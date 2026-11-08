@@ -31,7 +31,7 @@ interface Customer360WorkspaceProps {
   onBack: () => void;
   onCustomerUpdated: (customer: DirectoryCustomer) => void;
   onNavigate?: (view: string, customerId: string) => void;
-  onPersonalGuardChange?: (guarded: boolean, busy: boolean) => void;
+  onCustomerGuardChange?: (guarded: boolean, busy: boolean) => void;
 }
 
 interface PhoneVerificationSummary {
@@ -148,7 +148,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
   onBack,
   onCustomerUpdated,
   onNavigate,
-  onPersonalGuardChange,
+  onCustomerGuardChange,
 }) => {
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
@@ -157,10 +157,13 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'personal' | 'proof'>('overview');
   const [personalGuard, setPersonalGuard] = useState(false);
   const [personalBusy, setPersonalBusy] = useState(false);
-  const [pendingExit, setPendingExit] = useState<'overview' | 'proof' | 'back' | null>(null);
+  const [proofGuard, setProofGuard] = useState(false);
+  const [proofBusy, setProofBusy] = useState(false);
+  const [pendingExit, setPendingExit] = useState<'overview' | 'personal' | 'proof' | 'back' | null>(null);
   const exitDialogRef = useRef<HTMLElement>(null);
-  const reportPersonalGuard = useCallback((guarded: boolean, busy: boolean) => { setPersonalGuard(guarded); setPersonalBusy(busy); onPersonalGuardChange?.(guarded, busy); }, [onPersonalGuardChange]);
-  useEffect(() => () => onPersonalGuardChange?.(false, false), [onPersonalGuardChange]);
+  const reportPersonalGuard = useCallback((guarded: boolean, busy: boolean) => { setPersonalGuard(guarded); setPersonalBusy(busy); onCustomerGuardChange?.(guarded, busy); }, [onCustomerGuardChange]);
+  const reportProofGuard = useCallback((guarded: boolean, busy: boolean) => { setProofGuard(guarded); setProofBusy(busy); onCustomerGuardChange?.(guarded, busy); }, [onCustomerGuardChange]);
+  useEffect(() => () => onCustomerGuardChange?.(false, false), [onCustomerGuardChange]);
   useDialogFocus(exitDialogRef, Boolean(pendingExit), () => setPendingExit(null));
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
@@ -252,11 +255,15 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
   const tabs = ['overview', 'personal', 'proof'] as const;
   const tabIds = ['customer-overview-tab', 'customer-personal-tab', 'customer-proof-address-tab'];
   const requestTab = (tab: 'overview' | 'personal' | 'proof') => {
-    if (activeTab === 'personal' && tab !== 'personal' && personalGuard) { if (!personalBusy) setPendingExit(tab as 'overview' | 'proof'); return false; }
+    const guarded = activeTab === 'personal' ? personalGuard : activeTab === 'proof' ? proofGuard : false;
+    const busy = activeTab === 'personal' ? personalBusy : activeTab === 'proof' ? proofBusy : false;
+    if (tab !== activeTab && guarded) { if (!busy) setPendingExit(tab); return false; }
     setActiveTab(tab); return true;
   };
   const requestBack = () => {
-    if (activeTab === 'personal' && personalGuard) { if (!personalBusy) setPendingExit('back'); return; }
+    const guarded = activeTab === 'personal' ? personalGuard : activeTab === 'proof' ? proofGuard : false;
+    const busy = activeTab === 'personal' ? personalBusy : activeTab === 'proof' ? proofBusy : false;
+    if (guarded) { if (!busy) setPendingExit('back'); return; }
     onBack();
   };
   const handleTabKey = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -323,7 +330,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
   return (
     <main className="customer-management cm-workspace">
       <div className="cm-workspace-topline">
-        <button className="cm-back-button" type="button" onClick={requestBack} disabled={personalBusy}>← Back to directory</button>
+        <button className="cm-back-button" type="button" onClick={requestBack} disabled={(activeTab === 'personal' && personalBusy) || (activeTab === 'proof' && proofBusy)}>← Back to directory</button>
         <span className="cm-workspace-label">CUSTOMER 360°</span>
       </div>
 
@@ -548,18 +555,18 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
         </section>
       ) : (
         <section id="customer-proof-address-panel" role="tabpanel" aria-labelledby="customer-proof-address-tab" className="cm-workspace-content">
-          <CustomerProofOfAddressPanel customerId={customer.id} />
+          <CustomerProofOfAddressPanel customerId={customer.id} onGuardChange={reportProofGuard} />
         </section>
       )}
 
       {pendingExit && (
         <div className="cm-modal-backdrop" role="presentation">
           <section ref={exitDialogRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="cm-personal-exit-title">
-            <h2 id="cm-personal-exit-title">Leave personal information?</h2>
-            <p>Leaving discards any personal-information draft, one-time proof, and local uncertain-outcome lock. An earlier action may already have occurred. Inspect current records and audit history before acting again.</p>
+            <h2 id="cm-personal-exit-title">Leave {activeTab === 'proof' ? 'Proof of Address' : 'personal information'}?</h2>
+            <p>Leaving discards the local draft, any one-time proof or upload retry key, and local uncertain-outcome locks. An earlier action may already have occurred. Inspect current records and audit history before acting again.</p>
             <div className="cm-actions-row">
               <button type="button" className="cm-button cm-button-secondary" onClick={() => setPendingExit(null)}>Keep working</button>
-              <button type="button" className="cm-button cm-button-danger" onClick={() => { const destination = pendingExit; setPendingExit(null); reportPersonalGuard(false, false); if (destination === 'back') onBack(); else setActiveTab(destination); }}>Discard and leave</button>
+              <button type="button" className="cm-button cm-button-danger" onClick={() => { const destination = pendingExit; setPendingExit(null); if (activeTab === 'proof') reportProofGuard(false, false); else reportPersonalGuard(false, false); if (destination === 'back') onBack(); else setActiveTab(destination); }}>Discard and leave</button>
             </div>
           </section>
         </div>

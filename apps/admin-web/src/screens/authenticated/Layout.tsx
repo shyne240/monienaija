@@ -325,7 +325,7 @@ export const Layout: React.FC = () => {
           />
         );
       case 'dashboardSettings': return <DashboardSettingsScreen />;
-      case 'customers': return <CustomerDirectoryScreen onNavigate={(view, customerId) => navigateWithCustomer(view as View, customerId)} selectedCustomerId={navContext.customerId} onPersonalGuardChange={reportCustomerGuard} />;
+      case 'customers': return <CustomerDirectoryScreen onNavigate={(view, customerId) => navigateWithCustomer(view as View, customerId)} selectedCustomerId={navContext.customerId} onCustomerGuardChange={reportCustomerGuard} />;
       case 'agents':
         return (
           <AgentNetworkScreen
@@ -499,7 +499,7 @@ export const Layout: React.FC = () => {
         <div className="cm-modal-backdrop" role="presentation">
           <section ref={leaveDialogRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="mn-customer-leave-title">
             <h2 id="mn-customer-leave-title">Leave customer information?</h2>
-            <p>Leaving discards the personal-information draft, one-time proof and any local uncertain-outcome lock. An earlier action may already have occurred; inspect current records and audit history before acting again.</p>
+            <p>Leaving discards the customer draft, one-time proof or upload retry key, and any local uncertain-outcome lock. An earlier action may already have occurred; inspect current records and audit history before acting again.</p>
             {customerBusy && <p>A request is in progress. Leaving cannot cancel or confirm the server outcome.</p>}
             <div className="cm-actions-row">
               <button type="button" className="cm-button cm-button-secondary" onClick={() => setPendingLeave(null)}>Keep working</button>

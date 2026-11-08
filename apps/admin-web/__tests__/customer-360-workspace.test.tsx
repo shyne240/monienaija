@@ -343,3 +343,27 @@ test('personal draft requires explicit confirmation before tab change or return 
   fireEvent.click(view.getByRole('button', { name: 'Discard and leave' }));
   expect(onBack).toHaveBeenCalledTimes(1);
 });
+
+test('Proof of Address draft is guarded on tab change and return to directory', async () => {
+  jest.clearAllMocks();
+  setPrincipal(['customer.view', 'customer.view_address', 'customer.view_proof_of_address_metadata', 'customer.upload_proof_of_address']);
+  mockCustomerReads();
+  const old = (ApiClient.get as jest.Mock).getMockImplementation()!;
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+    if (path.endsWith('/proof-of-address/capabilities')) return Promise.resolve({ enabled: true, maxUploadBytes: 1048576 });
+    if (path.includes('/proof-of-address?page=')) return Promise.resolve({ items: [], page: 1, limit: 20, total: 0 });
+    return old(path);
+  });
+  const onBack = jest.fn();
+  const view = render(<Customer360Workspace customer={customer} onBack={onBack} onCustomerUpdated={jest.fn()} />);
+  fireEvent.click(view.getByRole('tab', { name: 'Proof of Address & physical verification' }));
+  fireEvent.change(await view.findByLabelText('Issuer (optional)'), { target: { value: 'Synthetic issuer' } });
+  fireEvent.click(view.getByRole('tab', { name: 'Overview' }));
+  expect(view.getByRole('dialog', { name: 'Leave Proof of Address?' })).toBeTruthy();
+  fireEvent.click(view.getByRole('button', { name: 'Keep working' }));
+  expect((view.getByLabelText('Issuer (optional)') as HTMLInputElement).value).toBe('Synthetic issuer');
+  fireEvent.click(view.getByRole('button', { name: /Back to directory/ }));
+  expect(onBack).not.toHaveBeenCalled();
+  fireEvent.click(view.getByRole('button', { name: 'Discard and leave' }));
+  expect(onBack).toHaveBeenCalledTimes(1);
+});

@@ -691,3 +691,20 @@ test('an unconfirmed upload needs explicit discard and cannot double-submit', as
   expect(screen.queryByRole('button', { name: 'Retry same upload' })).toBeNull();
   expect(ApiClient.postForm).toHaveBeenCalledTimes(1);
 });
+
+test('upload draft cannot be silently replaced or discarded', async () => {
+  setPermissions(operationsScopes); configureEnabledApi();
+  render(<CustomerProofOfAddressPanel customerId={customerId} />);
+  await screen.findByRole('heading', { name: 'Utility bill · revision 1' });
+  fireEvent.change(screen.getByLabelText('Issuer (optional)'), { target: { value: 'Unfinished synthetic issuer' } });
+  expect((screen.getByRole('button', { name: 'Replace with a new revision' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: 'Withdraw' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Discard upload draft' }));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Keep draft' }));
+  expect((screen.getByLabelText('Issuer (optional)') as HTMLInputElement).value).toBe('Unfinished synthetic issuer');
+  fireEvent.click(screen.getByRole('button', { name: 'Discard upload draft' }));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Discard draft' }));
+  expect((screen.getByLabelText('Issuer (optional)') as HTMLInputElement).value).toBe('');
+  expect((screen.getByRole('button', { name: 'Withdraw' }) as HTMLButtonElement).disabled).toBe(false);
+  expect(ApiClient.post).not.toHaveBeenCalled(); expect(ApiClient.postForm).not.toHaveBeenCalled();
+});

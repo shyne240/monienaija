@@ -251,6 +251,7 @@ async function settled<T>(promise: Promise<T>): Promise<{ value: T } | { error: 
 
 interface CustomerProofOfAddressPanelProps {
   customerId: string;
+  onGuardChange?: (guarded: boolean, busy: boolean) => void;
 }
 
 export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelProps> = (props) => {
@@ -261,7 +262,7 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
   return <CustomerProofOfAddressWorkspace key={key} {...props} />;
 };
 
-const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps> = ({ customerId }) => {
+const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps> = ({ customerId, onGuardChange }) => {
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
   const scopesKey = scopes.join('|');
@@ -295,6 +296,10 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
   const [documentDate, setDocumentDate] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const [uploadDraftTouched, setUploadDraftTouched] = useState(false);
+  const [confirmDiscardDraft, setConfirmDiscardDraft] = useState(false);
+  const discardDraftRef = useRef<HTMLElement>(null);
+  useDialogFocus(discardDraftRef, confirmDiscardDraft, () => setConfirmDiscardDraft(false));
   const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
   const [uploadBusy, setUploadBusy] = useState(false);
   const mutationLock = useRef(false);
@@ -318,6 +323,14 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
   const [lifecycleReviews, setLifecycleReviews] = useState<Record<string, boolean>>({});
+  const draftGuarded = Boolean(uploadDraftTouched || selectedFile || replacementTarget || pendingUpload || pendingLifecycle || uploadBusy || lifecycleBusy || Object.keys(lifecycleReviews).length);
+  useEffect(() => { onGuardChange?.(draftGuarded, uploadBusy || lifecycleBusy || Boolean(pendingLifecycle) || confirmDiscardDraft); }, [draftGuarded, uploadBusy, lifecycleBusy, pendingLifecycle, confirmDiscardDraft, onGuardChange]);
+  useEffect(() => {
+    if (!draftGuarded) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [draftGuarded]);
   const previewDialogRef = useRef<HTMLElement>(null);
   const previewTriggerRef = useRef<HTMLButtonElement | null>(null);
   const lifecycleDialogRef = useRef<HTMLFormElement>(null);
@@ -584,7 +597,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
           : `The matching submission currently has status ${result.documentStatus}. Review its history; this may be a replay of an earlier upload.`);
       setPendingUpload(null); setUploadReviewed(false); setConfirmAbandonUpload(false);
       setSelectedFile(null); setIdempotencyKey(null); setFileInputKey(key => key + 1);
-      setIssuerName(''); setDocumentDate(''); setReplacementTarget(null);
+      setIssuerName(''); setDocumentDate(''); setReplacementTarget(null); setUploadDraftTouched(false);
       refresh();
     } catch (error) {
       if (currentCustomerId.current === customerId) {
@@ -601,6 +614,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
   };
 
   const chooseFile = (file: File | null) => {
+    setUploadDraftTouched(true);
     setSelectedFile(file);
     setActionError(null);
     setIdempotencyKey(null);
@@ -613,6 +627,8 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
   };
 
   const beginReplacement = (document: ProofOfAddressDocument) => {
+    if (uploadDraftTouched || selectedFile || pendingUpload || uploadBusy || lifecycleBusy || !listLoaded) return;
+    setUploadDraftTouched(true);
     setReplacementTarget(document);
     setCategory(document.category);
     setDocumentType(document.documentType);
@@ -627,13 +643,17 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
   };
 
   const cancelReplacement = () => {
+    setUploadDraftTouched(false);
+    setConfirmDiscardDraft(false);
     setReplacementTarget(null);
     setCategory(CANDIDATE_CATEGORIES[0] ?? '');
+    setDocumentType(candidateProofTypesForCategory(CANDIDATE_CATEGORIES[0] ?? '')[0]?.type ?? '');
     setIssuerName('');
     setDocumentDate('');
     setSelectedFile(null);
     setIdempotencyKey(null);
     setFileInputKey((key) => key + 1);
+    setAddressId(addresses.find(address => address.isPrimary)?.id ?? addresses[0]?.id ?? '');
   };
 
   const loadHistory = async (documentId: string, page: number, append: boolean) => {
@@ -764,7 +784,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
 
   const confirmLifecycleAction = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!pendingLifecycle || !listLoaded || loading || !documents.some(current => current.id === pendingLifecycle.document.id && current.documentStatus === pendingLifecycle.document.documentStatus) || lifecycleBusy || uploadBusy || mutationLock.current || pendingUpload || Object.prototype.hasOwnProperty.call(lifecycleReviews, pendingLifecycle.document.id) || (pendingLifecycle.action === 'withdraw' ? !canWithdraw : !canArchive)) return;
+    if (!pendingLifecycle || !listLoaded || loading || !documents.some(current => current.id === pendingLifecycle.document.id && current.documentStatus === pendingLifecycle.document.documentStatus) || lifecycleBusy || uploadBusy || uploadDraftTouched || selectedFile || mutationLock.current || pendingUpload || Object.prototype.hasOwnProperty.call(lifecycleReviews, pendingLifecycle.document.id) || (pendingLifecycle.action === 'withdraw' ? !canWithdraw : !canArchive)) return;
     if (!lifecycleReason.trim() || lifecycleReason.trim().length > 1000 || /[\x00-\x1f\x7f]/.test(lifecycleReason.trim())) { setLifecycleError('Use a reason of 1–1000 characters without control characters.'); return; }
     mutationLock.current = true;
     const { document, action } = pendingLifecycle;
@@ -797,7 +817,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
   };
 
   const startLifecycleAction = (document: ProofOfAddressDocument, action: LifecycleAction) => {
-    if (!listLoaded || loading || mutationLock.current || uploadBusy || pendingUpload || Object.prototype.hasOwnProperty.call(lifecycleReviews, document.id) || !documents.some(current => current.id === document.id && current.documentStatus === document.documentStatus) || (action === 'withdraw' ? !canWithdraw : !canArchive)) return;
+    if (!listLoaded || loading || mutationLock.current || uploadBusy || uploadDraftTouched || selectedFile || pendingUpload || Object.prototype.hasOwnProperty.call(lifecycleReviews, document.id) || !documents.some(current => current.id === document.id && current.documentStatus === document.documentStatus) || (action === 'withdraw' ? !canWithdraw : !canArchive)) return;
     setPendingLifecycle({ document, action });
     setLifecycleReason('');
     setLifecycleError(null);
@@ -886,7 +906,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                     The replacement keeps the original residential address and candidate
                     classification. A new revision is created; previous records remain in history.
                     {canUpload && (
-                      <button className="cm-text-button" type="button" disabled={Boolean(pendingUpload) || uploadBusy} onClick={cancelReplacement}>
+                      <button className="cm-text-button" type="button" disabled={Boolean(pendingUpload) || uploadBusy} onClick={() => setConfirmDiscardDraft(true)}>
                         Cancel replacement
                       </button>
                     )}
@@ -898,7 +918,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                   </div>
                 )}
                 <form className="cm-poa-upload-form" onSubmit={uploadDocument}>
-                  <fieldset disabled={!canUpload || Boolean(uploadUnavailableReason) || uploadBusy || lifecycleBusy || Boolean(pendingUpload)}>
+                  <fieldset disabled={!canUpload || Boolean(uploadUnavailableReason) || uploadBusy || lifecycleBusy || Boolean(pendingUpload) || Boolean(pendingLifecycle)}>
                     <div className="cm-wizard-field-grid cm-poa-metadata-preview">
                       <label htmlFor="cm-poa-category">
                         Candidate category
@@ -906,7 +926,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                           id="cm-poa-category"
                           value={category}
                           disabled={Boolean(replacementTarget)}
-                          onChange={(event) => setCategory(event.target.value)}
+                          onChange={(event) => { setUploadDraftTouched(true); setCategory(event.target.value); }}
                         >
                           {CANDIDATE_CATEGORIES.map((option) => (
                             <option key={option} value={option}>
@@ -921,7 +941,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                           id="cm-poa-document-type"
                           value={documentType}
                           disabled={Boolean(replacementTarget)}
-                          onChange={(event) => setDocumentType(event.target.value)}
+                          onChange={(event) => { setUploadDraftTouched(true); setDocumentType(event.target.value); }}
                         >
                           {candidateTypes.map((candidate) => (
                             <option key={candidate.type} value={candidate.type}>
@@ -936,7 +956,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                           id="cm-poa-associated-address"
                           value={addressId}
                           disabled={Boolean(replacementTarget)}
-                          onChange={(event) => setAddressId(event.target.value)}
+                          onChange={(event) => { setUploadDraftTouched(true); setAddressId(event.target.value); }}
                           required
                         >
                           {addresses.length === 0 && (
@@ -955,7 +975,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                           id="cm-poa-document-date"
                           type="date"
                           value={documentDate}
-                          onChange={(event) => setDocumentDate(event.target.value)}
+                          onChange={(event) => { setUploadDraftTouched(true); setDocumentDate(event.target.value); }}
                         />
                       </label>
                       <label htmlFor="cm-poa-issuer">
@@ -966,7 +986,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                           maxLength={200}
                           autoComplete="off"
                           value={issuerName}
-                          onChange={(event) => setIssuerName(event.target.value)}
+                          onChange={(event) => { setUploadDraftTouched(true); setIssuerName(event.target.value); }}
                         />
                       </label>
                       <label htmlFor="cm-poa-file">
@@ -1011,6 +1031,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                     </div>
                   </fieldset>
                 </form>
+                {uploadDraftTouched && !pendingUpload && <button type="button" className="cm-text-button" disabled={uploadBusy || lifecycleBusy} onClick={() => setConfirmDiscardDraft(true)}>Discard upload draft</button>}
                 <p className="cm-muted">Pending upload data and its retry key are kept only in this workspace. Leaving, refreshing the browser or changing session loses them; inspect document records before a later upload.</p>
                 {pendingUpload && <div className="cm-policy-notice cm-policy-notice-warning" role="status">
                   <p>Retained request: {pendingUpload.file.name} · {pendingUpload.category} / {pendingUpload.documentType} · address {pendingUpload.addressId}{pendingUpload.supersedesId ? ` · replaces ${pendingUpload.supersedesId}` : ''} · issuer {pendingUpload.issuerName || 'not provided'} · document date {pendingUpload.documentDate || 'not provided'}.</p>
@@ -1158,7 +1179,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                           className="cm-button cm-button-secondary"
                           type="button"
                           onClick={() => beginReplacement(document)}
-                          disabled={uploadBusy || lifecycleBusy || !listLoaded || Boolean(pendingUpload) || Object.prototype.hasOwnProperty.call(lifecycleReviews, document.id)}
+                          disabled={uploadBusy || lifecycleBusy || !listLoaded || uploadDraftTouched || Boolean(selectedFile) || Boolean(pendingUpload) || Object.prototype.hasOwnProperty.call(lifecycleReviews, document.id)}
                         >
                           Replace with a new revision
                         </button>
@@ -1168,7 +1189,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                           className="cm-button cm-button-danger"
                           type="button"
                           onClick={() => startLifecycleAction(document, 'withdraw')}
-                          disabled={uploadBusy || lifecycleBusy || !listLoaded || Boolean(pendingUpload) || Object.prototype.hasOwnProperty.call(lifecycleReviews, document.id)}
+                          disabled={uploadBusy || lifecycleBusy || !listLoaded || uploadDraftTouched || Boolean(selectedFile) || Boolean(pendingUpload) || Object.prototype.hasOwnProperty.call(lifecycleReviews, document.id)}
                         >
                           Withdraw
                         </button>
@@ -1178,7 +1199,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                           className="cm-button cm-button-secondary"
                           type="button"
                           onClick={() => startLifecycleAction(document, 'archive')}
-                          disabled={uploadBusy || lifecycleBusy || !listLoaded || Boolean(pendingUpload) || Object.prototype.hasOwnProperty.call(lifecycleReviews, document.id)}
+                          disabled={uploadBusy || lifecycleBusy || !listLoaded || uploadDraftTouched || Boolean(selectedFile) || Boolean(pendingUpload) || Object.prototype.hasOwnProperty.call(lifecycleReviews, document.id)}
                         >
                           Archive withdrawn record
                         </button>
@@ -1375,6 +1396,15 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
         </div>
       )}
 
+      {confirmDiscardDraft && (
+        <div className="cm-modal-backdrop" role="presentation">
+          <section ref={discardDraftRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="cm-poa-discard-title">
+            <h2 id="cm-poa-discard-title">Discard upload draft?</h2>
+            <p>The selected file and unsaved metadata will be lost. This does not remove any document already uploaded.</p>
+            <div className="cm-actions-row"><button type="button" className="cm-button cm-button-secondary" onClick={() => setConfirmDiscardDraft(false)}>Keep draft</button>{' '}<button type="button" className="cm-button cm-button-danger" onClick={cancelReplacement}>Discard draft</button></div>
+          </section>
+        </div>
+      )}
       {pendingLifecycle && (
         <div className="cm-modal-backdrop" role="presentation">
           <form

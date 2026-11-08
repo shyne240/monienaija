@@ -6,6 +6,8 @@
     "keyboard": true,
     "uploadMismatchRejected": true,
     "withdrawMismatchRejected": true,
+    "draftTabShellGuard": true,
+    "pendingTabGuard": true,
     "confirmed": true,
     "pendingSize": {
       "page": 320,
@@ -26,6 +28,8 @@
     "keyboard": true,
     "uploadMismatchRejected": true,
     "withdrawMismatchRejected": true,
+    "draftTabShellGuard": true,
+    "pendingTabGuard": true,
     "confirmed": true,
     "pendingSize": {
       "page": 360,
@@ -46,6 +50,8 @@
     "keyboard": true,
     "uploadMismatchRejected": true,
     "withdrawMismatchRejected": true,
+    "draftTabShellGuard": true,
+    "pendingTabGuard": true,
     "confirmed": true,
     "pendingSize": {
       "page": 390,
@@ -66,6 +72,8 @@
     "keyboard": true,
     "uploadMismatchRejected": true,
     "withdrawMismatchRejected": true,
+    "draftTabShellGuard": true,
+    "pendingTabGuard": true,
     "confirmed": true,
     "pendingSize": {
       "page": 768,
@@ -86,6 +94,8 @@
     "keyboard": true,
     "uploadMismatchRejected": true,
     "withdrawMismatchRejected": true,
+    "draftTabShellGuard": true,
+    "pendingTabGuard": true,
     "confirmed": true,
     "pendingSize": {
       "page": 769,
@@ -106,6 +116,8 @@
     "keyboard": true,
     "uploadMismatchRejected": true,
     "withdrawMismatchRejected": true,
+    "draftTabShellGuard": true,
+    "pendingTabGuard": true,
     "confirmed": true,
     "pendingSize": {
       "page": 1024,
@@ -126,6 +138,8 @@
     "keyboard": true,
     "uploadMismatchRejected": true,
     "withdrawMismatchRejected": true,
+    "draftTabShellGuard": true,
+    "pendingTabGuard": true,
     "confirmed": true,
     "pendingSize": {
       "page": 1280,
@@ -146,6 +160,8 @@
     "keyboard": true,
     "uploadMismatchRejected": true,
     "withdrawMismatchRejected": true,
+    "draftTabShellGuard": true,
+    "pendingTabGuard": true,
     "confirmed": true,
     "pendingSize": {
       "page": 1440,
