@@ -1,8 +1,9 @@
 import './operational-surfaces.css';
+import './notification-redesign.css';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NotificationTemplateWorkspace } from '../../components/NotificationTemplateWorkspace';
 import { ProviderConfigurationWorkspace } from '../../components/ProviderConfigurationWorkspace';
-import { Alert, Button, Field } from '../../design-system/primitives';
+import { Alert, Button, Field, PageHeader } from '../../design-system/primitives';
 import {
   BASELINE_CODE_EVENT_CATALOGUE,
   BASELINE_CODE_TEMPLATES,
@@ -376,6 +377,9 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
     setTemplateErrors({ SMS: '', EMAIL: '' });
     setTemplateBlocked({ SMS: '', EMAIL: '' });
     setLoadingInitial(true);
+    if (permissions.canViewCatalogue) { setEventsSource('LOADING'); setEventsBlockedMsg(''); }
+    if (permissions.canViewProviderStatus) { setProviderStatus(null); setProviderBlockedMsg(''); }
+    setDiagnostics(null); setOutboxRows(null);
     setGlobalLoadErrors({});
     loadedTemplateChannelsRef.current = { SMS: false, EMAIL: false };
     setLoadedTemplateChannels({ SMS: false, EMAIL: false });
@@ -1131,32 +1135,15 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   }
 
   return (
-    <div className="mn-operational" style={styles.container} data-testid="notification-management-screen">
-      {/* Header */}
-      <div style={styles.headerRow}>
-        <div>
-          <h2 style={styles.title}>🔔 SMS & Email Notification Management</h2>
-          <p style={styles.subtitle}>
-            Governed event triggers, versioned SMS & Email templates, safe variable browser,
-            non-secret provider status, delivery diagnostics, and dual-control test sends.
-          </p>
-        </div>
-        <button
-          type="button"
-          data-testid="refresh-notifications-console-btn"
-          style={styles.secondaryBtn}
-          disabled={loadingInitial || isSavingTrigger}
-          onClick={() => {
-            void fetchAllReadSurfaces();
-            if (permissions.canViewDeliveries) {
-              void fetchDeliveries();
-              void fetchOutboxReceipts();
-            }
-          }}
-        >
-          {loadingInitial ? 'Refreshing…' : 'Refresh Console'}
-        </button>
+    <div className="mn-operational notification-redesign" style={styles.container} data-testid="notification-management-screen">
+      <div className="notification-redesign__header">
+        <PageHeader eyebrow="System administration" title="SMS & Email Notification Management" description="Review event triggers, templates, provider configuration and delivery diagnostics under the existing governance controls." />
+        <Button data-testid="refresh-notifications-console-btn" disabled={loadingInitial || isSavingTrigger} onClick={() => {
+          void fetchAllReadSurfaces();
+          if (permissions.canViewDeliveries) { void fetchDeliveries(); void fetchOutboxReceipts(); }
+        }}>{loadingInitial ? 'Refreshing…' : 'Refresh Console'}</Button>
       </div>
+      <div className="notification-redesign__boundary" role="note"><strong>Governed operations</strong><span>Changes require their existing authorization and approval steps. Reference data, provider configuration and delivery outcomes are distinct; opening this workspace does not start workers or send tests.</span></div>
 
       {/* Global partial-failure alerts */}
       {Object.keys(globalLoadErrors).length > 0 && (
@@ -1170,7 +1157,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       )}
 
       {/* Navigation Tabs */}
-      <div style={styles.tabBar} role="tablist" aria-label="Notification management sections">
+      <div className="notification-redesign__tab-scroll"><div className="notification-redesign__tabs" role="tablist" aria-label="Notification management sections">
         {visibleTabs.map((tabItem, index) => (
           <button
             key={tabItem.key}
@@ -1191,27 +1178,27 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
               event.preventDefault();
               document.getElementById(`notification-tab-${visibleTabs[next].key}`)?.focus();
             }}
-            style={activeTab === tabItem.key ? styles.activeTabBtn : styles.tabBtn}
             onClick={() => setActiveTab(tabItem.key)}
           >
             {tabItem.label}
           </button>
         ))}
-      </div>
-
+      </div></div>
+      <p className="notification-redesign__tab-hint">Scroll to see all sections. Use arrow keys to move between tabs, then Enter or Space to open one.</p>
       {visibleTabs.filter((tabItem) => tabItem.key !== activeTab).map((tabItem) => (
         <div key={tabItem.key} id={`notification-panel-${tabItem.key}`} role="tabpanel" aria-labelledby={`notification-tab-${tabItem.key}`} hidden />
       ))}
-      <div role="tabpanel" id={`notification-panel-${activeTab}`} aria-labelledby={`notification-tab-${activeTab}`}>
+      <div className="notification-redesign__panel" role="tabpanel" tabIndex={0} id={`notification-panel-${activeTab}`} aria-labelledby={`notification-tab-${activeTab}`}>
       {/* TAB 1: OVERVIEW (Capability 1) */}
       {activeTab === 'overview' && (
         <div style={styles.sectionStack} data-testid="notif-panel-overview">
+          <div className="notification-redesign__section-heading"><p>WORKSPACE OVERVIEW</p><h2>Channel and service signals</h2><span>Read each source independently. A configured provider or enabled trigger does not guarantee a delivery.</span></div>
           {/* Channel Status Cards */}
           <div style={styles.cardGrid3}>
             <section style={styles.card} aria-label="SMS channel status">
               <div style={styles.cardTitleRow}>
-                <h3 style={styles.cardTitle}>📱 SMS Channel</h3>
-                <span style={providerStatus ? styles.liveBadge : styles.mutedBadge}>
+                <h3 style={styles.cardTitle}>SMS Channel</h3>
+                <span style={providerStatus?.sms?.operationalStatus === 'READY' ? styles.liveBadge : providerStatus?.sms?.operationalStatus === 'DEGRADED' || providerStatus?.sms?.operationalStatus === 'MISCONFIGURED' ? styles.blockedBadge : styles.mutedBadge}>
                   {providerStatus?.sms?.operationalStatus ?? (!permissions.canViewProviderStatus ? 'SCOPE RESTRICTED' : loadingInitial ? 'LOADING…' : 'STATUS UNAVAILABLE')}
                 </span>
               </div>
@@ -1227,7 +1214,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     : 'Registry unavailable'}
                 </div>
                 <div>
-                  <strong>Direct-Send OTP Flows:</strong> {eventStats.security} mandatory (never persisted)
+                  <strong>Security events in catalogue:</strong> {eventStats.security} (direct-send flows are managed separately)
                 </div>
                 <div>
                   <strong>Agent SMS Note:</strong> Agent leg skipped until authoritative Agent phone model (D-N6)
@@ -1237,7 +1224,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
 
             <section style={styles.card} aria-label="Email channel status">
               <div style={styles.cardTitleRow}>
-                <h3 style={styles.cardTitle}>📧 Email Channel</h3>
+                <h3 style={styles.cardTitle}>Email Channel</h3>
                 {emailChannelBlocked ? (
                   <span style={styles.blockedBadge} data-testid="overview-email-blocked-badge">
                     BLOCKED (ARENA 3)
@@ -1260,7 +1247,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     NOT CONFIGURED (DARK)
                   </span>
                 ) : (
-                  <span style={styles.liveBadge} data-testid="overview-email-live-badge">
+                  <span style={providerStatus.email.operationalStatus === 'READY' ? styles.liveBadge : providerStatus.email.operationalStatus === 'DEGRADED' ? styles.blockedBadge : styles.mutedBadge} data-testid="overview-email-live-badge">
                     {providerStatus.email.operationalStatus}
                   </span>
                 )}
@@ -1299,24 +1286,18 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
 
             <section style={styles.card} aria-label="Event catalogue and outbox health">
               <div style={styles.cardTitleRow}>
-                <h3 style={styles.cardTitle}>⚡ Event & Outbox Health</h3>
+                <h3 style={styles.cardTitle}>Event & Outbox Health</h3>
                 <span
                   style={
-                    eventsBlockedMsg || eventsSource === 'OFFLINE_REFERENCE'
-                      ? styles.blockedBadge
-                      : styles.liveBadge
+                    eventsSource === 'LIVE' ? styles.liveBadge : styles.mutedBadge
                   }
                 >
-                  {eventsBlockedMsg || eventsSource === 'OFFLINE_REFERENCE'
-                    ? 'STATIC REFERENCE'
-                    : 'DB REGISTRY LIVE'}
+                  {!permissions.canViewCatalogue ? 'SCOPE RESTRICTED' : eventsSource === 'LOADING' ? 'CHECKING REGISTRY' : eventsSource === 'LIVE' ? 'DB REGISTRY READ' : 'STATIC REFERENCE'}
                 </span>
               </div>
               <div style={styles.kvList}>
                 <div>
-                  <strong>Catalogue Events:</strong> {eventStats.total} ({eventStats.security}{' '}
-                  Security · {eventStats.transactional} Transactional · {eventStats.informational}{' '}
-                  Informational)
+                  <strong>Catalogue Events:</strong> {permissions.canViewCatalogue && eventsSource === 'LOADING' ? 'Checking registry…' : <>{eventStats.total} ({eventStats.security}{' '}Security · {eventStats.transactional} Transactional · {eventStats.informational}{' '}Informational)</>}
                 </div>
                 <div>
                   <strong>Eligible Editable Triggers:</strong>{' '}
@@ -1368,11 +1349,10 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
             aria-label="Backend integration readiness matrix"
             data-testid="backend-readiness-matrix"
           >
-            <h3 style={styles.cardTitle}>🔗 Backend API Integration & Live Contract Reference</h3>
+            <h3 style={styles.cardTitle}>Backend API Contract Reference</h3>
             <p style={styles.cardDesc}>
-              Authoritative backend endpoints wired to this console. Policy-deferred capabilities
-              (manual delivery retry and single-step template activation without proposal) remain
-              explicitly disabled.
+              Contract reference, not a live health check for every endpoint. Policy-deferred capabilities
+              (manual delivery retry and single-step template activation without proposal) remain explicitly disabled.
             </p>
             <div style={{ overflowX: 'auto' }} role="region" aria-label="Notification records table" tabIndex={0}>
               <table style={styles.table}>
@@ -1381,7 +1361,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     <th style={styles.th}>Capability / Surface</th>
                     <th style={styles.th}>Current Backend Contract</th>
                     <th style={styles.th}>Governance / Scope</th>
-                    <th style={styles.th}>Runtime State</th>
+                    <th style={styles.th}>Evidence</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1395,7 +1375,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                       <code>notification.view_deliveries</code>
                     </td>
                     <td style={styles.td}>
-                      <span style={styles.liveBadge}>LIVE</span>
+                      <span style={styles.mutedBadge}>CONTRACT LISTED</span>
                     </td>
                   </tr>
                   <tr>
@@ -1408,7 +1388,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                       <code>outbox.view</code> · <code>diagnostics.view</code>
                     </td>
                     <td style={styles.td}>
-                      <span style={styles.liveBadge}>LIVE</span>
+                      <span style={styles.mutedBadge}>CONTRACT LISTED</span>
                     </td>
                   </tr>
                   <tr>
@@ -1422,11 +1402,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                       <code>privileged:approve</code> (MFA, Maker ≠ Checker)
                     </td>
                     <td style={styles.td}>
-                      {changeRequestsBlockedMsg ? (
-                        <span style={styles.blockedBadge}>BLOCKED</span>
-                      ) : (
-                        <span style={styles.liveBadge}>LIVE</span>
-                      )}
+                      {changeRequestsBlockedMsg ? <span style={styles.blockedBadge}>BLOCKED</span> : globalLoadErrors.changeRequests ? <span style={styles.blockedBadge}>UNAVAILABLE</span> : loadingInitial ? <span style={styles.mutedBadge}>CHECKING</span> : (permissions.canViewCatalogue || permissions.canApproveTemplates || permissions.canApproveConfiguration) ? <span style={styles.mutedBadge}>QUEUE READ</span> : <span style={styles.mutedBadge}>NOT CHECKED</span>}
                     </td>
                   </tr>
                   <tr>
@@ -1439,17 +1415,13 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                       <code>SUPER_ADMIN</code> · <code>notification.view_deliveries</code> · MFA
                     </td>
                     <td style={styles.td}>
-                      {eventsBlockedMsg ? (
-                        <span style={styles.blockedBadge}>BLOCKED</span>
-                      ) : (
-                        <span style={styles.liveBadge}>LIVE</span>
-                      )}
+                      {eventsBlockedMsg ? <span style={styles.blockedBadge}>BLOCKED</span> : !permissions.canViewCatalogue ? <span style={styles.mutedBadge}>NOT CHECKED</span> : eventsSource === 'LOADING' ? <span style={styles.mutedBadge}>CHECKING</span> : eventsSource === 'LIVE' ? <span style={styles.mutedBadge}>REGISTRY READ</span> : <span style={styles.mutedBadge}>REFERENCE ONLY</span>}
                     </td>
                   </tr>
                   <tr>
                     <td style={styles.td}>Editable SMS & Email Template Registry & Fixed-Sample Preview</td>
                     <td style={styles.td}>
-                      <code>GET/POST /internal/notifications/templates</code> ·{' '}
+                      <code>GET /internal/notifications/templates</code> · <code>POST /internal/notifications/changes</code> ·{' '}
                       <code>POST /internal/notifications/templates/preview</code>
                     </td>
                     <td style={styles.td}>
@@ -1462,7 +1434,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                       ) : templateErrors.SMS || templateErrors.EMAIL ? (
                         <span style={styles.blockedBadge}>UNAVAILABLE</span>
                       ) : loadedTemplateChannels.SMS && loadedTemplateChannels.EMAIL ? (
-                        <span style={styles.liveBadge}>LIVE</span>
+                        <span style={styles.mutedBadge}>REGISTRY READ</span>
                       ) : <span>NOT FULLY CHECKED</span>}
                     </td>
                   </tr>
@@ -1470,18 +1442,14 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     <td style={styles.td}>Non-Secret Provider Status & Governed Provider Configs</td>
                     <td style={styles.td}>
                       <code>GET /internal/notifications/provider-status</code> ·{' '}
-                      <code>GET/POST /internal/notifications/provider-configs*</code>
+                      <code>GET /internal/notifications/provider-config</code> · <code>POST /internal/notifications/provider-config/proposals</code>
                     </td>
                     <td style={styles.td}>
                       <code>notification.provider.view</code> ·{' '}
                       <code>notification.provider.configure</code>
                     </td>
                     <td style={styles.td}>
-                      {providerBlockedMsg ? (
-                        <span style={styles.blockedBadge}>BLOCKED</span>
-                      ) : (
-                        <span style={styles.liveBadge}>LIVE</span>
-                      )}
+                      {providerBlockedMsg ? <span style={styles.blockedBadge}>BLOCKED</span> : providerStatus ? <span style={styles.mutedBadge}>STATUS READ</span> : loadingInitial && permissions.canViewProviderStatus ? <span style={styles.mutedBadge}>CHECKING</span> : <span style={styles.mutedBadge}>NOT VERIFIED</span>}
                     </td>
                   </tr>
                   <tr>
@@ -1494,7 +1462,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                       <code>notification.test_send</code> (MFA)
                     </td>
                     <td style={styles.td}>
-                      <span style={styles.liveBadge}>LIVE</span>
+                      <span style={styles.mutedBadge}>CONTRACT LISTED</span>
                     </td>
                   </tr>
                 </tbody>
@@ -3398,7 +3366,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
 };
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { padding: 24, maxWidth: 1280, margin: '0 auto' },
+  container: { padding: 'clamp(16px, 3vw, 32px)', maxWidth: 1440, margin: '0 auto' },
   headerRow: {
     display: 'flex',
     justifyContent: 'space-between',

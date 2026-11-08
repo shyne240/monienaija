@@ -1,0 +1,20 @@
+.notification-redesign{min-width:0}
+.notification-redesign__header{display:flex;align-items:start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+.notification-redesign__header .mn-page-header{margin:0;min-width:0}
+.notification-redesign__boundary{display:flex;gap:8px 16px;flex-wrap:wrap;align-items:baseline;padding:14px 16px;margin-bottom:18px;border:1px solid #c8dfd1;border-left:4px solid #39795a;border-radius:8px;background:#f0f7f3;color:#244e3a;font-size:13px;line-height:1.5}
+.notification-redesign__tab-scroll{max-width:100%;overflow-x:auto;border-bottom:1px solid #c6d9ce;scrollbar-color:#6c9881 #f0f6f2}
+.notification-redesign__tabs{display:flex;gap:6px;width:max-content;min-width:100%;padding:0 0 8px}
+.notification-redesign__tabs button{min-height:42px;border:1px solid #c6d9ce;border-radius:7px;background:#fff;color:#36574a;padding:9px 13px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.notification-redesign__tabs button[aria-selected="true"]{border-color:#0b624a;background:#0b624a;color:#fff}
+.notification-redesign__tabs button:focus-visible,.notification-redesign__panel:focus-visible{outline:2px solid var(--mn-focus-ring);outline-offset:2px}
+.notification-redesign__tab-hint{font-size:12px;color:#52655f;line-height:1.4;margin:8px 0 20px}
+.notification-redesign__panel{min-width:0}
+.notification-redesign__section-heading{padding:4px 0}
+.notification-redesign__section-heading p{margin:0;font-size:11px;letter-spacing:.08em;font-weight:700;color:#4a6b5a}
+.notification-redesign__section-heading h2{margin:4px 0;font-size:20px;color:#132b25}
+.notification-redesign__section-heading span{font-size:13px;line-height:1.5;color:#52655f}
+.notification-redesign [data-testid="notif-panel-overview"] section{box-shadow:0 2px 12px rgba(19,43,37,.04)}
+.notification-redesign [data-testid="backend-readiness-matrix"]{min-width:0}
+.notification-redesign [data-testid="backend-readiness-matrix"] table{min-width:800px}
+.notification-redesign :is(input:not([type="checkbox"]):not([type="radio"]),select,textarea){border-color:#7d9288!important}
+@media(max-width:600px){.notification-redesign__header>button{width:100%}.notification-redesign__tab-scroll{margin-right:-16px}.notification-redesign__tab-hint{margin-bottom:16px}}
