@@ -236,6 +236,17 @@ function stripApplicantToken(
   return rest;
 }
 
+function verifyApplicationReceipt(value: AgentApplicationDraftResponse, expected: { id?: string; status: 'DRAFT' | 'SUBMITTED'; applicantReference?: string; agentClassId?: string }): void {
+  if (!value || typeof value !== 'object' || typeof value.id !== 'string' || !value.id.trim() ||
+      typeof value.reference !== 'string' || !value.reference.trim() || value.status !== expected.status ||
+      !Number.isSafeInteger(value.version) || (value.version ?? 0) < 1 ||
+      (expected.id !== undefined && value.id !== expected.id) ||
+      (expected.applicantReference !== undefined && value.applicantReference !== expected.applicantReference) ||
+      (expected.agentClassId !== undefined && value.agentClassId !== expected.agentClassId)) {
+    throw new Error('Application receipt could not be verified.');
+  }
+}
+
 export async function createAgentApplicationDraft(
   input: CreateAgentApplicationInput,
 ): Promise<Omit<AgentApplicationDraftResponse, 'applicantAccessToken'>> {
@@ -255,6 +266,7 @@ export async function createAgentApplicationDraft(
   }
 
   const created = await ApiClient.post<AgentApplicationDraftResponse>('/agents/applications', body);
+  verifyApplicationReceipt(created, { status: 'DRAFT', applicantReference: input.applicantReference.trim(), agentClassId: input.agentClassId?.trim() || undefined });
   return stripApplicantToken(created);
 }
 
@@ -273,6 +285,7 @@ export async function updateAgentApplicationDraft(
     `/agents/applications/${encodeURIComponent(applicationId)}`,
     body,
   );
+  verifyApplicationReceipt(updated, { id: applicationId, status: 'DRAFT', agentClassId: input.agentClassId?.trim() || undefined });
   return stripApplicantToken(updated);
 }
 
@@ -282,6 +295,7 @@ export async function submitAgentApplicationDraft(
   const submitted = await ApiClient.post<AgentApplicationDraftResponse>(
     `/agents/applications/${encodeURIComponent(applicationId)}/submit`,
   );
+  verifyApplicationReceipt(submitted, { id: applicationId, status: 'SUBMITTED' });
   return stripApplicantToken(submitted);
 }
 

@@ -1,0 +1,14 @@
+/* Agent Network page hierarchy; nested operational workspaces keep their own styles. */
+.agent-network-header { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:20px; padding:24px; border:1px solid #cfdfd6; border-radius:14px; background:linear-gradient(120deg,#e9f4ed,#f8fbf8); }
+.agent-network-header h2 { margin:4px 0 8px; color:#103a2b; font-size:clamp(24px,3vw,31px); letter-spacing:-.025em; }
+.agent-network-header p:not(.agent-network-eyebrow) { margin:0; max-width:660px; color:#38564b; line-height:1.5; }
+.agent-network-eyebrow { margin:0 0 6px; color:#356b52; font-size:11px; font-weight:800; letter-spacing:.1em; }
+.agent-network-header nav { display:flex; flex-wrap:wrap; gap:10px; }
+.agent-network-header a { display:inline-block; padding:9px 12px; background:#fff; border:1px solid #b8cec1; border-radius:8px; color:#174c36; font-size:13px; font-weight:700; text-decoration:none; }
+.agent-network-header a:focus-visible { outline:2px solid var(--mn-focus-ring); outline-offset:2px; }
+.agent-network-section { margin-top:20px; padding:clamp(16px,2.5vw,24px); border:1px solid #d8e5dc; border-radius:14px; background:#fff; box-shadow:0 4px 20px #183b2810; scroll-margin-top:16px; }
+.agent-network-directory-heading { margin-top:28px; border-top:1px solid #d8e5dc; padding-top:20px; scroll-margin-top:16px; }
+.agent-network-directory-heading h3 { margin:0 0 6px; color:#103a2b; font-size:20px; }
+.agent-network-directory-heading p:not(.agent-network-eyebrow) { margin:0; color:#486157; font-size:13px; line-height:1.5; }
+@media (max-width: 600px) { .agent-network-header { padding:18px; } .agent-network-header nav { width:100%; } }
+.agent-network-form-fields { min-width:0; margin:0; padding:0; border:0; }

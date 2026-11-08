@@ -1,4 +1,5 @@
 import './operational-surfaces.css';
+import './agent-network-redesign.css';
 import React, { useEffect, useRef, useState } from 'react';
 import { ScrollRegion } from '../../design-system/primitives';
 import { formatMinorUnits } from '../../utils/financial-display';
@@ -316,12 +317,20 @@ const EMPTY_TERMINAL_FORM = {
   serialNumber: '',
 };
 
-export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
+export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = (props) => {
+  const { principal, sessionId } = useAuthStore();
+  const contextKey = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  return <AgentNetworkWorkspace key={contextKey} {...props} />;
+};
+
+const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   initialAgentId,
   initialOpenApplications,
   onNavigateToSupportTickets,
 }) => {
   const { principal } = useAuthStore();
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
   const canView = hasFn('agent.view');
   const canManageFunding =
@@ -334,7 +343,8 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
   const canActivate = hasFn('agent.activate');
   const canLifecycle = canSuspend || canTerminate || canReactivate || canActivate;
   const canManageCredentials = hasFn('agent.manage_credentials');
-  const canReviewApplications = hasFn('agent.review_application');
+  const canReviewApplications = hasFn('agent.review_application') && (principal?.type === 'OPERATOR' || principal?.type === 'PRIVILEGED');
+  const canChangeApplications = canReviewApplications && !principal?.readOnlyPrincipal;
   const canManageOutletsTerminals = hasFn('agent.manage_outlets_terminals');
   const canAssignLimit = hasFn('agent.assign_limit');
   const isOperatorOrPrivilegedWorkforce = ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(
@@ -423,6 +433,9 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
   const [applicationsLoaded, setApplicationsLoaded] = useState(false);
   const [applicationsLoading, setApplicationsLoading] = useState(false);
   const [applicationsError, setApplicationsError] = useState('');
+  const [applicationsNeedRefresh, setApplicationsNeedRefresh] = useState(false);
+  const applicationsReadGeneration = useRef(0);
+  const applicationsUncertaintyVersion = useRef(0);
   const [applicationsMsg, setApplicationsMsg] = useState('');
   const [applications, setApplications] = useState<AgentApplicationRecord[]>([]);
   const [applicationStatusFilter, setApplicationStatusFilter] = useState('');
@@ -440,6 +453,13 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
     useState<AgentApplicationFormState>(EMPTY_APPLICATION_FORM);
   const [onboardingBusy, setOnboardingBusy] = useState(false);
   const [onboardingError, setOnboardingError] = useState('');
+  const applicationActionRef = useRef(false);
+  const [onboardingUnconfirmed, setOnboardingUnconfirmed] = useState(false);
+  const [confirmDiscardApplication, setConfirmDiscardApplication] = useState(false);
+  const applicationBaseline = useRef<AgentApplicationFormState>(EMPTY_APPLICATION_FORM);
+  const keepEditingRef = useRef<HTMLButtonElement>(null);
+  const cancelApplicationRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { if (confirmDiscardApplication) keepEditingRef.current?.focus(); }, [confirmDiscardApplication]);
 
   // On-demand catalogs & transaction observability
   const [classCatalog, setClassCatalog] = useState<AgentClassFullOption[]>([]);
@@ -556,18 +576,25 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
 
   const loadApplications = async () => {
     if (!canReviewApplications) return;
+    const generation = ++applicationsReadGeneration.current;
+    const uncertaintyAtStart = applicationsUncertaintyVersion.current;
     setApplicationsLoading(true);
     setApplicationsError('');
     try {
-      const res: any = await ApiClient.get('/internal/agents/applications');
-      const rows = Array.isArray(res) ? res : res?.data || [];
-      setApplications(rows);
+      const res: unknown = await ApiClient.get('/internal/agents/applications');
+      const rows = Array.isArray(res) ? res : res && typeof res === 'object' && Array.isArray((res as { data?: unknown }).data) ? (res as { data: unknown[] }).data : null;
+      if (!rows || rows.some(row => !row || typeof row !== 'object' || typeof (row as AgentApplicationRecord).id !== 'string' || !(row as AgentApplicationRecord).id || typeof (row as AgentApplicationRecord).reference !== 'string' || !['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED'].includes((row as AgentApplicationRecord).status) || typeof (row as AgentApplicationRecord).applicantReference !== 'string' || typeof (row as AgentApplicationRecord).agentClassId !== 'string')) throw new Error('Application queue response could not be verified.');
+      if (!mountedRef.current || generation !== applicationsReadGeneration.current) return;
+      setApplications(rows as AgentApplicationRecord[]);
       setApplicationsLoaded(true);
+      if (uncertaintyAtStart === applicationsUncertaintyVersion.current) setApplicationsNeedRefresh(false);
     } catch (e: any) {
+      if (!mountedRef.current || generation !== applicationsReadGeneration.current) return;
       setApplicationsLoaded(false);
+      setApplicationsNeedRefresh(true);
       setApplicationsError(e?.message || 'Failed to load Agent applications');
     } finally {
-      setApplicationsLoading(false);
+      if (mountedRef.current && generation === applicationsReadGeneration.current) setApplicationsLoading(false);
     }
   };
 
@@ -597,7 +624,8 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
   }, [initialAgentId, canView, loading, agents, handledInitialAgentId]);
 
   const startNewApplication = () => {
-    if (!canReviewApplications) return;
+    if (!canChangeApplications || onboardingOpen || applicationActionRef.current || applicationsLoading || applicationsNeedRefresh) return;
+    setOnboardingUnconfirmed(false);
     setOnboardingOpen(true);
     setEditingDraftId(null);
     setEditingDraftRef(null);
@@ -606,17 +634,17 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
     setApplicationsError('');
     setApplicationsMsg('');
     const activeClasses = classCatalog.filter((c) => c.isActive !== false);
-    setApplicationForm({
-      ...EMPTY_APPLICATION_FORM,
-      agentClassId: activeClasses[0]?.id ?? '',
-    });
+    const initial = { ...EMPTY_APPLICATION_FORM, agentClassId: activeClasses[0]?.id ?? '' };
+    applicationBaseline.current = initial;
+    setApplicationForm(initial);
     if (canView && classCatalog.length === 0) {
       void loadClassCatalog();
     }
   };
 
   const openDraftEditor = async (app: AgentApplicationRecord) => {
-    if (!canReviewApplications || onboardingBusy) return;
+    if (!canChangeApplications || onboardingBusy || onboardingOpen || applicationActionRef.current || applicationsLoading || applicationsNeedRefresh) return;
+    applicationActionRef.current = true;
     setOnboardingBusy(true);
     setOnboardingError('');
     setApplicationsError('');
@@ -628,15 +656,21 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
       const fresh = await ApiClient.get<AgentApplicationRecord>(
         `/internal/agents/applications/${encodeURIComponent(app.id)}`,
       );
+      if (!mountedRef.current) return;
+      if (!fresh || fresh.id !== app.id || fresh.status !== 'DRAFT' || !Number.isSafeInteger(fresh.version) || (fresh.version ?? 0) < 1) throw new Error('Draft details could not be verified. Refresh the queue before editing.');
+      setOnboardingUnconfirmed(false);
       setEditingDraftId(fresh.id);
       setEditingDraftRef(fresh.reference);
       setEditingDraftVersion(fresh.version);
-      setApplicationForm(hydrateApplicationForm(fresh));
+      const initial = hydrateApplicationForm(fresh);
+      applicationBaseline.current = initial;
+      setApplicationForm(initial);
       setOnboardingOpen(true);
     } catch (e: any) {
-      setApplicationsError(e?.message || 'Failed to open draft application for editing');
+      if (mountedRef.current) setApplicationsError(e?.message || 'Failed to open draft application for editing');
     } finally {
-      setOnboardingBusy(false);
+      applicationActionRef.current = false;
+      if (mountedRef.current) setOnboardingBusy(false);
     }
   };
 
@@ -646,6 +680,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
     if (applicationForm.agentClassId) return;
     const firstActive = classCatalog.find((c) => c.isActive !== false);
     if (firstActive) {
+      applicationBaseline.current = { ...applicationBaseline.current, agentClassId: firstActive.id };
       setApplicationForm((cur) => ({ ...cur, agentClassId: firstActive.id }));
     }
   }, [onboardingOpen, editingDraftId, classCatalog, applicationForm.agentClassId]);
@@ -720,6 +755,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
         contactEmail: applicationForm.contactEmail || undefined,
         payload,
       });
+      if (!mountedRef.current) throw new Error('Workspace changed before draft was confirmed.');
       setEditingDraftId(created.id);
       setEditingDraftRef(created.reference);
       setEditingDraftVersion(created.version);
@@ -733,50 +769,58 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
       payload,
       expectedVersion: editingDraftVersion,
     });
+    if (!mountedRef.current) throw new Error('Workspace changed before draft was confirmed.');
     setEditingDraftRef(updated.reference);
     setEditingDraftVersion(updated.version);
     return updated;
   };
 
   const saveApplicationDraft = async () => {
-    if (!canReviewApplications || onboardingBusy) return;
+    if (!canChangeApplications || onboardingBusy || onboardingUnconfirmed || confirmDiscardApplication || applicationActionRef.current) return;
     const validationErr = validateApplicationForm('draft');
     if (validationErr) {
       setOnboardingError(validationErr);
       return;
     }
+    applicationActionRef.current = true;
     setOnboardingBusy(true);
     setOnboardingError('');
     setApplicationsError('');
     setApplicationsMsg('');
     try {
       const saved = await persistDraftInternal();
+      if (!mountedRef.current) return;
+      applicationBaseline.current = applicationForm;
       setApplicationsMsg(
         `Draft application ${saved.reference} saved${saved.version != null ? ` (v${saved.version})` : ''}.`,
       );
       await loadApplications();
     } catch (e: any) {
-      setOnboardingError(e?.message || 'Failed to save Agent application draft');
+      if (mountedRef.current) { applicationsUncertaintyVersion.current++; setApplicationsNeedRefresh(true); setOnboardingUnconfirmed(true); setOnboardingError(`Draft outcome not confirmed. Review the application queue before retrying. ${e?.message || ''}`); }
     } finally {
-      setOnboardingBusy(false);
+      applicationActionRef.current = false;
+      if (mountedRef.current) setOnboardingBusy(false);
     }
   };
 
   const submitApplicationFromEditor = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canReviewApplications || onboardingBusy) return;
+    if (!canChangeApplications || onboardingBusy || onboardingUnconfirmed || confirmDiscardApplication || applicationActionRef.current) return;
     const validationErr = validateApplicationForm('submit');
     if (validationErr) {
       setOnboardingError(validationErr);
       return;
     }
+    applicationActionRef.current = true;
     setOnboardingBusy(true);
     setOnboardingError('');
     setApplicationsError('');
     setApplicationsMsg('');
     try {
       const savedDraft = await persistDraftInternal();
+      if (!mountedRef.current) return;
       const submitted = await submitAgentApplicationDraft(savedDraft.id);
+      if (!mountedRef.current) return;
       setOnboardingOpen(false);
       setEditingDraftId(null);
       setEditingDraftRef(null);
@@ -787,25 +831,29 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
       );
       await loadApplications();
     } catch (e: any) {
-      setOnboardingError(e?.message || 'Failed to submit Agent application');
+      if (mountedRef.current) { applicationsUncertaintyVersion.current++; setApplicationsNeedRefresh(true); setOnboardingUnconfirmed(true); setOnboardingError(`Application outcome not confirmed. Review the application queue before retrying. ${e?.message || ''}`); }
     } finally {
-      setOnboardingBusy(false);
+      applicationActionRef.current = false;
+      if (mountedRef.current) setOnboardingBusy(false);
     }
   };
 
   const submitDraftFromQueue = async (app: AgentApplicationRecord) => {
-    if (!canReviewApplications || applicationBusyId) return;
+    if (!canChangeApplications || applicationBusyId || onboardingOpen || applicationActionRef.current || applicationsLoading || applicationsNeedRefresh) return;
+    applicationActionRef.current = true;
     setApplicationBusyId(app.id);
     setApplicationsError('');
     setApplicationsMsg('');
     try {
       await submitAgentApplicationDraft(app.id);
+      if (!mountedRef.current) return;
       setApplicationsMsg(`Draft application ${app.reference} submitted for review.`);
       await loadApplications();
     } catch (e: any) {
-      setApplicationsError(e?.message || 'Failed to submit draft application');
+      if (mountedRef.current) { applicationsUncertaintyVersion.current++; setApplicationsNeedRefresh(true); setApplicationsError(`Submission outcome not confirmed. Refresh and inspect the application before retrying. ${e?.message || ''}`); }
     } finally {
-      setApplicationBusyId(null);
+      applicationActionRef.current = false;
+      if (mountedRef.current) setApplicationBusyId(null);
     }
   };
 
@@ -1247,11 +1295,13 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
       const detail = await ApiClient.get<AgentApplicationRecord>(
         `/internal/agents/applications/${encodeURIComponent(applicationId)}`,
       );
+      if (!mountedRef.current) return;
+      if (!detail || detail.id !== applicationId || typeof detail.reference !== 'string' || typeof detail.status !== 'string') throw new Error('Application details could not be verified.');
       setInspectedApplication(detail);
     } catch (e: any) {
-      setApplicationsError(e?.message || 'Failed to load application details');
+      if (mountedRef.current) { setInspectedApplication(null); setApplicationsError(e?.message || 'Failed to load application details'); }
     } finally {
-      setInspectAppLoading(false);
+      if (mountedRef.current) setInspectAppLoading(false);
     }
   };
 
@@ -1259,11 +1309,12 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
     app: AgentApplicationRecord,
     action: 'review' | 'approve' | 'reject' | 'activate',
   ) => {
-    if (!canReviewApplications || applicationBusyId) return;
+    if (!canChangeApplications || (action === 'activate' && !canActivate) || applicationBusyId || onboardingOpen || applicationActionRef.current || applicationsLoading || applicationsNeedRefresh) return;
     if (action === 'reject' && !(rejectReasons[app.id] || '').trim()) {
       setApplicationsError('A rejection reason is required before rejecting an application.');
       return;
     }
+    applicationActionRef.current = true;
     setApplicationBusyId(app.id);
     setApplicationsError('');
     setApplicationsMsg('');
@@ -1272,19 +1323,23 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
         const activated: any = await ApiClient.post(
           `/internal/admin/agents/applications/${encodeURIComponent(app.id)}/activate`,
         );
-        setApplicationsMsg(
-          `Application ${app.reference} activated${activated?.reference ? ` as Agent ${activated.reference}` : ''}.`,
-        );
+        if (!mountedRef.current) return;
+        if (!activated || activated.status !== 'ACTIVE' || typeof activated.id !== 'string' || !activated.id || typeof activated.reference !== 'string' || !activated.reference.trim() || (app.agentId ? activated.id !== app.agentId : activated.reference !== app.applicantReference)) throw new Error('Activation receipt did not match the application.');
+        setApplicationsMsg(`Application ${app.reference} activated as Agent ${activated.reference}.`);
         await Promise.all([loadApplications(), fetchAgents()]);
       } else if (action === 'reject') {
-        await ApiClient.post(`/internal/agents/applications/${encodeURIComponent(app.id)}/reject`, {
+        const rejected = await ApiClient.post<AgentApplicationRecord>(`/internal/agents/applications/${encodeURIComponent(app.id)}/reject`, {
           reason: (rejectReasons[app.id] || '').trim(),
         });
+        if (!mountedRef.current) return;
+        if (!rejected || rejected.id !== app.id || rejected.status !== 'REJECTED') throw new Error('Rejection receipt did not match the application.');
         setRejectReasons((cur) => ({ ...cur, [app.id]: '' }));
         setApplicationsMsg(`Application ${app.reference} rejected.`);
         await loadApplications();
       } else {
-        await ApiClient.post(`/internal/agents/applications/${encodeURIComponent(app.id)}/${action}`);
+        const receipt = await ApiClient.post<AgentApplicationRecord>(`/internal/agents/applications/${encodeURIComponent(app.id)}/${action}`);
+        if (!mountedRef.current) return;
+        if (!receipt || receipt.id !== app.id || receipt.status !== (action === 'review' ? 'UNDER_REVIEW' : 'APPROVED')) throw new Error('Decision receipt did not match the application.');
         setApplicationsMsg(
           action === 'review'
             ? `Application ${app.reference} marked under review.`
@@ -1293,9 +1348,10 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
         await loadApplications();
       }
     } catch (e: any) {
-      setApplicationsError(e?.message || `Application ${action} failed`);
+      if (mountedRef.current) { applicationsUncertaintyVersion.current++; setApplicationsNeedRefresh(true); setApplicationsError(`Application ${action} outcome not confirmed. Refresh and inspect before retrying. ${e?.message || ''}`); }
     } finally {
-      setApplicationBusyId(null);
+      applicationActionRef.current = false;
+      if (mountedRef.current) setApplicationBusyId(null);
     }
   };
 
@@ -1316,10 +1372,11 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
 
   return (
     <div className="mn-operational" style={wrap}>
-      <h2 style={h2}>🏪 Agent Network Management</h2>
-      <p style={sub}>
-        Browse agents, inspect ledger-derived financial positions, onboard and review Agent applications, manage outlets/terminals and agent limits, and perform only lifecycle actions granted to this principal.
-      </p>
+      <header className="agent-network-header">
+        <div><p className="agent-network-eyebrow">AGENT OPERATIONS</p><h2>Agent Network Management</h2>
+          <p>Review onboarding and manage your agent network in one place. Available actions depend on your workforce access.</p></div>
+        <nav aria-label="Agent network sections"><a href="#agent-directory">Agent directory</a>{canReviewApplications && <a href="#agent-applications">Onboarding applications</a>}</nav>
+      </header>
 
       {canManageFunding && (
         <div>
@@ -1336,9 +1393,10 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
       )}
 
       {canReviewApplications && (
-        <section style={sectionCard} aria-label="Agent applications governance">
+        <section id="agent-applications" className="agent-network-section" aria-label="Agent applications governance">
           <div style={sectionHead}>
             <div>
+              <p className="agent-network-eyebrow">ONBOARDING &amp; REVIEW</p>
               <h3 style={h3}>Agent Onboarding Applications</h3>
               <p style={smallMuted}>
                 Create and edit workforce-assisted <code>DRAFT</code> applications, submit drafts, review submitted applications, record approval/rejection decisions, and activate approved Ordinary Agents.
@@ -1363,7 +1421,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
               <button
                 type="button"
                 style={successBtn}
-                disabled={onboardingBusy}
+                disabled={!canChangeApplications || onboardingBusy || onboardingOpen || Boolean(applicationBusyId) || applicationsLoading || applicationsNeedRefresh}
                 onClick={startNewApplication}
               >
                 New Agent Application
@@ -1398,18 +1456,27 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
                 <button
                   type="button"
                   style={smallBtn}
+                  ref={cancelApplicationRef}
                   disabled={onboardingBusy}
                   onClick={() => {
-                    setOnboardingOpen(false);
-                    setEditingDraftId(null);
-                    setEditingDraftRef(null);
-                    setEditingDraftVersion(undefined);
-                    setOnboardingError('');
+                    if (JSON.stringify(applicationForm) !== JSON.stringify(applicationBaseline.current) || onboardingUnconfirmed) {
+                      setConfirmDiscardApplication(true);
+                    } else {
+                      setOnboardingOpen(false);
+                    }
                   }}
                 >
                   Cancel
                 </button>
               </div>
+              {confirmDiscardApplication && (
+                <div role="group" aria-label="Discard application changes" style={errBox}>
+                  <p>Discard the local changes? Saved drafts remain in the queue. If the last outcome was unconfirmed, refresh and inspect the queue before retrying.</p>
+                  <button ref={keepEditingRef} type="button" style={btn} onClick={() => { setConfirmDiscardApplication(false); cancelApplicationRef.current?.focus(); }}>Keep editing</button>{' '}
+                  <button type="button" style={btn} onClick={() => { setConfirmDiscardApplication(false); setOnboardingOpen(false); setEditingDraftId(null); setEditingDraftRef(null); setEditingDraftVersion(undefined); setOnboardingError(''); }}>Discard changes</button>
+                </div>
+              )}
+              <fieldset disabled={onboardingBusy || confirmDiscardApplication} className="agent-network-form-fields">
               <p style={{ ...smallMuted, marginTop: 4, marginBottom: 10 }}>
                 Save an editable <code>DRAFT</code> at any time or submit directly into the{' '}
                 <code>SUBMITTED</code> review queue. Applicant reference becomes the canonical Agent
@@ -1695,19 +1762,22 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
                 <button
                   type="button"
                   style={btn}
-                  disabled={onboardingBusy}
+                  disabled={onboardingBusy || onboardingUnconfirmed}
                   onClick={() => void saveApplicationDraft()}
                 >
                   {onboardingBusy ? 'Saving…' : 'Save draft'}
                 </button>
-                <button type="submit" style={successBtn} disabled={onboardingBusy}>
+                <button type="submit" style={successBtn} disabled={onboardingBusy || onboardingUnconfirmed}>
                   {onboardingBusy ? 'Submitting…' : 'Submit application'}
                 </button>
               </div>
+              </fieldset>
             </form>
           )}
 
           {applicationsError && <div style={errBox} role="alert">{applicationsError}</div>}
+          {applicationsLoading && <p role="status">Refreshing the application queue; actions are unavailable until the read completes.</p>}
+          {applicationsNeedRefresh && !applicationsLoading && <p role="status">The last outcome is unconfirmed. Refresh the queue before acting on its entries.</p>}
           {applicationsMsg && <div style={successBox} role="status">{applicationsMsg}</div>}
           {applicationsLoaded && (() => {
             const visibleApps = applications.filter((a) =>
@@ -1728,7 +1798,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
                 </thead>
                 <tbody>
                   {visibleApps.map((app) => {
-                    const busy = applicationBusyId === app.id;
+                    const busy = Boolean(applicationBusyId) || onboardingBusy || onboardingOpen || applicationsLoading || applicationsNeedRefresh || !canChangeApplications;
                     const isDraft = app.status === 'DRAFT';
                     const canReviewOrDecide = app.status === 'SUBMITTED' || app.status === 'UNDER_REVIEW';
                     // INTEGRATION FIX (Mission 16): the backend sets `agentId` when an application
@@ -1744,7 +1814,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
                       ? agents.find((candidate) => candidate.id === app.agentId)
                       : undefined;
                     const canActivateFromApp =
-                      app.status === 'APPROVED' &&
+                      canActivate && app.status === 'APPROVED' &&
                       (!app.agentId ||
                         (linkedAgent ? linkedAgent.status === 'PENDING' : true));
                     const matchedClass = classCatalog.find((c) => c.id === app.agentClassId);
@@ -1778,7 +1848,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
                                 <button
                                   type="button"
                                   style={smallBtn}
-                                  disabled={busy || onboardingBusy}
+                                  disabled={busy || onboardingBusy || onboardingOpen || Boolean(applicationBusyId)}
                                   onClick={() => void openDraftEditor(app)}
                                 >
                                   Edit draft
@@ -1786,7 +1856,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
                                 <button
                                   type="button"
                                   style={successBtn}
-                                  disabled={busy || onboardingBusy}
+                                  disabled={busy || onboardingBusy || onboardingOpen || Boolean(applicationBusyId)}
                                   onClick={() => void submitDraftFromQueue(app)}
                                 >
                                   Submit draft
@@ -1901,6 +1971,9 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
         </section>
       )}
 
+      <div id="agent-directory" className="agent-network-directory-heading">
+        <div><p className="agent-network-eyebrow">NETWORK</p><h3>Agent directory</h3><p>Find an agent to inspect their profile, financial position and available controls.</p></div>
+      </div>
       <div style={filters}>
         <label>
           Status:{' '}

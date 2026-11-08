@@ -83,12 +83,20 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
       status: 'APPROVED',
     };
 
+    const rejectApp = { ...submittedApp, id: 'app-3', reference: 'APP-003', businessName: 'Other kiosk' };
+    let apps = [submittedApp, approvedApp, rejectApp];
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
       if (path.startsWith('/internal/agents?')) return Promise.resolve({ data: [activeAgent], total: 1 });
-      if (path === '/internal/agents/applications') return Promise.resolve([submittedApp, approvedApp]);
+      if (path === '/internal/agents/applications') return Promise.resolve(apps);
       return Promise.resolve([]);
     });
-    (ApiClient.post as jest.Mock).mockResolvedValue({ id: AGENT_ID, reference: 'AG-ORD-002', status: 'ACTIVE' });
+    (ApiClient.post as jest.Mock).mockImplementation((path: string) => {
+      if (path.endsWith('/activate')) return Promise.resolve({ id: AGENT_ID, reference: approvedApp.applicantReference, status: 'ACTIVE' });
+      const [, id, action] = path.match(/applications\/(.*?)\/(review|approve|reject)$/) || [];
+      const status = action === 'review' ? 'UNDER_REVIEW' : action === 'approve' ? 'APPROVED' : 'REJECTED';
+      apps = apps.map(app => app.id === id ? { ...app, status } : app);
+      return Promise.resolve(apps.find(app => app.id === id));
+    });
 
     const view = render(<AgentNetworkScreen />);
     await view.findByText('AG-ORD-001');
@@ -97,31 +105,36 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
     expect(await view.findByText('Wuse Market Kiosk')).toBeTruthy();
 
     // Mark under review & Approve
-    fireEvent.click(view.getByRole('button', { name: 'Mark under review' }));
+    fireEvent.click(view.getAllByRole('button', { name: 'Mark under review' })[0]);
     await waitFor(() =>
       expect(ApiClient.post).toHaveBeenCalledWith('/internal/agents/applications/app-1/review'),
     );
-    fireEvent.click(view.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect((view.getAllByRole('button', { name: 'Approve' })[0] as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(view.getAllByRole('button', { name: 'Approve' })[0]);
     await waitFor(() =>
       expect(ApiClient.post).toHaveBeenCalledWith('/internal/agents/applications/app-1/approve'),
     );
 
     // Reject button is disabled until reason is entered
+    await waitFor(() => expect(view.getByText('Application APP-001 approved.')).toBeTruthy());
     const rejectBtn = view.getByRole('button', { name: 'Reject' }) as HTMLButtonElement;
     expect(rejectBtn.disabled).toBe(true);
-    fireEvent.change(view.getByLabelText('Rejection reason for APP-001'), {
+    await waitFor(() => expect((view.getByLabelText('Rejection reason for APP-003') as HTMLInputElement).disabled).toBe(false));
+    fireEvent.change(view.getByLabelText('Rejection reason for APP-003'), {
       target: { value: 'Incomplete CAC registration' },
     });
     expect(rejectBtn.disabled).toBe(false);
     fireEvent.click(rejectBtn);
     await waitFor(() =>
-      expect(ApiClient.post).toHaveBeenCalledWith('/internal/agents/applications/app-1/reject', {
+      expect(ApiClient.post).toHaveBeenCalledWith('/internal/agents/applications/app-3/reject', {
         reason: 'Incomplete CAC registration',
       }),
     );
 
-    // Activate approved application
-    fireEvent.click(view.getByRole('button', { name: 'Activate agent' }));
+    // Activate the previously approved application after rejection refresh completes.
+    await waitFor(() => expect(view.getByText('Application APP-003 rejected.')).toBeTruthy());
+    await waitFor(() => expect((view.getAllByRole('button', { name: 'Activate agent' })[1] as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(view.getAllByRole('button', { name: 'Activate agent' })[1]);
     await waitFor(() =>
       expect(ApiClient.post).toHaveBeenCalledWith('/internal/admin/agents/applications/app-2/activate'),
     );
