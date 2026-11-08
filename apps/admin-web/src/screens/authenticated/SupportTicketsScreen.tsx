@@ -46,6 +46,7 @@ interface SupportProps {
   initialCustomerId?: string;
   initialAgentId?: string;
   onBackToAgent?: () => void;
+  onSupportGuardChange?: (guarded: boolean, busy: boolean) => void;
 }
 
 export const SupportTicketsScreen: React.FC<SupportProps> = (props) => {
@@ -54,7 +55,7 @@ export const SupportTicketsScreen: React.FC<SupportProps> = (props) => {
   return <SupportWorkspace key={key} {...props} />;
 };
 
-const SupportWorkspace: React.FC<SupportProps> = ({ initialCustomerId, initialAgentId, onBackToAgent }) => {
+const SupportWorkspace: React.FC<SupportProps> = ({ initialCustomerId, initialAgentId, onBackToAgent, onSupportGuardChange }) => {
   const { principal } = useAuthStore();
   const canView = Boolean(principal && ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type) && principal.scopes.includes('customer.manage_support_case'));
   const canChange = canView && !principal?.readOnlyPrincipal;
@@ -91,9 +92,20 @@ const SupportWorkspace: React.FC<SupportProps> = ({ initialCustomerId, initialAg
   const inFlight = useRef(false);
   const [saving, setSaving] = useState(false);
   const [needsReload, setNeedsReload] = useState(false);
+  const [reviewReady, setReviewReady] = useState(false);
   const [messageAttempt, setMessageAttempt] = useState<{ ticketId: string; body: string; isInternal: boolean; key: string; createdAt: number } | null>(null);
   const [pendingExit, setPendingExit] = useState<Ticket | 'close' | 'back' | null>(null);
   const [confirmAbandonMessage, setConfirmAbandonMessage] = useState(false);
+  const hasDraft = Boolean(msgBody.trim()) || isInternalNote || Boolean(messageAttempt) || Boolean(selected && assignedToInput.trim() !== (selected.assignedTo ?? ''));
+  const supportGuard = saving || needsReload || hasDraft;
+  useEffect(() => { onSupportGuardChange?.(supportGuard, saving); }, [onSupportGuardChange, supportGuard, saving]);
+  useEffect(() => () => onSupportGuardChange?.(false, false), [onSupportGuardChange]);
+  useEffect(() => {
+    if (!supportGuard) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+  }, [supportGuard]);
+
   const keepDraftRef = useRef<HTMLButtonElement>(null);
   const detailTitleRef = useRef<HTMLHeadingElement>(null);
   const detailTriggerRef = useRef<HTMLElement | null>(null);
@@ -162,6 +174,7 @@ const SupportWorkspace: React.FC<SupportProps> = ({ initialCustomerId, initialAg
   const open = async (ticket: Ticket, preserveDraft = false) => {
     if (!canView || inFlight.current) return;
     if (!preserveDraft) setNeedsReload(false);
+    setReviewReady(false);
     const requestId = ++detailRequestId.current;
     activeTicketId.current = null;
     messageRequestId.current += 1;
@@ -178,7 +191,7 @@ const SupportWorkspace: React.FC<SupportProps> = ({ initialCustomerId, initialAg
       setSelected(detail); if (!preserveDraft) setAssignedToInput(detail.assignedTo ?? '');
       if (preserveDraft) {
         const historyLoaded = await fetchMessages(detail.id, requestId);
-        if (requestId === detailRequestId.current && historyLoaded) setNeedsReload(false);
+        if (requestId === detailRequestId.current && historyLoaded) setReviewReady(true);
       } else void fetchMessages(detail.id, requestId);
     } catch (err: any) {
       if (requestId === detailRequestId.current) setDetailErr(err?.message || 'Failed to load ticket');
@@ -194,7 +207,7 @@ const SupportWorkspace: React.FC<SupportProps> = ({ initialCustomerId, initialAg
 
   const requestDetailExit = (target: Ticket | 'close' | 'back') => {
     if (inFlight.current || pendingExit) return;
-    const dirty = Boolean(msgBody.trim()) || isInternalNote || Boolean(messageAttempt) || Boolean(selected && assignedToInput.trim() !== (selected.assignedTo ?? ''));
+    const dirty = hasDraft || needsReload;
     if (typeof target !== 'string') detailTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (selected && dirty) {
       exitTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -206,7 +219,7 @@ const SupportWorkspace: React.FC<SupportProps> = ({ initialCustomerId, initialAg
 
   const confirmDetailExit = () => {
     const target = pendingExit;
-    setPendingExit(null); setMessageAttempt(null); setConfirmAbandonMessage(false);
+    setPendingExit(null); setMessageAttempt(null); setConfirmAbandonMessage(false); setNeedsReload(false); setReviewReady(false);
     if (target === 'close') { focusTriggerOnClose.current = true; closeDetail(); } else if (target === 'back') onBackToAgent?.(); else if (target) { focusDetailOnOpen.current = true; void open(target); }
   };
 
@@ -217,7 +230,7 @@ const SupportWorkspace: React.FC<SupportProps> = ({ initialCustomerId, initialAg
     inFlight.current = true; setSaving(true); setDetailErr(''); setMsgRes('');
     try { await work(selected, current); }
     catch (err: any) {
-      if (current()) { setNeedsReload(true); setDetailErr(`${err?.message || 'Action failed'}. The outcome may be uncertain or the ticket may have changed; reload and inspect before retrying.`); }
+      if (current()) { setNeedsReload(true); setReviewReady(false); setDetailErr(`${err?.message || 'Action failed'}. The outcome may be uncertain or the ticket may have changed; reload and inspect before retrying.`); }
     } finally {
       inFlight.current = false;
       if (current()) setSaving(false);
@@ -378,7 +391,7 @@ const SupportWorkspace: React.FC<SupportProps> = ({ initialCustomerId, initialAg
           <div style={drawerHead}><h2 ref={detailTitleRef} tabIndex={-1} className="mn-support-redesign__detail-title">Ticket {selected.reference || selected.id.slice(0, 8)}</h2><button type="button" onClick={() => requestDetailExit('close')} disabled={saving || Boolean(pendingExit)} style={smallBtn}>Close</button></div>
           <div style={drawerBody}>
             {pendingExit && <div role="group" aria-label="Discard ticket changes" style={errBox}>
-              <p>Discard the local ticket draft? An unconfirmed message may already have been sent; inspect message history before sending again.</p>
+              <p>Discard the local ticket draft, retry key and review lock? An unconfirmed action may already have occurred. Independently inspect the ticket, message and audit history before acting again.</p>
               <button ref={keepDraftRef} type="button" style={smallBtn} onClick={() => { restoreExitFocus.current = true; setPendingExit(null); }}>Keep editing</button>{' '}
               <button type="button" style={smallBtn} onClick={confirmDetailExit}>Discard changes</button>
             </div>}
@@ -402,7 +415,10 @@ const SupportWorkspace: React.FC<SupportProps> = ({ initialCustomerId, initialAg
             )}
             {detailErr && <div style={errBox} role="alert">{detailErr}</div>}
             {msgRes && <div style={successBox} role="status">{msgRes}</div>}
-            {needsReload && <button type="button" disabled={detailLoading || messagesLoading || Boolean(pendingExit)} onClick={() => void open(selected, true)} style={smallBtn}>Reload ticket and inspect</button>}
+            {needsReload && <div role="status" style={helpText}>The last action may have occurred. Independently inspect the ticket, messages and available audit history before acting again. A fresh read or missing message cannot exclude a late commit; this review lock and any retry key are local and lost on confirmed exit or session change.
+              <button type="button" disabled={detailLoading || messagesLoading || Boolean(pendingExit)} onClick={() => void open(selected, true)} style={smallBtn}>Reload ticket and inspect</button>
+              {reviewReady && <button type="button" disabled={detailLoading || messagesLoading || Boolean(messagesError) || Boolean(pendingExit)} onClick={() => { setNeedsReload(false); setReviewReady(false); }}>I reviewed the ticket and audit history</button>}
+            </div>}
 
             <form onSubmit={assignTicket} style={formRow} aria-label="Assign support ticket">
               <label style={fieldLabel}>Assignee principal ID
@@ -438,7 +454,7 @@ const SupportWorkspace: React.FC<SupportProps> = ({ initialCustomerId, initialAg
               )}
             </section>
 
-            {messageAttempt && !saving && <div role="status" style={helpText}>Message outcome is not confirmed. Reload and inspect history. Retrying the same message uses the same request key for up to 24 hours; leaving this workspace loses the key.</div>}
+            {messageAttempt && !saving && <div role="status" style={helpText}>Message outcome is not confirmed. Reload and inspect history. Retrying the same message uses the same request key for up to 24 hours; history alone cannot prove non-delivery, and leaving this workspace loses the key.</div>}
             {messageAttempt && !saving && !needsReload && !detailLoading && !pendingExit && <div>
               {!confirmAbandonMessage ? <button type="button" style={smallBtn} onClick={() => setConfirmAbandonMessage(true)}>Abandon unconfirmed message</button> : <div role="group" aria-label="Abandon unconfirmed message"><p>The message may already exist. Have you inspected the history? Abandoning removes the retry key.</p><button type="button" style={smallBtn} onClick={() => setConfirmAbandonMessage(false)}>Keep retry key</button>{' '}<button type="button" style={smallBtn} onClick={() => { setMessageAttempt(null); setMsgBody(''); setIsInternalNote(false); setConfirmAbandonMessage(false); }}>Abandon message</button></div>}
             </div>}

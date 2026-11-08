@@ -74,7 +74,7 @@ test('status updates require a matching newer version before confirmation', asyn
   fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
   await screen.findByText(/Status receipt did not match/); expect(screen.queryByText('Status → RESOLVED')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Reload ticket and inspect' }));
-  await screen.findByLabelText('Message'); fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'I reviewed the ticket and audit history' })); fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
   expect(await screen.findByText('Status → RESOLVED')).toBeTruthy();
   expect(ApiClient.post).toHaveBeenLastCalledWith('/internal/support/tickets/A/status', { status: 'RESOLVED', version: 1 });
 });
@@ -95,7 +95,7 @@ test('unconfirmed message retains a single idempotency key across reload and ret
   render(<SupportTicketsScreen />); await screen.findByText('T-A'); fireEvent.click(views()[0]); await screen.findByText('No messages on this ticket.');
   fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Customer reply' } }); fireEvent.click(screen.getByRole('button', { name: 'Send' }));
   await screen.findByText(/Network lost/); const first = (ApiClient.post as jest.Mock).mock.calls[0][2].idempotencyKey; expect(first).toMatch(/^[0-9a-f]{48}$/);
-  fireEvent.click(screen.getByRole('button', { name: 'Reload ticket and inspect' })); await waitFor(() => expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: 'Reload ticket and inspect' })); fireEvent.click(await screen.findByRole('button', { name: 'I reviewed the ticket and audit history' })); await waitFor(() => expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(false));
   expect((screen.getByLabelText('Message') as HTMLInputElement).value).toBe('Customer reply'); expect((screen.getByLabelText('Message') as HTMLInputElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Send' })); expect(await screen.findByText('Customer-visible message added.')).toBeTruthy(); expect((ApiClient.post as jest.Mock).mock.calls[1][2].idempotencyKey).toBe(first);
 });
@@ -119,7 +119,7 @@ test('expired message retry key is not reused after its retention window', async
   (ApiClient.get as jest.Mock).mockImplementation((path: string) => path.includes('?') ? Promise.resolve({ items: [ticket('A')], pagination: { total: 1 } }) : path.endsWith('/messages') ? Promise.resolve([]) : Promise.resolve(ticket('A')));
   (ApiClient.post as jest.Mock).mockRejectedValue(new Error('Network lost'));
   render(<SupportTicketsScreen />); await screen.findByText('T-A'); fireEvent.click(views()[0]); await screen.findByText('No messages on this ticket.'); fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Reply' } }); fireEvent.click(screen.getByRole('button', { name: 'Send' })); await screen.findByText(/Network lost/);
-  fireEvent.click(screen.getByRole('button', { name: 'Reload ticket and inspect' })); await waitFor(() => expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(false)); clock.mockReturnValue(1000000 + 24 * 60 * 60 * 1000);
+  fireEvent.click(screen.getByRole('button', { name: 'Reload ticket and inspect' })); fireEvent.click(await screen.findByRole('button', { name: 'I reviewed the ticket and audit history' })); await waitFor(() => expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(false)); clock.mockReturnValue(1000000 + 24 * 60 * 60 * 1000);
   fireEvent.click(screen.getByRole('button', { name: 'Send' })); expect(screen.getByText(/previous message attempt cannot be safely retried/)).toBeTruthy(); expect(ApiClient.post).toHaveBeenCalledTimes(1); clock.mockRestore();
 });
 
@@ -128,4 +128,16 @@ test('dirty ticket close retains the draft and restores focus when kept', async 
   render(<SupportTicketsScreen />); await screen.findByText('T-A'); views()[0].focus(); fireEvent.click(views()[0]); await screen.findByText('No messages on this ticket.');
   expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Ticket T-A' })); fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Draft reply' } }); const close = screen.getAllByRole('button', { name: 'Close' })[0]; close.focus(); fireEvent.click(close);
   expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Keep editing' })); fireEvent.click(screen.getByRole('button', { name: 'Keep editing' })); expect(document.activeElement).toBe(close); expect((screen.getByLabelText('Message') as HTMLInputElement).value).toBe('Draft reply'); expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('unconfirmed status stays locked after fresh detail and history until independent review',async()=>{
+ const report=jest.fn();(ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.includes('?')?Promise.resolve({items:[ticket('A')],pagination:{total:1}}):path.endsWith('/messages')?Promise.resolve([]):Promise.resolve(ticket('A')));(ApiClient.post as jest.Mock).mockRejectedValue(new Error('network lost'));render(<SupportTicketsScreen onSupportGuardChange={report}/>);await screen.findByText('T-A');fireEvent.click(views()[0]);await screen.findByText('No messages on this ticket.');fireEvent.click(screen.getByRole('button',{name:'Resolve'}));await screen.findByText(/network lost/);expect(report).toHaveBeenLastCalledWith(true,false);const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);fireEvent.click(screen.getByRole('button',{name:'Reload ticket and inspect'}));await screen.findByRole('button',{name:'I reviewed the ticket and audit history'});expect((screen.getByRole('button',{name:'Resolve'}) as HTMLButtonElement).disabled).toBe(true);expect(screen.getByText(/fresh read or missing message cannot exclude a late commit/)).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'I reviewed the ticket and audit history'}));expect((screen.getByRole('button',{name:'Resolve'}) as HTMLButtonElement).disabled).toBe(false);expect(ApiClient.post).toHaveBeenCalledTimes(1);
+});
+
+test('closing an uncertain status requires explicit discard of the local lock',async()=>{
+ (ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.includes('?')?Promise.resolve({items:[ticket('A')],pagination:{total:1}}):path.endsWith('/messages')?Promise.resolve([]):Promise.resolve(ticket('A')));(ApiClient.post as jest.Mock).mockRejectedValue(new Error('network lost'));render(<SupportTicketsScreen/>);await screen.findByText('T-A');fireEvent.click(views()[0]);await screen.findByText('No messages on this ticket.');fireEvent.click(screen.getByRole('button',{name:'Resolve'}));await screen.findByText(/network lost/);fireEvent.click(screen.getAllByRole('button',{name:'Close'})[0]);expect(screen.getByRole('group',{name:'Discard ticket changes'})).toBeTruthy();expect(screen.getByText(/unconfirmed action may already have occurred/)).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Keep editing'}));expect(screen.getByRole('button',{name:'Reload ticket and inspect'})).toBeTruthy();
+});
+
+test('shell navigation protects support message drafts',async()=>{
+ const {Layout}=await import('../src/screens/authenticated/Layout');(ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.includes('/internal/support/tickets?')?Promise.resolve({items:[ticket('A')],pagination:{total:1}}):path.endsWith('/messages')?Promise.resolve([]):path.endsWith('/tickets/A')?Promise.resolve(ticket('A')):Promise.resolve([]));const view=render(<Layout/>);fireEvent.click(view.getByTestId('nav-support'));await view.findByText('T-A');fireEvent.click(view.getAllByRole('button',{name:'View'})[0]);await view.findByText('No messages on this ticket.');fireEvent.change(view.getByLabelText('Message'),{target:{value:'Draft message'}});fireEvent.click(view.getByTestId('nav-dashboard'));expect(view.getByRole('dialog',{name:'Leave support ticket review?'})).toBeTruthy();fireEvent.click(view.getByRole('button',{name:'Keep working'}));expect(view.getByLabelText('Message')).toHaveProperty('value','Draft message');fireEvent.click(view.getByTestId('nav-dashboard'));fireEvent.click(view.getByRole('button',{name:'Discard and leave'}));expect(view.queryByLabelText('Message')).toBeNull();
 });
