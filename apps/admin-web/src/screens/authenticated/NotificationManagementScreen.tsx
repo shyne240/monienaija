@@ -173,6 +173,9 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   const [eventGovernanceFilter, setEventGovernanceFilter] = useState<string>('ALL');
   const [editingTriggerEvent, setEditingTriggerEvent] =
     useState<NotificationEventCatalogueItem | null>(null);
+  const triggerDrawerRef = useRef<HTMLElement>(null);
+  const triggerOriginRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => { if (editingTriggerEvent) triggerDrawerRef.current?.focus(); }, [editingTriggerEvent]);
   const [draftEventEnabled, setDraftEventEnabled] = useState<boolean>(false);
   const [draftSmsEnabled, setDraftSmsEnabled] = useState<boolean>(true);
   const [draftEmailEnabled, setDraftEmailEnabled] = useState<boolean>(false);
@@ -1475,6 +1478,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       {/* TAB 2: EVENT CATALOGUE & ELIGIBLE TRIGGERS (Capability 2) */}
       {activeTab === 'events' && (
         <div style={styles.sectionStack} data-testid="notif-panel-events">
+          <div className="notification-redesign__section-heading"><p>EVENT GOVERNANCE</p><h2>Event Catalogue &amp; Triggers</h2><span>Search the loaded catalogue, review saved gates and prepare versioned changes for approval.</span></div>
           {eventsBlockedMsg && (
             <div
               style={styles.blockedBanner}
@@ -1510,7 +1514,8 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
           )}
 
           {/* Filter Bar */}
-          <div style={styles.card}>
+          <section className="notification-redesign__event-filters" aria-label="Event catalogue filters">
+            <div className="notification-redesign__event-filter-heading"><div><p className="notification-redesign__eyebrow">FIND EVENTS</p><h3>Filter catalogue</h3><p>Filters apply to the currently loaded catalogue.</p></div><Button size="sm" onClick={() => { setEventSearch(''); setEventClassFilter('ALL'); setEventGovernanceFilter('ALL'); }}>Reset filters</Button></div>
             <div style={styles.filterGrid}>
               <div>
                 <label htmlFor="event-search-input" style={styles.label}>
@@ -1560,20 +1565,24 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                 </select>
               </div>
             </div>
-          </div>
+            <p className="notification-redesign__event-count" role="status">Showing {filteredEvents.length} of {events.length} catalogue events.</p>
+          </section>
 
           {/* Eligible Trigger Configuration Form Drawer */}
           {editingTriggerEvent && (
             <section
+              ref={triggerDrawerRef}
+              tabIndex={-1}
+              className="notification-redesign__trigger-drawer"
               style={styles.drawerCard}
               aria-label="Configure event triggers"
               data-testid="event-trigger-config-panel"
             >
               <div style={styles.cardTitleRow}>
                 <h3 style={styles.cardTitle}>
-                  ⚙️ Configure Eligible Triggers — <code>{editingTriggerEvent.eventType}</code>
+                  Configure Eligible Triggers — <code>{editingTriggerEvent.eventType}</code>
                 </h3>
-                <Button size="sm" disabled={isSavingTrigger} onClick={() => setEditingTriggerEvent(null)}>
+                <Button size="sm" disabled={isSavingTrigger} onClick={() => { setEditingTriggerEvent(null); if (triggerOriginRef.current?.isConnected) triggerOriginRef.current.focus(); }}>
                   Close
                 </Button>
               </div>
@@ -1601,6 +1610,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                 </div>
               )}
 
+              {(loadingInitial || eventsSource !== 'LIVE') && <p role="status">The registry is not currently available. Your draft remains open, but submission is paused until a live read returns.</p>}
               <form onSubmit={(event) => void handleSubmitTriggerConfig(event)} noValidate>
                 <div
                   style={{
@@ -1707,7 +1717,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   type="submit"
                   variant="primary"
                   data-testid="submit-trigger-config-btn"
-                  disabled={!canProposeTriggerChange || isSavingTrigger}
+                  disabled={!canProposeTriggerChange || eventsSource !== 'LIVE' || loadingInitial || isSavingTrigger}
                 >
                   {isSavingTrigger ? 'Submitting…' : 'Submit changes for approval'}
                 </Button>
@@ -1716,14 +1726,16 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
           )}
 
           {/* Event Catalogue Table */}
-          <div style={styles.card}>
+          <section className="notification-redesign__event-results" style={styles.card} aria-label="Event catalogue results">
+            <p className="notification-redesign__eyebrow">LOADED CATALOGUE</p><h3>Event and channel settings</h3>
             <p>
               Event and saved channel settings are the last loaded registry state. Effective
               channels show configuration gates, not a delivery guarantee: recipient eligibility,
               preferences and provider state also apply. Proposals show only the loaded approval
               queue (and this session's new receipts); refresh for current status.
             </p>
-            <div style={{ overflowX: 'auto' }} role="region" aria-label="Notification records table" tabIndex={0}>
+            {filteredEvents.length === 0 && <div className="notification-redesign__event-empty">No catalogue events match these filters.</div>}
+            <div style={{ overflowX: 'auto' }} role="region" aria-label="Event catalogue table" tabIndex={0}>
               <table style={styles.table} data-testid="notification-events-table">
                 <thead>
                   <tr>
@@ -1811,12 +1823,12 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                         <td style={styles.td}>
                           {isLocked ? (
                             <span title={row.lockReason ?? undefined} style={styles.lockedChip}>
-                              🔒 LOCKED
+                              LOCKED
                             </span>
                           ) : eventsSource !== 'LIVE' || !hasEditableTarget ? (
                             'UNAVAILABLE'
                           ) : (
-                            <span style={styles.eligibleChip}>✓ ELIGIBLE</span>
+                            <span style={styles.eligibleChip}>ELIGIBLE</span>
                           )}
                         </td>
                         <td style={styles.td}>
@@ -1831,7 +1843,8 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                                     : eventsSource !== 'LIVE' || !hasEditableTarget ? 'Live, unlocked versioned configuration is required'
                                       : undefined
                               }
-                              onClick={() => openTriggerConfigDrawer(row)}
+                              aria-label={`${isLocked ? 'Locked' : 'Configure Triggers'} for ${row.eventType}`}
+                              onClick={(event) => { triggerOriginRef.current = event.currentTarget; openTriggerConfigDrawer(row); }}
                             >
                               {isLocked ? 'Locked' : 'Configure Triggers'}
                             </Button>
@@ -1840,6 +1853,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                                 <button
                                   type="button"
                                   style={styles.secondarySmallBtn}
+                                  aria-label={`SMS Template for ${row.eventType}`}
                                   onClick={() => {
                                     setTemplateJumpEventType(row.eventType);
                                     setActiveTab('smsTemplates');
@@ -1850,6 +1864,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                                 <button
                                   type="button"
                                   style={styles.secondarySmallBtn}
+                                  aria-label={`Email Template for ${row.eventType}`}
                                   onClick={() => {
                                     setTemplateJumpEventType(row.eventType);
                                     setActiveTab('emailTemplates');
@@ -1867,7 +1882,8 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                 </tbody>
               </table>
             </div>
-          </div>
+            <p className="notification-redesign__table-hint">Scroll horizontally to inspect all event and action columns.</p>
+          </section>
         </div>
       )}
 

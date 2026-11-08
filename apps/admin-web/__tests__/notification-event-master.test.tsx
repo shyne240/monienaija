@@ -1056,3 +1056,20 @@ describe('H-04/H-06 — versioned event-master controls', () => {
     );
   });
 });
+
+test('event catalogue filters, empty state and drawer focus remain keyboard discoverable', async () => {
+  jest.clearAllMocks(); installRegistryBackend(); seedPrincipal();
+  const view = render(<NotificationManagementScreen initialTab="events" />); await ready(view);
+  const search = view.getByLabelText('Search event or description');
+  fireEvent.change(search, { target: { value: 'no-synthetic-match' } });
+  expect(view.getByText('No catalogue events match these filters.')).toBeTruthy();
+  expect(view.getByText(/Showing 0 of \d+ catalogue events/)).toBeTruthy();
+  fireEvent.click(view.getByRole('button', { name: 'Reset filters' }));
+  expect((search as HTMLInputElement).value).toBe('');
+  const trigger = view.getByTestId(`configure-trigger-${A}`) as HTMLButtonElement;
+  expect(trigger.getAttribute('aria-label')).toContain(A); fireEvent.click(trigger);
+  expect(document.activeElement).toBe(view.getByTestId('event-trigger-config-panel'));
+  fireEvent.click(view.getByRole('button', { name: 'Close' }));
+  expect(view.queryByTestId('event-trigger-config-panel')).toBeNull(); expect(document.activeElement).toBe(trigger);
+  expect(ApiClient.post).not.toHaveBeenCalled();
+});
