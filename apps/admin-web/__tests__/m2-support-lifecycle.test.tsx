@@ -26,7 +26,7 @@ test('out-of-order detail and messages never cross ticket selection; draft clear
   await act(async () => { detailA.resolve(ticket('A')); await detailA.promise; });
   expect(screen.getByText('private-B')).toBeTruthy(); expect(screen.queryByText('Ticket T-A')).toBeNull();
   fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'draft for B' } });
-  fireEvent.click(views()[0]); await act(async () => { await Promise.resolve(); });
+  fireEvent.click(views()[0]); expect(screen.getByRole('group', { name: 'Discard ticket changes' })).toBeTruthy(); fireEvent.click(screen.getByRole('button', { name: 'Discard changes' })); await act(async () => { await Promise.resolve(); });
   expect((screen.getByLabelText('Message') as HTMLInputElement).value).toBe('');
   fireEvent.click(views()[1]); await screen.findByText('private-B');
   await act(async () => { messagesA.resolve([message('A')]); await messagesA.promise; });
@@ -87,4 +87,45 @@ test('late mutation receipt after a session change cannot confirm or refresh old
   fireEvent.click(screen.getByRole('button', { name: 'Resolve' })); act(() => session('two'));
   await act(async () => { pending.resolve({ ...ticket('A'), status: 'RESOLVED', version: 2 }); await pending.promise; });
   expect(screen.queryByText('Status → RESOLVED')).toBeNull(); expect(screen.queryByLabelText('Message')).toBeNull();
+});
+
+test('unconfirmed message retains a single idempotency key across reload and retry', async () => {
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => path.includes('?') ? Promise.resolve({ items: [ticket('A')], pagination: { total: 1 } }) : path.endsWith('/messages') ? Promise.resolve([]) : Promise.resolve(ticket('A')));
+  (ApiClient.post as jest.Mock).mockRejectedValueOnce(new Error('Network lost')).mockResolvedValueOnce({ ...message('A'), body: 'Customer reply', isInternal: false });
+  render(<SupportTicketsScreen />); await screen.findByText('T-A'); fireEvent.click(views()[0]); await screen.findByText('No messages on this ticket.');
+  fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Customer reply' } }); fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await screen.findByText(/Network lost/); const first = (ApiClient.post as jest.Mock).mock.calls[0][2].idempotencyKey; expect(first).toMatch(/^[0-9a-f]{48}$/);
+  fireEvent.click(screen.getByRole('button', { name: 'Reload ticket and inspect' })); await waitFor(() => expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(false));
+  expect((screen.getByLabelText('Message') as HTMLInputElement).value).toBe('Customer reply'); expect((screen.getByLabelText('Message') as HTMLInputElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Send' })); expect(await screen.findByText('Customer-visible message added.')).toBeTruthy(); expect((ApiClient.post as jest.Mock).mock.calls[1][2].idempotencyKey).toBe(first);
+});
+
+test('failed history reload does not unlock an uncertain message retry', async () => {
+  let historyReads = 0;
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => path.includes('?') ? Promise.resolve({ items: [ticket('A')], pagination: { total: 1 } }) : path.endsWith('/messages') ? (++historyReads === 1 ? Promise.resolve([]) : Promise.reject(new Error('History unavailable'))) : Promise.resolve(ticket('A')));
+  (ApiClient.post as jest.Mock).mockRejectedValue(new Error('Network lost'));
+  render(<SupportTicketsScreen />); await screen.findByText('T-A'); fireEvent.click(views()[0]); await screen.findByText('No messages on this ticket.'); fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Customer reply' } }); fireEvent.click(screen.getByRole('button', { name: 'Send' })); await screen.findByText(/Network lost/);
+  fireEvent.click(screen.getByRole('button', { name: 'Reload ticket and inspect' })); await screen.findByText('History unavailable'); expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true); expect(screen.getByRole('button', { name: 'Reload ticket and inspect' })).toBeTruthy(); expect(ApiClient.post).toHaveBeenCalledTimes(1);
+});
+
+test('read-only session cannot perform ticket mutations even with a support scope', async () => {
+  act(() => useAuthStore.setState(state => ({ principal: state.principal ? { ...state.principal, readOnlyPrincipal: true } : null })));
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => path.includes('?') ? Promise.resolve({ items: [ticket('A')], pagination: { total: 1 } }) : path.endsWith('/messages') ? Promise.resolve([]) : Promise.resolve(ticket('A')));
+  render(<SupportTicketsScreen />); await screen.findByText('T-A'); fireEvent.click(views()[0]); await screen.findByText('No messages on this ticket.'); expect((screen.getByRole('button', { name: 'Resolve' }) as HTMLButtonElement).disabled).toBe(true); expect((screen.getByLabelText('Message') as HTMLInputElement).disabled).toBe(true); expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('expired message retry key is not reused after its retention window', async () => {
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(1000000);
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => path.includes('?') ? Promise.resolve({ items: [ticket('A')], pagination: { total: 1 } }) : path.endsWith('/messages') ? Promise.resolve([]) : Promise.resolve(ticket('A')));
+  (ApiClient.post as jest.Mock).mockRejectedValue(new Error('Network lost'));
+  render(<SupportTicketsScreen />); await screen.findByText('T-A'); fireEvent.click(views()[0]); await screen.findByText('No messages on this ticket.'); fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Reply' } }); fireEvent.click(screen.getByRole('button', { name: 'Send' })); await screen.findByText(/Network lost/);
+  fireEvent.click(screen.getByRole('button', { name: 'Reload ticket and inspect' })); await waitFor(() => expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(false)); clock.mockReturnValue(1000000 + 24 * 60 * 60 * 1000);
+  fireEvent.click(screen.getByRole('button', { name: 'Send' })); expect(screen.getByText(/previous message attempt cannot be safely retried/)).toBeTruthy(); expect(ApiClient.post).toHaveBeenCalledTimes(1); clock.mockRestore();
+});
+
+test('dirty ticket close retains the draft and restores focus when kept', async () => {
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => path.includes('?') ? Promise.resolve({ items: [ticket('A')], pagination: { total: 1 } }) : path.endsWith('/messages') ? Promise.resolve([]) : Promise.resolve(ticket('A')));
+  render(<SupportTicketsScreen />); await screen.findByText('T-A'); views()[0].focus(); fireEvent.click(views()[0]); await screen.findByText('No messages on this ticket.');
+  expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Ticket T-A' })); fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Draft reply' } }); const close = screen.getAllByRole('button', { name: 'Close' })[0]; close.focus(); fireEvent.click(close);
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Keep editing' })); fireEvent.click(screen.getByRole('button', { name: 'Keep editing' })); expect(document.activeElement).toBe(close); expect((screen.getByLabelText('Message') as HTMLInputElement).value).toBe('Draft reply'); expect(ApiClient.post).not.toHaveBeenCalled();
 });

@@ -1,0 +1,8 @@
+.mn-support-redesign__queue { margin:20px 0; padding:clamp(16px,2.5vw,24px); background:#fff; border:1px solid #d7e5da; border-radius:14px; box-shadow:0 4px 20px #183b2810; }
+.mn-support-redesign__section-head { padding-bottom:12px; border-bottom:1px solid #e1ebe4; }
+.mn-support-redesign__section-head p { margin:0 0 5px; color:#386b53; font-size:11px; font-weight:800; letter-spacing:.1em; }
+.mn-support-redesign__section-head h2 { margin:0 0 5px; color:#103a2b; font-size:20px; }
+.mn-support-redesign__section-head span { color:#496157; font-size:13px; }
+.mn-support-redesign__detail-title { margin:0; color:#103a2b; font-size:17px; }
+.mn-support-redesign__detail-title:focus-visible { outline:2px solid var(--mn-focus-ring); outline-offset:3px; }
+.mn-support-redesign [role="group"] { overflow-wrap:anywhere; }

@@ -116,7 +116,7 @@ describe('Admin Web batch 02: existing support and approval actions', () => {
       expect(ApiClient.post).toHaveBeenCalledWith(`/internal/support/tickets/${ticket.id}/messages`, {
         body: 'We are checking the transaction.',
         isInternal: false,
-      });
+      }, { idempotencyKey: expect.any(String) });
       expect(view.getByText('Customer-visible message added.')).toBeTruthy();
     });
   });

@@ -597,7 +597,7 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
       expect(ApiClient.post).toHaveBeenCalledWith('/internal/support/tickets/ticket-pin-1/messages', {
         body: 'Verified Agent outlet ID & callback.',
         isInternal: true,
-      }),
+      }, { idempotencyKey: expect.any(String) }),
     );
     view.unmount();
 
