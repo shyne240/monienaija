@@ -26,3 +26,35 @@
 .mn-login__tab-header { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--mn-border-subtle); margin: 16px 0; }
 .mn-login__tab-btn { flex: 1 1 120px; padding: 12px 8px; font-size: 13px; }
 .mn-login__tab-btn--active { color: var(--mn-action-primary); border-bottom: 2px solid var(--mn-action-primary); font-weight: 700; }
+
+/* M2 sign-in: an identity rail and a single, clearly bounded authentication task. */
+.mn-login__container { padding: 32px 20px; background: #edf3ef; }
+.mn-login__shell { display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr); width: min(100%, 1000px); min-height: 620px; overflow: hidden; border: 1px solid var(--mn-border-subtle); border-radius: 20px; background: var(--mn-surface-raised); box-shadow: var(--mn-shadow-1); }
+.mn-login__identity { display: flex; flex-direction: column; justify-content: space-between; gap: 50px; padding: clamp(28px, 5vw, 52px); color: #e8f1ec; background: #0b3d2e; }
+.mn-login__brand { display: flex; align-items: center; gap: 12px; color: #fff; font-size: 20px; font-weight: 750; letter-spacing: -.025em; }
+.mn-login__logo-icon { width: 42px; height: 42px; margin: 0; border-radius: 8px; background: #fff; }
+.mn-login__identity .mn-login__statement { max-width: 12ch; margin: 12px 0 18px; color: #fff; font-size: clamp(32px, 3.3vw, 46px); line-height: 1.08; letter-spacing: -.04em; }
+.mn-login__identity p { max-width: 31ch; margin: 0; color: #d3e4da; line-height: 1.6; }
+.mn-login__identity .mn-login__kicker { color: #f3d393; font-size: 11px; font-weight: 750; letter-spacing: .12em; }
+.mn-login__identity .mn-login__identity-note { padding-top: 20px; border-top: 1px solid #5f8a78; font-size: 13px; }
+.mn-login__card { max-width: none; align-self: center; padding: clamp(28px, 5vw, 56px); border: 0; border-radius: 0; box-shadow: none; }
+.mn-login__intro { margin-bottom: 28px; }
+.mn-login__intro h1 { margin: 6px 0 8px; color: var(--mn-text-primary); font-size: clamp(25px, 2.5vw, 32px); line-height: 1.18; letter-spacing: -.035em; }
+.mn-login__intro p { margin: 0; color: var(--mn-text-secondary); line-height: 1.5; }
+.mn-login__intro .mn-login__eyebrow { color: var(--mn-status-success); font-size: 11px; font-weight: 750; letter-spacing: .12em; }
+.mn-login__input-group { margin-bottom: 18px; }
+.mn-login__input, .mn-login__textarea { min-height: 46px; }
+.mn-login__input[aria-invalid="true"], .mn-login__textarea[aria-invalid="true"] { border-color: var(--mn-status-danger); }
+.mn-login__submit-btn { min-height: 48px; margin-top: 4px; }
+.mn-login__availability, .mn-login__advanced-note { margin: 16px 0 0; color: var(--mn-text-secondary); font-size: 12px; line-height: 1.55; }
+.mn-login__advanced-section { margin-top: 22px; }
+.mn-login__advanced-toggle { min-height: 44px; color: var(--mn-action-primary); font-size: 13px; }
+.mn-login__tab-btn { min-height: 44px; }
+@media (max-width: 700px) {
+  .mn-login__container { align-items: flex-start; padding: 0; background: var(--mn-surface-raised); }
+  .mn-login__shell { display: block; min-height: 100vh; border: 0; border-radius: 0; box-shadow: none; }
+  .mn-login__identity { gap: 24px; padding: 24px; }
+  .mn-login__identity .mn-login__statement { max-width: none; font-size: 28px; margin: 8px 0; }
+  .mn-login__identity .mn-login__identity-note { display: none; }
+  .mn-login__card { padding: 28px 24px 40px; }
+}
