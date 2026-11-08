@@ -85,13 +85,13 @@ const TABS: readonly TabDefinition[] = [
   { key: 'providerConfig', label: '9. Provider Configuration' },
 ];
 
-export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationAdminTab }> = (props) => {
-  const principal = useAuthStore((state) => state.principal);
-  const contextKey = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationAdminTab; onNotificationGuardChange?: (guarded: boolean, busy: boolean) => void }> = (props) => {
+  const { principal, sessionId } = useAuthStore();
+  const contextKey = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
   return <NotificationManagementWorkspace key={contextKey} {...props} />;
 };
-const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdminTab }> = ({
-  initialTab = 'overview',
+const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdminTab; onNotificationGuardChange?: (guarded: boolean, busy: boolean) => void }> = ({
+  initialTab = 'overview', onNotificationGuardChange,
 }) => {
   const { principal } = useAuthStore();
   const permissions = useMemo(() => deriveNotificationPermissions(principal), [principal]);
@@ -121,6 +121,20 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       ),
     [permissions.canViewProviderConfig],
   );
+
+  const [templateGuards, setTemplateGuards] = useState({ SMS: {guarded: false, busy: false}, EMAIL: {guarded: false, busy: false} });
+  const reportTemplateGuard = useCallback((channel: ManagedNotificationChannel, guarded: boolean, busy: boolean) => {
+    setTemplateGuards(previous => previous[channel].guarded === guarded && previous[channel].busy === busy ? previous : { ...previous, [channel]: {guarded, busy} });
+  }, []);
+  const templateGuard = templateGuards.SMS.guarded || templateGuards.EMAIL.guarded;
+  const templateBusy = templateGuards.SMS.busy || templateGuards.EMAIL.busy;
+  useEffect(() => { onNotificationGuardChange?.(templateGuard, templateBusy); }, [onNotificationGuardChange, templateGuard, templateBusy]);
+  useEffect(() => {
+    if (!templateGuard) return;
+    const guard = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', guard);
+    return () => window.removeEventListener('beforeunload', guard);
+  }, [templateGuard]);
 
   const [activeTab, setActiveTab] = useState<NotificationAdminTab>(
     initialTab === 'providerConfig' && !permissions.canViewProviderConfig
@@ -1267,6 +1281,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
             eventJump={templateJump?.channel === channel ? templateJump : null}
             onTemplateSubmitted={(_outcome, record) => setSessionSubmittedChanges(previous => [record, ...previous])}
             onRefreshRequested={fetchAllReadSurfaces}
+            onGuardChange={reportTemplateGuard}
           />}
         </div>;
       })}

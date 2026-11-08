@@ -264,6 +264,7 @@ export function deriveNotificationPermissions(
   const scopes = new Set(principal?.scopes ?? []);
   const roles = new Set(principal?.roles ?? []);
   const has = (code: string) => scopes.has(code);
+  const canWrite = !principal?.readOnlyPrincipal;
   const isFinanceControllerChecker = roles.has('FINANCE_CONTROLLER') && has('privileged:approve');
   // INTERIM governance policy (Arena 1 registry, Phase 6 — pending product-owner
   // ratification of granular notification.* catalogue functions): the maker of template
@@ -285,10 +286,10 @@ export function deriveNotificationPermissions(
       has('notification.manage_configuration') ||
       has('notification.approve_configuration') ||
       isFinanceControllerChecker,
-    canManageTemplates: has('notification.manage_templates') || isSuperAdminMaker,
-    canApproveTemplates: has('notification.approve_templates') || isFinanceControllerChecker,
-    canManageConfiguration: has('notification.manage_configuration') || isSuperAdminMaker,
-    canApproveConfiguration: has('notification.approve_configuration') || isFinanceControllerChecker,
+    canManageTemplates: canWrite && (has('notification.manage_templates') || isSuperAdminMaker),
+    canApproveTemplates: canWrite && (has('notification.approve_templates') || isFinanceControllerChecker),
+    canManageConfiguration: canWrite && (has('notification.manage_configuration') || isSuperAdminMaker),
+    canApproveConfiguration: canWrite && (has('notification.approve_configuration') || isFinanceControllerChecker),
     canViewProviderStatus:
       has('notification.view_provider_status') ||
       has('notification.provider.view') ||
@@ -297,14 +298,14 @@ export function deriveNotificationPermissions(
       has('diagnostics.view'),
     canViewProviderConfig: has('notification.provider.view'),
     canProposeProviderConfig:
-      has('notification.provider.configure') && roles.has('SUPER_ADMIN'),
+      canWrite && has('notification.provider.configure') && roles.has('SUPER_ADMIN'),
     canApproveProviderConfig:
-      has('notification.provider.configure') && roles.has('FINANCE_CONTROLLER'),
+      canWrite && has('notification.provider.configure') && roles.has('FINANCE_CONTROLLER'),
     canActivateProviderConfig:
-      has('notification.provider.configure') &&
+      canWrite && has('notification.provider.configure') &&
       (roles.has('SUPER_ADMIN') || roles.has('FINANCE_CONTROLLER')),
-    canTestSend: has('notification.test_send'),
-    canUseWorkforceApprovalEndpoint: isFinanceControllerChecker,
+    canTestSend: canWrite && has('notification.test_send'),
+    canUseWorkforceApprovalEndpoint: canWrite && isFinanceControllerChecker,
     canViewOutbox: has('outbox.view'),
     canViewDiagnostics: has('diagnostics.view'),
     canViewAudit: has('audit.view') || has('audit.search'),

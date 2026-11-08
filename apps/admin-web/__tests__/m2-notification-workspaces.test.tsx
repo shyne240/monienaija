@@ -28,3 +28,9 @@ test('a late server preview cannot replace the preview of an edited draft', asyn
   expect(screen.queryByText('STALE SERVER CONTENT')).toBeNull();
   expect(screen.getByRole('button', { name: 'Verify via Server Preview' })).toBeTruthy();
 });
+
+test('read-only notification principals retain read access but cannot mutate any notification surface', () => {
+  const perms = deriveNotificationPermissions({ ...principal, roles: ['SUPER_ADMIN', 'FINANCE_CONTROLLER'], readOnlyPrincipal: true, scopes: ['notification.view_deliveries', 'notification.manage_templates', 'notification.approve_templates', 'notification.manage_configuration', 'notification.approve_configuration', 'notification.provider.view', 'notification.provider.configure', 'notification.test_send', 'privileged:approve'] });
+  expect(perms.canViewDeliveries).toBe(true); expect(perms.canViewProviderConfig).toBe(true);
+  for (const key of ['canManageTemplates','canApproveTemplates','canManageConfiguration','canApproveConfiguration','canProposeProviderConfig','canApproveProviderConfig','canActivateProviderConfig','canTestSend','canUseWorkforceApprovalEndpoint'] as const) expect(perms[key]).toBe(false);
+});

@@ -60,3 +60,15 @@ test('a pending active-version replacement cannot use a stale snapshot', () => {
  expect(screen.getByText(/selected version or active registry state changed/)).toBeTruthy();
  fireEvent.click(screen.getByRole('button',{name:'Keep draft'}));expect(body.value).toBe('Unsaved text');expect(ApiClient.post).not.toHaveBeenCalled();
 });
+
+test('an unconfirmed proposal blocks new proposals until independent review is explicitly acknowledged',async()=>{
+ jest.spyOn(NotificationManagementApi,'submitTemplateVersion').mockRejectedValue(new Error('Connection lost'));const confirm=jest.spyOn(window,'confirm').mockReturnValue(false);
+ render(<NotificationTemplateWorkspace {...props(1)}/>);fireEvent.change(screen.getByTestId('template-body-textarea'),{target:{value:'Synthetic edited draft'}});fireEvent.change(screen.getByTestId('template-change-summary-input'),{target:{value:'Synthetic explanation'}});fireEvent.click(screen.getByTestId('submit-template-version-btn'));
+ expect((await screen.findByTestId('template-proposal-review-lock')).textContent).toMatch(/cannot exclude a late commit/);expect((screen.getByTestId('submit-template-version-btn') as HTMLButtonElement).disabled).toBe(true);fireEvent.click(screen.getByRole('button',{name:'Acknowledge independent template review'}));expect(screen.getByTestId('template-proposal-review-lock')).toBeTruthy();confirm.mockReturnValue(true);fireEvent.click(screen.getByRole('button',{name:'Acknowledge independent template review'}));expect(screen.queryByTestId('template-proposal-review-lock')).toBeNull();
+});
+
+test('template drafts, pending proposals and local review locks are reported to the parent guard',async()=>{
+ let reject!:(reason:Error)=>void;const pending=new Promise<any>((_,r)=>reject=r);jest.spyOn(NotificationManagementApi,'submitTemplateVersion').mockReturnValue(pending);const guard=jest.fn();render(<NotificationTemplateWorkspace {...props(1)} onGuardChange={guard}/>);
+ fireEvent.change(screen.getByTestId('template-body-textarea'),{target:{value:'Synthetic draft'}});fireEvent.change(screen.getByTestId('template-change-summary-input'),{target:{value:'Synthetic reason'}});expect(guard).toHaveBeenLastCalledWith('SMS',true,false);
+ fireEvent.click(screen.getByTestId('submit-template-version-btn'));expect(guard).toHaveBeenLastCalledWith('SMS',true,true);await act(async()=>{reject(new Error('offline'));try{await pending;}catch{}});expect(guard).toHaveBeenLastCalledWith('SMS',true,false);expect(screen.getByTestId('template-proposal-review-lock')).toBeTruthy();
+});

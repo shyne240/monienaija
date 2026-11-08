@@ -39,6 +39,7 @@ interface NotificationTemplateWorkspaceProps {
     changeRecord: NotificationChangeRequestRecord,
   ) => void;
   onRefreshRequested?: () => Promise<void> | void;
+  onGuardChange?: (channel: ManagedNotificationChannel, guarded: boolean, busy: boolean) => void;
 }
 
 export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspaceProps> = ({
@@ -55,6 +56,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   eventJump = null,
   onTemplateSubmitted,
   onRefreshRequested,
+  onGuardChange,
 }) => {
   const defaultEventType = useMemo(() => {
     if (initialEventType && events.some((item) => item.eventType === initialEventType)) {
@@ -88,6 +90,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   const [submitBlockedMessage, setSubmitBlockedMessage] = useState<string>('');
   const [submitSuccessMessage, setSubmitSuccessMessage] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [proposalReviewRequired, setProposalReviewRequired] = useState(false);
 
   const [serverPreview, setServerPreview] = useState<SafePreviewResult | null>(null);
   const [previewBlockedMessage, setPreviewBlockedMessage] = useState<string>('');
@@ -110,6 +113,10 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   const submitInFlight = useRef(false);
   const activationInFlight = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => {
+    const busy = isSubmitting || Boolean(activatingTemplateId);
+    onGuardChange?.(channel, Boolean(hasUserEditedRef.current || changeSummary.trim() || activationComment.trim() || proposalReviewRequired || busy), busy);
+  }, [onGuardChange, channel, subject, body, changeSummary, activationComment, selectedEventType, proposalReviewRequired, isSubmitting, activatingTemplateId]);
   const previewGeneration = useRef(0);
   const previewContext = useRef('');
   const previewKey = JSON.stringify([currentPrincipalId, permissions.canViewCatalogue, channel, selectedEventType, subject, body, sampleOverrides]);
@@ -344,7 +351,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
   const handleSubmitTemplate = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance || submitInFlight.current || activationInFlight.current || pendingEventType || pendingReplacement) return;
+    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance || submitInFlight.current || activationInFlight.current || pendingEventType || pendingReplacement || proposalReviewRequired) return;
 
     setValidationErrors([]);
     setSubmitError('');
@@ -421,6 +428,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
           `Access denied (403): ${err.message || 'Current workforce principal is not authorized to submit notification templates.'}`,
         );
       } else {
+        setProposalReviewRequired(true);
         setSubmitError(`Template proposal outcome not confirmed. Check the approval queue before retrying. ${err?.message || 'Service unavailable.'}`);
       }
     } finally {
@@ -434,7 +442,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
     // historical version is a governed TEMPLATE_ROLLBACK proposal created by the maker
     // (SUPER_ADMIN + MFA); a FINANCE_CONTROLLER checker approves and executes it from the
     // change queue (maker ≠ checker is enforced server-side at approval time).
-    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance || submitInFlight.current || activationInFlight.current || pendingEventType || pendingReplacement || !activeVersionConfirmed || !activeVersion) return;
+    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance || submitInFlight.current || activationInFlight.current || pendingEventType || pendingReplacement || proposalReviewRequired || !activeVersionConfirmed || !activeVersion) return;
     if (versionRow.sourceOrigin === 'CODE_BASELINE') {
       setActivationFeedback({
         kind: 'blocked',
@@ -469,6 +477,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
       }
     } catch (err: any) {
       if (!mounted.current) return;
+      setProposalReviewRequired(true);
       setActivationFeedback({
         kind: 'error',
         message: `Rollback proposal outcome not confirmed. Check the approval queue before retrying. ${err?.message || 'Service unavailable.'}`,
@@ -633,6 +642,10 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         )}
       </section>
 
+      {proposalReviewRequired && <div role="alert" data-testid="template-proposal-review-lock">
+        <strong>Template proposal outcome requires independent review.</strong> Review the proposal queue, template and audit records for this channel before acknowledging. A fresh read or absent proposal cannot exclude a late commit. This local safeguard is lost on exit or session change.
+        <button type="button" onClick={() => { if (window.confirm('Have you independently reviewed the proposal queue, template and audit records, including the possibility of a late commit?')) setProposalReviewRequired(false); }}>Acknowledge independent template review</button>
+      </div>}
       {/* Two-Column Authoring + Variable Browser & Preview */}
       <div style={styles.twoColGrid}>
         {/* Left Column: SMS / Email Template Editor */}
@@ -802,7 +815,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               <button
                 type="submit"
                 data-testid="submit-template-version-btn"
-                disabled={!canEditFields || !permissions.hasMfaAssurance || isSubmitting || Boolean(activatingTemplateId) || Boolean(pendingEventType) || Boolean(pendingReplacement)}
+                disabled={!canEditFields || !permissions.hasMfaAssurance || isSubmitting || Boolean(activatingTemplateId) || Boolean(pendingEventType) || Boolean(pendingReplacement) || proposalReviewRequired}
                 style={!canEditFields || !permissions.hasMfaAssurance || isSubmitting || activatingTemplateId || pendingEventType || pendingReplacement ? styles.primaryBtnDisabled : styles.primaryBtn}
               >
                 {isSubmitting
@@ -1236,7 +1249,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                   const canActivateRow =
                     permissions.canManageTemplates &&
                     permissions.hasMfaAssurance &&
-                    activeVersionConfirmed && !isSubmitting && !activatingTemplateId && !pendingEventType && !pendingReplacement &&
+                    activeVersionConfirmed && !isSubmitting && !activatingTemplateId && !pendingEventType && !pendingReplacement && !proposalReviewRequired &&
                     !ver.isActive && ver.sourceOrigin !== 'CODE_BASELINE';
                   const verifiedRegistry = !templatesReadPending && !templatesReadError && !templatesRegistryBlocked && ver.sourceOrigin !== 'CODE_BASELINE';
 
