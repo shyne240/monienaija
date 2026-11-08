@@ -50,12 +50,12 @@ function matchesReversedLines(original: JournalLine[], reversed: JournalLine[]):
   return expected.length === actual.length && expected.every((line, index) => line === actual[index]);
 }
 
-export const LedgerOperationsScreen: React.FC = () => {
+export const LedgerOperationsScreen: React.FC<{onLedgerGuardChange?: (guarded: boolean, busy: boolean) => void}> = ({onLedgerGuardChange}) => {
   const { principal, sessionId } = useAuthStore();
   const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
-  return <LedgerWorkspace key={key} principal={principal} />;
+  return <LedgerWorkspace key={key} principal={principal} onLedgerGuardChange={onLedgerGuardChange} />;
 };
-const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getState>['principal']}> = ({principal}) => {
+const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getState>['principal']; onLedgerGuardChange?: (guarded: boolean, busy: boolean) => void}> = ({principal, onLedgerGuardChange}) => {
   const generations = useRef({accounts:0, journal:0, reversal:0});
   useEffect(() => () => { generations.current.accounts++; generations.current.journal++; generations.current.reversal++; }, []);
   const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
@@ -81,6 +81,15 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
   const [reviewReadLoading, setReviewReadLoading] = useState(false);
   const [confirmReversal, setConfirmReversal] = useState(false);
   const [confirmClearDraft, setConfirmClearDraft] = useState(false);
+  const ledgerGuard = reversalLoading || confirmReversal || confirmClearDraft || Boolean(reversalReason.trim() || reversalApprovalId.trim()) || Object.keys(reversalReviews).length > 0;
+  useEffect(() => { onLedgerGuardChange?.(ledgerGuard, reversalLoading); }, [onLedgerGuardChange, ledgerGuard, reversalLoading]);
+  useEffect(() => () => onLedgerGuardChange?.(false, false), [onLedgerGuardChange]);
+  useEffect(() => {
+    if (!ledgerGuard) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+  }, [ledgerGuard]);
+
   const reviewCancelRef = useRef<HTMLButtonElement>(null);
   const reviewTriggerRef = useRef<HTMLButtonElement>(null);
   const returnReviewFocus = useRef(false);
@@ -253,6 +262,7 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
   return (
     <div className="mn-operational mn-ledger" style={styles.container}>
       <PageHeader eyebrow="Finance and ledger" title="Ledger Core & Reversals Desk" description="Inspect accounts and journal postings, and use the existing governed reversal workflow." />
+      {Object.keys(reversalReviews).length > 0 && <div role="status" style={styles.gapWarning}>Local journal safeguards: {Object.entries(reversalReviews).map(([id, status]) => `${id} (${status})`).join(', ')}. Confirmed exit or session change loses these safeguards; inspect journal, approval and audit records before acting again. A fresh read cannot exclude a late commit.</div>}
 
       {error && <div style={styles.errorBox} role="alert">{error}</div>}
 
@@ -376,7 +386,7 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
                   <p style={styles.gapText}>Reversal details and outcome safeguards are held only in this workspace. Leaving, refreshing or changing session clears them. Check journal, approval and audit records before taking a later action.</p>
                   {isController && !canVerifyReversal(journal) && <div role="note" style={styles.gapWarning}>The posting lines are insufficient to verify a reversal receipt. Execution is unavailable.</div>}
                   {reversalReviews[journal.id] && <div role="status" style={styles.gapWarning}>
-                    {reversalReviews[journal.id] === 'executed' ? 'A reversal receipt was confirmed for this journal in this session. Further reversal attempts are unavailable.' : 'Refresh the journal and independently inspect the approval and audit records before any further action. A previous request may exist or an execution may have consumed approval. The original journal can remain POSTED after reversal; its status alone does not establish eligibility.'}
+                    {reversalReviews[journal.id] === 'executed' ? 'A reversal receipt was confirmed for this journal in this session. Further reversal attempts are unavailable.' : 'Refresh the journal and independently inspect the approval and audit records before any further action. A previous request may exist or an execution may have consumed approval. The original journal can remain POSTED after reversal; its status alone does not establish eligibility, and a fresh read cannot exclude a late commit.'}
                     {reversalReviews[journal.id] !== 'executed' && <div>
                       <button type="button" disabled={reviewReadLoading} onClick={() => void refreshJournalForReview()}>{reviewReadLoading ? 'Refreshing journal…' : 'Refresh journal for review'}</button>{' '}
                       <button type="button" disabled={reviewReadLoading || !reviewedJournalReads[journal.id]} onClick={() => setReversalReviews(current => { const next = { ...current }; delete next[journal.id]; return next; })}>I reviewed the journal and approval records</button>
