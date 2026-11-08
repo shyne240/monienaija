@@ -293,6 +293,21 @@ function confirmedRegistryCreation(value: RegistryChangeCreation | null | undefi
     && Date.parse(value.expiresAt) > Date.parse(value.requestedAt);
 }
 
+// Both diagnostic endpoints return explicit pagination. Never manufacture empty
+// pages or totals when a malformed or wrong-page response arrives.
+function requireDiagnosticPage<T>(value: unknown, page: number, limit: number, isRow: (row: any) => boolean): { data: T[]; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean } {
+  const result = value as { data?: unknown; total?: unknown; page?: unknown; limit?: unknown; totalPages?: unknown; hasNextPage?: unknown } | null;
+  if (!result || !Array.isArray(result.data) || result.page !== page || result.limit !== limit ||
+      !Number.isSafeInteger(result.total) || (result.total as number) < 0 ||
+      !Number.isSafeInteger(result.totalPages) || result.totalPages !== Math.ceil((result.total as number) / limit) ||
+      result.hasNextPage !== (page < (result.totalPages as number)) || result.data.length > limit || result.data.length > (result.total as number) || !result.data.every(isRow)) {
+    throw new Error('Diagnostic response could not be verified. Refresh before relying on these results.');
+  }
+  return result as { data: T[]; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean };
+}
+const nonEmptyDiagnosticString = (value: unknown): value is string => typeof value === 'string' && !!value.trim();
+const validDiagnosticTime = (value: unknown): boolean => typeof value === 'string' && Number.isFinite(Date.parse(value));
+
 /** Metadata for registry-approved variables (live names are authoritative; this only
  *  enriches the UI with descriptions/safe samples for the variable picker). */
 const VARIABLE_METADATA: Record<string, { description: string; sampleValue: string; sourceSummary: string }> = {
@@ -1288,21 +1303,16 @@ export const NotificationManagementApi = {
 
     const endpoint = `/internal/notifications/deliveries?${query.toString()}`;
     try {
-      const response = await ApiClient.get<Partial<NotificationDeliveryPage>>(endpoint);
-      const data = Array.isArray(response?.data)
-        ? (response.data as NotificationDeliveryRecord[])
-        : extractArray<NotificationDeliveryRecord>(response);
-      return {
-        status: 'LIVE',
-        data: {
-          data,
-          total: Number(response?.total ?? data.length),
-          page: Number(response?.page ?? filters.page ?? 1),
-          limit: Number(response?.limit ?? filters.limit ?? 20),
-          totalPages: Number(response?.totalPages ?? (data.length > 0 ? 1 : 0)),
-          hasNextPage: Boolean(response?.hasNextPage),
-        },
-      };
+      const response = await ApiClient.get<unknown>(endpoint);
+      return { status: 'LIVE', data: requireDiagnosticPage<NotificationDeliveryRecord>(response, filters.page ?? 1, filters.limit ?? 20, row =>
+        !!row && nonEmptyDiagnosticString(row.id) && nonEmptyDiagnosticString(row.eventType) && nonEmptyDiagnosticString(row.eventKey) &&
+        nonEmptyDiagnosticString(row.channel) && nonEmptyDiagnosticString(row.status) && nonEmptyDiagnosticString(row.recipientType) &&
+        nonEmptyDiagnosticString(row.recipientId) && Number.isSafeInteger(row.attempts) && row.attempts >= 0 && validDiagnosticTime(row.createdAt) &&
+        (!filters.status || row.status === filters.status.toUpperCase()) && (!filters.channel || row.channel === filters.channel.toUpperCase()) &&
+        (!filters.recipientType || row.recipientType === filters.recipientType.toUpperCase()) &&
+        (!filters.eventType || row.eventType === filters.eventType) &&
+        (!filters.recipientId || row.recipientType === 'PHONE' || row.recipientId.toLowerCase() === filters.recipientId.toLowerCase())) };
+
     } catch (error) {
       const httpStatus = getHttpStatus(error);
       const message = getErrorMessage(error, '');
@@ -1334,7 +1344,7 @@ export const NotificationManagementApi = {
    *   from all financial services) per docs/V1/V1-AGENT-MOBILE-17-RELEASE-INFRASTRUCTURE-HANDOFF.md.
    * - The Arena 2 contract document itself labelled a manual-retry route "Optional".
    * Adding one would require a new requirement + authorization policy decision; until then
-   * the 404 maps to an honest BLOCKED/deferred state and no endpoint is invented.
+   * the client returns a local BLOCKED/deferred state without issuing any request.
    */
   async requestManualDeliveryRetry(
     deliveryId: string,
@@ -1394,18 +1404,11 @@ export const NotificationManagementApi = {
       blockedExplanation:
         'BLOCKED on ARENA 3: Notification outbox receipts endpoint (GET /internal/notifications/outbox-receipts) is not yet integrated.',
       run: async () => {
-        const response = await ApiClient.get<Partial<NotificationOutboxReceiptPage>>(endpoint);
-        const data = Array.isArray(response?.data)
-          ? (response.data as NotificationOutboxReceiptRecord[])
-          : extractArray<NotificationOutboxReceiptRecord>(response);
-        return {
-          data,
-          total: Number(response?.total ?? data.length),
-          page: Number(response?.page ?? filters.page ?? 1),
-          limit: Number(response?.limit ?? filters.limit ?? 15),
-          totalPages: Number(response?.totalPages ?? (data.length > 0 ? 1 : 0)),
-          hasNextPage: Boolean(response?.hasNextPage),
-        };
+        const response = await ApiClient.get<unknown>(endpoint);
+        return requireDiagnosticPage<NotificationOutboxReceiptRecord>(response, filters.page ?? 1, filters.limit ?? 15, row =>
+          !!row && nonEmptyDiagnosticString(row.outboxEventId) && nonEmptyDiagnosticString(row.status) &&
+          Number.isSafeInteger(row.attempts) && row.attempts >= 0 && validDiagnosticTime(row.createdAt) && validDiagnosticTime(row.updatedAt) &&
+          (!filters.status || row.status === filters.status.toUpperCase()));
       },
     });
   },

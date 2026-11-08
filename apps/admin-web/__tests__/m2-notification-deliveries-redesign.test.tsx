@@ -59,3 +59,17 @@ test('latest outbox status filter wins over a late earlier read', async () => {
   expect(screen.queryByTestId('outbox-receipt-row-old-receipt')).toBeNull();
   expect(screen.getByTestId('outbox-receipt-row-new-receipt')).toBeTruthy();
 });
+test('malformed or wrong-context diagnostic pages are not shown as empty results', async () => {
+  (ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.startsWith('/internal/notifications/deliveries?') ? Promise.resolve({}) : path.startsWith('/internal/notifications/outbox-receipts?') ? Promise.resolve({data:[],total:0,page:2,limit:20,totalPages:0,hasNextPage:false}) : Promise.reject(new Error('unavailable')));
+  render(<NotificationManagementScreen initialTab="deliveries" />);
+  expect(await screen.findByText('Delivery records unavailable.')).toBeTruthy();
+  expect(await screen.findByText('Outbox receipts unavailable.')).toBeTruthy();
+  expect(screen.queryByTestId('notification-deliveries-pager')).toBeNull(); expect(screen.queryByTestId('outbox-receipts-pager')).toBeNull();
+  expect(ApiClient.post).not.toHaveBeenCalled();
+});
+test('delivery and outbox reads reject rows from a different applied status',async()=>{
+  (ApiClient.get as jest.Mock).mockResolvedValueOnce({data:[delivery('synthetic','SENT')],total:1,page:1,limit:20,totalPages:1,hasNextPage:false});
+  await expect(NotificationManagementApi.listDeliveries({status:'FAILED'})).rejects.toThrow(/could not be verified/);
+  (ApiClient.get as jest.Mock).mockResolvedValueOnce({data:[{outboxEventId:'synthetic',status:'MATERIALIZED',attempts:1,createdAt:'2026-11-01T00:00:00Z',updatedAt:'2026-11-01T00:00:00Z'}],total:1,page:1,limit:15,totalPages:1,hasNextPage:false});
+  await expect(NotificationManagementApi.listOutboxReceipts({status:'FAILED'})).rejects.toThrow(/could not be verified/);
+});
