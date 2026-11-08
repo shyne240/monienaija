@@ -404,4 +404,14 @@ describe('M1 Customer Directory — table semantics, keyboard and narrow-screen 
     });
     expect(view.queryByRole('button', { name: 'Clear filters' })).toBeNull();
   });
+  test('directory close control protects an in-progress draft and blocks row navigation', async () => {
+    (ApiClient.get as jest.Mock).mockResolvedValue(directoryResponse([customer],1,false,1));
+    const view=render(<CustomerDirectoryScreen/>);await view.findByText('Synthetic Directory Alpha');
+    fireEvent.click(view.getByRole('button',{name:'New Customer'}));fireEvent.change(view.getByLabelText(/First name/),{target:{value:'Unsaved synthetic'}});
+    const rowAction=view.getByRole('button',{name:'Open Customer 360° for Synthetic Directory Alpha'}) as HTMLButtonElement;expect(rowAction.disabled).toBe(true);
+    const close=view.getByRole('button',{name:'Close registration'});close.focus();fireEvent.click(close);
+    expect(view.getByRole('group',{name:'Confirm leaving registration'})).toBeTruthy();fireEvent.click(view.getByRole('button',{name:'Keep editing'}));expect(document.activeElement).toBe(close);
+    expect((view.getByLabelText(/First name/) as HTMLInputElement).value).toBe('Unsaved synthetic');fireEvent.click(close);fireEvent.click(view.getByRole('button',{name:'Discard unsaved changes and leave'}));expect(view.queryByRole('heading',{name:'Customer details'})).toBeNull();expect(rowAction.disabled).toBe(false);
+  });
+
 });

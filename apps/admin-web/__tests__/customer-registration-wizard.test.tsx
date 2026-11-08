@@ -657,4 +657,22 @@ describe('CustomerRegistrationWizard', () => {
     expect(document.activeElement).toBe(view.getByLabelText(/First name/));expect(view.getByLabelText(/First name/).getAttribute('aria-invalid')).toBe('true');expect(ApiClient.post).not.toHaveBeenCalled();
   });
 
+  test('closing an unsaved registration requires explicit discard and restores focus', () => {
+    const onClose=jest.fn();const view=render(<CustomerRegistrationWizard onClose={onClose} onCustomerCreated={jest.fn()} onOpenCustomer={jest.fn()}/>);
+    const first=view.getByLabelText(/First name/) as HTMLInputElement;fireEvent.change(first,{target:{value:'Unsaved synthetic'}});
+    const close=view.getByRole('button',{name:'Close'});close.focus();fireEvent.click(close);
+    const prompt=view.getByRole('group',{name:'Confirm leaving registration'});expect(document.activeElement).toBe(prompt);expect(onClose).not.toHaveBeenCalled();
+    fireEvent.keyDown(prompt,{key:'Escape'});expect(document.activeElement).toBe(close);expect(first.value).toBe('Unsaved synthetic');
+    fireEvent.click(close);fireEvent.click(view.getByRole('button',{name:'Discard unsaved changes and leave'}));expect(onClose).toHaveBeenCalledTimes(1);expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+
+  test('unsaved email is not described as saved in the summary and leaving is guarded', async () => {
+    const onOpen=jest.fn();const view=render(<CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={jest.fn()} onOpenCustomer={onOpen}/>);
+    fireEvent.change(view.getByLabelText(/First name/),{target:{value:'Synthetic'}});fireEvent.change(view.getByLabelText(/Last name/),{target:{value:'Customer'}});fireEvent.click(view.getByRole('button',{name:'Create DRAFT & continue'}));await view.findByLabelText(/Primary phone number/);
+    fireEvent.change(view.getByLabelText(/Primary phone number/),{target:{value:'+2348012340001'}});fireEvent.click(view.getByRole('button',{name:'Save contact details'}));await view.findByText(/Contact details saved/);
+    fireEvent.change(view.getByLabelText(/Email address/),{target:{value:'unsaved@example.test'}});fireEvent.click(view.getByRole('button',{name:'Continue to address'}));fireEvent.click(view.getByRole('button',{name:'Skip address'}));fireEvent.click(view.getByRole('button',{name:'Skip identity documents'}));
+    const emailTerm=view.getByText('Email');expect(emailTerm.nextElementSibling?.textContent).toBe('Not saved');fireEvent.click(view.getByRole('button',{name:'Open Customer 360°'}));expect(onOpen).not.toHaveBeenCalled();expect(view.getByRole('group',{name:'Confirm leaving registration'}).textContent).toMatch(/does not save/);
+    fireEvent.click(view.getByRole('button',{name:'Discard unsaved changes and leave'}));expect(onOpen).toHaveBeenCalledWith('synthetic-customer-id');
+  });
+
 });

@@ -1298,3 +1298,19 @@
   line-height: 1.45;
 }
 .cm-wizard-heading h2:focus { outline: 2px solid var(--mn-focus-ring, #a77916); outline-offset: 3px; }
+
+/* Keep registration exit decisions clear without obscuring the existing draft. */
+.cm-wizard-content { min-width: 0; padding: 0; margin: 0; border: 0; }
+.cm-registration-exit { margin: 0 0 18px; padding: 18px; border: 1px solid var(--mn-status-warning, #8c5600); border-radius: 12px; color: var(--cm-ink); background: var(--mn-status-warning-bg, #fff3d9); }
+.cm-registration-exit:focus { outline: 2px solid var(--mn-focus-ring, #0b624a); outline-offset: 3px; }
+.cm-registration-exit p { margin: 8px 0 12px; color: var(--cm-ink); font-size: 13px; line-height: 1.5; }
+.cm-registration-exit .cm-actions-row { justify-content: flex-start; flex-wrap: wrap; }
+.cm-registration-context { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; margin: 18px 0 0; padding: 14px 16px; border: 1px solid var(--mn-border-subtle, #dde7e2); border-radius: 12px; background: var(--mn-surface-canvas, #f5f8f6); }
+.cm-registration-context div { display: flex; flex-direction: column; gap: 3px; min-width: 110px; }
+.cm-registration-context span { color: var(--cm-muted); font-size: 10px; font-weight: 800; letter-spacing: .1em; }
+.cm-registration-context strong { font-size: 13px; }
+.cm-registration-context p { flex: 1 1 220px; margin: 0; color: var(--cm-muted); font-size: 12px; line-height: 1.45; }
+.cm-wizard-stepper { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.cm-wizard-stepper li.is-visited > span { color: var(--cm-brand); background: #dcece4; }
+.cm-wizard-step-state { display: block; margin-top: 4px; color: var(--cm-muted); font-size: 10px; font-weight: 500; }
+@media (max-width: 800px) { .cm-wizard-stepper { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

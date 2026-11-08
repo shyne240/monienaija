@@ -12,7 +12,7 @@ import {
   type StatusShape,
   type StatusTone,
 } from '../../design-system/primitives';
-import { CustomerRegistrationWizard } from './CustomerRegistrationWizard';
+import { CustomerRegistrationWizard, type CustomerRegistrationWizardHandle } from './CustomerRegistrationWizard';
 import { maskCustomerReference } from './customer-masking';
 import { Customer360Workspace, type DirectoryCustomer } from './Customer360Workspace';
 import '../../design-system/tokens.css';
@@ -121,6 +121,8 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const createButtonRef = useRef<HTMLButtonElement>(null);
+  const registrationRef = useRef<CustomerRegistrationWizardHandle>(null);
+  const [registrationBusy, setRegistrationBusy] = useState(false);
   const requestVersion = useRef(0);
 
   useEffect(() => {
@@ -166,6 +168,10 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
       setSelectionError(null);
       return;
     }
+    if (createOpen) {
+      setSelectionError('Close registration before opening a different customer.');
+      return;
+    }
 
     const listedCustomer = directory?.data?.find((customer) => customer.id === selectedCustomerId);
     if (listedCustomer) {
@@ -190,7 +196,7 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
     return () => {
       active = false;
     };
-  }, [selectedCustomerId, directory]);
+  }, [selectedCustomerId, directory, createOpen]);
 
   const handleCustomerCreated = () => {
     setPage(1);
@@ -283,7 +289,8 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
             <Button
               variant="primary"
               ref={createButtonRef}
-              onClick={() => setCreateOpen((value) => !value)}
+              onClick={() => { if (createOpen) registrationRef.current?.requestClose(); else setCreateOpen(true); }}
+              disabled={registrationBusy}
               aria-expanded={createOpen}
               aria-controls={createOpen ? 'mn-dir-registration' : undefined}
             >
@@ -293,10 +300,13 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
         }
       />
 
+      {createOpen && <p className="mn-dir-registration-notice" role="status">Finish or close registration before opening another customer. Only confirmed saves are retained.</p>}
       {createOpen && canCreateCustomer && (
         <div className="mn-dir-registration" id="mn-dir-registration">
           <CustomerRegistrationWizard
-            onClose={() => { setCreateOpen(false); createButtonRef.current?.focus(); }}
+            ref={registrationRef}
+            onBusyChange={setRegistrationBusy}
+            onClose={() => { setCreateOpen(false); setRegistrationBusy(false); createButtonRef.current?.focus(); }}
             onCustomerCreated={handleCustomerCreated}
             onOpenCustomer={openRegistrationCustomer}
           />
@@ -536,6 +546,8 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
                         variant="secondary"
                         size="sm"
                         onClick={() => setSelectedCustomer(customer)}
+                        disabled={createOpen}
+                        title={createOpen ? 'Close registration before opening another customer.' : undefined}
                         aria-label={`Open Customer 360° for ${displayName(customer)}`}
                       >
                         Open Customer 360°

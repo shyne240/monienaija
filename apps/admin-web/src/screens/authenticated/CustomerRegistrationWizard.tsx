@@ -1,4 +1,4 @@
-import React, { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import React, { type FormEvent, forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 
 import {
   getCustomerCalendarDate,
@@ -82,10 +82,13 @@ interface IdentityDraft {
   outcome: { kind: 'success' | 'error'; message: string } | null;
 }
 
+export interface CustomerRegistrationWizardHandle { requestClose: () => void; }
+
 interface CustomerRegistrationWizardProps {
   onClose: () => void;
   onCustomerCreated: (customer: CreatedCustomer) => void;
   onOpenCustomer: (customerId: string) => void;
+  onBusyChange?: (busy: boolean) => void;
 }
 
 const STEPS = [
@@ -145,19 +148,20 @@ function fieldErrorsFrom(error: unknown): Record<string, string> {
   );
 }
 
-export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProps> = (props) => {
+export const CustomerRegistrationWizard = forwardRef<CustomerRegistrationWizardHandle, CustomerRegistrationWizardProps>((props, ref) => {
   const { principal, sessionId } = useAuthStore();
   const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type,
     principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess,
     principal?.readOnlyPrincipal]);
-  return <CustomerRegistrationWorkspace key={key} {...props} />;
-};
+  return <CustomerRegistrationWorkspace key={key} ref={ref} {...props} />;
+});
 
-const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> = ({
+const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandle, CustomerRegistrationWizardProps>(({
   onClose,
   onCustomerCreated,
   onOpenCustomer,
-}) => {
+  onBusyChange,
+}, ref) => {
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
   const canManageIdentity =
@@ -213,18 +217,29 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
   const nextIdentityDraftId = useRef(1);
 
   const [isSaving, setIsSaving] = useState(false);
+  const [exitTarget, setExitTarget] = useState<'directory' | 'customer' | null>(null);
+  const exitPromptRef = useRef<HTMLDivElement>(null);
+  const exitOriginRef = useRef<HTMLElement | null>(null);
+  const restoreExitFocus = useRef(false);
+  const [savedProfileDraft, setSavedProfileDraft] = useState(JSON.stringify(['INDIVIDUAL', '', '', '', '', '', 'NG']));
+  const [savedAddressDraft, setSavedAddressDraft] = useState(JSON.stringify(['RESIDENTIAL', '', '', '', '', 'NG', '']));
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const savingRef = useRef(false);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => { onBusyChange?.(isSaving); }, [isSaving, onBusyChange]);
+  useEffect(() => {
+    if (exitTarget) exitPromptRef.current?.focus();
+    else if (restoreExitFocus.current) { restoreExitFocus.current = false; if (exitOriginRef.current?.isConnected) exitOriginRef.current.focus(); else stepHeadingRef.current?.focus(); }
+  }, [exitTarget]);
   useEffect(() => {
     if (Object.keys(fieldErrors).length > 0) wizardRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
   }, [fieldErrors]);
 
   const progress = useMemo(
-    () => (step >= STEPS.length ? 'Complete' : `${step + 1} of ${STEPS.length}`),
+    () => (step >= STEPS.length ? 'Summary' : `${step + 1} of ${STEPS.length}`),
     [step],
   );
   const derivedDisplayName = [firstName, middleName, lastName]
@@ -235,6 +250,20 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
     customerType === 'BUSINESS' ? normalizeCustomerText(businessName) : derivedDisplayName;
   const currentPhone = normalizePhoneNumber(phone, phoneCountry);
   const currentPhoneIsNigerian = currentPhone.valid && currentPhone.country === 'NG';
+  const profileDraft = JSON.stringify([customerType, businessName, firstName, middleName, lastName, dateOfBirth, nationality]);
+  const addressDraft = JSON.stringify([addressType, lineOne, lineTwo, city, stateOrProvince, country, postalCode]);
+  const hasUnsavedChanges = profileDraft !== savedProfileDraft || addressDraft !== savedAddressDraft ||
+    (currentPhone.e164 ?? phone.trim()) !== persistedPhone || normalizeEmailAddress(email) !== persistedEmail ||
+    Boolean(otpCode || verificationToken) || identityDocuments.some(item => !item.saved && (item.documentNumber.trim() || item.issuedAt || item.expiresAt || item.issuingCountry !== 'NG' || item.type !== (customerType === 'BUSINESS' ? 'BUSINESS_REGISTRATION' : 'NIN')));
+  const requestExit = (target: 'directory' | 'customer') => {
+    if (savingRef.current || isSaving || exitTarget) return;
+    if (!hasUnsavedChanges) { if (target === 'customer' && customer) onOpenCustomer(customer.id); else onClose(); return; }
+    exitOriginRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setExitTarget(target);
+  };
+  useImperativeHandle(ref, () => ({ requestClose: () => requestExit('directory') }));
+  const keepRegistration = () => { restoreExitFocus.current = true; setExitTarget(null); };
+
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -308,6 +337,7 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
       if (!matchesCustomerReceipt(savedProfile, savedCustomer.id) || typeof savedProfile.displayName !== 'string') {
         throw new Error('Unconfirmed profile receipt');
       }
+      setSavedProfileDraft(profileDraft);
       setProfileSaved(true);
       setFieldErrors({});
       onCustomerCreated(savedCustomer);
@@ -598,6 +628,7 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
           );
       if (!mounted.current) return;
       if (!matchesCustomerReceipt(saved, customer.id, address?.id) || saved.type !== addressType || saved.isPrimary !== true) throw new Error('Unconfirmed address receipt');
+      setSavedAddressDraft(addressDraft);
       setAddress(saved);
       setFieldErrors({});
       setNotice('Address saved.');
@@ -806,9 +837,7 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
     setStep(3);
   };
 
-  const finishLater = () => {
-    onClose();
-  };
+  const finishLater = () => { requestExit('directory'); };
 
   const stepForm = () => {
     if (step === 0) {
@@ -954,6 +983,7 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
                 </label>
                 <CustomerCountrySelect
                   id="registration-nationality"
+                  disabled={isSaving || Boolean(exitTarget)}
                   label="Nationality"
                   value={nationality}
                   onChange={setNationality}
@@ -983,7 +1013,7 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
                 onClick={finishLater}
                 disabled={isSaving}
               >
-                Save and finish later
+                Finish later
               </button>
             )}
           </div>
@@ -1004,6 +1034,7 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
           <div className="cm-wizard-field-grid">
             <CustomerPhoneField
               id="registration-phone"
+              disabled={isSaving || Boolean(exitTarget)}
               label="Primary phone number"
               value={phone}
               country={phoneCountry}
@@ -1125,7 +1156,7 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
               onClick={finishLater}
               disabled={isSaving}
             >
-              Save and finish later
+              Finish later
             </button>
           )}
         </form>
@@ -1219,6 +1250,7 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
             </label>
             <CustomerCountrySelect
               id="registration-address-country"
+              disabled={isSaving || Boolean(exitTarget)}
               label="Country"
               value={country}
               onChange={setCountry}
@@ -1275,7 +1307,7 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
                 onClick={finishLater}
                 disabled={isSaving}
               >
-                Save and finish later
+                Finish later
               </button>
             )}
           </div>
@@ -1455,7 +1487,7 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
                           )
                         }
                         required
-                        disabled={isNigeriaIdentityType(document.type)}
+                        disabled={isNigeriaIdentityType(document.type) || isSaving || Boolean(exitTarget)}
                         error={document.errors.issuingCountry}
                       />
                       {supportsIdentityDates(document.type) && (
@@ -1599,7 +1631,7 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
                 onClick={finishLater}
                 disabled={isSaving}
               >
-                Save and finish later
+                Finish later
               </button>
             )}
           </div>
@@ -1640,7 +1672,7 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
           </div>
           <div>
             <dt>Email</dt>
-            <dd>{emailContact?.maskedValue ?? (email.trim() ? 'Saved' : 'Not recorded')}</dd>
+            <dd>{emailContact ? (emailContact.maskedValue ?? 'Saved (value unavailable)') : email.trim() ? 'Not saved' : 'Not recorded'}</dd>
           </div>
           <div>
             <dt>Address</dt>
@@ -1684,12 +1716,12 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
             <button
               className="cm-button cm-button-primary"
               type="button"
-              onClick={() => onOpenCustomer(customer.id)}
+              onClick={() => requestExit('customer')}
             >
               Open Customer 360°
             </button>
           )}
-          <button className="cm-button cm-button-secondary" type="button" onClick={onClose}>
+          <button className="cm-button cm-button-secondary" type="button" onClick={finishLater}>
             Return to directory
           </button>
         </div>
@@ -1715,21 +1747,26 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
         <button
           className="cm-button cm-button-secondary"
           type="button"
-          onClick={onClose}
-          disabled={isSaving}
+          onClick={finishLater}
+          disabled={isSaving || Boolean(exitTarget)}
         >
           Close
         </button>
       </div>
+      <div className="cm-registration-context" aria-label="Registration save status">
+        <div><span>RECORD</span><strong>{customer ? 'DRAFT created' : 'Not created yet'}</strong></div>
+        <div><span>PROFILE</span><strong>{profileSaved ? 'Saved' : 'Not confirmed'}</strong></div>
+        <p>Changes are saved by each step’s save action. Moving between steps does not save edited fields.</p>
+      </div>
       <ol className="cm-wizard-stepper" aria-label="Registration progress">
-        {STEPS.map((label, index) => (
+        {[...STEPS, 'Registration summary'].map((label, index) => (
           <li
             key={label}
-            className={index === step ? 'is-active' : index < step ? 'is-complete' : ''}
+            className={index === step ? 'is-active' : index < step ? 'is-visited' : ''}
             aria-current={index === step ? 'step' : undefined}
           >
             <span>{index + 1}</span>
-            <small>{label}</small>
+            <small>{label}<span className="cm-wizard-step-state">{index === step ? 'Current' : index < step ? 'Visited' : 'Upcoming'}</span></small>
           </li>
         ))}
       </ol>
@@ -1743,7 +1780,15 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
           {notice}
         </div>
       )}
-      {stepForm()}
+      {exitTarget && (
+        <div className="cm-registration-exit" ref={exitPromptRef} tabIndex={-1} role="group" aria-label="Confirm leaving registration" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); keepRegistration(); } }}>
+          <strong>Leave with unsaved changes?</strong>
+          <p>Only details with confirmed save receipts are retained. Unsaved fields and verification input in this browser will be discarded; this action does not save them.</p>
+          {customer && <p>The customer record already created remains a DRAFT.</p>}
+          <div className="cm-actions-row"><button type="button" className="cm-button cm-button-secondary" onClick={keepRegistration}>Keep editing</button><button type="button" className="cm-button cm-button-primary" onClick={() => { if (exitTarget === 'customer' && customer) onOpenCustomer(customer.id); else onClose(); }}>Discard unsaved changes and leave</button></div>
+        </div>
+      )}
+      <fieldset className="cm-wizard-content" disabled={Boolean(exitTarget) || isSaving}>{stepForm()}</fieldset>
     </section>
   );
-};
+});
