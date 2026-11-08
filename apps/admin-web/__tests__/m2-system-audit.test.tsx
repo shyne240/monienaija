@@ -67,3 +67,8 @@ test('system health rejects deliveries that do not match the applied filter',asy
  render(<SystemHealthScreen/>);await screen.findByText('No notification deliveries were returned for these filters.');fireEvent.change(screen.getByLabelText('Channel'),{target:{value:'EMAIL'}});fireEvent.click(screen.getByRole('button',{name:'Search'}));
  expect(await screen.findByText(/Diagnostic response could not be verified/)).toBeTruthy();expect(screen.queryByText('WRONG_EVENT')).toBeNull();expect(screen.queryByText('No notification deliveries were returned for these filters.')).toBeNull();
 });
+test('notification diagnostic details discard unexpected message and payload fields',async()=>{
+ principal();(ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.includes('outbox-receipts')?Promise.resolve(page([{outboxEventId:'receipt',status:'FAILED',attempts:1,createdAt:'2026-11-01T00:00:00Z',updatedAt:'2026-11-01T00:00:00Z',payload:'PRIVATE_RECEIPT_PAYLOAD'}])):Promise.resolve(page([{...delivery('row','EVENT'),message:'PRIVATE_MESSAGE',destination:'PRIVATE_DESTINATION',payload:'PRIVATE_DELIVERY_PAYLOAD'}])));
+ render(<SystemHealthScreen/>);await screen.findAllByText('EVENT');fireEvent.click(screen.getByRole('button',{name:'Inspect Outbox Receipts'}));await screen.findAllByText('receipt');
+ for(const secret of ['PRIVATE_MESSAGE','PRIVATE_DESTINATION','PRIVATE_DELIVERY_PAYLOAD','PRIVATE_RECEIPT_PAYLOAD']) expect(screen.queryByText(secret)).toBeNull();
+});

@@ -2807,7 +2807,6 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                       <option value="CUSTOMER">CUSTOMER</option>
                       <option value="AGENT">AGENT</option>
                       <option value="PHONE">PHONE (Direct / Non-Account)</option>
-                      <option value="WORKFORCE">WORKFORCE</option>
                     </select>
                   </div>
                   <div>

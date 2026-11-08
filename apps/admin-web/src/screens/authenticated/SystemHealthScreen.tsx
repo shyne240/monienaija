@@ -207,7 +207,7 @@ const SystemHealthWorkspace: React.FC<{ onOpenNotifications?: () => void }> = ({
         <form onSubmit={applyDeliveryFilters} className="health-redesign__filters" aria-label="Delivery filters">
           <label>Status<select value={deliveryStatus} onChange={event => setDeliveryStatus(event.target.value)}><option value="">All</option><option value="PENDING">PENDING</option><option value="SENT">SENT</option><option value="FAILED">FAILED</option><option value="DEAD">DEAD</option><option value="UNKNOWN">UNKNOWN</option><option value="SKIPPED">SKIPPED</option></select></label>
           <label>Channel<select value={deliveryChannel} onChange={event => setDeliveryChannel(event.target.value)}><option value="">All</option><option value="SMS">SMS</option><option value="EMAIL">EMAIL</option><option value="PUSH">PUSH</option></select></label>
-          <label>Recipient type<select value={deliveryRecipientType} onChange={event => setDeliveryRecipientType(event.target.value)}><option value="">All</option><option value="CUSTOMER">CUSTOMER</option><option value="AGENT">AGENT</option><option value="PHONE">PHONE</option><option value="WORKFORCE">WORKFORCE</option></select></label>
+          <label>Recipient type<select value={deliveryRecipientType} onChange={event => setDeliveryRecipientType(event.target.value)}><option value="">All</option><option value="CUSTOMER">CUSTOMER</option><option value="AGENT">AGENT</option><option value="PHONE">PHONE</option></select></label>
           <label>Event type<input value={deliveryEventInput} onChange={event => setDeliveryEventInput(event.target.value)} maxLength={180} /></label>
           <Button type="submit" variant="primary">Search</Button>
         </form>

@@ -307,6 +307,16 @@ function requireDiagnosticPage<T>(value: unknown, page: number, limit: number, i
 }
 const nonEmptyDiagnosticString = (value: unknown): value is string => typeof value === 'string' && !!value.trim();
 const validDiagnosticTime = (value: unknown): boolean => typeof value === 'string' && Number.isFinite(Date.parse(value));
+// These projections deliberately discard unexpected message, destination, payload or secret
+// fields even if an older/misconfigured server sends them.
+function projectDiagnosticFields<T>(row: T, keys: readonly string[]): T {
+  const input = row as Record<string, unknown>;
+  return Object.fromEntries(keys.filter(key => Object.prototype.hasOwnProperty.call(input, key)).map(key => [key, input[key]])) as T;
+}
+const DELIVERY_FIELDS = ['id', 'eventType', 'eventKey', 'aggregateType', 'aggregateId', 'recipientType', 'recipientId', 'channel', 'status', 'attempts', 'providerRef', 'correlationId', 'causationId', 'errorCode', 'createdAt', 'updatedAt', 'sentAt', 'failedAt'] as const;
+const RECEIPT_FIELDS = ['outboxEventId', 'status', 'reason', 'attempts', 'nextAttemptAt', 'createdAt', 'updatedAt'] as const;
+const optionalStringFields = (row: Record<string, unknown>, keys: readonly string[]) => keys.every(key => row[key] == null || typeof row[key] === 'string');
+
 
 /** Metadata for registry-approved variables (live names are authoritative; this only
  *  enriches the UI with descriptions/safe samples for the variable picker). */
@@ -1315,14 +1325,16 @@ export const NotificationManagementApi = {
     const endpoint = `/internal/notifications/deliveries?${query.toString()}`;
     try {
       const response = await ApiClient.get<unknown>(endpoint);
-      return { status: 'LIVE', data: requireDiagnosticPage<NotificationDeliveryRecord>(response, filters.page ?? 1, filters.limit ?? 20, row =>
+      const page = requireDiagnosticPage<NotificationDeliveryRecord>(response, filters.page ?? 1, filters.limit ?? 20, row =>
         !!row && nonEmptyDiagnosticString(row.id) && nonEmptyDiagnosticString(row.eventType) && nonEmptyDiagnosticString(row.eventKey) &&
         nonEmptyDiagnosticString(row.channel) && nonEmptyDiagnosticString(row.status) && nonEmptyDiagnosticString(row.recipientType) &&
         nonEmptyDiagnosticString(row.recipientId) && Number.isSafeInteger(row.attempts) && row.attempts >= 0 && validDiagnosticTime(row.createdAt) &&
+        optionalStringFields(row, ['aggregateType', 'aggregateId', 'providerRef', 'correlationId', 'causationId', 'errorCode', 'updatedAt', 'sentAt', 'failedAt']) &&
         (!filters.status || row.status === filters.status.toUpperCase()) && (!filters.channel || row.channel === filters.channel.toUpperCase()) &&
         (!filters.recipientType || row.recipientType === filters.recipientType.toUpperCase()) &&
         (!filters.eventType || row.eventType === filters.eventType) &&
-        (!filters.recipientId || row.recipientType === 'PHONE' || row.recipientId.toLowerCase() === filters.recipientId.toLowerCase())) };
+        (!filters.recipientId || row.recipientType === 'PHONE' || row.recipientId.toLowerCase() === filters.recipientId.toLowerCase()));
+      return { status: 'LIVE', data: { ...page, data: page.data.map(row => projectDiagnosticFields(row, DELIVERY_FIELDS)) } };
 
     } catch (error) {
       const httpStatus = getHttpStatus(error);
@@ -1416,10 +1428,12 @@ export const NotificationManagementApi = {
         'BLOCKED on ARENA 3: Notification outbox receipts endpoint (GET /internal/notifications/outbox-receipts) is not yet integrated.',
       run: async () => {
         const response = await ApiClient.get<unknown>(endpoint);
-        return requireDiagnosticPage<NotificationOutboxReceiptRecord>(response, filters.page ?? 1, filters.limit ?? 15, row =>
+        const page = requireDiagnosticPage<NotificationOutboxReceiptRecord>(response, filters.page ?? 1, filters.limit ?? 15, row =>
           !!row && nonEmptyDiagnosticString(row.outboxEventId) && nonEmptyDiagnosticString(row.status) &&
           Number.isSafeInteger(row.attempts) && row.attempts >= 0 && validDiagnosticTime(row.createdAt) && validDiagnosticTime(row.updatedAt) &&
+          optionalStringFields(row, ['reason', 'nextAttemptAt']) &&
           (!filters.status || row.status === filters.status.toUpperCase()));
+        return { ...page, data: page.data.map(row => projectDiagnosticFields(row, RECEIPT_FIELDS)) };
       },
     });
   },
