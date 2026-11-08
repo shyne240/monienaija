@@ -94,15 +94,15 @@ interface LedgerJournalView {
 
 const validTransfer = (row: any): boolean => row && typeof row.id === 'string' && typeof row.agentId === 'string' && typeof row.beneficiaryPhoneMasked === 'string' && typeof row.currency === 'string' && typeof row.status === 'string' && ['principalMinor', 'feeMinor', 'vatMinor', 'totalMinor'].every(key => typeof row[key] === 'string' && /^\d+$/.test(row[key]));
 export const CashToCashOperationsScreen: React.FC = () => {
-  const principal = useAuthStore(state => state.principal);
-  const key = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  const { principal, sessionId } = useAuthStore();
+  const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
   return <CashToCashWorkspace key={key} />;
 };
 const CashToCashWorkspace: React.FC = () => {
   const { principal } = useAuthStore();
   const expiryRequest = useRef(0);
   useEffect(() => () => { expiryRequest.current++; }, []);
-  const canView = principal?.scopes.includes('transaction.view') ?? false;
+  const canView = Boolean(principal && ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type) && principal.scopes.includes('transaction.view'));
   const canViewLedger = principal?.scopes.includes('ledger.view') ?? false;
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<Filters>(EMPTY_FILTERS);
@@ -116,6 +116,14 @@ const CashToCashWorkspace: React.FC = () => {
   const [inspectedJournalLabel, setInspectedJournalLabel] = useState('');
   const [journalLoading, setJournalLoading] = useState(false);
   const [journalError, setJournalError] = useState('');
+  const receiptTitle = useRef<HTMLHeadingElement>(null);
+  const receiptTrigger = useRef<HTMLButtonElement | null>(null);
+  const receiptFocusPending = useRef(false);
+  const restoreReceiptFocus = useRef(false);
+  useEffect(() => {
+    if (selected && !loading && receiptFocusPending.current) { receiptFocusPending.current = false; receiptTitle.current?.focus(); }
+    if (!selected && restoreReceiptFocus.current) { restoreReceiptFocus.current = false; receiptTrigger.current?.focus(); }
+  }, [selected, loading]);
 
   // Read-only Cash-to-Cash expiry worker & backlog status (Arena 1 integration boundary)
   const [expiryStatus, setExpiryStatus] = useState<CashToCashExpiryStatusView | null>(null);
@@ -169,7 +177,7 @@ const CashToCashWorkspace: React.FC = () => {
         `/internal/admin/cash-to-cash/transfers?${query.toString()}`,
       );
       if (request !== listRequest.current) return;
-      if (!Array.isArray(response?.data) || !response.data.every(validTransfer) || !Number.isSafeInteger(response.total) || response.total < 0 || response.page !== targetPage || !Number.isSafeInteger(response.totalPages) || response.totalPages < 0) throw new Error('Cash-to-Cash list returned an invalid or mismatched response.');
+      if (!Array.isArray(response?.data) || !response.data.every(validTransfer) || !Number.isSafeInteger(response.total) || response.total < 0 || response.page !== targetPage || !Number.isSafeInteger(response.limit) || response.limit !== PAGE_SIZE || response.data.length > response.limit || !Number.isSafeInteger(response.totalPages) || response.totalPages !== Math.ceil(response.total / response.limit) || response.data.some(row => (selectedFilters.status && row.status !== selectedFilters.status.trim().toUpperCase()) || (selectedFilters.agentId.trim() && row.agentId !== selectedFilters.agentId.trim()) || (selectedFilters.transferId.trim() && row.id !== selectedFilters.transferId.trim()) || (selectedFilters.reference.trim() && row.reference !== selectedFilters.reference.trim()))) throw new Error('Cash-to-Cash list returned an invalid or mismatched response.');
       setResult(response);
       setSelected((current) => response.data.find((item) => item.id === current?.id) ?? null);
     } catch (loadError) {
@@ -192,21 +200,23 @@ const CashToCashWorkspace: React.FC = () => {
   }, [canView]);
 
   const journalRequest = useRef(0);
-  const journalContext = useRef({ selectedId: selected?.id, canViewLedger });
-  journalContext.current = { selectedId: selected?.id, canViewLedger };
+  const journalContext = useRef({ selectedId: selected?.id, initiation: selected?.journalId, claim: selected?.claimJournalId, canViewLedger });
+  journalContext.current = { selectedId: selected?.id, initiation: selected?.journalId, claim: selected?.claimJournalId, canViewLedger };
   useEffect(() => {
     setInspectedJournal(null);
     setInspectedJournalLabel('');
     setJournalError('');
     setJournalLoading(false);
     return () => { journalRequest.current += 1; };
-  }, [selected?.id, canViewLedger]);
+  }, [selected?.id, selected?.journalId, selected?.claimJournalId, canViewLedger]);
 
   const inspectJournal = async (journalId: string, label: string) => {
     if (!canViewLedger || !journalId || journalLoading || !selected) return;
     const selectedId = selected.id;
+    const initiation = selected.journalId;
+    const claim = selected.claimJournalId;
     const request = ++journalRequest.current;
-    const valid = () => request === journalRequest.current && journalContext.current.selectedId === selectedId && journalContext.current.canViewLedger;
+    const valid = () => request === journalRequest.current && journalContext.current.selectedId === selectedId && journalContext.current.initiation === initiation && journalContext.current.claim === claim && journalContext.current.canViewLedger;
     setInspectedJournal(null);
     setJournalLoading(true);
     setJournalError('');
@@ -233,12 +243,18 @@ const CashToCashWorkspace: React.FC = () => {
 
   const search = (event: React.FormEvent) => {
     event.preventDefault();
+    listRequest.current++;
+    setResult(null);
+    setSelected(null);
     setAppliedFilters({ ...filters });
     setPage(1);
     setSearchRevision((current) => current + 1);
   };
 
   const resetFilters = () => {
+    listRequest.current++;
+    setResult(null);
+    setSelected(null);
     setFilters(EMPTY_FILTERS);
     setAppliedFilters(EMPTY_FILTERS);
     setPage(1);
@@ -356,6 +372,8 @@ const CashToCashWorkspace: React.FC = () => {
         </section>
       )}
 
+      <section className="mn-c2c__investigation" aria-label="Transfer investigation">
+      <header className="mn-c2c__section-header"><div><p>TRANSFER INVESTIGATION</p><h2>Find a transfer</h2><span>Search exact references or IDs, then inspect the recorded receipt and journal links.</span></div></header>
       <form onSubmit={search} style={styles.filters} aria-label="Cash-to-Cash filters">
         <label style={styles.label}>
           Status
@@ -410,6 +428,7 @@ const CashToCashWorkspace: React.FC = () => {
       </form>
 
       <p className="mn-c2c__hint">Filter edits are applied when you select Search.</p>
+      <p className="mn-c2c__applied">Applied: {Object.entries(appliedFilters).filter(([, value]) => value.trim()).map(([key, value]) => `${key}: ${value.trim()}`).join(' · ') || 'All transfers'}</p>
       {error && (
         <div style={styles.error} role="alert">
           {error}
@@ -458,7 +477,7 @@ const CashToCashWorkspace: React.FC = () => {
                     <button
                       type="button"
                       style={styles.smallButton}
-                      onClick={() => setSelected(item)}
+                      onClick={(event) => { receiptTrigger.current = event.currentTarget; if (selected === item) receiptTitle.current?.focus(); else { receiptFocusPending.current = true; setSelected(item); } }}
                     >
                       Inspect receipt
                     </button>
@@ -497,11 +516,12 @@ const CashToCashWorkspace: React.FC = () => {
         </button>
       </footer>}
 
+      </section>
       {selected && !loading && (
-        <section style={styles.detail} aria-label="Cash-to-Cash receipt details">
+        <section className="mn-c2c__receipt" style={styles.detail} aria-label="Cash-to-Cash receipt details">
           <div style={styles.detailHeader}>
-            <h3 style={styles.detailTitle}>Transfer receipt and ledger references</h3>
-            <button type="button" style={styles.button} onClick={() => setSelected(null)}>
+            <h3 ref={receiptTitle} tabIndex={-1} style={styles.detailTitle}>Transfer receipt and ledger references</h3>
+            <button type="button" style={styles.button} onClick={() => { restoreReceiptFocus.current = true; setSelected(null); }}>
               Close
             </button>
           </div>
