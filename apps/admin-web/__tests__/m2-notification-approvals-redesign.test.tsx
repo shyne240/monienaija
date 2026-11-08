@@ -160,3 +160,10 @@ test('confirmed approval with unconfirmed execution locks direct and queue actio
  await waitFor(()=>expect((screen.getByRole('button',{name:'Acknowledge independent approval review'}) as HTMLButtonElement).disabled).toBe(false));
  expect((screen.getByTestId('direct-execute-approved-btn') as HTMLButtonElement).disabled).toBe(true);expect((approve as HTMLButtonElement).disabled).toBe(true);
 });
+
+test('a blocked checker write is not treated as proof that no decision occurred', async()=>{
+ jest.spyOn(NotificationManagementApi,'listChangeRequests').mockResolvedValue(live([row()]));
+ jest.spyOn(NotificationManagementApi,'decideNotificationChangeRequest').mockResolvedValue({status:'BLOCKED',owner:'ARENA_1',method:'POST',endpoint:'/synthetic',httpStatus:404,message:'Unavailable'});
+ render(<NotificationManagementScreen initialTab="approvals"/>);const approve=await screen.findByRole('button',{name:`Approve change ${id}`});await waitFor(()=>expect((approve as HTMLButtonElement).disabled).toBe(false));fireEvent.click(approve);
+ expect(await screen.findByTestId('notification-checker-review-lock')).toBeTruthy();expect((approve as HTMLButtonElement).disabled).toBe(true);expect((screen.getByTestId('direct-workforce-approve-btn') as HTMLButtonElement).disabled).toBe(true);
+});

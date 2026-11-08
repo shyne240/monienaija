@@ -983,7 +983,8 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
         queueDecisionComment.trim(),
       );
       if (res.status === 'BLOCKED') {
-        setCheckerFeedback({ kind: 'blocked', message: res.message });
+        markCheckerUncertain();
+        setCheckerFeedback({ kind: 'blocked', message: `${res.message} Outcome is not confirmed; independently review the approval and audit records.` });
       } else {
         const status = res.data.status;
         if (status === 'APPROVED') markCheckerUncertain();
@@ -1047,7 +1048,8 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
         approvalId.trim(),
       );
       if (res.status === 'BLOCKED') {
-        setCheckerFeedback({ kind: 'blocked', message: res.message });
+        markCheckerUncertain();
+        setCheckerFeedback({ kind: 'blocked', message: `${res.message} Outcome is not confirmed; independently review the approval and audit records.` });
       } else {
         setCheckerFeedback({
           kind: 'success',

@@ -391,6 +391,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
       if (!mounted.current) return;
 
       if (result.status === 'BLOCKED') {
+        setProposalReviewRequired(true);
         setSubmitBlockedMessage(result.message);
         return;
       }
@@ -462,6 +463,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
       });
       if (!mounted.current) return;
       if (res.status === 'BLOCKED') {
+        setProposalReviewRequired(true);
         setActivationFeedback({ kind: 'blocked', message: res.message });
       } else {
         if (res.data.status !== 'PENDING_APPROVAL' || !res.data.approvalId) throw new Error('Rollback proposal outcome not confirmed. Check the approval queue before retrying.');

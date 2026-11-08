@@ -72,3 +72,9 @@ test('template drafts, pending proposals and local review locks are reported to 
  fireEvent.change(screen.getByTestId('template-body-textarea'),{target:{value:'Synthetic draft'}});fireEvent.change(screen.getByTestId('template-change-summary-input'),{target:{value:'Synthetic reason'}});expect(guard).toHaveBeenLastCalledWith('SMS',true,false);
  fireEvent.click(screen.getByTestId('submit-template-version-btn'));expect(guard).toHaveBeenLastCalledWith('SMS',true,true);await act(async()=>{reject(new Error('offline'));try{await pending;}catch{}});expect(guard).toHaveBeenLastCalledWith('SMS',true,false);expect(screen.getByTestId('template-proposal-review-lock')).toBeTruthy();
 });
+
+test('a blocked template submission remains unconfirmed and requires review before retry',async()=>{
+ jest.spyOn(NotificationManagementApi,'submitTemplateVersion').mockResolvedValue({status:'BLOCKED',owner:'ARENA_1',method:'POST',endpoint:'/internal/notifications/changes',httpStatus:404,message:'Endpoint unavailable'});
+ render(<NotificationTemplateWorkspace {...props(1)}/>);fireEvent.change(screen.getByTestId('template-body-textarea'),{target:{value:'Synthetic edited draft'}});fireEvent.change(screen.getByTestId('template-change-summary-input'),{target:{value:'Synthetic explanation'}});fireEvent.click(screen.getByTestId('submit-template-version-btn'));
+ expect(await screen.findByTestId('template-proposal-review-lock')).toBeTruthy();expect((screen.getByTestId('submit-template-version-btn') as HTMLButtonElement).disabled).toBe(true);expect(NotificationManagementApi.submitTemplateVersion).toHaveBeenCalledTimes(1);
+});
