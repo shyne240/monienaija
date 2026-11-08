@@ -258,6 +258,23 @@ interface AgentLimitAssignmentRecord {
   effectiveFrom?: string | null;
 }
 
+function validOutlet(value: any, agentId: string): value is OutletRecord {
+  return !!value && typeof value === 'object' && typeof value.id === 'string' && !!value.id.trim() && value.agentId === agentId &&
+    typeof value.reference === 'string' && !!value.reference.trim() && typeof value.name === 'string' &&
+    ['code', 'displayName', 'addressLine', 'city', 'state', 'country'].every(key => value[key] == null || typeof value[key] === 'string') &&
+    ['ACTIVE', 'SUSPENDED', 'TERMINATED'].includes(value.status) && Number.isSafeInteger(value.version) && value.version > 0;
+}
+function validTerminal(value: any, agentId: string): value is TerminalRecord {
+  return !!value && typeof value === 'object' && typeof value.id === 'string' && !!value.id.trim() && value.agentId === agentId &&
+    typeof value.outletId === 'string' && !!value.outletId.trim() && typeof value.reference === 'string' && !!value.reference.trim() &&
+    ['code', 'label', 'serialNumber'].every(key => value[key] == null || typeof value[key] === 'string') &&
+    ['ACTIVE', 'SUSPENDED', 'TERMINATED'].includes(value.status) && Number.isSafeInteger(value.version) && value.version > 0;
+}
+function operationUncertain(error: any): boolean {
+  return ![400, 401, 403, 404, 422].includes(error?.status);
+}
+const nullableTrim = (value: string) => value.trim() || null;
+
 export interface AgentNetworkScreenProps {
   initialAgentId?: string;
   initialOpenApplications?: boolean;
@@ -388,18 +405,6 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const [detailError, setDetailError] = useState('');
   const [lifecycleReason, setLifecycleReason] = useState('');
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
-  const agentGuard = credentialGuard || credentialBusy || lifecycleUnconfirmed || lifecycleBusy || lifecycleReviewBusy;
-  const agentBusy = credentialBusy || lifecycleBusy || lifecycleReviewBusy;
-  useEffect(() => { onAgentGuardChange?.(agentGuard, agentBusy); }, [onAgentGuardChange, agentGuard, agentBusy]);
-  useEffect(() => {
-    if (!lifecycleUnconfirmed && !lifecycleBusy && !lifecycleReviewBusy) return;
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
-    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
-  }, [lifecycleUnconfirmed, lifecycleBusy, lifecycleReviewBusy]);
-  const mayLeaveAgent = () => {
-    if (agentBusy || lifecycleInFlight.current) return false;
-    return !agentGuard || window.confirm('Leave this Agent? A visible one-time credential and local access or lifecycle review locks will be lost. An action may have occurred; inspect Agent records and audit history before acting again.');
-  };
   const [actionMsg, setActionMsg] = useState('');
   const [actionErr, setActionErr] = useState('');
 
@@ -450,6 +455,26 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const [agentLimits, setAgentLimits] = useState<AgentLimitAssignmentRecord[]>([]);
   const [newLimitProfileCode, setNewLimitProfileCode] = useState('');
   const [limitsBusy, setLimitsBusy] = useState(false);
+  const [outletUnconfirmed, setOutletUnconfirmed] = useState(false);
+  const [outletReviewReady, setOutletReviewReady] = useState(false);
+  const outletWriteInFlight = useRef(false);
+  const outletReadGeneration = useRef(0);
+  const outletDraft = Object.values(outletForm).some(value => value.trim()) ||
+    Object.entries(terminalForm).some(([key, value]) => key !== 'outletId' && value.trim()) ||
+    Boolean(editingOutletId || editingTerminalId);
+  const agentGuard = credentialGuard || credentialBusy || lifecycleUnconfirmed || lifecycleBusy || lifecycleReviewBusy || outletDraft || outletBusy || outletUnconfirmed;
+  const agentBusy = credentialBusy || lifecycleBusy || lifecycleReviewBusy || outletBusy;
+  useEffect(() => { onAgentGuardChange?.(agentGuard, agentBusy); }, [onAgentGuardChange, agentGuard, agentBusy]);
+  useEffect(() => {
+    if (!agentGuard) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+  }, [agentGuard]);
+  const mayLeaveAgent = () => {
+    if (agentBusy || lifecycleInFlight.current || outletWriteInFlight.current) return false;
+    return !agentGuard || window.confirm('Leave this Agent? Unsaved outlet or terminal entries, a visible one-time credential, and local review locks will be lost. An action may have occurred; inspect Agent records and audit history before acting again.');
+  };
+
 
   // Agent applications queue + onboarding form (scope: agent.review_application)
   const [applicationsLoaded, setApplicationsLoaded] = useState(false);
@@ -518,7 +543,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
   const openDetail = async (a: Agent) => {
     if (!canView || (selectedAgentId.current === a.id && agentGuard) || (selectedAgentId.current !== a.id && !mayLeaveAgent())) return;
-    if (selectedAgentId.current !== a.id) { setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); }
+    if (selectedAgentId.current !== a.id) { setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); }
+    outletReadGeneration.current += 1;
     selectedAgentId.current = a.id;
     setSelected(a);
     setPosition(null);
@@ -530,6 +556,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     setReceivingError('');
     setReceivingNotEntitled(false);
     setOutletsLoaded(false);
+    setOutletsLoading(false);
     setOutlets([]);
     setTerminals([]);
     setOutletsError('');
@@ -939,7 +966,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   };
 
   const doLifecycle = async (action: keyof typeof lifecycleFunctions, id: string) => {
-    if (principal?.readOnlyPrincipal || !hasFn(lifecycleFunctions[action]) || lifecycleBusy || lifecycleInFlight.current || lifecycleUnconfirmed || credentialGuard || credentialBusy || !selected || selected.id !== id || !canPerformAgentLifecycle(action, selected.status)) return;
+    if (principal?.readOnlyPrincipal || !hasFn(lifecycleFunctions[action]) || lifecycleBusy || lifecycleInFlight.current || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || !selected || selected.id !== id || !canPerformAgentLifecycle(action, selected.status)) return;
     if (action === 'terminate' && !window.confirm(`Terminate Agent ${selected.reference}? This is irreversible, revokes its receiving number and invalidates sessions. Residual float is not moved automatically.`)) return;
     lifecycleInFlight.current = true;
     setLifecycleBusy(true); setLifecycleReviewStatus(null); setActionErr(''); setActionMsg('');
@@ -1007,34 +1034,37 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   };
 
   const loadOutletsAndTerminals = async (agentId: string) => {
-    setOutletsLoading(true);
-    setOutletsError('');
+    const request = ++outletReadGeneration.current;
+    const valid = () => mountedRef.current && request === outletReadGeneration.current && selectedAgentId.current === agentId;
+    setOutletsLoading(true); setOutletsLoaded(false); setOutletReviewReady(false); setOutletsError('');
     try {
       const [outletRows, terminalRows] = await Promise.all([
         ApiClient.get<OutletRecord[]>(`/internal/agents/${encodeURIComponent(agentId)}/outlets`),
         ApiClient.get<TerminalRecord[]>(`/internal/agents/${encodeURIComponent(agentId)}/terminals`),
       ]);
-      const safeOutlets = Array.isArray(outletRows) ? outletRows : [];
-      const safeTerminals = Array.isArray(terminalRows) ? terminalRows : [];
-      setOutlets(safeOutlets);
-      setTerminals(safeTerminals);
-      setOutletsLoaded(true);
-      setTerminalForm((cur) => ({
-        ...cur,
-        outletId: safeOutlets.some((o) => o.id === cur.outletId)
-          ? cur.outletId
-          : (safeOutlets.find((o) => o.status === 'ACTIVE')?.id ?? safeOutlets[0]?.id ?? ''),
-      }));
+      if (!valid()) return;
+      if (!Array.isArray(outletRows) || !outletRows.every(row => validOutlet(row, agentId)) ||
+          !Array.isArray(terminalRows) || !terminalRows.every(row => validTerminal(row, agentId)) ||
+          new Set(outletRows.map(row => row.id)).size !== outletRows.length || new Set(terminalRows.map(row => row.id)).size !== terminalRows.length) throw new Error('Invalid or cross-Agent outlet/terminal response.');
+      setOutlets(outletRows); setTerminals(terminalRows); setOutletsLoaded(true);
+      if (outletUnconfirmed) setOutletReviewReady(true);
+      setTerminalForm(cur => ({ ...cur, outletId: outletRows.some(o => o.id === cur.outletId) ? cur.outletId : (outletRows.find(o => o.status === 'ACTIVE')?.id ?? outletRows[0]?.id ?? '') }));
     } catch (e: any) {
-      setOutletsError(e?.message || 'Failed to load outlets and terminals');
-    } finally {
-      setOutletsLoading(false);
-    }
+      if (valid()) { setOutletsError(e?.message || 'Failed to load outlets and terminals'); setOutletsLoaded(false); }
+    } finally { if (valid()) setOutletsLoading(false); }
+  };
+
+  const outletFailure = (error: any, operation: string) => {
+    if (operationUncertain(error)) {
+      setOutletUnconfirmed(true); setOutletReviewReady(false);
+      setOutletsError(`${operation} outcome is unconfirmed or conflicted. Refresh and independently review records and audit history before another action.${error?.message ? ` ${error.message}` : ''}`);
+    } else setOutletsError(error?.message || `${operation} was rejected.`);
   };
 
   const createOutlet = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selected || !canManageOutletsTerminals || outletBusy) return;
+    if (!selected || !canManageOutletsTerminals || outletBusy || outletWriteInFlight.current || outletUnconfirmed || outletsLoading || !outletsLoaded || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed) return;
+    if (editingOutletId || editingTerminalId) return;
     const reference = outletForm.reference.trim();
     const name = outletForm.name.trim();
     const code = outletForm.code.trim();
@@ -1046,6 +1076,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       setOutletsError('Outlet code must be 3–80 characters when provided.');
       return;
     }
+    outletWriteInFlight.current = true; outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
     setOutletsMsg('');
@@ -1058,18 +1089,25 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       if (outletForm.city.trim()) body.city = outletForm.city.trim();
       if (outletForm.state.trim()) body.state = outletForm.state.trim();
       if (outletForm.country.trim()) body.country = outletForm.country.trim();
-      await ApiClient.post(`/internal/agents/${encodeURIComponent(selected.id)}/outlets`, body);
+      const receipt = await ApiClient.post<OutletRecord>(`/internal/agents/${encodeURIComponent(selected.id)}/outlets`, body);
+      if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
+      if (!validOutlet(receipt, selected.id) || receipt.reference !== reference || receipt.name !== name || receipt.status !== 'ACTIVE' || (code && receipt.code !== code.toUpperCase()) || ['displayName','addressLine','city','state','country'].some(key => key in body && (receipt as any)[key] !== body[key])) throw new Error('Outlet receipt did not match the request.');
       setOutletForm(EMPTY_OUTLET_FORM);
       setOutletsMsg(`Outlet ${reference} created.`);
       await loadOutletsAndTerminals(selected.id);
     } catch (e: any) {
-      setOutletsError(e?.message || 'Failed to create outlet');
+      if (mountedRef.current && selectedAgentId.current === selected.id) outletFailure(e, 'Outlet creation');
     } finally {
-      setOutletBusy(false);
+      outletWriteInFlight.current = false;
+      if (mountedRef.current) setOutletBusy(false);
     }
   };
 
   const startEditOutlet = (outlet: OutletRecord) => {
+    if (outletBusy || outletsLoading || outletUnconfirmed) return;
+    if (editingOutletId === outlet.id && !editingTerminalId) return;
+    if ((editingOutletId || editingTerminalId) && !window.confirm('Discard the current outlet or terminal editor before opening another?')) return;
+    setEditingTerminalId(null);
     setEditingOutletId(outlet.id);
     setOutletBoundaryMsg('');
     setOutletsError('');
@@ -1088,11 +1126,13 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
   const saveOutletMetadata = async (event: React.FormEvent, outlet: OutletRecord) => {
     event.preventDefault();
-    if (!selected || !canManageOutletsTerminals || outletBusy) return;
+    if (!selected || !canManageOutletsTerminals || outletBusy || outletWriteInFlight.current || outletUnconfirmed || outletsLoading || !outletsLoaded || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed) return;
+    if (editingOutletId !== outlet.id || !Number.isSafeInteger(editingOutletForm.expectedVersion) || (editingOutletForm.expectedVersion ?? 0) < 1) return;
     if (editingOutletForm.name.trim().length < 2) {
       setOutletsError('Outlet name must be at least 2 characters.');
       return;
     }
+    outletWriteInFlight.current = true; outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
     setOutletsMsg('');
@@ -1111,35 +1151,48 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
         setOutletBoundaryMsg(outcome.message);
         return;
       }
+      if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
+      const receipt = outcome.data;
+      if (!validOutlet(receipt, selected.id) || receipt.id !== outlet.id || receipt.version !== (editingOutletForm.expectedVersion ?? 0) + 1 || receipt.name !== editingOutletForm.name.trim() || receipt.displayName !== nullableTrim(editingOutletForm.displayName) || receipt.addressLine !== nullableTrim(editingOutletForm.addressLine) || receipt.city !== nullableTrim(editingOutletForm.city) || receipt.state !== nullableTrim(editingOutletForm.state) || receipt.country !== nullableTrim(editingOutletForm.country)) throw new Error('Outlet metadata receipt did not match the request.');
       setEditingOutletId(null);
       setOutletsMsg(`Outlet ${outlet.reference} metadata updated.`);
       await loadOutletsAndTerminals(selected.id);
     } catch (e: any) {
-      setOutletsError(e?.message || 'Failed to update outlet metadata');
+      if (mountedRef.current && selectedAgentId.current === selected.id) outletFailure(e, 'Outlet metadata update');
     } finally {
-      setOutletBusy(false);
+      outletWriteInFlight.current = false;
+      if (mountedRef.current) setOutletBusy(false);
     }
   };
 
   const doOutletLifecycle = async (outletId: string, action: 'suspend' | 'reactivate' | 'terminate') => {
-    if (!selected || !canManageOutletsTerminals || outletBusy) return;
+    if (!selected || !canManageOutletsTerminals || outletBusy || outletWriteInFlight.current || outletUnconfirmed || outletsLoading || !outletsLoaded || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed) return;
+    const current = outlets.find(row => row.id === outletId);
+    if (editingOutletId || editingTerminalId || !current || (action === 'suspend' && current.status !== 'ACTIVE') || (action === 'reactivate' && current.status !== 'SUSPENDED') || (action === 'terminate' && current.status === 'TERMINATED')) return;
+    if (action === 'terminate' && !window.confirm(`Terminate outlet ${current.reference}? This action cannot be undone.`)) return;
+    outletWriteInFlight.current = true; outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
     setOutletsMsg('');
     try {
-      await ApiClient.post(`/internal/outlets/${encodeURIComponent(outletId)}/${action}`);
+      const receipt = await ApiClient.post<OutletRecord>(`/internal/outlets/${encodeURIComponent(outletId)}/${action}`);
+      if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
+      const expected = action === 'suspend' ? 'SUSPENDED' : action === 'terminate' ? 'TERMINATED' : 'ACTIVE';
+      if (!validOutlet(receipt, selected.id) || receipt.id !== outletId || receipt.status !== expected) throw new Error('Outlet lifecycle receipt did not match the request.');
       setOutletsMsg(`Outlet ${action} succeeded.`);
       await loadOutletsAndTerminals(selected.id);
     } catch (e: any) {
-      setOutletsError(e?.message || `Outlet ${action} failed`);
+      if (mountedRef.current && selectedAgentId.current === selected.id) outletFailure(e, `Outlet ${action}`);
     } finally {
-      setOutletBusy(false);
+      outletWriteInFlight.current = false;
+      if (mountedRef.current) setOutletBusy(false);
     }
   };
 
   const createTerminal = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selected || !canManageOutletsTerminals || outletBusy) return;
+    if (!selected || !canManageOutletsTerminals || outletBusy || outletWriteInFlight.current || outletUnconfirmed || outletsLoading || !outletsLoaded || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed) return;
+    if (editingOutletId || editingTerminalId) return;
     const reference = terminalForm.reference.trim();
     const code = terminalForm.code.trim();
     const outletId = terminalForm.outletId.trim();
@@ -1151,6 +1204,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       setOutletsError('Terminal code must be 3–80 characters when provided.');
       return;
     }
+    outletWriteInFlight.current = true; outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
     setOutletsMsg('');
@@ -1160,7 +1214,9 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       if (code) body.code = code;
       if (terminalForm.label.trim()) body.label = terminalForm.label.trim();
       if (terminalForm.serialNumber.trim()) body.serialNumber = terminalForm.serialNumber.trim();
-      await ApiClient.post(`/internal/agents/${encodeURIComponent(selected.id)}/terminals`, body);
+      const receipt = await ApiClient.post<TerminalRecord>(`/internal/agents/${encodeURIComponent(selected.id)}/terminals`, body);
+      if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
+      if (!validTerminal(receipt, selected.id) || receipt.reference !== reference || receipt.outletId !== outletId || receipt.status !== 'ACTIVE' || (code && receipt.code !== code.toUpperCase()) || ['label','serialNumber'].some(key => key in body && (receipt as any)[key] !== body[key])) throw new Error('Terminal receipt did not match the request.');
       setTerminalForm((cur) => ({
         ...cur,
         reference: '',
@@ -1171,13 +1227,18 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       setOutletsMsg(`Terminal ${reference} created.`);
       await loadOutletsAndTerminals(selected.id);
     } catch (e: any) {
-      setOutletsError(e?.message || 'Failed to create terminal');
+      if (mountedRef.current && selectedAgentId.current === selected.id) outletFailure(e, 'Terminal creation');
     } finally {
-      setOutletBusy(false);
+      outletWriteInFlight.current = false;
+      if (mountedRef.current) setOutletBusy(false);
     }
   };
 
   const startEditTerminal = (terminal: TerminalRecord) => {
+    if (outletBusy || outletsLoading || outletUnconfirmed) return;
+    if (editingTerminalId === terminal.id && !editingOutletId) return;
+    if ((editingOutletId || editingTerminalId) && !window.confirm('Discard the current outlet or terminal editor before opening another?')) return;
+    setEditingOutletId(null);
     setEditingTerminalId(terminal.id);
     setTerminalBoundaryMsg('');
     setOutletsError('');
@@ -1192,7 +1253,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
   const saveTerminalMetadata = async (event: React.FormEvent, terminal: TerminalRecord) => {
     event.preventDefault();
-    if (!selected || !canManageOutletsTerminals || outletBusy) return;
+    if (!selected || !canManageOutletsTerminals || outletBusy || outletWriteInFlight.current || outletUnconfirmed || outletsLoading || !outletsLoaded || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || editingTerminalId !== terminal.id || !Number.isSafeInteger(editingTerminalForm.expectedVersion) || (editingTerminalForm.expectedVersion ?? 0) < 1) return;
+    outletWriteInFlight.current = true; outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
     setOutletsMsg('');
@@ -1207,29 +1269,41 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
         setTerminalBoundaryMsg(outcome.message);
         return;
       }
+      if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
+      const receipt = outcome.data;
+      if (!validTerminal(receipt, selected.id) || receipt.id !== terminal.id || receipt.version !== (editingTerminalForm.expectedVersion ?? 0) + 1 || receipt.label !== nullableTrim(editingTerminalForm.label) || receipt.serialNumber !== nullableTrim(editingTerminalForm.serialNumber)) throw new Error('Terminal metadata receipt did not match the request.');
       setEditingTerminalId(null);
       setOutletsMsg(`Terminal ${terminal.reference} metadata updated.`);
       await loadOutletsAndTerminals(selected.id);
     } catch (e: any) {
-      setOutletsError(e?.message || 'Failed to update terminal metadata');
+      if (mountedRef.current && selectedAgentId.current === selected.id) outletFailure(e, 'Terminal metadata update');
     } finally {
-      setOutletBusy(false);
+      outletWriteInFlight.current = false;
+      if (mountedRef.current) setOutletBusy(false);
     }
   };
 
   const doTerminalLifecycle = async (terminalId: string, action: 'suspend' | 'reactivate' | 'terminate') => {
-    if (!selected || !canManageOutletsTerminals || outletBusy) return;
+    if (!selected || !canManageOutletsTerminals || outletBusy || outletWriteInFlight.current || outletUnconfirmed || outletsLoading || !outletsLoaded || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed) return;
+    const current = terminals.find(row => row.id === terminalId);
+    if (editingOutletId || editingTerminalId || !current || (action === 'suspend' && current.status !== 'ACTIVE') || (action === 'reactivate' && current.status !== 'SUSPENDED') || (action === 'terminate' && current.status === 'TERMINATED')) return;
+    if (action === 'terminate' && !window.confirm(`Terminate terminal ${current.reference}? This action cannot be undone.`)) return;
+    outletWriteInFlight.current = true; outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
     setOutletsMsg('');
     try {
-      await ApiClient.post(`/internal/terminals/${encodeURIComponent(terminalId)}/${action}`);
+      const receipt = await ApiClient.post<TerminalRecord>(`/internal/terminals/${encodeURIComponent(terminalId)}/${action}`);
+      if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
+      const expected = action === 'suspend' ? 'SUSPENDED' : action === 'terminate' ? 'TERMINATED' : 'ACTIVE';
+      if (!validTerminal(receipt, selected.id) || receipt.id !== terminalId || receipt.status !== expected) throw new Error('Terminal lifecycle receipt did not match the request.');
       setOutletsMsg(`Terminal ${action} succeeded.`);
       await loadOutletsAndTerminals(selected.id);
     } catch (e: any) {
-      setOutletsError(e?.message || `Terminal ${action} failed`);
+      if (mountedRef.current && selectedAgentId.current === selected.id) outletFailure(e, `Terminal ${action}`);
     } finally {
-      setOutletBusy(false);
+      outletWriteInFlight.current = false;
+      if (mountedRef.current) setOutletBusy(false);
     }
   };
 
@@ -2097,7 +2171,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   Target in funding
                 </button>
               )}
-              <button type="button" disabled={agentBusy} onClick={() => { if (!mayLeaveAgent()) return; selectedAgentId.current = null; positionRequest.current += 1; setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setSelected(null); }} style={smallBtn}>
+              <button type="button" disabled={agentBusy} onClick={() => { if (!mayLeaveAgent()) return; selectedAgentId.current = null; positionRequest.current += 1; outletReadGeneration.current += 1; setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); setSelected(null); }} style={smallBtn}>
                 Close
               </button>
             </div>
@@ -2212,7 +2286,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     {canSuspend && (
                       <button
                         type="button"
-                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || !canPerformAgentLifecycle('suspend', selected.status)}
+                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || !canPerformAgentLifecycle('suspend', selected.status)}
                         onClick={() => void doLifecycle('suspend', selected.id)}
                         style={warnBtn}
                       >
@@ -2222,7 +2296,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     {canTerminate && (
                       <button
                         type="button"
-                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || !canPerformAgentLifecycle('terminate', selected.status)}
+                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || !canPerformAgentLifecycle('terminate', selected.status)}
                         onClick={() => void doLifecycle('terminate', selected.id)}
                         style={dangerBtn}
                       >
@@ -2232,7 +2306,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     {canReactivate && (
                       <button
                         type="button"
-                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || !canPerformAgentLifecycle('reactivate', selected.status)}
+                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || !canPerformAgentLifecycle('reactivate', selected.status)}
                         onClick={() => void doLifecycle('reactivate', selected.id)}
                         style={successBtn}
                       >
@@ -2242,7 +2316,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     {canActivate && (
                       <button
                         type="button"
-                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || !canPerformAgentLifecycle('activate', selected.status)}
+                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || !canPerformAgentLifecycle('activate', selected.status)}
                         onClick={() => void doLifecycle('activate', selected.id)}
                         style={successBtn}
                       >
@@ -2278,12 +2352,15 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                 <button
                   type="button"
                   style={smallBtn}
-                  disabled={outletsLoading}
-                  onClick={() => void loadOutletsAndTerminals(selected.id)}
+                  disabled={outletsLoading || outletBusy}
+                  onClick={() => { if (!outletUnconfirmed && (editingOutletId || editingTerminalId)) { if (!window.confirm('Refreshing closes the current metadata editor and discards its changes. Continue?')) return; setEditingOutletId(null); setEditingTerminalId(null); } void loadOutletsAndTerminals(selected.id); }}
                 >
                   {outletsLoading ? 'Loading…' : outletsLoaded ? 'Refresh outlets & terminals' : 'Load outlets & terminals'}
                 </button>
               </div>
+              {outletUnconfirmed && <div style={boundaryBox} role="status"><strong>Outlet and terminal review required.</strong> The previous operation may have completed; there is no client idempotency guarantee. Refresh both lists and independently inspect the affected record and audit history. A refresh does not exclude a late commit, and an absent record is not proof of failure. The local lock is lost on confirmed exit or session change.
+                {outletReviewReady && <button type="button" style={smallBtn} onClick={() => { if ((editingOutletId || editingTerminalId) && !window.confirm('Acknowledge review and discard the prior metadata editor? Copy any needed changes first; start a fresh editor from the refreshed record.')) return; setEditingOutletId(null); setEditingTerminalId(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletsError(''); }}>I reviewed the records and audit history</button>}
+              </div>}
               {outletsError && <div style={errBox} role="alert">{outletsError}</div>}
               {outletsMsg && <div style={successBox} role="status">{outletsMsg}</div>}
               {outletBoundaryMsg && (
@@ -2323,7 +2400,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                     <button
                                       type="button"
                                       style={smallBtn}
-                                      disabled={outletBusy}
+                                      disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                       onClick={() => startEditOutlet(outlet)}
                                     >
                                       Edit outlet
@@ -2332,7 +2409,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   <button
                                     type="button"
                                     style={warnBtn}
-                                    disabled={outletBusy || outlet.status !== 'ACTIVE'}
+                                    disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId) || outlet.status !== 'ACTIVE'}
                                     onClick={() => void doOutletLifecycle(outlet.id, 'suspend')}
                                   >
                                     Suspend outlet
@@ -2340,7 +2417,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   <button
                                     type="button"
                                     style={successBtn}
-                                    disabled={outletBusy || outlet.status !== 'SUSPENDED'}
+                                    disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId) || outlet.status !== 'SUSPENDED'}
                                     onClick={() => void doOutletLifecycle(outlet.id, 'reactivate')}
                                   >
                                     Reactivate outlet
@@ -2348,7 +2425,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   <button
                                     type="button"
                                     style={dangerBtn}
-                                    disabled={outletBusy || outlet.status === 'TERMINATED'}
+                                    disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId) || outlet.status === 'TERMINATED'}
                                     onClick={() => void doOutletLifecycle(outlet.id, 'terminate')}
                                   >
                                     Terminate outlet
@@ -2369,7 +2446,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   value={editingOutletForm.name}
                                   onChange={(e) => setEditingOutletForm((c) => ({ ...c, name: e.target.value }))}
                                   style={inlineInput}
-                                  disabled={outletBusy}
+                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                 />
                                 <input
                                   aria-label={`Edit outlet display name for ${outlet.reference}`}
@@ -2377,7 +2454,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   value={editingOutletForm.displayName}
                                   onChange={(e) => setEditingOutletForm((c) => ({ ...c, displayName: e.target.value }))}
                                   style={inlineInput}
-                                  disabled={outletBusy}
+                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                 />
                                 <input
                                   aria-label={`Edit outlet address for ${outlet.reference}`}
@@ -2385,7 +2462,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   value={editingOutletForm.addressLine}
                                   onChange={(e) => setEditingOutletForm((c) => ({ ...c, addressLine: e.target.value }))}
                                   style={inlineInput}
-                                  disabled={outletBusy}
+                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                 />
                                 <input
                                   aria-label={`Edit outlet city for ${outlet.reference}`}
@@ -2393,7 +2470,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   value={editingOutletForm.city}
                                   onChange={(e) => setEditingOutletForm((c) => ({ ...c, city: e.target.value }))}
                                   style={inlineInput}
-                                  disabled={outletBusy}
+                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                 />
                                 <input
                                   aria-label={`Edit outlet state for ${outlet.reference}`}
@@ -2401,7 +2478,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   value={editingOutletForm.state}
                                   onChange={(e) => setEditingOutletForm((c) => ({ ...c, state: e.target.value }))}
                                   style={inlineInput}
-                                  disabled={outletBusy}
+                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                 />
                                 <input
                                   aria-label={`Edit outlet country for ${outlet.reference}`}
@@ -2409,16 +2486,16 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   value={editingOutletForm.country}
                                   onChange={(e) => setEditingOutletForm((c) => ({ ...c, country: e.target.value }))}
                                   style={inlineInput}
-                                  disabled={outletBusy}
+                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                 />
-                                <button type="submit" style={successBtn} disabled={outletBusy}>
+                                <button type="submit" style={successBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}>
                                   Save outlet changes
                                 </button>
                                 <button
                                   type="button"
                                   style={smallBtn}
-                                  disabled={outletBusy}
-                                  onClick={() => setEditingOutletId(null)}
+                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
+                                  onClick={() => { if (window.confirm('Discard outlet metadata changes?')) setEditingOutletId(null); }}
                                 >
                                   Cancel
                                 </button>
@@ -2452,7 +2529,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                     <button
                                       type="button"
                                       style={smallBtn}
-                                      disabled={outletBusy}
+                                      disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                       onClick={() => startEditTerminal(terminal)}
                                     >
                                       Edit terminal
@@ -2461,7 +2538,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   <button
                                     type="button"
                                     style={warnBtn}
-                                    disabled={outletBusy || terminal.status !== 'ACTIVE'}
+                                    disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId) || terminal.status !== 'ACTIVE'}
                                     onClick={() => void doTerminalLifecycle(terminal.id, 'suspend')}
                                   >
                                     Suspend terminal
@@ -2469,7 +2546,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   <button
                                     type="button"
                                     style={successBtn}
-                                    disabled={outletBusy || terminal.status !== 'SUSPENDED'}
+                                    disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId) || terminal.status !== 'SUSPENDED'}
                                     onClick={() => void doTerminalLifecycle(terminal.id, 'reactivate')}
                                   >
                                     Reactivate terminal
@@ -2477,7 +2554,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   <button
                                     type="button"
                                     style={dangerBtn}
-                                    disabled={outletBusy || terminal.status === 'TERMINATED'}
+                                    disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId) || terminal.status === 'TERMINATED'}
                                     onClick={() => void doTerminalLifecycle(terminal.id, 'terminate')}
                                   >
                                     Terminate terminal
@@ -2498,7 +2575,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   value={editingTerminalForm.label}
                                   onChange={(e) => setEditingTerminalForm((c) => ({ ...c, label: e.target.value }))}
                                   style={inlineInput}
-                                  disabled={outletBusy}
+                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                 />
                                 <input
                                   aria-label={`Edit terminal serial number for ${terminal.reference}`}
@@ -2506,16 +2583,16 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   value={editingTerminalForm.serialNumber}
                                   onChange={(e) => setEditingTerminalForm((c) => ({ ...c, serialNumber: e.target.value }))}
                                   style={inlineInput}
-                                  disabled={outletBusy}
+                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                 />
-                                <button type="submit" style={successBtn} disabled={outletBusy}>
+                                <button type="submit" style={successBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}>
                                   Save terminal changes
                                 </button>
                                 <button
                                   type="button"
                                   style={smallBtn}
-                                  disabled={outletBusy}
-                                  onClick={() => setEditingTerminalId(null)}
+                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
+                                  onClick={() => { if (window.confirm('Discard terminal metadata changes?')) setEditingTerminalId(null); }}
                                 >
                                   Cancel
                                 </button>
@@ -2539,7 +2616,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                             value={outletForm.reference}
                             onChange={(e) => setOutletForm((c) => ({ ...c, reference: e.target.value }))}
                             style={inlineInput}
-                            disabled={outletBusy}
+                            disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                           />
                           <input
                             aria-label="Outlet name"
@@ -2547,7 +2624,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                             value={outletForm.name}
                             onChange={(e) => setOutletForm((c) => ({ ...c, name: e.target.value }))}
                             style={inlineInput}
-                            disabled={outletBusy}
+                            disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                           />
                           <input
                             aria-label="Outlet display name"
@@ -2555,7 +2632,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                             value={outletForm.displayName}
                             onChange={(e) => setOutletForm((c) => ({ ...c, displayName: e.target.value }))}
                             style={inlineInput}
-                            disabled={outletBusy}
+                            disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                             maxLength={160}
                           />
                           <input
@@ -2564,7 +2641,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                             value={outletForm.code}
                             onChange={(e) => setOutletForm((c) => ({ ...c, code: e.target.value }))}
                             style={inlineInput}
-                            disabled={outletBusy}
+                            disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                             maxLength={80}
                           />
                           <input
@@ -2573,7 +2650,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                             value={outletForm.addressLine}
                             onChange={(e) => setOutletForm((c) => ({ ...c, addressLine: e.target.value }))}
                             style={inlineInput}
-                            disabled={outletBusy}
+                            disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                             maxLength={500}
                           />
                           <input
@@ -2582,7 +2659,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                             value={outletForm.city}
                             onChange={(e) => setOutletForm((c) => ({ ...c, city: e.target.value }))}
                             style={inlineInput}
-                            disabled={outletBusy}
+                            disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                             maxLength={100}
                           />
                           <input
@@ -2591,7 +2668,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                             value={outletForm.state}
                             onChange={(e) => setOutletForm((c) => ({ ...c, state: e.target.value }))}
                             style={inlineInput}
-                            disabled={outletBusy}
+                            disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                             maxLength={100}
                           />
                           <input
@@ -2600,12 +2677,13 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                             value={outletForm.country}
                             onChange={(e) => setOutletForm((c) => ({ ...c, country: e.target.value }))}
                             style={inlineInput}
-                            disabled={outletBusy}
+                            disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                             maxLength={100}
                           />
-                          <button type="submit" style={smallBtn} disabled={outletBusy}>
+                          <button type="submit" style={smallBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId)}>
                             Create outlet
                           </button>
+                          <button type="button" style={smallBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || !Object.values(outletForm).some(value => value.trim())} onClick={() => { if (window.confirm('Discard the unsaved outlet entry?')) setOutletForm(EMPTY_OUTLET_FORM); }}>Clear outlet entry</button>
                         </form>
 
                         {outlets.length > 0 && (
@@ -2616,7 +2694,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                               value={terminalForm.reference}
                               onChange={(e) => setTerminalForm((c) => ({ ...c, reference: e.target.value }))}
                               style={inlineInput}
-                              disabled={outletBusy}
+                              disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                             />
                             <input
                               aria-label="Terminal code"
@@ -2624,7 +2702,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                               value={terminalForm.code}
                               onChange={(e) => setTerminalForm((c) => ({ ...c, code: e.target.value }))}
                               style={inlineInput}
-                              disabled={outletBusy}
+                              disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                               maxLength={80}
                             />
                             <select
@@ -2632,7 +2710,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                               value={terminalForm.outletId}
                               onChange={(e) => setTerminalForm((c) => ({ ...c, outletId: e.target.value }))}
                               style={inlineInput}
-                              disabled={outletBusy}
+                              disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                             >
                               {outlets.map((o) => (
                                 <option key={o.id} value={o.id}>
@@ -2646,7 +2724,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                               value={terminalForm.label}
                               onChange={(e) => setTerminalForm((c) => ({ ...c, label: e.target.value }))}
                               style={inlineInput}
-                              disabled={outletBusy}
+                              disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                               maxLength={160}
                             />
                             <input
@@ -2655,12 +2733,13 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                               value={terminalForm.serialNumber}
                               onChange={(e) => setTerminalForm((c) => ({ ...c, serialNumber: e.target.value }))}
                               style={inlineInput}
-                              disabled={outletBusy}
+                              disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                               maxLength={100}
                             />
-                            <button type="submit" style={smallBtn} disabled={outletBusy}>
+                            <button type="submit" style={smallBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId)}>
                               Create terminal
                             </button>
+                            <button type="button" style={smallBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || !Object.entries(terminalForm).some(([key,value]) => key !== 'outletId' && value.trim())} onClick={() => { if (window.confirm('Discard the unsaved terminal entry?')) setTerminalForm(cur => ({...EMPTY_TERMINAL_FORM, outletId: cur.outletId})); }}>Clear terminal entry</button>
                           </form>
                         )}
                       </div>

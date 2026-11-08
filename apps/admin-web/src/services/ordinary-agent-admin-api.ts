@@ -348,7 +348,7 @@ async function callArena1Boundary<T>(
         method,
         endpoint,
         httpStatus,
-        message: `${description} awaits Arena 1 backend endpoint (${method} ${endpoint}, HTTP ${httpStatus}). No state was modified.`,
+        message: `${description} is unavailable or the resource was not found (${method} ${endpoint}, HTTP ${httpStatus}). No successful receipt was returned.`,
       };
     }
     throw error;

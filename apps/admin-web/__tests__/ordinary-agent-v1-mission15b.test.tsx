@@ -306,7 +306,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
       if (path === `/internal/agents/${AGENT_ID}/terminals`) return Promise.resolve([existingTerminal]);
       return Promise.resolve([]);
     });
-    (ApiClient.post as jest.Mock).mockResolvedValue({});
+    (ApiClient.post as jest.Mock).mockResolvedValue({ ...existingOutlet, id:'outlet-new', reference:'OUT-GRK-02', name:'Area 11 Annex', code:'GRK02', displayName:'Area 11 Express', addressLine:'5 Gimbiya Street', version:1 });
 
     const view = render(<AgentNetworkScreen />);
     fireEvent.click(await view.findByRole('button', { name: 'View' }));
@@ -337,6 +337,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
       }),
     );
 
+    await view.findByText('Outlet OUT-GRK-02 created.');
     // Edit outlet metadata: first simulate pre-merge Arena 1 404 -> honest boundary banner, no fake success
     (ApiClient.patch as jest.Mock).mockRejectedValueOnce(new ApiError('Not Found', 404));
     fireEvent.click(view.getByRole('button', { name: 'Edit outlet' }));
@@ -349,7 +350,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     );
 
     // Now simulate live Arena 1 200 response -> updates cleanly with expectedVersion
-    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ ...existingOutlet, version: 3 });
+    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ ...existingOutlet, addressLine:'18 Tafawa Balewa Way', version: 3 });
     fireEvent.click(view.getByRole('button', { name: 'Save outlet changes' }));
     await waitFor(() =>
       // `code` is NOT editable via PATCH: UpdateOutletMetadataDto omits it and the global
@@ -367,7 +368,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     expect((await view.findByRole('status')).textContent).toContain('Outlet OUT-GRK-01 metadata updated');
 
     // Edit terminal metadata -> verify live PATCH /internal/terminals/:terminalId
-    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ ...existingTerminal, version: 2 });
+    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ ...existingTerminal, label:'VIP Counter POS', version: 2 });
     fireEvent.click(view.getByRole('button', { name: 'Edit terminal' }));
     fireEvent.change(view.getByLabelText('Edit terminal label for TRM-GRK-01'), {
       target: { value: 'VIP Counter POS' },

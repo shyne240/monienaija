@@ -190,6 +190,7 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
             state: 'FCT',
             country: 'NG',
             status: 'ACTIVE',
+            version: 1,
           },
         ]);
       }
@@ -204,6 +205,7 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
             label: 'Counter POS 1',
             serialNumber: 'SN-9901',
             status: 'ACTIVE',
+            version: 1,
           },
         ]);
       }
@@ -229,6 +231,8 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
         currentAgent = { ...currentAgent, status: 'SUSPENDED' };
         return Promise.resolve(currentAgent);
       }
+      if (path === `/internal/agents/${AGENT_ID}/outlets`) return Promise.resolve({id:'outlet-new',agentId:AGENT_ID,reference:'OUT-ABJ-02',name:'Maitama Desk',status:'ACTIVE',version:1});
+      if (path === `/internal/agents/${AGENT_ID}/terminals`) return Promise.resolve({id:'terminal-new',agentId:AGENT_ID,outletId:OUTLET_ID,reference:'TRM-ABJ-02',label:'Counter POS 2',status:'ACTIVE',version:1});
       return Promise.resolve({});
     });
     (ApiClient.patch as jest.Mock).mockResolvedValue({});
@@ -256,6 +260,7 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
       }),
     );
 
+    await view.findByText('Outlet OUT-ABJ-02 created.');
     fireEvent.change(view.getByLabelText('Terminal reference'), { target: { value: 'TRM-ABJ-02' } });
     fireEvent.change(view.getByLabelText('Terminal label'), { target: { value: 'Counter POS 2' } });
     fireEvent.click(view.getByRole('button', { name: 'Create terminal' }));
@@ -267,6 +272,7 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
       }),
     );
 
+    await view.findByText('Terminal TRM-ABJ-02 created.');
     // Agent limit assignment & toggle
     fireEvent.click(view.getByRole('button', { name: 'Load agent limits' }));
     expect(await view.findByText('AGENT_STANDARD')).toBeTruthy();
