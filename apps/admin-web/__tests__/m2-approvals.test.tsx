@@ -72,3 +72,11 @@ test('store session change clears generic approval draft even if principal sessi
  useAuthStore.setState({sessionId:'old'});render(<ApprovalsScreen/>);fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'),{target:{value:'synthetic-id'}});
  act(()=>useAuthStore.setState({sessionId:'new'}));expect((screen.getByLabelText('Pending Approval ID (UUID)') as HTMLInputElement).value).toBe('');
 });
+
+test('unconfirmed decisions remain guarded when a different ID is entered and warn on browser unload',async()=>{
+ (ApiClient.post as jest.Mock).mockRejectedValue(new Error('network lost'));const report=jest.fn();
+ render(<ApprovalsScreen onApprovalGuardChange={report}/>);fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'),{target:{value:'id-one'}});fireEvent.click(screen.getByRole('button',{name:'Reject Action'}));fireEvent.click(screen.getByRole('button',{name:'Confirm decision'}));
+ await screen.findByText(/This screen has no generic approval read endpoint/);fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'),{target:{value:'id-two'}});expect(report).toHaveBeenLastCalledWith(true,false);
+ const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);
+ fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'),{target:{value:'id-one'}});fireEvent.click(screen.getByRole('button',{name:'I reviewed the approval and audit trail'}));expect(report).toHaveBeenLastCalledWith(false,false);
+});

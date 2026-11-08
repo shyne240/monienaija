@@ -9,7 +9,7 @@ import { useAuthStore } from '../../store/auth-store';
 import { PendingFundingApprovalsQueue } from '../../components/PendingFundingApprovalsQueue';
 import { AgentFundingPanel, SelectedFundingInboxTarget } from './AgentFundingPanel';
 
-export const ApprovalsScreen: React.FC = () => {
+export const ApprovalsScreen: React.FC<{onApprovalGuardChange?: (guarded: boolean, busy: boolean) => void}> = ({onApprovalGuardChange}) => {
   const { principal, sessionId } = useAuthStore();
   const canApprove =
     principal?.roles.includes('FINANCE_CONTROLLER') === true &&
@@ -27,10 +27,10 @@ export const ApprovalsScreen: React.FC = () => {
     principal?.assuranceLevel === 'MFA';
 
   const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.assuranceLevel, principal?.roles, principal?.scopes, principal?.readOnlyPrincipal, canApprove, canReviewFunding, canAccessGlobalFundingInbox]);
-  return <ApprovalsWorkspace key={key} principal={principal} canApprove={canApprove} canReviewFunding={canReviewFunding} canAccessGlobalFundingInbox={canAccessGlobalFundingInbox} />;
+  return <ApprovalsWorkspace key={key} onApprovalGuardChange={onApprovalGuardChange} principal={principal} canApprove={canApprove} canReviewFunding={canReviewFunding} canAccessGlobalFundingInbox={canAccessGlobalFundingInbox} />;
 };
 
-const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getState>['principal']; canApprove: boolean; canReviewFunding: boolean; canAccessGlobalFundingInbox: boolean}> = ({principal, canApprove, canReviewFunding, canAccessGlobalFundingInbox}) => {
+const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getState>['principal']; canApprove: boolean; canReviewFunding: boolean; canAccessGlobalFundingInbox: boolean; onApprovalGuardChange?: (guarded: boolean, busy: boolean) => void}> = ({principal, canApprove, canReviewFunding, canAccessGlobalFundingInbox, onApprovalGuardChange}) => {
   const canWrite = !principal?.readOnlyPrincipal;
   const [unconfirmedIds, setUnconfirmedIds] = useState<Record<string, boolean>>({});
   const decisionGeneration = useRef(0);
@@ -63,6 +63,15 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
   useDialogFocus(dialogRef, Boolean(pendingDecision), () => { if (!inFlight.current) setPendingDecision(null); }, pendingDecision?.action === 'reject' ? rejectRef : approveRef);
   useEffect(() => { if (isLoading) dialogRef.current?.focus(); }, [isLoading]);
   useEffect(() => { if (success && !pendingDecision) successRef.current?.focus(); }, [success, pendingDecision]);
+  const decisionGuard = Object.keys(unconfirmedIds).length > 0 || isLoading || Boolean(pendingDecision);
+  useEffect(() => { onApprovalGuardChange?.(decisionGuard, isLoading); }, [onApprovalGuardChange, decisionGuard, isLoading]);
+  useEffect(() => () => onApprovalGuardChange?.(false, false), [onApprovalGuardChange]);
+  useEffect(() => {
+    if (!decisionGuard) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [decisionGuard]);
 
   const handleDecision = (action: 'approve' | 'reject') => {
     if (!canApprove || !canWrite || isLoading || pendingDecision || inFlight.current || unconfirmedIds[approvalId.trim()]) return;
@@ -185,6 +194,7 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
       <p className="approvals-redesign__eyebrow">KNOWN APPROVAL ID</p><h2>Generic checker decision</h2><p className="approvals-redesign__intro">Review the pending action in an authorized record before deciding. A decision may require a separate execution step.</p>
       {!canWrite && <p role="note">This session is read-only. Checker decisions cannot be submitted.</p>}
       {error && <div style={styles.errorBox} role="alert">{error}</div>}
+      {Object.keys(unconfirmedIds).length > 0 && !unconfirmedIds[approvalId.trim()] && <div className="approvals-redesign__boundary" role="note"><strong>Unconfirmed decisions remain in this workspace.</strong><span>Return to an ID to review its outcome:</span>{Object.keys(unconfirmedIds).map(id => <button type="button" key={id} onClick={() => setApprovalId(id)}>{id}</button>)}</div>}
       {unconfirmedIds[approvalId.trim()] && <div className="approvals-redesign__boundary" role="status"><strong>Decision review required</strong><span>The decision may already have occurred. This screen has no generic approval read endpoint; inspect the authoritative approval and audit trail elsewhere before another action. This local lock is lost when leaving or changing session, and review cannot exclude a late commit.</span><button type="button" onClick={() => { setUnconfirmedIds(current => { const next = { ...current }; delete next[approvalId.trim()]; return next; }); setError(''); }}>I reviewed the approval and audit trail</button></div>}
       {success && <div ref={successRef} tabIndex={-1} style={styles.successBox} role="status"><span>{success === 'approve' ? 'Approval recorded. The underlying action may require a separate execution step.' : 'Approval decision recorded as rejected successfully.'}</span><div>Approval ID: <code>{receiptId}</code></div></div>}
 

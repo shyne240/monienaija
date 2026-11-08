@@ -5,6 +5,7 @@
       "page": 320,
       "view": 320,
       "unconfirmedLocked": true,
+      "shellGuard": true,
       "acknowledgement": true,
       "axeViolations": []
     },
@@ -13,6 +14,7 @@
       "page": 360,
       "view": 360,
       "unconfirmedLocked": true,
+      "shellGuard": true,
       "acknowledgement": true,
       "axeViolations": []
     },
@@ -21,6 +23,7 @@
       "page": 390,
       "view": 390,
       "unconfirmedLocked": true,
+      "shellGuard": true,
       "acknowledgement": true,
       "axeViolations": []
     },
@@ -29,6 +32,7 @@
       "page": 768,
       "view": 768,
       "unconfirmedLocked": true,
+      "shellGuard": true,
       "acknowledgement": true,
       "axeViolations": []
     },
@@ -37,6 +41,7 @@
       "page": 769,
       "view": 769,
       "unconfirmedLocked": true,
+      "shellGuard": true,
       "acknowledgement": true,
       "axeViolations": []
     },
@@ -45,6 +50,7 @@
       "page": 1024,
       "view": 1024,
       "unconfirmedLocked": true,
+      "shellGuard": true,
       "acknowledgement": true,
       "axeViolations": []
     },
@@ -53,6 +59,7 @@
       "page": 1280,
       "view": 1280,
       "unconfirmedLocked": true,
+      "shellGuard": true,
       "acknowledgement": true,
       "axeViolations": []
     },
@@ -61,6 +68,7 @@
       "page": 1440,
       "view": 1440,
       "unconfirmedLocked": true,
+      "shellGuard": true,
       "acknowledgement": true,
       "axeViolations": []
     }

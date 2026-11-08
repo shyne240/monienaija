@@ -61,6 +61,9 @@ export const Layout: React.FC = () => {
   const [customerBusy, setCustomerBusy] = useState(false);
   const [agentGuard, setAgentGuard] = useState(false);
   const [agentBusy, setAgentBusy] = useState(false);
+  const [approvalGuard, setApprovalGuard] = useState(false);
+  const [approvalBusy, setApprovalBusy] = useState(false);
+  const reportApprovalGuard = useCallback((guarded: boolean, busy: boolean) => { setApprovalGuard(guarded); setApprovalBusy(busy); }, []);
   const reportAgentGuard = useCallback((guarded: boolean, busy: boolean) => { setAgentGuard(guarded); setAgentBusy(busy); }, []);
   const [pendingLeave, setPendingLeave] = useState<{ view: View; context?: NavContext } | { logout: true } | null>(null);
   const leaveDialogRef = useRef<HTMLElement>(null);
@@ -275,6 +278,8 @@ export const Layout: React.FC = () => {
     setCustomerBusy(false);
     setAgentGuard(false);
     setAgentBusy(false);
+    setApprovalGuard(false);
+    setApprovalBusy(false);
     setCurrentView(view);
     // Customer context belongs only to the destination explicitly selected from Customer 360°.
     // Clear it on every ordinary navigation so stale IDs cannot leak into unrelated screens.
@@ -296,11 +301,11 @@ export const Layout: React.FC = () => {
 
   const handleNav = (view: View, context?: NavContext) => {
     if (!canAccessAdminView(view, principal.scopes, principal.roles, context)) return;
-    if ((customerGuard && canonicalAdminView(currentView) === 'customers') || (agentGuard && canonicalAdminView(currentView) === 'agents')) { restoreFocusRef.current = false; setMobileOpen(false); setPendingLeave({ view, context }); return; }
+    if ((customerGuard && canonicalAdminView(currentView) === 'customers') || (agentGuard && canonicalAdminView(currentView) === 'agents') || (approvalGuard && canonicalAdminView(currentView) === 'approvalsInbox')) { restoreFocusRef.current = false; setMobileOpen(false); setPendingLeave({ view, context }); return; }
     performNav(view, context);
   };
   const requestLogout = () => {
-    if ((customerGuard && canonicalAdminView(currentView) === 'customers') || (agentGuard && canonicalAdminView(currentView) === 'agents')) { restoreFocusRef.current = false; setMobileOpen(false); setPendingLeave({ logout: true }); return; }
+    if ((customerGuard && canonicalAdminView(currentView) === 'customers') || (agentGuard && canonicalAdminView(currentView) === 'agents') || (approvalGuard && canonicalAdminView(currentView) === 'approvalsInbox')) { restoreFocusRef.current = false; setMobileOpen(false); setPendingLeave({ logout: true }); return; }
     logout();
   };
 
@@ -374,7 +379,7 @@ export const Layout: React.FC = () => {
       case 'fraudCases': return <RiskFraudScreen initialCustomerId={navContext.customerId} onBackToCustomer={navContext.customerId ? () => handleNav('customers', { customerId: navContext.customerId }) : undefined} />;
       case 'workforceAccess': return <WorkforceAdminScreen />;
       case 'roleGovernance': return <RoleAssignmentScreen />;
-      case 'approvalsInbox': return <ApprovalsScreen />;
+      case 'approvalsInbox': return <ApprovalsScreen onApprovalGuardChange={reportApprovalGuard} />;
       case 'superAdminRecovery': return <SuperAdminRecoveryScreen />;
       case 'notifications': return <NotificationManagementScreen />;
       case 'systemHealth': return <SystemHealthScreen onOpenNotifications={isVisible('notifications') ? () => handleNav('notifications') : undefined} />;
@@ -504,9 +509,9 @@ export const Layout: React.FC = () => {
       {pendingLeave && (
         <div className="cm-modal-backdrop" role="presentation">
           <section ref={leaveDialogRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="mn-customer-leave-title">
-            <h2 id="mn-customer-leave-title">{canonicalAdminView(currentView) === 'agents' ? 'Leave Agent access review?' : 'Leave customer information?'}</h2>
-            <p>{canonicalAdminView(currentView) === 'agents' ? 'Leaving discards any visible one-time credential and local Agent access review lock. An earlier action may already have occurred; inspect Agent access records and audit history before acting again.' : 'Leaving discards the customer draft, one-time proof or upload retry key, and any local uncertain-outcome lock. An earlier action may already have occurred; inspect current records and audit history before acting again.'}</p>
-            {(customerBusy || agentBusy) && <p>A request is in progress. Leaving cannot cancel or confirm the server outcome.</p>}
+            <h2 id="mn-customer-leave-title">{canonicalAdminView(currentView) === 'agents' ? 'Leave Agent access review?' : canonicalAdminView(currentView) === 'approvalsInbox' ? 'Leave approval review?' : 'Leave customer information?'}</h2>
+            <p>{canonicalAdminView(currentView) === 'agents' ? 'Leaving discards any visible one-time credential and local Agent access review lock. An earlier action may already have occurred; inspect Agent access records and audit history before acting again.' : canonicalAdminView(currentView) === 'approvalsInbox' ? 'Leaving discards the local approval decision and review locks. A decision may already have occurred; inspect the authoritative approval and audit trail before acting again.' : 'Leaving discards the customer draft, one-time proof or upload retry key, and any local uncertain-outcome lock. An earlier action may already have occurred; inspect current records and audit history before acting again.'}</p>
+            {(customerBusy || agentBusy || approvalBusy) && <p>A request is in progress. Leaving cannot cancel or confirm the server outcome.</p>}
             <div className="cm-actions-row">
               <button type="button" className="cm-button cm-button-secondary" onClick={() => setPendingLeave(null)}>Keep working</button>
               <button type="button" className="cm-button cm-button-danger" onClick={() => { const destination = pendingLeave; setPendingLeave(null); if ('logout' in destination) logout(); else performNav(destination.view, destination.context); }}>Discard and leave</button>
