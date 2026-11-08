@@ -1,0 +1,6 @@
+.mn-dashboard-settings { max-width:1300px; }
+.mn-dashboard-settings__panel { margin: 24px 0; padding: clamp(16px, 2vw, 24px); border: 1px solid var(--mn-border-subtle); border-radius: 10px; background: #fff; box-shadow: 0 4px 20px #183b2810; min-width: 0; }
+.mn-dashboard-settings__panel > h2 { margin-top: 0; }
+.mn-dashboard-settings__eyebrow { margin: 0 0 8px; color: #386b53; font-size: 11px; font-weight: 800; letter-spacing: .1em; }
+.mn-dashboard-settings__review { margin-top: 10px; padding: 12px; min-width: 210px; white-space: normal; border: 1px solid #b77a17; border-radius: 6px; background: #fff3d9; color: #78350f; font-size: 13px; }
+.mn-dashboard-settings__review button { min-height: 40px; }

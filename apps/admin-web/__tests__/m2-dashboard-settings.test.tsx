@@ -20,6 +20,7 @@ function setupReads() {
 }
 async function choose(role = 'ROLE_A') { fireEvent.change(await screen.findByLabelText(`Dashboard template for ${role}`), { target: { value: 'TWO' } }); }
 function save(role = 'ROLE_A') { return within(screen.getByText(role).closest('tr')!).getByRole('button', { name: `Save dashboard assignment for ${role}` }); }
+function submit(role='ROLE_A') { fireEvent.click(save(role)); fireEvent.click(screen.getByRole('button',{name:'Confirm assignment'})); }
 beforeEach(() => { jest.resetAllMocks(); principal(); setupReads(); });
 
 test('malformed configuration is unavailable rather than an empty list', async () => {
@@ -28,20 +29,20 @@ test('malformed configuration is unavailable rather than an empty list', async (
 });
 test('rejects unrelated receipts, preserves draft, and requires reload before retry', async () => {
   (ApiClient.put as jest.Mock).mockResolvedValue(receipt('ROLE_B'));
-  render(<DashboardSettingsScreen />); await choose(); fireEvent.change(screen.getByLabelText('Reason for ROLE_A dashboard change'), { target: { value: 'Synthetic review' } }); fireEvent.click(save());
+  render(<DashboardSettingsScreen />); await choose(); fireEvent.change(screen.getByLabelText('Reason for ROLE_A dashboard change'), { target: { value: 'Synthetic review' } }); submit();
   expect(await screen.findByText(/outcome could not be confirmed/)).toBeTruthy(); expect(screen.queryByText(/Dashboard for ROLE_A is now/)).toBeNull(); expect((save() as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(screen.getByRole('button', { name: 'Reload configuration' })); expect(await screen.findByLabelText('Reason for ROLE_A dashboard change')).toHaveProperty('value', 'Synthetic review'); expect((save() as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Reload configuration' })); expect(await screen.findByLabelText('Reason for ROLE_A dashboard change')).toHaveProperty('value', 'Synthetic review'); expect((save() as HTMLButtonElement).disabled).toBe(true); fireEvent.click(screen.getByRole('button',{name:'I reviewed ROLE_A'})); expect((save() as HTMLButtonElement).disabled).toBe(false);
 });
 test('confirms a matching receipt and clears the submitted reason', async () => {
-  (ApiClient.put as jest.Mock).mockResolvedValue(receipt()); render(<DashboardSettingsScreen />); await choose(); fireEvent.change(screen.getByLabelText('Reason for ROLE_A dashboard change'), { target: { value:'Review' } }); fireEvent.click(save());
+  (ApiClient.put as jest.Mock).mockResolvedValue(receipt()); render(<DashboardSettingsScreen />); await choose(); fireEvent.change(screen.getByLabelText('Reason for ROLE_A dashboard change'), { target: { value:'Review' } }); submit();
   expect(await screen.findByText('Dashboard for ROLE_A is now TWO.')).toBeTruthy(); expect(screen.getByLabelText('Reason for ROLE_A dashboard change')).toHaveProperty('value', ''); expect((save() as HTMLButtonElement).disabled).toBe(true);
 });
 test('only one role assignment can be submitted at a time', async () => {
-  const pending = deferred(); (ApiClient.put as jest.Mock).mockReturnValue(pending.promise); render(<DashboardSettingsScreen />); await choose(); await choose('ROLE_B'); fireEvent.click(save()); expect((save('ROLE_B') as HTMLButtonElement).disabled).toBe(true); expect((screen.getByRole('button', { name:'Reload configuration' }) as HTMLButtonElement).disabled).toBe(true);
+  const pending = deferred(); (ApiClient.put as jest.Mock).mockReturnValue(pending.promise); render(<DashboardSettingsScreen />); await choose(); await choose('ROLE_B'); submit(); expect((save('ROLE_B') as HTMLButtonElement).disabled).toBe(true); expect((screen.getByRole('button', { name:'Reload configuration' }) as HTMLButtonElement).disabled).toBe(true);
   await act(async () => { pending.resolve(receipt()); await pending.promise; }); expect(ApiClient.put).toHaveBeenCalledTimes(1);
 });
 test('session change discards drafts and ignores late assignment responses', async () => {
-  const pending = deferred(); (ApiClient.put as jest.Mock).mockReturnValue(pending.promise); render(<DashboardSettingsScreen />); await choose(); fireEvent.click(save()); act(() => principal('session-b')); await screen.findByLabelText('Dashboard template for ROLE_A'); await act(async () => { pending.resolve(receipt()); await pending.promise; });
+  const pending = deferred(); (ApiClient.put as jest.Mock).mockReturnValue(pending.promise); render(<DashboardSettingsScreen />); await choose(); submit(); act(() => principal('session-b')); await screen.findByLabelText('Dashboard template for ROLE_A'); await act(async () => { pending.resolve(receipt()); await pending.promise; });
   expect(screen.queryByText('Dashboard for ROLE_A is now TWO.')).toBeNull(); expect(screen.getByLabelText('Dashboard template for ROLE_A')).toHaveProperty('value', 'ONE');
 });
 test('late configuration from an older session cannot replace the current session', async () => {
@@ -52,8 +53,14 @@ test('late configuration from an older session cannot replace the current sessio
   render(<DashboardSettingsScreen />); act(() => principal('session-b')); await screen.findByText('Template ONE'); await act(async () => { pending.resolve([{ ...templates[0], displayName:'OLD SESSION' }]); await pending.promise; }); expect(screen.queryByText('OLD SESSION')).toBeNull(); expect(screen.getByText('Template ONE')).toBeTruthy();
 });
 test('read-only principals cannot edit or send assignments', async () => {
-  principal('read-only', ['workforce.dashboard.view']); render(<DashboardSettingsScreen />); await screen.findByText('ROLE_A'); expect(screen.queryByLabelText('Dashboard template for ROLE_A')).toBeNull(); expect(ApiClient.put).not.toHaveBeenCalled();
+  principal('read-only'); act(() => useAuthStore.setState(state => ({principal: state.principal ? {...state.principal, readOnlyPrincipal: true} : null}))); render(<DashboardSettingsScreen />); await screen.findByText('ROLE_A'); expect(screen.queryByLabelText('Dashboard template for ROLE_A')).toBeNull(); expect(ApiClient.put).not.toHaveBeenCalled();
 });
 test('missing view permission does not call configuration endpoints', async () => {
   principal('restricted', ['workforce.dashboard.assign']); render(<DashboardSettingsScreen />); expect(await screen.findByText(/do not have permission to view dashboard configuration/)).toBeTruthy(); expect(ApiClient.get).not.toHaveBeenCalled();
+});
+test('reload retains local drafts but requires explicit review and confirmation focuses safely',async()=>{
+ render(<DashboardSettingsScreen/>);await choose();fireEvent.click(screen.getByRole('button',{name:'Reload configuration'}));await screen.findByRole('button',{name:'I reviewed ROLE_A'});expect((save() as HTMLButtonElement).disabled).toBe(true);fireEvent.click(screen.getByRole('button',{name:'I reviewed ROLE_A'}));fireEvent.click(save());expect(document.activeElement).toBe(screen.getByRole('button',{name:'Keep editing'}));fireEvent.click(screen.getByRole('button',{name:'Keep editing'}));expect(document.activeElement).toBe(save());expect(ApiClient.put).not.toHaveBeenCalled();
+});
+test('a change to the store session id also resets drafts for the same principal',async()=>{
+ render(<DashboardSettingsScreen/>);await choose();act(()=>useAuthStore.setState({sessionId:'different-store-session'}));await screen.findByLabelText('Dashboard template for ROLE_A');expect(screen.getByLabelText('Dashboard template for ROLE_A')).toHaveProperty('value','ONE');
 });

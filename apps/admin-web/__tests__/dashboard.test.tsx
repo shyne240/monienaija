@@ -231,6 +231,7 @@ describe('Admin Web Portal — Dashboard Settings (role → template assignment)
     fireEvent.change(select, { target: { value: 'EXECUTIVE_GOVERNANCE' } });
 
     fireEvent.click(getByText('Save'));
+    fireEvent.click(getByText('Confirm assignment'));
 
     await waitFor(() => {
       expect(ApiClient.put).toHaveBeenCalledWith('/internal/a2/workforce/dashboard/assignments/TREASURY', {
@@ -273,6 +274,7 @@ describe('Admin Web Portal — Dashboard Settings (role → template assignment)
     const select = await waitFor(() => getByDisplayValue('RECONCILIATION_VISIBILITY') as HTMLSelectElement);
     fireEvent.change(select, { target: { value: 'EXECUTIVE_GOVERNANCE' } });
     fireEvent.click(getByText('Save'));
+    fireEvent.click(getByText('Confirm assignment'));
 
     expect(await findByText(/is not a known, active template/)).toBeTruthy();
   });
