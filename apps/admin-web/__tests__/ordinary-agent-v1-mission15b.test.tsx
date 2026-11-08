@@ -569,8 +569,8 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
         },
       ],
     });
-    (ApiClient.post as jest.Mock).mockResolvedValue({});
-    (ApiClient.patch as jest.Mock).mockResolvedValue({});
+    (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'new-assignment', subjectType: 'AGENT_CLASS', subjectId: CLASS_ID, limitProfileCode: 'AGENT_CLASS_VIP', isActive: true, version: 1 });
+    (ApiClient.patch as jest.Mock).mockResolvedValue({ id: 'cls-assign-9', subjectType: 'AGENT_CLASS', subjectId: CLASS_ID, limitProfileCode: 'AGENT_CLASS_CAP', isActive: false, version: 4 });
 
     const limitScreen = render(<LimitAssignmentScreen />);
     expect(await limitScreen.findByText(`AGENT_CLASS: ${CLASS_ID}`)).toBeTruthy();
@@ -590,7 +590,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
       }),
     );
 
-    fireEvent.click(limitScreen.getByRole('button', { name: `Deactivate AGENT_CLASS_CAP for AGENT_CLASS ${CLASS_ID}` }));
+    fireEvent.click(await limitScreen.findByRole('button', { name: `Deactivate AGENT_CLASS_CAP for AGENT_CLASS ${CLASS_ID}` }));
     await waitFor(() =>
       expect(ApiClient.patch).toHaveBeenCalledWith('/internal/limit-assignments/cls-assign-9', {
         subjectType: 'AGENT_CLASS',

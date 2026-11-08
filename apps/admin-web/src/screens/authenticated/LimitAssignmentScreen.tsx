@@ -88,15 +88,16 @@ function buildQuery(filters: object, page: number): string {
   return query.toString();
 }
 
-const validAssignment = (row: any): boolean => row && typeof row.id === 'string' && typeof row.subjectType === 'string' && typeof row.limitProfileCode === 'string' && typeof row.isActive === 'boolean';
+const validAssignment = (row: any): boolean => row && typeof row.id === 'string' && Boolean(row.id.trim()) && typeof row.subjectType === 'string' && Boolean(row.subjectType.trim()) && typeof row.limitProfileCode === 'string' && Boolean(row.limitProfileCode.trim()) && typeof row.isActive === 'boolean';
 const validReceipt = (row: any, subjectType: string, subjectId: string, code: string): boolean => validAssignment(row) && row.subjectType === subjectType && row.subjectId === subjectId && row.limitProfileCode === code && Number.isSafeInteger(row.version) && row.version > 0;
 const validPage = (page: any, expected: number): page is DiagnosticsResult => page && page.page === expected && Number.isSafeInteger(page.limit) && page.limit > 0 && Number.isSafeInteger(page.total) && page.total >= 0 && Number.isSafeInteger(page.totalPages) && page.totalPages >= 0 && Array.isArray(page.data) && page.data.every((row: any) => row && typeof row === 'object' && !Array.isArray(row));
-export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBackToCustomer?: () => void }> = (props) => {
-  const principal = useAuthStore(state => state.principal);
-  const key = JSON.stringify([props.initialCustomerId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+interface LimitScreenProps { initialCustomerId?: string; onBackToCustomer?: () => void; onLimitGuardChange?: (guarded: boolean, busy: boolean) => void }
+export const LimitAssignmentScreen: React.FC<LimitScreenProps> = (props) => {
+  const {principal, sessionId} = useAuthStore();
+  const key = JSON.stringify([props.initialCustomerId, sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
   return <LimitAssignmentWorkspace key={key} {...props} />;
 };
-const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToCustomer?: () => void }> = ({ initialCustomerId, onBackToCustomer }) => {
+const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerId, onBackToCustomer, onLimitGuardChange }) => {
   const { principal } = useAuthStore();
   const instanceId = useId().replace(/:/g, '');
   const generations = useRef({ assignments:0, usage:0, reservations:0, classes:0, assign:0, classAssign:0, toggle:0 });
@@ -108,7 +109,8 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
   const canViewAgentClasses = hasFn('agent.view');
   const canAccessScreen = canReadAssignments || canAssignAgent || canModifyLimits;
   const canViewDiagnostics = canReadAssignments;
-  const canMutateAnyRow = canAssignAgent || canModifyLimits;
+  const canWrite = !principal?.readOnlyPrincipal;
+  const canMutateAnyRow = canWrite && (canAssignAgent || canModifyLimits);
 
   const [assignments, setAssignments] = useState<any[]>([]);
   const [assignmentsSearched, setAssignmentsSearched] = useState(false);
@@ -145,6 +147,24 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
   const [reservationLoading, setReservationLoading] = useState(false);
   const [usageError, setUsageError] = useState('');
   const [reservationError, setReservationError] = useState('');
+  const [uncertainAssignment, setUncertainAssignment] = useState<{subjectType: string; subjectId: string; code: string} | null>(null);
+  const [reviewReady, setReviewReady] = useState(false);
+  const mutationInFlight = useRef(false);
+  const mutationBusy = assignBusy || classAssignBusy || Boolean(toggleBusyId);
+  const draftGuard = Boolean(agentId.trim() || profileCode.trim() || agentClassId.trim() || classProfileCode.trim());
+  const guarded = mutationBusy || Boolean(uncertainAssignment) || draftGuard;
+  useEffect(() => { onLimitGuardChange?.(guarded, mutationBusy); }, [onLimitGuardChange, guarded, mutationBusy]);
+  useEffect(() => () => onLimitGuardChange?.(false, false), [onLimitGuardChange]);
+  useEffect(() => {
+    if (!guarded) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+  }, [guarded]);
+  const lockOutcome = (target: {subjectType: string; subjectId: string; code: string}) => {
+    generations.current.assignments++; setLoading(false); setAssignments([]); setAssignmentsSearched(false); setAssignmentPage(null);
+    setUncertainAssignment(target); setReviewReady(false);
+  };
+
 
   const fetchAssignments = async (overrideFilters?: typeof assignmentFilters, requestedPage = 1) => {
     if (!canReadAssignments) {
@@ -173,16 +193,39 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
       const response: any = await ApiClient.get(endpoint);
       if (generation !== generations.current.assignments) return;
       const rows = Array.isArray(response) ? response : response?.data ?? response?.items;
-      if (!Array.isArray(rows) || !rows.every(validAssignment)) throw new Error('Limit assignments returned an invalid response.');
+      if (!Array.isArray(rows) || !rows.every(validAssignment) || (initialCustomerId && rows.some((row: any) => row.subjectType !== 'CUSTOMER' || row.subjectId !== initialCustomerId))) throw new Error('Limit assignments returned an invalid or mismatched response.');
       const hasPageInfo = Number.isSafeInteger(response?.page) && Number.isSafeInteger(response?.total) && Number.isSafeInteger(response?.totalPages);
       if (hasPageInfo && (response.page !== requestedPage || response.total < rows.length || response.totalPages < 0 || response.page < 1)) throw new Error('Limit assignments returned an invalid or mismatched page.');
-      setAssignments(rows); setAssignmentsSearched(true); setToggleError('');
+      setAssignments(rows); setAssignmentsSearched(true);
+      if (!uncertainAssignment) setToggleError('');
       setAssignmentPage(hasPageInfo ? { page: response.page, total: response.total, totalPages: response.totalPages } : null);
     } catch (err: any) {
       if (generation === generations.current.assignments) setError(err?.message || 'Failed to load limit assignments');
     } finally {
       if (generation === generations.current.assignments) setLoading(false);
     }
+  };
+
+  const reviewAssignment = async () => {
+    if (!canReadAssignments || !uncertainAssignment || mutationInFlight.current || loading) return;
+    const target = uncertainAssignment;
+    const generation = ++generations.current.assignments;
+    setReviewReady(false); setLoading(true); setError('');
+    try {
+      const query = new URLSearchParams({ subjectType: target.subjectType, subjectId: target.subjectId, limitProfileCode: target.code });
+      const response: any = await ApiClient.get(`/internal/limit-assignments?${query.toString()}`);
+      if (generation !== generations.current.assignments) return;
+      const rows = response?.data;
+      if (!Array.isArray(rows) || !rows.every((row: any) => validReceipt(row, target.subjectType, target.subjectId, target.code)) ||
+          response.page !== 1 || !Number.isSafeInteger(response.limit) || response.limit < 1 || !Number.isSafeInteger(response.total) || response.total < rows.length ||
+          !Number.isSafeInteger(response.totalPages) || response.totalPages !== Math.ceil(response.total / response.limit) || typeof response.hasNextPage !== 'boolean' || response.hasNextPage !== (response.page < response.totalPages)) throw new Error('Assignment review response could not be verified.');
+      setAssignments(rows); setAssignmentsSearched(true);
+      const filters = { subjectType: target.subjectType, subjectId: target.subjectId, limitProfileCode: target.code, isActive: '' };
+      setAssignmentFilters(filters); setAppliedAssignmentFilters(filters);
+      setAssignmentPage({page: response.page, total: response.total, totalPages: response.totalPages});
+      setReviewReady(true);
+    } catch (err: any) { if (generation === generations.current.assignments) setError(err?.message || 'Assignment review failed.'); }
+    finally { if (generation === generations.current.assignments) setLoading(false); }
   };
 
   useEffect(() => {
@@ -248,7 +291,7 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
 
   const handleAssign = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canAssignAgent || assignBusy) return;
+    if (!canWrite || !canAssignAgent || mutationBusy || mutationInFlight.current || uncertainAssignment) return;
     setResult('');
     setResultErr('');
     if (!agentId.trim() || !profileCode.trim()) {
@@ -257,7 +300,7 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
     }
     const normalizedCode = profileCode.trim().toUpperCase();
     const subjectId = agentId.trim();
-    const generation = ++generations.current.assign; setAssignBusy(true);
+    const generation = ++generations.current.assign; mutationInFlight.current = true; setAssignBusy(true);
     try {
       const receipt = await ApiClient.post('/internal/limit-assignments', {
         limitProfileCode: normalizedCode,
@@ -271,17 +314,18 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
           ? `Assigned profile ${normalizedCode} to agent ${agentId.trim()}`
           : `Assigned profile ${normalizedCode} to agent ${agentId.trim()}. Listing assignments requires limit.view.`,
       );
+      setAgentId(''); setProfileCode('');
       if (canReadAssignments) {
         void fetchAssignments();
       }
     } catch (err: any) {
-      if (generation === generations.current.assign) setResultErr(`Assignment outcome not confirmed; check assignments before retrying. ${err?.message || 'Service unavailable.'}`);
-    } finally { if (generation === generations.current.assign) setAssignBusy(false); }
+      if (generation === generations.current.assign) { lockOutcome({subjectType:'AGENT', subjectId, code:normalizedCode}); setResultErr(`Assignment outcome not confirmed; check assignments before retrying. ${err?.message || 'Service unavailable.'}`); }
+    } finally { mutationInFlight.current = false; if (generation === generations.current.assign) setAssignBusy(false); }
   };
 
   const handleAssignAgentClass = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canModifyLimits || classAssignBusy) return;
+    if (!canWrite || !canModifyLimits || mutationBusy || mutationInFlight.current || uncertainAssignment) return;
     setClassResult('');
     setClassResultErr('');
     if (!agentClassId.trim() || !classProfileCode.trim()) {
@@ -294,7 +338,7 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
       return;
     }
     const subjectId = agentClassId.trim();
-    const generation = ++generations.current.classAssign; setClassAssignBusy(true);
+    const generation = ++generations.current.classAssign; mutationInFlight.current = true; setClassAssignBusy(true);
     try {
       const receipt = await ApiClient.post('/internal/limit-assignments', {
         limitProfileCode: normalizedCode,
@@ -308,24 +352,24 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
           ? `Assigned profile ${normalizedCode} to Agent Class ${agentClassId.trim()}`
           : `Assigned profile ${normalizedCode} to Agent Class ${agentClassId.trim()}. Listing assignments requires limit.view.`,
       );
-      setClassProfileCode('');
+      setAgentClassId(''); setClassProfileCode('');
       if (canReadAssignments) {
         void fetchAssignments();
       }
     } catch (err: any) {
-      if (generation === generations.current.classAssign) setClassResultErr(`Assignment outcome not confirmed; check assignments before retrying. ${err?.message || 'Service unavailable.'}`);
-    } finally { if (generation === generations.current.classAssign) setClassAssignBusy(false); }
+      if (generation === generations.current.classAssign) { lockOutcome({subjectType:'AGENT_CLASS', subjectId, code:normalizedCode}); setClassResultErr(`Assignment outcome not confirmed; check assignments before retrying. ${err?.message || 'Service unavailable.'}`); }
+    } finally { mutationInFlight.current = false; if (generation === generations.current.classAssign) setClassAssignBusy(false); }
   };
 
   const handleToggleSubjectAssignment = async (assignment: any) => {
-    if (toggleBusyId) return;
+    if (!canWrite || mutationBusy || mutationInFlight.current || uncertainAssignment) return;
     const isAgent = assignment.subjectType === 'AGENT' && canAssignAgent;
     const isAgentClass = assignment.subjectType === 'AGENT_CLASS' && canModifyLimits;
-    if ((!isAgent && !isAgentClass) || !Number.isSafeInteger(assignment.version) || assignment.version < 1 || typeof assignment.isActive !== 'boolean') return;
+    if (!assignmentsSearched || loading || typeof assignment.subjectId !== 'string' || !assignment.subjectId.trim() || !assignments.some(row => row.id === assignment.id && row.version === assignment.version) || (!isAgent && !isAgentClass) || !Number.isSafeInteger(assignment.version) || assignment.version < 1 || typeof assignment.isActive !== 'boolean') return;
 
     setToggleMessage(''); setToggleError('');
     const generation = ++generations.current.toggle;
-    setToggleBusyId(assignment.id);
+    mutationInFlight.current = true; setToggleBusyId(assignment.id);
     try {
       const receipt: any = await ApiClient.patch(`/internal/limit-assignments/${encodeURIComponent(assignment.id)}`, {
         subjectType: assignment.subjectType,
@@ -343,10 +387,10 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
     } catch (err: any) {
       if (generation !== generations.current.toggle) return;
       const errText = `Assignment update not confirmed; refresh before retrying. ${err?.message || 'Service unavailable.'}`;
-      generations.current.assignments++; setLoading(false);
-      setAssignments([]); setAssignmentsSearched(false); setAssignmentPage(null);
+      lockOutcome({subjectType: assignment.subjectType, subjectId: assignment.subjectId, code: assignment.limitProfileCode});
       setToggleError(errText);
     } finally {
+      mutationInFlight.current = false;
       if (generation === generations.current.toggle) setToggleBusyId(null);
     }
   };
@@ -365,6 +409,11 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
   return (
     <div className="mn-operational mn-limit-assignment limit-redesign" style={wrap}>
       <PageHeader eyebrow="Commercial administration" title="Limit Assignments" description="Review assignments and read-only usage or reservation diagnostics." />
+      {!canWrite && <p role="note">This session is read-only; assignment actions are unavailable.</p>}
+      {uncertainAssignment && <div className="limit-redesign__feedback limit-redesign__feedback--error" role="status"><strong>Assignment review required.</strong> The action may have completed for {uncertainAssignment.subjectType} <code>{uncertainAssignment.subjectId}</code>, profile <code>{uncertainAssignment.code}</code>. Independently inspect assignments and available audit history. A filtered page or a fresh read cannot prove absence or exclude a late commit. The local lock is lost on confirmed exit or session change.
+        {canReadAssignments ? <button type="button" style={btn} disabled={loading || mutationBusy} onClick={() => void reviewAssignment()}>Load matching assignments for review</button> : <span> This session cannot read assignments; use an independently authorized source.</span>}
+        {(!canReadAssignments || reviewReady) && <button type="button" style={btn} onClick={() => { setUncertainAssignment(null); setReviewReady(false); setResultErr(''); setClassResultErr(''); setToggleError(''); }}>I reviewed assignments and audit history</button>}
+      </div>}
       <div className="limit-redesign__boundary" role="note"><strong>Scope and permissions</strong><span>Assignments require their respective functions. Usage and reservations are read-only diagnostics; profile definitions are managed in Limit Catalogue.</span></div>
       {(canReadAssignments || (!initialCustomerId && (canAssignAgent || canModifyLimits))) && <nav className="limit-redesign__nav" aria-label="Limit workspace sections">
         {canReadAssignments && <a href={`#${instanceId}-assignments`}>Assignments</a>}
@@ -539,7 +588,7 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
                               type="button"
                               style={smallLink}
                               aria-label={`${assignment.isActive ? 'Deactivate' : 'Activate'} ${assignment.limitProfileCode} for ${assignment.subjectType} ${assignment.subjectId || assignment.segmentCode || 'unknown subject'}`}
-                              disabled={Boolean(toggleBusyId) || !Number.isSafeInteger(assignment.version) || assignment.version < 1}
+                              disabled={!canWrite || mutationBusy || Boolean(uncertainAssignment) || loading || typeof assignment.subjectId !== 'string' || !assignment.subjectId.trim() || !Number.isSafeInteger(assignment.version) || assignment.version < 1}
                               title={!Number.isSafeInteger(assignment.version) || assignment.version < 1 ? 'Refresh to obtain a verified version before updating.' : undefined}
                               onClick={() => void handleToggleSubjectAssignment(assignment)}
                             >
@@ -572,9 +621,9 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
           {canAssignAgent && <section className="limit-redesign__action-card" aria-label="Assign Limit Profile to Agent">
             <h3>Assign Limit Profile to Agent</h3><p>Requires <code>agent.assign_limit</code>.</p>
             <form onSubmit={handleAssign} className="limit-redesign__action-form">
-              <label>Agent UUID<input aria-label="Agent UUID" disabled={assignBusy} value={agentId} onChange={event => setAgentId(event.target.value)} placeholder="Agent UUID" /></label>
-              <label>Agent limit profile code<input aria-label="Agent limit profile code" disabled={assignBusy} value={profileCode} onChange={event => setProfileCode(event.target.value)} placeholder="Profile code (e.g. AGENT_STANDARD)" /></label>
-              <button type="submit" style={btn} disabled={assignBusy}>{assignBusy ? 'Assigning…' : 'Assign'}</button>
+              <label>Agent UUID<input aria-label="Agent UUID" disabled={!canWrite || mutationBusy || Boolean(uncertainAssignment)} value={agentId} onChange={event => setAgentId(event.target.value)} placeholder="Agent UUID" /></label>
+              <label>Agent limit profile code<input aria-label="Agent limit profile code" disabled={!canWrite || mutationBusy || Boolean(uncertainAssignment)} value={profileCode} onChange={event => setProfileCode(event.target.value)} placeholder="Profile code (e.g. AGENT_STANDARD)" /></label>
+              <button type="submit" style={btn} disabled={!canWrite || mutationBusy || Boolean(uncertainAssignment)}>{assignBusy ? 'Assigning…' : 'Assign'}</button>
             </form>
             {result && <div style={{ ...successBox, marginTop: 8 }} role="status">{result}</div>}
             {resultErr && <div style={{ ...errBox, marginTop: 8, marginBottom: 0 }} role="alert">{resultErr}</div>}
@@ -584,12 +633,12 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
               {canViewAgentClasses && <button type="button" style={smallLink} disabled={classOptionsLoading} onClick={() => void loadAgentClassesCatalog()}>{classOptionsLoading ? 'Loading classes…' : 'Load Agent classes'}</button>}
             </div>
             <form onSubmit={handleAssignAgentClass} className="limit-redesign__action-form">
-              {classOptions.length > 0 && <label>Select Agent class<select aria-label="Select Agent class" disabled={classAssignBusy} value={agentClassId} onChange={event => setAgentClassId(event.target.value)}>
+              {classOptions.length > 0 && <label>Select Agent class<select aria-label="Select Agent class" disabled={!canWrite || mutationBusy || Boolean(uncertainAssignment)} value={agentClassId} onChange={event => setAgentClassId(event.target.value)}>
                 <option value="">Select Agent class…</option>{classOptions.map(cls => <option key={cls.id} value={cls.id}>{cls.name} ({cls.code})</option>)}
               </select></label>}
-              <label>Agent class UUID<input aria-label="Agent class UUID" disabled={classAssignBusy} value={agentClassId} onChange={event => setAgentClassId(event.target.value)} placeholder="Agent Class UUID" /></label>
-              <label>Agent class limit profile code<input aria-label="Agent class limit profile code" disabled={classAssignBusy} value={classProfileCode} onChange={event => setClassProfileCode(event.target.value)} placeholder="Profile code (e.g. AGENT_CLASS_STANDARD)" /></label>
-              <button type="submit" style={btn} disabled={classAssignBusy}>{classAssignBusy ? 'Assigning…' : 'Assign to class'}</button>
+              <label>Agent class UUID<input aria-label="Agent class UUID" disabled={!canWrite || mutationBusy || Boolean(uncertainAssignment)} value={agentClassId} onChange={event => setAgentClassId(event.target.value)} placeholder="Agent Class UUID" /></label>
+              <label>Agent class limit profile code<input aria-label="Agent class limit profile code" disabled={!canWrite || mutationBusy || Boolean(uncertainAssignment)} value={classProfileCode} onChange={event => setClassProfileCode(event.target.value)} placeholder="Profile code (e.g. AGENT_CLASS_STANDARD)" /></label>
+              <button type="submit" style={btn} disabled={!canWrite || mutationBusy || Boolean(uncertainAssignment)}>{classAssignBusy ? 'Assigning…' : 'Assign to class'}</button>
             </form>
             {classResult && <div style={{ ...successBox, marginTop: 8 }} role="status">{classResult}</div>}
             {classResultErr && <div style={{ ...errBox, marginTop: 8, marginBottom: 0 }} role="alert">{classResultErr}</div>}

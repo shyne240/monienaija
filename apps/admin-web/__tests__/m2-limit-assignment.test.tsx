@@ -1,5 +1,5 @@
 import React from 'react';
-import {act,fireEvent,render,screen} from '@testing-library/react';
+import {act,fireEvent,render,screen,waitFor} from '@testing-library/react';
 import {LimitAssignmentScreen} from '../src/screens/authenticated/LimitAssignmentScreen';
 import {ApiClient} from '../src/services/api-client';
 import {useAuthStore} from '../src/store/auth-store';
@@ -32,19 +32,18 @@ test('assignment page metadata cannot claim a different requested page',async()=
 });
 
 
-test('an unconfirmed toggle hides stale rows until a fresh read and does not assert success',async()=>{
- (ApiClient.get as jest.Mock).mockResolvedValue({data:[{...row,version:1}],page:1,total:1,totalPages:1});
+test('an unconfirmed toggle requires a verified matching read and explicit independent review',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue({data:[{...row,version:1}],page:1,limit:20,total:1,totalPages:1,hasNextPage:false});
  (ApiClient.patch as jest.Mock).mockResolvedValue({id:'wrong',status:'DISABLED'});
  render(<LimitAssignmentScreen/>);fireEvent.click(await screen.findByRole('button',{name:'Deactivate CLASS_STANDARD for AGENT_CLASS synthetic-class'}));
  expect(await screen.findByText(/Assignment update not confirmed/)).toBeTruthy();expect(screen.queryByRole('button',{name:/Deactivate CLASS_STANDARD/})).toBeNull();
- fireEvent.click(screen.getByRole('button',{name:'Filter assignments'}));expect(await screen.findByRole('button',{name:'Deactivate CLASS_STANDARD for AGENT_CLASS synthetic-class'})).toBeTruthy();expect(screen.queryByText(/Assignment update not confirmed/)).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:'Filter assignments'}));expect((await screen.findByRole('button',{name:'Deactivate CLASS_STANDARD for AGENT_CLASS synthetic-class'}) as HTMLButtonElement).disabled).toBe(true);expect(screen.queryByRole('button',{name:'I reviewed assignments and audit history'})).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:'Load matching assignments for review'}));fireEvent.click(await screen.findByRole('button',{name:'I reviewed assignments and audit history'}));expect((screen.getByRole('button',{name:/Deactivate CLASS_STANDARD/}) as HTMLButtonElement).disabled).toBe(false);
 });
 
-test('customer context keeps toggle feedback and reload inside the assignment workspace',async()=>{
- (ApiClient.get as jest.Mock).mockResolvedValue({data:[{...row,version:1}]});(ApiClient.patch as jest.Mock).mockRejectedValue(new Error('offline'));
- render(<LimitAssignmentScreen initialCustomerId="customer-1"/>);fireEvent.click(await screen.findByRole('button',{name:'Deactivate CLASS_STANDARD for AGENT_CLASS synthetic-class'}));
- expect(await screen.findByText(/Assignment update not confirmed/)).toBeTruthy();expect(screen.queryByRole('button',{name:/Deactivate CLASS_STANDARD/})).toBeNull();
- fireEvent.click(screen.getByRole('button',{name:'Reload assignments'}));expect(await screen.findByRole('button',{name:/Deactivate CLASS_STANDARD/})).toBeTruthy();expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-assignments/customer/customer-1');
+test('customer context rejects another subject rather than displaying its assignment',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue({data:[{...row,version:1}]});
+ render(<LimitAssignmentScreen initialCustomerId="customer-1"/>);expect(await screen.findByText(/invalid or mismatched response/)).toBeTruthy();expect(screen.queryByRole('button',{name:/Deactivate CLASS_STANDARD/})).toBeNull();expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-assignments/customer/customer-1');
 });
 
 test('section navigation and action cards respect read and assignment scopes',async()=>{
@@ -69,4 +68,25 @@ test('an assignment read started during a failed toggle cannot restore stale row
  fireEvent.click(await screen.findByRole('button',{name:/Deactivate CLASS_STANDARD/}));fireEvent.click(screen.getByRole('button',{name:'Filter assignments'}));
  await act(async()=>{patch.resolve({id:'wrong'});await patch.promise;});expect(screen.getByText(/Assignment update not confirmed/)).toBeTruthy();
  await act(async()=>{read.resolve({data:[{...row,version:1}]});await read.promise;});expect(screen.queryByRole('button',{name:/Deactivate CLASS_STANDARD/})).toBeNull();
+});
+
+test('read-only principals cannot issue assignment writes even when scopes include mutation',async()=>{
+ useAuthStore.setState(state=>({principal:{...state.principal!,readOnlyPrincipal:true,scopes:['limit.view','limit.modify','agent.assign_limit']}}));(ApiClient.get as jest.Mock).mockResolvedValue({data:[{...row,version:1}]});render(<LimitAssignmentScreen/>);await screen.findByText('CLASS_STANDARD');expect(screen.getByText(/This session is read-only/)).toBeTruthy();expect(screen.queryByRole('button',{name:/Deactivate CLASS_STANDARD/})).toBeNull();expect((screen.getByRole('button',{name:'Assign to class'}) as HTMLButtonElement).disabled).toBe(true);fireEvent.submit(screen.getByRole('button',{name:'Assign to class'}).closest('form')!);expect(ApiClient.post).not.toHaveBeenCalled();expect(ApiClient.patch).not.toHaveBeenCalled();
+});
+
+test('write-only principals must acknowledge independent review after an uncertain create',async()=>{
+ useAuthStore.setState(state=>({principal:{...state.principal!,scopes:['agent.assign_limit']}}));(ApiClient.post as jest.Mock).mockRejectedValue(new Error('network lost'));const report=jest.fn();render(<LimitAssignmentScreen onLimitGuardChange={report}/>);fireEvent.change(screen.getByLabelText('Agent UUID'),{target:{value:'agent-1'}});fireEvent.change(screen.getByLabelText('Agent limit profile code'),{target:{value:'STANDARD'}});fireEvent.click(screen.getByRole('button',{name:'Assign'}));await screen.findByText(/Assignment outcome not confirmed/);expect(report).toHaveBeenLastCalledWith(true,false);expect((screen.getByRole('button',{name:'Assign'}) as HTMLButtonElement).disabled).toBe(true);expect(ApiClient.get).not.toHaveBeenCalled();expect(screen.getByText(/independently authorized source/)).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'I reviewed assignments and audit history'}));expect((screen.getByRole('button',{name:'Assign'}) as HTMLButtonElement).disabled).toBe(false);expect((screen.getByLabelText('Agent UUID') as HTMLInputElement).value).toBe('agent-1');
+});
+
+test('a mismatched review cannot unlock a create and navigation guard preserves entered draft',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue({data:[],page:1,limit:20,total:0,totalPages:0,hasNextPage:false});(ApiClient.post as jest.Mock).mockResolvedValue({});const report=jest.fn();render(<LimitAssignmentScreen onLimitGuardChange={report}/>);fireEvent.change(screen.getByLabelText('Agent class UUID'),{target:{value:'synthetic-class'}});fireEvent.change(screen.getByLabelText('Agent class limit profile code'),{target:{value:'CLASS_STANDARD'}});await waitFor(()=>expect(report).toHaveBeenLastCalledWith(true,false));const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);fireEvent.click(screen.getByRole('button',{name:'Assign to class'}));await screen.findByText(/Assignment outcome not confirmed/);
+ (ApiClient.get as jest.Mock).mockResolvedValue({data:[{...row,subjectId:'other',version:1}],page:1,limit:20,total:1,totalPages:1,hasNextPage:false});fireEvent.click(screen.getByRole('button',{name:'Load matching assignments for review'}));expect(await screen.findByText(/review response could not be verified/)).toBeTruthy();expect(screen.queryByRole('button',{name:'I reviewed assignments and audit history'})).toBeNull();expect((screen.getByRole('button',{name:'Assign to class'}) as HTMLButtonElement).disabled).toBe(true);
+});
+
+test('assignment actions are mutually exclusive while a request is pending',async()=>{
+ useAuthStore.setState(state=>({principal:{...state.principal!,scopes:['limit.view','limit.modify','agent.assign_limit']}}));(ApiClient.get as jest.Mock).mockResolvedValue({data:[{...row,version:1}]});const pending=deferred();(ApiClient.post as jest.Mock).mockReturnValue(pending.promise);render(<LimitAssignmentScreen/>);await screen.findByText('CLASS_STANDARD');fireEvent.change(screen.getByLabelText('Agent UUID'),{target:{value:'agent-1'}});fireEvent.change(screen.getByLabelText('Agent limit profile code'),{target:{value:'STANDARD'}});fireEvent.click(screen.getByRole('button',{name:'Assign'}));expect((screen.getByRole('button',{name:'Assign to class'}) as HTMLButtonElement).disabled).toBe(true);expect((screen.getByRole('button',{name:/Deactivate CLASS_STANDARD/}) as HTMLButtonElement).disabled).toBe(true);fireEvent.submit(screen.getByRole('button',{name:'Assign to class'}).closest('form')!);expect(ApiClient.post).toHaveBeenCalledTimes(1);await act(async()=>{pending.resolve({});await pending.promise;});
+});
+
+test('shell navigation protects an unfinished assignment draft',async()=>{
+ const {Layout}=await import('../src/screens/authenticated/Layout');useAuthStore.setState(state=>({isAuthenticated:true,principal:{...state.principal!,scopes:['limit.view','limit.modify','agent.assign_limit']}}));(ApiClient.get as jest.Mock).mockResolvedValue({data:[]});const view=render(<Layout/>);fireEvent.click(view.getByTestId('nav-limitAssignments'));fireEvent.change(await view.findByLabelText('Agent UUID'),{target:{value:'draft-agent'}});fireEvent.click(view.getByTestId('nav-dashboard'));expect(view.getByRole('dialog',{name:'Leave limit assignment review?'})).toBeTruthy();fireEvent.click(view.getByRole('button',{name:'Keep working'}));expect((view.getByLabelText('Agent UUID') as HTMLInputElement).value).toBe('draft-agent');fireEvent.click(view.getByTestId('nav-dashboard'));fireEvent.click(view.getByRole('button',{name:'Discard and leave'}));expect(view.queryByLabelText('Agent UUID')).toBeNull();
 });
