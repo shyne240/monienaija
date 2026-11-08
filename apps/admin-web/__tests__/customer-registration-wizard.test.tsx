@@ -213,6 +213,50 @@ describe('CustomerRegistrationWizard', () => {
     expect(callback).not.toHaveBeenCalled();
   });
 
+  test('an unconfirmed customer creation cannot be repeated and requires explicit investigation exit', async () => {
+    (ApiClient.post as jest.Mock).mockRejectedValueOnce(new Error('connection lost'));
+    const onClose = jest.fn();
+    const onGuardChange = jest.fn();
+    const view = render(<CustomerRegistrationWizard onClose={onClose} onCustomerCreated={jest.fn()} onOpenCustomer={jest.fn()} onGuardChange={onGuardChange} />);
+    fireEvent.change(view.getByLabelText(/First name/), { target: { value: 'Synthetic' } });
+    fireEvent.change(view.getByLabelText(/Last name/), { target: { value: 'Customer' } });
+    const form = view.getByRole('button', { name: 'Create DRAFT & continue' }).closest('form')!;
+    fireEvent.submit(form);
+    await view.findByText(/customer or profile outcome is unconfirmed or conflicted/);
+    fireEvent.submit(form);
+    expect(ApiClient.post).toHaveBeenCalledTimes(1);
+    expect(view.getByText(/customer identifier was not confirmed/)).toBeTruthy();
+    expect(onGuardChange).toHaveBeenLastCalledWith(true, false);
+    fireEvent.click(view.getByRole('button', { name: 'Leave to review directory' }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(view.getByText(/unconfirmed action may already have occurred/)).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: 'Keep editing' }));
+    expect(view.getByText(/Further registration actions are blocked/)).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: 'Leave to review directory' }));
+    fireEvent.click(view.getByRole('button', { name: 'Discard unsaved changes and leave' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  test('an unconfirmed contact save blocks retries and offers the confirmed customer for review', async () => {
+    const original = (ApiClient.post as jest.Mock).getMockImplementation()!;
+    (ApiClient.post as jest.Mock).mockImplementation((path: string, body: unknown) => path.endsWith('/contact-method')
+      ? Promise.reject(new Error('connection lost')) : original(path, body));
+    const open = jest.fn();
+    const view = render(<CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={jest.fn()} onOpenCustomer={open} />);
+    fireEvent.change(view.getByLabelText(/First name/), { target: { value: 'Synthetic' } });
+    fireEvent.change(view.getByLabelText(/Last name/), { target: { value: 'Customer' } });
+    fireEvent.click(view.getByRole('button', { name: 'Create DRAFT & continue' }));
+    fireEvent.change(await view.findByLabelText(/Primary phone number/), { target: { value: '+2348012340001' } });
+    const form = view.getByRole('button', { name: 'Save contact details' }).closest('form')!;
+    fireEvent.submit(form);
+    await view.findByText(/contact outcome is unconfirmed or conflicted/);
+    fireEvent.submit(form);
+    expect((ApiClient.post as jest.Mock).mock.calls.filter(([path]) => path.endsWith('/contact-method'))).toHaveLength(1);
+    fireEvent.click(view.getByRole('button', { name: 'Open customer for review' }));
+    fireEvent.click(view.getByRole('button', { name: 'Discard unsaved changes and leave' }));
+    expect(open).toHaveBeenCalledWith(createdCustomer.id);
+  });
+
   test('a conflicting registration profile is never overwritten automatically', async () => {
     const post = (ApiClient.post as jest.Mock).getMockImplementation()!;
     (ApiClient.post as jest.Mock).mockImplementation((path: string, body: unknown) => path.endsWith('/registration-profile')
@@ -268,7 +312,7 @@ describe('CustomerRegistrationWizard', () => {
     await view.findByLabelText('One-time code');
     fireEvent.change(view.getByLabelText('One-time code'), { target:{ value:'123456' } });
     fireEvent.click(view.getByRole('button', { name:'Verify primary phone' }));
-    expect(await view.findByText(/request outcome could not be confirmed/i)).toBeTruthy();
+    expect(await view.findByText(/phone verification save outcome could not be confirmed/i)).toBeTruthy();
     expect(view.queryByText(/Primary phone verified/)).toBeNull();
   });
 
@@ -507,6 +551,11 @@ describe('CustomerRegistrationWizard', () => {
     });
     fireEvent.change(view.getByLabelText(/Issue date/), { target: { value: '2015-06-12' } });
     fireEvent.change(view.getByLabelText(/Expiry date/), { target: { value: '2035-06-12' } });
+    fireEvent.change(view.getByLabelText(/Identity document type/), { target: { value: 'NIN' } });
+    expect(view.getByRole('dialog', { name: 'Change document type?' })).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: 'Keep entry' }));
+    expect((view.getByLabelText(/Issue date/) as HTMLInputElement).value).toBe('2015-06-12');
+    expect((view.getByLabelText(/Expiry date/) as HTMLInputElement).value).toBe('2035-06-12');
     fireEvent.click(view.getByRole('button', { name: 'Save this document' }));
     expect(await view.findByText('••••••0002 · Saved')).toBeTruthy();
 
@@ -645,6 +694,11 @@ describe('CustomerRegistrationWizard', () => {
     expect((view.getByLabelText(/Document number/) as HTMLInputElement).value).toBe('00000000002');
 
     fireEvent.click(view.getByRole('button', { name: 'Remove unsaved entry' }));
+    expect(view.getByRole('dialog', { name: 'Remove unsaved document?' })).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: 'Keep entry' }));
+    expect((view.getByLabelText(/Document number/) as HTMLInputElement).value).toBe('00000000002');
+    fireEvent.click(view.getByRole('button', { name: 'Remove unsaved entry' }));
+    fireEvent.click(view.getByRole('button', { name: 'Discard fields' }));
     expect(view.getByText('••••••0001 · Saved')).toBeTruthy();
     expect(view.queryByLabelText(/Document number/)).toBeNull();
     expect(view.queryByText('00000000002')).toBeNull();

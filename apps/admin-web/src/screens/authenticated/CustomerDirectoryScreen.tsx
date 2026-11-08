@@ -327,12 +327,13 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
         }
       />
 
-      {createOpen && <p className="mn-dir-registration-notice" role="status">Finish or close registration before opening another customer. Only confirmed saves are retained.</p>}
+      {createOpen && <p className="mn-dir-registration-notice" role="status">Finish or close registration before opening another customer. Unconfirmed actions may still have taken effect.</p>}
       {createOpen && canCreateCustomer && (
         <div className="mn-dir-registration" id="mn-dir-registration">
           <CustomerRegistrationWizard
             ref={registrationRef}
             onBusyChange={setRegistrationBusy}
+            onGuardChange={onCustomerGuardChange}
             onClose={() => { setCreateOpen(false); setRegistrationBusy(false); createButtonRef.current?.focus(); }}
             onCustomerCreated={handleCustomerCreated}
             onOpenCustomer={openRegistrationCustomer}

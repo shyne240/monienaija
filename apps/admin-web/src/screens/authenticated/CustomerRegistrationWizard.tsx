@@ -14,6 +14,7 @@ import {
 } from '../../../../../src/customer/customer-validation';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { maskContactValue } from './customer-masking';
 import { countryNameForCode, isNigeriaIdentityType } from './CountrySelect';
 import {
@@ -89,6 +90,7 @@ interface CustomerRegistrationWizardProps {
   onCustomerCreated: (customer: CreatedCustomer) => void;
   onOpenCustomer: (customerId: string) => void;
   onBusyChange?: (busy: boolean) => void;
+  onGuardChange?: (guarded: boolean, busy: boolean) => void;
 }
 
 const STEPS = [
@@ -161,6 +163,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
   onCustomerCreated,
   onOpenCustomer,
   onBusyChange,
+  onGuardChange,
 }, ref) => {
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
@@ -218,7 +221,15 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
   const nextIdentityDraftId = useRef(1);
 
   const [isSaving, setIsSaving] = useState(false);
+  const [uncertainAction, setUncertainAction] = useState<string | null>(null);
+  const uncertainRef = useRef(false);
+  const markUncertain = (action: string, error: unknown, force = false) => {
+    if (force || ![400, 401, 403, 404, 413, 422].includes(requestStatus(error) ?? 0)) { uncertainRef.current = true; setUncertainAction(action); }
+  };
   const [exitTarget, setExitTarget] = useState<'directory' | 'customer' | null>(null);
+  const [pendingIdentityDiscard, setPendingIdentityDiscard] = useState<{ id: string; nextType?: IdentityType } | null>(null);
+  const identityDiscardRef = useRef<HTMLElement>(null);
+  useDialogFocus(identityDiscardRef, Boolean(pendingIdentityDiscard), () => setPendingIdentityDiscard(null));
   const exitPromptRef = useRef<HTMLDivElement>(null);
   const exitOriginRef = useRef<HTMLElement | null>(null);
   const restoreExitFocus = useRef(false);
@@ -256,9 +267,18 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
   const hasUnsavedChanges = profileDraft !== savedProfileDraft || addressDraft !== savedAddressDraft ||
     (currentPhone.e164 ?? phone.trim()) !== persistedPhone || normalizeEmailAddress(email) !== persistedEmail ||
     Boolean(otpCode || verificationToken) || identityDocuments.some(item => !item.saved && (item.documentNumber.trim() || item.issuedAt || item.expiresAt || item.issuingCountry !== 'NG' || item.type !== (customerType === 'BUSINESS' ? 'BUSINESS_REGISTRATION' : 'NIN')));
+  const guarded = Boolean(hasUnsavedChanges || uncertainAction || isSaving);
+  useEffect(() => { onGuardChange?.(guarded, isSaving); }, [guarded, isSaving, onGuardChange]);
+  useEffect(() => () => onGuardChange?.(false, false), [onGuardChange]);
+  useEffect(() => {
+    if (!guarded) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [guarded]);
   const requestExit = (target: 'directory' | 'customer') => {
     if (savingRef.current || isSaving || exitTarget) return;
-    if (!hasUnsavedChanges) { if (target === 'customer' && customer) onOpenCustomer(customer.id); else onClose(); return; }
+    if (!hasUnsavedChanges && !uncertainAction) { if (target === 'customer' && customer) onOpenCustomer(customer.id); else onClose(); return; }
     exitOriginRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setExitTarget(target);
   };
@@ -268,7 +288,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canRegister || savingRef.current) return;
+    if (!canRegister || savingRef.current || uncertainRef.current) return;
     const errors = validateProfileFields(
       {
         customerType,
@@ -347,6 +367,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
     } catch (saveError) {
       if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError));
+      markUncertain('customer or profile', saveError);
       setError(safeSaveError(saveError));
     } finally {
       savingRef.current = false;
@@ -418,7 +439,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
 
   const saveContacts = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canRegister || !customer || savingRef.current) return;
+    if (!canRegister || !customer || savingRef.current || uncertainRef.current) return;
     const validationErrors = {
       ...validateContactFields('PHONE', phone, phoneCountry),
       ...(email.trim() ? validateContactFields('EMAIL', email) : {}),
@@ -473,6 +494,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
     } catch (saveError) {
       if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError));
+      markUncertain('contact', saveError);
       setError(safeSaveError(saveError));
     } finally {
       savingRef.current = false;
@@ -482,7 +504,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
 
   const requestPhoneOtp = async () => {
     const normalizedPhone = normalizePhoneNumber(phone, phoneCountry);
-    if (!canRegister || !customer || !phoneContact || savingRef.current) return;
+    if (!canRegister || !customer || !phoneContact || savingRef.current || uncertainRef.current) return;
     if (!normalizedPhone.valid || !normalizedPhone.e164 || normalizedPhone.country !== 'NG') {
       setError(
         'The current OTP flow supports valid Nigerian phone numbers only. Other countries can be saved unverified.',
@@ -512,6 +534,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
     } catch (otpError) {
       if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(otpError));
+      markUncertain('OTP request', otpError);
       setError(safeSaveError(otpError));
     } finally {
       savingRef.current = false;
@@ -521,7 +544,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
 
   const verifyPhone = async () => {
     const normalizedPhone = normalizePhoneNumber(phone, phoneCountry);
-    if (!canRegister || !customer || !phoneContact || savingRef.current || !otpRequested) return;
+    if (!canRegister || !customer || !phoneContact || savingRef.current || uncertainRef.current || !otpRequested) return;
     if (!normalizedPhone.valid || !normalizedPhone.e164 || normalizedPhone.country !== 'NG') {
       setError('The current OTP flow supports valid Nigerian phone numbers only.');
       return;
@@ -531,6 +554,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
     setError(null);
     setFieldErrors({});
     setNotice(null);
+    let verificationSaveStarted = false;
     try {
       let token = verificationToken;
       if (!token) {
@@ -543,6 +567,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
         token = verified.verificationToken;
         setVerificationToken(token);
       }
+      verificationSaveStarted = true;
       const updated = await ApiClient.patch<ContactRecord>(
         `/customers/${encodeURIComponent(customer.id)}/contact-methods/${encodeURIComponent(phoneContact.id)}`,
         {
@@ -564,7 +589,8 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
     } catch (verifyError) {
       if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(verifyError));
-      setError(safeSaveError(verifyError));
+      markUncertain('phone verification', verifyError, verificationSaveStarted);
+      setError(verificationSaveStarted ? 'The phone verification save outcome could not be confirmed. Review the contact before another action.' : safeSaveError(verifyError));
     } finally {
       savingRef.current = false;
       if (mounted.current) setIsSaving(false);
@@ -573,7 +599,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
 
   const saveAddress = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canRegister || !customer || savingRef.current) return;
+    if (!canRegister || !customer || savingRef.current || uncertainRef.current) return;
     const anyAddressField = [lineOne, lineTwo, city, stateOrProvince, postalCode].some((value) =>
       normalizeCustomerText(value),
     );
@@ -637,6 +663,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
     } catch (saveError) {
       if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError));
+      markUncertain('address', saveError);
       setError(safeSaveError(saveError));
     } finally {
       savingRef.current = false;
@@ -664,14 +691,25 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
   };
 
   const removeUnsavedIdentityDocument = (localId: string) => {
-    setIdentityDocuments((current) =>
-      current.filter((item) => item.localId !== localId || item.saved),
-    );
+    const item = identityDocuments.find(document => document.localId === localId && !document.saved);
+    if (!item) return;
+    const defaultType = customerType === 'BUSINESS' ? 'BUSINESS_REGISTRATION' : 'NIN';
+    if (item.documentNumber.trim() || item.issuedAt || item.expiresAt || item.issuingCountry !== 'NG' || item.type !== defaultType) {
+      setPendingIdentityDiscard({ id: localId });
+      return;
+    }
+    setIdentityDocuments(current => current.filter(document => document.localId !== localId || document.saved));
+  };
+  const changeIdentityType = (localId: string, type: IdentityType) => {
+    setIdentityDocuments(current => current.map(item => item.localId === localId
+      ? { ...item, type, issuingCountry: isNigeriaIdentityType(type) ? 'NG' : item.issuingCountry || 'NG',
+          issuedAt: supportsIdentityDates(type) ? item.issuedAt : '', expiresAt: supportsIdentityDates(type) ? item.expiresAt : '', errors: {}, outcome: null }
+      : item));
   };
 
   const saveIdentityDocument = async (localId: string) => {
     const document = identityDocuments.find((item) => item.localId === localId);
-    if (!canRegister || !customer || savingRef.current || !document || document.saved) return;
+    if (!canRegister || !customer || savingRef.current || uncertainRef.current || !document || document.saved) return;
     const documentNumber = normalizeCustomerText(document.documentNumber);
     const duplicateDraft = identityDocuments.some(
       (item) =>
@@ -809,6 +847,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
             : item,
         ),
       );
+      markUncertain('identity document', saveError);
       setError(safeSaveError(saveError));
     } finally {
       savingRef.current = false;
@@ -1395,23 +1434,10 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
                           }
                           onChange={(event) => {
                             const type = event.target.value as IdentityType;
-                            setIdentityDocuments((current) =>
-                              current.map((item) =>
-                                item.localId === document.localId
-                                  ? {
-                                      ...item,
-                                      type,
-                                      issuingCountry: isNigeriaIdentityType(type)
-                                        ? 'NG'
-                                        : item.issuingCountry || 'NG',
-                                      issuedAt: supportsIdentityDates(type) ? item.issuedAt : '',
-                                      expiresAt: supportsIdentityDates(type) ? item.expiresAt : '',
-                                      errors: {},
-                                      outcome: null,
-                                    }
-                                  : item,
-                              ),
-                            );
+                            if ((!supportsIdentityDates(type) && (document.issuedAt || document.expiresAt)) ||
+                                (isNigeriaIdentityType(type) && document.issuingCountry !== 'NG')) {
+                              setPendingIdentityDiscard({ id: document.localId, nextType: type });
+                            } else changeIdentityType(document.localId, type);
                           }}
                         >
                           {identityTypes.map((value) => (
@@ -1757,7 +1783,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
         </button>
       </div>
       <div className="cm-registration-context" aria-label="Registration save status">
-        <div><span>RECORD</span><strong>{customer ? 'DRAFT created' : 'Not created yet'}</strong></div>
+        <div><span>RECORD</span><strong>{customer ? 'DRAFT created' : uncertainAction ? 'Creation not confirmed' : 'Not created yet'}</strong></div>
         <div><span>PROFILE</span><strong>{profileSaved ? 'Saved' : 'Not confirmed'}</strong></div>
         <p>Changes are saved by each step’s save action. Moving between steps does not save edited fields.</p>
       </div>
@@ -1783,15 +1809,31 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
           {notice}
         </div>
       )}
+      {pendingIdentityDiscard && <div className="cm-modal-backdrop" role="presentation">
+        <section ref={identityDiscardRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="registration-identity-discard-title">
+          <h2 id="registration-identity-discard-title">{pendingIdentityDiscard.nextType ? 'Change document type?' : 'Remove unsaved document?'}</h2>
+          <p>{pendingIdentityDiscard.nextType ? 'Changing this type clears incompatible issue date, expiry date or issuing country fields.' : 'This removes the unsaved document entry and its fields. Saved records are not removed.'}</p>
+          <div className="cm-actions-row"><button type="button" className="cm-button cm-button-secondary" onClick={() => setPendingIdentityDiscard(null)}>Keep entry</button>{' '}<button type="button" className="cm-button cm-button-danger" onClick={() => { const pending = pendingIdentityDiscard; if (pending.nextType) changeIdentityType(pending.id, pending.nextType); else setIdentityDocuments(current => current.filter(item => item.localId !== pending.id || item.saved)); setPendingIdentityDiscard(null); }}>Discard fields</button></div>
+        </section>
+      </div>}
+      {uncertainAction && <div className="cm-policy-notice cm-policy-notice-warning" role="status">
+        <strong>The {uncertainAction} outcome is unconfirmed or conflicted.</strong>
+        <p>Further registration actions are blocked to prevent repeating an operation that may already have happened. Leave and inspect the customer records and available audit history before starting another action. A read may not prove an OTP was delivered or rule out a late commit.</p>
+        <p>This lock and unsaved input exist only in this workspace and will be lost when leaving, changing session or reloading the browser. {customer ? 'The confirmed customer identifier can be opened for review.' : 'The customer identifier was not confirmed; search the directory and audit history rather than creating another record blindly.'}</p>
+        <div className="cm-actions-row">
+          <button type="button" className="cm-button cm-button-secondary" disabled={isSaving || Boolean(exitTarget)} onClick={() => requestExit('directory')}>Leave to review directory</button>
+          {customer && <button type="button" className="cm-button cm-button-secondary" disabled={isSaving || Boolean(exitTarget)} onClick={() => requestExit('customer')}>Open customer for review</button>}
+        </div>
+      </div>}
       {exitTarget && (
         <div className="cm-registration-exit" ref={exitPromptRef} tabIndex={-1} role="group" aria-label="Confirm leaving registration" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); keepRegistration(); } }}>
-          <strong>Leave with unsaved changes?</strong>
-          <p>Only details with confirmed save receipts are retained. Unsaved fields and verification input in this browser will be discarded; this action does not save them.</p>
+          <strong>Leave with unsaved changes or an unconfirmed action?</strong>
+          <p>Unsaved fields, verification input and the local outcome lock will be discarded. An unconfirmed action may already have occurred; inspect records and audit history before a new action. This exit does not save your draft.</p>
           {customer && <p>The customer record already created remains a DRAFT.</p>}
           <div className="cm-actions-row"><button type="button" className="cm-button cm-button-secondary" onClick={keepRegistration}>Keep editing</button><button type="button" className="cm-button cm-button-primary" onClick={() => { if (exitTarget === 'customer' && customer) onOpenCustomer(customer.id); else onClose(); }}>Discard unsaved changes and leave</button></div>
         </div>
       )}
-      <fieldset className="cm-wizard-content" disabled={Boolean(exitTarget) || isSaving}>{stepForm()}</fieldset>
+      <fieldset className="cm-wizard-content" disabled={Boolean(exitTarget) || isSaving || Boolean(uncertainAction) || Boolean(pendingIdentityDiscard)}>{stepForm()}</fieldset>
     </section>
   );
 });
