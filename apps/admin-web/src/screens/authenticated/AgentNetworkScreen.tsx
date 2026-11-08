@@ -270,6 +270,10 @@ function validTerminal(value: any, agentId: string): value is TerminalRecord {
     ['code', 'label', 'serialNumber'].every(key => value[key] == null || typeof value[key] === 'string') &&
     ['ACTIVE', 'SUSPENDED', 'TERMINATED'].includes(value.status) && Number.isSafeInteger(value.version) && value.version > 0;
 }
+function validAgentLimit(value: any, agentId: string): value is AgentLimitAssignmentRecord {
+  return !!value && typeof value === 'object' && typeof value.id === 'string' && !!value.id.trim() && value.subjectType === 'AGENT' && value.subjectId === agentId &&
+    typeof value.limitProfileCode === 'string' && !!value.limitProfileCode.trim() && typeof value.isActive === 'boolean' && Number.isSafeInteger(value.version) && value.version > 0;
+}
 function operationUncertain(error: any): boolean {
   return ![400, 401, 403, 404, 422].includes(error?.status);
 }
@@ -455,6 +459,13 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const [agentLimits, setAgentLimits] = useState<AgentLimitAssignmentRecord[]>([]);
   const [newLimitProfileCode, setNewLimitProfileCode] = useState('');
   const [limitsBusy, setLimitsBusy] = useState(false);
+  const [limitUnconfirmed, setLimitUnconfirmed] = useState(false);
+  const [limitReviewReady, setLimitReviewReady] = useState(false);
+  const [limitPage, setLimitPage] = useState(1);
+  const [limitHasNext, setLimitHasNext] = useState(false);
+  const [limitTotal, setLimitTotal] = useState(0);
+  const limitWriteInFlight = useRef(false);
+  const limitReadGeneration = useRef(0);
   const [outletUnconfirmed, setOutletUnconfirmed] = useState(false);
   const [outletReviewReady, setOutletReviewReady] = useState(false);
   const outletWriteInFlight = useRef(false);
@@ -462,8 +473,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const outletDraft = Object.values(outletForm).some(value => value.trim()) ||
     Object.entries(terminalForm).some(([key, value]) => key !== 'outletId' && value.trim()) ||
     Boolean(editingOutletId || editingTerminalId);
-  const agentGuard = credentialGuard || credentialBusy || lifecycleUnconfirmed || lifecycleBusy || lifecycleReviewBusy || outletDraft || outletBusy || outletUnconfirmed;
-  const agentBusy = credentialBusy || lifecycleBusy || lifecycleReviewBusy || outletBusy;
+  const agentGuard = credentialGuard || credentialBusy || lifecycleUnconfirmed || lifecycleBusy || lifecycleReviewBusy || outletDraft || outletBusy || outletUnconfirmed || Boolean(newLimitProfileCode.trim()) || limitsBusy || limitUnconfirmed;
+  const agentBusy = credentialBusy || lifecycleBusy || lifecycleReviewBusy || outletBusy || limitsBusy;
   useEffect(() => { onAgentGuardChange?.(agentGuard, agentBusy); }, [onAgentGuardChange, agentGuard, agentBusy]);
   useEffect(() => {
     if (!agentGuard) return;
@@ -471,8 +482,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
   }, [agentGuard]);
   const mayLeaveAgent = () => {
-    if (agentBusy || lifecycleInFlight.current || outletWriteInFlight.current) return false;
-    return !agentGuard || window.confirm('Leave this Agent? Unsaved outlet or terminal entries, a visible one-time credential, and local review locks will be lost. An action may have occurred; inspect Agent records and audit history before acting again.');
+    if (agentBusy || lifecycleInFlight.current || outletWriteInFlight.current || limitWriteInFlight.current) return false;
+    return !agentGuard || window.confirm('Leave this Agent? Unsaved outlet, terminal or limit entries, a visible one-time credential, and local review locks will be lost. An action may have occurred; inspect Agent records and audit history before acting again.');
   };
 
 
@@ -543,8 +554,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
   const openDetail = async (a: Agent) => {
     if (!canView || (selectedAgentId.current === a.id && agentGuard) || (selectedAgentId.current !== a.id && !mayLeaveAgent())) return;
-    if (selectedAgentId.current !== a.id) { setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); }
-    outletReadGeneration.current += 1;
+    if (selectedAgentId.current !== a.id) { setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); setLimitUnconfirmed(false); setLimitReviewReady(false); }
+    outletReadGeneration.current += 1; limitReadGeneration.current += 1;
     selectedAgentId.current = a.id;
     setSelected(a);
     setPosition(null);
@@ -566,6 +577,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     setEditingOutletId(null);
     setEditingTerminalId(null);
     setLimitsLoaded(false);
+    setLimitsLoading(false); setLimitPage(1); setLimitHasNext(false); setLimitTotal(0);
     setAgentLimits([]);
     setLimitsError('');
     setLimitsMsg('');
@@ -966,7 +978,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   };
 
   const doLifecycle = async (action: keyof typeof lifecycleFunctions, id: string) => {
-    if (principal?.readOnlyPrincipal || !hasFn(lifecycleFunctions[action]) || lifecycleBusy || lifecycleInFlight.current || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || !selected || selected.id !== id || !canPerformAgentLifecycle(action, selected.status)) return;
+    if (principal?.readOnlyPrincipal || !hasFn(lifecycleFunctions[action]) || lifecycleBusy || lifecycleInFlight.current || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || newLimitProfileCode.trim() || limitsBusy || limitUnconfirmed || !selected || selected.id !== id || !canPerformAgentLifecycle(action, selected.status)) return;
     if (action === 'terminate' && !window.confirm(`Terminate Agent ${selected.reference}? This is irreversible, revokes its receiving number and invalidates sessions. Residual float is not moved automatically.`)) return;
     lifecycleInFlight.current = true;
     setLifecycleBusy(true); setLifecycleReviewStatus(null); setActionErr(''); setActionMsg('');
@@ -1307,79 +1319,63 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     }
   };
 
-  const loadAgentLimits = async (agentId: string) => {
+  const loadAgentLimits = async (agentId: string, page = 1) => {
     if (!canViewLimitCatalog) return;
-    setLimitsLoading(true);
-    setLimitsError('');
+    const request = ++limitReadGeneration.current;
+    const valid = () => mountedRef.current && selectedAgentId.current === agentId && request === limitReadGeneration.current;
+    setLimitsLoading(true); setLimitsLoaded(false); setLimitReviewReady(false); setLimitsError('');
     try {
-      const res: any = await ApiClient.get(
-        `/internal/limit-assignments/agent/${encodeURIComponent(agentId)}`,
-      );
-      const rows = res?.data || res?.items || (Array.isArray(res) ? res : []);
-      setAgentLimits(rows);
-      setLimitsLoaded(true);
+      const res: any = await ApiClient.get(`/internal/limit-assignments/agent/${encodeURIComponent(agentId)}?page=${page}&limit=20`);
+      if (!valid()) return;
+      if (!res || !Array.isArray(res.data) || !res.data.every((row: unknown) => validAgentLimit(row, agentId)) ||
+          new Set(res.data.map((row: AgentLimitAssignmentRecord) => row.id)).size !== res.data.length ||
+          res.page !== page || res.limit !== 20 || !Number.isSafeInteger(res.total) || res.total < 0 ||
+          !Number.isSafeInteger(res.totalPages) || res.totalPages !== Math.ceil(res.total / 20) ||
+          typeof res.hasNextPage !== 'boolean' || res.hasNextPage !== (page < res.totalPages) || res.data.length > 20 || res.data.length > res.total) throw new Error('Invalid or cross-Agent limit assignment page.');
+      setAgentLimits(res.data); setLimitPage(page); setLimitHasNext(res.hasNextPage); setLimitTotal(res.total); setLimitsLoaded(true);
+      if (limitUnconfirmed) setLimitReviewReady(true);
     } catch (e: any) {
-      setLimitsError(e?.message || 'Failed to load agent limit assignments');
-    } finally {
-      setLimitsLoading(false);
-    }
+      if (valid()) { setLimitsLoaded(false); setLimitsError(e?.message || 'Failed to load agent limit assignments'); }
+    } finally { if (valid()) setLimitsLoading(false); }
+  };
+
+  const limitFailure = (error: any, operation: string) => {
+    if (operationUncertain(error)) {
+      setLimitUnconfirmed(true); setLimitReviewReady(false);
+      setLimitsError(`${operation} outcome is unconfirmed or conflicted. Review Agent assignments and audit history independently before another action.${error?.message ? ` ${error.message}` : ''}`);
+    } else setLimitsError(error?.message || `${operation} was rejected.`);
   };
 
   const assignAgentLimit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selected || !canAssignLimit || limitsBusy) return;
+    if (!selected || !canAssignLimit || limitsBusy || limitWriteInFlight.current || limitUnconfirmed || limitsLoading || (canViewLimitCatalog && !limitsLoaded) || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed) return;
     const code = newLimitProfileCode.trim().toUpperCase();
-    if (!code) {
-      setLimitsError('Limit profile code is required.');
-      return;
-    }
-    setLimitsBusy(true);
-    setLimitsError('');
-    setLimitsMsg('');
+    if (!/^[A-Z0-9_]{3,80}$/.test(code)) { setLimitsError('Limit profile code must contain 3–80 letters, numbers or underscores.'); return; }
+    limitWriteInFlight.current = true; limitReadGeneration.current += 1;
+    setLimitsBusy(true); setLimitsError(''); setLimitsMsg('');
     try {
-      await ApiClient.post('/internal/limit-assignments', {
-        subjectType: 'AGENT',
-        subjectId: selected.id,
-        limitProfileCode: code,
-      });
+      const receipt = await ApiClient.post<AgentLimitAssignmentRecord>('/internal/limit-assignments', { subjectType: 'AGENT', subjectId: selected.id, limitProfileCode: code });
+      if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
+      if (!validAgentLimit(receipt, selected.id) || receipt.limitProfileCode !== code || receipt.isActive !== true) throw new Error('Assignment receipt did not match the request.');
       setNewLimitProfileCode('');
-      setLimitsMsg(
-        canViewLimitCatalog
-          ? `Assigned limit profile ${code} to ${selected.reference}.`
-          : `Assigned limit profile ${code} to ${selected.reference}. Viewing existing assignments requires limit.view.`,
-      );
-      if (canViewLimitCatalog) {
-        await loadAgentLimits(selected.id);
-      }
-    } catch (e: any) {
-      setLimitsError(e?.message || 'Failed to assign limit profile');
-    } finally {
-      setLimitsBusy(false);
-    }
+      setLimitsMsg(canViewLimitCatalog ? `Assigned limit profile ${code} to ${selected.reference}.` : `Assigned limit profile ${code} to ${selected.reference}. Viewing existing assignments requires limit.view.`);
+      if (canViewLimitCatalog) await loadAgentLimits(selected.id, 1);
+    } catch (e: any) { if (mountedRef.current && selectedAgentId.current === selected.id) limitFailure(e, 'Limit assignment'); }
+    finally { limitWriteInFlight.current = false; if (mountedRef.current) setLimitsBusy(false); }
   };
 
   const toggleAgentLimit = async (item: AgentLimitAssignmentRecord) => {
-    if (!selected || !canAssignLimit || limitsBusy) return;
-    setLimitsBusy(true);
-    setLimitsError('');
-    setLimitsMsg('');
+    if (!selected || !canAssignLimit || limitsBusy || limitWriteInFlight.current || limitUnconfirmed || limitsLoading || !limitsLoaded || newLimitProfileCode.trim() || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || !validAgentLimit(item, selected.id) || !agentLimits.some(row => row.id === item.id && row.version === item.version)) return;
+    limitWriteInFlight.current = true; limitReadGeneration.current += 1;
+    setLimitsBusy(true); setLimitsError(''); setLimitsMsg('');
     try {
-      await ApiClient.patch(`/internal/limit-assignments/${encodeURIComponent(item.id)}`, {
-        subjectType: 'AGENT',
-        isActive: !item.isActive,
-        version: item.version ?? 1,
-      });
-      setLimitsMsg(
-        `Limit profile ${item.limitProfileCode} ${item.isActive ? 'deactivated' : 'activated'}.`,
-      );
-      if (canViewLimitCatalog) {
-        await loadAgentLimits(selected.id);
-      }
-    } catch (e: any) {
-      setLimitsError(e?.message || 'Failed to update limit assignment');
-    } finally {
-      setLimitsBusy(false);
-    }
+      const receipt = await ApiClient.patch<AgentLimitAssignmentRecord>(`/internal/limit-assignments/${encodeURIComponent(item.id)}`, { subjectType: 'AGENT', isActive: !item.isActive, version: item.version });
+      if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
+      if (!validAgentLimit(receipt, selected.id) || receipt.id !== item.id || receipt.limitProfileCode !== item.limitProfileCode || receipt.isActive !== !item.isActive || receipt.version !== item.version! + 1) throw new Error('Limit update receipt did not match the request.');
+      setLimitsMsg(`Limit profile ${item.limitProfileCode} ${item.isActive ? 'deactivated' : 'activated'}.`);
+      await loadAgentLimits(selected.id, limitPage);
+    } catch (e: any) { if (mountedRef.current && selectedAgentId.current === selected.id) limitFailure(e, 'Limit update'); }
+    finally { limitWriteInFlight.current = false; if (mountedRef.current) setLimitsBusy(false); }
   };
 
   const inspectApplication = async (applicationId: string) => {
@@ -2171,7 +2167,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   Target in funding
                 </button>
               )}
-              <button type="button" disabled={agentBusy} onClick={() => { if (!mayLeaveAgent()) return; selectedAgentId.current = null; positionRequest.current += 1; outletReadGeneration.current += 1; setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); setSelected(null); }} style={smallBtn}>
+              <button type="button" disabled={agentBusy} onClick={() => { if (!mayLeaveAgent()) return; selectedAgentId.current = null; positionRequest.current += 1; outletReadGeneration.current += 1; limitReadGeneration.current += 1; setLimitUnconfirmed(false); setLimitReviewReady(false); setNewLimitProfileCode(''); setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); setSelected(null); }} style={smallBtn}>
                 Close
               </button>
             </div>
@@ -2286,7 +2282,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     {canSuspend && (
                       <button
                         type="button"
-                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || !canPerformAgentLifecycle('suspend', selected.status)}
+                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || Boolean(newLimitProfileCode.trim()) || limitsBusy || limitUnconfirmed || !canPerformAgentLifecycle('suspend', selected.status)}
                         onClick={() => void doLifecycle('suspend', selected.id)}
                         style={warnBtn}
                       >
@@ -2296,7 +2292,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     {canTerminate && (
                       <button
                         type="button"
-                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || !canPerformAgentLifecycle('terminate', selected.status)}
+                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || Boolean(newLimitProfileCode.trim()) || limitsBusy || limitUnconfirmed || !canPerformAgentLifecycle('terminate', selected.status)}
                         onClick={() => void doLifecycle('terminate', selected.id)}
                         style={dangerBtn}
                       >
@@ -2306,7 +2302,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     {canReactivate && (
                       <button
                         type="button"
-                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || !canPerformAgentLifecycle('reactivate', selected.status)}
+                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || Boolean(newLimitProfileCode.trim()) || limitsBusy || limitUnconfirmed || !canPerformAgentLifecycle('reactivate', selected.status)}
                         onClick={() => void doLifecycle('reactivate', selected.id)}
                         style={successBtn}
                       >
@@ -2316,7 +2312,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     {canActivate && (
                       <button
                         type="button"
-                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || !canPerformAgentLifecycle('activate', selected.status)}
+                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || Boolean(newLimitProfileCode.trim()) || limitsBusy || limitUnconfirmed || !canPerformAgentLifecycle('activate', selected.status)}
                         onClick={() => void doLifecycle('activate', selected.id)}
                         style={successBtn}
                       >
@@ -2757,8 +2753,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     <button
                       type="button"
                       style={smallBtn}
-                      disabled={limitsLoading}
-                      onClick={() => void loadAgentLimits(selected.id)}
+                      disabled={limitsLoading || limitsBusy}
+                      onClick={() => void loadAgentLimits(selected.id, limitUnconfirmed ? 1 : limitPage)}
                     >
                       {limitsLoading ? 'Loading…' : limitsLoaded ? 'Refresh agent limits' : 'Load agent limits'}
                     </button>
@@ -2769,12 +2765,16 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     Your principal holds <code>agent.assign_limit</code> without <code>limit.view</code>. Reading existing per-Agent limit assignments requires <code>limit.view</code>; you can still assign a limit profile below.
                   </div>
                 )}
+                {limitUnconfirmed && <div style={boundaryBox} role="status"><strong>Limit assignment review required.</strong> The action may have completed; no idempotency guarantee is available. Independently inspect assignments and available audit records before another action. {canViewLimitCatalog ? 'Refresh the list; pages not displayed may contain other assignments.' : 'This session cannot load assignments; use an independently authorized source.'} A read cannot exclude a late commit or prove absence. This local lock is lost on confirmed exit or session change.
+                  {(!canViewLimitCatalog || limitReviewReady) && <button type="button" style={smallBtn} onClick={() => { setLimitUnconfirmed(false); setLimitReviewReady(false); setLimitsError(''); }}>I reviewed assignments and audit history</button>}
+                </div>}
                 {limitsError && <div style={errBox} role="alert">{limitsError}</div>}
                 {limitsMsg && <div style={successBox} role="status">{limitsMsg}</div>}
                 {canViewLimitCatalog && limitsLoaded && (
                   <div style={{ marginTop: 10 }}>
+                    <p style={smallMuted}>Page {limitPage} · {limitTotal} total assignments. A page alone does not establish that an assignment is absent.</p>
                     {agentLimits.length === 0 ? (
-                      <div style={smallMuted}>No direct limit assignments configured for this Agent.</div>
+                      <div style={smallMuted}>No limit assignments on this page.</div>
                     ) : (
                       <ul style={compactList}>
                         {agentLimits.map((item) => (
@@ -2784,13 +2784,13 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                               <span style={badge(item.isActive ? 'ACTIVE' : 'INACTIVE')}>
                                 {item.isActive ? 'ACTIVE' : 'INACTIVE'}
                               </span>{' '}
-                              · v{item.version ?? 1}
+                              · v{item.version}
                             </span>
                             {canAssignLimit && (
                               <button
                                 type="button"
                                 style={smallBtn}
-                                disabled={limitsBusy}
+                                disabled={limitsBusy || limitsLoading || limitUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(newLimitProfileCode.trim())}
                                 onClick={() => void toggleAgentLimit(item)}
                               >
                                 {item.isActive ? 'Deactivate limit' : 'Activate limit'}
@@ -2800,6 +2800,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                         ))}
                       </ul>
                     )}
+                    <div style={actionRow}><button type="button" style={smallBtn} disabled={limitsBusy || limitsLoading || limitPage <= 1} onClick={() => void loadAgentLimits(selected.id, limitPage - 1)}>Previous limit page</button><button type="button" style={smallBtn} disabled={limitsBusy || limitsLoading || !limitHasNext} onClick={() => void loadAgentLimits(selected.id, limitPage + 1)}>Next limit page</button></div>
                   </div>
                 )}
 
@@ -2815,7 +2816,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                         value={newLimitProfileCode}
                         onChange={(e) => setNewLimitProfileCode(e.target.value)}
                         style={inlineInput}
-                        disabled={limitsBusy}
+                        disabled={limitsBusy || limitsLoading || limitUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                       >
                         <option value="">Choose catalog profile…</option>
                         {limitCatalog.map((profile) => (
@@ -2831,7 +2832,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                       value={newLimitProfileCode}
                       onChange={(e) => setNewLimitProfileCode(e.target.value)}
                       style={inlineInput}
-                      disabled={limitsBusy}
+                      disabled={limitsBusy || limitsLoading || limitUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                     />
                     {canViewLimitCatalog && (
                       <button
@@ -2843,9 +2844,10 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                         {limitCatalogLoading ? 'Loading catalog…' : 'Load limit catalog'}
                       </button>
                     )}
-                    <button type="submit" style={smallBtn} disabled={limitsBusy}>
+                    <button type="submit" style={smallBtn} disabled={limitsBusy || limitsLoading || limitUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}>
                       Assign limit profile
                     </button>
+                    <button type="button" style={smallBtn} disabled={limitsBusy || limitsLoading || limitUnconfirmed || !newLimitProfileCode.trim()} onClick={() => { if (window.confirm('Discard the unsaved limit profile entry?')) setNewLimitProfileCode(''); }}>Clear limit entry</button>
                   </form>
                 )}
               </section>

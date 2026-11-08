@@ -286,8 +286,8 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
           { id: 'cls-100', code: 'ORD_T1', name: 'Ordinary Tier 1', isActive: true },
         ]);
       }
-      if (url === '/internal/limit-assignments/agent/agent-100') {
-        return Promise.resolve([]);
+      if (url === '/internal/limit-assignments/agent/agent-100?page=1&limit=20') {
+        return Promise.resolve({data:[],page:1,limit:20,total:0,totalPages:0,hasNextPage:false});
       }
       if (url === '/internal/limit-profiles') {
         return Promise.resolve([{ code: 'AGENT_ORDINARY_T1', name: 'Ordinary Tier 1 Profile', isActive: true }]);
@@ -345,7 +345,7 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
     expect((await view.findAllByText(/Ordinary Tier 1 \(ORD_T1\)/)).length).toBeGreaterThanOrEqual(2);
 
     fireEvent.click(view.getByRole('button', { name: 'Load agent limits' }));
-    await view.findByText(/No direct limit assignments/i);
+    await view.findByText(/No limit assignments on this page/i);
     fireEvent.click(view.getByRole('button', { name: 'Load limit catalog' }));
     expect(await view.findByLabelText('Select catalog limit profile')).toBeTruthy();
 

@@ -552,6 +552,70 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     expect(upd2.body.isActive).toBe(true);
   });
 
+  it('05 concurrent updates with one version serialize, including a no-op update', async () => {
+    await createProfile('RACE_ASSIGN');
+    const customerId = await seedCustomer();
+    const created = await createAssignment({
+      limitProfileCode: 'RACE_ASSIGN',
+      subjectType: 'CUSTOMER',
+      subjectId: customerId,
+      precedence: 1,
+    });
+    expect(created.status).toBe(201);
+    const id = created.body.id;
+    const runner = dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    await runner.query('SELECT id FROM limit_assignments WHERE id=$1 FOR UPDATE', [id]);
+    const first = request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 1, precedence: 1 })
+      .then((res) => res);
+    const second = request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 1, precedence: 9 })
+      .then((res) => res);
+    let blocked = false;
+    try {
+      const deadline = Date.now() + 10000;
+      while (Date.now() < deadline) {
+        const rows: Array<{ count: string }> = await dataSource.query(
+          `SELECT count(*)::text AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%limit_assignments%'`,
+        );
+        if (Number(rows[0]!.count) >= 2) {
+          blocked = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    } finally {
+      await runner.commitTransaction();
+      await runner.release();
+    }
+    const results = await Promise.all([first, second]);
+    expect(blocked).toBe(true);
+    expect(results.map((res) => res.status).sort()).toEqual([200, 409]);
+    expect(results.find((res) => res.status === 200)!.body.version).toBe(2);
+    const after = await request(app.getHttpServer())
+      .get(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'));
+    expect(after.status).toBe(200);
+    expect(after.body.version).toBe(2);
+    const noop = await request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 2, precedence: after.body.precedence });
+    expect(noop.status).toBe(200);
+    expect(noop.body.version).toBe(3);
+    const staleNoop = await request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 2, precedence: after.body.precedence });
+    expect(staleNoop.status).toBe(409);
+  });
+
   it('05a. Agent assignment PATCH authorizes before lookup and preserves non-Agent access', async () => {
     const profileCode = 'PATCH_AGENT_AUTH';
     await createProfile(profileCode, { kind: 'UNIVERSAL' });

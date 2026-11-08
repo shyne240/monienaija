@@ -209,9 +209,10 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
           },
         ]);
       }
-      if (path === `/internal/limit-assignments/agent/${AGENT_ID}`) {
+      if (path === `/internal/limit-assignments/agent/${AGENT_ID}?page=1&limit=20`) {
         return Promise.resolve({
-          items: [
+          page: 1, limit: 20, total: 1, totalPages: 1, hasNextPage: false,
+          data: [
             {
               id: LIMIT_ASSIGNMENT_ID,
               limitProfileCode: 'AGENT_STANDARD',
@@ -235,7 +236,7 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
       if (path === `/internal/agents/${AGENT_ID}/terminals`) return Promise.resolve({id:'terminal-new',agentId:AGENT_ID,outletId:OUTLET_ID,reference:'TRM-ABJ-02',label:'Counter POS 2',status:'ACTIVE',version:1});
       return Promise.resolve({});
     });
-    (ApiClient.patch as jest.Mock).mockResolvedValue({});
+    (ApiClient.patch as jest.Mock).mockResolvedValue({ id: LIMIT_ASSIGNMENT_ID, subjectType:'AGENT', subjectId:AGENT_ID, limitProfileCode:'AGENT_STANDARD', isActive:false, version:3 });
 
     const view = render(<AgentNetworkScreen />);
     fireEvent.click(await view.findByRole('button', { name: 'View' }));
@@ -284,6 +285,7 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
       ),
     );
 
+    await view.findByText('Limit profile AGENT_STANDARD deactivated.');
     // Lifecycle state-machine: on ACTIVE agent, Suspend & Terminate are enabled while Reactivate & Activate are disabled
     const lifecycleBar = view.getByLabelText('Granted agent lifecycle actions');
     expect((within(lifecycleBar).getByRole('button', { name: 'Suspend' }) as HTMLButtonElement).disabled).toBe(false);

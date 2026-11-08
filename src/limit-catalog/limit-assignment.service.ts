@@ -6,7 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Not, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, Not, QueryFailedError, Repository, type EntityManager } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import { LimitAssignment } from './limit-assignment.entity';
@@ -109,63 +109,75 @@ export class LimitAssignmentService {
     actor: string,
     access: { excludeAgent?: boolean } = {},
   ): Promise<LimitAssignmentSafeProjection> {
-    const where: Record<string, unknown> = { id };
-    if (access.excludeAgent) where.subjectType = Not(LimitAssignmentSubjectType.AGENT);
-    const assignment = await this.assignmentRepo.findOne({ where: where as never });
-    // Keep the same response for an unknown ID and a filtered-out Agent assignment.
-    if (!assignment) throw new NotFoundException('Limit assignment not found');
-    const row = assignment as unknown as LimitAssignment;
-    this.assertVersion(row.version, input.version);
-
-    const previous = this.assignmentValues(row);
-
-    if (input.limitProfileCode !== undefined) {
-      const code = input.limitProfileCode.trim().toUpperCase();
-      if (!PROFILE_CODE_PATTERN.test(code))
-        throw new BadRequestException('limitProfileCode must match ^[A-Z0-9_]{3,80}$');
-      const profile = await this.profileRepo.findOne({ where: { code } as never });
-      if (!profile) throw new NotFoundException(`Limit profile ${code} not found`);
-      row.limitProfileCode = code;
-    }
-    if (input.subjectType !== undefined) {
-      this.assertEnum(input.subjectType, LimitAssignmentSubjectType, 'subjectType');
-      row.subjectType = input.subjectType.trim().toUpperCase();
-    }
-    if (input.subjectId !== undefined) {
-      row.subjectId = input.subjectId ? input.subjectId.trim() : null;
-    }
-    if (input.segmentCode !== undefined) {
-      row.segmentCode = input.segmentCode ? input.segmentCode.trim().toUpperCase() : null;
-    }
-    // validate consistency after potential subject change
-    this.validateSubjectConsistency(row.subjectType, row.subjectId, row.segmentCode);
-    await this.validateSubjectExistence(row.subjectType, row.subjectId);
-
-    if (input.precedence !== undefined) {
-      if (!Number.isSafeInteger(input.precedence))
-        throw new BadRequestException('precedence must be integer');
-      row.precedence = input.precedence;
-    }
-    if (input.effectiveFrom !== undefined) {
-      const d = input.effectiveFrom ? new Date(input.effectiveFrom as string) : null;
-      if (input.effectiveFrom && d && isNaN(d.getTime()))
-        throw new BadRequestException('effectiveFrom must be valid ISO date');
-      if (d) row.effectiveFrom = d;
-    }
-    if (input.effectiveTo !== undefined) {
-      const d = input.effectiveTo ? new Date(input.effectiveTo as string) : null;
-      if (input.effectiveTo && d && isNaN(d.getTime()))
-        throw new BadRequestException('effectiveTo must be valid ISO date');
-      row.effectiveTo = d;
-    }
-    if (row.effectiveTo && row.effectiveTo <= row.effectiveFrom)
-      throw new BadRequestException('effectiveTo must be after effectiveFrom');
-    if (input.isActive !== undefined) row.isActive = input.isActive;
-
-    row.updatedBy = actor;
-
     try {
-      const saved = (await this.assignmentRepo.save(row as never)) as unknown as LimitAssignment;
+      const { saved, previous } = await this.dataSource.transaction(async (manager) => {
+        const repo = manager.getRepository(LimitAssignment);
+        const where: Record<string, unknown> = { id };
+        if (access.excludeAgent) where.subjectType = Not(LimitAssignmentSubjectType.AGENT);
+        const assignment = await repo.findOne({
+          where: where as never,
+          lock: { mode: 'pessimistic_write' },
+        });
+        // Keep the same response for an unknown ID and a filtered-out Agent assignment.
+        if (!assignment) throw new NotFoundException('Limit assignment not found');
+        const row = assignment as unknown as LimitAssignment;
+        this.assertVersion(row.version, input.version);
+
+        const previous = this.assignmentValues(row);
+
+        if (input.limitProfileCode !== undefined) {
+          const code = input.limitProfileCode.trim().toUpperCase();
+          if (!PROFILE_CODE_PATTERN.test(code))
+            throw new BadRequestException('limitProfileCode must match ^[A-Z0-9_]{3,80}$');
+          const profile = await manager
+            .getRepository(LimitProfile)
+            .findOne({ where: { code } as never });
+          if (!profile) throw new NotFoundException(`Limit profile ${code} not found`);
+          row.limitProfileCode = code;
+        }
+        if (input.subjectType !== undefined) {
+          this.assertEnum(input.subjectType, LimitAssignmentSubjectType, 'subjectType');
+          row.subjectType = input.subjectType.trim().toUpperCase();
+        }
+        if (input.subjectId !== undefined) {
+          row.subjectId = input.subjectId ? input.subjectId.trim() : null;
+        }
+        if (input.segmentCode !== undefined) {
+          row.segmentCode = input.segmentCode ? input.segmentCode.trim().toUpperCase() : null;
+        }
+        // validate consistency after potential subject change
+        this.validateSubjectConsistency(row.subjectType, row.subjectId, row.segmentCode);
+        await this.validateSubjectExistence(row.subjectType, row.subjectId, manager);
+
+        if (input.precedence !== undefined) {
+          if (!Number.isSafeInteger(input.precedence))
+            throw new BadRequestException('precedence must be integer');
+          row.precedence = input.precedence;
+        }
+        if (input.effectiveFrom !== undefined) {
+          const d = input.effectiveFrom ? new Date(input.effectiveFrom as string) : null;
+          if (input.effectiveFrom && d && isNaN(d.getTime()))
+            throw new BadRequestException('effectiveFrom must be valid ISO date');
+          if (d) row.effectiveFrom = d;
+        }
+        if (input.effectiveTo !== undefined) {
+          const d = input.effectiveTo ? new Date(input.effectiveTo as string) : null;
+          if (input.effectiveTo && d && isNaN(d.getTime()))
+            throw new BadRequestException('effectiveTo must be valid ISO date');
+          row.effectiveTo = d;
+        }
+        if (row.effectiveTo && row.effectiveTo <= row.effectiveFrom)
+          throw new BadRequestException('effectiveTo must be after effectiveFrom');
+        if (input.isActive !== undefined) row.isActive = input.isActive;
+
+        row.updatedBy = actor;
+        // Consume the version even for an otherwise identical update. Under the row lock,
+        // a concurrent request using the same version must observe this increment and fail.
+        row.version += 1;
+
+        const saved = await repo.save(row);
+        return { saved, previous };
+      });
       if (this.auditService) {
         try {
           await this.dataSource.transaction(async (m) => {
@@ -179,7 +191,7 @@ export class LimitAssignmentService {
             } as never);
           });
         } catch {
-          // Audit recording is best-effort on this existing path.
+          // Audit recording remains best-effort on this existing path.
         }
       }
       return this.toSafe(saved);
@@ -375,22 +387,26 @@ export class LimitAssignmentService {
   private async validateSubjectExistence(
     subjectType: string,
     subjectId: string | null,
+    manager?: EntityManager,
   ): Promise<void> {
+    const query = manager
+      ? manager.query.bind(manager)
+      : this.dataSource.query.bind(this.dataSource);
     const t = subjectType.trim().toUpperCase();
     if (t === 'CUSTOMER' && subjectId) {
-      const row: Array<{ id: string }> = await this.dataSource.query(
+      const row: Array<{ id: string }> = await query(
         `SELECT id FROM customers WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
         [subjectId],
       );
       if (row.length === 0) throw new NotFoundException(`Customer ${subjectId} not found`);
     } else if (t === 'AGENT' && subjectId) {
-      const row: Array<{ id: string }> = await this.dataSource.query(
+      const row: Array<{ id: string }> = await query(
         `SELECT id FROM agents WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
         [subjectId],
       );
       if (row.length === 0) throw new NotFoundException(`Agent ${subjectId} not found`);
     } else if (t === 'AGENT_CLASS' && subjectId) {
-      const row: Array<{ id: string }> = await this.dataSource.query(
+      const row: Array<{ id: string }> = await query(
         `SELECT id FROM agent_classes WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
         [subjectId],
       );
