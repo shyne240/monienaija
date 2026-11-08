@@ -571,7 +571,7 @@ function mockIntegratedRegistryBackend() {
         status: 'SENT',
         channel: body?.channel,
         correlationId: 'corr-test-1',
-        destination: '+23480***0100',
+        destination: body?.channel === 'SMS' ? '+**********100' : `${body.destination.slice(0,2)}***@${body.destination.split('@')[1]}`,
         provider: 'test',
         providerRef: 'ref-test-1',
         errorCode: null,
@@ -1768,14 +1768,14 @@ test('offline template baselines are references, not confirmation of an active r
 
 test('a console test response is shown as simulation, not live delivery', async () => {
     mockIntegratedRegistryBackend();seedPrincipal({roles:['OPERATIONS'],scopes:['notification.view_deliveries','notification.test_send']});
-    (ApiClient.post as jest.Mock).mockResolvedValueOnce({status:'SENT',channel:'SMS',provider:'console',correlationId:'synthetic-correlation',providerRef:null});
+    (ApiClient.post as jest.Mock).mockResolvedValueOnce({status:'SENT',channel:'SMS',provider:'console',correlationId:'synthetic-correlation',destination:'+**********100',providerRef:null});
     const view=render(<NotificationManagementScreen initialTab="testSend"/>);fireEvent.change(view.getByTestId('test-send-destination-input'),{target:{value:'08030000100'}});fireEvent.click(view.getByTestId('test-send-workforce-attestation'));fireEvent.click(view.getByTestId('submit-test-send-btn'));
     expect((await view.findByTestId('test-send-outcome-banner')).textContent).toContain('Console simulation only; no live provider delivery was confirmed.');
   });
 
   test('a test-send receipt for another channel is not shown as sent', async () => {
     mockIntegratedRegistryBackend();seedPrincipal({roles:['OPERATIONS'],scopes:['notification.view_deliveries','notification.test_send']});
-    (ApiClient.post as jest.Mock).mockResolvedValueOnce({status:'SENT',channel:'EMAIL',provider:'console',correlationId:'synthetic-correlation',providerRef:null});
+    (ApiClient.post as jest.Mock).mockResolvedValueOnce({status:'SENT',channel:'EMAIL',provider:'console',correlationId:'synthetic-correlation',destination:'+**********100',providerRef:null});
     const view=render(<NotificationManagementScreen initialTab="testSend"/>);fireEvent.change(view.getByTestId('test-send-destination-input'),{target:{value:'08030000100'}});fireEvent.click(view.getByTestId('test-send-workforce-attestation'));fireEvent.click(view.getByTestId('submit-test-send-btn'));
     expect((await view.findByTestId('test-send-error-banner')).textContent).toContain('Test-send outcome not confirmed');expect(view.queryByTestId('test-send-outcome-banner')).toBeNull();
   });
@@ -1857,4 +1857,13 @@ test('switching tabs cannot start a duplicate template proposal while the first 
   expect(submit.disabled).toBe(true);fireEvent.click(submit);
   expect((ApiClient.post as jest.Mock).mock.calls.filter(([path])=>path==='/internal/notifications/changes')).toHaveLength(1);
   await act(async()=>{resolve({approvalId:'550e8400-e29b-41d4-a716-4466554400aa',status:'REQUESTED',actionType:'NOTIFICATION_TEMPLATE_CHANGE',requestedAt:'2026-11-01',expiresAt:'2026-11-02'});await pending;});
+});
+
+test('a mismatched probe receipt locks sends across tabs until independent review', async () => {
+  mockIntegratedRegistryBackend(); seedPrincipal({roles:['OPERATIONS'],scopes:['notification.view_deliveries','notification.test_send']});
+  (ApiClient.post as jest.Mock).mockResolvedValueOnce({status:'SENT',channel:'SMS',provider:'console',correlationId:'synthetic-correlation',destination:'+**********999',providerRef:null});
+  const view=render(<NotificationManagementScreen initialTab="testSend"/>);fireEvent.change(view.getByTestId('test-send-destination-input'),{target:{value:'08030000100'}});fireEvent.click(view.getByTestId('test-send-workforce-attestation'));fireEvent.click(view.getByTestId('submit-test-send-btn'));
+  expect((await view.findByTestId('notification-probe-review-lock')).textContent).toMatch(/do not create delivery rows.*cannot prove non-delivery/i);expect((view.getByTestId('submit-test-send-btn') as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(view.getByTestId('notif-tab-overview'));expect(view.getByTestId('notification-probe-review-lock')).toBeTruthy();const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);
+  const confirm=jest.spyOn(window,'confirm').mockReturnValue(false);fireEvent.click(view.getByRole('button',{name:'Acknowledge independent test-send review'}));expect(view.getByTestId('notification-probe-review-lock')).toBeTruthy();confirm.mockReturnValue(true);fireEvent.click(view.getByRole('button',{name:'Acknowledge independent test-send review'}));confirm.mockRestore();expect(view.queryByTestId('notification-probe-review-lock')).toBeNull();
 });

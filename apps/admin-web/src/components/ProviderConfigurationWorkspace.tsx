@@ -19,6 +19,10 @@ interface ProviderConfigurationWorkspaceProps {
   principalRoles: string[];
   permissions: NotificationPermissions;
   onRefreshParentStatus?: () => void;
+  probeBusy?: boolean;
+  probeReview?: boolean;
+  beginProbe?: () => boolean;
+  finishProbe?: (channel: ManagedProviderChannel, uncertain: boolean) => void;
 }
 
 function lifecycleBadgeVisual(state: ProviderLifecycleState): {
@@ -123,6 +127,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   principalId,
   permissions,
   onRefreshParentStatus,
+  probeBusy = false, probeReview = false, beginProbe, finishProbe,
 }) => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -427,6 +432,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   };
 
   const handleQuickTestSend = async (channel: ManagedProviderChannel) => {
+    if (!permissions.canTestSend || probeBusy || probeReview) return;
     const rawDest = channel === 'SMS' ? smsTestDest : emailTestDest;
     const confirmed = channel === 'SMS' ? smsTestConfirmed : emailTestConfirmed;
     const setBusy = channel === 'SMS' ? setSmsTestBusy : setEmailTestBusy;
@@ -463,6 +469,8 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       destination = destination.toLowerCase();
     }
 
+    if (beginProbe && !beginProbe()) return;
+    let uncertain = false;
     setBusy(true);
     try {
       const outcome = await NotificationManagementApi.submitTestSend({
@@ -470,6 +478,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
         destination,
         workforceDestinationConfirmed: true,
       });
+      if (outcome.status === 'BLOCKED' || (outcome.status === 'LIVE' && outcome.data.status === 'FAILED')) uncertain = true;
       if (!mounted.current) return;
       if (outcome.status === 'BLOCKED') {
         setMsg({ kind: 'err', text: outcome.message });
@@ -483,14 +492,17 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       } else {
         setMsg({
           kind: 'err',
-          text: `${channel} test-send failed: ${outcome.data.lastError ?? 'PROVIDER_FAILURE'}.`,
+          text: `${channel} provider reported failure: ${outcome.data.lastError ?? 'PROVIDER_FAILURE'}. Non-delivery is not proven; independent review is required.`,
         });
       }
       await loadWorkspace(false);
       if (mounted.current) onRefreshParentStatus?.();
     } catch (err) {
-      if (mounted.current) setMsg({ kind: 'err', text: `Test-send outcome not confirmed. Check delivery records before retrying. ${describeError(err)}` });
+      const status = (err as {status?: number})?.status;
+      uncertain = status !== 400 && status !== 403 && status !== 422 && status !== 429;
+      if (mounted.current) setMsg({ kind: 'err', text: `Test-send outcome not confirmed. Check authorized audit and provider records before retrying. ${describeError(err)}` });
     } finally {
+      finishProbe?.(channel, uncertain);
       if (mounted.current) setBusy(false);
     }
   };
@@ -833,13 +845,13 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                   data-testid="sms-quick-test-destination"
                   placeholder="+2348012345678 (workforce phone)"
                   value={smsTestDest}
-                  onChange={(e) => setSmsTestDest(e.target.value)}
+                  onChange={(e) => { setSmsTestDest(e.target.value); setSmsTestConfirmed(false); }}
                   style={{ flex: 1, minWidth: 190, padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
                 />
                 <button
                   type="button"
                   data-testid="sms-quick-test-send-btn"
-                  disabled={smsTestBusy}
+                  disabled={smsTestBusy || probeBusy || probeReview}
                   onClick={() => void handleQuickTestSend('SMS')}
                   style={{
                     padding: '6px 12px',
@@ -1285,13 +1297,13 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                   data-testid="email-quick-test-destination"
                   placeholder="ops@monienaija.ng (workforce email)"
                   value={emailTestDest}
-                  onChange={(e) => setEmailTestDest(e.target.value)}
+                  onChange={(e) => { setEmailTestDest(e.target.value); setEmailTestConfirmed(false); }}
                   style={{ flex: 1, minWidth: 190, padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
                 />
                 <button
                   type="button"
                   data-testid="email-quick-test-send-btn"
-                  disabled={emailTestBusy}
+                  disabled={emailTestBusy || probeBusy || probeReview}
                   onClick={() => void handleQuickTestSend('EMAIL')}
                   style={{
                     padding: '6px 12px',

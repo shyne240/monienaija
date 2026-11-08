@@ -333,6 +333,17 @@ const GENERIC_VARIABLE_METADATA = {
   sourceSummary: 'server-side allowlisted resolver',
 };
 
+// Mirror the server's masked receipt; the test endpoint does not return the raw destination.
+function maskTestDestination(channel: ManagedNotificationChannel, destination: string): string {
+  if (channel === 'EMAIL') {
+    const [local, domain] = destination.split('@');
+    return `${local.slice(0, Math.min(2, local.length))}***@${domain}`;
+  }
+  const digits = destination.replace(/\D/g, '');
+  const keep = Math.min(3, digits.length);
+  return `${destination.slice(0, destination.length - keep).replace(/\d/g, '*')}${digits.slice(-keep)}`;
+}
+
 export function generateNotificationIdempotencyKey(): string {
   const globalCrypto = typeof globalThis !== 'undefined' ? (globalThis as any).crypto : undefined;
   if (globalCrypto && typeof globalCrypto.randomUUID === 'function') {
@@ -1035,7 +1046,7 @@ export const NotificationManagementApi = {
       method: 'POST',
       endpoint: '/internal/notifications/test-send',
       blockedExplanation:
-        'BLOCKED on ARENA 3: Controlled test-send endpoint (POST /internal/notifications/test-send) is not yet integrated. No SMS or Email was transmitted.',
+        'Controlled test-send endpoint was unavailable (404/501); submission outcome is not confirmed.',
       run: async () => {
         const res = await ApiClient.post<{
           status: 'SENT' | 'FAILED';
@@ -1050,8 +1061,8 @@ export const NotificationManagementApi = {
           { channel: payload.channel, destination: payload.destination },
           { idempotencyKey },
         );
-        if (!res || res.channel !== payload.channel || !['SENT', 'FAILED'].includes(res.status) || typeof res.provider !== 'string' || !res.provider.trim()) {
-          throw new Error('Test-send response did not match the requested channel.');
+        if (!res || res.channel !== payload.channel || res.destination !== maskTestDestination(payload.channel, payload.destination) || typeof res.correlationId !== 'string' || !res.correlationId.trim() || !['SENT', 'FAILED'].includes(res.status) || typeof res.provider !== 'string' || !res.provider.trim()) {
+          throw new Error('Test-send receipt did not match the requested channel and masked destination, or lacked a correlation reference.');
         }
         return {
           status: res.status,

@@ -228,16 +228,6 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   const checkerBusyRef = useRef(false);
   const checkerUncertaintyVersion = useRef(0);
 
-  const checkerBusy = isSubmittingChecker || Boolean(decidingChangeId || executingApprovalId);
-  const notificationGuard = templateGuard || triggerDirty || Boolean(triggerReview) || isSavingTrigger || Boolean(checkerApprovalId.trim() || checkerComment.trim() || queueDecisionComment.trim() || queueNeedsRefresh || checkerBusy);
-  const notificationBusy = templateBusy || checkerBusy || isSavingTrigger;
-  useEffect(() => { onNotificationGuardChange?.(notificationGuard, notificationBusy); }, [onNotificationGuardChange, notificationGuard, notificationBusy]);
-  useEffect(() => {
-    if (!notificationGuard) return;
-    const guard = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
-    window.addEventListener('beforeunload', guard);
-    return () => window.removeEventListener('beforeunload', guard);
-  }, [notificationGuard]);
   const markCheckerUncertain = () => { checkerUncertaintyVersion.current++; setQueueReviewLoaded(false); setQueueNeedsRefresh(true); };
 
   // Deliveries, Retries & Outbox Receipts State (Capability 10)
@@ -289,6 +279,30 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   const [testBlockedMsg, setTestBlockedMsg] = useState<string>('');
   const [testError, setTestError] = useState<string>('');
   const [isSendingTest, setIsSendingTest] = useState<boolean>(false);
+
+  const [probeReview, setProbeReview] = useState<ManagedNotificationChannel | null>(null);
+  const probeReviewRef = useRef<ManagedNotificationChannel | null>(null);
+  const probeInFlight = useRef(false);
+  const [probeBusy, setProbeBusy] = useState(false);
+  const beginProbe = useCallback(() => {
+    if (!permissions.canTestSend || probeInFlight.current || probeReviewRef.current) return false;
+    probeInFlight.current = true; setProbeBusy(true); return true;
+  }, [permissions.canTestSend]);
+  const finishProbe = useCallback((channel: ManagedNotificationChannel, uncertain: boolean) => {
+    if (uncertain) { probeReviewRef.current = channel; setProbeReview(channel); }
+    probeInFlight.current = false; setProbeBusy(false);
+  }, []);
+  const checkerBusy = isSubmittingChecker || Boolean(decidingChangeId || executingApprovalId);
+  const notificationGuard = templateGuard || Boolean(testDestination.trim() || testWorkforceConfirmed || probeReview || probeBusy) || triggerDirty || Boolean(triggerReview) || isSavingTrigger || Boolean(checkerApprovalId.trim() || checkerComment.trim() || queueDecisionComment.trim() || queueNeedsRefresh || checkerBusy);
+  const notificationBusy = templateBusy || checkerBusy || isSavingTrigger || probeBusy;
+  useEffect(() => { onNotificationGuardChange?.(notificationGuard, notificationBusy); }, [onNotificationGuardChange, notificationGuard, notificationBusy]);
+  useEffect(() => {
+    if (!notificationGuard) return;
+    const guard = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', guard);
+    return () => window.removeEventListener('beforeunload', guard);
+  }, [notificationGuard]);
+
 
   const fetchDeliveries = useCallback(async (preserveInspector = false) => {
     if (!permissions.canViewDeliveries) return;
@@ -1162,7 +1176,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   // Handlers — Controlled Test-Send (Capability 11 — fixed connectivity probe)
   const handleTestSendSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!permissions.canTestSend) return;
+    if (!permissions.canTestSend || probeInFlight.current || probeReviewRef.current) return;
 
     setTestValidationErrors([]);
     setTestError('');
@@ -1180,6 +1194,8 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       return;
     }
 
+    if (!beginProbe()) return;
+    let uncertain = false;
     setIsSendingTest(true);
     try {
       const res = await NotificationManagementApi.submitTestSend({
@@ -1189,10 +1205,12 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       });
 
       if (res.status === 'BLOCKED') {
+        uncertain = true;
         setTestBlockedMsg(res.message);
         return;
       }
 
+      if (res.data.status === 'FAILED') uncertain = true; // Provider failure does not prove non-delivery.
       setTestOutcome(res.data);
     } catch (err: any) {
       if (err?.status === 429) {
@@ -1204,9 +1222,11 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
           `Access denied (403): ${err.message || 'Workforce principal lacks dual-control permission for test-send.'}`,
         );
       } else {
-        setTestError(`Test-send outcome not confirmed. Check delivery records before retrying. ${err?.message || 'Service unavailable.'}`);
+        uncertain = err?.status !== 400 && err?.status !== 422;
+        setTestError(`Test-send outcome not confirmed. Check authorized audit and provider records before retrying. ${err?.message || 'Service unavailable.'}`);
       }
     } finally {
+      finishProbe(testChannel, uncertain);
       setIsSendingTest(false);
     }
   };
@@ -1278,6 +1298,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
           </button>
         ))}
       </div></div>
+      {probeReview && <div role="alert" data-testid="notification-probe-review-lock">{probeReview} test-send outcome is unconfirmed. Independently review authorized test-send quota and audit records and provider records before another probe. Test sends do not create delivery rows; absent records or a fresh read cannot prove non-delivery or exclude a late outcome. This local safeguard is lost on exit or session change. <button type="button" disabled={probeBusy} onClick={() => { if (window.confirm('Have you independently reviewed authorized test-send audit and provider records, including possible late delivery?')) { probeReviewRef.current = null; setProbeReview(null); setTestWorkforceConfirmed(false); } }}>Acknowledge independent test-send review</button></div>}
       <p className="notification-redesign__tab-hint">Scroll to see all sections. Use arrow keys to move between tabs, then Enter or Space to open one.</p>
       {visibleTabs.filter((tabItem) => tabItem.key !== activeTab && tabItem.key !== 'smsTemplates' && tabItem.key !== 'emailTemplates').map((tabItem) => (
         <div key={tabItem.key} id={`notification-panel-${tabItem.key}`} role="tabpanel" aria-labelledby={`notification-tab-${tabItem.key}`} hidden />
@@ -3342,7 +3363,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                       setTestChannel(e.target.value as ManagedNotificationChannel);
                       setTestWorkforceConfirmed(false); setTestOutcome(null); setTestError(''); setTestBlockedMsg(''); setTestValidationErrors([]);
                     }}
-                    disabled={!permissions.canTestSend || isSendingTest}
+                    disabled={!permissions.canTestSend || isSendingTest || probeBusy || Boolean(probeReview)}
                   >
                     <option value="SMS">SMS</option>
                     <option value="EMAIL">EMAIL</option>
@@ -3370,7 +3391,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                       setTestDestination(e.target.value);
                       setTestWorkforceConfirmed(false); setTestOutcome(null); setTestError(''); setTestBlockedMsg(''); setTestValidationErrors([]);
                     }}
-                    disabled={!permissions.canTestSend || isSendingTest}
+                    disabled={!permissions.canTestSend || isSendingTest || probeBusy || Boolean(probeReview)}
                   />
                 </div>
               </div>
@@ -3383,7 +3404,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     data-testid="test-send-workforce-attestation"
                     checked={testWorkforceConfirmed}
                     onChange={(e) => setTestWorkforceConfirmed(e.target.checked)}
-                    disabled={!permissions.canTestSend || isSendingTest}
+                    disabled={!permissions.canTestSend || isSendingTest || probeBusy || Boolean(probeReview)}
                   />
                   <span>
                     I attest that this destination belongs to an authorized MonieNaija workforce
@@ -3433,6 +3454,8 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                 >
                   <strong>Test-Send Status: {testOutcome.status}</strong>
                   {testOutcome.status === 'SENT' && testOutcome.provider === 'console' && <p>Console simulation only; no live provider delivery was confirmed.</p>}
+                  {testOutcome.status === 'SENT' && testOutcome.provider !== 'console' && <p>Provider acceptance does not confirm destination delivery.</p>}
+                  {testOutcome.status === 'FAILED' && <p>Provider reported failure; non-delivery is not proven. Independent review is required before another probe.</p>}
                   <div style={{ marginTop: 4, fontSize: 12 }}>
                     {testOutcome.deliveryId && (
                       <span>
@@ -3461,7 +3484,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
               <button
                 type="submit"
                 data-testid="submit-test-send-btn"
-                disabled={!permissions.canTestSend || isSendingTest}
+                disabled={!permissions.canTestSend || isSendingTest || probeBusy || Boolean(probeReview)}
                 style={
                   !permissions.canTestSend || isSendingTest
                     ? styles.primaryBtnDisabled
@@ -3485,6 +3508,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
             principalRoles={principal?.roles ?? []}
             permissions={permissions}
             onRefreshParentStatus={() => void fetchAllReadSurfaces()}
+            probeBusy={probeBusy} probeReview={Boolean(probeReview)} beginProbe={beginProbe} finishProbe={finishProbe}
           />
         </div>
       )}

@@ -875,4 +875,13 @@ describe('Governed SMS (Robase) & Email (Brevo) Provider Configuration Workspace
     expect(ApiClient.post).not.toHaveBeenCalled();
   });
 
+  it('an unconfirmed quick probe locks the main probe after switching sections', async () => {
+    seedPrincipal({principalId:'issuer:operator',roles:['SUPER_ADMIN'],scopes:['notification.provider.view','notification.test_send','notification.view_deliveries']});
+    wireStandardBackendMocks(makeOverviewFixture(),[]); (ApiClient.post as jest.Mock).mockRejectedValue(new Error('Synthetic timeout'));
+    const view=render(<NotificationManagementScreen initialTab="providerConfig"/>);await view.findByTestId('provider-config-workspace');
+    fireEvent.change(view.getByTestId('sms-quick-test-destination'),{target:{value:'08030000100'}});fireEvent.click(view.getByTestId('sms-quick-test-confirm'));fireEvent.click(view.getByTestId('sms-quick-test-send-btn'));
+    expect(await view.findByTestId('notification-probe-review-lock')).toBeTruthy();expect((view.getByTestId('sms-quick-test-send-btn') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(view.getByTestId('notif-tab-testSend'));expect((view.getByTestId('submit-test-send-btn') as HTMLButtonElement).disabled).toBe(true);expect(view.getByTestId('notification-probe-review-lock')).toBeTruthy();
+  });
+
 });
