@@ -41,13 +41,37 @@ test('incomplete provisioning response is not presented as a valid one-time cred
 
 test('disable confirms the requested identity and DISABLED status, not just HTTP success', async () => {
   principal('one',['workforce.user.suspend']);(ApiClient.post as jest.Mock).mockResolvedValueOnce({id:'other',status:'DISABLED'}).mockResolvedValueOnce({id:'user-1',status:'DISABLED'});
-  render(<WorkforceAdminScreen />);fireEvent.change(screen.getByPlaceholderText('SUPPORT user ID'),{target:{value:'user-1'}});fireEvent.click(screen.getByRole('button',{name:'Disable SUPPORT User'}));
+  render(<WorkforceAdminScreen />);fireEvent.change(screen.getByPlaceholderText('SUPPORT user ID'),{target:{value:'user-1'}});fireEvent.click(screen.getByRole('button',{name:'Disable SUPPORT User'}));fireEvent.click(screen.getByRole('button',{name:'Confirm disable'}));
   expect(await screen.findByText(/Disable outcome not confirmed/)).toBeTruthy();expect(screen.queryByText('Support user user-1 disabled.')).toBeNull();
-  fireEvent.click(screen.getByRole('button',{name:'Disable SUPPORT User'}));expect(await screen.findByText('Support user user-1 disabled.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button',{name:'Disable SUPPORT User'}));fireEvent.click(screen.getByRole('button',{name:'Confirm disable'}));expect(await screen.findByText('Support user user-1 disabled.')).toBeTruthy();
 });
 
 test('a new session for the same operator clears one-time credentials', async () => {
   principal('one',['workforce.user.create']);(ApiClient.post as jest.Mock).mockResolvedValue({username:'synthetic',supportUserId:'one-id',temporaryPassword:'synthetic-secret',passwordExpiresAt:'2027-01-01'});
   render(<WorkforceAdminScreen />);fireEvent.change(screen.getByLabelText('Support username or email'),{target:{value:'synthetic'}});fireEvent.click(screen.getByRole('button',{name:'Create SUPPORT User'}));await screen.findByText(/synthetic-secret/);
   act(()=>useAuthStore.setState(state=>({principal:{...state.principal!,sessionId:'new-session'}})));expect(screen.queryByText(/synthetic-secret/)).toBeNull();
+});
+
+
+test('disable review captures identity and reason, traps focus and allows escape without a write', () => {
+  principal('one',['workforce.user.suspend']);render(<WorkforceAdminScreen />);
+  fireEvent.change(screen.getByLabelText('Support user ID'),{target:{value:' user/1 '}});
+  fireEvent.change(screen.getByLabelText('Reason (optional)'),{target:{value:' review '}});
+  const trigger=screen.getByRole('button',{name:'Disable SUPPORT User'});fireEvent.click(trigger);
+  const dialog=screen.getByRole('dialog',{name:'Disable SUPPORT user?'});
+  expect(dialog.textContent).toContain('user/1');expect(dialog.textContent).toContain('review');
+  expect(document.activeElement).toBe(screen.getByRole('button',{name:'Cancel'}));
+  fireEvent.keyDown(document,{key:'Tab',shiftKey:true});expect(document.activeElement).toBe(screen.getByRole('button',{name:'Confirm disable'}));
+  fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog')).toBeNull();expect(document.activeElement).toBe(trigger);expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('disable is single flight and session changes remove the review and ignore late results', async () => {
+  principal('one',['workforce.user.suspend']);const previous=deferred();(ApiClient.post as jest.Mock).mockReturnValue(previous.promise);
+  render(<WorkforceAdminScreen />);fireEvent.change(screen.getByLabelText('Support user ID'),{target:{value:'user/1'}});fireEvent.change(screen.getByLabelText('Reason (optional)'),{target:{value:' review '}});
+  fireEvent.click(screen.getByRole('button',{name:'Disable SUPPORT User'}));fireEvent.click(screen.getByRole('button',{name:'Confirm disable'}));
+  expect(ApiClient.post).toHaveBeenCalledWith('/internal/admin/support/workforce-users/user%2F1/disable',{reason:'review'});
+  expect(screen.getAllByRole('button',{name:'Disabling…'}).every(button => (button as HTMLButtonElement).disabled)).toBe(true);expect(document.activeElement).toBe(screen.getByRole('dialog'));
+  fireEvent.keyDown(document,{key:'Escape'});expect(screen.getByRole('dialog')).toBeTruthy();expect(ApiClient.post).toHaveBeenCalledTimes(1);
+  act(()=>principal('two',['workforce.user.suspend']));expect(screen.queryByRole('dialog')).toBeNull();
+  await act(async()=>{previous.resolve({id:'user/1',status:'DISABLED'});await previous.promise;});expect(screen.queryByText('Support user user/1 disabled.')).toBeNull();
 });

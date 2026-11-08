@@ -115,6 +115,7 @@ describe('Admin Web shared-screen improvements', () => {
     fireEvent.change(view.getByPlaceholderText('SUPPORT user ID'), { target: { value: 'support-user-42' } });
     fireEvent.change(view.getByPlaceholderText('Reason for disabling access'), { target: { value: 'Access no longer required' } });
     fireEvent.click(view.getByRole('button', { name: 'Disable SUPPORT User' }));
+    fireEvent.click(view.getByRole('button', { name: 'Confirm disable' }));
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenCalledWith('/internal/admin/support/workforce-users/support-user-42/disable', { reason: 'Access no longer required' });
       expect(view.getByText('Support user support-user-42 disabled.')).toBeTruthy();
