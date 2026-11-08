@@ -258,3 +258,25 @@ test('uncertain Agent access action warns before changing the selected Agent or 
  fireEvent.click(screen.getByRole('button',{name:'Close'}));expect(confirm).toHaveBeenCalledTimes(2);expect(screen.getByText(/Credential request outcome may be uncertain/)).toBeTruthy();
  confirm.mockReturnValue(true);fireEvent.click(screen.getByRole('button',{name:'Close'}));expect(screen.queryByText(/Credential request outcome may be uncertain/)).toBeNull();confirm.mockRestore();
 });
+
+test('unconfirmed Agent lifecycle receipt locks actions until a matching fresh status and explicit audit review',async()=>{
+ useAuthStore.setState({principal:{type:'OPERATOR',principalId:'manager',sessionId:'session',audience:'workforce-admin',roles:[],scopes:['agent.view','agent.suspend','agent.terminate','agent.reactivate'],customerAccess:'NONE',assuranceLevel:'MFA'}});
+ const agent={id:'agent',reference:'AG-life',status:'ACTIVE',agentClassId:null,createdAt:'2026-01-01',updatedAt:'2026-01-01'};
+ let detail:any={...agent,id:'other'};(ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.startsWith('/internal/agents?')?Promise.resolve({data:[agent],total:1}):path==='/internal/agents/agent'?Promise.resolve(detail):Promise.resolve([]));
+ (ApiClient.post as jest.Mock).mockResolvedValue({id:'other',status:'SUSPENDED'});
+ const report=jest.fn();render(<AgentNetworkScreen onAgentGuardChange={report}/>);await screen.findByText('AG-life');fireEvent.click(screen.getByRole('button',{name:'View'}));fireEvent.click(screen.getByRole('button',{name:'Suspend'}));
+ await screen.findByText(/Agent lifecycle outcome is unconfirmed/);expect((screen.getByRole('button',{name:'Suspend'}) as HTMLButtonElement).disabled).toBe(true);expect((screen.getByRole('button',{name:'Terminate'}) as HTMLButtonElement).disabled).toBe(true);expect(report).toHaveBeenLastCalledWith(true,false);
+ fireEvent.click(screen.getByRole('button',{name:'Refresh Agent for review'}));expect(await screen.findByText(/Agent review response did not match/)).toBeTruthy();expect(screen.queryByRole('button',{name:'I reviewed the status and audit history'})).toBeNull();
+ detail={...agent,status:'SUSPENDED'};fireEvent.click(screen.getByRole('button',{name:'Refresh Agent for review'}));await screen.findByText('Reviewed Agent status: SUSPENDED');expect((screen.getByRole('button',{name:'Reactivate'}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole('button',{name:'I reviewed the status and audit history'}));expect((screen.getByRole('button',{name:'Reactivate'}) as HTMLButtonElement).disabled).toBe(false);expect(ApiClient.post).toHaveBeenCalledTimes(1);
+});
+
+test('Agent lifecycle conflict locks until review; rejected termination confirmation sends no request',async()=>{
+ const confirm=jest.spyOn(window,'confirm').mockReturnValue(false);
+ useAuthStore.setState({principal:{type:'OPERATOR',principalId:'manager',sessionId:'session',audience:'workforce-admin',roles:[],scopes:['agent.view','agent.suspend','agent.terminate'],customerAccess:'NONE',assuranceLevel:'MFA'}});
+ const agent={id:'agent',reference:'AG-conflict',status:'ACTIVE',agentClassId:null,createdAt:'2026-01-01',updatedAt:'2026-01-01'};
+ (ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.startsWith('/internal/agents?')?Promise.resolve({data:[agent],total:1}):Promise.resolve([]));
+ (ApiClient.post as jest.Mock).mockRejectedValue(Object.assign(new Error('conflict'),{status:409}));render(<AgentNetworkScreen/>);await screen.findByText('AG-conflict');fireEvent.click(screen.getByRole('button',{name:'View'}));fireEvent.click(screen.getByRole('button',{name:'Terminate'}));expect(ApiClient.post).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('button',{name:'Suspend'}));await screen.findByText(/Agent lifecycle outcome is unconfirmed/);expect((screen.getByRole('button',{name:'Suspend'}) as HTMLButtonElement).disabled).toBe(true);
+ const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);confirm.mockRestore();
+});

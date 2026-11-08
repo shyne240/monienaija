@@ -335,12 +335,12 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const [credentialGuard, setCredentialGuard] = useState(false);
   const [credentialBusy, setCredentialBusy] = useState(false);
-  const reportCredentialGuard = useCallback((guarded: boolean, busy: boolean) => { setCredentialGuard(guarded); setCredentialBusy(busy); onAgentGuardChange?.(guarded, busy); }, [onAgentGuardChange]);
+  const [lifecycleUnconfirmed, setLifecycleUnconfirmed] = useState(false);
+  const [lifecycleReviewStatus, setLifecycleReviewStatus] = useState<string | null>(null);
+  const [lifecycleReviewBusy, setLifecycleReviewBusy] = useState(false);
+  const lifecycleInFlight = useRef(false);
+  const reportCredentialGuard = useCallback((guarded: boolean, busy: boolean) => { setCredentialGuard(guarded); setCredentialBusy(busy); }, []);
   useEffect(() => () => onAgentGuardChange?.(false, false), [onAgentGuardChange]);
-  const mayLeaveCredential = () => {
-    if (credentialBusy) return false;
-    return !credentialGuard || window.confirm('Leave this Agent? A visible one-time credential and any local access-action review lock will be lost. The action may have occurred; inspect Agent access records and audit history before acting again.');
-  };
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
   const canView = hasFn('agent.view');
   const canManageFunding =
@@ -388,6 +388,18 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const [detailError, setDetailError] = useState('');
   const [lifecycleReason, setLifecycleReason] = useState('');
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
+  const agentGuard = credentialGuard || credentialBusy || lifecycleUnconfirmed || lifecycleBusy || lifecycleReviewBusy;
+  const agentBusy = credentialBusy || lifecycleBusy || lifecycleReviewBusy;
+  useEffect(() => { onAgentGuardChange?.(agentGuard, agentBusy); }, [onAgentGuardChange, agentGuard, agentBusy]);
+  useEffect(() => {
+    if (!lifecycleUnconfirmed && !lifecycleBusy && !lifecycleReviewBusy) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+  }, [lifecycleUnconfirmed, lifecycleBusy, lifecycleReviewBusy]);
+  const mayLeaveAgent = () => {
+    if (agentBusy || lifecycleInFlight.current) return false;
+    return !agentGuard || window.confirm('Leave this Agent? A visible one-time credential and local access or lifecycle review locks will be lost. An action may have occurred; inspect Agent records and audit history before acting again.');
+  };
   const [actionMsg, setActionMsg] = useState('');
   const [actionErr, setActionErr] = useState('');
 
@@ -505,7 +517,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   };
 
   const openDetail = async (a: Agent) => {
-    if (!canView || (selectedAgentId.current !== a.id && !mayLeaveCredential())) return;
+    if (!canView || (selectedAgentId.current === a.id && agentGuard) || (selectedAgentId.current !== a.id && !mayLeaveAgent())) return;
+    if (selectedAgentId.current !== a.id) { setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); }
     selectedAgentId.current = a.id;
     setSelected(a);
     setPosition(null);
@@ -926,50 +939,48 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   };
 
   const doLifecycle = async (action: keyof typeof lifecycleFunctions, id: string) => {
-    if (principal?.readOnlyPrincipal || !hasFn(lifecycleFunctions[action]) || lifecycleBusy) return;
-    if (selected && !canPerformAgentLifecycle(action, selected.status)) return;
-    setLifecycleBusy(true);
-    setActionErr('');
-    setActionMsg('');
+    if (principal?.readOnlyPrincipal || !hasFn(lifecycleFunctions[action]) || lifecycleBusy || lifecycleInFlight.current || lifecycleUnconfirmed || credentialGuard || credentialBusy || !selected || selected.id !== id || !canPerformAgentLifecycle(action, selected.status)) return;
+    if (action === 'terminate' && !window.confirm(`Terminate Agent ${selected.reference}? This is irreversible, revokes its receiving number and invalidates sessions. Residual float is not moved automatically.`)) return;
+    lifecycleInFlight.current = true;
+    setLifecycleBusy(true); setLifecycleReviewStatus(null); setActionErr(''); setActionMsg('');
     try {
       const reasonText = lifecycleReason.trim() || `${action} via Admin Web`;
       const payload = action === 'suspend' || action === 'terminate' ? { reason: reasonText } : {};
-      const updated: any = await ApiClient.post(
-        `/internal/admin/agents/${encodeURIComponent(id)}/${action}`,
-        payload,
-      );
-      const nextStatus =
-        updated && typeof updated === 'object' && typeof updated.status === 'string'
-          ? updated.status
-          : undefined;
-      if (updated && typeof updated === 'object' && 'status' in updated) {
-        setSelected((cur) => (cur && cur.id === id ? { ...cur, ...updated } : cur));
-      }
-      const revokedCount =
-        updated && typeof updated === 'object'
-          ? (updated.revokedSessionsCount ?? updated.sessionsInvalidated ?? updated.revokedCount)
-          : undefined;
-      const statusDetail = nextStatus ? ` (status: ${nextStatus})` : '';
-      if (typeof revokedCount === 'number') {
-        setActionMsg(
-          `Agent ${action} succeeded${statusDetail}. ${revokedCount} active session${revokedCount === 1 ? '' : 's'} invalidated.`,
-        );
-      } else if (action === 'suspend' || action === 'terminate') {
-        setActionMsg(
-          `Agent ${action} succeeded${statusDetail}. Operational services are blocked${action === 'terminate' ? ' and receiving number revoked' : ''}; use "Invalidate active sessions" below if existing sessions must be revoked explicitly.`,
-        );
-      } else {
-        setActionMsg(
-          `Agent ${action} succeeded${statusDetail}. Canonical receiving number ensured; previously revoked sessions remain revoked until the Agent signs in again.`,
-        );
-      }
+      const updated: any = await ApiClient.post(`/internal/admin/agents/${encodeURIComponent(id)}/${action}`, payload);
+      if (!mountedRef.current || selectedAgentId.current !== id) return;
+      const expected = action === 'suspend' ? 'SUSPENDED' : action === 'terminate' ? 'TERMINATED' : 'ACTIVE';
+      if (!updated || updated.id !== id || updated.status !== expected) throw new Error('Lifecycle receipt did not match the Agent and requested status.');
+      setSelected(cur => cur && cur.id === id ? { ...cur, status: expected } : cur);
+      setActionMsg(`Agent ${action} confirmed (status: ${expected}). Review the Agent record and audit history for details.`);
       setLifecycleReason('');
       await Promise.all([fetchAgents(), loadPosition(id)]);
     } catch (e: any) {
-      setActionErr(e?.message || `${action} failed`);
+      if (!mountedRef.current || selectedAgentId.current !== id) return;
+      const status = typeof e?.status === 'number' ? e.status : undefined;
+      if (status === 400 || status === 401 || status === 403 || status === 404 || status === 422) {
+        setActionErr(e?.message || `${action} was rejected.`);
+      } else {
+        setLifecycleUnconfirmed(true); setLifecycleReviewStatus(null);
+        setActionErr('Agent lifecycle outcome is unconfirmed or conflicted. Refresh the matching Agent and independently review its audit history before another lifecycle action.');
+      }
     } finally {
-      setLifecycleBusy(false);
+      lifecycleInFlight.current = false;
+      if (mountedRef.current) setLifecycleBusy(false);
     }
+  };
+
+  const reviewLifecycle = async () => {
+    if (!selected || !lifecycleUnconfirmed || lifecycleReviewBusy || lifecycleInFlight.current) return;
+    const id = selected.id; lifecycleInFlight.current = true; setLifecycleReviewBusy(true); setLifecycleReviewStatus(null);
+    try {
+      const fresh = await ApiClient.get<Agent>(`/internal/agents/${encodeURIComponent(id)}`);
+      if (!mountedRef.current || selectedAgentId.current !== id) return;
+      if (!fresh || fresh.id !== id || !['PENDING', 'ACTIVE', 'SUSPENDED', 'TERMINATED'].includes(fresh.status)) throw new Error('Agent review response did not match the selected Agent or a known status.');
+      setSelected(current => current && current.id === id ? { ...current, status: fresh.status } : current);
+      setLifecycleReviewStatus(fresh.status); setActionErr('');
+    } catch (e: any) {
+      if (mountedRef.current && selectedAgentId.current === id) setActionErr(e?.message || 'Unable to load the Agent for review.');
+    } finally { lifecycleInFlight.current = false; if (mountedRef.current) setLifecycleReviewBusy(false); }
   };
 
   const loadReceivingNumber = async (agentId: string) => {
@@ -2031,7 +2042,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                 <td style={cell}>{a.agentClassId ? <code>{a.agentClassId}</code> : '—'}</td>
                 <td style={cell}>{new Date(a.createdAt).toLocaleString()}</td>
                 <td style={cell}>
-                  <button type="button" disabled={credentialBusy} onClick={() => void openDetail(a)} style={smallBtn}>
+                  <button type="button" disabled={agentBusy || (selectedAgentId.current === a.id && agentGuard)} onClick={() => void openDetail(a)} style={smallBtn}>
                     View
                   </button>
                 </td>
@@ -2086,7 +2097,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   Target in funding
                 </button>
               )}
-              <button type="button" disabled={credentialBusy} onClick={() => { if (!mayLeaveCredential()) return; selectedAgentId.current = null; positionRequest.current += 1; setSelected(null); }} style={smallBtn}>
+              <button type="button" disabled={agentBusy} onClick={() => { if (!mayLeaveAgent()) return; selectedAgentId.current = null; positionRequest.current += 1; setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setSelected(null); }} style={smallBtn}>
                 Close
               </button>
             </div>
@@ -2201,7 +2212,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     {canSuspend && (
                       <button
                         type="button"
-                        disabled={lifecycleBusy || !canPerformAgentLifecycle('suspend', selected.status)}
+                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || !canPerformAgentLifecycle('suspend', selected.status)}
                         onClick={() => void doLifecycle('suspend', selected.id)}
                         style={warnBtn}
                       >
@@ -2211,7 +2222,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     {canTerminate && (
                       <button
                         type="button"
-                        disabled={lifecycleBusy || !canPerformAgentLifecycle('terminate', selected.status)}
+                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || !canPerformAgentLifecycle('terminate', selected.status)}
                         onClick={() => void doLifecycle('terminate', selected.id)}
                         style={dangerBtn}
                       >
@@ -2221,7 +2232,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     {canReactivate && (
                       <button
                         type="button"
-                        disabled={lifecycleBusy || !canPerformAgentLifecycle('reactivate', selected.status)}
+                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || !canPerformAgentLifecycle('reactivate', selected.status)}
                         onClick={() => void doLifecycle('reactivate', selected.id)}
                         style={successBtn}
                       >
@@ -2231,7 +2242,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     {canActivate && (
                       <button
                         type="button"
-                        disabled={lifecycleBusy || !canPerformAgentLifecycle('activate', selected.status)}
+                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || !canPerformAgentLifecycle('activate', selected.status)}
                         onClick={() => void doLifecycle('activate', selected.id)}
                         style={successBtn}
                       >
@@ -2246,10 +2257,13 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                 {principal?.readOnlyPrincipal ? 'Lifecycle actions are unavailable in a read-only session.' : <>Lifecycle actions require <code>agent.suspend / terminate / reactivate / activate</code>.</>}
               </div>
             )}
+            {lifecycleUnconfirmed && <div style={errBox} role="status"><strong>Agent lifecycle review required.</strong> A prior action may have occurred. Refresh this Agent and inspect the authoritative audit history independently; a fresh read cannot exclude a late commit. This local lock is lost on confirmed exit or session change.
+              <div style={actionRow}><button type="button" style={smallBtn} disabled={lifecycleBusy || lifecycleReviewBusy} onClick={() => void reviewLifecycle()}>{lifecycleReviewBusy ? 'Loading Agent…' : 'Refresh Agent for review'}</button>
+              {lifecycleReviewStatus && <><span>Reviewed Agent status: {lifecycleReviewStatus}</span><button type="button" style={smallBtn} onClick={() => { setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setActionErr(''); }}>I reviewed the status and audit history</button></>}</div></div>}
             {actionMsg && <div style={successBox} role="status">{actionMsg}</div>}
             {actionErr && <div style={errBox} role="alert">{actionErr}</div>}
 
-            {canManageCredentials && (
+            {canManageCredentials && !lifecycleBusy && !lifecycleReviewBusy && !lifecycleUnconfirmed && (
               <AgentCredentialPanel
                 agentId={selected.id}
                 agentStatus={selected.status}
