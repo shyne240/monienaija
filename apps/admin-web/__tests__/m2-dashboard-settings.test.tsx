@@ -1,7 +1,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { DashboardSettingsScreen } from '../src/screens/authenticated/DashboardSettingsScreen';
-import { ApiClient } from '../src/services/api-client';
+import { ApiClient, ApiError } from '../src/services/api-client';
 import { useAuthStore } from '../src/store/auth-store';
 
 jest.mock('../src/services/api-client', () => {
@@ -63,4 +63,20 @@ test('reload retains local drafts but requires explicit review and confirmation 
 });
 test('a change to the store session id also resets drafts for the same principal',async()=>{
  render(<DashboardSettingsScreen/>);await choose();act(()=>useAuthStore.setState({sessionId:'different-store-session'}));await screen.findByLabelText('Dashboard template for ROLE_A');expect(screen.getByLabelText('Dashboard template for ROLE_A')).toHaveProperty('value','ONE');
+});
+
+test('a conflict requires fresh configuration and explicit review, not immediate retry',async()=>{
+ (ApiClient.put as jest.Mock).mockRejectedValue(new ApiError('conflict',409));render(<DashboardSettingsScreen/>);await choose();submit();await screen.findByText(/outcome could not be confirmed/);expect((save() as HTMLButtonElement).disabled).toBe(true);expect(screen.queryByRole('button',{name:'I reviewed ROLE_A'})).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Reload configuration'}));await screen.findByRole('button',{name:'I reviewed ROLE_A'});expect(screen.getByText(/fresh read does not exclude a late commit/)).toBeTruthy();expect((save() as HTMLButtonElement).disabled).toBe(true);fireEvent.click(screen.getByRole('button',{name:'I reviewed ROLE_A'}));expect((save() as HTMLButtonElement).disabled).toBe(false);
+});
+
+test('a missing role cannot silently discard an uncertain outcome',async()=>{
+ const confirm=jest.spyOn(window,'confirm').mockReturnValue(false);const report=jest.fn();(ApiClient.put as jest.Mock).mockRejectedValue(new Error('network lost'));render(<DashboardSettingsScreen onDashboardGuardChange={report}/>);await choose();submit();await screen.findByText(/outcome could not be confirmed/);(ApiClient.get as jest.Mock).mockImplementation((url:string)=>Promise.resolve(url.endsWith('/templates')?templates:url.endsWith('/assignments')?assignments.filter(a=>a.roleKey!=='ROLE_A'):[]));fireEvent.click(screen.getByRole('button',{name:'Reload configuration'}));await screen.findByRole('button',{name:'I reviewed ROLE_A and discard draft'});fireEvent.click(screen.getByRole('button',{name:'I reviewed ROLE_A and discard draft'}));expect(report).toHaveBeenLastCalledWith(true,false);confirm.mockReturnValue(true);fireEvent.click(screen.getByRole('button',{name:'I reviewed ROLE_A and discard draft'}));await waitFor(()=>expect(report).toHaveBeenLastCalledWith(false,false));confirm.mockRestore();
+});
+
+test('dashboard assignment drafts and pending writes guard browser unload',async()=>{
+ const report=jest.fn();const pending=deferred();(ApiClient.put as jest.Mock).mockReturnValue(pending.promise);render(<DashboardSettingsScreen onDashboardGuardChange={report}/>);await choose();expect(report).toHaveBeenLastCalledWith(true,false);const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);submit();expect(report).toHaveBeenLastCalledWith(true,true);await act(async()=>{pending.resolve(receipt());await pending.promise;});await waitFor(()=>expect(report).toHaveBeenLastCalledWith(false,false));
+});
+
+test('shell navigation protects dashboard assignment drafts',async()=>{
+ const {Layout}=await import('../src/screens/authenticated/Layout');useAuthStore.setState(state=>({isAuthenticated:true,principal:state.principal?{...state.principal,roles:['SUPER_ADMIN']}:null}));const view=render(<Layout/>);fireEvent.click(view.getByTestId('nav-dashboardSettings'));await choose();fireEvent.click(view.getByTestId('nav-dashboard'));expect(view.getByRole('dialog',{name:'Leave dashboard settings?'})).toBeTruthy();fireEvent.click(view.getByRole('button',{name:'Keep working'}));expect(view.getByLabelText('Dashboard template for ROLE_A')).toHaveProperty('value','TWO');fireEvent.click(view.getByTestId('nav-dashboard'));fireEvent.click(view.getByRole('button',{name:'Discard and leave'}));expect(view.queryByLabelText('Dashboard template for ROLE_A')).toBeNull();
 });

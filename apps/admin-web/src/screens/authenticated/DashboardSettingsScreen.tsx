@@ -37,13 +37,13 @@ type LoadState = 'loading' | 'ready' | 'forbidden' | 'error';
  * The UI gates actions by session scopes and read-only context; the backend remains authoritative
  * and applies its own checks. A failed or unconfirmed write is not displayed as successful.
  */
-export const DashboardSettingsScreen: React.FC = () => {
+export const DashboardSettingsScreen: React.FC<{onDashboardGuardChange?: (guarded: boolean, busy: boolean) => void}> = ({onDashboardGuardChange}) => {
   const { principal, sessionId } = useAuthStore();
   const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
-  return <DashboardSettingsWorkspace key={key} />;
+  return <DashboardSettingsWorkspace key={key} onDashboardGuardChange={onDashboardGuardChange} />;
 };
 
-const DashboardSettingsWorkspace: React.FC = () => {
+const DashboardSettingsWorkspace: React.FC<{onDashboardGuardChange?: (guarded: boolean, busy: boolean) => void}> = ({onDashboardGuardChange}) => {
   const { principal } = useAuthStore();
   const generation = useRef(0);
   const savingRef = useRef(false);
@@ -62,9 +62,19 @@ const DashboardSettingsWorkspace: React.FC = () => {
   const [reasonByRole, setReasonByRole] = useState<Record<string, string>>({});
   const [savingRole, setSavingRole] = useState<string | null>(null);
   const [needsReview, setNeedsReview] = useState<Record<string, 'refresh' | 'ack'>>({});
+  const [uncertainRoles, setUncertainRoles] = useState<Record<string, true>>({});
   const drafts = useRef({templates: pendingTemplateByRole, reasons: reasonByRole});
   drafts.current = {templates: pendingTemplateByRole, reasons: reasonByRole};
   const [confirmRole, setConfirmRole] = useState<string | null>(null);
+  const guard = Boolean(savingRole || confirmRole || Object.keys(needsReview).length || Object.keys(uncertainRoles).length || Object.keys(pendingTemplateByRole).length || Object.values(reasonByRole).some(value => value.trim()));
+  useEffect(() => { onDashboardGuardChange?.(guard, Boolean(savingRole)); }, [onDashboardGuardChange, guard, savingRole]);
+  useEffect(() => () => onDashboardGuardChange?.(false, false), [onDashboardGuardChange]);
+  useEffect(() => {
+    if (!guard) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+  }, [guard]);
+
   const confirmCancelRef = useRef<HTMLButtonElement>(null);
   const saveButtons = useRef<Record<string, HTMLButtonElement | null>>({});
   const returnToRole = useRef<string | null>(null);
@@ -154,9 +164,9 @@ const DashboardSettingsWorkspace: React.FC = () => {
       setFeedbackByRole((prev) => ({ ...prev, [roleKey]: { kind: 'success', message: `Dashboard for ${roleKey} is now ${templateKey}.` } }));
     } catch (err: any) {
       if (request !== generation.current) return;
-      const rejected = err instanceof ApiError && [400, 401, 403, 404, 409, 422].includes(err.status);
+      const rejected = err instanceof ApiError && [400, 401, 403, 404, 422].includes(err.status);
       const message = rejected ? err.message : 'The assignment outcome could not be confirmed. Reload configuration and review the current assignment before retrying.';
-      if (!rejected) setNeedsReview(prev => ({ ...prev, [roleKey]: 'refresh' }));
+      if (!rejected) { setNeedsReview(prev => ({ ...prev, [roleKey]: 'refresh' })); setUncertainRoles(prev => ({...prev, [roleKey]: true})); }
       setFeedbackByRole((prev) => ({ ...prev, [roleKey]: { kind: 'error', message } }));
     } finally {
       if (request === generation.current) { savingRef.current = false; setSavingRole(null); }
@@ -210,7 +220,7 @@ const DashboardSettingsWorkspace: React.FC = () => {
           Assign which dashboard template each role displays. Assigning a template never grants or changes any permission — it only
           changes which widgets that role's dashboard shows.
         </p>
-        <p style={styles.note}>Changes and outcome safeguards are local to this workspace and are lost on navigation, browser refresh or session change. Assignments do not use an optimistic version. Reload and review the current assignment before making changes; another operator may change it concurrently.</p>
+        <p style={styles.note}>Changes and outcome safeguards are local to this workspace and are lost on navigation, browser refresh or session change. Assignments do not use an optimistic version. Reload and independently review the current assignment and audit history before making changes; another operator may change it concurrently, and a fresh read cannot exclude a late commit.</p>
         <button type="button" style={styles.retryBtn} disabled={savingRole !== null || confirmRole !== null} onClick={() => void load()}>Reload configuration</button>
       </div>
 
@@ -259,7 +269,7 @@ const DashboardSettingsWorkspace: React.FC = () => {
       <p className="mn-dashboard-settings__eyebrow">ROLE CONFIGURATION</p>
       <h2 style={styles.sectionHeader}>Role → Dashboard Assignment ({assignments.length})</h2>
       {!canAssign && <p role="note">Assignment controls are unavailable for this session.</p>}
-      {Object.keys(needsReview).filter(role => !assignments.some(a => a.roleKey === role)).map(role => <div role="alert" key={role}>The saved configuration no longer contains {role}; its local draft cannot be submitted. <button type="button" onClick={() => { setPendingTemplateByRole(prev => {const next={...prev}; delete next[role]; return next;}); setReasonByRole(prev => {const next={...prev}; delete next[role]; return next;}); setNeedsReview(prev => {const next={...prev}; delete next[role]; return next;}); }}>Discard {role} draft</button></div>)}
+      {Object.keys(needsReview).filter(role => !assignments.some(a => a.roleKey === role)).map(role => <div role="alert" key={role}>The refreshed configuration does not contain {role}; its local draft cannot be submitted. {uncertainRoles[role] && 'A missing role does not prove the action failed or exclude a late commit. Independently inspect assignment and audit history before clearing this local review.'} <button type="button" onClick={() => { if (uncertainRoles[role] && !window.confirm(`Acknowledge independent ${role} assignment and audit review and discard this local draft? The action may have occurred.`)) return; setPendingTemplateByRole(prev => {const next={...prev}; delete next[role]; return next;}); setReasonByRole(prev => {const next={...prev}; delete next[role]; return next;}); setNeedsReview(prev => {const next={...prev}; delete next[role]; return next;}); setUncertainRoles(prev => {const next={...prev}; delete next[role]; return next;}); }}>{uncertainRoles[role] ? `I reviewed ${role} and discard draft` : `Discard ${role} draft`}</button></div>)}
       <ScrollRegion label="Role dashboard assignments" hint="Scroll horizontally to view all assignment controls.">
         <div style={styles.assignmentTableWrap}><table style={styles.table}>
           <thead>
@@ -322,7 +332,7 @@ const DashboardSettingsWorkspace: React.FC = () => {
                       >
                         {savingRole === a.roleKey ? 'Saving…' : 'Save'}
                       </button>
-                      {needsReview[a.roleKey] && <div role="status" className="mn-dashboard-settings__review">{needsReview[a.roleKey] === 'refresh' ? 'Reload configuration before reviewing this unconfirmed outcome.' : 'Review the current assignment and your retained draft. This read does not prevent concurrent changes.'}{needsReview[a.roleKey] === 'ack' && <div><button type="button" onClick={() => setNeedsReview(prev => {const next={...prev}; delete next[a.roleKey]; return next;})}>I reviewed {a.roleKey}</button></div>}</div>}
+                      {needsReview[a.roleKey] && <div role="status" className="mn-dashboard-settings__review">{needsReview[a.roleKey] === 'refresh' ? 'Reload configuration before reviewing this unconfirmed outcome.' : 'Independently review the current assignment, audit history and your retained draft. A fresh read does not exclude a late commit or prevent concurrent changes.'}{needsReview[a.roleKey] === 'ack' && <div><button type="button" onClick={() => { setNeedsReview(prev => {const next={...prev}; delete next[a.roleKey]; return next;}); setUncertainRoles(prev => {const next={...prev}; delete next[a.roleKey]; return next;}); }}>I reviewed {a.roleKey}</button></div>}</div>}
                       {feedback && (
                         <div role={feedback.kind === 'success' ? 'status' : 'alert'} style={feedback.kind === 'success' ? styles.rowSuccess : styles.rowError}>{feedback.message}</div>
                       )}
