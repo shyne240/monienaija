@@ -64,7 +64,7 @@ describe('Admin Web batch 03: limit read-only diagnostics', () => {
     expect((await view.findAllByText('250000')).length).toBeGreaterThan(0);
     expect(view.getByText('Total 21 · Page 1 of 2')).toBeTruthy();
     expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-usages?page=1&limit=20&limitProfileCode=AGENT_STANDARD&product=CASH_IN');
-    fireEvent.click(view.getByRole('button', { name: 'Next' }));
+    fireEvent.click(view.getByRole('button', { name: 'Next usage page' }));
     await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-usages?page=2&limit=20&limitProfileCode=AGENT_STANDARD&product=CASH_IN'));
 
     fireEvent.change(view.getByLabelText('Stale only'), { target: { value: 'true' } });

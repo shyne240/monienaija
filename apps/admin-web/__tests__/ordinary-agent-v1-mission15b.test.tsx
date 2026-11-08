@@ -589,7 +589,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
       }),
     );
 
-    fireEvent.click(limitScreen.getByRole('button', { name: 'Deactivate' }));
+    fireEvent.click(limitScreen.getByRole('button', { name: `Deactivate AGENT_CLASS_CAP for AGENT_CLASS ${CLASS_ID}` }));
     await waitFor(() =>
       expect(ApiClient.patch).toHaveBeenCalledWith('/internal/limit-assignments/cls-assign-9', {
         subjectType: 'AGENT_CLASS',

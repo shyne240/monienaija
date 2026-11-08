@@ -9,7 +9,7 @@ const row={id:'synthetic-id',subjectType:'AGENT_CLASS',subjectId:'synthetic-clas
 function deferred(){let resolve!:(v:any)=>void;const promise=new Promise<any>(r=>resolve=r);return {promise,resolve};}
 beforeEach(()=>{jest.resetAllMocks();principal();});
 test('an assignment without a version is displayed without inventing one and cannot be changed',async()=>{
- (ApiClient.get as jest.Mock).mockResolvedValue({data:[row],total:1});render(<LimitAssignmentScreen/>);expect(await screen.findByText('Unavailable')).toBeTruthy();const button=screen.getByRole('button',{name:'Deactivate'}) as HTMLButtonElement;expect(button.disabled).toBe(true);fireEvent.click(button);expect(ApiClient.patch).not.toHaveBeenCalled();
+ (ApiClient.get as jest.Mock).mockResolvedValue({data:[row],total:1});render(<LimitAssignmentScreen/>);expect(await screen.findByText('Unavailable')).toBeTruthy();const button=screen.getByRole('button',{name:'Deactivate CLASS_STANDARD for AGENT_CLASS synthetic-class'}) as HTMLButtonElement;expect(button.disabled).toBe(true);fireEvent.click(button);expect(ApiClient.patch).not.toHaveBeenCalled();
 });
 test('a malformed create receipt does not claim assignment success',async()=>{
  (ApiClient.get as jest.Mock).mockResolvedValue({data:[]});(ApiClient.post as jest.Mock).mockResolvedValue({});render(<LimitAssignmentScreen/>);fireEvent.change(screen.getByLabelText('Agent class UUID'),{target:{value:'synthetic-class'}});fireEvent.change(screen.getByLabelText('Agent class limit profile code'),{target:{value:'CLASS_STANDARD'}});fireEvent.click(screen.getByRole('button',{name:'Assign to class'}));expect(await screen.findByText(/Assignment outcome not confirmed/)).toBeTruthy();expect(screen.queryByText(/Assigned profile CLASS_STANDARD/)).toBeNull();
@@ -29,4 +29,44 @@ test('assignment pagination preserves applied filters and uses the server page',
 });
 test('assignment page metadata cannot claim a different requested page',async()=>{
  (ApiClient.get as jest.Mock).mockImplementation((url:string)=>Promise.resolve({data:[{...row,version:1}],total:21,page:1,totalPages:2}));render(<LimitAssignmentScreen/>);await screen.findByText('21 assignments · Page 1 of 2');fireEvent.click(screen.getByRole('button',{name:'Next assignments'}));expect(await screen.findByText(/invalid or mismatched page/)).toBeTruthy();expect(screen.queryByText('21 assignments · Page 1 of 2')).toBeNull();
+});
+
+
+test('an unconfirmed toggle hides stale rows until a fresh read and does not assert success',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue({data:[{...row,version:1}],page:1,total:1,totalPages:1});
+ (ApiClient.patch as jest.Mock).mockResolvedValue({id:'wrong',status:'DISABLED'});
+ render(<LimitAssignmentScreen/>);fireEvent.click(await screen.findByRole('button',{name:'Deactivate CLASS_STANDARD for AGENT_CLASS synthetic-class'}));
+ expect(await screen.findByText(/Assignment update not confirmed/)).toBeTruthy();expect(screen.queryByRole('button',{name:/Deactivate CLASS_STANDARD/})).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:'Filter assignments'}));expect(await screen.findByRole('button',{name:'Deactivate CLASS_STANDARD for AGENT_CLASS synthetic-class'})).toBeTruthy();expect(screen.queryByText(/Assignment update not confirmed/)).toBeNull();
+});
+
+test('customer context keeps toggle feedback and reload inside the assignment workspace',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue({data:[{...row,version:1}]});(ApiClient.patch as jest.Mock).mockRejectedValue(new Error('offline'));
+ render(<LimitAssignmentScreen initialCustomerId="customer-1"/>);fireEvent.click(await screen.findByRole('button',{name:'Deactivate CLASS_STANDARD for AGENT_CLASS synthetic-class'}));
+ expect(await screen.findByText(/Assignment update not confirmed/)).toBeTruthy();expect(screen.queryByRole('button',{name:/Deactivate CLASS_STANDARD/})).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:'Reload assignments'}));expect(await screen.findByRole('button',{name:/Deactivate CLASS_STANDARD/})).toBeTruthy();expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-assignments/customer/customer-1');
+});
+
+test('section navigation and action cards respect read and assignment scopes',async()=>{
+ useAuthStore.setState(state=>({principal:{...state.principal!,scopes:['agent.assign_limit']}}));render(<LimitAssignmentScreen/>);
+ expect(screen.getByRole('navigation',{name:'Limit workspace sections'})).toBeTruthy();expect(screen.getByRole('link',{name:'Manage assignments'})).toBeTruthy();expect(screen.queryByRole('link',{name:'Usage diagnostics'})).toBeNull();expect(screen.queryByRole('region',{name:'Existing assignments'})).toBeNull();
+ expect(screen.getByLabelText('Agent UUID')).toBeTruthy();expect(screen.queryByLabelText('Agent class UUID')).toBeNull();expect(ApiClient.get).not.toHaveBeenCalled();
+});
+
+
+test('a matching versioned toggle receipt displays success in the assignment register',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue({data:[{...row,version:1}]});(ApiClient.patch as jest.Mock).mockResolvedValue({...row,isActive:false,version:2});
+ render(<LimitAssignmentScreen/>);fireEvent.click(await screen.findByRole('button',{name:'Deactivate CLASS_STANDARD for AGENT_CLASS synthetic-class'}));
+ expect(await screen.findByText('Agent Class limit assignment CLASS_STANDARD deactivated.')).toBeTruthy();
+ expect(ApiClient.patch).toHaveBeenCalledWith('/internal/limit-assignments/synthetic-id',{subjectType:'AGENT_CLASS',isActive:false,version:1});
+});
+
+
+test('an assignment read started during a failed toggle cannot restore stale rows',async()=>{
+ const patch=deferred(), read=deferred();let reads=0;
+ (ApiClient.get as jest.Mock).mockImplementation(()=>++reads===1?Promise.resolve({data:[{...row,version:1}]}):read.promise);
+ (ApiClient.patch as jest.Mock).mockReturnValue(patch.promise);render(<LimitAssignmentScreen/>);
+ fireEvent.click(await screen.findByRole('button',{name:/Deactivate CLASS_STANDARD/}));fireEvent.click(screen.getByRole('button',{name:'Filter assignments'}));
+ await act(async()=>{patch.resolve({id:'wrong'});await patch.promise;});expect(screen.getByText(/Assignment update not confirmed/)).toBeTruthy();
+ await act(async()=>{read.resolve({data:[{...row,version:1}]});await read.promise;});expect(screen.queryByRole('button',{name:/Deactivate CLASS_STANDARD/})).toBeNull();
 });

@@ -1,6 +1,6 @@
 import './operational-surfaces.css';
 import './limit-assignment.css';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { StructuredRecordTable, type DataRecord, type StructuredColumn } from '../../components/StructuredData';
 import { PageHeader, ScrollRegion } from '../../design-system/primitives';
 import { ApiClient } from '../../services/api-client';
@@ -98,6 +98,7 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
 };
 const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToCustomer?: () => void }> = ({ initialCustomerId, onBackToCustomer }) => {
   const { principal } = useAuthStore();
+  const instanceId = useId().replace(/:/g, '');
   const generations = useRef({ assignments:0, usage:0, reservations:0, classes:0, assign:0, classAssign:0, toggle:0 });
   useEffect(() => () => { for (const key of Object.keys(generations.current) as Array<keyof typeof generations.current>) generations.current[key]++; }, []);
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
@@ -132,6 +133,8 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
   const [classResult, setClassResult] = useState('');
   const [classResultErr, setClassResultErr] = useState('');
   const [toggleBusyId, setToggleBusyId] = useState<string | null>(null);
+  const [toggleMessage, setToggleMessage] = useState('');
+  const [toggleError, setToggleError] = useState('');
   const [result, setResult] = useState('');
   const [resultErr, setResultErr] = useState('');
   const [usageFilters, setUsageFilters] = useState<UsageFilters>(INITIAL_USAGE_FILTERS);
@@ -173,7 +176,7 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
       if (!Array.isArray(rows) || !rows.every(validAssignment)) throw new Error('Limit assignments returned an invalid response.');
       const hasPageInfo = Number.isSafeInteger(response?.page) && Number.isSafeInteger(response?.total) && Number.isSafeInteger(response?.totalPages);
       if (hasPageInfo && (response.page !== requestedPage || response.total < rows.length || response.totalPages < 0 || response.page < 1)) throw new Error('Limit assignments returned an invalid or mismatched page.');
-      setAssignments(rows); setAssignmentsSearched(true);
+      setAssignments(rows); setAssignmentsSearched(true); setToggleError('');
       setAssignmentPage(hasPageInfo ? { page: response.page, total: response.total, totalPages: response.totalPages } : null);
     } catch (err: any) {
       if (generation === generations.current.assignments) setError(err?.message || 'Failed to load limit assignments');
@@ -320,10 +323,7 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
     const isAgentClass = assignment.subjectType === 'AGENT_CLASS' && canModifyLimits;
     if ((!isAgent && !isAgentClass) || !Number.isSafeInteger(assignment.version) || assignment.version < 1 || typeof assignment.isActive !== 'boolean') return;
 
-    setResult('');
-    setResultErr('');
-    setClassResult('');
-    setClassResultErr('');
+    setToggleMessage(''); setToggleError('');
     const generation = ++generations.current.toggle;
     setToggleBusyId(assignment.id);
     try {
@@ -336,16 +336,16 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
       if (!validReceipt(receipt, assignment.subjectType, assignment.subjectId, assignment.limitProfileCode) || receipt.id !== assignment.id || receipt.isActive !== !assignment.isActive || receipt.version <= assignment.version) throw new Error('Update receipt was incomplete or mismatched.');
       const label = assignment.subjectType === 'AGENT_CLASS' ? 'Agent Class' : 'Agent';
       const msg = `${label} limit assignment ${assignment.limitProfileCode} ${assignment.isActive ? 'deactivated' : 'activated'}.`;
-      if (assignment.subjectType === 'AGENT_CLASS') setClassResult(msg);
-      else setResult(msg);
+      setToggleMessage(msg);
       if (canReadAssignments) {
         void fetchAssignments();
       }
     } catch (err: any) {
       if (generation !== generations.current.toggle) return;
       const errText = `Assignment update not confirmed; refresh before retrying. ${err?.message || 'Service unavailable.'}`;
-      if (assignment.subjectType === 'AGENT_CLASS') setClassResultErr(errText);
-      else setResultErr(errText);
+      generations.current.assignments++; setLoading(false);
+      setAssignments([]); setAssignmentsSearched(false); setAssignmentPage(null);
+      setToggleError(errText);
     } finally {
       if (generation === generations.current.toggle) setToggleBusyId(null);
     }
@@ -363,13 +363,14 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
   }
 
   return (
-    <div className="mn-operational mn-limit-assignment" style={wrap}>
+    <div className="mn-operational mn-limit-assignment limit-redesign" style={wrap}>
       <PageHeader eyebrow="Commercial administration" title="Limit Assignments" description="Review assignments and read-only usage or reservation diagnostics." />
-      <p style={sub}>
-        View existing assignments with <code>limit.view</code>, assign per-Agent profiles with{' '}
-        <code>agent.assign_limit</code>, and manage <code>AGENT_CLASS</code> assignments with{' '}
-        <code>limit.modify</code>. Catalogue definitions are managed separately.
-      </p>
+      <div className="limit-redesign__boundary" role="note"><strong>Scope and permissions</strong><span>Assignments require their respective functions. Usage and reservations are read-only diagnostics; profile definitions are managed in Limit Catalogue.</span></div>
+      {(canReadAssignments || (!initialCustomerId && (canAssignAgent || canModifyLimits))) && <nav className="limit-redesign__nav" aria-label="Limit workspace sections">
+        {canReadAssignments && <a href={`#${instanceId}-assignments`}>Assignments</a>}
+        {!initialCustomerId && (canAssignAgent || canModifyLimits) && <a href={`#${instanceId}-manage`}>Manage assignments</a>}
+        {canViewDiagnostics && <><a href={`#${instanceId}-usage`}>Usage diagnostics</a><a href={`#${instanceId}-reservations`}>Reservation diagnostics</a></>}
+      </nav>}
       {initialCustomerId && (
         <div style={note}>
           Showing assignments for customer <code>{initialCustomerId}</code>.
@@ -388,11 +389,14 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
         <div style={diagnosticNotice} role="note" data-testid="limit-view-required-notice">
           Listing existing limit assignments and usage/reservation diagnostics requires{' '}
           <code>limit.view</code> (enforced server-side on <code>GET /internal/limit-assignments</code>).
-          Your session does not hold <code>limit.view</code>, so read queries are not issued; you can
-          still submit authorized assignment actions below.
+          Your session does not hold <code>limit.view</code>, so read queries are not issued.
+          {!initialCustomerId && ' Authorized assignment actions remain available below.'}
         </div>
       ) : (
-        <>
+        <section className="limit-redesign__panel" id={`${instanceId}-assignments`} tabIndex={-1} aria-labelledby={`${instanceId}-assignments-title`}>
+          <div className="limit-redesign__heading"><div><p className="limit-redesign__eyebrow">ASSIGNMENT REGISTER</p><h2 id={`${instanceId}-assignments-title`}>Existing assignments</h2><p>Review profile, subject, effective date and version. Available actions depend on your grants.</p></div></div>
+          {toggleMessage && <div className="limit-redesign__feedback limit-redesign__feedback--success" role="status">{toggleMessage}</div>}
+          {toggleError && <div className="limit-redesign__feedback limit-redesign__feedback--error" role="alert">{toggleError}</div>}
           {!initialCustomerId && (
             <form
               aria-label="Assignment filters"
@@ -534,6 +538,7 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
                             <button
                               type="button"
                               style={smallLink}
+                              aria-label={`${assignment.isActive ? 'Deactivate' : 'Activate'} ${assignment.limitProfileCode} for ${assignment.subjectType} ${assignment.subjectId || assignment.segmentCode || 'unknown subject'}`}
                               disabled={Boolean(toggleBusyId) || !Number.isSafeInteger(assignment.version) || assignment.version < 1}
                               title={!Number.isSafeInteger(assignment.version) || assignment.version < 1 ? 'Refresh to obtain a verified version before updating.' : undefined}
                               onClick={() => void handleToggleSubjectAssignment(assignment)}
@@ -557,118 +562,48 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
             <button type="button" style={btn} disabled={loading || assignmentPage.page >= assignmentPage.totalPages} onClick={() => void fetchAssignments(appliedAssignmentFilters, assignmentPage.page + 1)}>Next assignments</button>
           </div>}
           {assignmentsSearched && !assignmentPage && <p style={note}>Assignment pagination is not confirmed by this response.</p>}
-        </>
+          {initialCustomerId && !assignmentsSearched && !loading && <button type="button" style={btn} onClick={() => void fetchAssignments()}>Reload assignments</button>}
+        </section>
       )}
 
-      {!initialCustomerId && canAssignAgent && (
-        <div style={formCard}>
-          <h4 style={h4}>Assign Limit Profile to Agent</h4>
-          <form onSubmit={handleAssign} style={form}>
-            <input
-              aria-label="Agent UUID"
-              disabled={assignBusy}
-              value={agentId}
-              onChange={(event) => setAgentId(event.target.value)}
-              placeholder="Agent UUID"
-              style={inlineFormInput}
-            />
-            <input
-              aria-label="Agent limit profile code"
-              disabled={assignBusy}
-              value={profileCode}
-              onChange={(event) => setProfileCode(event.target.value)}
-              placeholder="Profile code (e.g. AGENT_STANDARD)"
-              style={inlineFormInput}
-            />
-            <button type="submit" style={btn} disabled={assignBusy}>
-              {assignBusy ? 'Assigning…' : 'Assign'}
-            </button>
-          </form>
-          {result && (
-            <div style={{ ...successBox, marginTop: 8 }} role="status">
-              {result}
+      {!initialCustomerId && (canAssignAgent || canModifyLimits) && <section className="limit-redesign__manage" id={`${instanceId}-manage`} tabIndex={-1} aria-labelledby={`${instanceId}-manage-title`}>
+        <div className="limit-redesign__heading"><div><p className="limit-redesign__eyebrow">PERMISSION-GATED ACTIONS</p><h2 id={`${instanceId}-manage-title`}>Manage assignments</h2><p>Assign profiles only to the subjects permitted by your function grants.</p></div></div>
+        <div className="limit-redesign__manage-grid">
+          {canAssignAgent && <section className="limit-redesign__action-card" aria-label="Assign Limit Profile to Agent">
+            <h3>Assign Limit Profile to Agent</h3><p>Requires <code>agent.assign_limit</code>.</p>
+            <form onSubmit={handleAssign} className="limit-redesign__action-form">
+              <label>Agent UUID<input aria-label="Agent UUID" disabled={assignBusy} value={agentId} onChange={event => setAgentId(event.target.value)} placeholder="Agent UUID" /></label>
+              <label>Agent limit profile code<input aria-label="Agent limit profile code" disabled={assignBusy} value={profileCode} onChange={event => setProfileCode(event.target.value)} placeholder="Profile code (e.g. AGENT_STANDARD)" /></label>
+              <button type="submit" style={btn} disabled={assignBusy}>{assignBusy ? 'Assigning…' : 'Assign'}</button>
+            </form>
+            {result && <div style={{ ...successBox, marginTop: 8 }} role="status">{result}</div>}
+            {resultErr && <div style={{ ...errBox, marginTop: 8, marginBottom: 0 }} role="alert">{resultErr}</div>}
+          </section>}
+          {canModifyLimits && <section className="limit-redesign__action-card" aria-label="Assign Limit Profile to Agent Class">
+            <div className="limit-redesign__action-heading"><div><h3>Assign Limit Profile to Agent Class (<code>AGENT_CLASS</code>)</h3><p>Requires <code>limit.modify</code>.</p></div>
+              {canViewAgentClasses && <button type="button" style={smallLink} disabled={classOptionsLoading} onClick={() => void loadAgentClassesCatalog()}>{classOptionsLoading ? 'Loading classes…' : 'Load Agent classes'}</button>}
             </div>
-          )}
-          {resultErr && (
-            <div style={{ ...errBox, marginTop: 8, marginBottom: 0 }} role="alert">
-              {resultErr}
-            </div>
-          )}
+            <form onSubmit={handleAssignAgentClass} className="limit-redesign__action-form">
+              {classOptions.length > 0 && <label>Select Agent class<select aria-label="Select Agent class" disabled={classAssignBusy} value={agentClassId} onChange={event => setAgentClassId(event.target.value)}>
+                <option value="">Select Agent class…</option>{classOptions.map(cls => <option key={cls.id} value={cls.id}>{cls.name} ({cls.code})</option>)}
+              </select></label>}
+              <label>Agent class UUID<input aria-label="Agent class UUID" disabled={classAssignBusy} value={agentClassId} onChange={event => setAgentClassId(event.target.value)} placeholder="Agent Class UUID" /></label>
+              <label>Agent class limit profile code<input aria-label="Agent class limit profile code" disabled={classAssignBusy} value={classProfileCode} onChange={event => setClassProfileCode(event.target.value)} placeholder="Profile code (e.g. AGENT_CLASS_STANDARD)" /></label>
+              <button type="submit" style={btn} disabled={classAssignBusy}>{classAssignBusy ? 'Assigning…' : 'Assign to class'}</button>
+            </form>
+            {classResult && <div style={{ ...successBox, marginTop: 8 }} role="status">{classResult}</div>}
+            {classResultErr && <div style={{ ...errBox, marginTop: 8, marginBottom: 0 }} role="alert">{classResultErr}</div>}
+          </section>}
         </div>
-      )}
-
-      {!initialCustomerId && canModifyLimits && (
-        <div style={formCard} aria-label="Assign Limit Profile to Agent Class">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-            <h4 style={{ margin: 0 }}>Assign Limit Profile to Agent Class (<code>AGENT_CLASS</code>)</h4>
-            {canViewAgentClasses && (
-              <button
-                type="button"
-                style={smallLink}
-                disabled={classOptionsLoading}
-                onClick={() => void loadAgentClassesCatalog()}
-              >
-                {classOptionsLoading ? 'Loading classes…' : 'Load Agent classes'}
-              </button>
-            )}
-          </div>
-          <form onSubmit={handleAssignAgentClass} style={form}>
-            {classOptions.length > 0 && (
-              <select
-                aria-label="Select Agent class"
-                disabled={classAssignBusy}
-                value={agentClassId}
-                onChange={(event) => setAgentClassId(event.target.value)}
-                style={inlineFormInput}
-              >
-                <option value="">Select Agent class…</option>
-                {classOptions.map((cls) => (
-                  <option key={cls.id} value={cls.id}>
-                    {cls.name} ({cls.code})
-                  </option>
-                ))}
-              </select>
-            )}
-            <input
-              aria-label="Agent class UUID"
-                disabled={classAssignBusy}
-              value={agentClassId}
-              onChange={(event) => setAgentClassId(event.target.value)}
-              placeholder="Agent Class UUID"
-              style={inlineFormInput}
-            />
-            <input
-              aria-label="Agent class limit profile code"
-                disabled={classAssignBusy}
-              value={classProfileCode}
-              onChange={(event) => setClassProfileCode(event.target.value)}
-              placeholder="Profile code (e.g. AGENT_CLASS_STANDARD)"
-              style={inlineFormInput}
-            />
-            <button type="submit" style={btn} disabled={classAssignBusy}>
-              {classAssignBusy ? 'Assigning…' : 'Assign to class'}
-            </button>
-          </form>
-          {classResult && (
-            <div style={{ ...successBox, marginTop: 8 }} role="status">
-              {classResult}
-            </div>
-          )}
-          {classResultErr && (
-            <div style={{ ...errBox, marginTop: 8, marginBottom: 0 }} role="alert">
-              {classResultErr}
-            </div>
-          )}
-        </div>
-      )}
+      </section>}
 
       {canViewDiagnostics ? (
         <>
           <div style={diagnosticNotice}>
-            These existing diagnostics are read-only. The API enforces <code>limit.view</code> server-side, AND-combined with the workforce principal-type allowlist (audit F-03/P0-03 correction); this page requests them only when the signed-in principal holds <code>limit.view</code>, matching the backend gate. Stale reservations are flagged for investigation only: age is not proof of an orphan, and this screen does not release reservations.
+            Diagnostics are read-only. The service requires <code>limit.view</code> and an allowed workforce principal type. Stale reservations are flagged for investigation only: age is not proof of an orphan, and this screen cannot release reservations.
           </div>
-          <section style={diagnosticCard} aria-label="Limit usage diagnostics">
-            <h3 style={sectionTitle}>Usage Diagnostics</h3>
+          <section className="limit-redesign__panel limit-redesign__diagnostic" id={`${instanceId}-usage`} tabIndex={-1} aria-label="Limit usage diagnostics">
+            <p className="limit-redesign__eyebrow">READ-ONLY DIAGNOSTICS</p><h2>Usage Diagnostics</h2>
             <p style={sectionHelp}>Inspect recorded and reserved usage by principal, profile, product, and window.</p>
             <form onChangeCapture={() => { generations.current.usage++; setUsageLoading(false); setUsageResult(null); setUsageError(''); }} onSubmit={(event) => { event.preventDefault(); void loadUsages(1); }} style={filterGrid}>
               {textFilter('Profile code', usageFilters.limitProfileCode, (value) => setUsageFilters((current) => ({ ...current, limitProfileCode: value })))}
@@ -684,20 +619,20 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
               <button type="submit" style={btn} disabled={usageLoading}>{usageLoading ? 'Loading…' : 'Search usage'}</button>
             </form>
             {usageError && <div style={errBox} role="alert">{usageError}</div>}
-            {usageLoading ? <div style={loadingBox}>Loading usage diagnostics…</div> : usageResult && (
+            {usageLoading ? <div style={loadingBox} role="status">Loading usage diagnostics…</div> : !usageResult && !usageError ? <div className="limit-redesign__initial">Choose filters and search to load usage diagnostics.</div> : usageResult && (
               <>
                 <div style={resultSummary}>Total {usageResult.total} · Page {usageResult.page}{usageResult.totalPages > 0 ? ` of ${usageResult.totalPages}` : ' (no results)'}</div>
                 <StructuredRecordTable rows={usageResult.data} columns={USAGE_COLUMNS} emptyMessage="No usage rows match these filters." />
                 <div style={pager}>
-                  <button type="button" style={smallLink} disabled={usageResult.page <= 1 || usageLoading} onClick={() => void loadUsages(usageResult.page - 1)}>Previous</button>
-                  <button type="button" style={smallLink} disabled={usageResult.page >= usageResult.totalPages || usageLoading} onClick={() => void loadUsages(usageResult.page + 1)}>Next</button>
+                  <button type="button" style={smallLink} aria-label="Previous usage page" disabled={usageResult.page <= 1 || usageLoading} onClick={() => void loadUsages(usageResult.page - 1)}>Previous</button>
+                  <button type="button" style={smallLink} aria-label="Next usage page" disabled={usageResult.page >= usageResult.totalPages || usageLoading} onClick={() => void loadUsages(usageResult.page + 1)}>Next</button>
                 </div>
               </>
             )}
           </section>
 
-          <section style={diagnosticCard} aria-label="Limit reservation diagnostics">
-            <h3 style={sectionTitle}>Reservation Diagnostics</h3>
+          <section className="limit-redesign__panel limit-redesign__diagnostic" id={`${instanceId}-reservations`} tabIndex={-1} aria-label="Limit reservation diagnostics">
+            <p className="limit-redesign__eyebrow">READ-ONLY DIAGNOSTICS</p><h2>Reservation Diagnostics</h2>
             <p style={sectionHelp}>Read reservation status, age, and correlation references. No recovery mutation is offered here.</p>
             <form onChangeCapture={() => { generations.current.reservations++; setReservationLoading(false); setReservationResult(null); setReservationError(''); }} onSubmit={(event) => { event.preventDefault(); void loadReservations(1); }} style={filterGrid}>
               <label style={fieldLabel}>Status
@@ -724,13 +659,13 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
               <button type="submit" style={btn} disabled={reservationLoading}>{reservationLoading ? 'Loading…' : 'Search reservations'}</button>
             </form>
             {reservationError && <div style={errBox} role="alert">{reservationError}</div>}
-            {reservationLoading ? <div style={loadingBox}>Loading reservation diagnostics…</div> : reservationResult && (
+            {reservationLoading ? <div style={loadingBox} role="status">Loading reservation diagnostics…</div> : !reservationResult && !reservationError ? <div className="limit-redesign__initial">Choose filters and search to load reservation diagnostics.</div> : reservationResult && (
               <>
                 <div style={resultSummary}>Total {reservationResult.total} · Page {reservationResult.page}{reservationResult.totalPages > 0 ? ` of ${reservationResult.totalPages}` : ' (no results)'}{reservationResult.staleThresholdMinutes !== undefined && <> · Stale threshold {reservationResult.staleThresholdMinutes} min</>}</div>
                 <StructuredRecordTable rows={reservationResult.data} columns={RESERVATION_COLUMNS} emptyMessage="No reservations match these filters." />
                 <div style={pager}>
-                  <button type="button" style={smallLink} disabled={reservationResult.page <= 1 || reservationLoading} onClick={() => void loadReservations(reservationResult.page - 1)}>Previous</button>
-                  <button type="button" style={smallLink} disabled={reservationResult.page >= reservationResult.totalPages || reservationLoading} onClick={() => void loadReservations(reservationResult.page + 1)}>Next</button>
+                  <button type="button" style={smallLink} aria-label="Previous reservations page" disabled={reservationResult.page <= 1 || reservationLoading} onClick={() => void loadReservations(reservationResult.page - 1)}>Previous</button>
+                  <button type="button" style={smallLink} aria-label="Next reservations page" disabled={reservationResult.page >= reservationResult.totalPages || reservationLoading} onClick={() => void loadReservations(reservationResult.page + 1)}>Next</button>
                 </div>
               </>
             )}
@@ -752,9 +687,7 @@ function textFilter(label: string, value: string, onChange: (next: string) => vo
   );
 }
 
-const wrap: React.CSSProperties = { padding: 'clamp(16px, 3vw, 32px)', maxWidth: 1100 };
-const h2: React.CSSProperties = { margin: '0 0 8px', color: 'var(--mn-nav-surface-deep, #082f23)' };
-const sub: React.CSSProperties = { color: 'var(--mn-text-secondary, #52655f)', fontSize: 13, marginBottom: 12 };
+const wrap: React.CSSProperties = { padding: 'clamp(16px, 3vw, 32px)', maxWidth: 1440 };
 const errBox: React.CSSProperties = { background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#991B1B', padding: 10, borderRadius: 6, marginBottom: 12, fontSize: 13 };
 const successBox: React.CSSProperties = { background: '#ECFDF5', border: '1px solid #6EE7B7', color: '#065F46', padding: 10, borderRadius: 6, fontSize: 13 };
 const loadingBox: React.CSSProperties = { padding: 20, textAlign: 'center', color: 'var(--mn-text-secondary, #52655f)' };
@@ -763,18 +696,12 @@ const denied: React.CSSProperties = { background: '#FFF7ED', border: '1px solid 
 const table: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 8, overflow: 'hidden' };
 const mono: React.CSSProperties = { fontFamily: 'monospace', fontSize: 12 };
 const badge = (status: string): React.CSSProperties => ({ padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 700, background: status === 'ACTIVE' ? '#ECFDF5' : 'var(--mn-surface-sunken, #eef3f0)', color: 'var(--mn-text-primary, #132b25)' });
-const formCard: React.CSSProperties = { marginTop: 16, padding: 16, background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8 };
-const h4: React.CSSProperties = { margin: '0 0 8px' };
-const form: React.CSSProperties = { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' };
 const filterGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 8, alignItems: 'end', marginBottom: 12 };
 const input: React.CSSProperties = { boxSizing: 'border-box', width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)', minWidth: 0, background: '#fff' };
-const inlineFormInput: React.CSSProperties = { boxSizing: 'border-box', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)', minWidth: 210, flex: '1 1 210px', background: '#fff' };
 const btn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)', background: '#fff', cursor: 'pointer' };
 const smallLink: React.CSSProperties = { padding: '4px 7px', borderRadius: 5, border: '1px solid #CBD5E1', background: '#FFFFFF', color: 'var(--mn-text-primary, #132b25)', cursor: 'pointer', fontSize: 11 };
 const note: React.CSSProperties = { marginTop: 12, fontSize: 12, color: 'var(--mn-text-secondary, #52655f)', background: 'var(--mn-surface-canvas, #f5f8f6)', padding: 10, borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)' };
 const diagnosticNotice: React.CSSProperties = { marginTop: 16, fontSize: 12, color: '#92400E', background: '#FFFBEB', padding: 10, borderRadius: 6, border: '1px solid #FDE68A', lineHeight: 1.5 };
-const diagnosticCard: React.CSSProperties = { marginTop: 16, padding: 16, background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8 };
-const sectionTitle: React.CSSProperties = { margin: '0 0 6px', fontSize: 16, color: 'var(--mn-nav-surface-deep, #082f23)' };
 const sectionHelp: React.CSSProperties = { margin: '0 0 12px', color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 };
 const fieldLabel: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 5, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 };
 const resultSummary: React.CSSProperties = { marginBottom: 8, fontSize: 12, color: 'var(--mn-text-secondary, #52655f)' };

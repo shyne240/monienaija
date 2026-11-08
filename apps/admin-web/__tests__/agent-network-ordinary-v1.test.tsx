@@ -310,7 +310,7 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
       expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-assignments?subjectType=AGENT'),
     );
 
-    fireEvent.click(view.getByRole('button', { name: 'Deactivate' }));
+    fireEvent.click(view.getByRole('button', { name: `Deactivate AGENT_STANDARD for AGENT ${AGENT_ID}` }));
     await waitFor(() =>
       expect(ApiClient.patch).toHaveBeenCalledWith(
         `/internal/limit-assignments/${LIMIT_ASSIGNMENT_ID}`,
