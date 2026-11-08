@@ -3,6 +3,7 @@ import './system-health.css';
 import { Button, PageHeader } from '../../design-system/primitives';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
+import { NotificationManagementApi } from '../../services/notification-management-api';
 import { useAuthStore } from '../../store/auth-store';
 import { DataRecord, extractRecords, StructuredColumn, StructuredKeyValueList, StructuredRecordTable } from '../../components/StructuredData';
 
@@ -87,12 +88,10 @@ const SystemHealthWorkspace: React.FC<{ onOpenNotifications?: () => void }> = ({
     setOutboxReceiptsLoading(true);
     setOutboxReceiptsError('');
     try {
-      const q = new URLSearchParams({ page: '1', limit: '20' });
-      if (statusFilter) q.set('status', statusFilter);
-      const res = await ApiClient.get(`/internal/notifications/outbox-receipts?${q.toString()}`);
+      const res = await NotificationManagementApi.listOutboxReceipts({ page: 1, limit: 20, status: statusFilter || undefined });
       if (generation !== generations.current.receipts) return;
-      if (!validList(res)) throw new Error('Notification outbox receipts returned an invalid response.');
-      setOutboxReceipts(res);
+      if (res.status === 'BLOCKED') throw new Error(res.message);
+      setOutboxReceipts(res.data);
     } catch (err: any) {
       if (generation === generations.current.receipts) setOutboxReceiptsError(err?.message || 'Notification outbox receipts unavailable');
     } finally {
@@ -124,15 +123,13 @@ const SystemHealthWorkspace: React.FC<{ onOpenNotifications?: () => void }> = ({
     const generation = ++generations.current.deliveries;
     setDeliveryLoading(true); setDeliveries(null);
     setLoadErrors(previous => ({ ...previous, deliveries: '' }));
-    const query = new URLSearchParams({ page: String(deliveryPage), limit: '20' });
-    if (appliedDeliveryFilters.status) query.set('status', appliedDeliveryFilters.status);
-    if (appliedDeliveryFilters.channel) query.set('channel', appliedDeliveryFilters.channel);
-    if (appliedDeliveryFilters.recipientType) query.set('recipientType', appliedDeliveryFilters.recipientType);
-    if (appliedDeliveryFilters.eventType) query.set('eventType', appliedDeliveryFilters.eventType);
     try {
-      const value = await ApiClient.get(`/internal/notifications/deliveries?${query.toString()}`);
-      if (!isRecord(value) || !validList(value) || !Number.isSafeInteger(value.total) || (value.total as number) < 0 || value.page !== deliveryPage || typeof value.hasNextPage !== 'boolean') throw new Error('Notification deliveries returned an invalid or mismatched response.');
-      if (generation === generations.current.deliveries) setDeliveries(value);
+      const result = await NotificationManagementApi.listDeliveries({ page: deliveryPage, limit: 20,
+        status: appliedDeliveryFilters.status || undefined, channel: appliedDeliveryFilters.channel || undefined,
+        recipientType: appliedDeliveryFilters.recipientType || undefined, eventType: appliedDeliveryFilters.eventType || undefined });
+      if (generation !== generations.current.deliveries) return;
+      if (result.status === 'BLOCKED') throw new Error(result.message);
+      setDeliveries(result.data);
     } catch (err: any) {
       if (generation === generations.current.deliveries) setLoadErrors(previous => ({ ...previous, deliveries: err?.message || 'Notification deliveries unavailable' }));
     } finally {
