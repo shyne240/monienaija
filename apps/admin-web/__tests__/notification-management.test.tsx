@@ -3,6 +3,7 @@ import { act, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { ApiClient, ApiError } from '../src/services/api-client';
 import { useAuthStore, WorkforcePrincipal } from '../src/store/auth-store';
 import { NotificationManagementScreen } from '../src/screens/authenticated/NotificationManagementScreen';
+import { NotificationManagementApi } from '../src/services/notification-management-api';
 import { SystemHealthScreen } from '../src/screens/authenticated/SystemHealthScreen';
 import {
   BASELINE_CODE_EVENT_CATALOGUE,
@@ -1043,13 +1044,10 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     expect(within(inspector).getByText(/UNCLASSIFIED/)).toBeTruthy();
     expect(inspector.textContent).toMatch(/3 attempt\(s\)/);
 
-    // Manual retry endpoint is genuinely absent from the backend — honest BLOCKED state,
-    // automatic bounded retry lives in NotificationWorkerService
-    fireEvent.change(view.getByTestId('manual-retry-reason-input'), {
-      target: { value: 'Provider recovered after upstream timeout incident' },
-    });
-    fireEvent.click(view.getByTestId('request-manual-retry-btn'));
-    expect(await view.findByTestId('manual-retry-blocked')).toBeTruthy();
+    // No manual retry route or policy exists: the control must not issue any POST.
+    expect((view.getByTestId('request-manual-retry-btn') as HTMLButtonElement).disabled).toBe(true);
+    expect(view.getByTestId('manual-retry-policy').textContent).toMatch(/No retry or worker action is started/);
+    fireEvent.click(view.getByTestId('request-manual-retry-btn')); expect(ApiClient.post).not.toHaveBeenCalled();
 
     // Invalid UUID in Recipient ID filter catches client-side before hitting backend
     fireEvent.change(view.getByLabelText('Recipient UUID filter'), {
@@ -1866,4 +1864,10 @@ test('a mismatched probe receipt locks sends across tabs until independent revie
   expect((await view.findByTestId('notification-probe-review-lock')).textContent).toMatch(/do not create delivery rows.*cannot prove non-delivery/i);expect((view.getByTestId('submit-test-send-btn') as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(view.getByTestId('notif-tab-overview'));expect(view.getByTestId('notification-probe-review-lock')).toBeTruthy();const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);
   const confirm=jest.spyOn(window,'confirm').mockReturnValue(false);fireEvent.click(view.getByRole('button',{name:'Acknowledge independent test-send review'}));expect(view.getByTestId('notification-probe-review-lock')).toBeTruthy();confirm.mockReturnValue(true);fireEvent.click(view.getByRole('button',{name:'Acknowledge independent test-send review'}));confirm.mockRestore();expect(view.queryByTestId('notification-probe-review-lock')).toBeNull();
+});
+
+test('the deferred manual retry service fails closed without any network request', async()=>{
+  (ApiClient.post as jest.Mock).mockClear();
+  const result=await NotificationManagementApi.requestManualDeliveryRetry('synthetic-delivery','Synthetic reason');
+  expect(result.status).toBe('BLOCKED');expect(result.status === 'BLOCKED' && result.httpStatus).toBe(0);expect(ApiClient.post).not.toHaveBeenCalled();
 });

@@ -261,13 +261,6 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
     recipientId: string;
   }>({ status: '', channel: '', recipientType: '', eventType: '', recipientId: '' });
   const [selectedDelivery, setSelectedDelivery] = useState<NotificationDeliveryRecord | null>(null);
-  const [manualRetryReason, setManualRetryReason] = useState<string>('');
-  const [manualRetryFeedback, setManualRetryFeedback] = useState<{
-    kind: 'success' | 'blocked' | 'error';
-    message: string;
-  } | null>(null);
-  const [isRetryingDelivery, setIsRetryingDelivery] = useState<boolean>(false);
-
   const [outboxReceiptPageData, setOutboxReceiptPageData] =
     useState<NotificationOutboxReceiptPage | null>(null);
   const [outboxReceiptLoading, setOutboxReceiptLoading] = useState<boolean>(false);
@@ -1143,42 +1136,6 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       eventType: filterEventType.trim(),
       recipientId: filterRecipientId.trim(),
     });
-  };
-
-  const handleManualDeliveryRetry = async (delivery: NotificationDeliveryRecord) => {
-    if (!permissions.canManageConfiguration && !permissions.canTestSend) return;
-    if (manualRetryReason.trim().length < 10) {
-      setManualRetryFeedback({
-        kind: 'error',
-        message: 'Provide an operational reason (at least 10 characters) before requesting manual retry.',
-      });
-      return;
-    }
-    setIsRetryingDelivery(true);
-    setManualRetryFeedback(null);
-    try {
-      const res = await NotificationManagementApi.requestManualDeliveryRetry(
-        delivery.id,
-        manualRetryReason.trim(),
-      );
-      if (res.status === 'BLOCKED') {
-        setManualRetryFeedback({ kind: 'blocked', message: res.message });
-      } else {
-        setManualRetryFeedback({
-          kind: 'success',
-          message: `Manual retry queued (${res.data.status}). Financial ledger state is never re-executed on notification retry.`,
-        });
-        setManualRetryReason('');
-        await fetchDeliveries(true);
-      }
-    } catch (err: any) {
-      setManualRetryFeedback({
-        kind: 'error',
-        message: err?.message || 'Manual delivery retry failed.',
-      });
-    } finally {
-      setIsRetryingDelivery(false);
-    }
   };
 
   // Handlers — Controlled Test-Send (Capability 11 — fixed connectivity probe)
@@ -2961,8 +2918,6 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                       style={styles.secondarySmallBtn}
                       onClick={() => {
                         setSelectedDelivery(null);
-                        setManualRetryFeedback(null);
-                        setManualRetryReason('');
                         if (deliveryOriginRef.current?.isConnected) deliveryOriginRef.current.focus();
                       }}
                     >
@@ -3011,51 +2966,10 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                         diagnostics API (data minimization) and is never displayed here. */}
                   </div>
 
-                  {selectedDelivery.status === 'FAILED' &&
-                    (permissions.canManageConfiguration || permissions.canTestSend) && (
-                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #CBD5E1' }}>
-                        <label htmlFor="manual-retry-reason" style={styles.label}>
-                          Request Manual Delivery Retry (ARENA 3 Boundary)
-                        </label>
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                          <input
-                            id="manual-retry-reason"
-                            aria-label="Manual retry reason"
-                            data-testid="manual-retry-reason-input"
-                            type="text"
-                            style={{ ...styles.input, maxWidth: 420 }}
-                            placeholder="Operational reason for manual retry (min 10 chars)…"
-                            value={manualRetryReason}
-                            onChange={(e) => setManualRetryReason(e.target.value)}
-                          />
-                          <button
-                            type="button"
-                            data-testid="request-manual-retry-btn"
-                            disabled={isRetryingDelivery}
-                            style={styles.secondaryBtn}
-                            onClick={() => void handleManualDeliveryRetry(selectedDelivery)}
-                          >
-                            {isRetryingDelivery ? 'Requesting…' : 'Request Manual Retry'}
-                          </button>
-                        </div>
-                        {manualRetryFeedback && (
-                          <div
-                            style={{
-                              ...(manualRetryFeedback.kind === 'success'
-                                ? styles.successAlert
-                                : manualRetryFeedback.kind === 'blocked'
-                                  ? styles.blockedBanner
-                                  : styles.errorAlert),
-                              marginTop: 10,
-                            }}
-                            role={manualRetryFeedback.kind === 'error' ? 'alert' : 'status'}
-                            data-testid={`manual-retry-${manualRetryFeedback.kind}`}
-                          >
-                            {manualRetryFeedback.message}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                  {selectedDelivery.status === 'FAILED' && <div role="note" data-testid="manual-retry-policy" style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #CBD5E1' }}>
+                    Manual retry is outside the approved read-only V1 scope and requires a new requirement and authorization policy. No retry or worker action is started here; review worker status separately.
+                    <button type="button" data-testid="request-manual-retry-btn" disabled>Manual retry unavailable</button>
+                  </div>}
                 </section>
               )}
 
@@ -3131,8 +3045,6 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                                 onClick={(event) => {
                                   deliveryOriginRef.current = event.currentTarget;
                                   setSelectedDelivery(row);
-                                  setManualRetryReason('');
-                                  setManualRetryFeedback(null);
                                 }}
                               >
                                 Inspect

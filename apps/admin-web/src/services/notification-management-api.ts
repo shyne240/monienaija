@@ -1327,19 +1327,15 @@ export const NotificationManagementApi = {
    */
   async requestManualDeliveryRetry(
     deliveryId: string,
-    reason: string,
-    idempotencyKey = generateNotificationIdempotencyKey(),
+    _reason: string,
+    _idempotencyKey?: string,
   ): Promise<IntegrationResult<NotificationMutationOutcome>> {
     const endpoint = `/internal/notifications/deliveries/${encodeURIComponent(deliveryId)}/retry`;
-    return callTypedBoundary({
-      owner: 'ARENA_3',
-      method: 'POST',
-      endpoint,
-      blockedExplanation:
-        `DEFERRED (approved V1 scope is read-only — no retry/replay controls): manual delivery retry endpoint (${endpoint}) does not exist by requirement. Failed deliveries are retried automatically by NotificationWorkerService (bounded attempts, exponential backoff); a manual-retry capability needs a new requirement + authorization policy decision.`,
-      run: () =>
-        ApiClient.post<NotificationMutationOutcome>(endpoint, { reason }, { idempotencyKey }),
-    });
+    // V1 has no authorized retry route. Never probe a potentially side-effecting
+    // endpoint: no network request was made, so zero is not an HTTP response.
+    return { status: 'BLOCKED', owner: 'ARENA_3', method: 'POST', endpoint, httpStatus: 0,
+      message: 'Manual retry is outside the approved read-only V1 scope. No request was made; a new requirement and authorization policy are needed.' };
+
   },
 
   /**
