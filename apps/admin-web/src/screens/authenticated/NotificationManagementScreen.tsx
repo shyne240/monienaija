@@ -128,13 +128,6 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   }, []);
   const templateGuard = templateGuards.SMS.guarded || templateGuards.EMAIL.guarded;
   const templateBusy = templateGuards.SMS.busy || templateGuards.EMAIL.busy;
-  useEffect(() => { onNotificationGuardChange?.(templateGuard, templateBusy); }, [onNotificationGuardChange, templateGuard, templateBusy]);
-  useEffect(() => {
-    if (!templateGuard) return;
-    const guard = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
-    window.addEventListener('beforeunload', guard);
-    return () => window.removeEventListener('beforeunload', guard);
-  }, [templateGuard]);
 
   const [activeTab, setActiveTab] = useState<NotificationAdminTab>(
     initialTab === 'providerConfig' && !permissions.canViewProviderConfig
@@ -225,10 +218,23 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   const [queueStatus, setQueueStatus] = useState('ALL');
   const [reviewedChange, setReviewedChange] = useState<NotificationChangeRequestRecord | null>(null);
   const [queueNeedsRefresh, setQueueNeedsRefresh] = useState(false);
+  const [queueReviewLoaded, setQueueReviewLoaded] = useState(false);
   const reviewRef = useRef<HTMLElement | null>(null);
   const reviewOrigin = useRef<HTMLButtonElement | null>(null);
   const checkerBusyRef = useRef(false);
   const checkerUncertaintyVersion = useRef(0);
+
+  const checkerBusy = isSubmittingChecker || Boolean(decidingChangeId || executingApprovalId);
+  const notificationGuard = templateGuard || Boolean(checkerApprovalId.trim() || checkerComment.trim() || queueDecisionComment.trim() || queueNeedsRefresh || checkerBusy);
+  const notificationBusy = templateBusy || checkerBusy;
+  useEffect(() => { onNotificationGuardChange?.(notificationGuard, notificationBusy); }, [onNotificationGuardChange, notificationGuard, notificationBusy]);
+  useEffect(() => {
+    if (!notificationGuard) return;
+    const guard = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', guard);
+    return () => window.removeEventListener('beforeunload', guard);
+  }, [notificationGuard]);
+  const markCheckerUncertain = () => { checkerUncertaintyVersion.current++; setQueueReviewLoaded(false); setQueueNeedsRefresh(true); };
 
   // Deliveries, Retries & Outbox Receipts State (Capability 10)
   const [deliveryPageData, setDeliveryPageData] = useState<NotificationDeliveryPage | null>(null);
@@ -545,7 +551,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
             } else {
               setChangeRequestsBlockedMsg('');
               setChangeRequests(res.data);
-              if (uncertaintyAtStart === checkerUncertaintyVersion.current) setQueueNeedsRefresh(false);
+              if (uncertaintyAtStart === checkerUncertaintyVersion.current) setQueueReviewLoaded(true);
               // Configuration receipts bridge submission to the next authoritative
               // queue load; don't continue presenting omitted/old statuses as current.
               setSessionSubmittedChanges((prev) =>
@@ -950,6 +956,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
         setCheckerFeedback({ kind: 'blocked', message: res.message });
       } else {
         const status = res.data.status;
+        if (status === 'APPROVED') markCheckerUncertain();
         setCheckerFeedback({
           kind: status === 'APPROVED' ? 'error' : 'success',
           message: res.data.message ?? `Change request ${targetApprovalId}: ${status}.`,
@@ -962,8 +969,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
         await fetchAllReadSurfaces();
       }
     } catch (err: any) {
-      checkerUncertaintyVersion.current++;
-      setQueueNeedsRefresh(true);
+      markCheckerUncertain();
       setCheckerFeedback({
         kind: 'error',
         message: err?.message || `Failed to ${decision} notification change request.`,
@@ -1000,7 +1006,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       });
       return;
     }
-    if (checkerBusyRef.current || (rowId && (loadingInitial || queueNeedsRefresh || changeRequestsBlockedMsg || globalLoadErrors.changeRequests || !changeRequests.some((item) => item.id === rowId && item.status === 'APPROVED')))) return;
+    if (checkerBusyRef.current || queueNeedsRefresh || (rowId && (loadingInitial || queueNeedsRefresh || changeRequestsBlockedMsg || globalLoadErrors.changeRequests || !changeRequests.some((item) => item.id === rowId && item.status === 'APPROVED')))) return;
 
     checkerBusyRef.current = true;
     const trackingKey = rowId ?? approvalId.trim();
@@ -1023,8 +1029,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
         await fetchAllReadSurfaces();
       }
     } catch (err: any) {
-      checkerUncertaintyVersion.current++;
-      setQueueNeedsRefresh(true);
+      markCheckerUncertain();
       setCheckerFeedback({
         kind: 'error',
         message: err?.message || 'Failed to execute approved notification change proposal.',
@@ -1036,7 +1041,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   };
 
   const handleWorkforceApprovalSubmit = async (decision: 'approve' | 'reject') => {
-    if (!permissions.canUseWorkforceApprovalEndpoint || !hasNotificationCheckerIdentity || !permissions.hasMfaAssurance || checkerBusyRef.current) return;
+    if (!permissions.canUseWorkforceApprovalEndpoint || !hasNotificationCheckerIdentity || !permissions.hasMfaAssurance || checkerBusyRef.current || queueNeedsRefresh) return;
     if (!isUuidString(checkerApprovalId)) {
       setCheckerFeedback({
         kind: 'error',
@@ -1075,8 +1080,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       setCheckerComment('');
       await fetchAllReadSurfaces();
     } catch (err: any) {
-      checkerUncertaintyVersion.current++;
-      setQueueNeedsRefresh(true);
+      markCheckerUncertain();
       setCheckerFeedback({
         kind: 'error',
         message: err?.message || `Failed to ${decision} workforce approval.`,
@@ -2056,9 +2060,10 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
               <p style={{ ...styles.cardDesc, color: '#92400E' }}>{changeRequestsBlockedMsg}</p>
             )}
 
+            {queueNeedsRefresh && <div role="alert" data-testid="notification-checker-review-lock">A decision or execution was not confirmed. Refresh the queue before acting on its entries, then independently review the approval, configuration and audit records. If the queue is unavailable, obtain an authorized external review. A fresh read cannot exclude a late commit; this local safeguard is lost on exit or session change. <button type="button" disabled={loadingInitial || (!queueReviewLoaded && !changeRequestsBlockedMsg && !globalLoadErrors.changeRequests && permissions.canViewCatalogue)} onClick={() => { if (window.confirm('Have you independently reviewed the approval, configuration and audit records, including the possibility of a late commit?')) setQueueNeedsRefresh(false); }}>Acknowledge independent approval review</button></div>}
             {loadingInitial ? <p role="status">Refreshing the queue; shown entries are last known and cannot be actioned.</p> :
               changeRequestsBlockedMsg || globalLoadErrors.changeRequests ? <p role="status">Current queue is unavailable; any shown entries are last known and cannot be actioned.</p> :
-              queueNeedsRefresh ? <p role="status">A decision or execution was not confirmed. Refresh the queue before acting on its entries.</p> :
+              queueNeedsRefresh ? <p role="status">Actions remain locked pending independent review.</p> :
               !(permissions.canViewCatalogue || permissions.canApproveTemplates || permissions.canApproveConfiguration) ? <p role="status">Current session cannot read the notification queue.</p> : <p>Search and status filters apply only to the loaded queue and session receipts, not the full history.</p>}
             <div className="notification-redesign__approval-filters">
               <label>Search loaded changes<input aria-label="Search loaded notification changes" value={queueSearch} onChange={(e) => setQueueSearch(e.target.value)} placeholder="Approval ID, event or requester" style={styles.input} /></label>
@@ -2293,6 +2298,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     !permissions.canUseWorkforceApprovalEndpoint ||
                     !hasNotificationCheckerIdentity ||
                     !permissions.hasMfaAssurance ||
+                    queueNeedsRefresh ||
                     isSubmittingChecker ||
                     decidingChangeId !== null ||
                     executingApprovalId !== null
@@ -2308,6 +2314,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   !permissions.canUseWorkforceApprovalEndpoint ||
                   !hasNotificationCheckerIdentity ||
                   !permissions.hasMfaAssurance ||
+                    queueNeedsRefresh ||
                   isSubmittingChecker ||
                   decidingChangeId !== null ||
                   executingApprovalId !== null
@@ -2328,6 +2335,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   (!permissions.canApproveTemplates && !permissions.canApproveConfiguration) ||
                   !hasNotificationCheckerIdentity ||
                   !permissions.hasMfaAssurance ||
+                    queueNeedsRefresh ||
                   isSubmittingChecker ||
                   decidingChangeId !== null ||
                   executingApprovalId !== null
@@ -2352,6 +2360,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   !permissions.canUseWorkforceApprovalEndpoint ||
                   !hasNotificationCheckerIdentity ||
                   !permissions.hasMfaAssurance ||
+                    queueNeedsRefresh ||
                   isSubmittingChecker ||
                   decidingChangeId !== null ||
                   executingApprovalId !== null

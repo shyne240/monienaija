@@ -880,6 +880,9 @@ describe('H-04/H-06 — versioned event-master controls', () => {
 
     server.executeError = null;
     fireEvent.click(checker.getByTestId('notif-tab-approvals'));
+    const acknowledge = checker.getByRole('button', {name: 'Acknowledge independent approval review'});
+    await waitFor(() => expect((acknowledge as HTMLButtonElement).disabled).toBe(false));
+    const confirmation = jest.spyOn(window, 'confirm').mockReturnValue(true); fireEvent.click(acknowledge); confirmation.mockRestore();
     fireEvent.click(checker.getByTestId(`execute-change-${id}`));
     expect((await checker.findByTestId('checker-feedback-success')).textContent).toMatch(
       /executed/i,
@@ -923,6 +926,9 @@ describe('H-04/H-06 — versioned event-master controls', () => {
     expect(server.events[0].eventEnabled).toBe(true);
     expect(server.events[0].eventConfigurationVersion).toBe(8);
     expect(server.events[1]).toEqual(unrelatedBefore);
+    const acknowledge = checker.getByRole('button', {name: 'Acknowledge independent approval review'});
+    await waitFor(() => expect((acknowledge as HTMLButtonElement).disabled).toBe(false));
+    const confirmation = jest.spyOn(window, 'confirm').mockReturnValue(true); fireEvent.click(acknowledge); confirmation.mockRestore();
     fireEvent.click(checker.getByTestId(`execute-change-${id}`));
     await waitFor(() =>
       expect(postCalls().filter(([url]) => url.endsWith('/execute'))).toHaveLength(2),

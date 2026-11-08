@@ -85,7 +85,7 @@ test('stale or refreshing queue rows cannot be actioned', async () => {
   expect(ApiClient.post).not.toHaveBeenCalled();
 });
 
-test('denial is not success and blocks further queue actions until a successful refresh', async () => {
+test('denial is not success and requires fresh queue plus independent review', async () => {
   jest.spyOn(NotificationManagementApi, 'listChangeRequests').mockResolvedValue(live([row()]));
   (ApiClient.post as jest.Mock).mockResolvedValue({ approved: false, reason: 'ROLE_MISSING', approval: { id, status: 'REQUESTED' } });
   render(<NotificationManagementScreen initialTab="approvals" />);
@@ -95,6 +95,12 @@ test('denial is not success and blocks further queue actions until a successful 
   expect(screen.queryByTestId('checker-feedback-success')).toBeNull(); expect((approve as HTMLButtonElement).disabled).toBe(true);
   expect(ApiClient.post).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole('button', { name: 'Refresh Console' }));
+  const acknowledge = await screen.findByRole('button', {name: 'Acknowledge independent approval review'});
+  await waitFor(() => expect((acknowledge as HTMLButtonElement).disabled).toBe(false));
+  expect((approve as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByTestId('direct-workforce-approve-btn') as HTMLButtonElement).disabled).toBe(true);
+  const guardEvent = new Event('beforeunload', {cancelable:true}); window.dispatchEvent(guardEvent); expect(guardEvent.defaultPrevented).toBe(true);
+  const confirmation = jest.spyOn(window, 'confirm').mockReturnValue(true); fireEvent.click(acknowledge); confirmation.mockRestore();
   await waitFor(() => expect((approve as HTMLButtonElement).disabled).toBe(false));
 });
 
@@ -136,5 +142,21 @@ test('a refresh started before an uncertain decision cannot clear its required-r
   expect((approve as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByText(/Refresh the queue before acting on its entries/)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Refresh Console' }));
+  const acknowledge = await screen.findByRole('button', {name: 'Acknowledge independent approval review'});
+  await waitFor(() => expect((acknowledge as HTMLButtonElement).disabled).toBe(false));
+  expect((approve as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByTestId('direct-workforce-approve-btn') as HTMLButtonElement).disabled).toBe(true);
+  const guardEvent = new Event('beforeunload', {cancelable:true}); window.dispatchEvent(guardEvent); expect(guardEvent.defaultPrevented).toBe(true);
+  const confirmation = jest.spyOn(window, 'confirm').mockReturnValue(true); fireEvent.click(acknowledge); confirmation.mockRestore();
   await waitFor(() => expect((approve as HTMLButtonElement).disabled).toBe(false));
+});
+
+test('confirmed approval with unconfirmed execution locks direct and queue actions even after automatic refresh', async () => {
+ jest.spyOn(NotificationManagementApi,'listChangeRequests').mockResolvedValue(live([row()]));
+ jest.spyOn(NotificationManagementApi,'decideNotificationChangeRequest').mockResolvedValue(live({status:'APPROVED', approvalId:id, message:'Approval recorded, but execution could not be confirmed.'}));
+ render(<NotificationManagementScreen initialTab="approvals" />);
+ const approve=await screen.findByRole('button',{name:`Approve change ${id}`});await waitFor(()=>expect((approve as HTMLButtonElement).disabled).toBe(false));fireEvent.click(approve);
+ expect((await screen.findByTestId('notification-checker-review-lock')).textContent).toMatch(/cannot exclude a late commit/);
+ await waitFor(()=>expect((screen.getByRole('button',{name:'Acknowledge independent approval review'}) as HTMLButtonElement).disabled).toBe(false));
+ expect((screen.getByTestId('direct-execute-approved-btn') as HTMLButtonElement).disabled).toBe(true);expect((approve as HTMLButtonElement).disabled).toBe(true);
 });
