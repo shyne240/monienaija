@@ -261,9 +261,12 @@ function wireStandardBackendMocks(
 describe('Governed SMS (Robase) & Email (Brevo) Provider Configuration Workspace', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
     window.localStorage.clear();
     window.sessionStorage.clear();
   });
+
+  afterEach(() => jest.restoreAllMocks());
 
   it('does not present stale configuration or a failed proposals read as current data', async () => {
     seedPrincipal({ principalId:'issuer:synthetic', roles:['SUPER_ADMIN'], scopes:['notification.view_deliveries','notification.provider.view','notification.provider.configure'] });
@@ -819,7 +822,7 @@ describe('Governed SMS (Robase) & Email (Brevo) Provider Configuration Workspace
     overview.sms={...overview.sms,version:overview.sms.version+1};fireEvent.click(view.getByTestId('refresh-provider-config-btn'));
     expect(await view.findByText(/SMS configuration changed since this draft was loaded/)).toBeTruthy();
     expect((view.getByTestId('sms-reason-input') as HTMLInputElement).value).toBe('Synthetic draft');expect((view.getByTestId('submit-sms-proposal-btn') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(view.getByRole('button',{name:'Reset SMS draft from current configuration'}));expect((view.getByTestId('sms-reason-input') as HTMLInputElement).value).toBe('');expect((view.getByTestId('submit-sms-proposal-btn') as HTMLButtonElement).disabled).toBe(false);
+    const confirmation=jest.spyOn(window,'confirm').mockReturnValue(true);fireEvent.click(view.getByRole('button',{name:'Reset SMS draft from current configuration'}));confirmation.mockRestore();expect((view.getByTestId('sms-reason-input') as HTMLInputElement).value).toBe('');expect((view.getByTestId('submit-sms-proposal-btn') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('does not confirm a checker response for another proposal', async () => {
@@ -843,6 +846,10 @@ describe('Governed SMS (Robase) & Email (Brevo) Provider Configuration Workspace
     (ApiClient.post as jest.Mock).mockRejectedValue(new Error(`Synthetic failure with ${secret}`));
     const view=render(<NotificationManagementScreen initialTab="providerConfig"/>);await view.findByTestId('provider-config-workspace');fireEvent.change(view.getByTestId('email-credential-action-select'),{target:{value:'SET_ENCRYPTED'}});fireEvent.change(view.getByTestId('email-api-key-input'),{target:{value:secret}});fireEvent.change(view.getByTestId('email-reason-input'),{target:{value:'Synthetic rotation'}});fireEvent.click(view.getByTestId('submit-email-proposal-btn'));
     expect((await view.findByTestId('email-proposal-feedback')).textContent).toContain('Proposal outcome not confirmed');expect(view.container.textContent).not.toContain(secret);expect((view.getByTestId('email-api-key-input') as HTMLInputElement).value).toBe('');
+    expect(view.getByTestId('provider-review-lock').textContent).toMatch(/cannot exclude a late commit/);expect((view.getByTestId('submit-email-proposal-btn') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(view.getByTestId('notif-tab-overview'));fireEvent.click(view.getByTestId('notif-tab-providerConfig'));expect(view.getByTestId('provider-review-lock')).toBeTruthy();
+    const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);
+    const confirm=jest.spyOn(window,'confirm').mockReturnValue(false);fireEvent.click(view.getByRole('button',{name:'Acknowledge independent provider review'}));expect(view.getByTestId('provider-review-lock')).toBeTruthy();confirm.mockReturnValue(true);fireEvent.click(view.getByRole('button',{name:'Acknowledge independent provider review'}));confirm.mockRestore();await view.findByTestId('provider-config-workspace');expect(view.queryByTestId('provider-review-lock')).toBeNull();
   });
 
   it('clears typed credentials when the provider or credential action changes', async () => {
@@ -882,6 +889,30 @@ describe('Governed SMS (Robase) & Email (Brevo) Provider Configuration Workspace
     fireEvent.change(view.getByTestId('sms-quick-test-destination'),{target:{value:'08030000100'}});fireEvent.click(view.getByTestId('sms-quick-test-confirm'));fireEvent.click(view.getByTestId('sms-quick-test-send-btn'));
     expect(await view.findByTestId('notification-probe-review-lock')).toBeTruthy();expect((view.getByTestId('sms-quick-test-send-btn') as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(view.getByTestId('notif-tab-testSend'));expect((view.getByTestId('submit-test-send-btn') as HTMLButtonElement).disabled).toBe(true);expect(view.getByTestId('notification-probe-review-lock')).toBeTruthy();
+  });
+
+  it('retains provider drafts and protects them across notification tabs', async () => {
+    seedPrincipal({principalId:'issuer:maker',roles:['SUPER_ADMIN'],scopes:['notification.provider.view','notification.provider.configure']});wireStandardBackendMocks(makeOverviewFixture(),[]);
+    const guard=jest.fn();const view=render(<NotificationManagementScreen initialTab="providerConfig" onNotificationGuardChange={guard}/>);await view.findByTestId('provider-config-workspace');
+    fireEvent.change(view.getByTestId('sms-reason-input'),{target:{value:'Unsubmitted synthetic reason'}});await waitFor(()=>expect(guard).toHaveBeenLastCalledWith(true,false));
+    fireEvent.click(view.getByTestId('notif-tab-overview'));fireEvent.click(view.getByTestId('notif-tab-providerConfig'));expect((view.getByTestId('sms-reason-input') as HTMLInputElement).value).toBe('Unsubmitted synthetic reason');
+    const confirm=jest.spyOn(window,'confirm').mockReturnValue(true);fireEvent.click(view.getByRole('button',{name:'Discard provider drafts'}));confirm.mockRestore();await waitFor(()=>expect(guard).toHaveBeenLastCalledWith(false,false));expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('serializes pending provider decisions across proposals and sections', async () => {
+    seedPrincipal({principalId:'issuer:checker',roles:['FINANCE_CONTROLLER'],scopes:['notification.provider.view','notification.provider.configure']});
+    const proposal={id:'prop-pending',channel:'SMS',status:'REQUESTED',expectedVersion:0,proposedProvider:'console',proposedEnabled:false,credentialAction:'CLEAR',proposerPrincipalId:'issuer:maker',reason:'Synthetic reason'} as ProviderConfigProposal;
+    wireStandardBackendMocks(makeOverviewFixture(),[proposal]);let resolve!:(value:any)=>void;const pending=new Promise<any>(r=>resolve=r);(ApiClient.post as jest.Mock).mockReturnValue(pending);
+    const guard=jest.fn();const view=render(<NotificationManagementScreen initialTab="providerConfig" onNotificationGuardChange={guard}/>);fireEvent.click(await view.findByTestId('approve-provider-proposal-prop-pending'));
+    await waitFor(()=>expect(guard).toHaveBeenLastCalledWith(true,true));fireEvent.click(view.getByTestId('notif-tab-overview'));fireEvent.click(view.getByTestId('notif-tab-providerConfig'));expect((view.getByTestId('approve-provider-proposal-prop-pending') as HTMLButtonElement).disabled).toBe(true);
+    await act(async()=>{resolve({...proposal,id:'other',status:'APPROVED'});await pending;});expect(view.getByTestId('provider-review-lock')).toBeTruthy();expect(ApiClient.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires explicit confirmation before a provider checker mutation', async () => {
+    seedPrincipal({principalId:'issuer:checker',roles:['FINANCE_CONTROLLER'],scopes:['notification.provider.view','notification.provider.configure']});
+    const proposal={id:'prop-confirm',channel:'SMS',status:'REQUESTED',expectedVersion:0,proposedProvider:'console',proposedEnabled:false,credentialAction:'CLEAR',proposerPrincipalId:'issuer:maker',reason:'Synthetic reason'} as ProviderConfigProposal;wireStandardBackendMocks(makeOverviewFixture(),[proposal]);
+    const view=render(<NotificationManagementScreen initialTab="providerConfig"/>);const approve=await view.findByTestId('approve-provider-proposal-prop-confirm');(window.confirm as jest.Mock).mockReturnValue(false);fireEvent.click(approve);
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('prop-confirm'));expect(ApiClient.post).not.toHaveBeenCalled();
   });
 
 });

@@ -23,6 +23,7 @@ interface ProviderConfigurationWorkspaceProps {
   probeReview?: boolean;
   beginProbe?: () => boolean;
   finishProbe?: (channel: ManagedProviderChannel, uncertain: boolean) => void;
+  onGuardChange?: (guarded: boolean, busy: boolean, reviewRequired: boolean) => void;
 }
 
 function lifecycleBadgeVisual(state: ProviderLifecycleState): {
@@ -115,6 +116,22 @@ function describeError(err: unknown): string {
   return String(err);
 }
 
+function matchesProposalReceipt(created: ProviderConfigProposal, payload: ProposeProviderConfigPayload, principalId: string | null): boolean {
+  const baseUrl = payload.baseUrl ? payload.baseUrl.trim().replace(/\/+$/, '').toLowerCase() : null;
+  return Boolean(created && typeof created.id === 'string' && created.id.trim() && created.channel === payload.channel &&
+    created.status === 'REQUESTED' && created.expectedVersion === payload.expectedVersion && created.proposedProvider === payload.provider &&
+    created.proposedEnabled === payload.enabled && created.credentialAction === payload.credentialAction && created.reason === payload.reason &&
+    created.proposerPrincipalId === principalId && typeof created.approvalId === 'string' && created.approvalId.trim() &&
+    typeof created.createdAt === 'string' && !Number.isNaN(Date.parse(created.createdAt)) &&
+    created.proposedBaseUrl === baseUrl && created.proposedRequestTimeoutMs === payload.requestTimeoutMs &&
+    (payload.channel === 'SMS' ? created.proposedSenderId === (payload.senderId ?? null) :
+      created.proposedFromEmail === (payload.fromEmail?.toLowerCase() ?? null) && created.proposedFromName === (payload.fromName ?? null) &&
+      created.proposedReplyToEmail === (payload.replyToEmail?.toLowerCase() ?? null) &&
+      created.proposedDomainAuthentication?.spfConfigured === payload.spfConfigured &&
+      created.proposedDomainAuthentication?.dkimConfigured === payload.dkimConfigured &&
+      created.proposedDomainAuthentication?.dmarcConfigured === payload.dmarcConfigured));
+}
+
 const GATE_LABELS: Array<{ key: keyof ProviderChannelSnapshot['gates']; label: string }> = [
   { key: 'configured', label: 'CONFIGURED' },
   { key: 'verified', label: 'VERIFIED' },
@@ -127,7 +144,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   principalId,
   permissions,
   onRefreshParentStatus,
-  probeBusy = false, probeReview = false, beginProbe, finishProbe,
+  probeBusy = false, probeReview = false, beginProbe, finishProbe, onGuardChange,
 }) => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -137,6 +154,17 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   const requestGeneration = useRef(0);
   const mounted = useRef(true);
   const queueInFlight = useRef(false);
+  const providerInFlight = useRef(false);
+  const [providerActionBusy, setProviderActionBusy] = useState(false);
+  const [providerReview, setProviderReview] = useState<string | null>(null);
+  const [providerDirty, setProviderDirty] = useState(false);
+  useEffect(() => { onGuardChange?.(providerDirty || Boolean(providerReview) || providerActionBusy, providerActionBusy, Boolean(providerReview)); }, [onGuardChange, providerDirty, providerReview, providerActionBusy]);
+  const beginProviderAction = () => {
+    if (providerInFlight.current || providerReview || probeBusy || probeReview) return false;
+    providerInFlight.current = true; setProviderActionBusy(true); return true;
+  };
+  const endProviderAction = () => { providerInFlight.current = false; if (mounted.current) setProviderActionBusy(false); };
+
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const currentAccess = useRef({ principalId, canView: permissions.canViewProviderConfig });
   currentAccess.current = { principalId, canView: permissions.canViewProviderConfig };
@@ -290,7 +318,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
 
   const handleSubmitSmsProposal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!overview || !permissions.canProposeProviderConfig || !permissions.hasMfaAssurance || smsBusy || smsDraftVersion !== overview.sms.version) return;
+    if (!overview || !permissions.canProposeProviderConfig || !permissions.hasMfaAssurance || smsBusy || providerReview || providerInFlight.current || probeBusy || smsDraftVersion !== overview.sms.version) return;
     setSmsFeedback(null);
 
     const payload: ProposeProviderConfigPayload = {
@@ -323,11 +351,13 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
     setSmsFormErrors(validationErrors);
     if (validationErrors.length > 0) return;
 
+    if (!window.confirm(`Submit the SMS provider proposal for ${payload.provider} (${payload.enabled ? 'enabled' : 'disabled'}), based on version ${payload.expectedVersion}? The proposal requires independent approval before activation.`)) return;
+    if (!beginProviderAction()) return;
     setSmsBusy(true);
     try {
       const created = await NotificationManagementApi.proposeProviderConfig(payload);
       if (!mounted.current) return;
-      if (!created || typeof created.id !== 'string' || !created.id.trim() || created.channel !== 'SMS' || created.status !== 'REQUESTED' || created.expectedVersion !== payload.expectedVersion || created.proposedProvider !== payload.provider || created.proposerPrincipalId !== principalId || typeof created.approvalId !== 'string' || !created.approvalId.trim()) throw new Error('Proposal receipt did not match the requested change');
+      if (!matchesProposalReceipt(created, payload, principalId)) throw new Error('Proposal receipt did not match the requested change');
       setSmsApiKey('');
       setSmsReason('');
       setSmsFeedback({
@@ -336,15 +366,16 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       });
       await loadWorkspace(false);
     } catch (err) {
-      if (mounted.current) setSmsFeedback({ kind: 'err', text: 'Proposal outcome not confirmed. Check the proposal queue and audit record before retrying.' });
+      if (mounted.current) { setProviderReview('SMS proposal'); setSmsFeedback({ kind: 'err', text: 'Proposal outcome not confirmed. Check the proposal queue and audit record before retrying.' }); }
     } finally {
+      endProviderAction();
       if (mounted.current) { setSmsApiKey(''); setSmsBusy(false); }
     }
   };
 
   const handleSubmitEmailProposal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!overview || !permissions.canProposeProviderConfig || !permissions.hasMfaAssurance || emailBusy || emailDraftVersion !== overview.email.version) return;
+    if (!overview || !permissions.canProposeProviderConfig || !permissions.hasMfaAssurance || emailBusy || providerReview || providerInFlight.current || probeBusy || emailDraftVersion !== overview.email.version) return;
     setEmailFeedback(null);
 
     const isExternal = emailProvider === 'brevo' || emailProvider === 'resend';
@@ -383,11 +414,13 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
     setEmailFormErrors(validationErrors);
     if (validationErrors.length > 0) return;
 
+    if (!window.confirm(`Submit the EMAIL provider proposal for ${payload.provider} (${payload.enabled ? 'enabled' : 'disabled'}), based on version ${payload.expectedVersion}? The proposal requires independent approval before activation.`)) return;
+    if (!beginProviderAction()) return;
     setEmailBusy(true);
     try {
       const created = await NotificationManagementApi.proposeProviderConfig(payload);
       if (!mounted.current) return;
-      if (!created || typeof created.id !== 'string' || !created.id.trim() || created.channel !== 'EMAIL' || created.status !== 'REQUESTED' || created.expectedVersion !== payload.expectedVersion || created.proposedProvider !== payload.provider || created.proposerPrincipalId !== principalId || typeof created.approvalId !== 'string' || !created.approvalId.trim()) throw new Error('Proposal receipt did not match the requested change');
+      if (!matchesProposalReceipt(created, payload, principalId)) throw new Error('Proposal receipt did not match the requested change');
       setEmailApiKey('');
       setEmailReason('');
       setEmailFeedback({
@@ -396,13 +429,16 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       });
       await loadWorkspace(false);
     } catch (err) {
-      if (mounted.current) setEmailFeedback({ kind: 'err', text: 'Proposal outcome not confirmed. Check the proposal queue and audit record before retrying.' });
+      if (mounted.current) { setProviderReview('Email proposal'); setEmailFeedback({ kind: 'err', text: 'Proposal outcome not confirmed. Check the proposal queue and audit record before retrying.' }); }
     } finally {
+      endProviderAction();
       if (mounted.current) { setEmailApiKey(''); setEmailBusy(false); }
     }
   };
 
   const handleVerifyChannel = async (channel: ManagedProviderChannel) => {
+    if (!permissions.canTestSend || !overview || providerReview || providerInFlight.current || probeBusy || probeReview) return;
+    if (!window.confirm(`Verify the current ${channel} provider configuration? This may contact the provider and update verification state.`) || !beginProviderAction()) return;
     const setFeedback = channel === 'SMS' ? setSmsFeedback : setEmailFeedback;
     const setBusy = channel === 'SMS' ? setSmsBusy : setEmailBusy;
     setFeedback(null);
@@ -410,7 +446,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
     try {
       const res = await NotificationManagementApi.verifyProviderChannel(channel);
       if (!mounted.current) return;
-      if (!res || res.channel !== channel || typeof res.verified !== 'boolean' || res.snapshot?.channel !== channel) throw new Error('Verification result is not confirmed. Refresh the provider configuration before retrying.');
+      if (!res || res.channel !== channel || typeof res.verified !== 'boolean' || res.snapshot?.channel !== channel || res.provider !== overview[channel === 'SMS' ? 'sms' : 'email'].provider || res.snapshot.provider !== res.provider || res.snapshot.version !== overview[channel === 'SMS' ? 'sms' : 'email'].version) throw new Error('Verification result is not confirmed. Refresh the provider configuration before retrying.');
       if (res.verified) {
         setFeedback({
           kind: 'ok',
@@ -425,14 +461,15 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       await loadWorkspace(false);
       if (mounted.current) onRefreshParentStatus?.();
     } catch (err) {
-      if (mounted.current) setFeedback({ kind: 'err', text: describeError(err) });
+      if (mounted.current) { setProviderReview(`${channel} verification`); setFeedback({ kind: 'err', text: `Verification outcome not confirmed. ${describeError(err)}` }); }
     } finally {
+      endProviderAction();
       if (mounted.current) setBusy(false);
     }
   };
 
   const handleQuickTestSend = async (channel: ManagedProviderChannel) => {
-    if (!permissions.canTestSend || probeBusy || probeReview) return;
+    if (!permissions.canTestSend || probeBusy || probeReview || providerInFlight.current || providerReview) return;
     const rawDest = channel === 'SMS' ? smsTestDest : emailTestDest;
     const confirmed = channel === 'SMS' ? smsTestConfirmed : emailTestConfirmed;
     const setBusy = channel === 'SMS' ? setSmsTestBusy : setEmailTestBusy;
@@ -511,7 +548,8 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
     proposal: ProviderConfigProposal,
     action: 'approve' | 'reject' | 'activate',
   ) => {
-    if (queueInFlight.current || !permissions.hasMfaAssurance || (action === 'activate' ? !permissions.canActivateProviderConfig || proposal.status !== 'APPROVED' : !permissions.canApproveProviderConfig || proposal.status !== 'REQUESTED' || principalId === proposal.proposerPrincipalId)) return;
+    if (queueInFlight.current || providerInFlight.current || providerReview || probeBusy || loading || proposalsError || !proposals.some(item => item.id === proposal.id && item.status === proposal.status) || !permissions.hasMfaAssurance || (action === 'activate' ? !permissions.canActivateProviderConfig || proposal.status !== 'APPROVED' : !permissions.canApproveProviderConfig || proposal.status !== 'REQUESTED' || principalId === proposal.proposerPrincipalId)) return;
+    if (!window.confirm(`${action.toUpperCase()} ${proposal.channel} provider proposal ${proposal.id} for ${proposal.proposedProvider} (base version ${proposal.expectedVersion})?`) || !beginProviderAction()) return;
     queueInFlight.current = true;
     setQueueBanner(null);
     setQueueBusyId(proposal.id);
@@ -520,7 +558,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       if (action === 'approve') {
         const receipt = await NotificationManagementApi.approveProviderConfigProposal(proposal.id, comment);
         if (!mounted.current) return;
-        if (!receipt || receipt.id !== proposal.id || receipt.channel !== proposal.channel || receipt.status !== 'APPROVED') throw new Error('Approval receipt did not match the proposal');
+        if (!receipt || receipt.id !== proposal.id || receipt.channel !== proposal.channel || receipt.status !== 'APPROVED' || receipt.decidedBy !== principalId || !receipt.decidedAt) throw new Error('Approval receipt did not match the proposal');
         setQueueBanner({
           kind: 'ok',
           text: `Proposal ${proposal.id.slice(0, 8)} (${proposal.channel}) approved. Ready for governed activation.`,
@@ -528,7 +566,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       } else if (action === 'reject') {
         const receipt = await NotificationManagementApi.rejectProviderConfigProposal(proposal.id, comment);
         if (!mounted.current) return;
-        if (!receipt || receipt.id !== proposal.id || receipt.channel !== proposal.channel || receipt.status !== 'REJECTED') throw new Error('Rejection receipt did not match the proposal');
+        if (!receipt || receipt.id !== proposal.id || receipt.channel !== proposal.channel || receipt.status !== 'REJECTED' || receipt.decidedBy !== principalId || !receipt.decidedAt) throw new Error('Rejection receipt did not match the proposal');
         setQueueBanner({
           kind: 'ok',
           text: `Proposal ${proposal.id.slice(0, 8)} (${proposal.channel}) rejected.`,
@@ -536,7 +574,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       } else {
         const res = await NotificationManagementApi.activateProviderConfigProposal(proposal.id);
         if (!mounted.current) return;
-        if (!res || res.proposal?.id !== proposal.id || res.proposal.channel !== proposal.channel || res.proposal.status !== 'ACTIVATED' || res.configuration?.channel !== proposal.channel || res.configuration.provider !== proposal.proposedProvider || !Number.isSafeInteger(res.configuration.version) || res.proposal.resultingVersion !== res.configuration.version) throw new Error('Activation receipt did not match the proposal and configuration');
+        if (!res || res.proposal?.id !== proposal.id || res.proposal.channel !== proposal.channel || res.proposal.status !== 'ACTIVATED' || res.proposal.activatedBy !== principalId || !res.proposal.activatedAt || res.configuration?.channel !== proposal.channel || res.configuration.provider !== proposal.proposedProvider || !Number.isSafeInteger(res.configuration.version) || res.proposal.resultingVersion !== res.configuration.version) throw new Error('Activation receipt did not match the proposal and configuration');
         setQueueBanner({
           kind: 'ok',
           text: `Activated ${res.configuration.channel} provider "${res.configuration.provider}" (v${res.configuration.version}, state: ${res.configuration.lifecycleState}).`,
@@ -545,12 +583,26 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       await loadWorkspace(false);
       if (mounted.current) onRefreshParentStatus?.();
     } catch (err) {
-      if (mounted.current) setQueueBanner({ kind: 'err', text: `Outcome not confirmed. Check the proposal and current configuration before retrying. ${describeError(err)}` });
+      if (mounted.current) { setProviderReview(`${proposal.channel} ${action} ${proposal.id}`); setQueueBanner({ kind: 'err', text: `Outcome not confirmed. Check the proposal and current configuration before retrying. ${describeError(err)}` }); }
     } finally {
       queueInFlight.current = false;
+      endProviderAction();
       if (mounted.current) setQueueBusyId(null);
     }
   };
+
+  const discardProviderDrafts = () => {
+    setSmsApiKey(''); setEmailApiKey(''); setSmsReason(''); setEmailReason('');
+    setSmsTestDest(''); setEmailTestDest(''); setSmsTestConfirmed(false); setEmailTestConfirmed(false);
+    setDecisionComments({}); setSmsFeedback(null); setEmailFeedback(null);
+    if (overview) hydrateFormsFromSnapshot(overview);
+    else {
+      setSmsDraftVersion(null); setSmsProvider('robase'); setSmsEnabled(false); setSmsBaseUrl('https://api.robase.dev'); setSmsSenderId('MonieNaija'); setSmsTimeoutMs(10000); setSmsCredAction('SET_ENCRYPTED');
+      setEmailDraftVersion(null); setEmailProvider('brevo'); setEmailEnabled(false); setEmailBaseUrl('https://api.brevo.com'); setEmailFromAddress(''); setEmailFromName('MonieNaija'); setEmailReplyTo(''); setEmailTimeoutMs(10000); setEmailCredAction('SET_ENCRYPTED'); setEmailSpf(false); setEmailDkim(false); setEmailDmarc(false);
+    }
+    setProviderDirty(false);
+  };
+  const reviewNotice = providerReview && <div role="alert" data-testid="provider-review-lock">{providerReview} outcome requires independent review. Review provider configuration, proposal, approval and audit records before another action; a fresh read or absent entry cannot exclude a late commit. This local safeguard is lost on exit or session change. <button type="button" disabled={providerActionBusy || probeBusy} onClick={() => { if (window.confirm('Have you independently reviewed the provider configuration, proposal, approval and audit records, including a possible late commit? This discards provider drafts and credentials.')) { discardProviderDrafts(); setProviderReview(null); void loadWorkspace(true); } }}>Acknowledge independent provider review</button></div>;
 
   if (!permissions.canViewProviderConfig) {
     return (
@@ -573,7 +625,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   if (loading) {
     return (
       <div data-testid="provider-config-loading" style={{ padding: 20, color: 'var(--mn-text-secondary, #52655f)' }}>
-        Loading governed SMS (Robase) and Email (Brevo) provider configuration…
+        {reviewNotice} Loading governed SMS (Robase) and Email (Brevo) provider configuration…
       </div>
     );
   }
@@ -590,7 +642,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           color: '#92400e',
         }}
       >
-        <strong>Provider Configuration Unavailable:</strong> {loadError}
+        {reviewNotice}<strong>Provider Configuration Unavailable:</strong> {loadError}
         {overview && <p>Previously loaded configuration is not current. Draft values remain in this workspace.</p>}
         <button type="button" onClick={() => void loadWorkspace(false)}>Retry configuration</button>
       </div>
@@ -603,7 +655,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   const emailVisual = lifecycleBadgeVisual(overview.email.lifecycleState);
 
   return (
-    <div className="mn-provider-workspace" data-testid="provider-config-workspace" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div className="mn-provider-workspace" data-testid="provider-config-workspace" onChange={() => setProviderDirty(true)} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <header className="mn-provider-intro">
         <p className="mn-provider-kicker">PROVIDER GOVERNANCE</p>
         <h2>Provider configuration</h2>
@@ -614,6 +666,8 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           <a href="#provider-proposals">Proposal queue</a>
         </nav>
       </header>
+      {reviewNotice}
+      {providerDirty && <p>Provider drafts and credentials are retained across sections. <button type="button" disabled={providerActionBusy || probeBusy || Boolean(providerReview)} onClick={() => { if (window.confirm('Discard provider drafts, checker notes and any entered credentials?')) discardProviderDrafts(); }}>Discard provider drafts</button></p>}
       {/* Top Governance & Server Encryption Key Health Banner */}
       <div
         data-testid="provider-encryption-banner"
@@ -821,7 +875,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                 <button
                   type="button"
                   data-testid="verify-sms-provider-btn"
-                  disabled={smsBusy || overview.sms.source !== 'DATABASE' || overview.sms.provider === 'console'}
+                  disabled={smsBusy || providerActionBusy || probeBusy || probeReview || Boolean(providerReview) || overview.sms.source !== 'DATABASE' || overview.sms.provider === 'console'}
                   onClick={() => void handleVerifyChannel('SMS')}
                   style={{
                     padding: '5px 10px',
@@ -842,7 +896,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                 <input
                   id="sms-provider-test-destination"
                   type="text"
-                  data-testid="sms-quick-test-destination"
+                  data-testid="sms-quick-test-destination" disabled={probeBusy || providerActionBusy}
                   placeholder="+2348012345678 (workforce phone)"
                   value={smsTestDest}
                   onChange={(e) => { setSmsTestDest(e.target.value); setSmsTestConfirmed(false); }}
@@ -851,7 +905,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                 <button
                   type="button"
                   data-testid="sms-quick-test-send-btn"
-                  disabled={smsTestBusy || probeBusy || probeReview}
+                  disabled={smsTestBusy || probeBusy || probeReview || providerActionBusy || Boolean(providerReview)}
                   onClick={() => void handleQuickTestSend('SMS')}
                   style={{
                     padding: '6px 12px',
@@ -870,7 +924,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
               <label style={{ fontSize: 11, color: 'var(--mn-text-secondary, #52655f)', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <input
                   type="checkbox"
-                  data-testid="sms-quick-test-confirm"
+                  data-testid="sms-quick-test-confirm" disabled={probeBusy || providerActionBusy}
                   checked={smsTestConfirmed}
                   onChange={(e) => setSmsTestConfirmed(e.target.checked)}
                 />
@@ -891,7 +945,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           )}
 
           {/* Governed SMS Proposal Form */}
-          <form aria-label="SMS provider proposal" onSubmit={(e) => void handleSubmitSmsProposal(e)} style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
+          <form aria-label="SMS provider proposal" onSubmit={(e) => void handleSubmitSmsProposal(e)} style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}><fieldset disabled={providerActionBusy || probeBusy} style={{ border: 0, padding: 0, margin: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
               Propose SMS Provider Change (Maker-Checker + MFA)
             </div>
@@ -1057,11 +1111,11 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
               </div>
             )}
 
-            {smsDraftVersion !== overview.sms.version && <div role="alert">SMS configuration changed since this draft was loaded. The draft is retained but cannot be submitted until reset and reviewed. <button type="button" onClick={() => hydrateSms(overview.sms)}>Reset SMS draft from current configuration</button></div>}
+            {smsDraftVersion !== overview.sms.version && <div role="alert">SMS configuration changed since this draft was loaded. The draft is retained but cannot be submitted until reset and reviewed. <button type="button" onClick={() => { if (window.confirm('Discard the SMS provider draft and entered credential?')) hydrateSms(overview.sms); }}>Reset SMS draft from current configuration</button></div>}
             <button
               type="submit"
               data-testid="submit-sms-proposal-btn"
-              disabled={!permissions.canProposeProviderConfig || !permissions.hasMfaAssurance || smsBusy || smsDraftVersion !== overview.sms.version}
+              disabled={!permissions.canProposeProviderConfig || !permissions.hasMfaAssurance || smsBusy || providerActionBusy || probeBusy || probeReview || Boolean(providerReview) || smsDraftVersion !== overview.sms.version}
               style={{
                 padding: '8px 14px',
                 borderRadius: 6,
@@ -1085,7 +1139,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                   ? 'MFA Required to Propose SMS Change'
                   : 'Submit SMS Configuration Proposal'}
             </button>
-          </form>
+          </fieldset></form>
         </section>
 
         {/* ==================== EMAIL (BREVO) PANEL ==================== */}
@@ -1269,7 +1323,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                   type="button"
                   data-testid="verify-email-provider-btn"
                   disabled={
-                    emailBusy ||
+                    emailBusy || providerActionBusy || probeBusy || probeReview || Boolean(providerReview) ||
                     overview.email.source !== 'DATABASE' ||
                     overview.email.provider === 'none' ||
                     overview.email.provider === 'console'
@@ -1294,7 +1348,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                 <input
                   id="email-provider-test-destination"
                   type="email"
-                  data-testid="email-quick-test-destination"
+                  data-testid="email-quick-test-destination" disabled={probeBusy || providerActionBusy}
                   placeholder="ops@monienaija.ng (workforce email)"
                   value={emailTestDest}
                   onChange={(e) => { setEmailTestDest(e.target.value); setEmailTestConfirmed(false); }}
@@ -1303,7 +1357,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                 <button
                   type="button"
                   data-testid="email-quick-test-send-btn"
-                  disabled={emailTestBusy || probeBusy || probeReview}
+                  disabled={emailTestBusy || probeBusy || probeReview || providerActionBusy || Boolean(providerReview)}
                   onClick={() => void handleQuickTestSend('EMAIL')}
                   style={{
                     padding: '6px 12px',
@@ -1322,7 +1376,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
               <label style={{ fontSize: 11, color: 'var(--mn-text-secondary, #52655f)', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <input
                   type="checkbox"
-                  data-testid="email-quick-test-confirm"
+                  data-testid="email-quick-test-confirm" disabled={probeBusy || providerActionBusy}
                   checked={emailTestConfirmed}
                   onChange={(e) => setEmailTestConfirmed(e.target.checked)}
                 />
@@ -1343,7 +1397,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           )}
 
           {/* Governed Email Proposal Form */}
-          <form aria-label="Email provider proposal" onSubmit={(e) => void handleSubmitEmailProposal(e)} style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
+          <form aria-label="Email provider proposal" onSubmit={(e) => void handleSubmitEmailProposal(e)} style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}><fieldset disabled={providerActionBusy || probeBusy} style={{ border: 0, padding: 0, margin: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
               Propose Email Provider Change (Maker-Checker + MFA)
             </div>
@@ -1581,11 +1635,11 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
               </div>
             )}
 
-            {emailDraftVersion !== overview.email.version && <div role="alert">Email configuration changed since this draft was loaded. The draft is retained but cannot be submitted until reset and reviewed. <button type="button" onClick={() => hydrateEmail(overview.email)}>Reset Email draft from current configuration</button></div>}
+            {emailDraftVersion !== overview.email.version && <div role="alert">Email configuration changed since this draft was loaded. The draft is retained but cannot be submitted until reset and reviewed. <button type="button" onClick={() => { if (window.confirm('Discard the email provider draft and entered credential?')) hydrateEmail(overview.email); }}>Reset Email draft from current configuration</button></div>}
             <button
               type="submit"
               data-testid="submit-email-proposal-btn"
-              disabled={!permissions.canProposeProviderConfig || !permissions.hasMfaAssurance || emailBusy || emailDraftVersion !== overview.email.version}
+              disabled={!permissions.canProposeProviderConfig || !permissions.hasMfaAssurance || emailBusy || providerActionBusy || probeBusy || probeReview || Boolean(providerReview) || emailDraftVersion !== overview.email.version}
               style={{
                 padding: '8px 14px',
                 borderRadius: 6,
@@ -1609,7 +1663,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                   ? 'MFA Required to Propose Email Change'
                   : 'Submit Email Configuration Proposal'}
             </button>
-          </form>
+          </fieldset></form>
         </section>
       </div>
 
@@ -1691,7 +1745,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                     prop.status === 'APPROVED' &&
                     permissions.canActivateProviderConfig &&
                     permissions.hasMfaAssurance;
-                  const busy = queueBusyId !== null;
+                  const busy = queueBusyId !== null || providerActionBusy || probeBusy || probeReview || Boolean(providerReview);
 
                   return (
                     <tr key={prop.id} data-testid={`provider-proposal-row-${prop.id}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -1755,7 +1809,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                             <input
                               id={`provider-decision-${prop.id}`}
                               type="text"
-                              data-testid={`decision-comment-${prop.id}`}
+                              data-testid={`decision-comment-${prop.id}`} disabled={providerActionBusy || probeBusy}
                               placeholder="Checker note (optional)"
                               value={decisionComments[prop.id] ?? ''}
                               onChange={(e) =>

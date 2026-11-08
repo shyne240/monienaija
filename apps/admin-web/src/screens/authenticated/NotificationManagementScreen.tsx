@@ -126,6 +126,10 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   const reportTemplateGuard = useCallback((channel: ManagedNotificationChannel, guarded: boolean, busy: boolean) => {
     setTemplateGuards(previous => previous[channel].guarded === guarded && previous[channel].busy === busy ? previous : { ...previous, [channel]: {guarded, busy} });
   }, []);
+  const [providerGuard, setProviderGuard] = useState(false);
+  const [providerBusy, setProviderBusy] = useState(false);
+  const [providerReviewRequired, setProviderReviewRequired] = useState(false);
+  const reportProviderGuard = useCallback((guarded: boolean, busy: boolean, reviewRequired: boolean) => { setProviderGuard(guarded); setProviderBusy(busy); setProviderReviewRequired(reviewRequired); }, []);
   const templateGuard = templateGuards.SMS.guarded || templateGuards.EMAIL.guarded;
   const templateBusy = templateGuards.SMS.busy || templateGuards.EMAIL.busy;
 
@@ -138,8 +142,10 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   activeTabRef.current = activeTab;
   const [templateJump, setTemplateJump] = useState<{ channel: ManagedNotificationChannel; eventType: string; sequence: number } | null>(null);
   const templateJumpSequence = useRef(0);
+  const [visitedProvider, setVisitedProvider] = useState(initialTab === 'providerConfig');
   const [visitedTemplates, setVisitedTemplates] = useState({ SMS: initialTab === 'smsTemplates', EMAIL: initialTab === 'emailTemplates' });
   useEffect(() => {
+    if (activeTab === 'providerConfig') setVisitedProvider(true);
     if (activeTab === 'smsTemplates') setVisitedTemplates(previous => previous.SMS ? previous : { ...previous, SMS: true });
     if (activeTab === 'emailTemplates') setVisitedTemplates(previous => previous.EMAIL ? previous : { ...previous, EMAIL: true });
   }, [activeTab]);
@@ -285,16 +291,16 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   const probeInFlight = useRef(false);
   const [probeBusy, setProbeBusy] = useState(false);
   const beginProbe = useCallback(() => {
-    if (!permissions.canTestSend || probeInFlight.current || probeReviewRef.current) return false;
+    if (!permissions.canTestSend || providerBusy || providerReviewRequired || probeInFlight.current || probeReviewRef.current) return false;
     probeInFlight.current = true; setProbeBusy(true); return true;
-  }, [permissions.canTestSend]);
+  }, [permissions.canTestSend, providerBusy, providerReviewRequired]);
   const finishProbe = useCallback((channel: ManagedNotificationChannel, uncertain: boolean) => {
     if (uncertain) { probeReviewRef.current = channel; setProbeReview(channel); }
     probeInFlight.current = false; setProbeBusy(false);
   }, []);
   const checkerBusy = isSubmittingChecker || Boolean(decidingChangeId || executingApprovalId);
-  const notificationGuard = templateGuard || Boolean(testDestination.trim() || testWorkforceConfirmed || probeReview || probeBusy) || triggerDirty || Boolean(triggerReview) || isSavingTrigger || Boolean(checkerApprovalId.trim() || checkerComment.trim() || queueDecisionComment.trim() || queueNeedsRefresh || checkerBusy);
-  const notificationBusy = templateBusy || checkerBusy || isSavingTrigger || probeBusy;
+  const notificationGuard = templateGuard || providerGuard || Boolean(testDestination.trim() || testWorkforceConfirmed || probeReview || probeBusy) || triggerDirty || Boolean(triggerReview) || isSavingTrigger || Boolean(checkerApprovalId.trim() || checkerComment.trim() || queueDecisionComment.trim() || queueNeedsRefresh || checkerBusy);
+  const notificationBusy = templateBusy || providerBusy || checkerBusy || isSavingTrigger || probeBusy;
   useEffect(() => { onNotificationGuardChange?.(notificationGuard, notificationBusy); }, [onNotificationGuardChange, notificationGuard, notificationBusy]);
   useEffect(() => {
     if (!notificationGuard) return;
@@ -1300,7 +1306,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       </div></div>
       {probeReview && <div role="alert" data-testid="notification-probe-review-lock">{probeReview} test-send outcome is unconfirmed. Independently review authorized test-send quota and audit records and provider records before another probe. Test sends do not create delivery rows; absent records or a fresh read cannot prove non-delivery or exclude a late outcome. This local safeguard is lost on exit or session change. <button type="button" disabled={probeBusy} onClick={() => { if (window.confirm('Have you independently reviewed authorized test-send audit and provider records, including possible late delivery?')) { probeReviewRef.current = null; setProbeReview(null); setTestWorkforceConfirmed(false); } }}>Acknowledge independent test-send review</button></div>}
       <p className="notification-redesign__tab-hint">Scroll to see all sections. Use arrow keys to move between tabs, then Enter or Space to open one.</p>
-      {visibleTabs.filter((tabItem) => tabItem.key !== activeTab && tabItem.key !== 'smsTemplates' && tabItem.key !== 'emailTemplates').map((tabItem) => (
+      {visibleTabs.filter((tabItem) => tabItem.key !== activeTab && tabItem.key !== 'smsTemplates' && tabItem.key !== 'emailTemplates' && tabItem.key !== 'providerConfig').map((tabItem) => (
         <div key={tabItem.key} id={`notification-panel-${tabItem.key}`} role="tabpanel" aria-labelledby={`notification-tab-${tabItem.key}`} hidden />
       ))}
       {(['SMS', 'EMAIL'] as const).map(channel => {
@@ -1320,7 +1326,13 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
           />}
         </div>;
       })}
-      {activeTab !== 'smsTemplates' && activeTab !== 'emailTemplates' && <div className="notification-redesign__panel" role="tabpanel" tabIndex={0} id={`notification-panel-${activeTab}`} aria-labelledby={`notification-tab-${activeTab}`}>
+      {permissions.canViewProviderConfig && <div className="notification-redesign__panel" role="tabpanel" tabIndex={activeTab === 'providerConfig' ? 0 : -1} id="notification-panel-providerConfig" aria-labelledby="notification-tab-providerConfig" hidden={activeTab !== 'providerConfig'}>
+        {(visitedProvider || activeTab === 'providerConfig') && <div style={styles.sectionStack} data-testid="notif-panel-providerConfig">
+          <ProviderConfigurationWorkspace principalId={currentPrincipalId || null} principalRoles={principal?.roles ?? []} permissions={permissions} onRefreshParentStatus={() => void fetchAllReadSurfaces()} onGuardChange={reportProviderGuard}
+            probeBusy={probeBusy} probeReview={Boolean(probeReview)} beginProbe={beginProbe} finishProbe={finishProbe} />
+        </div>}
+      </div>}
+      {activeTab !== 'smsTemplates' && activeTab !== 'emailTemplates' && activeTab !== 'providerConfig' && <div className="notification-redesign__panel" role="tabpanel" tabIndex={0} id={`notification-panel-${activeTab}`} aria-labelledby={`notification-tab-${activeTab}`}>
       {/* TAB 1: OVERVIEW (Capability 1) */}
       {activeTab === 'overview' && (
         <div style={styles.sectionStack} data-testid="notif-panel-overview">
@@ -3363,7 +3375,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                       setTestChannel(e.target.value as ManagedNotificationChannel);
                       setTestWorkforceConfirmed(false); setTestOutcome(null); setTestError(''); setTestBlockedMsg(''); setTestValidationErrors([]);
                     }}
-                    disabled={!permissions.canTestSend || isSendingTest || probeBusy || Boolean(probeReview)}
+                    disabled={!permissions.canTestSend || isSendingTest || probeBusy || Boolean(probeReview) || providerBusy || providerReviewRequired}
                   >
                     <option value="SMS">SMS</option>
                     <option value="EMAIL">EMAIL</option>
@@ -3391,7 +3403,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                       setTestDestination(e.target.value);
                       setTestWorkforceConfirmed(false); setTestOutcome(null); setTestError(''); setTestBlockedMsg(''); setTestValidationErrors([]);
                     }}
-                    disabled={!permissions.canTestSend || isSendingTest || probeBusy || Boolean(probeReview)}
+                    disabled={!permissions.canTestSend || isSendingTest || probeBusy || Boolean(probeReview) || providerBusy || providerReviewRequired}
                   />
                 </div>
               </div>
@@ -3404,7 +3416,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     data-testid="test-send-workforce-attestation"
                     checked={testWorkforceConfirmed}
                     onChange={(e) => setTestWorkforceConfirmed(e.target.checked)}
-                    disabled={!permissions.canTestSend || isSendingTest || probeBusy || Boolean(probeReview)}
+                    disabled={!permissions.canTestSend || isSendingTest || probeBusy || Boolean(probeReview) || providerBusy || providerReviewRequired}
                   />
                   <span>
                     I attest that this destination belongs to an authorized MonieNaija workforce
@@ -3484,7 +3496,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
               <button
                 type="submit"
                 data-testid="submit-test-send-btn"
-                disabled={!permissions.canTestSend || isSendingTest || probeBusy || Boolean(probeReview)}
+                disabled={!permissions.canTestSend || isSendingTest || probeBusy || Boolean(probeReview) || providerBusy || providerReviewRequired}
                 style={
                   !permissions.canTestSend || isSendingTest
                     ? styles.primaryBtnDisabled
@@ -3500,18 +3512,6 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
         </div>
       )}
 
-      {/* TAB 9: GOVERNED PROVIDER CONFIGURATION (Robase SMS & Brevo Transactional Email) */}
-      {activeTab === 'providerConfig' && permissions.canViewProviderConfig && (
-        <div style={styles.sectionStack} data-testid="notif-panel-providerConfig">
-          <ProviderConfigurationWorkspace
-            principalId={currentPrincipalId || null}
-            principalRoles={principal?.roles ?? []}
-            permissions={permissions}
-            onRefreshParentStatus={() => void fetchAllReadSurfaces()}
-            probeBusy={probeBusy} probeReview={Boolean(probeReview)} beginProbe={beginProbe} finishProbe={finishProbe}
-          />
-        </div>
-      )}
       </div>}
     </div>
   );
