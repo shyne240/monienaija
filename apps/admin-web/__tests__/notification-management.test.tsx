@@ -372,9 +372,10 @@ const CHANGE_LIST_FIXTURE = {
 };
 
 const PROVIDER_STATUS_FIXTURE = {
+  projectionScope: 'FULL',
   channels: ['SMS', 'PUSH', 'EMAIL'],
   sms: {
-    provider: 'robase',
+    provider: 'robase', enabled: true, deliveryTested: true, lifecycleState: 'DELIVERY_TESTED',
     baseUrl: 'https://api.robase.dev',
     configured: true,
     keyFingerprint: '9f2a',
@@ -384,7 +385,7 @@ const PROVIDER_STATUS_FIXTURE = {
     apiKey: 'robe_99999999999999999999999999999999',
   },
   email: {
-    provider: 'resend',
+    provider: 'resend', enabled: true, deliveryTested: true, lifecycleState: 'DELIVERY_TESTED',
     baseUrl: 'https://api.resend.com',
     configured: true,
     keyFingerprint: 'ab12',
@@ -1512,7 +1513,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
         }
         if (path === '/internal/notifications/provider-status') {
           return Promise.resolve({
-            channels: ['SMS', 'PUSH', 'EMAIL'],
+            channels: ['SMS', 'PUSH', 'EMAIL'], projectionScope: 'MINIMAL',
             sms: { available: true, provider: 'console' },
             push: { available: false },
             email: { available: false, provider: 'none' },
@@ -1604,7 +1605,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
         }
         if (path === '/internal/notifications/provider-status') {
           return Promise.resolve({
-            channels: ['SMS', 'PUSH', 'EMAIL'],
+            channels: ['SMS', 'PUSH', 'EMAIL'], projectionScope: 'MINIMAL',
             sms: { available: true, provider: 'console' },
             push: { available: false },
             email: { available: false, provider: 'none' },
@@ -1727,7 +1728,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
         if (path === '/internal/notifications/events') return Promise.resolve([]);
         if (path === '/internal/notifications/provider-status') {
           return Promise.resolve({
-            channels: ['SMS', 'PUSH', 'EMAIL'],
+            channels: ['SMS', 'PUSH', 'EMAIL'], projectionScope: 'MINIMAL',
             sms: { available: true, provider: 'console' },
             push: { available: false },
             email: { available: false, provider: 'none' },
@@ -1745,7 +1746,8 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
       });
 
       const overview = render(<NotificationManagementScreen initialTab="overview" />);
-      expect(await overview.findByTestId('overview-email-disabled-badge')).toBeTruthy();
+      expect((await overview.findByTestId('overview-email-coarse-badge')).textContent).toContain('UNAVAILABLE (COARSE)');
+      expect(overview.queryByText(/Confirmed disabled \/ dark/)).toBeNull();
       const matrixText = overview.getByTestId('backend-readiness-matrix').textContent ?? '';
       expect(matrixText).toContain('GET /internal/notifications/outbox-receipts');
       expect(matrixText).toContain('POST /internal/notifications/changes/:approvalId/execute');

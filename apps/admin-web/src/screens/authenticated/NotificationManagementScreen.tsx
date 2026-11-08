@@ -1302,7 +1302,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
               <div style={styles.cardTitleRow}>
                 <h3 style={styles.cardTitle}>SMS Channel</h3>
                 <span style={providerStatus?.sms?.operationalStatus === 'READY' ? styles.liveBadge : providerStatus?.sms?.operationalStatus === 'DEGRADED' || providerStatus?.sms?.operationalStatus === 'MISCONFIGURED' ? styles.blockedBadge : styles.mutedBadge}>
-                  {providerStatus?.sms?.operationalStatus ?? (!permissions.canViewProviderStatus ? 'SCOPE RESTRICTED' : loadingInitial ? 'LOADING…' : 'STATUS UNAVAILABLE')}
+                  {providerStatus?.projectionScope === 'MINIMAL' ? providerStatus.sms.operationalStatus === 'READY' ? 'AVAILABLE (COARSE)' : 'UNAVAILABLE (COARSE)' : providerStatus?.sms?.operationalStatus ?? (!permissions.canViewProviderStatus ? 'SCOPE RESTRICTED' : loadingInitial ? 'LOADING…' : 'STATUS UNAVAILABLE')}
                 </span>
               </div>
               <p style={styles.cardDesc}>
@@ -1330,7 +1330,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                 <h3 style={styles.cardTitle}>Email Channel</h3>
                 {emailChannelBlocked ? (
                   <span style={styles.blockedBadge} data-testid="overview-email-blocked-badge">
-                    BLOCKED (ARENA 3)
+                    CHANNEL SUPPORT UNAVAILABLE
                   </span>
                 ) : !permissions.canViewProviderStatus ? (
                   <span style={styles.mutedBadge} data-testid="overview-email-restricted-badge">
@@ -1343,6 +1343,10 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                 ) : !providerStatus ? (
                   <span style={styles.blockedBadge} data-testid="overview-email-unavailable-badge">
                     STATUS UNAVAILABLE
+                  </span>
+                ) : providerStatus.projectionScope === 'MINIMAL' ? (
+                  <span style={styles.mutedBadge} data-testid="overview-email-coarse-badge">
+                    {providerStatus.email.operationalStatus === 'READY' ? 'AVAILABLE (COARSE)' : 'UNAVAILABLE (COARSE)'}
                   </span>
                 ) : providerStatus.email.operationalStatus === 'NOT_CONFIGURED' ||
                   String(providerStatus.email.provider).toUpperCase() === 'NONE' ? (
@@ -1372,13 +1376,15 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                 <div>
                   <strong>Runtime Status:</strong>{' '}
                   {emailChannelBlocked
-                    ? 'Pending ARENA 3 schema & provider adapter integration'
+                    ? providerBlockedMsg ? 'Provider status unavailable; channel support not established' : 'EMAIL is not reported in the API channel list; database schema is not verified here'
                     : !permissions.canViewProviderStatus
                       ? 'Requires notification.provider.view or notification.view_deliveries'
                       : !providerStatus
                         ? loadingInitial
                           ? 'Loading provider readiness…'
                           : 'Provider status not loaded (unavailable)'
+                        : providerStatus.projectionScope === 'MINIMAL'
+                          ? providerStatus.email.operationalStatus === 'READY' ? 'Available (coarse projection)' : 'Unavailable (coarse projection; cause not reported)'
                         : providerStatus.email.operationalStatus === 'NOT_CONFIGURED' ||
                             String(providerStatus.email.provider).toUpperCase() === 'NONE'
                           ? `Confirmed disabled / dark (${providerStatus.email.provider || 'NONE'})`
@@ -1414,9 +1420,9 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                         REDACTED (MINIMAL PROJECTION)
                       </span>
                     ) : providerStatus.worker.enabled ? (
-                      'ENABLED'
+                      'ENABLED (reported; running activity is not confirmed)'
                     ) : (
-                      'DISABLED'
+                      'DISABLED (reported configuration)'
                     )
                   ) : permissions.canViewProviderStatus ? (
                     'Unloaded'
@@ -2506,12 +2512,8 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     <code>{providerStatus.sms.baseUrl || 'Console local memory'}</code>
                   </div>
                   <div>
-                    <strong>API Key Configured:</strong>{' '}
+                    <strong>Provider configuration gate (reported):</strong>{' '}
                     {providerStatus.sms.apiKeyConfigured ? 'Yes' : 'No'}
-                  </div>
-                  <div>
-                    <strong>Live Prefix (robe_) Valid:</strong>{' '}
-                    {providerStatus.sms.apiKeyPrefixValid ? 'Verified' : 'Not applicable / Invalid'}
                   </div>
                   <div>
                     <strong>Key Fingerprint (Masked):</strong>{' '}
@@ -2522,12 +2524,9 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     </code>
                   </div>
                   <div>
-                    <strong>Request Timeout:</strong> {providerStatus.sms.requestTimeoutMs} ms
+                    <strong>Request Timeout:</strong> {providerStatus.sms.requestTimeoutMs == null ? 'Unavailable' : `${providerStatus.sms.requestTimeoutMs} ms`}
                   </div>
-                  <div>
-                    <strong>Production Console Guard:</strong>{' '}
-                    {providerStatus.sms.productionGuardSatisfied ? 'Satisfied' : 'Fails startup in prod'}
-                  </div>
+                  <div>Production startup guard status is not reported by this endpoint.</div>
                   <div>
                     <strong>Sender Identity Mode:</strong>{' '}
                     {providerStatus.sms.senderIdentitySummary ||
@@ -2561,7 +2560,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
               ) : providerStatus ? (
                 <div style={styles.kvList} data-testid="email-provider-status-details">
                   <div>
-                    <strong>DB Schema Widened (EMAIL):</strong>{' '}
+                    <strong>EMAIL reported in API channels:</strong>{' '}
                     {providerStatus.email.channelEnabledInSchema ? 'Yes' : 'No'}
                   </div>
                   <div>
@@ -2569,7 +2568,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     <code>{providerStatus.email.provider || 'Not configured'}</code>
                   </div>
                   <div>
-                    <strong>Credentials Configured:</strong>{' '}
+                    <strong>Provider configuration gate (reported):</strong>{' '}
                     {providerStatus.email.credentialsConfigured ? 'Yes' : 'No'}
                   </div>
                   <div>
@@ -2581,18 +2580,17 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     </code>
                   </div>
                   <div>
-                    <strong>Verified Sender Identity:</strong>{' '}
+                    <strong>Configured Sender Identity (not delivery verification):</strong>{' '}
                     {providerStatus.email.fromName
                       ? `${providerStatus.email.fromName} <${providerStatus.email.fromAddress ?? ''}>`
                       : providerStatus.email.fromAddress || 'Not configured'}
                   </div>
                   <div>
-                    <strong>Domain DKIM/SPF Status:</strong>{' '}
+                    <strong>Domain authentication configuration flags (not DNS verification):</strong>{' '}
                     {providerStatus.email.domainVerificationStatus}
                   </div>
                   <div>
-                    <strong>Honors Customer Email Preference:</strong>{' '}
-                    {providerStatus.email.honorsCustomerEmailPreference ? 'Yes' : 'No'}
+                    Customer email preferences apply to applicable non-security events; security-critical events can bypass them.
                   </div>
                 </div>
               ) : (
@@ -2637,14 +2635,14 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   </code>
                 </div>
                 <div>
-                  <strong>Worker Poller Enabled:</strong>{' '}
+                  <strong>Worker Enabled (reported configuration):</strong>{' '}
                   {providerStatus ? (
                     providerStatus.projectionScope === 'MINIMAL' || providerStatus.worker.redacted ? (
                       <span data-testid="provider-worker-redacted-value">
                         REDACTED (requires notification.provider.view — not disabled)
                       </span>
                     ) : providerStatus.worker.enabled ? (
-                      'ENABLED'
+                      'ENABLED (reported; running activity is not confirmed)'
                     ) : (
                       'DISABLED (reported)'
                     )

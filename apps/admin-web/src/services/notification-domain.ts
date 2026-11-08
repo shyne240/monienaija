@@ -162,28 +162,31 @@ export interface NotificationProviderStatus {
     senderId?: string | null;
     lastTest?: ProviderChannelSnapshot['lastTest'];
     baseUrl: string | null;
-    apiKeyConfigured: boolean;
-    apiKeyPrefixValid: boolean;
+    /** Legacy name: reported provider configuration gate, not a key inspection. */
+    apiKeyConfigured: boolean | null;
+    apiKeyPrefixValid: boolean | null;
     apiKeyLast4Fingerprint: string | null;
-    requestTimeoutMs: number;
-    productionGuardSatisfied: boolean;
+    requestTimeoutMs: number | null;
+    productionGuardSatisfied: boolean | null;
     senderIdentityMode: 'PROVIDER_WORKSPACE_ACCOUNT' | 'PER_MESSAGE_CONFIGURED';
     senderIdentitySummary: string;
     deliveryReceiptTracking: 'ACCEPTED_BY_PROVIDER_ONLY' | 'WEBHOOK_ENABLED' | 'POLLING_ENABLED';
   };
   email: {
+    /** Legacy name: membership in the reported API channel list, not a database schema check. */
     channelEnabledInSchema: boolean;
     provider: string | null;
     operationalStatus: 'READY' | 'CONSOLE_ONLY' | 'NOT_CONFIGURED' | 'DEGRADED';
     lifecycleState?: ProviderLifecycleState;
     gates?: ProviderReadinessGates;
     lastTest?: ProviderChannelSnapshot['lastTest'];
-    credentialsConfigured: boolean;
+    /** Legacy name: reported provider configuration gate, not a credential inspection. */
+    credentialsConfigured: boolean | null;
     credentialFingerprint: string | null;
     fromAddress: string | null;
     fromName: string | null;
-    domainVerificationStatus: 'VERIFIED' | 'UNVERIFIED' | 'NOT_APPLICABLE';
-    honorsCustomerEmailPreference: boolean;
+    domainVerificationStatus: 'VERIFIED' | 'UNVERIFIED' | 'CONFIGURED' | 'INCOMPLETE' | 'UNKNOWN' | 'NOT_APPLICABLE';
+    honorsCustomerEmailPreference: boolean | null;
   };
 }
 

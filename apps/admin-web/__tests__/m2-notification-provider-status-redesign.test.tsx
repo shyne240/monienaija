@@ -36,3 +36,16 @@ test('editing the probe context requires a fresh attestation and clears validati
   fireEvent.change(destination,{target:{value:'another-invalid'}});expect(attest.checked).toBe(false);expect(screen.queryByTestId('test-send-validation-errors')).toBeNull();
   fireEvent.click(attest);fireEvent.change(screen.getByTestId('test-send-channel-select'),{target:{value:'EMAIL'}});expect(attest.checked).toBe(false);expect(ApiClient.post).not.toHaveBeenCalled();
 });
+test('malformed provider projections are unavailable instead of inventing worker or provider defaults',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValueOnce({channels:['SMS','EMAIL'],projectionScope:'FULL',sms:{},email:{},worker:{}});
+ await expect(NotificationManagementApi.getProviderStatus()).rejects.toThrow(/could not be verified/);
+ (ApiClient.get as jest.Mock).mockResolvedValueOnce({channels:['SMS','EMAIL'],projectionScope:'MINIMAL',sms:{},email:{available:false}});
+ await expect(NotificationManagementApi.getProviderStatus()).rejects.toThrow(/could not be verified/);
+ expect(ApiClient.post).not.toHaveBeenCalled();
+});
+test('provider status distinguishes reported configuration from unreported verification and worker activity',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValueOnce({channels:['SMS','PUSH','EMAIL'],projectionScope:'FULL',sms:{provider:'robase',enabled:true,configured:true,deliveryTested:false,lifecycleState:'CONFIGURED',keyFingerprint:'1234',timeoutMs:null},email:{provider:'resend',enabled:true,configured:true,deliveryTested:false,lifecycleState:'CONFIGURED',domainAuth:null},worker:{enabled:true,pollIntervalMs:5000,batchSize:10,retryMaxAttempts:3,retryBaseDelaySeconds:60}});
+ const result=await NotificationManagementApi.getProviderStatus();expect(result.status).toBe('LIVE');
+ if(result.status==='LIVE') { expect(result.data.worker.pendingOutboxCount).toBeNull();expect(result.data.sms.apiKeyPrefixValid).toBeNull();expect(result.data.sms.productionGuardSatisfied).toBeNull();expect(result.data.sms.requestTimeoutMs).toBeNull();expect(result.data.email.domainVerificationStatus).toBe('UNKNOWN'); }
+ expect(ApiClient.post).not.toHaveBeenCalled();
+});

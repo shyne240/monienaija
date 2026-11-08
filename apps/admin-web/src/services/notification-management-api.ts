@@ -900,8 +900,24 @@ export const NotificationManagementApi = {
         // Scope discipline: environment and outbox health are loaded by the console through
         // their OWN permission-gated endpoints (getSafeRuntimeConfig / getDiagnostics) —
         // this mapping never cross-calls endpoints the current principal may lack scope for.
-        const environment: string = 'unknown';
-        const pendingOutboxCount = 0;
+        if (!raw || !Array.isArray(raw.channels) || !raw.channels.every(channel => typeof channel === 'string') ||
+          !raw.sms || !raw.email || !['MINIMAL', 'FULL'].includes(raw.projectionScope ?? '')) {
+          throw new Error('Provider status response could not be verified.');
+        }
+        if (raw.projectionScope === 'MINIMAL' && (typeof raw.sms.available !== 'boolean' || typeof raw.email.available !== 'boolean')) {
+          throw new Error('Provider availability response could not be verified.');
+        }
+        if (raw.projectionScope === 'FULL' && (!nonEmptyDiagnosticString(raw.sms.provider) || !nonEmptyDiagnosticString(raw.email.provider) ||
+          typeof raw.sms.enabled !== 'boolean' || typeof raw.sms.configured !== 'boolean' ||
+          typeof raw.email.enabled !== 'boolean' || typeof raw.email.configured !== 'boolean' ||
+          typeof raw.sms.deliveryTested !== 'boolean' || typeof raw.email.deliveryTested !== 'boolean' ||
+          !['NOT_CONFIGURED', 'CONSOLE_ONLY', 'MISCONFIGURED', 'CONFIGURED', 'VERIFIED', 'ENABLED', 'DELIVERY_TESTED', 'PRODUCTION_READY'].includes(raw.sms.lifecycleState ?? '') ||
+          !['NOT_CONFIGURED', 'CONSOLE_ONLY', 'MISCONFIGURED', 'CONFIGURED', 'VERIFIED', 'ENABLED', 'DELIVERY_TESTED', 'PRODUCTION_READY'].includes(raw.email.lifecycleState ?? '') ||
+          (raw.email.domainAuth != null && (typeof raw.email.domainAuth.spfConfigured !== 'boolean' || typeof raw.email.domainAuth.dkimConfigured !== 'boolean' || typeof raw.email.domainAuth.dmarcConfigured !== 'boolean' || raw.email.domainAuth.allConfigured !== (raw.email.domainAuth.spfConfigured && raw.email.domainAuth.dkimConfigured && raw.email.domainAuth.dmarcConfigured))) ||
+          !raw.worker || typeof raw.worker.enabled !== 'boolean' ||
+          ![raw.worker.batchSize, raw.worker.retryMaxAttempts, raw.worker.retryBaseDelaySeconds].every(value => Number.isSafeInteger(value) && (value as number) >= 0))) {
+          throw new Error('Provider status response could not be verified.');
+        }
 
         if (raw.projectionScope === 'MINIMAL') {
           const smsAvail = raw.sms?.available === true;
@@ -923,11 +939,11 @@ export const NotificationManagementApi = {
               operationalStatus: smsAvail ? 'READY' : 'DEGRADED',
               senderId: null,
               baseUrl: null,
-              apiKeyConfigured: false,
-              apiKeyPrefixValid: false,
+              apiKeyConfigured: null,
+              apiKeyPrefixValid: null,
               apiKeyLast4Fingerprint: null,
-              requestTimeoutMs: 0,
-              productionGuardSatisfied: false,
+              requestTimeoutMs: null,
+              productionGuardSatisfied: null,
               senderIdentityMode: 'PROVIDER_WORKSPACE_ACCOUNT',
               senderIdentitySummary:
                 'Provider identity and configuration details require notification.provider.view.',
@@ -937,12 +953,12 @@ export const NotificationManagementApi = {
               channelEnabledInSchema: (raw.channels ?? []).includes('EMAIL'),
               provider: null,
               operationalStatus: emailAvail ? 'READY' : 'NOT_CONFIGURED',
-              credentialsConfigured: false,
+              credentialsConfigured: null,
               credentialFingerprint: null,
               fromAddress: null,
               fromName: null,
               domainVerificationStatus: 'NOT_APPLICABLE',
-              honorsCustomerEmailPreference: true,
+              honorsCustomerEmailPreference: null,
             },
           };
           return sanitizeProviderStatusForDisplay(minimalMapped);
@@ -960,7 +976,7 @@ export const NotificationManagementApi = {
                 : (raw.sms.deliveryTested ||
                       raw.sms.lifecycleState === 'DELIVERY_TESTED' ||
                       raw.sms.lifecycleState === 'PRODUCTION_READY') &&
-                    raw.sms.enabled
+                    raw.sms.enabled && raw.sms.configured
                   ? 'READY'
                   : 'DEGRADED'
             : raw.sms?.configured
@@ -978,7 +994,7 @@ export const NotificationManagementApi = {
                 : (raw.email.deliveryTested ||
                       raw.email.lifecycleState === 'DELIVERY_TESTED' ||
                       raw.email.lifecycleState === 'PRODUCTION_READY') &&
-                    raw.email.enabled
+                    raw.email.enabled && raw.email.configured
                   ? 'READY'
                   : 'DEGRADED'
             : emailProvider === 'none'
@@ -994,13 +1010,13 @@ export const NotificationManagementApi = {
             ? 'NOT_APPLICABLE'
             : raw.email?.domainAuth
               ? raw.email.domainAuth.allConfigured
-                ? 'VERIFIED'
-                : 'UNVERIFIED'
-              : 'NOT_APPLICABLE';
+                ? 'CONFIGURED'
+                : 'INCOMPLETE'
+              : 'UNKNOWN';
 
         const mapped: NotificationProviderStatus = {
           checkedAt: new Date().toISOString(),
-          environment,
+          environment: null,
           projectionScope: 'FULL',
           worker: {
             enabled: raw.worker?.enabled === true,
@@ -1008,7 +1024,7 @@ export const NotificationManagementApi = {
             batchSize: Number(raw.worker?.batchSize ?? 0),
             smsRetryMaxAttempts: Number(raw.worker?.retryMaxAttempts ?? 0),
             smsRetryBaseDelaySeconds: Number(raw.worker?.retryBaseDelaySeconds ?? 0),
-            pendingOutboxCount,
+            pendingOutboxCount: null,
           },
           sms: {
             provider: smsProvider,
@@ -1019,22 +1035,17 @@ export const NotificationManagementApi = {
             lastTest: raw.sms?.lastTest,
             baseUrl: raw.sms?.baseUrl ?? null,
             apiKeyConfigured: Boolean(raw.sms?.configured),
-            apiKeyPrefixValid: Boolean(raw.sms?.keyFingerprint),
+            apiKeyPrefixValid: null,
             apiKeyLast4Fingerprint: raw.sms?.keyFingerprint ?? null,
-            requestTimeoutMs: Number(raw.sms?.timeoutMs ?? 0),
-            productionGuardSatisfied:
-              smsProvider === 'console'
-                ? false
-                : raw.sms?.lifecycleState !== undefined
-                  ? Boolean(raw.sms?.enabled && raw.sms?.configured)
-                  : Boolean(raw.sms?.configured),
+            requestTimeoutMs: typeof raw.sms?.timeoutMs === 'number' ? raw.sms.timeoutMs : null,
+            productionGuardSatisfied: null,
             senderIdentityMode: 'PROVIDER_WORKSPACE_ACCOUNT',
             senderIdentitySummary:
               smsProvider === 'robase'
                 ? raw.sms?.senderId
                   ? `Workspace sender ID "${raw.sms.senderId}" recorded (bound at Robase workspace level).`
                   : 'Sender identity is managed by the Robase workspace/account configuration.'
-                : `No live sender identity — provider '${smsProvider}' does not transmit messages.`,
+                : smsProvider === 'console' ? 'Console provider simulates sends; no live sender identity is reported.' : 'Sender identity is not reported for this provider.',
             deliveryReceiptTracking: 'ACCEPTED_BY_PROVIDER_ONLY',
           },
           email: {
@@ -1049,7 +1060,7 @@ export const NotificationManagementApi = {
             fromAddress: raw.email?.from ?? null,
             fromName: raw.email?.fromName ?? null,
             domainVerificationStatus,
-            honorsCustomerEmailPreference: true,
+            honorsCustomerEmailPreference: null,
           },
         };
         return sanitizeProviderStatusForDisplay(mapped);

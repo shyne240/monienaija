@@ -212,8 +212,10 @@ function wireStandardBackendMocks(
     }
     if (endpoint === '/internal/notifications/provider-status') {
       return Promise.resolve({
+        projectionScope: 'FULL', channels: ['SMS', 'PUSH', 'EMAIL'],
         sms: {
           provider: overview.sms.provider,
+          deliveryTested: overview.sms.gates.deliveryTested,
           configured: overview.sms.gates.configured,
           enabled: overview.sms.enabled,
           lifecycleState: overview.sms.lifecycleState,
@@ -223,6 +225,7 @@ function wireStandardBackendMocks(
         },
         email: {
           provider: overview.email.provider,
+          deliveryTested: overview.email.gates.deliveryTested,
           configured: overview.email.gates.configured,
           enabled: overview.email.enabled,
           lifecycleState: overview.email.lifecycleState,
@@ -232,7 +235,7 @@ function wireStandardBackendMocks(
           fromName: overview.email.fromName,
           domainAuthentication: overview.email.domainAuthentication,
         },
-        worker: overview.worker,
+        worker: { ...overview.worker, retryMaxAttempts: overview.worker.smsRetryMaxAttempts, retryBaseDelaySeconds: overview.worker.smsRetryBaseDelaySeconds },
         rateLimit: { maxPerHour: 5 },
       });
     }
@@ -615,14 +618,14 @@ describe('Governed SMS (Robase) & Email (Brevo) Provider Configuration Workspace
       expect(outcome.data.environment).toBeNull();
       expect(outcome.data.sms.provider).toBe('redacted');
       expect(outcome.data.sms.operationalStatus).toBe('READY');
-      expect(outcome.data.sms.apiKeyConfigured).toBe(false);
+      expect(outcome.data.sms.apiKeyConfigured).toBeNull();
       expect(outcome.data.sms.apiKeyLast4Fingerprint).toBeNull();
       expect(outcome.data.sms.senderId).toBeNull();
       expect(outcome.data.sms.lifecycleState).toBeUndefined();
       expect(outcome.data.sms.lastTest).toBeUndefined();
       expect(outcome.data.email.provider).toBeNull();
       expect(outcome.data.email.operationalStatus).toBe('READY');
-      expect(outcome.data.email.credentialsConfigured).toBe(false);
+      expect(outcome.data.email.credentialsConfigured).toBeNull();
       expect(outcome.data.email.credentialFingerprint).toBeNull();
       expect(outcome.data.email.fromAddress).toBeNull();
       expect(outcome.data.email.fromName).toBeNull();

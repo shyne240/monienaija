@@ -520,12 +520,12 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         >
           <div style={styles.blockedTitleRow}>
             <span style={styles.blockedBadge}>BLOCKED</span>
-            <strong>{templatesRegistryBlocked ? 'Template registry unavailable' : 'Email provider state unavailable or not enabled'}</strong>
+            <strong>{templatesRegistryBlocked ? 'Template registry unavailable' : 'Email channel support unavailable'}</strong>
           </div>
           <p style={styles.blockedBodyText}>
             {templatesRegistryBlocked
               ? 'The template registry could not be read. Any code-defined entries are references, not confirmed active versions; a confirmed active version is required for a proposal.'
-              : 'Email provider state is blocked or reports that the channel is not enabled. Template governance and actual delivery readiness are separate.'}
+              : 'Provider status is unavailable or EMAIL is not reported in the API channel list. This does not establish the database schema or delivery readiness; template governance is separate.'}
           </p>
         </div>
       )}
