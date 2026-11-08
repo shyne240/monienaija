@@ -1776,3 +1776,27 @@ test('a console test response is shown as simulation, not live delivery', async 
     const view=render(<NotificationManagementScreen initialTab="testSend"/>);fireEvent.change(view.getByTestId('test-send-destination-input'),{target:{value:'08030000100'}});fireEvent.click(view.getByTestId('test-send-workforce-attestation'));fireEvent.click(view.getByTestId('submit-test-send-btn'));
     expect((await view.findByTestId('test-send-error-banner')).textContent).toContain('Test-send outcome not confirmed');expect(view.queryByTestId('test-send-outcome-banner')).toBeNull();
   });
+
+test('template event switching protects a draft and reason without issuing a proposal', async () => {
+  jest.clearAllMocks(); mockIntegratedRegistryBackend();
+  seedPrincipal({roles:['SUPER_ADMIN'], scopes:['notification.view_deliveries'], assuranceLevel:'MFA'});
+  const view = render(<NotificationManagementScreen initialTab="smsTemplates"/>);
+  await waitFor(() => expect(view.getByTestId('template-version-history-table')).toBeTruthy());
+  const selector = view.getByTestId('template-event-select') as HTMLSelectElement;
+  fireEvent.change(selector, {target:{value:'transfer.completed'}});
+  const body = view.getByTestId('template-body-textarea') as HTMLTextAreaElement;
+  fireEvent.change(body, {target:{value:'Draft {{reference}}'}});
+  fireEvent.change(view.getByTestId('template-change-summary-input'), {target:{value:'A careful change reason'}});
+  fireEvent.change(selector, {target:{value:'cash_to_cash.created'}});
+  const prompt = view.getByTestId('template-event-switch-prompt');
+  expect(document.activeElement).toBe(prompt); expect(selector.value).toBe('transfer.completed');
+  expect((view.getByTestId('submit-template-version-btn') as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(view.getByRole('button',{name:'Keep draft'}));
+  expect(document.activeElement).toBe(selector); expect(body.value).toBe('Draft {{reference}}');
+  fireEvent.change(selector, {target:{value:'cash_to_cash.created'}});
+  fireEvent.click(view.getByRole('button',{name:'Discard and switch'}));
+  expect(selector.value).toBe('cash_to_cash.created'); expect(document.activeElement).toBe(selector);
+  expect(view.getByTestId('template-c2c-nondisclosure-banner')).toBeTruthy();
+  expect((view.getByTestId('template-change-summary-input') as HTMLInputElement).value).toBe('');
+  expect(ApiClient.post).not.toHaveBeenCalled();
+});

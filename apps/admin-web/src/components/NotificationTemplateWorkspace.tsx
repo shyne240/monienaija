@@ -63,6 +63,12 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   }, [events, initialEventType]);
 
   const [selectedEventType, setSelectedEventType] = useState<string>(defaultEventType);
+  const [pendingEventType, setPendingEventType] = useState<string | null>(null);
+  const switchPromptRef = useRef<HTMLDivElement | null>(null);
+  const eventSelectRef = useRef<HTMLSelectElement | null>(null);
+  useEffect(() => {
+    if (pendingEventType) switchPromptRef.current?.focus();
+  }, [pendingEventType]);
   const [subject, setSubject] = useState<string>('');
   const [body, setBody] = useState<string>('');
   const [changeSummary, setChangeSummary] = useState<string>('');
@@ -177,12 +183,11 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
     }
   }, [selectedEventType, channel, referenceVersion?.id, activeVersionConfirmed, activeVersion?.version]);
 
-  const isSecurityLocked = Boolean(
+  const isSecurityFlow = Boolean(
     selectedEvent &&
-      (selectedEvent.deliveryClass === 'SECURITY' ||
-        SECURITY_LOCKED_EVENT_TYPES.has(selectedEvent.eventType) ||
-        !selectedEvent.templateEditable),
+      (selectedEvent.deliveryClass === 'SECURITY' || SECURITY_LOCKED_EVENT_TYPES.has(selectedEvent.eventType)),
   );
+  const isSecurityLocked = Boolean(selectedEvent && (isSecurityFlow || !selectedEvent.templateEditable));
 
   const canEditFields = permissions.canManageTemplates && !isSecurityLocked;
 
@@ -287,7 +292,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
   const handleSubmitTemplate = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance || submitInFlight.current || activationInFlight.current) return;
+    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance || submitInFlight.current || activationInFlight.current || pendingEventType) return;
 
     setValidationErrors([]);
     setSubmitError('');
@@ -377,7 +382,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
     // historical version is a governed TEMPLATE_ROLLBACK proposal created by the maker
     // (SUPER_ADMIN + MFA); a FINANCE_CONTROLLER checker approves and executes it from the
     // change queue (maker ≠ checker is enforced server-side at approval time).
-    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance || submitInFlight.current || activationInFlight.current || !activeVersionConfirmed || !activeVersion) return;
+    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance || submitInFlight.current || activationInFlight.current || pendingEventType || !activeVersionConfirmed || !activeVersion) return;
     if (versionRow.sourceOrigin === 'CODE_BASELINE') {
       setActivationFeedback({
         kind: 'blocked',
@@ -427,6 +432,21 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
   return (
     <div className="mn-template-workspace" style={styles.wrapper} data-testid={`template-workspace-${channel.toLowerCase()}`}>
+      <header className="mn-template-intro">
+        <p className="mn-template-kicker">TEMPLATE GOVERNANCE · {channel}</p>
+        <h2>{channel === 'SMS' ? 'SMS templates' : 'Email templates'}</h2>
+        <p>
+          Choose an event, prepare a draft with approved variables, then review its preview and
+          version history. Proposals require approval before taking effect. Drafts are local to
+          this tab and are discarded when you leave it.
+        </p>
+        <nav aria-label={`${channel} template workspace sections`}>
+          <a href={`#template-editor-${channel}`}>Editor</a>
+          <a href={`#template-variables-${channel}`}>Variables</a>
+          <a href={`#template-preview-${channel}`}>Preview</a>
+          <a href={`#template-history-${channel}`}>Version history</a>
+        </nav>
+      </header>
       {templatesReadError && <div role="alert" style={styles.blockedBanner}>Template registry unavailable: {templatesReadError}. Displayed data is not confirmed current.</div>}
       {/* Integration Status Banner */}
       {(templatesRegistryBlocked || (channel === 'EMAIL' && emailChannelBlocked)) && (
@@ -437,16 +457,12 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         >
           <div style={styles.blockedTitleRow}>
             <span style={styles.blockedBadge}>BLOCKED</span>
-            <strong>
-              {channel === 'EMAIL'
-                ? 'Backend Template Registry (ARENA 1) & Email Channel Runtime (ARENA 3) Pending Integration'
-                : 'Backend Template Registry (ARENA 1) Pending Integration'}
-            </strong>
+            <strong>{templatesRegistryBlocked ? 'Template registry unavailable' : 'Email provider state unavailable or not enabled'}</strong>
           </div>
           <p style={styles.blockedBodyText}>
             {templatesRegistryBlocked
-              ? 'GET/POST /internal/notifications/templates is not yet available on the running backend. Showing read-only code-defined v1 baselines from NotificationTemplateService for inspection, variable authoring, validation, and safe preview. Persistence and version activation remain BLOCKED until ARENA 1 merges.'
-              : 'Email delivery infrastructure (NotificationChannel EMAIL widening and provider adapter) is pending ARENA 3 integration.'}
+              ? 'The template registry could not be read. Any code-defined entries are references, not confirmed active versions; a confirmed active version is required for a proposal.'
+              : 'Email provider state is blocked or reports that the channel is not enabled. Template governance and actual delivery readiness are separate.'}
           </p>
         </div>
       )}
@@ -460,20 +476,28 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
       )}
 
       {/* Event Selector Header Card */}
-      <div style={styles.card}>
+      <section style={styles.card} className="mn-template-context" aria-label={`${channel} event context`}>
+        <p className="mn-template-kicker">01 · SELECT AN EVENT</p>
+        <h3>Template context</h3>
         <div style={styles.selectorRow}>
           <div style={{ flex: '1 1 260px', minWidth: 0 }}>
             <label htmlFor={`template-event-select-${channel}`} style={styles.label}>
               Notification Event ({channel} Channel · Locale <code>en-NG</code>)
             </label>
             <select
+              ref={eventSelectRef}
               id={`template-event-select-${channel}`}
               aria-label="Notification event"
               data-testid="template-event-select"
               style={styles.select}
               value={selectedEventType}
               disabled={isSubmitting || Boolean(activatingTemplateId)}
-              onChange={(e) => setSelectedEventType(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                if (next === selectedEventType) return;
+                if (hasUserEditedRef.current || changeSummary.trim()) setPendingEventType(next);
+                else setSelectedEventType(next);
+              }}
             >
               {events.map((item) => (
                 <option key={item.eventType} value={item.eventType}>
@@ -498,6 +522,20 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
           )}
         </div>
         {selectedEvent && <p style={styles.eventDescription}>{selectedEvent.description}</p>}
+        {pendingEventType && (
+          <div className="mn-template-switch-prompt" ref={switchPromptRef} tabIndex={-1}
+            role="group" aria-label="Confirm event switch" data-testid="template-event-switch-prompt">
+            <strong>Discard this event's draft?</strong>
+            <p>
+              Switching from <code>{selectedEventType}</code> to <code>{pendingEventType}</code> replaces
+              the current editor draft and reason. This does not submit a proposal.
+            </p>
+            <div>
+              <button type="button" onClick={() => { setPendingEventType(null); eventSelectRef.current?.focus(); }}>Keep draft</button>
+              <button type="button" onClick={() => { setSelectedEventType(pendingEventType); setPendingEventType(null); eventSelectRef.current?.focus(); }}>Discard and switch</button>
+            </div>
+          </div>
+        )}
 
         {isSecurityLocked && selectedEvent && (
           <div
@@ -505,12 +543,9 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
             role="alert"
             data-testid="template-security-locked-banner"
           >
-            <strong>🔒 Mandatory Security Direct-Send Flow — Template Editing Prohibited</strong>
+            <strong>{isSecurityFlow ? 'Security flow — template editing prohibited' : 'Template editing prohibited for this event'}</strong>
             <p style={{ margin: '6px 0 0 0', fontSize: 13 }}>
-              <code>{selectedEvent.eventType}</code> dispatches directly through{' '}
-              <code>NOTIFICATION_PROVIDER_TOKEN</code> without creating outbox or delivery records so
-              OTPs and temporary credentials can never be persisted in database tables or exposed to
-              admin-editable templates (Audit Finding F-S6).
+              {isSecurityFlow ? 'Security templates are locked to protect direct-send credentials from admin editing.' : 'The loaded catalogue marks this event as not template-editable.'}
             </p>
           </div>
         )}
@@ -520,7 +555,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
             style={styles.c2cNoticeBox}
             data-testid="template-c2c-nondisclosure-banner"
           >
-            <strong>🛡️ Cash-to-Cash Beneficiary Non-Disclosure Rule (Audit §4.7.3 / F-S2)</strong>
+            <strong>Cash-to-Cash Beneficiary Non-Disclosure Rule (Audit §4.7.3 / F-S2)</strong>
             <p style={{ margin: '6px 0 0 0', fontSize: 13 }}>
               Beneficiary SMS templates may reference ONLY{' '}
               <code>{'{{sender_name}}'}</code>, <code>{'{{amount}}'}</code>, and{' '}
@@ -531,15 +566,17 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
             </p>
           </div>
         )}
-      </div>
+      </section>
 
       {/* Two-Column Authoring + Variable Browser & Preview */}
       <div style={styles.twoColGrid}>
         {/* Left Column: SMS / Email Template Editor */}
-        <section style={styles.card} aria-label={`${channel} template editor`}>
+        <section id={`template-editor-${channel}`} className="mn-template-card" style={styles.card} aria-label={`${channel} template editor`} tabIndex={-1}>
+          <p className="mn-template-kicker">02 · COMPOSE</p>
           <h3 style={styles.sectionTitle}>
-            {channel === 'SMS' ? '✉️ SMS Template Editor' : '📧 Email Template Editor (Subject & Body)'}
+            {channel === 'SMS' ? 'SMS Template Editor' : 'Email Template Editor (Subject & Body)'}
           </h3>
+          <p style={styles.helperText}>Drafting does not change the active template. A confirmed active version and an approved proposal are required.</p>
 
           <form onSubmit={handleSubmitTemplate} noValidate>
             {channel === 'EMAIL' && (
@@ -651,7 +688,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                 style={styles.input}
                 placeholder="Describe why this template version is being proposed (min 10 chars)…"
                 value={changeSummary}
-                onChange={(e) => setChangeSummary(e.target.value)}
+                onChange={(e) => { hasUserEditedRef.current = true; setChangeSummary(e.target.value); }}
                 disabled={!canEditFields || isSubmitting}
               />
             </div>
@@ -700,8 +737,8 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               <button
                 type="submit"
                 data-testid="submit-template-version-btn"
-                disabled={!canEditFields || !permissions.hasMfaAssurance || isSubmitting || Boolean(activatingTemplateId)}
-                style={!canEditFields || !permissions.hasMfaAssurance || isSubmitting || activatingTemplateId ? styles.primaryBtnDisabled : styles.primaryBtn}
+                disabled={!canEditFields || !permissions.hasMfaAssurance || isSubmitting || Boolean(activatingTemplateId) || Boolean(pendingEventType)}
+                style={!canEditFields || !permissions.hasMfaAssurance || isSubmitting || activatingTemplateId || pendingEventType ? styles.primaryBtnDisabled : styles.primaryBtn}
               >
                 {isSubmitting
                   ? 'Submitting…'
@@ -717,11 +754,13 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Capability 5: Approved Variable Browser & Insertion */}
           <section
+            id={`template-variables-${channel}`} tabIndex={-1} className="mn-template-card"
             style={styles.card}
             aria-label="Approved variable browser"
             data-testid="approved-variable-browser"
           >
-            <h3 style={styles.sectionTitle}>🧩 Approved Variable Browser & Insertion</h3>
+            <p className="mn-template-kicker">03 · APPROVED VARIABLES</p>
+            <h3 style={styles.sectionTitle}>Variable browser &amp; insertion</h3>
             <p style={styles.helperText}>
               Secrets (<code>OTP</code>, <code>PIN</code>, <code>password</code>,{' '}
               <code>transferCode</code>, provider keys, internal ledger IDs) are excluded by
@@ -755,6 +794,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                       <button
                         type="button"
                         data-testid={`insert-var-body-${variable.name}`}
+                        aria-label={`Insert ${variable.name} into body`}
                         disabled={!canEditFields || isSubmitting || Boolean(activatingTemplateId)}
                         style={canEditFields ? styles.secondarySmallBtn : styles.disabledSmallBtn}
                         onClick={() => insertTokenIntoField('body', variable)}
@@ -765,6 +805,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                         <button
                           type="button"
                           data-testid={`insert-var-subject-${variable.name}`}
+                          aria-label={`Insert ${variable.name} into subject`}
                           disabled={!canEditFields || isSubmitting || Boolean(activatingTemplateId)}
                           style={canEditFields ? styles.secondarySmallBtn : styles.disabledSmallBtn}
                           onClick={() => insertTokenIntoField('subject', variable)}
@@ -781,12 +822,13 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
           {/* Capability 6: Template Preview Using Representative Safe Data */}
           <section
+            id={`template-preview-${channel}`} tabIndex={-1} className="mn-template-card"
             style={styles.card}
             aria-label="Template safe preview"
             data-testid="template-safe-preview-card"
           >
             <div style={styles.labelRow}>
-              <h3 style={styles.sectionTitle}>🔍 Safe Template Preview (Representative Data)</h3>
+              <div><p className="mn-template-kicker">04 · INSPECT</p><h3 style={styles.sectionTitle}>Safe Template Preview (Representative Data)</h3></div>
               <button
                 type="button"
                 data-testid="run-server-preview-btn"
@@ -1061,14 +1103,15 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
       {/* Capability 7: Template Version History & Comparison */}
       <section
+        id={`template-history-${channel}`} tabIndex={-1} className="mn-template-card"
         style={styles.card}
         aria-label={`${channel} template version history`}
         data-testid="template-version-history-section"
       >
         <div style={styles.labelRow}>
-          <h3 style={styles.sectionTitle}>
-            🕓 {channel} Template Version {activeVersionConfirmed ? 'History' : 'References'} ({matchingVersions.length})
-          </h3>
+          <div><p className="mn-template-kicker">05 · VERSION RECORD</p><h3 style={styles.sectionTitle}>
+            {channel} Template Version {activeVersionConfirmed ? 'History' : 'References'} ({matchingVersions.length})
+          </h3></div>
           {permissions.canManageTemplates && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input
@@ -1128,7 +1171,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                   const canActivateRow =
                     permissions.canManageTemplates &&
                     permissions.hasMfaAssurance &&
-                    activeVersionConfirmed && !isSubmitting && !activatingTemplateId &&
+                    activeVersionConfirmed && !isSubmitting && !activatingTemplateId && !pendingEventType &&
                     !ver.isActive && ver.sourceOrigin !== 'CODE_BASELINE';
                   const verifiedRegistry = !templatesReadPending && !templatesReadError && !templatesRegistryBlocked && ver.sourceOrigin !== 'CODE_BASELINE';
 
@@ -1174,7 +1217,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                             <button
                               type="button"
                               style={styles.secondarySmallBtn}
-                              disabled={isSubmitting || Boolean(activatingTemplateId)}
+                              disabled={isSubmitting || Boolean(activatingTemplateId) || Boolean(pendingEventType)}
                               onClick={() => {
                                 hasUserEditedRef.current = true;
                                 setDraftBaseVersion(activeVersionConfirmed && activeVersion ? activeVersion.version : null);
@@ -1189,6 +1232,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                             <button
                               type="button"
                               style={styles.secondarySmallBtn}
+                              aria-label={`Compare version ${ver.version} with active version`}
                               onClick={() => setComparedVersion(ver)}
                             >
                               Compare
@@ -1198,6 +1242,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                             <button
                               type="button"
                               data-testid={`activate-version-${ver.version}`}
+                              aria-label={`Propose rollback to version ${ver.version}`}
                               disabled={
                                 !canActivateRow || activatingTemplateId === ver.id
                               }
