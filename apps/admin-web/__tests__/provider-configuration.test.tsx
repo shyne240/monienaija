@@ -845,4 +845,34 @@ describe('Governed SMS (Robase) & Email (Brevo) Provider Configuration Workspace
     expect((await view.findByTestId('email-proposal-feedback')).textContent).toContain('Proposal outcome not confirmed');expect(view.container.textContent).not.toContain(secret);expect((view.getByTestId('email-api-key-input') as HTMLInputElement).value).toBe('');
   });
 
+  it('clears typed credentials when the provider or credential action changes', async () => {
+    seedPrincipal({principalId:'issuer:maker', roles:['SUPER_ADMIN'], scopes:['notification.provider.view','notification.provider.configure']});
+    wireStandardBackendMocks(makeOverviewFixture(), []);
+    const view = render(<NotificationManagementScreen initialTab="providerConfig" />);
+    await view.findByTestId('provider-config-workspace');
+    const provider = view.getByTestId('email-provider-select');
+    const action = view.getByTestId('email-credential-action-select');
+    fireEvent.change(action, {target:{value:'SET_ENCRYPTED'}});
+    fireEvent.change(view.getByTestId('email-api-key-input'), {target:{value:'synthetic-key-one'}});
+    fireEvent.change(action, {target:{value:'KEEP_EXISTING'}});
+    fireEvent.change(action, {target:{value:'SET_ENCRYPTED'}});
+    expect((view.getByTestId('email-api-key-input') as HTMLInputElement).value).toBe('');
+    fireEvent.change(view.getByTestId('email-api-key-input'), {target:{value:'synthetic-key-two'}});
+    fireEvent.change(provider, {target:{value:'resend'}});
+    expect((view.getByTestId('email-api-key-input') as HTMLInputElement).value).toBe('');
+    expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('labels checker notes and actions with their proposal identity', async () => {
+    seedPrincipal({principalId:'issuer:checker',roles:['FINANCE_CONTROLLER'],scopes:['notification.provider.view','notification.provider.configure']});
+    const proposal={id:'prop-label',channel:'SMS',status:'REQUESTED',expectedVersion:0,proposedProvider:'console',proposedEnabled:false,credentialAction:'CLEAR',proposerPrincipalId:'issuer:maker',reason:'Synthetic reason'} as ProviderConfigProposal;
+    wireStandardBackendMocks(makeOverviewFixture(),[proposal]);
+    const view=render(<NotificationManagementScreen initialTab="providerConfig" />);
+    await view.findByTestId('provider-proposal-row-prop-label');
+    expect(view.getByLabelText('Checker note for prop-label (optional)')).toBeTruthy();
+    expect(view.getByRole('button',{name:'Approve provider proposal prop-label'})).toBeTruthy();
+    expect(view.getByRole('button',{name:'Reject provider proposal prop-label'})).toBeTruthy();
+    expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+
 });

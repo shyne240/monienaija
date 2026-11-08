@@ -36,3 +36,20 @@
 .mn-template-workspace [data-testid="template-version-history-table"] th { white-space: nowrap; }
 .mn-template-workspace [data-testid="template-version-history-table"] td:nth-child(-n+3) { white-space: nowrap; }
 .mn-template-workspace [data-testid="rendered-preview-output"] > div:first-child > span:last-child { color: #d1e4db !important; }
+/* Provider configuration: observed state, governed drafts and queue navigation. */
+.mn-provider-intro { padding: 20px; background: #edf5ef; border: 1px solid #d0e2d6; border-radius: 10px; }
+.mn-provider-kicker { margin: 0 0 6px; color: #4a6b5a; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+.mn-provider-intro h2 { margin: 4px 0 8px; color: #173d2e; font-size: 21px; line-height: 1.25; }
+.mn-provider-intro > p:not(.mn-provider-kicker) { margin: 0; color: #52655f; max-width: 80ch; font-size: 13px; line-height: 1.5; }
+.mn-provider-intro nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.mn-provider-intro nav a { display: inline-flex; align-items: center; min-height: 36px; padding: 7px 12px; border-radius: 7px; border: 1px solid #bfd4c6; background: #fff; color: #175943; text-decoration: none; font-size: 12px; font-weight: 700; }
+.mn-provider-intro nav a:focus-visible { outline: 2px solid var(--mn-focus-ring, #0b624a); outline-offset: 2px; }
+.mn-provider-panel { min-width: 0; scroll-margin-top: 16px; box-shadow: 0 2px 12px rgba(19,43,37,.04); }
+.mn-provider-workspace label { line-height: 1.4; }
+.mn-provider-field-label { font-size: 12px; font-weight: 700; color: #344f43; }
+.mn-provider-form-hint { margin: 0; color: #52655f; font-size: 12px; line-height: 1.5; }
+.mn-provider-workspace input:not([type="checkbox"]), .mn-provider-workspace select, .mn-provider-workspace textarea { border-color: var(--mn-border-control, #6d817a) !important; }
+.mn-provider-workspace [data-testid="provider-proposals-table"] { min-width: 1000px; }
+.mn-provider-workspace [data-testid="provider-proposals-table"] th { white-space: nowrap; }
+@media(max-width:600px) { .mn-provider-intro { padding: 16px; } }
+@media(max-width:600px) { .mn-provider-summary { grid-template-columns: minmax(0, 1fr) !important; } }

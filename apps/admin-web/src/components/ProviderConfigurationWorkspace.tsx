@@ -592,6 +592,16 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
 
   return (
     <div className="mn-provider-workspace" data-testid="provider-config-workspace" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <header className="mn-provider-intro">
+        <p className="mn-provider-kicker">PROVIDER GOVERNANCE</p>
+        <h2>Provider configuration</h2>
+        <p>Review the loaded configuration and readiness gates, prepare a version-bound proposal, and inspect the separate approval queue. Opening this workspace does not verify connections, send tests, or start workers.</p>
+        <nav aria-label="Provider configuration sections">
+          <a href="#provider-sms">SMS configuration</a>
+          <a href="#provider-email">Email configuration</a>
+          <a href="#provider-proposals">Proposal queue</a>
+        </nav>
+      </header>
       {/* Top Governance & Server Encryption Key Health Banner */}
       <div
         data-testid="provider-encryption-banner"
@@ -647,6 +657,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       >
         {/* ==================== SMS (ROBASE) PANEL ==================== */}
         <section
+          id="provider-sms" tabIndex={-1} className="mn-provider-panel" aria-label="SMS provider configuration"
           data-testid="sms-provider-config-panel"
           style={{
             background: '#ffffff',
@@ -660,6 +671,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
             <div>
+              <p className="mn-provider-kicker">01 · CHANNEL CONFIGURATION</p>
               <h3 style={{ margin: 0, fontSize: 16, color: '#0f172a' }}>SMS Provider Configuration (Robase)</h3>
               <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
                 Source: <strong>{overview.sms.source}</strong> · Version: <strong>v{overview.sms.version}</strong>
@@ -709,7 +721,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           </div>
 
           {/* Non-Secret Active SMS Summary */}
-          <div
+          <div className="mn-provider-summary"
             style={{
               padding: 12,
               borderRadius: 8,
@@ -813,8 +825,10 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                   Verify SMS Config
                 </button>
               </div>
+              <label htmlFor="sms-provider-test-destination" className="mn-provider-field-label">Workforce phone for controlled test</label>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <input
+                  id="sms-provider-test-destination"
                   type="text"
                   data-testid="sms-quick-test-destination"
                   placeholder="+2348012345678 (workforce phone)"
@@ -865,10 +879,11 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           )}
 
           {/* Governed SMS Proposal Form */}
-          <form onSubmit={(e) => void handleSubmitSmsProposal(e)} style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
+          <form aria-label="SMS provider proposal" onSubmit={(e) => void handleSubmitSmsProposal(e)} style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
             <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
               Propose SMS Provider Change (Maker-Checker + MFA)
             </div>
+            <p className="mn-provider-form-hint">Draft changes do not alter active configuration. Changing provider or credential action clears a typed key.</p>
 
             {!permissions.canProposeProviderConfig && (
               <div style={{ fontSize: 12, color: '#64748b', background: '#f8fafc', padding: 8, borderRadius: 6 }}>
@@ -886,6 +901,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                   disabled={!permissions.canProposeProviderConfig}
                   onChange={(e) => {
                     const val = e.target.value as 'robase' | 'console';
+                    if (val !== smsProvider) setSmsApiKey('');
                     setSmsProvider(val);
                     if (val === 'robase' && !overview.sms.hasStoredCredential) {
                       setSmsCredAction('SET_ENCRYPTED');
@@ -953,7 +969,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                     data-testid="sms-credential-action-select"
                     value={smsCredAction}
                     disabled={!permissions.canProposeProviderConfig}
-                    onChange={(e) => setSmsCredAction(e.target.value as ProviderCredentialAction)}
+                    onChange={(e) => { setSmsApiKey(''); setSmsCredAction(e.target.value as ProviderCredentialAction); }}
                     style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
                   >
                     <option value="SET_ENCRYPTED">Set / Rotate Encrypted API Key (AES-256-GCM)</option>
@@ -1062,6 +1078,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
 
         {/* ==================== EMAIL (BREVO) PANEL ==================== */}
         <section
+          id="provider-email" tabIndex={-1} className="mn-provider-panel" aria-label="Email provider configuration"
           data-testid="email-provider-config-panel"
           style={{
             background: '#ffffff',
@@ -1075,6 +1092,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
             <div>
+              <p className="mn-provider-kicker">02 · CHANNEL CONFIGURATION</p>
               <h3 style={{ margin: 0, fontSize: 16, color: '#0f172a' }}>Transactional Email Configuration (Brevo)</h3>
               <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
                 Source: <strong>{overview.email.source}</strong> · Version: <strong>v{overview.email.version}</strong>
@@ -1124,7 +1142,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           </div>
 
           {/* Non-Secret Active Email Summary */}
-          <div
+          <div className="mn-provider-summary"
             style={{
               padding: 12,
               borderRadius: 8,
@@ -1259,8 +1277,10 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                   Verify Brevo Connection & Sender
                 </button>
               </div>
+              <label htmlFor="email-provider-test-destination" className="mn-provider-field-label">Workforce email for controlled test</label>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <input
+                  id="email-provider-test-destination"
                   type="email"
                   data-testid="email-quick-test-destination"
                   placeholder="ops@monienaija.ng (workforce email)"
@@ -1311,10 +1331,11 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           )}
 
           {/* Governed Email Proposal Form */}
-          <form onSubmit={(e) => void handleSubmitEmailProposal(e)} style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
+          <form aria-label="Email provider proposal" onSubmit={(e) => void handleSubmitEmailProposal(e)} style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
             <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
               Propose Email Provider Change (Maker-Checker + MFA)
             </div>
+            <p className="mn-provider-form-hint">Draft changes do not alter active configuration. Changing provider or credential action clears a typed key.</p>
 
             {!permissions.canProposeProviderConfig && (
               <div style={{ fontSize: 12, color: '#64748b', background: '#f8fafc', padding: 8, borderRadius: 6 }}>
@@ -1332,6 +1353,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                   disabled={!permissions.canProposeProviderConfig}
                   onChange={(e) => {
                     const next = e.target.value as 'brevo' | 'resend' | 'none' | 'console';
+                    if (next !== emailProvider) setEmailApiKey('');
                     setEmailProvider(next);
                     if (next === 'brevo') setEmailBaseUrl('https://api.brevo.com');
                     if (next === 'resend') setEmailBaseUrl('https://api.resend.com');
@@ -1428,7 +1450,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                     data-testid="email-credential-action-select"
                     value={emailCredAction}
                     disabled={!permissions.canProposeProviderConfig}
-                    onChange={(e) => setEmailCredAction(e.target.value as ProviderCredentialAction)}
+                    onChange={(e) => { setEmailApiKey(''); setEmailCredAction(e.target.value as ProviderCredentialAction); }}
                     style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
                   >
                     <option value="SET_ENCRYPTED">Set / Rotate Encrypted API Key (AES-256-GCM)</option>
@@ -1581,6 +1603,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
 
       {/* ==================== GOVERNED PROPOSALS QUEUE ==================== */}
       <section
+        id="provider-proposals" tabIndex={-1} className="mn-provider-panel" aria-label="Provider proposal queue"
         data-testid="provider-proposals-section"
         style={{
           background: '#ffffff',
@@ -1591,11 +1614,12 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div>
+            <p className="mn-provider-kicker">03 · CHECKER WORKSPACE</p>
             <h3 style={{ margin: 0, fontSize: 15, color: '#0f172a' }}>
               Governed Provider Configuration Proposals (Maker-Checker & Activation)
             </h3>
             <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-              Initiating administrator cannot approve their own change. Independent{' '}
+              Showing up to 25 returned proposals. Initiating administrator cannot approve their own change. Independent{' '}
               <code>FINANCE_CONTROLLER</code> + MFA approval is required prior to activation.
             </div>
           </div>
@@ -1622,7 +1646,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           <div role="alert">Provider proposals unavailable: {proposalsError}</div>
         ) : proposals.length === 0 ? (
           <div style={{ fontSize: 12, color: '#64748b', padding: 12 }}>
-            No provider configuration proposals submitted yet.
+            No provider proposals returned in the current query.
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }} role="region" aria-label="Provider configuration proposals" tabIndex={0}>
@@ -1715,7 +1739,9 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                         )}
                         {prop.status === 'REQUESTED' && !isSelf && permissions.canApproveProviderConfig && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <label htmlFor={`provider-decision-${prop.id}`} className="mn-provider-field-label">Checker note for {prop.id} (optional)</label>
                             <input
+                              id={`provider-decision-${prop.id}`}
                               type="text"
                               data-testid={`decision-comment-${prop.id}`}
                               placeholder="Checker note (optional)"
@@ -1732,6 +1758,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                               <button
                                 type="button"
                                 data-testid={`approve-provider-proposal-${prop.id}`}
+                                aria-label={`Approve provider proposal ${prop.id}`}
                                 disabled={!canApproveThis || busy}
                                 onClick={() => void handleProposalAction(prop, 'approve')}
                                 style={{
@@ -1750,6 +1777,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                               <button
                                 type="button"
                                 data-testid={`reject-provider-proposal-${prop.id}`}
+                                aria-label={`Reject provider proposal ${prop.id}`}
                                 disabled={!canApproveThis || busy}
                                 onClick={() => void handleProposalAction(prop, 'reject')}
                                 style={{
@@ -1772,6 +1800,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                           <button
                             type="button"
                             data-testid={`activate-provider-proposal-${prop.id}`}
+                            aria-label={`Activate provider proposal ${prop.id}`}
                             disabled={!canActivateThis || busy}
                             onClick={() => void handleProposalAction(prop, 'activate')}
                             style={{
@@ -1794,6 +1823,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                 })}
               </tbody>
             </table>
+            <p className="mn-provider-form-hint">Scroll horizontally to inspect all proposal and governance columns.</p>
           </div>
         )}
       </section>
