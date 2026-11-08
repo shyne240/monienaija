@@ -118,7 +118,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
       currency: 'NGN',
       accountingUnit: 'LAGOS_BRANCH',
       description: 'Pilot Wallet Funding',
-      lines: [],
+      lines: [{ id:'line-1', accountId:'a', direction:'DEBIT', amountMinor:'100' }, { id:'line-2', accountId:'b', direction:'CREDIT', amountMinor:'100' }],
     };
 
     (ApiClient.get as jest.Mock)
@@ -128,7 +128,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
       .mockResolvedValueOnce({ ...mockJournal, status: 'REVERSED' }) // reload journal
       .mockResolvedValueOnce([]); // reload accounts list
 
-    (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'reversal-uuid', status: 'POSTED', reversalOfJournalId: 'journal-uuid-999' });
+    (ApiClient.post as jest.Mock).mockImplementation((_url: string, body: any) => Promise.resolve({ ...mockJournal, id:'reversal-uuid', idempotencyKey:body.idempotencyKey, reversalOfJournalId:'journal-uuid-999', lines:mockJournal.lines.map(line => ({...line, direction:line.direction === 'DEBIT' ? 'CREDIT' : 'DEBIT'})) }));
 
     const { getByText, getByPlaceholderText, findByText, container } = render(<App />);
 
@@ -145,6 +145,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
       target: { value: '3f2c1a00-0000-0000-0000-000000000abc' },
     });
     fireEvent.click(getByText('Execute Approved Reversal'));
+    fireEvent.click(getByText('Confirm reversal execution'));
 
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenCalledWith(
@@ -167,7 +168,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
       currency: 'NGN',
       accountingUnit: 'LAGOS_BRANCH',
       description: 'Pilot Wallet Funding',
-      lines: [],
+      lines: [{ id:'line-1', accountId:'a', direction:'DEBIT', amountMinor:'100' }, { id:'line-2', accountId:'b', direction:'CREDIT', amountMinor:'100' }],
     };
 
     (ApiClient.get as jest.Mock)
@@ -214,7 +215,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
       currency: 'NGN',
       accountingUnit: 'LAGOS_BRANCH',
       description: 'Pilot Wallet Funding',
-      lines: [],
+      lines: [{ id:'line-1', accountId:'a', direction:'DEBIT', amountMinor:'100' }, { id:'line-2', accountId:'b', direction:'CREDIT', amountMinor:'100' }],
     };
 
     (ApiClient.get as jest.Mock)
@@ -243,6 +244,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
     expect(await findByText('Request Reversal Approval')).toBeTruthy();
     fireEvent.change(getByPlaceholderText('e.g. Correct posting duplicate entry'), { target: { value: 'Preparer Reversal Request' } });
     fireEvent.click(getByText('Request Reversal Approval'));
+    fireEvent.click(getByText('Confirm reversal request'));
 
     await waitFor(() => {
       // P0-B: the maker leg posts the actual reversal request to the domain endpoint; the

@@ -3,3 +3,5 @@
 .mn-ledger :is(code, [role="alert"], [role="status"]) { overflow-wrap: anywhere; }
 .mn-ledger__section-head { flex-wrap: wrap; gap: 10px; }
 .mn-ledger__section-head select { flex: 0 0 auto; }
+.mn-ledger__panel { box-shadow:0 4px 20px #183b2810; }
+.mn-ledger__eyebrow { margin:0 0 8px; color:#386b53; font-size:11px; font-weight:800; letter-spacing:.1em; }
