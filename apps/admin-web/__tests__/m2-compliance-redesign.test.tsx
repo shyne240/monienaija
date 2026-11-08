@@ -25,14 +25,14 @@ test('fraud lookup displays only returned fraud rows and keeps category boundary
 });
 
 test('review-only KYC mode keeps read restriction explicit and clears a reason when customer changes',()=>{
- principal(['kyc.review']);render(<ComplianceScreen mode="kyc"/>);
+ const confirm=jest.spyOn(window,'confirm').mockReturnValue(true);principal(['kyc.review']);render(<ComplianceScreen mode="kyc"/>);
  expect(screen.getByText(/Assessment lookup requires/)).toBeTruthy();
  const decision=screen.getByRole('region',{name:'Submit KYC assessment decision'});
  expect(within(decision).queryByRole('option',{name:'APPROVED'})).toBeNull();
  fireEvent.change(screen.getByLabelText('Customer UUID'),{target:{value:'customer-one'}});
  fireEvent.change(screen.getByLabelText('Assessment reason (optional)'),{target:{value:'previous customer note'}});
  fireEvent.change(screen.getByLabelText('Customer UUID'),{target:{value:'customer-two'}});
- expect((screen.getByLabelText('Assessment reason (optional)') as HTMLInputElement).value).toBe('');
+ expect((screen.getByLabelText('Assessment reason (optional)') as HTMLInputElement).value).toBe('');confirm.mockRestore();
 });
 
 test('fraud permission does not grant compliance or KYC access',()=>{
