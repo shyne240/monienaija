@@ -80,3 +80,31 @@ test('an unrelated class update receipt cannot confirm a save',async()=>{
  (ApiClient.get as jest.Mock).mockResolvedValue([cls('a')]);(ApiClient.patch as jest.Mock).mockResolvedValue({...cls('b'),name:'Draft class',version:3});
  render(<AgentClassesScreen/>);fireEvent.click(await screen.findByRole('button',{name:'Review / edit'}));fireEvent.change(screen.getByLabelText('Class name'),{target:{value:'Draft class'}});fireEvent.click(screen.getByRole('button',{name:'Save class'}));expect(await screen.findByText(/Class update response is incomplete/)).toBeTruthy();expect(screen.queryByText(/saved at version/)).toBeNull();expect(screen.getByLabelText('Class name')).toHaveProperty('value','Draft class');
 });
+
+test('switching class or closing a dirty editor requires explicit discard',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue([cls('a'),cls('b')]);
+ render(<AgentClassesScreen/>);await screen.findByText('REF-a');fireEvent.click(screen.getAllByRole('button',{name:'Review / edit'})[0]);fireEvent.change(screen.getByLabelText('Class name'),{target:{value:'Local edits'}});screen.getAllByRole('button',{name:'Review / edit'})[1].focus();fireEvent.click(screen.getAllByRole('button',{name:'Review / edit'})[1]);
+ expect(screen.getByRole('group',{name:'Discard class changes'})).toBeTruthy();expect(document.activeElement).toBe(screen.getByRole('button',{name:'Keep editing'}));fireEvent.click(screen.getByRole('button',{name:'Keep editing'}));expect(screen.getByLabelText('Class name')).toHaveProperty('value','Local edits');expect(document.activeElement).toBe(screen.getAllByRole('button',{name:'Review / edit'})[1]);
+ fireEvent.click(screen.getByRole('button',{name:'Close'}));fireEvent.click(screen.getByRole('button',{name:'Discard changes'}));expect(screen.queryByLabelText('Class name')).toBeNull();expect(ApiClient.patch).not.toHaveBeenCalled();
+});
+test('unconfirmed class save blocks retry until refresh and explicit reselection',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue([cls('a')]);(ApiClient.patch as jest.Mock).mockResolvedValue({...cls('b'),name:'Local edits',version:3});
+ render(<AgentClassesScreen/>);fireEvent.click(await screen.findByRole('button',{name:'Review / edit'}));fireEvent.change(screen.getByLabelText('Class name'),{target:{value:'Local edits'}});fireEvent.click(screen.getByRole('button',{name:'Save class'}));
+ expect(await screen.findByText(/last class outcome is unconfirmed/)).toBeTruthy();expect((screen.getByRole('button',{name:'Save class'}) as HTMLButtonElement).disabled).toBe(true);expect((screen.getByRole('button',{name:'Review / edit'}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole('button',{name:'Refresh'}));await screen.findByRole('button',{name:'Review / edit'});fireEvent.click(screen.getByRole('button',{name:'Review / edit'}));fireEvent.click(screen.getByRole('button',{name:'Discard changes'}));expect(screen.getByLabelText('Class name')).toHaveProperty('value','Class a');expect((screen.getByRole('button',{name:'Save class'}) as HTMLButtonElement).disabled).toBe(false);expect(ApiClient.patch).toHaveBeenCalledTimes(1);
+});
+test('readOnlyPrincipal overrides mutation scopes in the class workspace',async()=>{
+ act(()=>useAuthStore.setState(state=>({principal:state.principal?{...state.principal,readOnlyPrincipal:true}:null})));(ApiClient.get as jest.Mock).mockImplementation((url:string)=>url==='/internal/agents/classes'?Promise.resolve([cls('a')]):Promise.resolve(page([limit('first')])));
+ render(<AgentClassesScreen/>);fireEvent.click(await screen.findByRole('button',{name:'Review'}));fireEvent.click(screen.getByRole('button',{name:'Load class limit assignments'}));await screen.findByText('SYNTHETIC_PROFILE');expect(screen.queryByRole('button',{name:'Create class'})).toBeNull();expect(screen.queryByRole('button',{name:'Assign class limit'})).toBeNull();expect(screen.queryByRole('button',{name:'Deactivate class limit'})).toBeNull();
+});
+test('an unconfirmed limit assignment blocks retry even after selecting another class',async()=>{
+ (ApiClient.get as jest.Mock).mockImplementation((url:string)=>url==='/internal/agents/classes'?Promise.resolve([cls('a'),cls('b')]):Promise.resolve(page([])));(ApiClient.post as jest.Mock).mockResolvedValue({...limit('wrong','b'),limitProfileCode:'NEW_PROFILE'});
+ render(<AgentClassesScreen/>);await screen.findByText('REF-a');fireEvent.click(screen.getAllByRole('button',{name:'Review / edit'})[0]);fireEvent.change(screen.getByLabelText('Class limit profile code'),{target:{value:'NEW_PROFILE'}});fireEvent.click(screen.getByRole('button',{name:'Assign class limit'}));await screen.findByText(/assignment outcome could not be confirmed/);
+ fireEvent.click(screen.getAllByRole('button',{name:'Review / edit'})[1]);fireEvent.click(screen.getByRole('button',{name:'Discard changes'}));expect((screen.getByRole('button',{name:'Assign class limit'}) as HTMLButtonElement).disabled).toBe(true);fireEvent.click(screen.getAllByRole('button',{name:'Review / edit'})[0]);fireEvent.click(screen.getByRole('button',{name:'Load class limit assignments'}));await screen.findByRole('button',{name:'I reviewed the class limits'});expect((screen.getByRole('button',{name:'Assign class limit'}) as HTMLButtonElement).disabled).toBe(true);fireEvent.click(screen.getByRole('button',{name:'I reviewed the class limits'}));expect((screen.getByRole('button',{name:'Assign class limit'}) as HTMLButtonElement).disabled).toBe(false);expect(ApiClient.post).toHaveBeenCalledTimes(1);
+});
+
+test('class edits are frozen and duplicate saves are blocked while a write is pending',async()=>{
+ const pending=deferred();(ApiClient.get as jest.Mock).mockResolvedValue([cls('a')]);(ApiClient.patch as jest.Mock).mockReturnValue(pending.promise);
+ render(<AgentClassesScreen/>);fireEvent.click(await screen.findByRole('button',{name:'Review / edit'}));fireEvent.change(screen.getByLabelText('Class name'),{target:{value:'New name'}});fireEvent.click(screen.getByRole('button',{name:'Save class'}));fireEvent.click(screen.getByRole('button',{name:'Saving…'}));expect(ApiClient.patch).toHaveBeenCalledTimes(1);expect(screen.getByLabelText('Class name').matches(':disabled')).toBe(true);
+ await act(async()=>{pending.resolve({...cls('a'),name:'New name',version:3});await pending.promise;});
+});

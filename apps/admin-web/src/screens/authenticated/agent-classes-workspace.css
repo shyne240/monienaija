@@ -2,3 +2,13 @@
 .mn-agent-classes button { min-height: 38px; }
 .mn-agent-classes :is(input, select, textarea) { max-width: 100%; min-width: 0; }
 .mn-agent-classes :is(code, pre, [role="alert"], [role="status"]) { overflow-wrap: anywhere; }
+.mn-agent-class-fields { min-width:0; margin:0; padding:0; border:0; display:grid; gap:12px; }
+.mn-agent-class-catalogue-header { display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:20px 20px 16px; background:#eef6f0; border:1px solid #d4e4d9; border-radius:12px 12px 0 0; }
+.mn-agent-class-catalogue-header p, .mn-agent-class-editor-eyebrow { margin:0 0 5px; color:#386b53; font-size:11px; font-weight:800; letter-spacing:.09em; }
+.mn-agent-class-catalogue-header h2 { margin:0 0 5px; color:#103a2b; font-size:20px; }
+.mn-agent-class-catalogue-header span, .mn-agent-class-editor-note { color:#496157; font-size:13px; }
+.mn-agent-class-catalogue-header .mn-agent-class-count { padding:6px 10px; color:#1d543a; border:1px solid #c5dccc; border-radius:20px; background:#fff; font-weight:700; }
+.mn-agent-class-editor { box-shadow:0 4px 18px #183b2810; }
+.mn-agent-class-editor-note { margin:5px 0 0; }
+.mn-agent-classes table th, .mn-agent-classes table td { padding:12px; text-align:left; vertical-align:top; border-bottom:1px solid #e1ebe4; }
+.mn-agent-classes table th { color:#486157; background:#f4f8f5; font-size:12px; }

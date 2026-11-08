@@ -134,14 +134,14 @@ function parseJsonField(raw: string, label: string): unknown | null {
 }
 
 export const AgentClassesScreen: React.FC = () => {
-  const { principal } = useAuthStore();
-  const hasFunction = (functionCode: string) => principal?.scopes.includes(functionCode) ?? false;
+  const { principal, sessionId } = useAuthStore();
+  const hasFunction = (functionCode: string) => Boolean(principal && ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type) && principal.scopes.includes(functionCode));
   const canView = hasFunction('agent.view');
-  const canManage = hasFunction('agent.manage_classes');
+  const canManage = hasFunction('agent.manage_classes') && !principal?.readOnlyPrincipal;
   const canViewLimits = hasFunction('limit.view');
-  const canModifyLimits = hasFunction('limit.modify');
+  const canModifyLimits = hasFunction('limit.modify') && !principal?.readOnlyPrincipal;
 
-  const key = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
   return <AgentClassesWorkspace key={key} canView={canView} canManage={canManage} canViewLimits={canViewLimits} canModifyLimits={canModifyLimits} />;
 };
 
@@ -149,6 +149,16 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
   const listGeneration = useRef(0);
   const limitGeneration = useRef(0);
   const mutationGeneration = useRef(0);
+  const mutationLock = useRef(false);
+  const formBaseline = useRef<AgentClassForm>(EMPTY_FORM);
+  const [pendingNavigation, setPendingNavigation] = useState<AgentClassRecord | 'create' | 'close' | null>(null);
+  const keepEditingRef = useRef<HTMLButtonElement>(null);
+  const navigationTrigger = useRef<HTMLElement | null>(null);
+  const restoreNavigationFocus = useRef(false);
+  const [classUnconfirmed, setClassUnconfirmed] = useState(false);
+  const [classNeedsRefresh, setClassNeedsRefresh] = useState(false);
+  const [limitUnconfirmedClassId, setLimitUnconfirmedClassId] = useState<string | null>(null);
+  useEffect(() => { if (pendingNavigation) keepEditingRef.current?.focus(); else if (restoreNavigationFocus.current) { restoreNavigationFocus.current = false; navigationTrigger.current?.focus(); } }, [pendingNavigation]);
   useEffect(() => () => { listGeneration.current += 1; limitGeneration.current += 1; mutationGeneration.current += 1; }, []);
   const [items, setItems] = useState<AgentClassRecord[]>([]);
   const [selected, setSelected] = useState<AgentClassRecord | null>(null);
@@ -190,7 +200,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
       const response: unknown = await ApiClient.get('/internal/agents/classes');
       const rows = Array.isArray(response) ? response : (response as { data?: unknown } | null)?.data;
       if (!Array.isArray(rows) || rows.some((row) => !row || typeof row.id !== 'string' || typeof row.reference !== 'string' || typeof row.code !== 'string' || typeof row.name !== 'string' || typeof row.isActive !== 'boolean' || !Number.isSafeInteger(row.version) || row.version < 1)) throw new Error('Invalid Agent class catalogue response.');
-      if (request === listGeneration.current) setItems(rows as AgentClassRecord[]);
+      if (request === listGeneration.current) { setItems(rows as AgentClassRecord[]); setClassNeedsRefresh(false); }
     } catch (loadError) {
       if (request === listGeneration.current) { setItems([]); setListError(loadError instanceof Error ? loadError.message : 'Failed to load Agent classes.'); }
     } finally {
@@ -200,22 +210,49 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
 
   useEffect(() => { if (canView) void loadClasses(); }, [canView, loadClasses]);
 
-  const chooseClass = (agentClass: AgentClassRecord) => {
+  const applyChooseClass = (agentClass: AgentClassRecord) => {
+    setClassUnconfirmed(false);
     setSelected(agentClass);
     setCreating(false);
-    setForm(toForm(agentClass));
+    const next = toForm(agentClass);
+    formBaseline.current = next;
+    setForm(next);
     setError('');
     setMessage('');
     resetClassLimitsState();
   };
 
-  const startCreate = () => {
+  const applyStartCreate = () => {
+    setClassUnconfirmed(false);
+    formBaseline.current = EMPTY_FORM;
     setSelected(null);
     setCreating(true);
     setForm(EMPTY_FORM);
     setError('');
     setMessage('');
     resetClassLimitsState();
+  };
+
+  const navigateEditor = (target: AgentClassRecord | 'create' | 'close') => {
+    if (mutationLock.current || saving || classLimitsBusy || pendingNavigation || (classNeedsRefresh && target !== 'close')) return;
+    if ((creating || selected) && (JSON.stringify(form) !== JSON.stringify(formBaseline.current) || Boolean(classLimitProfileCode.trim()) || classUnconfirmed)) {
+      navigationTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setPendingNavigation(target);
+      return;
+    }
+    applyNavigation(target);
+  };
+
+  const applyNavigation = (target: AgentClassRecord | 'create' | 'close') => {
+    setPendingNavigation(null);
+    if (target === 'close') { setCreating(false); setSelected(null); setForm(EMPTY_FORM); resetClassLimitsState(); return; }
+    if (classNeedsRefresh) return;
+    if (target === 'create') applyStartCreate();
+    else {
+      const current = items.find(item => item.id === target.id && item.version === target.version);
+      if (!current) { setError('Catalogue changed; choose the current class again.'); return; }
+      applyChooseClass(current);
+    }
   };
 
   const changeField = <K extends keyof AgentClassForm>(key: K, value: AgentClassForm[K]) => {
@@ -270,7 +307,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
 
   const assignClassLimitProfile = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selected || !canModifyLimits || classLimitsBusy || saving || classLimitsLoading) return;
+    if (!selected || !canModifyLimits || classLimitsBusy || saving || classLimitsLoading || Boolean(limitUnconfirmedClassId) || mutationLock.current || pendingNavigation) return;
     const code = classLimitProfileCode.trim().toUpperCase();
     if (!/^[A-Z0-9_]{3,80}$/.test(code)) {
       setClassLimitsError(
@@ -279,6 +316,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
       return;
     }
     const request = ++mutationGeneration.current;
+    mutationLock.current = true;
     setClassLimitsBusy(true);
     setClassLimitsError('');
     setClassLimitsMsg('');
@@ -300,15 +338,17 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
         await loadClassLimitAssignments(selected.id);
       }
     } catch (err: any) {
-      if (request === mutationGeneration.current) { setClassLimitsLoaded(false); setClassLimits([]); setClassLimitsPage(null); setClassLimitsError('The assignment outcome could not be confirmed. Review the class limits before retrying.'); }
+      if (request === mutationGeneration.current) { setClassLimitsLoaded(false); setClassLimits([]); setClassLimitsPage(null); setLimitUnconfirmedClassId(selected.id); setClassLimitsError('The assignment outcome could not be confirmed. Review the class limits before retrying.'); }
     } finally {
+      mutationLock.current = false;
       if (request === mutationGeneration.current) setClassLimitsBusy(false);
     }
   };
 
   const toggleClassLimitAssignment = async (assignment: ClassLimitAssignmentRecord) => {
-    if (!selected || !canModifyLimits || classLimitsBusy || saving || classLimitsLoading || !Number.isSafeInteger(assignment.version) || (assignment.version ?? 0) < 1) return;
+    if (!selected || !canModifyLimits || classLimitsBusy || saving || classLimitsLoading || Boolean(limitUnconfirmedClassId) || mutationLock.current || pendingNavigation || !Number.isSafeInteger(assignment.version) || (assignment.version ?? 0) < 1) return;
     const request = ++mutationGeneration.current;
+    mutationLock.current = true;
     setClassLimitsBusy(true);
     setClassLimitsError('');
     setClassLimitsMsg('');
@@ -327,8 +367,9 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
         await loadClassLimitAssignments(selected.id, classLimitsPage?.page ?? 1);
       }
     } catch (err: any) {
-      if (request === mutationGeneration.current) { setClassLimitsLoaded(false); setClassLimits([]); setClassLimitsPage(null); setClassLimitsError('The update outcome could not be confirmed. Reload class limits and inspect the assignment before retrying.'); }
+      if (request === mutationGeneration.current) { setClassLimitsLoaded(false); setClassLimits([]); setClassLimitsPage(null); setLimitUnconfirmedClassId(selected.id); setClassLimitsError('The update outcome could not be confirmed. Reload class limits and inspect the assignment before retrying.'); }
     } finally {
+      mutationLock.current = false;
       if (request === mutationGeneration.current) setClassLimitsBusy(false);
     }
   };
@@ -337,7 +378,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canManage || saving || classLimitsBusy || classLimitsLoading || loading || !!listError || selectedStale) return;
+    if (!canManage || saving || classLimitsBusy || classLimitsLoading || loading || !!listError || selectedStale || classUnconfirmed || mutationLock.current || pendingNavigation) return;
     setError('');
     setMessage('');
 
@@ -357,6 +398,8 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
     }
 
     const request = ++mutationGeneration.current;
+    let writeStarted = false;
+    mutationLock.current = true;
     try {
       const config = {
         requirements: parseJsonField(form.requirements, 'Requirements'),
@@ -379,6 +422,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
         if (form.reference.trim()) body.reference = form.reference.trim();
         if (form.code.trim()) body.code = form.code.trim();
         if (form.description.trim()) body.description = form.description.trim();
+        writeStarted = true;
         const created = await ApiClient.post<AgentClassRecord>('/internal/agents/classes', body);
         if (request !== mutationGeneration.current) return;
         if (!created || typeof created.id !== 'string' || !created.id.trim() || typeof created.reference !== 'string' || !created.reference.trim() || typeof created.code !== 'string' || !created.code.trim() || created.name !== form.name.trim() || created.isActive !== form.isActive || !Number.isSafeInteger(created.version) || created.version < 1 || (form.reference.trim() && created.reference !== form.reference.trim()) || (form.code.trim() && created.code !== form.code.trim())) throw new Error('Class creation response is incomplete.');
@@ -387,9 +431,11 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
         );
         setSelected(created);
         setCreating(false);
-        setForm(toForm(created));
+        formBaseline.current = toForm(created);
+        setForm(formBaseline.current);
         await loadClasses();
       } else if (selected) {
+        writeStarted = true;
         const updated = await ApiClient.patch<AgentClassRecord>(
           `/internal/agents/classes/${encodeURIComponent(selected.id)}`,
           {
@@ -404,15 +450,18 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
         if (!updated || updated.id !== selected.id || updated.reference !== selected.reference || updated.code !== selected.code || updated.name !== form.name.trim() || updated.isActive !== form.isActive || !Number.isSafeInteger(updated.version) || updated.version <= selected.version) throw new Error('Class update response is incomplete.');
         setMessage(`Agent class ${updated.reference} saved at version ${updated.version}.`);
         setSelected(updated);
-        setForm(toForm(updated));
+        formBaseline.current = toForm(updated);
+        setForm(formBaseline.current);
         await loadClasses();
       }
     } catch (saveError) {
+      if (request === mutationGeneration.current && writeStarted) { setClassUnconfirmed(true); setClassNeedsRefresh(true); }
       if (request === mutationGeneration.current) setError(
         `${saveError instanceof Error ? saveError.message : 'Unable to save Agent class.'} ` +
           'If the response was lost, refresh the list and inspect the class before retrying.',
       );
     } finally {
+      mutationLock.current = false;
       if (request === mutationGeneration.current) setSaving(false);
     }
   };
@@ -432,8 +481,8 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
     <div className="mn-operational mn-agent-classes" style={styles.wrap}>
       <PageHeader eyebrow="Agent network" title="Agent classes & service eligibility" description="Review class configuration and manage it only with the dedicated authorization function." actions={
         <div style={styles.headerActions}>
-          <button type="button" onClick={() => void loadClasses()} style={styles.secondaryButton} disabled={loading || saving || classLimitsBusy}>Refresh</button>
-          {canManage && <button type="button" onClick={startCreate} style={styles.primaryButton} disabled={loading || saving || classLimitsBusy || !!listError}>Create class</button>}
+          <button type="button" onClick={() => void loadClasses()} style={styles.secondaryButton} disabled={loading || saving || classLimitsBusy || Boolean(pendingNavigation)}>Refresh</button>
+          {canManage && <button type="button" onClick={() => navigateEditor('create')} style={styles.primaryButton} disabled={loading || saving || classLimitsBusy || !!listError || classNeedsRefresh || Boolean(pendingNavigation)}>Create class</button>}
         </div>
       } />
 
@@ -446,12 +495,12 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
           role="note"
           data-testid="agent-classes-readonly-governance"
         >
-          <strong>Read-Only Governance Mode:</strong> Your principal holds <code>agent.view</code>{' '}
-          without <code>agent.manage_classes</code>. Class catalogue creation and editing require{' '}
+          <strong>Read-Only Governance Mode:</strong> Your session is read-only or lacks <code>agent.manage_classes</code>. Class catalogue creation and editing require{' '}
           <code>agent.manage_classes</code> (granted to <code>AGENT_NETWORK_MANAGER</code> and{' '}
           <code>SUPER_ADMIN</code>).
         </div>
       )}
+      {classNeedsRefresh && <div style={styles.warningBox} role="status">The last class write was not confirmed. Refresh and inspect the catalogue before choosing another class or creating a new one.</div>}
       {listError && <div style={styles.error} role="alert">Agent class catalogue unavailable: {listError}. Draft values remain in this workspace; refresh before taking action.</div>}
       {error && (
         <div style={styles.error} role="alert">
@@ -464,6 +513,10 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
         </div>
       )}
 
+      <div className="mn-agent-class-catalogue-header">
+        <div><p>CLASS GOVERNANCE</p><h2>Class catalogue</h2><span>Review services, configuration and version before making changes.</span></div>
+        {!loading && !listError && <span className="mn-agent-class-count">{items.length} {items.length === 1 ? 'class' : 'classes'} returned</span>}
+      </div>
       {loading ? (
         <div style={styles.loading}>Loading Agent classes…</div>
       ) : listError ? null : items.length === 0 ? (
@@ -502,8 +555,8 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
                   <td>
                     <button
                       type="button"
-                      onClick={() => chooseClass(item)}
-                      disabled={saving || classLimitsBusy}
+                      onClick={() => navigateEditor(item)}
+                      disabled={saving || classLimitsBusy || classNeedsRefresh || Boolean(pendingNavigation)}
                       style={styles.smallButton}
                     >
                       {canManage ? 'Review / edit' : 'Review'}
@@ -518,30 +571,34 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
 
       {!loading && !listError && (creating || selected) && (
         <section
+          className="mn-agent-class-editor"
           style={styles.editor}
           aria-label={creating ? 'Create Agent class' : 'Agent class details'}
         >
           <div style={styles.editorHeader}>
+            <div><p className="mn-agent-class-editor-eyebrow">{creating ? 'NEW CONFIGURATION' : 'CLASS CONFIGURATION'}</p>
             <h3 style={styles.sectionTitle}>
               {creating ? 'Create Agent class' : `${selected?.reference} — configuration`}
-            </h3>
+            </h3><p className="mn-agent-class-editor-note">Changes remain local until saved. Review policy-bearing fields before submitting.</p></div>
             <button
               type="button"
               style={styles.secondaryButton}
-              disabled={saving || classLimitsBusy}
-              onClick={() => {
-                setCreating(false);
-                setSelected(null);
-                setForm(EMPTY_FORM);
-                resetClassLimitsState();
-              }}
+              disabled={saving || classLimitsBusy || Boolean(pendingNavigation)}
+              onClick={() => navigateEditor('close')}
             >
               Close
             </button>
           </div>
+          {pendingNavigation && <div role="group" aria-label="Discard class changes" style={styles.warningBox}>
+            <p>Discard the local class changes? Saved changes remain in the catalogue. Inspect a refreshed catalogue after an unconfirmed outcome.</p>
+            <button ref={keepEditingRef} type="button" style={styles.secondaryButton} onClick={() => { restoreNavigationFocus.current = true; setPendingNavigation(null); }}>Keep editing</button>{' '}
+            <button type="button" style={styles.secondaryButton} onClick={() => applyNavigation(pendingNavigation)}>Discard changes</button>
+          </div>}
+          {classUnconfirmed && <div role="status" style={styles.warningBox}>The last class outcome is unconfirmed. Refresh and inspect the catalogue, then reselect the class or start a new draft before another write.</div>}
           {selectedStale && <div style={styles.warningBox} role="alert">The catalogue has changed or this class is no longer listed. Your draft is retained; review and reselect the current class before saving. Reselecting replaces the draft.</div>}
           {canManage ? (
             <form onSubmit={save} style={styles.form}>
+              <fieldset disabled={saving || Boolean(pendingNavigation)} className="mn-agent-class-fields">
               {creating && (
                 <>
                   <label style={styles.label}>
@@ -695,9 +752,10 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
                   before applying it again.
                 </p>
               )}
-              <button type="submit" style={styles.primaryButton} disabled={saving || classLimitsBusy || classLimitsLoading || selectedStale}>
+              <button type="submit" style={styles.primaryButton} disabled={saving || classLimitsBusy || classLimitsLoading || selectedStale || classUnconfirmed || Boolean(pendingNavigation)}>
                 {saving ? 'Saving…' : creating ? (form.isActive ? 'Create active class' : 'Create inactive class') : 'Save class'}
               </button>
+              </fieldset>
             </form>
           ) : (
             <div style={styles.readOnlyDetails}>
@@ -770,6 +828,10 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
                 </div>
               )}
 
+              {limitUnconfirmedClassId && <div role="status" style={styles.warningBox}>
+                A class limit outcome is unconfirmed for class <code>{limitUnconfirmedClassId}</code>. Reload and inspect its relevant pages before further limit writes. If you cannot view limits, seek a reviewer with access.
+                {selected.id === limitUnconfirmedClassId && classLimitsLoaded && <div><button type="button" style={styles.smallButton} onClick={() => setLimitUnconfirmedClassId(null)}>I reviewed the class limits</button></div>}
+              </div>}
               {classLimitsError && (
                 <div style={styles.error} role="alert">
                   {classLimitsError}
@@ -804,7 +866,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
                             <button
                               type="button"
                               style={styles.smallButton}
-                              disabled={classLimitsBusy || classLimitsLoading || saving || !Number.isSafeInteger(assignment.version) || (assignment.version ?? 0) < 1}
+                              disabled={classLimitsBusy || classLimitsLoading || saving || Boolean(limitUnconfirmedClassId) || Boolean(pendingNavigation) || !Number.isSafeInteger(assignment.version) || (assignment.version ?? 0) < 1}
                               title={!Number.isSafeInteger(assignment.version) || (assignment.version ?? 0) < 1 ? 'Version unavailable; refresh before changing this assignment.' : undefined}
                               onClick={() => void toggleClassLimitAssignment(assignment)}
                             >
@@ -844,7 +906,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
                   <button
                     type="submit"
                     style={styles.smallButton}
-                    disabled={classLimitsBusy || classLimitsLoading || saving}
+                    disabled={classLimitsBusy || classLimitsLoading || saving || Boolean(limitUnconfirmedClassId) || Boolean(pendingNavigation)}
                   >
                     Assign class limit
                   </button>
