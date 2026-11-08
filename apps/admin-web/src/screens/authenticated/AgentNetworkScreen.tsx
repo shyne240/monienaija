@@ -354,6 +354,10 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const { principal } = useAuthStore();
   const mountedRef = useRef(true);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+  const [fundingGuard, setFundingGuard] = useState(false);
+  const [fundingBusy, setFundingBusy] = useState(false);
+  const reportFundingGuard = useCallback((guarded: boolean, busy: boolean) => { setFundingGuard(guarded); setFundingBusy(busy); }, []);
+  const mayChangeFundingTarget = () => !fundingBusy && (!fundingGuard || window.confirm('Change funding target? Unsaved entries and local review locks will be lost. An earlier request or posting may have occurred; inspect funding, approval, ledger and audit records.'));
   const [credentialGuard, setCredentialGuard] = useState(false);
   const [credentialBusy, setCredentialBusy] = useState(false);
   const [lifecycleUnconfirmed, setLifecycleUnconfirmed] = useState(false);
@@ -509,8 +513,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const detailBusy = credentialBusy || lifecycleBusy || lifecycleReviewBusy || outletBusy || limitsBusy;
   const applicationDraft = onboardingOpen && JSON.stringify(applicationForm) !== JSON.stringify(applicationBaseline.current);
   const applicationGuard = applicationDraft || onboardingUnconfirmed || applicationsReviewPending || onboardingBusy || Boolean(applicationBusyId) || Object.values(rejectReasons).some(reason => reason.trim());
-  const agentGuard = detailGuard || applicationGuard;
-  const agentBusy = detailBusy || onboardingBusy || Boolean(applicationBusyId);
+  const agentGuard = detailGuard || applicationGuard || fundingGuard;
+  const agentBusy = detailBusy || fundingBusy || onboardingBusy || Boolean(applicationBusyId);
   useEffect(() => { onAgentGuardChange?.(agentGuard, agentBusy); }, [onAgentGuardChange, agentGuard, agentBusy]);
   useEffect(() => {
     if (!agentGuard) return;
@@ -1464,7 +1468,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
           <strong>Not entitled:</strong> Agent directory and Agent receiving-number lookup require{' '}
           <code>agent.view</code>. Your roles: {principal?.roles.join(', ')}
         </div>
-        {canManageFunding && <AgentFundingPanel />}
+        {canManageFunding && <AgentFundingPanel onFundingGuardChange={reportFundingGuard} />}
       </div>
     );
   }
@@ -1485,12 +1489,12 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
           {fundingTargetAgentId && (
             <div style={noteBox}>
               Funding panel targeted to Agent <code>{fundingTargetAgentId}</code>.{' '}
-              <button type="button" style={smallBtn} onClick={() => setFundingTargetAgentId('')}>
+              <button type="button" style={smallBtn} onClick={() => { if (mayChangeFundingTarget()) setFundingTargetAgentId(''); }}>
                 Clear target
               </button>
             </div>
           )}
-          <AgentFundingPanel agentId={fundingTargetAgentId || undefined} />
+          <AgentFundingPanel agentId={fundingTargetAgentId || undefined} onFundingGuardChange={reportFundingGuard} />
         </div>
       )}
 
@@ -2175,7 +2179,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                 <button
                   type="button"
                   style={smallBtn}
-                  onClick={() => setFundingTargetAgentId(selected.id)}
+                  onClick={() => { if (fundingTargetAgentId !== selected.id && mayChangeFundingTarget()) setFundingTargetAgentId(selected.id); }}
                 >
                   Target in funding
                 </button>

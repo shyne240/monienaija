@@ -1,6 +1,6 @@
 import './operational-surfaces.css';
 import { Button, PageHeader } from '../../design-system/primitives';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './workforce-workspace.css';
 import './approvals-redesign.css';
 import { useDialogFocus } from '../../utils/use-dialog-focus';
@@ -45,6 +45,11 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
           ? 'An authorized workforce principal (OPERATOR, SERVICE, or PRIVILEGED) is required.'
           : 'Decision 7 requires both agent.fund and agent.defund scopes to read the global funding inbox.';
 
+  const [fundingGuard, setFundingGuard] = useState(false);
+  const [fundingBusy, setFundingBusy] = useState(false);
+  const [fundingReview, setFundingReview] = useState(false);
+  const reportFundingGuard = useCallback((guarded: boolean, busy: boolean, reviewRequired: boolean) => { setFundingGuard(guarded); setFundingBusy(busy); setFundingReview(reviewRequired); }, []);
+  const mayChangeFundingTarget = () => !fundingBusy && (!fundingGuard || window.confirm('Change funding target? Unsaved entries and local review locks will be lost. An earlier request, decision or posting may have occurred; inspect funding, approval, ledger and audit records.'));
   const [selectedInboxTarget, setSelectedInboxTarget] = useState<SelectedFundingInboxTarget | null>(null);
   const [inboxRefreshTrigger, setInboxRefreshTrigger] = useState(0);
   const [approvalId, setApprovalId] = useState('');
@@ -63,8 +68,9 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
   useDialogFocus(dialogRef, Boolean(pendingDecision), () => { if (!inFlight.current) setPendingDecision(null); }, pendingDecision?.action === 'reject' ? rejectRef : approveRef);
   useEffect(() => { if (isLoading) dialogRef.current?.focus(); }, [isLoading]);
   useEffect(() => { if (success && !pendingDecision) successRef.current?.focus(); }, [success, pendingDecision]);
-  const decisionGuard = Object.keys(unconfirmedIds).length > 0 || isLoading || Boolean(pendingDecision);
-  useEffect(() => { onApprovalGuardChange?.(decisionGuard, isLoading); }, [onApprovalGuardChange, decisionGuard, isLoading]);
+  const decisionGuard = Object.keys(unconfirmedIds).length > 0 || isLoading || Boolean(pendingDecision) || Boolean(approvalId.trim() || comment.trim()) || fundingGuard;
+  const decisionBusy = isLoading || fundingBusy;
+  useEffect(() => { onApprovalGuardChange?.(decisionGuard, decisionBusy); }, [onApprovalGuardChange, decisionGuard, decisionBusy]);
   useEffect(() => () => onApprovalGuardChange?.(false, false), [onApprovalGuardChange]);
   useEffect(() => {
     if (!decisionGuard) return;
@@ -74,14 +80,14 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
   }, [decisionGuard]);
 
   const handleDecision = (action: 'approve' | 'reject') => {
-    if (!canApprove || !canWrite || isLoading || pendingDecision || inFlight.current || unconfirmedIds[approvalId.trim()]) return;
+    if (!canApprove || !canWrite || isLoading || fundingBusy || fundingReview || pendingDecision || inFlight.current || unconfirmedIds[approvalId.trim()]) return;
     setError(''); setSuccess(null); setReceiptId('');
     if (!approvalId.trim()) { setError('Approval ID is required'); return; }
     setPendingDecision({ action, id: approvalId.trim(), comment: comment.trim() });
   };
 
   const confirmDecision = async () => {
-    if (!canApprove || !canWrite || isLoading || inFlight.current || !pendingDecision || unconfirmedIds[pendingDecision.id]) return;
+    if (!canApprove || !canWrite || isLoading || fundingBusy || fundingReview || inFlight.current || !pendingDecision || unconfirmedIds[pendingDecision.id]) return;
     const { action, id, comment: submittedComment } = pendingDecision;
     const request = ++decisionGeneration.current;
     inFlight.current = true; setIsLoading(true); setDecisionAction(action); setError(''); setSuccess(null);
@@ -147,6 +153,7 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
             refreshTrigger={inboxRefreshTrigger}
             activeRequestId={selectedInboxTarget?.requestId ?? null}
             onSelectRequest={(targetAgentId, idemKey, selection) => {
+              if (!mayChangeFundingTarget()) return;
               setSelectedInboxTarget((prev) => ({
                 agentId: targetAgentId,
                 idempotencyKey: idemKey,
@@ -177,7 +184,7 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
                   fontSize: 11,
                   fontWeight: 600,
                 }}
-                onClick={() => setSelectedInboxTarget(null)}
+                onClick={() => { if (mayChangeFundingTarget()) setSelectedInboxTarget(null); }}
               >
                 Clear target
               </button>
@@ -185,6 +192,8 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
           )}
           <AgentFundingPanel
             selectedInboxTarget={selectedInboxTarget}
+            onFundingGuardChange={reportFundingGuard}
+            externalMutationBlocked={isLoading || Boolean(pendingDecision) || Object.keys(unconfirmedIds).length > 0}
             onCheckerOutcome={() => setInboxRefreshTrigger((n) => n + 1)}
           />
         </section>
@@ -193,6 +202,7 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
       {canApprove && <section id="generic-checker-workspace" className="approvals-redesign__panel approvals-redesign__generic" tabIndex={-1} aria-label="Generic checker decision">
       <p className="approvals-redesign__eyebrow">KNOWN APPROVAL ID</p><h2>Generic checker decision</h2><p className="approvals-redesign__intro">Review the pending action in an authorized record before deciding. A decision may require a separate execution step.</p>
       {!canWrite && <p role="note">This session is read-only. Checker decisions cannot be submitted.</p>}
+      {fundingReview && <p role="alert">A funding outcome is unconfirmed. Complete independent funding review before using generic checker actions.</p>}
       {error && <div style={styles.errorBox} role="alert">{error}</div>}
       {Object.keys(unconfirmedIds).length > 0 && !unconfirmedIds[approvalId.trim()] && <div className="approvals-redesign__boundary" role="note"><strong>Unconfirmed decisions remain in this workspace.</strong><span>Return to an ID to review its outcome:</span>{Object.keys(unconfirmedIds).map(id => <button type="button" key={id} onClick={() => setApprovalId(id)}>{id}</button>)}</div>}
       {unconfirmedIds[approvalId.trim()] && <div className="approvals-redesign__boundary" role="status"><strong>Decision review required</strong><span>The decision may already have occurred. This screen has no generic approval read endpoint; inspect the authoritative approval and audit trail elsewhere before another action. This local lock is lost when leaving or changing session, and review cannot exclude a late commit.</span><button type="button" onClick={() => { setUnconfirmedIds(current => { const next = { ...current }; delete next[approvalId.trim()]; return next; }); setError(''); }}>I reviewed the approval and audit trail</button></div>}
@@ -228,10 +238,10 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
           </div>
 
           <div style={styles.decisionButtons}>
-            <button ref={approveRef} type="submit" disabled={isLoading || !canWrite || Boolean(pendingDecision) || !approvalId.trim() || Boolean(unconfirmedIds[approvalId.trim()])} style={styles.submitBtn}>
+            <button ref={approveRef} type="submit" disabled={isLoading || fundingBusy || fundingReview || !canWrite || Boolean(pendingDecision) || !approvalId.trim() || Boolean(unconfirmedIds[approvalId.trim()])} style={styles.submitBtn}>
               {isLoading && decisionAction === 'approve' ? 'Approving…' : 'Sign & Approve Action'}
             </button>
-            <button ref={rejectRef} type="button" disabled={isLoading || !canWrite || Boolean(pendingDecision) || !approvalId.trim() || Boolean(unconfirmedIds[approvalId.trim()])} onClick={() => handleDecision('reject')} style={styles.rejectBtn}>
+            <button ref={rejectRef} type="button" disabled={isLoading || fundingBusy || fundingReview || !canWrite || Boolean(pendingDecision) || !approvalId.trim() || Boolean(unconfirmedIds[approvalId.trim()])} onClick={() => handleDecision('reject')} style={styles.rejectBtn}>
               {isLoading && decisionAction === 'reject' ? 'Rejecting…' : 'Reject Action'}
             </button>
           </div>

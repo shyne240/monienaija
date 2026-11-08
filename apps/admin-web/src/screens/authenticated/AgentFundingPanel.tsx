@@ -148,6 +148,8 @@ interface AgentFundingPanelProps {
   initialIdempotencyKey?: string;
   selectedInboxTarget?: SelectedFundingInboxTarget | null;
   onCheckerOutcome?: (outcome: AgentFundingCheckerOutcome) => void;
+  onFundingGuardChange?: (guarded: boolean, busy: boolean, reviewRequired: boolean) => void;
+  externalMutationBlocked?: boolean;
 }
 
 export function AgentFundingPanel(props: AgentFundingPanelProps) {
@@ -156,7 +158,7 @@ export function AgentFundingPanel(props: AgentFundingPanelProps) {
   return <AgentFundingWorkspace key={key} {...props} />;
 }
 
-function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey, selectedInboxTarget = null, onCheckerOutcome }: AgentFundingPanelProps) {
+function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey, selectedInboxTarget = null, onCheckerOutcome, onFundingGuardChange, externalMutationBlocked = false }: AgentFundingPanelProps) {
   const { principal } = useAuthStore();
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -175,6 +177,19 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
   const [reviewed, setReviewed] = useState(false);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
+  const [reviewLock, setReviewLock] = useState<{ agentId: string; idempotencyKey: string; requestId?: string; requestHash?: string; direction: 'FUND' | 'DEFUND'; amountMinor: string; reason: string; action: string } | null>(null);
+  const reviewLockRef = useRef(reviewLock); reviewLockRef.current = reviewLock;
+  const [reviewReady, setReviewReady] = useState(false);
+  const attemptedWrite = useRef<typeof reviewLock>(null);
+  const fundingGuard = Boolean(amount.trim() || reason.trim() || rejectionReason.trim() || handoffInput.trim() || reviewed || draft || reviewLock || busy);
+  useEffect(() => { onFundingGuardChange?.(fundingGuard, busy, Boolean(reviewLock)); }, [onFundingGuardChange, fundingGuard, busy, reviewLock]);
+  useEffect(() => () => onFundingGuardChange?.(false, false, false), [onFundingGuardChange]);
+  useEffect(() => {
+    if (!fundingGuard) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+  }, [fundingGuard]);
+
   const [message, setMessage] = useState('');
   const trimmedAgentId = agentId.trim();
   const key = `monienaija.agent-funding.v1:${principal?.principalId}:${trimmedAgentId}`;
@@ -243,6 +258,8 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
     if (!mounted.current) return;
     if (!Array.isArray(rows) || rows.some(row => !validFundingRequest(row, targetAgentId) || (instructionKey && row.idempotencyKey !== instructionKey))) throw new Error('Invalid funding instruction response');
     setItems(rows);
+    const lock = reviewLockRef.current;
+    if (lock && lock.agentId === targetAgentId) setReviewReady(rows.some(row => row.idempotencyKey === lock.idempotencyKey && (!lock.requestId || row.id === lock.requestId) && (!lock.requestHash || row.requestHash === lock.requestHash) && row.direction === lock.direction && row.amountMinor === lock.amountMinor && row.reason === lock.reason));
     const selectedRow = preferredRequestId
       ? rows.find((row) => row.id === preferredRequestId) ?? null
       : rows.find((row) => row.id === selected?.id) ?? rows[0] ?? null;
@@ -257,6 +274,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
   async function guarded(task: () => Promise<void>) {
     if (inFlight.current) return;
     inFlight.current = true;
+    attemptedWrite.current = null;
     setBusy(true);
     setMessage('');
     try {
@@ -264,9 +282,11 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
     } catch (error) {
       if (!mounted.current) return;
       setItems([]); setSelected(null); setReviewed(false);
-      setMessage(
-        `${error instanceof Error ? error.message : 'Request failed'}. Outcome may be uncertain. Refresh and recover the same instruction; do not submit a replacement.`,
-      );
+      if (attemptedWrite.current) { setReviewLock(attemptedWrite.current); setReviewReady(false); }
+      setMessage(attemptedWrite.current
+        ? `${error instanceof Error ? error.message : 'Request failed'}. Outcome may be uncertain. Refresh and recover the same instruction; do not submit a replacement.`
+        : `${error instanceof Error ? error.message : 'Request failed'}. No funding write was attempted by this action.`);
+
     } finally {
       inFlight.current = false;
       if (mounted.current) setBusy(false);
@@ -315,6 +335,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
       setMessage('Enter a valid Maker handoff JSON package or Agent ID.');
       return;
     }
+    if (parsed.agentId !== trimmedAgentId && (amount.trim() || reason.trim() || rejectionReason.trim() || reviewed || draft || reviewLock) && !window.confirm('Change Agent and replace the current funding entries? Any earlier action may have occurred; inspect funding, approval, ledger and audit records.')) return;
     setHandoffInput('');
     if (parsed.agentId === trimmedAgentId) {
       void guarded(() =>
@@ -327,7 +348,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
   }
 
   async function initiate() {
-    if (!canWrite || !isMaker || !mfa || !hasFunction(direction) || storageError) return;
+    if (!canWrite || !isMaker || !mfa || !hasFunction(direction) || storageError || reviewLock || externalMutationBlocked) return;
     if (!trimmedAgentId || !/^[1-9]\d*$/.test(amount.trim()) || !reason.trim()) {
       throw new Error('Agent ID, positive integer kobo amount and reason are required');
     }
@@ -346,6 +367,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
     localStorage.setItem(key, JSON.stringify(instruction));
     setDraft(instruction);
     const { direction: requestedDirection, agentId: target, ...body } = instruction;
+    attemptedWrite.current = {agentId: target, idempotencyKey: instruction.idempotencyKey, direction: instruction.direction, amountMinor: instruction.amountMinor, reason: instruction.reason, action: 'request'};
     const created = await ApiClient.post<FundingRequest>(
       `/internal/agents/${encodeURIComponent(target)}/${requestedDirection.toLowerCase()}-request`,
       body,
@@ -360,6 +382,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
   async function decide(action: 'approve' | 'reject') {
     if (
       !selected ||
+      reviewLock || externalMutationBlocked ||
       !canWrite ||
       !reviewed ||
       !isChecker ||
@@ -374,6 +397,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
     if (action === 'reject') {
       const rejection = rejectionReason.trim();
       if (!rejection) throw new Error('A rejection reason is required');
+      attemptedWrite.current = {agentId: selected.agentId, idempotencyKey: selected.idempotencyKey, requestId: selected.id, requestHash: selected.requestHash, direction: selected.direction, amountMinor: selected.amountMinor, reason: selected.reason, action: 'rejection'};
       const result = await ApiClient.post<FundingRequest>(
         `/internal/agents/funding-requests/${selected.id}/reject`,
         { reason: rejection },
@@ -385,6 +409,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
       decision = 'REJECTED';
       setRejectionReason('');
     } else {
+      attemptedWrite.current = {agentId: selected.agentId, idempotencyKey: selected.idempotencyKey, requestId: selected.id, requestHash: selected.requestHash, direction: selected.direction, amountMinor: selected.amountMinor, reason: selected.reason, action: 'approval'};
       const result = await ApiClient.post<{ approved: boolean; reason: string; approval?: {id: string; status: string} }>(
         `/internal/a2/workforce/approvals/${selected.approvalId}/approve`,
         { comment: 'Reviewed Agent, amount, direction and business reason in funding workflow' },
@@ -410,6 +435,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
   async function execute() {
     if (
       !selected ||
+      reviewLock || externalMutationBlocked ||
       !canWrite ||
       !isChecker ||
       !mfa ||
@@ -422,6 +448,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
 
     // The server executes the immutable, persisted request by ID; the client cannot alter the
     // amount, target, metadata or ledger details at execution time.
+    attemptedWrite.current = {agentId: selected.agentId, idempotencyKey: selected.idempotencyKey, requestId: selected.id, requestHash: selected.requestHash, direction: selected.direction, amountMinor: selected.amountMinor, reason: selected.reason, action: 'posting'};
     const result = await ApiClient.post<FundingResult>(
       `/internal/agents/funding-requests/${selected.id}/execute`,
       {},
@@ -447,17 +474,17 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
     (selected.status === 'EXECUTED' && selected.approvalStatus === 'CONSUMED')
   );
   const canDecide =
-    canWrite && isChecker &&
+    canWrite && !reviewLock && !externalMutationBlocked && isChecker &&
     hasFunction(selected?.direction ?? direction) &&
     selected?.approvalStatus === 'REQUESTED' && selected.status === 'PENDING' &&
     selected.requesterPrincipalId !== principal?.principalId;
   const canExecute =
-    canWrite && isChecker &&
+    canWrite && !reviewLock && !externalMutationBlocked && isChecker &&
     hasFunction(selected?.direction ?? direction) &&
     selected?.approvalStatus === 'APPROVED' && selected.status === 'PENDING' &&
     selected.approvalApprovedBy === principal?.principalId;
   const canRecover =
-    canWrite && isChecker &&
+    canWrite && !reviewLock && !externalMutationBlocked && isChecker &&
     hasFunction(selected?.direction ?? direction) &&
     selected?.approvalStatus === 'CONSUMED' && selected.status === 'EXECUTED' &&
     selected.checkerPrincipalId === principal?.principalId;
@@ -506,13 +533,18 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
       {!suppliedAgentId && (
         <label>
           Agent ID
-          <input aria-label="Funding Agent ID" value={agentId} onChange={(event) => setAgentId(event.target.value)} disabled={busy} />
+          <input aria-label="Funding Agent ID" value={agentId} onChange={(event) => { if ((amount.trim() || reason.trim() || rejectionReason.trim() || reviewLock) && !window.confirm('Change Agent? Unsaved fields will be replaced. Any earlier funding action may have occurred; retain its key and review funding, approval, ledger and audit records.')) return; setAgentId(event.target.value); }} disabled={busy} />
         </label>
       )}
       <button disabled={busy || !trimmedAgentId || !mfa} onClick={() => void guarded(() => load())}>
         Load funding instructions
       </button>
 
+      {reviewLock && <div role="alert" data-testid="funding-review-lock"><strong>Funding {reviewLock.action} outcome requires independent review.</strong> Agent <code>{reviewLock.agentId}</code>, instruction key <code>{reviewLock.idempotencyKey}</code>{reviewLock.requestId && <> · request <code>{reviewLock.requestId}</code></>}. Review the matching instruction, approval, ledger and audit records before further writes. A fresh read or missing record cannot exclude a late commit. This local lock is lost on exit or session change; the retained maker key remains in browser storage.
+        <button type="button" disabled={busy} onClick={() => void guarded(() => loadForAgent(reviewLock.agentId, reviewLock.idempotencyKey, reviewLock.requestId))}>Refresh affected funding instruction</button>
+        <button type="button" disabled={busy || !reviewReady} onClick={() => { if (window.confirm('Have you independently reviewed the matching funding instruction, approval, ledger and audit records, including the possibility of a late commit?')) { setReviewLock(null); setReviewReady(false); setReviewed(false); } }}>Acknowledge independent funding review</button>
+        <button type="button" disabled={busy} onClick={() => { if (window.confirm('If the matching instruction cannot be read here, have you independently reviewed funding, approval, ledger and audit records through an authorized source, including a possible late commit?')) { setReviewLock(null); setReviewReady(false); setReviewed(false); } }}>Acknowledge authorized external funding review</button>
+      </div>}
       {draft && (
         <div>
           <p>Retained instruction key: {draft.idempotencyKey}</p>
@@ -539,18 +571,19 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
             Reason
             <input aria-label="Funding reason" value={reason} onChange={(event) => setReason(event.target.value)} disabled={busy || !!draft} maxLength={500} />
           </label>
-          <button className="mn-funding__primary" disabled={busy || !canWrite || !mfa || !hasFunction(direction) || !!draft || storageError} onClick={() => void guarded(initiate)}>
+          <button className="mn-funding__primary" disabled={busy || Boolean(reviewLock) || externalMutationBlocked || !canWrite || !mfa || !hasFunction(direction) || !!draft || storageError} onClick={() => void guarded(initiate)}>
             Request independent approval
           </button>
           {draft && !selected && (
-            <button disabled={busy || !canWrite || !mfa || !hasFunction(draft.direction)} onClick={() => void guarded(initiate)}>
+            <button disabled={busy || Boolean(reviewLock) || externalMutationBlocked || !canWrite || !mfa || !hasFunction(draft.direction)} onClick={() => void guarded(initiate)}>
               Retry original approval request
             </button>
           )}
           {draft && selected && selectedTerminal && (
             <button
-              disabled={busy}
+              disabled={busy || Boolean(reviewLock)}
               onClick={() => {
+                if (!window.confirm('Clear this retained instruction key and start another? Verify its final funding and audit state first.')) return;
                 localStorage.removeItem(key);
                 setDraft(null);
                 setSelected(null);

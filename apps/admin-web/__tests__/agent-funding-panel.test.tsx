@@ -331,14 +331,27 @@ test('unconfirmed funding decision requires a fresh instruction load and new rev
  fireEvent.click(view.getByRole('button',{name:'Load funding instructions'}));fireEvent.click(await view.findByRole('button',{name:new RegExp(`${REQUEST_ID}.*REQUESTED`)}));
  fireEvent.click(view.getByLabelText('I reviewed this Agent, amount, direction and business reason'));fireEvent.click(view.getByRole('button',{name:'Approve funding instruction'}));
  expect(await view.findByText(/Outcome may be uncertain/)).toBeTruthy();expect(view.queryByRole('button',{name:'Approve funding instruction'})).toBeNull();
- fireEvent.click(view.getByRole('button',{name:'Load funding instructions'}));fireEvent.click(await view.findByRole('button',{name:new RegExp(`${REQUEST_ID}.*REQUESTED`)}));
- expect((view.getByRole('button',{name:'Approve funding instruction'}) as HTMLButtonElement).disabled).toBe(true);expect(ApiClient.post).toHaveBeenCalledTimes(1);
+ expect(view.getByTestId('funding-review-lock').textContent).toMatch(/cannot exclude a late commit/);
+ expect((view.getByRole('button',{name:'Acknowledge independent funding review'}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(view.getByRole('button',{name:'Refresh affected funding instruction'}));await waitFor(()=>expect((view.getByRole('button',{name:'Acknowledge independent funding review'}) as HTMLButtonElement).disabled).toBe(false));
+ expect(view.queryByRole('button',{name:'Approve funding instruction'})).toBeNull();expect(ApiClient.post).toHaveBeenCalledTimes(1);
+ const confirmation=jest.spyOn(window,'confirm').mockReturnValue(true);fireEvent.click(view.getByRole('button',{name:'Acknowledge independent funding review'}));confirmation.mockRestore();
+ expect((view.getByRole('button',{name:'Approve funding instruction'}) as HTMLButtonElement).disabled).toBe(true);
 });
 
 test('read-only maker cannot submit a funding request',()=>{
  setPrincipal('AGENT_NETWORK_MANAGER','maker-1',['agent.fund']);useAuthStore.setState(state=>({principal:{...state.principal!,readOnlyPrincipal:true}}));
  const view=render(<AgentFundingPanel agentId="agent-1" />);fireEvent.change(view.getByLabelText('Funding amount in kobo'),{target:{value:'100'}});fireEvent.change(view.getByLabelText('Funding reason'),{target:{value:'review'}});
  expect((view.getByRole('button',{name:'Request independent approval'}) as HTMLButtonElement).disabled).toBe(true);expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+
+test('funding lock survives absent or mismatched fresh rows and guards unload', async()=>{
+ setPrincipal('FINANCE_CONTROLLER','checker-2',['agent.fund']);(ApiClient.get as jest.Mock).mockResolvedValueOnce([fundingRequest('REQUESTED')]).mockResolvedValueOnce([]).mockResolvedValueOnce([{...fundingRequest('REQUESTED'),requestHash:'other'}]);(ApiClient.post as jest.Mock).mockRejectedValue(new Error('offline'));
+ const guard=jest.fn();const view=render(<AgentFundingPanel agentId="agent-1" onFundingGuardChange={guard}/>);fireEvent.click(view.getByRole('button',{name:'Load funding instructions'}));await view.findByRole('button',{name:new RegExp(`${REQUEST_ID}.*REQUESTED`)});fireEvent.click(view.getByLabelText('I reviewed this Agent, amount, direction and business reason'));fireEvent.click(view.getByRole('button',{name:'Approve funding instruction'}));await view.findByTestId('funding-review-lock');expect(guard).toHaveBeenLastCalledWith(true,false,true);
+ const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);
+ fireEvent.click(view.getByRole('button',{name:'Refresh affected funding instruction'}));await waitFor(()=>expect(ApiClient.get).toHaveBeenCalledTimes(2));expect((view.getByRole('button',{name:'Acknowledge independent funding review'}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(view.getByRole('button',{name:'Refresh affected funding instruction'}));await waitFor(()=>expect(ApiClient.get).toHaveBeenCalledTimes(3));expect((view.getByRole('button',{name:'Acknowledge independent funding review'}) as HTMLButtonElement).disabled).toBe(true);
 });
 
 });
