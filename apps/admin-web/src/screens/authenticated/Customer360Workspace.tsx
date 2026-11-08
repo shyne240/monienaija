@@ -161,8 +161,8 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
   const [proofBusy, setProofBusy] = useState(false);
   const [pendingExit, setPendingExit] = useState<'overview' | 'personal' | 'proof' | 'back' | null>(null);
   const exitDialogRef = useRef<HTMLElement>(null);
-  const reportPersonalGuard = useCallback((guarded: boolean, busy: boolean) => { setPersonalGuard(guarded); setPersonalBusy(busy); onCustomerGuardChange?.(guarded, busy); }, [onCustomerGuardChange]);
-  const reportProofGuard = useCallback((guarded: boolean, busy: boolean) => { setProofGuard(guarded); setProofBusy(busy); onCustomerGuardChange?.(guarded, busy); }, [onCustomerGuardChange]);
+  const reportPersonalGuard = useCallback((guarded: boolean, busy: boolean) => { setPersonalGuard(guarded); setPersonalBusy(busy); }, []);
+  const reportProofGuard = useCallback((guarded: boolean, busy: boolean) => { setProofGuard(guarded); setProofBusy(busy); }, []);
   useEffect(() => () => onCustomerGuardChange?.(false, false), [onCustomerGuardChange]);
   useDialogFocus(exitDialogRef, Boolean(pendingExit), () => setPendingExit(null));
   const [overview, setOverview] = useState<OverviewData | null>(null);
@@ -170,6 +170,10 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
   const [overviewReloadVersion, setOverviewReloadVersion] = useState(0);
   const statusLock = useRef(false);
   const [statusUnconfirmed, setStatusUnconfirmed] = useState(false);
+  const [statusReviewLoaded, setStatusReviewLoaded] = useState(false);
+  const [statusReviewStatus, setStatusReviewStatus] = useState<string | null>(null);
+  const [statusReviewBusy, setStatusReviewBusy] = useState(false);
+  const statusReviewLock = useRef(false);
   const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -178,6 +182,13 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useDialogFocus(dialogRef, Boolean(pendingStatus), () => { if (!isUpdatingStatus) setPendingStatus(null); });
+  useEffect(() => { onCustomerGuardChange?.(personalGuard || proofGuard || statusUnconfirmed || isUpdatingStatus || Boolean(pendingStatus), personalBusy || proofBusy || isUpdatingStatus || statusReviewBusy || Boolean(pendingStatus)); }, [onCustomerGuardChange, personalGuard, proofGuard, statusUnconfirmed, isUpdatingStatus, pendingStatus, personalBusy, proofBusy, statusReviewBusy]);
+  useEffect(() => {
+    if (!statusUnconfirmed && !isUpdatingStatus) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [statusUnconfirmed, isUpdatingStatus]);
 
   useEffect(() => {
     let active = true;
@@ -261,8 +272,8 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
     setActiveTab(tab); return true;
   };
   const requestBack = () => {
-    const guarded = activeTab === 'personal' ? personalGuard : activeTab === 'proof' ? proofGuard : false;
-    const busy = activeTab === 'personal' ? personalBusy : activeTab === 'proof' ? proofBusy : false;
+    const guarded = statusUnconfirmed || (activeTab === 'personal' ? personalGuard : activeTab === 'proof' ? proofGuard : false);
+    const busy = isUpdatingStatus || statusReviewBusy || (activeTab === 'personal' ? personalBusy : activeTab === 'proof' ? proofBusy : false);
     if (guarded) { if (!busy) setPendingExit('back'); return; }
     onBack();
   };
@@ -315,8 +326,10 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
       const status = error && typeof error === 'object' && 'status' in error
         ? Number((error as { status?: unknown }).status)
         : undefined;
-      if (![400, 401, 403, 404, 409].includes(status ?? 0)) setStatusUnconfirmed(true);
-      setActionError(status === 400 || status === 409
+      if (![400, 401, 403, 404].includes(status ?? 0)) { setStatusUnconfirmed(true); setStatusReviewLoaded(false); }
+      setActionError(status === 409
+        ? 'The status change conflicted with the current lifecycle state. Refresh and review the customer before another action.'
+        : status === 400
         ? 'The status change was blocked by a customer lifecycle rule.'
         : status === 401 || status === 403 || status === 404
           ? 'The customer status change was rejected or the customer is unavailable.'
@@ -327,10 +340,35 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
     }
   };
 
+  const refreshStatusForReview = async () => {
+    if (!statusUnconfirmed || statusReviewLock.current || isUpdatingStatus) return;
+    statusReviewLock.current = true;
+    setStatusReviewBusy(true);
+    setStatusReviewLoaded(false);
+    setStatusReviewStatus(null);
+    try {
+      const fresh = await ApiClient.get<DirectoryCustomer>(`/internal/customers/${encodeURIComponent(customer.id)}`);
+      if (!mounted.current) return;
+      if (!fresh || fresh.id !== customer.id || typeof fresh.reference !== 'string' || !['INDIVIDUAL', 'BUSINESS'].includes(fresh.type) ||
+          !['DRAFT', 'ACTIVE', 'SUSPENDED', 'CLOSED'].includes(fresh.status) || typeof fresh.kycLevel !== 'string' || typeof fresh.kycStatus !== 'string' ||
+          (typeof fresh.createdAt !== 'string' && !(fresh.createdAt instanceof Date)) ||
+          (fresh.displayName != null && typeof fresh.displayName !== 'string') || (fresh.legalName != null && typeof fresh.legalName !== 'string')) throw new Error('Invalid customer record');
+      onCustomerUpdated({ ...customer, ...fresh, primaryContact: null });
+      setStatusReviewStatus(fresh.status);
+      setStatusReviewLoaded(true);
+      setActionError(null);
+    } catch {
+      if (mounted.current) setActionError('Customer status review could not be loaded. Actions remain locked.');
+    } finally {
+      statusReviewLock.current = false;
+      if (mounted.current) setStatusReviewBusy(false);
+    }
+  };
+
   return (
     <main className="customer-management cm-workspace">
       <div className="cm-workspace-topline">
-        <button className="cm-back-button" type="button" onClick={requestBack} disabled={(activeTab === 'personal' && personalBusy) || (activeTab === 'proof' && proofBusy)}>← Back to directory</button>
+        <button className="cm-back-button" type="button" onClick={requestBack} disabled={isUpdatingStatus || statusReviewBusy || (activeTab === 'personal' && personalBusy) || (activeTab === 'proof' && proofBusy)}>← Back to directory</button>
         <span className="cm-workspace-label">CUSTOMER 360°</span>
       </div>
 
@@ -395,6 +433,12 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
 
       {actionMessage && <div className="cm-notice" role="status">{actionMessage}</div>}
       {actionError && !pendingStatus && <div className="cm-error" role="alert">{actionError}</div>}
+      {statusUnconfirmed && !pendingStatus && <section className="cm-policy-notice cm-policy-notice-warning" aria-labelledby="cm-status-review-title">
+        <h2 id="cm-status-review-title">Customer lifecycle review required</h2>
+        <p>The previous action may have taken effect or conflicted. Refresh the customer and inspect its current status and available audit history before another action. A refresh cannot rule out a late commit. This lock is local and is lost on exit or session change.</p>
+        <button type="button" className="cm-button cm-button-secondary" disabled={statusReviewBusy} onClick={() => void refreshStatusForReview()}>{statusReviewBusy ? 'Refreshing…' : 'Refresh customer for lifecycle review'}</button>
+        {statusReviewLoaded && <p>Current returned status: <strong>{statusReviewStatus}</strong>. <button type="button" className="cm-button cm-button-secondary" onClick={() => { setStatusUnconfirmed(false); setStatusReviewLoaded(false); setActionMessage('Review acknowledged. Check the current status and audit history before a new action.'); }}>I reviewed customer status and audit history</button></p>}
+      </section>}
 
       {activeTab === 'overview' ? (
         <section id="customer-overview-panel" role="tabpanel" aria-labelledby="customer-overview-tab" className="cm-workspace-content">
@@ -562,7 +606,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
       {pendingExit && (
         <div className="cm-modal-backdrop" role="presentation">
           <section ref={exitDialogRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="cm-personal-exit-title">
-            <h2 id="cm-personal-exit-title">Leave {activeTab === 'proof' ? 'Proof of Address' : 'personal information'}?</h2>
+            <h2 id="cm-personal-exit-title">Leave {activeTab === 'proof' ? 'Proof of Address' : activeTab === 'personal' ? 'personal information' : 'customer review'}?</h2>
             <p>Leaving discards the local draft, any one-time proof or upload retry key, and local uncertain-outcome locks. An earlier action may already have occurred. Inspect current records and audit history before acting again.</p>
             <div className="cm-actions-row">
               <button type="button" className="cm-button cm-button-secondary" onClick={() => setPendingExit(null)}>Keep working</button>

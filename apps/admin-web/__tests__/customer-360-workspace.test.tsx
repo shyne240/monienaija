@@ -367,3 +367,40 @@ test('Proof of Address draft is guarded on tab change and return to directory', 
   fireEvent.click(view.getByRole('button', { name: 'Discard and leave' }));
   expect(onBack).toHaveBeenCalledTimes(1);
 });
+
+test('lifecycle conflict requires a fresh matching record and explicit audit review', async () => {
+  jest.clearAllMocks(); setPrincipal(['customer.view', 'customer.suspend']); mockCustomerReads();
+  (ApiClient.patch as jest.Mock).mockRejectedValueOnce(Object.assign(new Error('conflict'), { status: 409 }));
+  const oldGet = (ApiClient.get as jest.Mock).getMockImplementation()!;
+  let reviewMode = 'failure';
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+    if (path === `/internal/customers/${customer.id}`) {
+      if (reviewMode === 'failure') return Promise.reject(new Error('offline'));
+      if (reviewMode === 'wrong') return Promise.resolve({ ...customer, id: 'other-customer' });
+      return Promise.resolve({ ...customer, status: 'SUSPENDED' });
+    }
+    return oldGet(path);
+  });
+  const onBack = jest.fn();
+  const Harness = () => { const [current, setCurrent] = React.useState(customer); return <Customer360Workspace customer={current} onBack={onBack} onCustomerUpdated={setCurrent} />; };
+  const view = render(<Harness />);
+  fireEvent.click(view.getByRole('button', { name: 'Suspend' }));
+  fireEvent.click(view.getByRole('button', { name: 'Confirm change' }));
+  expect(await view.findByText(/status change conflicted/)).toBeTruthy();
+  expect((view.getByRole('button', { name: 'Confirm change' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(view.getByRole('button', { name: 'Cancel' }));
+  fireEvent.click(view.getByRole('button', { name: 'Refresh customer for lifecycle review' }));
+  await view.findByText(/review could not be loaded/);
+  expect(view.queryByRole('button', { name: 'I reviewed customer status and audit history' })).toBeNull();
+  reviewMode = 'wrong';
+  fireEvent.click(view.getByRole('button', { name: 'Refresh customer for lifecycle review' }));
+  await waitFor(() => expect((ApiClient.get as jest.Mock).mock.calls.filter(([path]) => path === `/internal/customers/${customer.id}`)).toHaveLength(2));
+  expect(view.queryByRole('button', { name: 'I reviewed customer status and audit history' })).toBeNull();
+  reviewMode = 'ok';
+  fireEvent.click(view.getByRole('button', { name: 'Refresh customer for lifecycle review' }));
+  const acknowledge = await view.findByRole('button', { name: 'I reviewed customer status and audit history' });
+  expect(view.getByText('Current returned status:', { exact: false }).textContent).toMatch('SUSPENDED');
+  fireEvent.click(acknowledge);
+  expect(view.queryByRole('heading', { name: 'Customer lifecycle review required' })).toBeNull();
+  expect(ApiClient.patch).toHaveBeenCalledTimes(1);
+});
