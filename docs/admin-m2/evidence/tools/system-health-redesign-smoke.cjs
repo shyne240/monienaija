@@ -1,0 +1,27 @@
+// Synthetic reads only. All writes are blocked; no providers or workers are invoked.
+const assert=require('assert');const assertVisibleLabels=require('./assert-visible-labels.cjs');
+const {chromium:playwright}=require('playwright-core');const chromium=require('@sparticuz/chromium').default;const fs=require('fs');
+(async()=>{const browser=await playwright.launch({executablePath:await chromium.executablePath(),args:chromium.args,headless:true});const page=await browser.newPage({viewport:{width:320,height:900}});
+ let metricsReads=0;
+ await page.route('**/api/v1/**',route=>{const r=route.request(),u=new URL(r.url());if(r.method()!=='GET')return route.fulfill({status:403,body:'Synthetic harness blocks mutations'});let body;
+  if(u.pathname.endsWith('/my-dashboard'))body={templateKey:'SYNTHETIC',displayName:'Overview',isFallback:false,widgets:[]};
+  else if(u.pathname.endsWith('/internal/metrics')){metricsReads++;body={generatedAt:'2026-11-01T00:00:00Z',metrics:{'synthetic.jobs_processed':'8','synthetic.health_checks':'4'}};}
+  else if(u.pathname.endsWith('/internal/diagnostics'))body={status:'ok',version:'synthetic',database:{status:'ok'},migrations:{status:'ok',appliedCount:1},reconciliation:{status:'WARNING'},pendingOutbox:2,timestamp:'2026-11-01T00:00:00Z'};
+  else if(u.pathname.endsWith('/internal/outbox'))body=[{id:'synthetic-outbox',eventType:'synthetic.event',aggregateType:'CUSTOMER',aggregateId:'synthetic-id',status:'PENDING',attempts:0,occurredAt:'2026-11-01T00:00:00Z'}];
+  else if(u.pathname.endsWith('/internal/notifications/deliveries')){if(u.searchParams.get('status')==='DEAD')return route.fulfill({status:503,contentType:'application/json',body:'{"message":"Synthetic delivery unavailable"}'});body={data:[{id:'synthetic-delivery',eventType:'synthetic.delivery',channel:'EMAIL',recipientType:'CUSTOMER',recipientId:'synthetic-recipient',status:'FAILED',attempts:2,errorCode:'UNCLASSIFIED',createdAt:'2026-11-01T00:00:00Z'}],total:21,page:Number(u.searchParams.get('page')),hasNextPage:u.searchParams.get('page')==='1'};}
+  else if(u.pathname.endsWith('/internal/notifications/outbox-receipts'))body={data:[{outboxEventId:'synthetic-outbox',status:'PENDING',reason:null,attempts:0,updatedAt:'2026-11-01T00:00:00Z'}],total:1,page:1,limit:20,totalPages:1,hasNextPage:false};
+  else return route.fulfill({status:503,contentType:'application/json',body:'{"message":"Synthetic service unavailable"}'});
+  return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)});
+ });
+ await page.goto(process.env.HEALTH_SMOKE_ORIGIN||'http://127.0.0.1:5173/');await page.evaluate(()=>{localStorage.setItem('admin_workforce_token','synthetic');localStorage.setItem('admin_workforce_session_id','synthetic');localStorage.setItem('admin_workforce_principal',JSON.stringify({type:'OPERATOR',principalId:'synthetic',sessionId:'synthetic',audience:'workforce-admin',roles:['OPERATIONS'],scopes:['metrics.view','diagnostics.view','outbox.view','notification.view_deliveries'],customerAccess:'NONE',assuranceLevel:'MFA'}));});
+ const results=[];for(const width of [320,360,390,768,769,1024,1280,1440]){
+  await page.setViewportSize({width,height:900});await page.reload({waitUntil:'networkidle'});if(width<1024)await page.getByTestId('mobile-menu-toggle').click();await page.getByTestId((width<1024?'mobile-':'')+'nav-systemHealth').click();await page.getByText('synthetic.jobs_processed').waitFor();const initialReads=metricsReads;
+  const nav=page.getByRole('navigation',{name:'System health sections'});await nav.getByRole('link',{name:'Deliveries & receipts'}).focus();await page.keyboard.press('Enter');const delivery=page.getByRole('region',{name:'Notification deliveries'});assert(await delivery.evaluate(el=>document.activeElement===el));
+  await page.getByLabel('Channel').selectOption('EMAIL');assert(await page.getByText(/Filters changed; search to apply/).isVisible());await page.getByRole('button',{name:'Search'}).focus();await page.keyboard.press('Enter');await page.getByText('Applied filters: Channel: EMAIL').waitFor();await page.getByText(/21 matching delivery records/).waitFor();
+  await page.getByRole('button',{name:'Next',exact:true}).click();await page.getByText(/Page 2\) out of 21/).waitFor();assert.equal(metricsReads,initialReads);
+  await page.getByLabel('Status').selectOption('DEAD');await page.getByRole('button',{name:'Search'}).click();await page.getByText('Synthetic delivery unavailable').waitFor();await page.getByRole('button',{name:'Inspect Outbox Receipts'}).click();await page.getByTestId('system-health-outbox-receipts-panel').waitFor();
+  await assertVisibleLabels(page);const size=await page.evaluate(()=>({page:document.documentElement.scrollWidth,view:document.documentElement.clientWidth}));results.push({width,keyboardSectionAndSearch:true,filteredPagination:true,independentReceiptOnError:true,visibleLabelMechanisms:true,...size});
+  if([320,1440].includes(width)){await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:`${process.cwd()}/docs/admin-m2/evidence/system-health-redesign-${width}.png`,fullPage:true});}
+ }
+ fs.writeFileSync(`${process.cwd()}/docs/admin-m2/evidence/system-health-redesign-smoke.json`,JSON.stringify(results,null,2)+'\n');console.log(JSON.stringify({total:results.length,overflow:results.filter(x=>x.page>x.view)},null,2));await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});

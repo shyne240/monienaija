@@ -20,3 +20,38 @@ test('editing the audit query invalidates late search results',async()=>{
 test('audit results are cleared on principal change even when the scope remains',async()=>{
  principal('one',['audit.search']);(ApiClient.get as jest.Mock).mockResolvedValue([{id:'audit',actor:'FIRST ACTOR',action:'READ',entityType:'CUSTOMER',entityId:'old'}]);render(<AuditTrailScreen/>);fireEvent.click(screen.getByRole('button',{name:'Search'}));await screen.findByText('FIRST ACTOR');act(()=>principal('two',['audit.search']));expect(screen.queryByText('FIRST ACTOR')).toBeNull();
 });
+
+test('health panels resolve independently and delivery filtering does not reload unrelated sources',async()=>{
+ principal('one',['metrics.view','diagnostics.view','outbox.view','notification.view_deliveries']);const diagnostic=deferred();
+ (ApiClient.get as jest.Mock).mockImplementation((path:string)=>{
+  if(path==='/internal/metrics')return Promise.resolve({generatedAt:'2026-11-01',metrics:{SYNTHETIC_METRIC:'8'}});
+  if(path==='/internal/diagnostics')return diagnostic.promise;
+  if(path==='/internal/outbox')return Promise.resolve([]);
+  if(path.startsWith('/internal/notifications/deliveries'))return Promise.resolve({data:[],page:1,total:0,hasNextPage:false});
+  return Promise.reject(new Error('Unexpected request'));
+ });
+ render(<SystemHealthScreen/>);expect(await screen.findByText('SYNTHETIC_METRIC')).toBeTruthy();expect(screen.getByText('Loading diagnostics…')).toBeTruthy();await screen.findByText('No notification deliveries were returned for these filters.');
+ fireEvent.change(screen.getByLabelText('Channel'),{target:{value:'EMAIL'}});expect(screen.getByText(/Filters changed; search to apply/)).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Search'}));
+ await waitFor(()=>expect(ApiClient.get).toHaveBeenCalledWith('/internal/notifications/deliveries?page=1&limit=20&channel=EMAIL'));expect(screen.getByText('Applied filters: Channel: EMAIL')).toBeTruthy();
+ expect((ApiClient.get as jest.Mock).mock.calls.filter(([path])=>path==='/internal/metrics')).toHaveLength(1);
+ await act(async()=>{diagnostic.resolve({status:'ok'});await diagnostic.promise;});expect(screen.queryByText('Loading diagnostics…')).toBeNull();
+});
+
+test('a newer delivery search replaces an in-flight search and late results are ignored',async()=>{
+ principal();const older=deferred(),newer=deferred();(ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.includes('channel=EMAIL')?older.promise:path.includes('channel=SMS')?newer.promise:Promise.resolve({data:[],page:1,total:0,hasNextPage:false}));
+ render(<SystemHealthScreen/>);await screen.findByText('No notification deliveries were returned for these filters.');
+ fireEvent.change(screen.getByLabelText('Channel'),{target:{value:'EMAIL'}});fireEvent.click(screen.getByRole('button',{name:'Search'}));
+ fireEvent.change(screen.getByLabelText('Channel'),{target:{value:'SMS'}});fireEvent.click(screen.getByRole('button',{name:'Search'}));
+ await act(async()=>{newer.resolve({data:[{id:'new',eventType:'NEW_EVENT'}],page:1,total:1,hasNextPage:false});await newer.promise;});expect((await screen.findAllByText('NEW_EVENT')).length).toBeGreaterThan(0);
+ await act(async()=>{older.resolve({data:[{id:'old',eventType:'OLD_EVENT'}],page:1,total:1,hasNextPage:false});await older.promise;});expect(screen.queryByText('OLD_EVENT')).toBeNull();expect(screen.getByText('Applied filters: Channel: SMS')).toBeTruthy();
+});
+
+test('receipt inspection stays independently available when delivery reads fail',async()=>{
+ principal();(ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.includes('outbox-receipts')?Promise.resolve({data:[{outboxEventId:'receipt-1',status:'PENDING'}],total:1,page:1}):Promise.reject(new Error('delivery unavailable')));
+ render(<SystemHealthScreen/>);expect(await screen.findByText('delivery unavailable')).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Inspect Outbox Receipts'}));expect((await screen.findAllByText('receipt-1')).length).toBeGreaterThan(0);expect(ApiClient.get).toHaveBeenCalledWith('/internal/notifications/outbox-receipts?page=1&limit=20');
+});
+
+test('section navigation and requests follow each independent function grant',async()=>{
+ principal('one',['metrics.view']);(ApiClient.get as jest.Mock).mockResolvedValue({metrics:{jobs:'2'}});render(<SystemHealthScreen/>);await screen.findByText('jobs');
+ expect(screen.getByRole('link',{name:'Metrics'})).toBeTruthy();expect(screen.queryByRole('link',{name:'Deliveries & receipts'})).toBeNull();expect(screen.queryByRole('region',{name:'Notification deliveries'})).toBeNull();expect(ApiClient.get).toHaveBeenCalledTimes(1);
+});
