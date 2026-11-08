@@ -117,21 +117,25 @@ interface FinanceVerificationReport {
 
 const minor = (value: unknown) => typeof value === 'string' && /^-?\d+$/.test(value);
 const count = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-const isDimension = (row: any) => row && typeof row.currency === 'string' && typeof row.accountingUnit === 'string' && minor(row.totalDebitsMinor) && minor(row.totalCreditsMinor) && typeof row.balanced === 'boolean' && (!row.balanced || BigInt(row.totalDebitsMinor) === BigInt(row.totalCreditsMinor));
-const isAccountRow = (row: any) => row && typeof row.accountId === 'string' && typeof row.accountCode === 'string' && typeof row.accountName === 'string' && typeof row.currency === 'string' && typeof row.accountingUnit === 'string' && minor(row.totalDebitsMinor) && minor(row.totalCreditsMinor) && minor(row.balanceMinor);
-const validRun = (r: any) => r && ['PASS','WARNING','ERROR'].includes(r.status) && typeof r.generatedAt === 'string' && Array.isArray(r.checks) && r.checks.every((c: any) => c && typeof c.name === 'string' && ['PASS','WARNING','ERROR'].includes(c.status) && typeof c.message === 'string') && r.binding && count(r.binding.summary?.bindingsChecked) && count(r.binding.summary?.discrepancies) && Array.isArray(r.binding.discrepancies) && r.binding.discrepancies.every((d: any) => d && typeof d.key === 'string' && typeof d.type === 'string' && typeof d.message === 'string');
-const validTrial = (r: any) => r && typeof r.generatedAt === 'string' && typeof r.balanced === 'boolean' && Array.isArray(r.dimensions) && r.dimensions.every(isDimension) && (!r.balanced || r.dimensions.every((d: any) => d.balanced)) && Array.isArray(r.rows) && r.rows.every(isAccountRow);
-const validFinance = (r: any) => r && typeof r.generatedAt === 'string' && r.journalIntegrity && typeof r.journalIntegrity.balanced === 'boolean' && count(r.journalIntegrity.totalJournals) && count(r.journalIntegrity.invalidJournals) && count(r.journalIntegrity.orphanLines) && (!r.journalIntegrity.balanced || (r.journalIntegrity.invalidJournals === 0 && r.journalIntegrity.orphanLines === 0)) && [r.totalAssets, r.totalLiabilities].every(rows => Array.isArray(rows) && rows.every((row: any) => row && typeof row.currency === 'string' && typeof row.accountingUnit === 'string' && minor(row.totalBalanceMinor)));
+const isDimension = (row: any) => row && typeof row.currency === 'string' && typeof row.accountingUnit === 'string' && minor(row.totalDebitsMinor) && minor(row.totalCreditsMinor) && typeof row.balanced === 'boolean' && (row.balanced === (BigInt(row.totalDebitsMinor) === BigInt(row.totalCreditsMinor)));
+const isAccountRow = (row: any) => row && count(row.entryCount) && typeof row.accountType === 'string' && typeof row.accountId === 'string' && typeof row.accountCode === 'string' && typeof row.accountName === 'string' && typeof row.currency === 'string' && typeof row.accountingUnit === 'string' && minor(row.totalDebitsMinor) && minor(row.totalCreditsMinor) && minor(row.balanceMinor);
+const validDate = (value: unknown) => typeof value === 'string' && Number.isFinite(Date.parse(value));
+const validRun = (r: any) => r && ['PASS','WARNING','ERROR'].includes(r.status) && validDate(r.generatedAt) && Array.isArray(r.checks) && r.checks.length > 0 && r.checks.every((c: any) => c && typeof c.name === 'string' && ['PASS','WARNING','ERROR'].includes(c.status) && typeof c.message === 'string') && r.status === (r.checks.some((c: any) => c.status === 'ERROR') ? 'ERROR' : r.checks.some((c: any) => c.status === 'WARNING') ? 'WARNING' : 'PASS') && r.binding && count(r.binding.summary?.bindingsChecked) && count(r.binding.summary?.discrepancies) && count(r.binding.summary?.errors) && count(r.binding.summary?.warnings) && Array.isArray(r.binding.discrepancies) && r.binding.summary.discrepancies === r.binding.discrepancies.length && r.binding.discrepancies.every((d: any) => d && typeof d.key === 'string' && typeof d.type === 'string' && typeof d.message === 'string' && ['WARNING','ERROR'].includes(d.severity) && typeof d.owner === 'string') && r.binding.summary.errors === r.binding.discrepancies.filter((d: any) => d.severity === 'ERROR').length && r.binding.summary.warnings === r.binding.discrepancies.filter((d: any) => d.severity === 'WARNING').length && (r.status !== 'PASS' || r.binding.discrepancies.length === 0) && (r.status !== 'WARNING' || r.binding.summary.errors === 0);
+const validTrial = (r: any) => r && validDate(r.generatedAt) && typeof r.balanced === 'boolean' && Array.isArray(r.dimensions) && r.dimensions.every(isDimension) && (r.balanced === r.dimensions.every((d: any) => d.balanced)) && Array.isArray(r.rows) && r.rows.every(isAccountRow);
+const validFinance = (r: any) => r && validDate(r.generatedAt) && r.journalIntegrity && typeof r.journalIntegrity.balanced === 'boolean' && count(r.journalIntegrity.totalJournals) && count(r.journalIntegrity.invalidJournals) && count(r.journalIntegrity.orphanLines) && (!r.journalIntegrity.balanced || (r.journalIntegrity.invalidJournals === 0 && r.journalIntegrity.orphanLines === 0)) && [r.totalAssets, r.totalLiabilities].every(rows => Array.isArray(rows) && rows.every((row: any) => row && typeof row.currency === 'string' && typeof row.accountingUnit === 'string' && minor(row.totalBalanceMinor)));
 
 export const ReconciliationObservabilityScreen: React.FC = () => {
-  const { principal } = useAuthStore();
+  const { principal, sessionId } = useAuthStore();
   const canView = principal?.scopes.includes('reconciliation.view') ?? false;
-  return <ReconciliationWorkspace key={`${principal?.principalId ?? ''}:${canView}`} canView={canView} />;
+  return <ReconciliationWorkspace key={JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal])} canView={canView} />;
 };
 const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
   const generations = useRef({run:0, trial:0, finance:0, activity:0});
   useEffect(() => () => { generations.current.run++; generations.current.trial++; generations.current.finance++; generations.current.activity++; }, []);
   const [activeTab, setActiveTab] = useState<'runs' | 'trial-balance' | 'finance'>('runs');
+  const activityHeading = useRef<HTMLHeadingElement>(null);
+  const focusActivity = useRef(false);
+  useEffect(() => { if (activeTab === 'finance' && focusActivity.current) { focusActivity.current = false; activityHeading.current?.focus(); } }, [activeTab]);
 
   // Reconciliation Runs State
   const [report, setReport] = useState<ReconciliationReport | null>(null);
@@ -248,13 +252,13 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
       <PageHeader eyebrow="Finance and ledger" title="Independent Reconciliation & Breaks Desk" description="Review reported ledger balance conservation, trial balances and reconciliation breaks." />
 
       <div style={styles.gapWarning}>
-        <span style={styles.gapTitle}>⚠️ In-House Simulated Settlement Boundaries</span>
+        <span style={styles.gapTitle}>Internal verification boundaries</span>
         <p style={styles.gapText}>
-          Reconciliation executes internal PostgreSQL matching algorithms comparing wallet metadata balances against double-entry lines. No external bank statements are consumed in this phase.
+          These reports check internal ledger and wallet relationships. They do not compare external bank statements or establish settlement with an external provider.
         </p>
       </div>
 
-      <div style={styles.tabHeader}>
+      <div className="mn-reconciliation__tabs" style={styles.tabHeader} aria-label="Reconciliation workspaces">
         <button
           style={activeTab === 'runs' ? styles.activeTabBtn : styles.tabBtn}
           aria-pressed={activeTab === 'runs'}
@@ -279,7 +283,10 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
       </div>
 
       {activeTab === 'runs' ? (
-        <div style={styles.content}>
+        <div className="mn-reconciliation__workspace" style={styles.content}>
+          <p className="mn-reconciliation__eyebrow">INTERNAL MATCHING</p>
+          <h2>Verification checks</h2>
+          <p>Generate a point-in-time report of internal checks and binding discrepancies.</p>
           <div style={styles.actionRow}>
             <button
               disabled={runLoading}
@@ -310,7 +317,7 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
                   <span style={styles.metaValue}>{report.binding.summary.bindingsChecked}</span>
                 </div>
                 <div style={styles.metaRow}>
-                  <span style={styles.metaLabel}>Active Breaks:</span>
+                  <span style={styles.metaLabel}>Binding Discrepancies:</span>
                   <span style={report.binding.summary.discrepancies > 0 ? styles.discrepancyCount : styles.metaValue}>
                     {report.binding.summary.discrepancies}
                   </span>
@@ -361,7 +368,8 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
           )}
         </div>
       ) : activeTab === 'trial-balance' ? (
-        <div style={styles.content}>
+        <div className="mn-reconciliation__workspace" style={styles.content}>
+          <p className="mn-reconciliation__eyebrow">LEDGER TOTALS</p><h2>Trial balance</h2>
           {tbError && <div style={styles.errorBox} role="alert">{tbError}</div>}
 
           {tbLoading ? (
@@ -372,7 +380,7 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
                 <div style={styles.metaRow}>
                   <span style={styles.metaLabel}>Trial Balance Integrity:</span>
                   <span style={tbReport.balanced ? styles.passStatus : styles.failStatus}>
-                    {tbReport.balanced ? 'BALANCED FACT' : 'UNBALANCED DISCREPANCY'}
+                    {tbReport.balanced ? 'REPORTED BALANCED' : 'UNBALANCED DISCREPANCY'}
                   </span>
                 </div>
                 <div style={styles.metaRow}>
@@ -381,6 +389,7 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
                 </div>
               </div>
 
+              <p>Reported trial balance compares internal debit and credit totals; it is not external settlement confirmation.{tbReport.dimensions.length === 0 && ' No dimensions were returned, so this does not establish activity.'}</p>
               <h4 style={styles.sectionTitle}>Balance Conservation by Dimension</h4>
               <div style={styles.dimensionsGrid}>
                 {tbReport.dimensions.map((dim) => (
@@ -434,7 +443,9 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
                           <button
                             type="button"
                             onClick={() => {
+                              focusActivity.current = true;
                               setActiveTab('finance');
+                              void handleLoadFinanceVerification();
                               void handleInspectAccountActivity(r.accountId);
                             }}
                             style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFF', cursor: 'pointer', fontSize: 12 }}
@@ -451,7 +462,8 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
           )}
         </div>
       ) : (
-        <div style={styles.content}>
+        <div className="mn-reconciliation__workspace" style={styles.content}>
+          <p className="mn-reconciliation__eyebrow">FINANCE SIGNALS</p><h2>Finance verification and activity</h2>
           <div style={styles.actionRow}>
             <button
               disabled={financeLoading}
@@ -464,6 +476,7 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
 
           {financeError && <div style={styles.errorBox} role="alert">{financeError}{financeReport && ' Previous results are stale; the refresh failed.'}</div>}
           {financeLoading && financeReport && <p role="status">Refreshing; previous finance verification results may be stale.</p>}
+          {financeReport && <p>Internal journal integrity and account totals are reported independently; they do not establish external settlement.</p>}
           {financeReport && <p>Report generated at: {new Date(financeReport.generatedAt).toLocaleString()}</p>}
 
           {financeReport && (
@@ -509,7 +522,7 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
           )}
 
           <div style={{ ...styles.summaryCard, marginTop: 20 }}>
-            <h4 style={styles.cardTitle}>Account Activity Inspector</h4>
+            <h4 ref={activityHeading} tabIndex={-1} style={styles.cardTitle}>Account Activity Inspector</h4>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
               <input
                 aria-label="Ledger Account UUID"
@@ -608,7 +621,7 @@ const styles = {
   gapTitle: {
     fontSize: '13px',
     fontWeight: 'bold',
-    color: '#D97706',
+    color: '#78350F',
     display: 'block',
     marginBottom: '6px',
   },

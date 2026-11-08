@@ -46,7 +46,7 @@ test('failed agent refresh does not leave an old empty result as current', async
 });
 
 test('zero discrepancies do not imply balanced books', async () => {
-  (ApiClient.get as jest.Mock).mockResolvedValue({ status: 'ERROR', generatedAt: '2026-01-01T00:00:00Z', checks: [{ name: 'check', status: 'ERROR', message: 'Check failed', details: {} }], binding: { summary: { bindingsChecked: 0, discrepancies: 0 }, discrepancies: [] } });
+  (ApiClient.get as jest.Mock).mockResolvedValue({ status: 'ERROR', generatedAt: '2026-01-01T00:00:00Z', checks: [{ name: 'check', status: 'ERROR', message: 'Check failed', details: {} }], binding: { summary: { bindingsChecked: 0, discrepancies: 0, errors: 0, warnings: 0 }, discrepancies: [] } });
   render(<ReconciliationObservabilityScreen />);
   fireEvent.click(screen.getByRole('button', { name: 'Execute In-House Reconciliation Match' }));
   expect(await screen.findByText(/does not establish that the books are balanced/)).toBeTruthy();
