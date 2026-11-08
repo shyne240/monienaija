@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuthStore } from '../../store/auth-store';
 import { ApiClient } from '../../services/api-client';
 import { useWidgetData } from '../../components/dashboard/useWidgetData';
 import { WidgetRenderer } from '../../components/dashboard/widgets';
 import { PageHeader } from '../../design-system/primitives';
 import './operational-surfaces.css';
+import './dashboard-workspace.css';
 import type { ResolvedDashboard } from '../../components/dashboard/types';
 
 const DASH = '/internal/a2/workforce/dashboard';
@@ -47,21 +48,22 @@ function validDashboard(value: unknown): value is ResolvedDashboard {
 }
 
 export const DashboardScreen: React.FC<DashboardScreenProps> = (props) => {
-  const principal = useAuthStore(state => state.principal);
+  const { principal, sessionId } = useAuthStore();
   if (!principal) return null;
-  const key = JSON.stringify([principal.principalId, principal.sessionId, principal.type, principal.roles, principal.scopes, principal.assuranceLevel, principal.customerAccess, principal.readOnlyPrincipal]);
+  const key = JSON.stringify([sessionId, principal.principalId, principal.sessionId, principal.audience, principal.type, principal.roles, principal.scopes, principal.assuranceLevel, principal.customerAccess, principal.readOnlyPrincipal]);
   return <DashboardWorkspace key={key} {...props} />;
 };
 
 const DashboardWorkspace: React.FC<DashboardScreenProps> = ({ onNavigateToCustomers, onNavigateToAgents }) => {
   const { principal } = useAuthStore();
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const { data: dashboard, loading, error } = useWidgetData<ResolvedDashboard>(
     async () => {
       const value: unknown = await ApiClient.get(`${DASH}/my-dashboard`);
       if (!validDashboard(value)) throw new Error('Invalid dashboard response.');
       return value;
     },
-    [],
+    [loadAttempt],
   );
 
   if (!principal) return null;
@@ -74,12 +76,13 @@ const DashboardWorkspace: React.FC<DashboardScreenProps> = ({ onNavigateToCustom
     .sort((a, b) => a.order - b.order);
 
   return (
-    <div className="mn-operational" style={styles.container}>
+    <div className="mn-operational mn-dashboard" style={styles.container}>
       <PageHeader eyebrow="Overview" title="System Administration Dashboard" description="Your workforce session and assigned operational widgets." />
 
-      <div style={styles.grid}>
-        <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Identity & Session</h3>
+      <div className="mn-dashboard__identity-grid" style={styles.grid}>
+        <section className="mn-dashboard__identity" style={styles.card} aria-label="Identity and session">
+          <p className="mn-dashboard__eyebrow">YOUR SESSION</p>
+          <h2 style={styles.cardTitle}>Identity & Session</h2>
           <div style={styles.metaRow}>
             <span style={styles.metaLabel}>Operator Principal:</span>
             <span style={styles.metaValue}>{principal.principalId}</span>
@@ -92,26 +95,29 @@ const DashboardWorkspace: React.FC<DashboardScreenProps> = ({ onNavigateToCustom
             <span style={styles.metaLabel}>Audience bound:</span>
             <span style={styles.metaValue}>{principal.audience}</span>
           </div>
-        </div>
+        </section>
 
-        <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Entitlements & Scopes</h3>
+        <section className="mn-dashboard__identity" style={styles.card} aria-label="Entitlements and scopes">
+          <p className="mn-dashboard__eyebrow">YOUR ACCESS</p>
+          <h2 style={styles.cardTitle}>Entitlements & Scopes</h2>
           <div style={styles.badgeContainer}>
             {principal.roles.map((role) => (
               <span key={role} style={styles.roleBadge}>{role}</span>
             ))}
           </div>
-          <div style={styles.scopesList}>
-            <span style={styles.scopesLabel}>Allowed scopes:</span>
-            {principal.scopes.map((scope) => (
-              <span key={scope} style={styles.scopeItem}>• {scope}</span>
-            ))}
-          </div>
-        </div>
+          <details className="mn-dashboard__scopes">
+            <summary>Allowed scopes ({principal.scopes.length})</summary>
+            <div style={styles.scopesList}>
+              {principal.scopes.length === 0 ? <span>No scopes in this session.</span> : principal.scopes.map((scope) => (
+                <span key={scope} style={styles.scopeItem}>• {scope}</span>
+              ))}
+            </div>
+          </details>
+        </section>
       </div>
 
       <div style={styles.sectionHeaderRow}>
-        <h3 style={styles.sectionHeader}>{dashboard ? dashboard.displayName : 'Your Dashboard'}</h3>
+        <h2 style={styles.sectionHeader}>{dashboard ? dashboard.displayName : 'Your Dashboard'}</h2>
         {dashboard?.isFallback && (
           <span style={styles.fallbackBadge} title={dashboard.fallbackReason}>
             Default dashboard — {dashboard.fallbackReason || 'no role-specific template assigned'}
@@ -129,7 +135,8 @@ const DashboardWorkspace: React.FC<DashboardScreenProps> = ({ onNavigateToCustom
 
       {!loading && error && (
         <div style={styles.errorBox} role="alert">
-          ⚠️ Unable to load your dashboard: {error}
+          <span>Unable to load your dashboard: {error}</span>{' '}
+          <button type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)}>Retry dashboard</button>
         </div>
       )}
 

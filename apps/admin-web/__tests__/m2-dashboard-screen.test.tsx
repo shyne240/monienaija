@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { DashboardScreen } from '../src/screens/authenticated/DashboardScreen';
 import { formatMinor } from '../src/components/dashboard/types';
 import { ApiClient } from '../src/services/api-client';
@@ -31,4 +31,14 @@ test('dashboard amounts preserve exact units and do not assume missing currency 
   expect(formatMinor(9007199254740992,'NGN')).toBe('Amount unavailable');
   expect(formatMinor('12.5','NGN')).toBe('Amount unavailable');
   expect(formatMinor('123')).toBe('Amount unavailable');
+});
+
+test('the session store id changes dashboard context even when principal details are unchanged', async () => {
+  const old=deferred();(ApiClient.get as jest.Mock).mockReturnValueOnce(old.promise).mockResolvedValueOnce(dashboard('Current session dashboard'));render(<DashboardScreen/>);act(()=>useAuthStore.setState({sessionId:'another-session'}));expect(await screen.findByText('Current session dashboard')).toBeTruthy();await act(async()=>{old.resolve(dashboard('Stale dashboard'));await old.promise;});expect(screen.queryByText('Stale dashboard')).toBeNull();
+});
+test('dashboard configuration error offers a working retry',async()=>{
+ (ApiClient.get as jest.Mock).mockRejectedValueOnce(new Error('Synthetic unavailable')).mockResolvedValueOnce(dashboard('Recovered dashboard'));render(<DashboardScreen/>);expect(await screen.findByText(/Synthetic unavailable/)).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Retry dashboard'}));expect(await screen.findByText('Recovered dashboard')).toBeTruthy();expect(ApiClient.get).toHaveBeenCalledTimes(2);
+});
+test('session scopes are available through a keyboard-operable disclosure',async()=>{
+ setPrincipal('one',['test.scope']);(ApiClient.get as jest.Mock).mockResolvedValue(dashboard('Synthetic'));render(<DashboardScreen/>);await screen.findByText('Synthetic');const disclosure=screen.getByText('Allowed scopes (1)');expect(disclosure.parentElement?.hasAttribute('open')).toBe(false);fireEvent.click(disclosure);expect(disclosure.parentElement?.hasAttribute('open')).toBe(true);expect(screen.getByText('• test.scope')).toBeTruthy();
 });
