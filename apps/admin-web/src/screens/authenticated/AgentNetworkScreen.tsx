@@ -473,25 +473,13 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const outletDraft = Object.values(outletForm).some(value => value.trim()) ||
     Object.entries(terminalForm).some(([key, value]) => key !== 'outletId' && value.trim()) ||
     Boolean(editingOutletId || editingTerminalId);
-  const agentGuard = credentialGuard || credentialBusy || lifecycleUnconfirmed || lifecycleBusy || lifecycleReviewBusy || outletDraft || outletBusy || outletUnconfirmed || Boolean(newLimitProfileCode.trim()) || limitsBusy || limitUnconfirmed;
-  const agentBusy = credentialBusy || lifecycleBusy || lifecycleReviewBusy || outletBusy || limitsBusy;
-  useEffect(() => { onAgentGuardChange?.(agentGuard, agentBusy); }, [onAgentGuardChange, agentGuard, agentBusy]);
-  useEffect(() => {
-    if (!agentGuard) return;
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
-    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
-  }, [agentGuard]);
-  const mayLeaveAgent = () => {
-    if (agentBusy || lifecycleInFlight.current || outletWriteInFlight.current || limitWriteInFlight.current) return false;
-    return !agentGuard || window.confirm('Leave this Agent? Unsaved outlet, terminal or limit entries, a visible one-time credential, and local review locks will be lost. An action may have occurred; inspect Agent records and audit history before acting again.');
-  };
-
-
   // Agent applications queue + onboarding form (scope: agent.review_application)
   const [applicationsLoaded, setApplicationsLoaded] = useState(false);
   const [applicationsLoading, setApplicationsLoading] = useState(false);
   const [applicationsError, setApplicationsError] = useState('');
   const [applicationsNeedRefresh, setApplicationsNeedRefresh] = useState(false);
+  const [applicationsReviewPending, setApplicationsReviewPending] = useState(false);
+  const [applicationsReviewReady, setApplicationsReviewReady] = useState(false);
   const applicationsReadGeneration = useRef(0);
   const applicationsUncertaintyVersion = useRef(0);
   const [applicationsMsg, setApplicationsMsg] = useState('');
@@ -517,6 +505,25 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const applicationBaseline = useRef<AgentApplicationFormState>(EMPTY_APPLICATION_FORM);
   const keepEditingRef = useRef<HTMLButtonElement>(null);
   const cancelApplicationRef = useRef<HTMLButtonElement>(null);
+  const detailGuard = credentialGuard || credentialBusy || lifecycleUnconfirmed || lifecycleBusy || lifecycleReviewBusy || outletDraft || outletBusy || outletUnconfirmed || Boolean(newLimitProfileCode.trim()) || limitsBusy || limitUnconfirmed;
+  const detailBusy = credentialBusy || lifecycleBusy || lifecycleReviewBusy || outletBusy || limitsBusy;
+  const applicationDraft = onboardingOpen && JSON.stringify(applicationForm) !== JSON.stringify(applicationBaseline.current);
+  const applicationGuard = applicationDraft || onboardingUnconfirmed || applicationsReviewPending || onboardingBusy || Boolean(applicationBusyId) || Object.values(rejectReasons).some(reason => reason.trim());
+  const agentGuard = detailGuard || applicationGuard;
+  const agentBusy = detailBusy || onboardingBusy || Boolean(applicationBusyId);
+  useEffect(() => { onAgentGuardChange?.(agentGuard, agentBusy); }, [onAgentGuardChange, agentGuard, agentBusy]);
+  useEffect(() => {
+    if (!agentGuard) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+  }, [agentGuard]);
+  const mayLeaveAgent = () => {
+    if (detailBusy || lifecycleInFlight.current || outletWriteInFlight.current || limitWriteInFlight.current) return false;
+    return !detailGuard || window.confirm('Leave this Agent? Unsaved outlet, terminal or limit entries, a visible one-time credential, and local review locks will be lost. An action may have occurred; inspect Agent records and audit history before acting again.');
+  };
+
+
+
   useEffect(() => { if (confirmDiscardApplication) keepEditingRef.current?.focus(); }, [confirmDiscardApplication]);
 
   // On-demand catalogs & transaction observability
@@ -553,7 +560,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   };
 
   const openDetail = async (a: Agent) => {
-    if (!canView || (selectedAgentId.current === a.id && agentGuard) || (selectedAgentId.current !== a.id && !mayLeaveAgent())) return;
+    if (!canView || (selectedAgentId.current === a.id && detailGuard) || (selectedAgentId.current !== a.id && !mayLeaveAgent())) return;
     if (selectedAgentId.current !== a.id) { setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); setLimitUnconfirmed(false); setLimitReviewReady(false); }
     outletReadGeneration.current += 1; limitReadGeneration.current += 1;
     selectedAgentId.current = a.id;
@@ -641,6 +648,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     const generation = ++applicationsReadGeneration.current;
     const uncertaintyAtStart = applicationsUncertaintyVersion.current;
     setApplicationsLoading(true);
+    setApplicationsReviewReady(false);
     setApplicationsError('');
     try {
       const res: unknown = await ApiClient.get('/internal/agents/applications');
@@ -649,7 +657,10 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       if (!mountedRef.current || generation !== applicationsReadGeneration.current) return;
       setApplications(rows as AgentApplicationRecord[]);
       setApplicationsLoaded(true);
-      if (uncertaintyAtStart === applicationsUncertaintyVersion.current) setApplicationsNeedRefresh(false);
+      if (uncertaintyAtStart === applicationsUncertaintyVersion.current) {
+        if (applicationsReviewPending) setApplicationsReviewReady(true);
+        else setApplicationsNeedRefresh(false);
+      }
     } catch (e: any) {
       if (!mountedRef.current || generation !== applicationsReadGeneration.current) return;
       setApplicationsLoaded(false);
@@ -858,7 +869,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       );
       await loadApplications();
     } catch (e: any) {
-      if (mountedRef.current) { applicationsUncertaintyVersion.current++; setApplicationsNeedRefresh(true); setOnboardingUnconfirmed(true); setOnboardingError(`Draft outcome not confirmed. Review the application queue before retrying. ${e?.message || ''}`); }
+      if (mountedRef.current) { applicationsUncertaintyVersion.current++; setApplicationsNeedRefresh(true); setApplicationsReviewPending(true); setApplicationsReviewReady(false); setOnboardingUnconfirmed(true); setOnboardingError(`Draft outcome not confirmed. Review the application queue before retrying. ${e?.message || ''}`); }
     } finally {
       applicationActionRef.current = false;
       if (mountedRef.current) setOnboardingBusy(false);
@@ -893,7 +904,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       );
       await loadApplications();
     } catch (e: any) {
-      if (mountedRef.current) { applicationsUncertaintyVersion.current++; setApplicationsNeedRefresh(true); setOnboardingUnconfirmed(true); setOnboardingError(`Application outcome not confirmed. Review the application queue before retrying. ${e?.message || ''}`); }
+      if (mountedRef.current) { applicationsUncertaintyVersion.current++; setApplicationsNeedRefresh(true); setApplicationsReviewPending(true); setApplicationsReviewReady(false); setOnboardingUnconfirmed(true); setOnboardingError(`Application outcome not confirmed. Review the application queue before retrying. ${e?.message || ''}`); }
     } finally {
       applicationActionRef.current = false;
       if (mountedRef.current) setOnboardingBusy(false);
@@ -912,7 +923,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       setApplicationsMsg(`Draft application ${app.reference} submitted for review.`);
       await loadApplications();
     } catch (e: any) {
-      if (mountedRef.current) { applicationsUncertaintyVersion.current++; setApplicationsNeedRefresh(true); setApplicationsError(`Submission outcome not confirmed. Refresh and inspect the application before retrying. ${e?.message || ''}`); }
+      if (mountedRef.current) { applicationsUncertaintyVersion.current++; setApplicationsNeedRefresh(true); setApplicationsReviewPending(true); setApplicationsReviewReady(false); setApplicationsError(`Submission outcome not confirmed. Refresh and inspect the application before retrying. ${e?.message || ''}`); }
     } finally {
       applicationActionRef.current = false;
       if (mountedRef.current) setApplicationBusyId(null);
@@ -1439,7 +1450,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
         await loadApplications();
       }
     } catch (e: any) {
-      if (mountedRef.current) { applicationsUncertaintyVersion.current++; setApplicationsNeedRefresh(true); setApplicationsError(`Application ${action} outcome not confirmed. Refresh and inspect before retrying. ${e?.message || ''}`); }
+      if (mountedRef.current) { applicationsUncertaintyVersion.current++; setApplicationsNeedRefresh(true); setApplicationsReviewPending(true); setApplicationsReviewReady(false); setApplicationsError(`Application ${action} outcome not confirmed. Refresh and inspect before retrying. ${e?.message || ''}`); }
     } finally {
       applicationActionRef.current = false;
       if (mountedRef.current) setApplicationBusyId(null);
@@ -1868,7 +1879,9 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
           {applicationsError && <div style={errBox} role="alert">{applicationsError}</div>}
           {applicationsLoading && <p role="status">Refreshing the application queue; actions are unavailable until the read completes.</p>}
-          {applicationsNeedRefresh && !applicationsLoading && <p role="status">The last outcome is unconfirmed. Refresh the queue before acting on its entries.</p>}
+          {applicationsReviewPending && <div style={boundaryBox} role="status"><strong>Application review required.</strong> The last outcome is unconfirmed or conflicted. Refresh the queue and independently inspect the application and available audit history before another action. A missing record or fresh read cannot exclude a late commit, and this local lock is lost on confirmed exit or session change.
+            {applicationsReviewReady && <button type="button" style={smallBtn} onClick={() => { if (onboardingOpen && !window.confirm('Acknowledge review and discard the local application editor? Copy any needed entries before continuing.')) return; setOnboardingOpen(false); setOnboardingUnconfirmed(false); setConfirmDiscardApplication(false); setEditingDraftId(null); setEditingDraftRef(null); setEditingDraftVersion(undefined); setApplicationForm(EMPTY_APPLICATION_FORM); setOnboardingError(''); setApplicationsReviewPending(false); setApplicationsReviewReady(false); setApplicationsNeedRefresh(false); setApplicationsError(''); }}>I reviewed the application and audit history</button>}
+          </div>}
           {applicationsMsg && <div style={successBox} role="status">{applicationsMsg}</div>}
           {applicationsLoaded && (() => {
             const visibleApps = applications.filter((a) =>
@@ -2112,7 +2125,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                 <td style={cell}>{a.agentClassId ? <code>{a.agentClassId}</code> : '—'}</td>
                 <td style={cell}>{new Date(a.createdAt).toLocaleString()}</td>
                 <td style={cell}>
-                  <button type="button" disabled={agentBusy || (selectedAgentId.current === a.id && agentGuard)} onClick={() => void openDetail(a)} style={smallBtn}>
+                  <button type="button" disabled={agentBusy || (selectedAgentId.current === a.id && detailGuard)} onClick={() => void openDetail(a)} style={smallBtn}>
                     View
                   </button>
                 </td>
@@ -2167,7 +2180,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   Target in funding
                 </button>
               )}
-              <button type="button" disabled={agentBusy} onClick={() => { if (!mayLeaveAgent()) return; selectedAgentId.current = null; positionRequest.current += 1; outletReadGeneration.current += 1; limitReadGeneration.current += 1; setLimitUnconfirmed(false); setLimitReviewReady(false); setNewLimitProfileCode(''); setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); setSelected(null); }} style={smallBtn}>
+              <button type="button" disabled={detailBusy} onClick={() => { if (!mayLeaveAgent()) return; selectedAgentId.current = null; positionRequest.current += 1; outletReadGeneration.current += 1; limitReadGeneration.current += 1; setLimitUnconfirmed(false); setLimitReviewReady(false); setNewLimitProfileCode(''); setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); setSelected(null); }} style={smallBtn}>
                 Close
               </button>
             </div>

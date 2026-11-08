@@ -45,7 +45,10 @@ test('unmatched decision receipts remain unconfirmed and block writes until a fr
   expect(screen.queryByText(/marked under review\./)).toBeNull();
   expect((screen.getByRole('button', { name: 'Approve' }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Refresh applications' }));
-  await waitFor(() => expect((screen.getByRole('button', { name: 'Approve' }) as HTMLButtonElement).disabled).toBe(false));
+  await screen.findByRole('button', { name: 'I reviewed the application and audit history' });
+  expect((screen.getByRole('button', { name: 'Approve' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'I reviewed the application and audit history' }));
+  expect((screen.getByRole('button', { name: 'Approve' }) as HTMLButtonElement).disabled).toBe(false);
 });
 
 test('one in-flight action blocks competing actions and a session change suppresses the old result', async () => {
@@ -115,4 +118,16 @@ test('a session change after creating a draft stops the chained submit', async (
   await act(async () => { pending.resolve({ ...app, applicantReference: 'AG-NEW', status: 'DRAFT' }); await pending.promise; });
   expect(ApiClient.post).toHaveBeenCalledTimes(1);
   expect(screen.queryByText(/submitted for review/)).toBeNull();
+});
+
+test('unsaved onboarding is guarded at the shell and on browser unload; explicit discard releases it',async()=>{
+ const report=jest.fn();render(<AgentNetworkScreen onAgentGuardChange={report}/>);fireEvent.click(screen.getByRole('button',{name:'New Agent Application'}));fireEvent.change(screen.getByLabelText('Applicant reference'),{target:{value:'LOCAL-DRAFT'}});await waitFor(()=>expect(report).toHaveBeenLastCalledWith(true,false));
+ const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);fireEvent.click(screen.getByRole('button',{name:'Cancel'}));fireEvent.click(screen.getByRole('button',{name:'Discard changes'}));await waitFor(()=>expect(report).toHaveBeenLastCalledWith(false,false));
+});
+
+test('uncertain new application requires fresh queue and explicit review before abandoning its preserved editor',async()=>{
+ const confirm=jest.spyOn(window,'confirm').mockReturnValue(false);const report=jest.fn();(ApiClient.post as jest.Mock).mockRejectedValue(new Error('network lost'));render(<AgentNetworkScreen onAgentGuardChange={report}/>);
+ fireEvent.click(screen.getByRole('button',{name:'New Agent Application'}));fireEvent.change(screen.getByLabelText('Applicant reference'),{target:{value:'AG-NEW'}});await waitFor(()=>expect((screen.getByLabelText('Application Agent class') as HTMLSelectElement).value).toBe('class-1'));fireEvent.click(screen.getByRole('button',{name:'Save draft'}));await screen.findByText(/Draft outcome not confirmed/);
+ fireEvent.click(screen.getByRole('button',{name:'Load applications'}));await screen.findByRole('button',{name:'I reviewed the application and audit history'});expect((screen.getByRole('button',{name:'Save draft'}) as HTMLButtonElement).disabled).toBe(true);fireEvent.click(screen.getByRole('button',{name:'I reviewed the application and audit history'}));expect((screen.getByLabelText('Applicant reference') as HTMLInputElement).value).toBe('AG-NEW');expect(report).toHaveBeenLastCalledWith(true,false);
+ confirm.mockReturnValue(true);fireEvent.click(screen.getByRole('button',{name:'I reviewed the application and audit history'}));expect(screen.queryByLabelText('Applicant reference')).toBeNull();expect((screen.getByRole('button',{name:'New Agent Application'}) as HTMLButtonElement).disabled).toBe(false);expect(ApiClient.post).toHaveBeenCalledTimes(1);confirm.mockRestore();
 });
