@@ -41,3 +41,18 @@
 .notification-redesign [data-testid="notif-panel-providers"] section,.notification-redesign__test-send{min-width:0;box-shadow:0 2px 12px rgba(19,43,37,.04)}
 .notification-redesign__test-send .notification-redesign__eyebrow{margin-bottom:6px}
 .notification-redesign__attestation{padding:14px;border:1px solid #cbdcd2;border-radius:8px;background:#f4f9f6}
+.notification-redesign__approval-nav{display:flex;gap:8px;flex-wrap:wrap}
+.notification-redesign__approval-nav a{display:inline-flex;align-items:center;min-height:38px;padding:8px 12px;border:1px solid #c6d9ce;border-radius:7px;background:#fff;color:#175943;font-size:12px;font-weight:700;text-decoration:none}
+.notification-redesign__approval-nav a:focus-visible,.notification-redesign__approval-section:focus-visible,.notification-redesign__change-review:focus-visible{outline:2px solid var(--mn-focus-ring,#0b624a);outline-offset:3px}
+.notification-redesign__approval-posture,.notification-redesign__approval-section{min-width:0;scroll-margin-top:16px;box-shadow:0 2px 12px rgba(19,43,37,.04)}
+.notification-redesign__approval-section>p:not(.notification-redesign__eyebrow),.notification-redesign__change-review p{font-size:13px;line-height:1.5;color:#52655f}
+.notification-redesign__approval-filters{display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin:14px 0 8px}
+.notification-redesign__approval-filters label{display:grid;gap:5px;flex:1 1 190px;font-size:12px;font-weight:700;color:#344f43}
+.notification-redesign__approval-count{margin:0 0 12px!important;font-size:12px!important}
+.notification-redesign__review-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:10px;margin:12px 0}
+.notification-redesign__review-facts div{min-width:0;padding:10px;border:1px solid #dce7e0;border-radius:7px;background:#fff}
+.notification-redesign__review-facts dt{font-size:11px;font-weight:700;color:#52655f}.notification-redesign__review-facts dd{margin:4px 0 0;overflow-wrap:anywhere;font-size:13px}
+.notification-redesign__review-body p{white-space:pre-wrap;overflow-wrap:anywhere}
+.notification-redesign [data-testid="notification-change-requests-table"]{min-width:1100px}
+.notification-redesign [data-testid="notification-governance-audit-table"]{min-width:780px}
+@media(max-width:600px){.notification-redesign__approval-filters button{flex:1 1 100%}}

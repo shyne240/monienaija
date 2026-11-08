@@ -165,6 +165,9 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   >([]);
   const [changeRequestsBlockedMsg, setChangeRequestsBlockedMsg] = useState<string>('');
   const [auditRows, setAuditRows] = useState<Array<Record<string, unknown>>>([]);
+  const [auditFailedCategories, setAuditFailedCategories] = useState<string[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditUnavailable, setAuditUnavailable] = useState(false);
   const [globalLoadErrors, setGlobalLoadErrors] = useState<Record<string, string>>({});
 
   // Event Catalogue & Trigger Edit State (Capability 2)
@@ -198,6 +201,14 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   const [decidingChangeId, setDecidingChangeId] = useState<string | null>(null);
   const [executingApprovalId, setExecutingApprovalId] = useState<string | null>(null);
   const [queueDecisionComment, setQueueDecisionComment] = useState<string>('');
+  const [queueSearch, setQueueSearch] = useState('');
+  const [queueStatus, setQueueStatus] = useState('ALL');
+  const [reviewedChange, setReviewedChange] = useState<NotificationChangeRequestRecord | null>(null);
+  const [queueNeedsRefresh, setQueueNeedsRefresh] = useState(false);
+  const reviewRef = useRef<HTMLElement | null>(null);
+  const reviewOrigin = useRef<HTMLButtonElement | null>(null);
+  const checkerBusyRef = useRef(false);
+  const checkerUncertaintyVersion = useRef(0);
 
   // Deliveries, Retries & Outbox Receipts State (Capability 10)
   const [deliveryPageData, setDeliveryPageData] = useState<NotificationDeliveryPage | null>(null);
@@ -384,6 +395,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
     }
 
     const generation = ++refreshGeneration.current;
+    const uncertaintyAtStart = checkerUncertaintyVersion.current;
     templateGenerations.current.SMS++; templateGenerations.current.EMAIL++;
     setTemplateErrors({ SMS: '', EMAIL: '' });
     setTemplateBlocked({ SMS: '', EMAIL: '' });
@@ -391,6 +403,9 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
     if (permissions.canViewCatalogue) { setEventsSource('LOADING'); setEventsBlockedMsg(''); }
     if (permissions.canViewProviderStatus) { setProviderStatus(null); setProviderBlockedMsg(''); }
     setDiagnostics(null); setRuntimeConfig(null); setOutboxRows(null);
+    if (permissions.canViewAudit) { setAuditLoading(true); setAuditRows([]); setAuditFailedCategories([]); setAuditUnavailable(false); }
+    if (reviewRef.current?.contains(document.activeElement)) document.getElementById('notification-approval-queue')?.focus();
+    setReviewedChange(null);
     setGlobalLoadErrors({});
     loadedTemplateChannelsRef.current = { SMS: false, EMAIL: false };
     setLoadedTemplateChannels({ SMS: false, EMAIL: false });
@@ -510,6 +525,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
             } else {
               setChangeRequestsBlockedMsg('');
               setChangeRequests(res.data);
+              if (uncertaintyAtStart === checkerUncertaintyVersion.current) setQueueNeedsRefresh(false);
               // Configuration receipts bridge submission to the next authoritative
               // queue load; don't continue presenting omitted/old statuses as current.
               setSessionSubmittedChanges((prev) =>
@@ -530,9 +546,14 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
     if (permissions.canViewAudit) {
       tasks.push(
         NotificationManagementApi.listNotificationGovernanceAudit(20)
-          .then((value) => { if (generation === refreshGeneration.current) setAuditRows(value); })
+          .then((value) => {
+            if (generation !== refreshGeneration.current) return;
+            setAuditRows(value.rows); setAuditFailedCategories(value.failedCategories);
+            setAuditUnavailable(value.failedCategories.length === 4); setAuditLoading(false);
+          })
           .catch(() => {
-            // Non-fatal audit lookup
+            if (generation !== refreshGeneration.current) return;
+            setAuditRows([]); setAuditUnavailable(true); setAuditLoading(false);
           }),
       );
     }
@@ -702,6 +723,14 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
     const extras = sessionSubmittedChanges.filter((item) => !seen.has(item.id));
     return [...extras, ...changeRequests];
   }, [changeRequests, sessionSubmittedChanges]);
+  const filteredChangeRequests = useMemo(() => {
+    const search = queueSearch.trim().toLowerCase();
+    return combinedChangeRequests.filter((item) =>
+      (queueStatus === 'ALL' || item.status === queueStatus) &&
+      (!search || [item.approvalId, item.id, item.eventType, item.channel, item.requestedBy, item.summary].some((value) => value?.toLowerCase().includes(search))),
+    );
+  }, [combinedChangeRequests, queueSearch, queueStatus]);
+  useEffect(() => { if (reviewedChange) reviewRef.current?.focus(); }, [reviewedChange]);
   const pendingConfigurationByEvent = useMemo(() => {
     const grouped = new Map<string, NotificationChangeRequestRecord[]>();
     for (const request of combinedChangeRequests) {
@@ -868,7 +897,9 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       record.changeType === 'EVENT_TRIGGER_CONFIG'
         ? permissions.canApproveConfiguration
         : permissions.canApproveTemplates;
-    if (!canDecide || !hasNotificationCheckerIdentity || !permissions.hasMfaAssurance) return;
+    if (!canDecide || !hasNotificationCheckerIdentity || !permissions.hasMfaAssurance || checkerBusyRef.current ||
+        record.status !== 'PENDING_APPROVAL' || loadingInitial || queueNeedsRefresh || changeRequestsBlockedMsg || globalLoadErrors.changeRequests ||
+        !changeRequests.some((item) => item.id === record.id && item.status === 'PENDING_APPROVAL')) return;
 
     if (record.requestedBy === currentPrincipalId) {
       setCheckerFeedback({
@@ -886,6 +917,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
     }
 
     const targetApprovalId = record.approvalId ?? record.id;
+    checkerBusyRef.current = true;
     setDecidingChangeId(record.id);
     setCheckerFeedback(null);
     try {
@@ -910,11 +942,14 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
         await fetchAllReadSurfaces();
       }
     } catch (err: any) {
+      checkerUncertaintyVersion.current++;
+      setQueueNeedsRefresh(true);
       setCheckerFeedback({
         kind: 'error',
         message: err?.message || `Failed to ${decision} notification change request.`,
       });
     } finally {
+      checkerBusyRef.current = false;
       setDecidingChangeId(null);
     }
   };
@@ -945,8 +980,9 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       });
       return;
     }
-    if (executingApprovalId) return;
+    if (checkerBusyRef.current || (rowId && (loadingInitial || queueNeedsRefresh || changeRequestsBlockedMsg || globalLoadErrors.changeRequests || !changeRequests.some((item) => item.id === rowId && item.status === 'APPROVED')))) return;
 
+    checkerBusyRef.current = true;
     const trackingKey = rowId ?? approvalId.trim();
     setExecutingApprovalId(trackingKey);
     setCheckerFeedback(null);
@@ -967,17 +1003,20 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
         await fetchAllReadSurfaces();
       }
     } catch (err: any) {
+      checkerUncertaintyVersion.current++;
+      setQueueNeedsRefresh(true);
       setCheckerFeedback({
         kind: 'error',
         message: err?.message || 'Failed to execute approved notification change proposal.',
       });
     } finally {
+      checkerBusyRef.current = false;
       setExecutingApprovalId(null);
     }
   };
 
   const handleWorkforceApprovalSubmit = async (decision: 'approve' | 'reject') => {
-    if (!permissions.canUseWorkforceApprovalEndpoint || !permissions.hasMfaAssurance) return;
+    if (!permissions.canUseWorkforceApprovalEndpoint || !hasNotificationCheckerIdentity || !permissions.hasMfaAssurance || checkerBusyRef.current) return;
     if (!isUuidString(checkerApprovalId)) {
       setCheckerFeedback({
         kind: 'error',
@@ -994,6 +1033,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
     }
 
     const trimmedApprovalId = checkerApprovalId.trim();
+    checkerBusyRef.current = true;
     setIsSubmittingChecker(true);
     setCheckerFeedback(null);
     try {
@@ -1015,11 +1055,14 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       setCheckerComment('');
       await fetchAllReadSurfaces();
     } catch (err: any) {
+      checkerUncertaintyVersion.current++;
+      setQueueNeedsRefresh(true);
       setCheckerFeedback({
         kind: 'error',
         message: err?.message || `Failed to ${decision} workforce approval.`,
       });
     } finally {
+      checkerBusyRef.current = false;
       setIsSubmittingChecker(false);
     }
   };
@@ -1944,9 +1987,12 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       {/* TAB 5: APPROVALS & GOVERNANCE (Capability 8) */}
       {activeTab === 'approvals' && (
         <div style={styles.sectionStack} data-testid="notif-panel-approvals">
+          <div className="notification-redesign__section-heading"><p>GOVERNED CHANGES</p><h2>Notification approvals</h2><span>Review the loaded notification queue and use the existing checker decision and execution controls. Approval and execution are distinct governed steps.</span></div>
+          <nav className="notification-redesign__approval-nav" aria-label="Notification approval sections"><a href="#notification-approval-queue">Change queue</a><a href="#notification-direct-approval">Direct decision</a>{permissions.canViewAudit && <a href="#notification-approval-audit">Audit sample</a>}</nav>
           {/* Operator Governance Posture */}
-          <div style={styles.card}>
-            <h3 style={styles.cardTitle}>⚖️ Maker-Checker Governance Posture</h3>
+          <section style={styles.card} className="notification-redesign__approval-posture" aria-label="Notification governance posture">
+            <p className="notification-redesign__eyebrow">YOUR SESSION</p>
+            <h3 style={styles.cardTitle}>Maker-Checker Governance Posture</h3>
             <div style={styles.kvList}>
               <div>
                 <strong>Authenticated Principal:</strong> <code>{currentPrincipalId}</code> · Roles:{' '}
@@ -1962,9 +2008,9 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
               </div>
               <div>
                 <strong>Checker Capabilities:</strong> Approve Templates (
-                {permissions.canApproveTemplates ? 'Granted' : 'Not granted'}) · Approve Triggers (
-                {hasNotificationCheckerIdentity && permissions.hasMfaAssurance ? 'Granted' : 'Not granted'}) · Separation of
-                Duties: <strong>Maker ≠ Checker strictly enforced</strong>
+                {hasNotificationCheckerIdentity && permissions.hasMfaAssurance && permissions.canApproveTemplates ? 'Available' : 'Not available'}) · Approve Triggers (
+                {hasNotificationCheckerIdentity && permissions.hasMfaAssurance && permissions.canApproveConfiguration ? 'Available' : 'Not available'}) · Separation of
+                Duties: <strong>Maker ≠ Checker; server authorization applies</strong>
               </div>
             </div>
             {!permissions.hasMfaAssurance &&
@@ -1978,7 +2024,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   template or configuration changes.
                 </div>
               )}
-          </div>
+          </section>
 
           {checkerFeedback && (
             <div
@@ -1997,10 +2043,11 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
           )}
 
           {/* Notification Change Requests Queue */}
-          <section style={styles.card} aria-label="Notification change requests queue">
+          <section id="notification-approval-queue" tabIndex={-1} className="notification-redesign__approval-section" style={styles.card} aria-label="Notification change requests queue">
+            <p className="notification-redesign__eyebrow">LOADED QUEUE</p>
             <div style={styles.cardTitleRow}>
               <h3 style={styles.cardTitle}>
-                📋 Notification Configuration & Template Change Requests ({combinedChangeRequests.length})
+                Notification Configuration & Template Change Requests ({combinedChangeRequests.length})
               </h3>
               {changeRequestsBlockedMsg && (
                 <span style={styles.blockedBadge} data-testid="change-requests-blocked-badge">
@@ -2012,6 +2059,16 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
               <p style={{ ...styles.cardDesc, color: '#92400E' }}>{changeRequestsBlockedMsg}</p>
             )}
 
+            {loadingInitial ? <p role="status">Refreshing the queue; shown entries are last known and cannot be actioned.</p> :
+              changeRequestsBlockedMsg || globalLoadErrors.changeRequests ? <p role="status">Current queue is unavailable; any shown entries are last known and cannot be actioned.</p> :
+              queueNeedsRefresh ? <p role="status">A decision or execution was not confirmed. Refresh the queue before acting on its entries.</p> :
+              !(permissions.canViewCatalogue || permissions.canApproveTemplates || permissions.canApproveConfiguration) ? <p role="status">Current session cannot read the notification queue.</p> : <p>Search and status filters apply only to the loaded queue and session receipts, not the full history.</p>}
+            <div className="notification-redesign__approval-filters">
+              <label>Search loaded changes<input aria-label="Search loaded notification changes" value={queueSearch} onChange={(e) => setQueueSearch(e.target.value)} placeholder="Approval ID, event or requester" style={styles.input} /></label>
+              <label>Status<select aria-label="Notification change status" value={queueStatus} onChange={(e) => setQueueStatus(e.target.value)} style={styles.select}><option value="ALL">All statuses</option><option value="PENDING_APPROVAL">Pending approval</option><option value="APPROVED">Approved</option><option value="APPLIED">Applied</option><option value="REJECTED">Rejected</option><option value="CANCELLED">Cancelled</option><option value="EXPIRED">Expired</option></select></label>
+              <button type="button" style={styles.secondarySmallBtn} onClick={() => { setQueueSearch(''); setQueueStatus('ALL'); }}>Reset queue filters</button>
+            </div>
+            <p role="status" className="notification-redesign__approval-count">Showing {filteredChangeRequests.length} of {combinedChangeRequests.length} loaded entries.</p>
             {(permissions.canApproveTemplates || permissions.canApproveConfiguration) && (
               <div style={{ marginBottom: 12 }}>
                 <label htmlFor="queue-decision-comment" style={styles.label}>
@@ -2030,12 +2087,12 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
               </div>
             )}
 
-            {combinedChangeRequests.length === 0 ? (
+            {filteredChangeRequests.length === 0 ? (
               <div style={styles.emptyBox}>
-                No pending or recent notification change requests returned.
+                {loadingInitial ? 'Loading notification changes…' : changeRequestsBlockedMsg || globalLoadErrors.changeRequests ? 'Notification queue unavailable.' : !(permissions.canViewCatalogue || permissions.canApproveTemplates || permissions.canApproveConfiguration) ? 'Notification queue is restricted.' : combinedChangeRequests.length === 0 ? 'No notification change requests returned in the loaded queue.' : 'No loaded changes match these filters.'}
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }} role="region" aria-label="Notification records table" tabIndex={0}>
+              <div style={{ overflowX: 'auto' }} role="region" aria-label="Notification change requests table" tabIndex={0}>
                 <table style={styles.table} data-testid="notification-change-requests-table">
                   <thead>
                     <tr>
@@ -2049,7 +2106,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     </tr>
                   </thead>
                   <tbody>
-                    {combinedChangeRequests.map((reqRow) => {
+                    {filteredChangeRequests.map((reqRow) => {
                       const isSelf = reqRow.requestedBy === currentPrincipalId;
                       const hasCheckerScope = hasNotificationCheckerIdentity &&
                         (reqRow.changeType === 'EVENT_TRIGGER_CONFIG'
@@ -2059,7 +2116,9 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                         reqRow.status === 'PENDING_APPROVAL' &&
                         hasCheckerScope &&
                         permissions.hasMfaAssurance &&
-                        !isSelf;
+                        !isSelf && !loadingInitial && !queueNeedsRefresh && !changeRequestsBlockedMsg && !globalLoadErrors.changeRequests &&
+                        changeRequests.some((item) => item.id === reqRow.id && item.status === 'PENDING_APPROVAL') &&
+                        decidingChangeId === null && executingApprovalId === null && !isSubmittingChecker;
 
                       return (
                         <tr key={reqRow.id} data-testid={`change-request-row-${reqRow.id}`}>
@@ -2088,12 +2147,14 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                             </span>
                           </td>
                           <td style={styles.td}>
+                            <button type="button" style={styles.secondarySmallBtn} aria-label={`Inspect change ${reqRow.approvalId ?? reqRow.id}`} onClick={(event) => { reviewOrigin.current = event.currentTarget; setReviewedChange(reqRow); }}>Inspect</button>
                             {reqRow.status === 'PENDING_APPROVAL' && hasCheckerScope ? (
-                              <div style={{ display: 'flex', gap: 6 }}>
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
                                 <button
                                   type="button"
                                   data-testid={`approve-change-${reqRow.id}`}
-                                  disabled={!canAct || decidingChangeId === reqRow.id}
+                                  aria-label={`Approve change ${reqRow.approvalId ?? reqRow.id}`}
+                                  disabled={!canAct}
                                   title={
                                     isSelf
                                       ? 'Self-approval prohibited (Maker ≠ Checker)'
@@ -2109,7 +2170,8 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                                 <button
                                   type="button"
                                   data-testid={`reject-change-${reqRow.id}`}
-                                  disabled={!canAct || decidingChangeId === reqRow.id}
+                                  aria-label={`Reject change ${reqRow.approvalId ?? reqRow.id}`}
+                                  disabled={!canAct}
                                   style={canAct ? styles.rejectSmallBtn : styles.disabledSmallBtn}
                                   onClick={() => void handleQueueDecision(reqRow, 'reject')}
                                 >
@@ -2120,10 +2182,9 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                               <button
                                 type="button"
                                 data-testid={`execute-change-${reqRow.id}`}
+                                aria-label={`Execute approved change ${reqRow.approvalId ?? reqRow.id}`}
                                 disabled={
-                                  isSelf ||
-                                  !permissions.hasMfaAssurance ||
-                                  executingApprovalId !== null
+                                  isSelf || !permissions.hasMfaAssurance || executingApprovalId !== null || decidingChangeId !== null || isSubmittingChecker || loadingInitial || queueNeedsRefresh || Boolean(changeRequestsBlockedMsg || globalLoadErrors.changeRequests) || !changeRequests.some((item) => item.id === reqRow.id && item.status === 'APPROVED')
                                 }
                                 title={
                                   isSelf
@@ -2164,21 +2225,29 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                 </table>
               </div>
             )}
+            <p className="notification-redesign__table-hint">Scroll horizontally to inspect all change and checker columns.</p>
           </section>
+          {reviewedChange && <section ref={reviewRef} tabIndex={-1} className="notification-redesign__change-review" style={styles.drawerCard} aria-label="Notification change inspection" data-testid="notification-change-inspector">
+            <div style={styles.cardTitleRow}><h3 style={styles.cardTitle}>Change inspection — <code>{reviewedChange.approvalId ?? reviewedChange.id}</code></h3><button type="button" style={styles.secondarySmallBtn} onClick={() => { setReviewedChange(null); if (reviewOrigin.current?.isConnected) reviewOrigin.current.focus(); else document.getElementById('notification-approval-queue')?.focus(); }}>Close inspection</button></div>
+            <p>Snapshot from the loaded queue. Frozen details may be unavailable; confirm the current proposal and policy before deciding.</p>
+            <dl className="notification-redesign__review-facts"><div><dt>Event and channel</dt><dd>{reviewedChange.eventType} · {reviewedChange.channel}</dd></div><div><dt>Type and status</dt><dd>{reviewedChange.changeType} · {reviewedChange.status}</dd></div><div><dt>Requested by</dt><dd>{reviewedChange.requestedBy}</dd></div><div><dt>Summary</dt><dd>{reviewedChange.summary || 'Unavailable'}</dd></div></dl>
+            {reviewedChange.proposedSubject && <div><strong>Proposed subject:</strong> {reviewedChange.proposedSubject}</div>}
+            {reviewedChange.proposedBody && <div className="notification-redesign__review-body"><strong>Proposed body:</strong><p>{reviewedChange.proposedBody}</p></div>}
+            {(['proposedEventEnabled','proposedSmsEnabled','proposedEmailEnabled'] as const).map((key) => typeof reviewedChange[key] === 'boolean' ? <div key={key}>{key === 'proposedEventEnabled' ? 'Event' : key === 'proposedSmsEnabled' ? 'SMS' : 'Email'} proposed: {reviewedChange[key] ? 'enabled' : 'disabled'}</div> : null)}
+          </section>}
 
           {/* LIVE Generic Workforce Approval Decision & Approved Proposal Execution Form */}
           <section
+            id="notification-direct-approval" tabIndex={-1} className="notification-redesign__approval-section"
             style={styles.card}
             aria-label="Direct workforce approval decision"
             data-testid="live-workforce-approval-section"
           >
             <div style={styles.cardTitleRow}>
               <h3 style={styles.cardTitle}>
-                ✅ Direct Workforce Approval & Two-Step Execution (
-                <code>/internal/a2/workforce/approvals/:id</code> ·{' '}
-                <code>/internal/notifications/changes/:approvalId/execute</code>)
+                Direct Workforce Approval &amp; Two-Step Execution
               </h3>
-              <span style={styles.liveBadge}>LIVE ENDPOINTS</span>
+              <span style={styles.mutedBadge}>GOVERNED ACTIONS</span>
             </div>
             <p style={styles.cardDesc}>
               Authorized <code>FINANCE_CONTROLLER</code> checkers with <code>privileged:approve</code>{' '}
@@ -2202,8 +2271,10 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   onChange={(e) => setCheckerApprovalId(e.target.value)}
                   disabled={
                     !permissions.canUseWorkforceApprovalEndpoint ||
+                    !hasNotificationCheckerIdentity ||
                     !permissions.hasMfaAssurance ||
                     isSubmittingChecker ||
+                    decidingChangeId !== null ||
                     executingApprovalId !== null
                   }
                 />
@@ -2223,8 +2294,10 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   onChange={(e) => setCheckerComment(e.target.value)}
                   disabled={
                     !permissions.canUseWorkforceApprovalEndpoint ||
+                    !hasNotificationCheckerIdentity ||
                     !permissions.hasMfaAssurance ||
                     isSubmittingChecker ||
+                    decidingChangeId !== null ||
                     executingApprovalId !== null
                   }
                 />
@@ -2236,8 +2309,10 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                 data-testid="direct-workforce-approve-btn"
                 disabled={
                   !permissions.canUseWorkforceApprovalEndpoint ||
+                  !hasNotificationCheckerIdentity ||
                   !permissions.hasMfaAssurance ||
                   isSubmittingChecker ||
+                  decidingChangeId !== null ||
                   executingApprovalId !== null
                 }
                 style={
@@ -2254,8 +2329,10 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                 data-testid="direct-execute-approved-btn"
                 disabled={
                   (!permissions.canApproveTemplates && !permissions.canApproveConfiguration) ||
+                  !hasNotificationCheckerIdentity ||
                   !permissions.hasMfaAssurance ||
                   isSubmittingChecker ||
+                  decidingChangeId !== null ||
                   executingApprovalId !== null
                 }
                 style={
@@ -2276,8 +2353,10 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                 data-testid="direct-workforce-reject-btn"
                 disabled={
                   !permissions.canUseWorkforceApprovalEndpoint ||
+                  !hasNotificationCheckerIdentity ||
                   !permissions.hasMfaAssurance ||
                   isSubmittingChecker ||
+                  decidingChangeId !== null ||
                   executingApprovalId !== null
                 }
                 style={
@@ -2295,11 +2374,12 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
           {/* Governance Audit Trail (F-02 — normalized actor + full non-provider notification governance entity coverage) */}
           {permissions.canViewAudit && (
             <section
+              id="notification-approval-audit" tabIndex={-1} className="notification-redesign__approval-section"
               style={styles.card}
               aria-label="Notification governance audit records"
               data-testid="notification-governance-audit-section"
             >
-              <h3 style={styles.cardTitle}>📜 Recent Notification Governance Audit Events</h3>
+              <h3 style={styles.cardTitle}>Recent Notification Governance Audit Events</h3>
               <p style={styles.cardDesc}>
                 Covers <code>NOTIFICATION_TEMPLATE</code>, <code>NOTIFICATION_CHANGE</code>,{' '}
                 <code>NOTIFICATION_EVENT_CONFIGURATION</code>, and{' '}
@@ -2307,12 +2387,13 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                 remains isolated to Tab 9 (<code>SUPER_ADMIN</code> & <code>FINANCE_AUDITOR</code>{' '}
                 only).
               </p>
-              {auditRows.length === 0 ? (
+              {auditFailedCategories.length > 0 && !auditUnavailable && <p role="status">Some audit categories could not be read: {auditFailedCategories.join(', ')}. Results are partial.</p>}
+              {auditLoading ? <div style={styles.emptyBox}>Loading governance audit sample…</div> : auditUnavailable ? <div style={styles.emptyBox} role="alert">Governance audit sample unavailable.</div> : auditRows.length === 0 ? (
                 <div style={styles.emptyBox}>
-                  No notification governance audit events recorded yet.
+                  No audit events returned in the loaded sample.
                 </div>
               ) : (
-                <div style={{ overflowX: 'auto' }} role="region" aria-label="Notification records table" tabIndex={0}>
+                <div style={{ overflowX: 'auto' }} role="region" aria-label="Notification governance audit table" tabIndex={0}>
                   <table style={styles.table} data-testid="notification-governance-audit-table">
                     <thead>
                       <tr>
@@ -2335,7 +2416,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                           </td>
                           <td style={styles.td}>
                             <code data-testid={`governance-audit-actor-${idx}`}>
-                              {String(row.actor ?? row.actorId ?? 'SYSTEM')}
+                              {String(row.actor ?? row.actorId ?? 'Unknown')}
                             </code>
                           </td>
                           <td style={styles.td}>{String(row.occurredAt ?? row.createdAt ?? '—')}</td>

@@ -562,7 +562,9 @@ function mockIntegratedRegistryBackend() {
       return Promise.resolve({ approvalId: endpoint.split('/')[4], type: 'TEMPLATE' });
     }
     if (endpoint.includes('/internal/a2/workforce/approvals/')) {
-      return Promise.resolve({ status: 'APPROVED' });
+      const approvalId = endpoint.split('/')[5];
+      const status = endpoint.endsWith('/reject') ? 'REJECTED' : 'APPROVED';
+      return Promise.resolve({ approved: status === 'APPROVED', reason: status, approval: { id: approvalId, status } });
     }
     if (endpoint === '/internal/notifications/test-send') {
       return Promise.resolve({
@@ -1421,7 +1423,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
             },
             {
               approvalId: selfApprovedId,
-              type: 'EVENT_CONFIGURATION',
+              type: 'CONFIGURATION',
               eventType: 'customer.funding.approved',
               channel: 'EMAIL',
               status: 'APPROVED',
@@ -1439,6 +1441,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
           return Promise.resolve({
             id: 'chg-approved-1',
             approvalId: approvedProposalId,
+            type: 'TEMPLATE',
             status: 'APPLIED',
           });
         }

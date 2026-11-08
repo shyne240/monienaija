@@ -41,6 +41,33 @@ export type IntegrationResult<T> =
       message: string;
     };
 
+interface WorkforceDecisionReceipt {
+  approved?: boolean;
+  reason?: string;
+  approval?: { id?: string; status?: string };
+}
+
+function validateWorkforceDecisionReceipt(value: unknown, approvalId: string, decision: 'approve' | 'reject'): void {
+  const receipt = value as WorkforceDecisionReceipt | null;
+  const expectedStatus = decision === 'approve' ? 'APPROVED' : 'REJECTED';
+  if (!receipt || receipt.approval?.id !== approvalId || receipt.approval.status !== expectedStatus ||
+      receipt.reason !== expectedStatus || receipt.approved !== (decision === 'approve')) {
+    throw new Error('Decision outcome not confirmed. Refresh the approval queue and audit record before retrying.');
+  }
+}
+
+function validateNotificationExecutionReceipt(value: unknown, approvalId: string): void {
+  const receipt = value as { approvalId?: string; type?: string } | null;
+  if (!receipt || receipt.approvalId !== approvalId || !['TEMPLATE', 'TEMPLATE_ROLLBACK', 'CONFIGURATION'].includes(receipt.type ?? '')) {
+    throw new Error('Execution outcome not confirmed. Refresh the approval queue and audit record before retrying.');
+  }
+}
+
+export interface NotificationGovernanceAuditResult {
+  rows: Array<Record<string, unknown>>;
+  failedCategories: string[];
+}
+
 export interface UpdateEventConfigurationPayload {
   channel: NotificationConfigurationTarget;
   enabled: boolean;
@@ -1061,7 +1088,9 @@ export const NotificationManagementApi = {
         'BLOCKED on ARENA 1: Notification change-request listing endpoint (GET /internal/notifications/changes) is not yet integrated.',
       run: async () => {
         const res = await ApiClient.get<unknown>(`/internal/notifications/changes${qs}`);
+        if (!Array.isArray(res) && !(res && typeof res === 'object' && (Array.isArray((res as any).items) || Array.isArray((res as any).data)))) throw new Error('Notification queue response could not be verified.');
         const rows = extractArray<RegistryChangeRow>(res);
+        if (rows.some(row => !row || typeof row.approvalId !== 'string' || !row.approvalId || !['TEMPLATE', 'TEMPLATE_ROLLBACK', 'CONFIGURATION'].includes(row.type) || typeof row.createdBy !== 'string' || !row.createdBy || typeof row.createdAt !== 'string' || typeof row.status !== 'string')) throw new Error('Notification queue contains an invalid entry.');
         const enriched = await Promise.all(
           rows.slice(0, 10).map(async (row) => {
             try {
@@ -1074,7 +1103,8 @@ export const NotificationManagementApi = {
           }),
         );
         return rows.map((row, index) => {
-          const detail = index < enriched.length ? enriched[index] : null;
+          const candidate = index < enriched.length ? enriched[index] : null;
+          const detail = candidate?.approvalId === row.approvalId && candidate.change?.type === row.type && candidate.change.eventType === row.eventType && candidate.change.channel === row.channel ? candidate : null;
           const change = detail?.change;
           const summaryParts = [`${mapChangeType(row.type).replace(/_/g, ' ')}`, row.eventType, row.channel]
             .filter(Boolean)
@@ -1123,12 +1153,13 @@ export const NotificationManagementApi = {
         'BLOCKED on ARENA 1: Workforce approval decision endpoint is not yet integrated for notification change requests.',
       run: async () => {
         const trimmed = comment.trim() || undefined;
-        await ApiClient.post(
+        const receipt = await ApiClient.post<unknown>(
           `/internal/a2/workforce/approvals/${encodeURIComponent(requestId.trim())}/${decision}`,
           decision === 'reject'
             ? { comment: trimmed, ...(trimmed ? { reason: trimmed } : {}) }
             : { comment: trimmed },
         );
+        validateWorkforceDecisionReceipt(receipt, requestId.trim(), decision);
         if (decision === 'reject') {
           return {
             status: 'REJECTED',
@@ -1142,6 +1173,7 @@ export const NotificationManagementApi = {
           const executed = await ApiClient.post<{ approvalId: string; type: string }>(
             `/internal/notifications/changes/${encodeURIComponent(requestId.trim())}/execute`,
           );
+          validateNotificationExecutionReceipt(executed, requestId.trim());
           return {
             status: 'APPLIED',
             approvalId: requestId,
@@ -1183,10 +1215,11 @@ export const NotificationManagementApi = {
           {},
           { idempotencyKey: `notif-change-execute:${cleanId}` },
         );
+        validateNotificationExecutionReceipt(executed, cleanId);
         return {
           status: 'APPLIED',
-          approvalId: executed.approvalId ?? cleanId,
-          changeRequestId: executed.approvalId ?? cleanId,
+          approvalId: cleanId,
+          changeRequestId: cleanId,
           updatedAt: new Date().toISOString(),
           message: `Approved change ${executed.approvalId ?? cleanId}${executed.type ? ` (${executed.type})` : ''} executed — the frozen proposal is now applied.`,
         };
@@ -1203,10 +1236,13 @@ export const NotificationManagementApi = {
     comment?: string,
   ): Promise<unknown> {
     const trimmedComment = comment?.trim() || undefined;
-    return ApiClient.post(`/internal/a2/workforce/approvals/${encodeURIComponent(approvalId.trim())}/${decision}`, {
+    const cleanId = approvalId.trim();
+    const result = await ApiClient.post<unknown>(`/internal/a2/workforce/approvals/${encodeURIComponent(cleanId)}/${decision}`, {
       comment: trimmedComment,
       ...(decision === 'reject' && trimmedComment ? { reason: trimmedComment } : {}),
     });
+    validateWorkforceDecisionReceipt(result, cleanId, decision);
+    return result;
   },
 
   /**
@@ -1364,6 +1400,7 @@ export const NotificationManagementApi = {
     const res = await ApiClient.get<unknown>(
       `/internal/audit?entityType=${encodeURIComponent(entityType)}&limit=${limit}`,
     );
+    if (!Array.isArray(res) && !(res && typeof res === 'object' && (Array.isArray((res as any).items) || Array.isArray((res as any).data)))) throw new Error('Audit response could not be verified.');
     return extractArray<Record<string, unknown>>(res).map((row) => ({
       ...row,
       entityType: row.entityType ?? entityType,
@@ -1380,23 +1417,20 @@ export const NotificationManagementApi = {
    */
   async listNotificationGovernanceAudit(
     limitPerCategory = 10,
-  ): Promise<Array<Record<string, unknown>>> {
+  ): Promise<NotificationGovernanceAuditResult> {
     const categories = [
       'NOTIFICATION_TEMPLATE',
       'NOTIFICATION_CHANGE',
       'NOTIFICATION_EVENT_CONFIGURATION',
       'NOTIFICATION_TEST_SEND',
     ] as const;
-    const batches = await Promise.all(
-      categories.map((category) =>
-        NotificationManagementApi.listAuditEvents(category, limitPerCategory).catch(
-          () => [] as Array<Record<string, unknown>>,
-        ),
-      ),
+    const batches = await Promise.allSettled(
+      categories.map((category) => NotificationManagementApi.listAuditEvents(category, limitPerCategory)),
     );
+    const failedCategories = categories.filter((_, index) => batches[index].status === 'rejected');
     const seen = new Set<string>();
     const merged: Array<Record<string, unknown>> = [];
-    for (const row of batches.flat()) {
+    for (const row of batches.flatMap((batch) => batch.status === 'fulfilled' ? batch.value : [])) {
       const key = String(row.id ?? `${row.entityType}-${row.entityId}-${row.action}-${row.createdAt ?? row.occurredAt}`);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1407,7 +1441,7 @@ export const NotificationManagementApi = {
       const tb = Date.parse(String(b.occurredAt ?? b.createdAt ?? '')) || 0;
       return tb - ta;
     });
-    return merged.slice(0, limitPerCategory * 2);
+    return { rows: merged.slice(0, limitPerCategory * 2), failedCategories };
   },
 
   // Customer preference endpoints (`/customers/:id/preferences*`) are restricted to authenticated

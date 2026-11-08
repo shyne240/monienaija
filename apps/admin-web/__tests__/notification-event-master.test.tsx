@@ -329,7 +329,7 @@ function installRegistryBackend() {
           if (proposal.status !== 'REQUESTED') throw new ApiError('Invalid approval status', 409);
           proposal.status = approvalMatch[2] === 'approve' ? 'APPROVED' : 'REJECTED';
           proposal.approvedBy = principal.principalId;
-          return { status: proposal.status };
+          return { approved: proposal.status === 'APPROVED', reason: proposal.status, approval: { id: proposal.approvalId, status: proposal.status } };
         }
         const executeMatch = endpoint.match(
           /^\/internal\/notifications\/changes\/([^/]+)\/execute$/,
