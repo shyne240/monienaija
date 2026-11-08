@@ -1,7 +1,9 @@
 import './operational-surfaces.css';
-import { PageHeader } from '../../design-system/primitives';
+import { Button, PageHeader } from '../../design-system/primitives';
 import React, { useEffect, useRef, useState } from 'react';
 import './workforce-workspace.css';
+import './approvals-redesign.css';
+import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { PendingFundingApprovalsQueue } from '../../components/PendingFundingApprovalsQueue';
@@ -49,39 +51,42 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
   const [error, setError] = useState('');
   const [success, setSuccess] = useState<'approve' | 'reject' | null>(null);
   const [decisionAction, setDecisionAction] = useState<'approve' | 'reject' | null>(null);
+  const [pendingDecision, setPendingDecision] = useState<{action:'approve'|'reject'; id:string; comment:string} | null>(null);
+  const [receiptId, setReceiptId] = useState('');
+  const dialogRef = useRef<HTMLElement>(null);
+  const successRef = useRef<HTMLDivElement>(null);
+  const approveRef = useRef<HTMLButtonElement>(null);
+  const rejectRef = useRef<HTMLButtonElement>(null);
+  const inFlight = useRef(false);
+  useDialogFocus(dialogRef, Boolean(pendingDecision), () => { if (!inFlight.current) setPendingDecision(null); }, pendingDecision?.action === 'reject' ? rejectRef : approveRef);
+  useEffect(() => { if (isLoading) dialogRef.current?.focus(); }, [isLoading]);
+  useEffect(() => { if (success && !pendingDecision) successRef.current?.focus(); }, [success, pendingDecision]);
 
-  const handleDecision = async (action: 'approve' | 'reject') => {
-    if (!canApprove || isLoading) return;
-    if (!approvalId.trim()) {
-      setError('Approval ID is required');
-      return;
-    }
+  const handleDecision = (action: 'approve' | 'reject') => {
+    if (!canApprove || isLoading || pendingDecision || inFlight.current) return;
+    setError(''); setSuccess(null); setReceiptId('');
+    if (!approvalId.trim()) { setError('Approval ID is required'); return; }
+    setPendingDecision({ action, id: approvalId.trim(), comment: comment.trim() });
+  };
 
+  const confirmDecision = async () => {
+    if (!canApprove || isLoading || inFlight.current || !pendingDecision) return;
+    const { action, id, comment: submittedComment } = pendingDecision;
     const request = ++decisionGeneration.current;
-    const submittedId = approvalId.trim();
-    setIsLoading(true);
-    setDecisionAction(action);
-    setError('');
-    setSuccess(null);
-
+    inFlight.current = true; setIsLoading(true); setDecisionAction(action); setError(''); setSuccess(null);
     try {
-      // Both decision routes exist; the backend remains authoritative for the checker policy.
-      const response = await ApiClient.post<{approved?: boolean; reason?: string; approval?: {id?: string; status?: string}}>(`/internal/a2/workforce/approvals/${encodeURIComponent(submittedId)}/${action}`, {
-        comment: comment.trim() || undefined,
-      });
+      const response = await ApiClient.post<{approved?: boolean; reason?: string; approval?: {id?: string; status?: string}}>(`/internal/a2/workforce/approvals/${encodeURIComponent(id)}/${action}`, { comment: submittedComment || undefined });
       if (request !== decisionGeneration.current) return;
       const expected = action === 'approve' ? 'APPROVED' : 'REJECTED';
-      if (!response || response.reason !== expected || response.approved !== (action === 'approve') || response.approval?.status !== expected || response.approval?.id !== submittedId) {
-        setError(response?.reason ? `Decision not confirmed: ${response.reason}. Check the approval and audit trail before retrying.` : 'Decision outcome not confirmed. Check the approval and audit trail before retrying.');
-        return;
+      if (!response || response.reason !== expected || response.approved !== (action === 'approve') || response.approval?.status !== expected || response.approval?.id !== id) {
+        setError(response?.reason ? `Decision not confirmed: ${response.reason}. Check the approval and audit trail before retrying.` : 'Decision outcome not confirmed. Check the approval and audit trail before retrying.'); return;
       }
-      setSuccess(action);
-      setApprovalId('');
-      setComment('');
+      setSuccess(action); setReceiptId(id); setApprovalId(''); setComment('');
     } catch (err: any) {
       if (request === decisionGeneration.current) setError(`Decision outcome not confirmed. Check the approval and audit trail before retrying. ${err?.message || 'Service unavailable.'}`);
     } finally {
-      if (request === decisionGeneration.current) { setIsLoading(false); setDecisionAction(null); }
+      inFlight.current = false;
+      if (request === decisionGeneration.current) { setIsLoading(false); setDecisionAction(null); setPendingDecision(null); }
     }
   };
 
@@ -99,13 +104,18 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
   }
 
   return (
-    <div className="mn-operational mn-approvals" style={styles.container}>
-      <PageHeader eyebrow="Workforce and governance" title="Privileged Approvals (Maker-Checker)" description="Execute authorized check verifications and system overrides." />
+    <div className="mn-operational mn-approvals approvals-redesign" style={styles.container}>
+      <PageHeader eyebrow="Workforce and governance" title="Privileged Approvals (Maker-Checker)" description="Review funding requests and record authorized checker decisions." />
 
+      <div className="approvals-redesign__boundary" role="note"><strong>Separate checker workflows</strong><span>Funding requests have a dedicated inbox and decision flow. Other privileged approvals require a known approval ID.</span></div>
+      <nav className="approvals-redesign__nav" aria-label="Approval workspace sections">
+        {canReviewFunding && <a href="#funding-checker-workspace">Funding checker</a>}
+        {canApprove && <a href="#generic-checker-workspace">Generic checker decision</a>}
+      </nav>
       <div style={styles.gapWarning}>
         <span style={styles.gapTitle}>ℹ️ Approval Discovery Scope</span>
         <p style={styles.gapText}>
-          Agent funding and defunding requests use the live Global Funding Inbox below (<code>GET /internal/agents/funding-requests</code>). Generic non-funding workforce overrides still require a known Approval ID because generic <code>GET /internal/a2/workforce/approvals</code> listing is not exposed.
+          Agent funding and defunding requests use the Global Funding Inbox when your session meets its access rules (<code>GET /internal/agents/funding-requests</code>). Generic non-funding workforce overrides require a known Approval ID because generic <code>GET /internal/a2/workforce/approvals</code> listing is not exposed.
         </p>
       </div>
       <div style={styles.fundingNote}>
@@ -116,7 +126,8 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
       </div>
 
       {canReviewFunding && (
-        <div style={{ marginBottom: 24 }}>
+        <section id="funding-checker-workspace" className="approvals-redesign__panel" tabIndex={-1} aria-label="Funding checker workspace">
+          <p className="approvals-redesign__eyebrow">AGENT FUNDING</p><h2>Funding checker workspace</h2><p className="approvals-redesign__intro">Review eligible requests and use the dedicated checker panel for funding decisions.</p>
           <PendingFundingApprovalsQueue
             canReviewFunding={canReviewFunding}
             canAccessGlobalInbox={canAccessGlobalFundingInbox}
@@ -164,11 +175,13 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
             selectedInboxTarget={selectedInboxTarget}
             onCheckerOutcome={() => setInboxRefreshTrigger((n) => n + 1)}
           />
-        </div>
+        </section>
       )}
 
+      {canApprove && <section id="generic-checker-workspace" className="approvals-redesign__panel approvals-redesign__generic" tabIndex={-1} aria-label="Generic checker decision">
+      <p className="approvals-redesign__eyebrow">KNOWN APPROVAL ID</p><h2>Generic checker decision</h2><p className="approvals-redesign__intro">Review the pending action in an authorized record before deciding. A decision may require a separate execution step.</p>
       {error && <div style={styles.errorBox} role="alert">{error}</div>}
-      {success && <div style={styles.successBox} role="status">{success === 'approve' ? 'Approval recorded. The underlying action may require a separate execution step.' : 'Approval decision recorded as rejected successfully.'}</div>}
+      {success && <div ref={successRef} tabIndex={-1} style={styles.successBox} role="status"><span>{success === 'approve' ? 'Approval recorded. The underlying action may require a separate execution step.' : 'Approval decision recorded as rejected successfully.'}</span><div>Approval ID: <code>{receiptId}</code></div></div>}
 
       {canApprove && (
       <div style={styles.card}>
@@ -183,7 +196,7 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
               placeholder="e.g. 5e6f7g8h-1234-..."
               value={approvalId}
               onChange={(e) => setApprovalId(e.target.value)}
-              disabled={isLoading}
+              disabled={isLoading || Boolean(pendingDecision)}
             />
           </div>
 
@@ -195,21 +208,28 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
               placeholder="Provide context or explanation for auditing..."
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              disabled={isLoading}
+              disabled={isLoading || Boolean(pendingDecision)}
             />
           </div>
 
           <div style={styles.decisionButtons}>
-            <button type="submit" disabled={isLoading || !approvalId.trim()} style={styles.submitBtn}>
+            <button ref={approveRef} type="submit" disabled={isLoading || Boolean(pendingDecision) || !approvalId.trim()} style={styles.submitBtn}>
               {isLoading && decisionAction === 'approve' ? 'Approving…' : 'Sign & Approve Action'}
             </button>
-            <button type="button" disabled={isLoading || !approvalId.trim()} onClick={() => void handleDecision('reject')} style={styles.rejectBtn}>
+            <button ref={rejectRef} type="button" disabled={isLoading || Boolean(pendingDecision) || !approvalId.trim()} onClick={() => handleDecision('reject')} style={styles.rejectBtn}>
               {isLoading && decisionAction === 'reject' ? 'Rejecting…' : 'Reject Action'}
             </button>
           </div>
         </form>
       </div>
       )}
+      </section>}
+      {pendingDecision && <div className="approvals-redesign__overlay"><section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="checker-review-title" aria-describedby="checker-review-description" tabIndex={-1} className="approvals-redesign__dialog">
+        <p className="approvals-redesign__eyebrow">REVIEW CHECKER DECISION</p><h2 id="checker-review-title">Confirm {pendingDecision.action === 'approve' ? 'approval' : 'rejection'}</h2>
+        <p id="checker-review-description">Confirm the known approval ID and decision. Funding rejections must use the dedicated funding workflow; an approval may require separate execution.</p>
+        <dl><div><dt>Approval ID</dt><dd><code>{pendingDecision.id}</code></dd></div><div><dt>Decision</dt><dd>{pendingDecision.action === 'approve' ? 'Approve' : 'Reject'}</dd></div><div><dt>Audit comment</dt><dd>{pendingDecision.comment || 'Not provided'}</dd></div></dl>
+        <div className="approvals-redesign__dialog-actions"><Button disabled={isLoading} onClick={() => setPendingDecision(null)}>Cancel</Button><Button variant={pendingDecision.action === 'reject' ? 'danger' : 'primary'} disabled={isLoading} onClick={() => void confirmDecision()}>{isLoading ? 'Recording decision…' : 'Confirm decision'}</Button></div>
+      </section></div>}
     </div>
   );
 };

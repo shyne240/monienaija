@@ -232,6 +232,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
 
     // Submit
     fireEvent.click(getByText('Sign & Approve Action'));
+    fireEvent.click(getByText('Confirm decision'));
 
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenCalledWith(

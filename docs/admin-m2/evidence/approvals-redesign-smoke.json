@@ -1,0 +1,82 @@
+[
+  {
+    "width": 320,
+    "keyboardReview": true,
+    "deniedAndRejectedIntercepted": true,
+    "visibleLabelMechanisms": true,
+    "page": 320,
+    "view": 320,
+    "dialogPage": 320,
+    "dialogView": 320
+  },
+  {
+    "width": 360,
+    "keyboardReview": true,
+    "deniedAndRejectedIntercepted": true,
+    "visibleLabelMechanisms": true,
+    "page": 360,
+    "view": 360,
+    "dialogPage": 360,
+    "dialogView": 360
+  },
+  {
+    "width": 390,
+    "keyboardReview": true,
+    "deniedAndRejectedIntercepted": true,
+    "visibleLabelMechanisms": true,
+    "page": 390,
+    "view": 390,
+    "dialogPage": 390,
+    "dialogView": 390
+  },
+  {
+    "width": 768,
+    "keyboardReview": true,
+    "deniedAndRejectedIntercepted": true,
+    "visibleLabelMechanisms": true,
+    "page": 768,
+    "view": 768,
+    "dialogPage": 768,
+    "dialogView": 768
+  },
+  {
+    "width": 769,
+    "keyboardReview": true,
+    "deniedAndRejectedIntercepted": true,
+    "visibleLabelMechanisms": true,
+    "page": 769,
+    "view": 769,
+    "dialogPage": 769,
+    "dialogView": 769
+  },
+  {
+    "width": 1024,
+    "keyboardReview": true,
+    "deniedAndRejectedIntercepted": true,
+    "visibleLabelMechanisms": true,
+    "page": 1024,
+    "view": 1024,
+    "dialogPage": 1024,
+    "dialogView": 1024
+  },
+  {
+    "width": 1280,
+    "keyboardReview": true,
+    "deniedAndRejectedIntercepted": true,
+    "visibleLabelMechanisms": true,
+    "page": 1280,
+    "view": 1280,
+    "dialogPage": 1280,
+    "dialogView": 1280
+  },
+  {
+    "width": 1440,
+    "keyboardReview": true,
+    "deniedAndRejectedIntercepted": true,
+    "visibleLabelMechanisms": true,
+    "page": 1440,
+    "view": 1440,
+    "dialogPage": 1440,
+    "dialogView": 1440
+  }
+]

@@ -136,6 +136,7 @@ describe('Admin Web batch 02: existing support and approval actions', () => {
     fireEvent.change(view.getByPlaceholderText('e.g. 5e6f7g8h-1234-...'), { target: { value: 'approval-reject-1' } });
     fireEvent.change(view.getByPlaceholderText('Provide context or explanation for auditing...'), { target: { value: 'Not approved: evidence is incomplete.' } });
     fireEvent.click(view.getByRole('button', { name: 'Reject Action' }));
+    fireEvent.click(view.getByRole('button', { name: 'Confirm decision' }));
     expect(await view.findByText('Approval decision recorded as rejected successfully.')).toBeTruthy();
     expect(ApiClient.post).toHaveBeenCalledWith('/internal/a2/workforce/approvals/approval-reject-1/reject', {
       comment: 'Not approved: evidence is incomplete.',
@@ -143,6 +144,7 @@ describe('Admin Web batch 02: existing support and approval actions', () => {
 
     fireEvent.change(view.getByPlaceholderText('e.g. 5e6f7g8h-1234-...'), { target: { value: 'approval-approve-2' } });
     fireEvent.click(view.getByRole('button', { name: 'Sign & Approve Action' }));
+    fireEvent.click(view.getByRole('button', { name: 'Confirm decision' }));
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenCalledWith('/internal/a2/workforce/approvals/approval-approve-2/approve', {
         comment: undefined,
