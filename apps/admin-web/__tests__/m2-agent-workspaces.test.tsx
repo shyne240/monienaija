@@ -91,8 +91,12 @@ test('session revocation requires a matching Agent and a non-negative integer co
   fireEvent.click(button);
   expect(await screen.findByText(/Session revocation response could not be confirmed/)).toBeTruthy();
   expect(screen.queryByText(/Active Agent sessions invalidated/)).toBeNull();
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', {name:'I reviewed Agent access and audit history'}));
   fireEvent.click(button);
   expect(await screen.findByText(/Session revocation response could not be confirmed/)).toBeTruthy();
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', {name:'I reviewed Agent access and audit history'}));
   fireEvent.click(button);
   expect(await screen.findByText('Active Agent sessions invalidated (0 sessions revoked).')).toBeTruthy();
   jest.restoreAllMocks();
@@ -218,4 +222,27 @@ test('read-only Agent detail keeps permitted reads and hides lifecycle and crede
 test('credential component independently blocks read-only principals even when passed canManage',()=>{
  useAuthStore.setState({principal:{type:'OPERATOR',principalId:'reader',sessionId:'reader',audience:'workforce-admin',roles:[],scopes:['agent.manage_credentials'],customerAccess:'NONE',assuranceLevel:'MFA',readOnlyPrincipal:true}});
  render(<AgentCredentialPanel agentId="agent" agentStatus="ACTIVE" canManage/>);expect(screen.queryByRole('button',{name:'Issue initial credential'})).toBeNull();expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+
+test('uncertain credential issuance blocks all access actions until independent review and survives status changes',async()=>{
+ useAuthStore.setState({principal:{type:'OPERATOR',principalId:'manager',sessionId:'session',audience:'workforce-admin',roles:[],scopes:['agent.manage_credentials'],customerAccess:'NONE',assuranceLevel:'MFA'}});
+ (ApiClient.post as jest.Mock).mockRejectedValue(new Error('network lost'));
+ const view=render(<AgentCredentialPanel agentId="agent" agentStatus="ACTIVE" canManage/>);
+ fireEvent.click(screen.getByRole('button',{name:'Issue initial credential'}));
+ expect(await screen.findByText(/Credential request outcome may be uncertain/)).toBeTruthy();
+ for(const name of ['Issue initial credential','Reissue + invalidate sessions','Invalidate active sessions']) expect((screen.getByRole('button',{name}) as HTMLButtonElement).disabled).toBe(true);
+ view.rerender(<AgentCredentialPanel agentId="agent" agentStatus="SUSPENDED" canManage/>);view.rerender(<AgentCredentialPanel agentId="agent" agentStatus="ACTIVE" canManage/>);
+ expect((screen.getByRole('button',{name:'Issue initial credential'}) as HTMLButtonElement).disabled).toBe(true);
+ expect(ApiClient.post).toHaveBeenCalledTimes(1);fireEvent.click(screen.getByRole('button',{name:'I reviewed Agent access and audit history'}));expect((screen.getByRole('button',{name:'Issue initial credential'}) as HTMLButtonElement).disabled).toBe(false);
+});
+
+test('credential conflict requires explicit review and warns on browser unload',async()=>{
+ useAuthStore.setState({principal:{type:'OPERATOR',principalId:'manager',sessionId:'session',audience:'workforce-admin',roles:[],scopes:['agent.manage_credentials'],customerAccess:'NONE',assuranceLevel:'MFA'}});
+ (ApiClient.post as jest.Mock).mockRejectedValue(Object.assign(new Error('conflict'),{status:409}));
+ render(<AgentCredentialPanel agentId="agent" agentStatus="ACTIVE" canManage/>);fireEvent.click(screen.getByRole('button',{name:'Issue initial credential'}));
+ expect(await screen.findByText(/Credential request was rejected \(HTTP 409\)/)).toBeTruthy();
+ expect((screen.getByRole('button',{name:'Reissue + invalidate sessions'}) as HTMLButtonElement).disabled).toBe(true);
+ const event = new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);
+ fireEvent.click(screen.getByRole('button',{name:'I reviewed Agent access and audit history'}));const after = new Event('beforeunload',{cancelable:true});window.dispatchEvent(after);expect(after.defaultPrevented).toBe(false);
 });

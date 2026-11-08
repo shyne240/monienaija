@@ -28,7 +28,7 @@ interface AgentCredentialPanelProps {
 
 export const AgentCredentialPanel: React.FC<AgentCredentialPanelProps> = (props) => {
   const { principal, sessionId } = useAuthStore();
-  const key = JSON.stringify([props.agentId, props.agentStatus, sessionId, principal?.principalId, principal?.sessionId,
+  const key = JSON.stringify([props.agentId, sessionId, principal?.principalId, principal?.sessionId,
     principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel,
     principal?.customerAccess, principal?.readOnlyPrincipal, props.canManage]);
   return <AgentCredentialWorkspace key={key} {...props} canManage={props.canManage && !principal?.readOnlyPrincipal} />;
@@ -43,6 +43,8 @@ const AgentCredentialWorkspace: React.FC<AgentCredentialPanelProps> = ({ agentId
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [reviewRequired, setReviewRequired] = useState(false);
+  const inFlight = useRef(false);
   const generation = useRef(0);
   const context = useRef({ agentId, canManage });
   context.current = { agentId, canManage };
@@ -59,12 +61,19 @@ const AgentCredentialWorkspace: React.FC<AgentCredentialPanelProps> = ({ agentId
     return () => { generation.current += 1; };
   }, [agentId, canManage]);
 
+  useEffect(() => {
+    if (!reviewRequired && !busy && !revokeBusy) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [reviewRequired, busy, revokeBusy]);
+
   if (!canManage) return null;
 
   const anyBusy = busy || revokeBusy;
 
   const issue = async (reissue: boolean) => {
-    if (anyBusy || agentStatus !== 'ACTIVE') return;
+    if (anyBusy || inFlight.current || reviewRequired || agentStatus !== 'ACTIVE') return;
     if (
       reissue &&
       !window.confirm(
@@ -74,6 +83,7 @@ const AgentCredentialWorkspace: React.FC<AgentCredentialPanelProps> = ({ agentId
       return;
     }
 
+    inFlight.current = true;
     const current = ++generation.current;
     const valid = () => generation.current === current && context.current.agentId === agentId && context.current.canManage;
     setBusy(true);
@@ -90,6 +100,7 @@ const AgentCredentialWorkspace: React.FC<AgentCredentialPanelProps> = ({ agentId
           typeof result.temporaryPassword !== 'string' || !result.temporaryPassword || result.rotationRequired !== true ||
           (result.passwordExpiresAt !== null && (typeof result.passwordExpiresAt !== 'string' || !Number.isFinite(Date.parse(result.passwordExpiresAt)))) ||
           typeof result.deliveryNotice !== 'string' || !result.deliveryNotice.trim()) {
+        setReviewRequired(true);
         setError('Credential response could not be confirmed. The result may be uncertain; check the Agent access state before retrying.');
         return;
       }
@@ -104,17 +115,19 @@ const AgentCredentialWorkspace: React.FC<AgentCredentialPanelProps> = ({ agentId
       if (!valid()) return;
       const status = statusOf(requestError);
       if (status === 400 || status === 403 || status === 404 || status === 409) {
+        if (status === 409) setReviewRequired(true);
         setError(`Credential request was rejected (HTTP ${status}). Check the Agent status and existing credential before choosing an action.`);
       } else {
+        setReviewRequired(true);
         setError('Credential request outcome may be uncertain. Check the Agent access state before retrying.');
       }
     } finally {
-      if (valid()) setBusy(false);
+      if (valid()) { inFlight.current = false; setBusy(false); }
     }
   };
 
   const invalidateSessions = async () => {
-    if (anyBusy) return;
+    if (anyBusy || inFlight.current || reviewRequired) return;
     if (
       !window.confirm(
         'Invalidate all active sessions for this Agent without rotating their password?',
@@ -123,6 +136,7 @@ const AgentCredentialWorkspace: React.FC<AgentCredentialPanelProps> = ({ agentId
       return;
     }
 
+    inFlight.current = true;
     const current = ++generation.current;
     const valid = () => generation.current === current && context.current.agentId === agentId && context.current.canManage;
     setRevokeBusy(true);
@@ -138,6 +152,7 @@ const AgentCredentialWorkspace: React.FC<AgentCredentialPanelProps> = ({ agentId
       }
       const count = outcome.data.revokedCount;
       if (outcome.data.agentId !== agentId || typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) {
+        setReviewRequired(true);
         setError('Session revocation response could not be confirmed. Check the Agent access state before retrying.');
         return;
       }
@@ -148,9 +163,10 @@ const AgentCredentialWorkspace: React.FC<AgentCredentialPanelProps> = ({ agentId
         requestError instanceof Error
           ? requestError.message
           : 'Failed to invalidate active Agent sessions.';
+      setReviewRequired(true);
       setError(`${rawMessage} Session revocation may be unconfirmed; check the Agent access state before retrying.`);
     } finally {
-      if (valid()) setRevokeBusy(false);
+      if (valid()) { inFlight.current = false; setRevokeBusy(false); }
     }
   };
 
@@ -180,7 +196,7 @@ const AgentCredentialWorkspace: React.FC<AgentCredentialPanelProps> = ({ agentId
           <button
             type="button"
             className="mn-agent-workspace__button"
-            disabled={anyBusy || initialIssued}
+            disabled={anyBusy || reviewRequired || initialIssued}
             onClick={() => void issue(false)}
           >
             {busy ? 'Working…' : initialIssued ? 'Initial credential issued' : 'Issue initial credential'}
@@ -188,7 +204,7 @@ const AgentCredentialWorkspace: React.FC<AgentCredentialPanelProps> = ({ agentId
           <button
             type="button"
             className="mn-agent-workspace__button"
-            disabled={anyBusy}
+            disabled={anyBusy || reviewRequired}
             onClick={() => void issue(true)}
           >
             Reissue + invalidate sessions
@@ -201,13 +217,14 @@ const AgentCredentialWorkspace: React.FC<AgentCredentialPanelProps> = ({ agentId
         <button
           type="button"
           className="mn-agent-workspace__button"
-          disabled={anyBusy}
+          disabled={anyBusy || reviewRequired}
           onClick={() => void invalidateSessions()}
         >
           {revokeBusy ? 'Invalidating…' : 'Invalidate active sessions'}
         </button>
       </div>
 
+      {reviewRequired && <div style={styles.boundary} role="status"><strong>Independent review required.</strong> The action may have completed, and a one-time password may be unrecoverable. This panel has no credential or session status read; inspect the authoritative Agent access records and audit trail elsewhere before another action. This local lock is lost on leaving or session change; review cannot exclude a late commit. <button type="button" className="mn-agent-workspace__button" onClick={() => { setReviewRequired(false); setError(''); }}>I reviewed Agent access and audit history</button></div>}
       {boundaryNote && (
         <div
           style={styles.boundary}

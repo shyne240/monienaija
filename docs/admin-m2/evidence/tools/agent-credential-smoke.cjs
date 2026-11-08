@@ -3,8 +3,9 @@ const assertVisibleLabels = require('./assert-visible-labels.cjs');
 const { chromium: playwright } = require('playwright-core');
 const chromium = require('@sparticuz/chromium').default;
 const fs = require('fs');
+const axe = require('axe-core');
 (async () => {
-  const browser = await playwright.launch({ executablePath: await chromium.executablePath(), args: chromium.args, headless: true });
+  const browser = await playwright.launch({ executablePath: await chromium.executablePath(), args: chromium.args.filter(a=>a!=='--single-process'), headless: true });
   const page = await browser.newPage({ viewport: { width: 320, height: 900 } });
   page.on('dialog', dialog => dialog.accept());
   let revokeMode = 'mismatch';
@@ -21,7 +22,7 @@ const fs = require('fs');
     else return route.fulfill({ status: 503, body: 'Synthetic service unavailable' });
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
-  await page.goto('http://127.0.0.1:5173/');
+  await page.goto('http://127.0.0.1:5176/');
   await page.evaluate(() => {
     localStorage.setItem('admin_workforce_token', 'synthetic');
     localStorage.setItem('admin_workforce_session_id', 'synthetic');
@@ -41,10 +42,18 @@ const fs = require('fs');
     if (await controls.getByTestId('temporary-agent-password').count()) throw Error('Synthetic one-time value remained visible after hiding');
     revokeMode = 'mismatch'; const revoke = controls.getByRole('button', { name: 'Invalidate active sessions' }); await revoke.focus(); await page.keyboard.press('Enter');
     await controls.getByText(/Session revocation response could not be confirmed/).waitFor();
+    if (!await revoke.isDisabled()) throw Error('Unconfirmed revocation was not locked');
+    await page.addScriptTag({content:axe.source});
+    const scan=await controls.evaluate(async el=>window.axe.run(el,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21a','wcag21aa']}}));
+    if(scan.violations.length)throw Error(JSON.stringify(scan.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.html)}))));
+    const lockedSize=await page.evaluate(()=>({page:document.documentElement.scrollWidth,view:document.documentElement.clientWidth}));
+    if(lockedSize.page>lockedSize.view)throw Error('Overflow in locked review state');
+    if ([320,1440].includes(width)) await page.screenshot({path:`docs/admin-m2/evidence/agent-credential-review-${width}.png`,fullPage:true});
+    await controls.getByRole('button', { name: 'I reviewed Agent access and audit history' }).click();
     revokeMode = 'valid'; await revoke.focus(); await page.keyboard.press('Enter'); await controls.getByText('Active Agent sessions invalidated (0 sessions revoked).').waitFor();
     await assertVisibleLabels(page);
     const sizes = await page.evaluate(() => ({ page: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
-    report.push({ width, workspace: 'credential and session controls', synthetic: true, keyboard: true, secretHidden: true, mismatchedReceiptRejected: true, zeroRevocationsConfirmed: true, ...sizes });
+    report.push({ width, workspace: 'credential and session controls', synthetic: true, keyboard: true, secretHidden: true, mismatchedReceiptRejected: true, zeroRevocationsConfirmed: true, reviewLock: true, targetedAxeViolations: scan.violations.map(v=>v.id), ...sizes });
     if ([320, 1440].includes(width)) { await page.evaluate(() => window.scrollTo(0, 0)); await page.screenshot({ path: `${process.cwd()}/docs/admin-m2/evidence/agent-credentials-${width}.png`, fullPage: true }); }
   }
   fs.writeFileSync(`${process.cwd()}/docs/admin-m2/evidence/agent-credential-smoke.json`, JSON.stringify(report, null, 2) + '\n');
