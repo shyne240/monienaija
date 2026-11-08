@@ -14,22 +14,23 @@ type RoleReview = { domain: RoleDomain; action: RoleAction; target: string; role
 const FINANCE_ROLES = ['FINANCE_PREPARER', 'FINANCE_CONTROLLER', 'FINANCE_AUDITOR'];
 const OPERATIONAL_ROLES = ['OPERATIONS', 'AGENT_NETWORK_MANAGER', 'COMPLIANCE', 'RISK_FRAUD', 'CUSTOMER_SERVICE', 'TREASURY'];
 
-export const RoleAssignmentScreen: React.FC = () => {
-  const { principal } = useAuthStore();
+export const RoleAssignmentScreen: React.FC<{onRoleGuardChange?: (guarded: boolean, busy: boolean) => void}> = ({onRoleGuardChange}) => {
+  const { principal, sessionId } = useAuthStore();
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
   const isSuperAdmin = principal?.roles.includes('SUPER_ADMIN') === true;
   const isAdministrator = principal?.roles.includes('ADMINISTRATOR') === true;
-  const canAssignFinance = isSuperAdmin && hasFn('workforce.role.assign');
-  const canRevokeFinance = isSuperAdmin && hasFn('workforce.role.revoke');
-  const canAssignOperational = (isAdministrator || isSuperAdmin) && hasFn('workforce.role.assign_operational');
-  const canRevokeOperational = (isAdministrator || isSuperAdmin) && hasFn('workforce.role.revoke_operational');
+  const canWrite = !principal?.readOnlyPrincipal;
+  const canAssignFinance = canWrite && isSuperAdmin && hasFn('workforce.role.assign');
+  const canRevokeFinance = canWrite && isSuperAdmin && hasFn('workforce.role.revoke');
+  const canAssignOperational = canWrite && (isAdministrator || isSuperAdmin) && hasFn('workforce.role.assign_operational');
+  const canRevokeOperational = canWrite && (isAdministrator || isSuperAdmin) && hasFn('workforce.role.revoke_operational');
   const principalId = principal?.principalId ?? '';
   const hasMfa = principal?.assuranceLevel === 'MFA';
-  const key = JSON.stringify([principalId, principal?.sessionId, principal?.type, principal?.assuranceLevel, canAssignFinance, canRevokeFinance, canAssignOperational, canRevokeOperational]);
-  return <RoleWorkspace key={key} principalId={principalId} hasMfa={hasMfa} canAssignFinance={canAssignFinance} canRevokeFinance={canRevokeFinance} canAssignOperational={canAssignOperational} canRevokeOperational={canRevokeOperational} />;
+  const key = JSON.stringify([sessionId, principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.customerAccess, principal?.assuranceLevel, principal?.readOnlyPrincipal, canAssignFinance, canRevokeFinance, canAssignOperational, canRevokeOperational]);
+  return <RoleWorkspace key={key} principalId={principalId} hasMfa={hasMfa} canAssignFinance={canAssignFinance} canRevokeFinance={canRevokeFinance} canAssignOperational={canAssignOperational} canRevokeOperational={canRevokeOperational} onRoleGuardChange={onRoleGuardChange} />;
 };
 
-const RoleWorkspace: React.FC<{principalId: string; hasMfa: boolean; canAssignFinance: boolean; canRevokeFinance: boolean; canAssignOperational: boolean; canRevokeOperational: boolean}> = ({principalId, hasMfa, canAssignFinance, canRevokeFinance, canAssignOperational, canRevokeOperational}) => {
+const RoleWorkspace: React.FC<{principalId: string; hasMfa: boolean; canAssignFinance: boolean; canRevokeFinance: boolean; canAssignOperational: boolean; canRevokeOperational: boolean; onRoleGuardChange?: (guarded: boolean, busy: boolean) => void}> = ({principalId, hasMfa, canAssignFinance, canRevokeFinance, canAssignOperational, canRevokeOperational, onRoleGuardChange}) => {
   const requestGeneration = useRef(0);
   useEffect(() => () => { requestGeneration.current += 1; }, []);
   const canManageFinanceRoles = canAssignFinance || canRevokeFinance;
@@ -52,6 +53,16 @@ const RoleWorkspace: React.FC<{principalId: string; hasMfa: boolean; canAssignFi
   const [success, setSuccess] = useState(false);
   const [successDetails, setSuccessDetails] = useState<RoleReview | null>(null);
   const [pendingReview, setPendingReview] = useState<RoleReview | null>(null);
+  const [uncertainRole, setUncertainRole] = useState<RoleReview | null>(null);
+  const roleGuard = isLoading || Boolean(pendingReview) || Boolean(uncertainRole) || Boolean(targetPrincipalId.trim() || effectiveFrom || effectiveTo || approvalIds.trim());
+  useEffect(() => { onRoleGuardChange?.(roleGuard, isLoading); }, [onRoleGuardChange, roleGuard, isLoading]);
+  useEffect(() => () => onRoleGuardChange?.(false, false), [onRoleGuardChange]);
+  useEffect(() => {
+    if (!roleGuard) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+  }, [roleGuard]);
+
   const dialogRef = useRef<HTMLElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const inFlight = useRef(false);
@@ -63,6 +74,7 @@ const RoleWorkspace: React.FC<{principalId: string; hasMfa: boolean; canAssignFi
   const roleOptions = domain === 'finance' ? FINANCE_ROLES : OPERATIONAL_ROLES;
 
   const changeDomain = (nextDomain: RoleDomain) => {
+    if (uncertainRole || (nextDomain !== domain && approvalIds.trim() && !window.confirm('Switch role domain and discard the entered finance approval IDs?'))) return;
     setDomain(nextDomain);
     setRoleKey(nextDomain === 'finance' ? 'FINANCE_PREPARER' : 'OPERATIONS');
     setAction(nextDomain === 'finance'
@@ -75,7 +87,7 @@ const RoleWorkspace: React.FC<{principalId: string; hasMfa: boolean; canAssignFi
 
   const handleRoleAction = (event: React.FormEvent) => {
     event.preventDefault();
-    if (pendingReview || isLoading || inFlight.current || (action === 'assign' && (!canAssign || !hasMfa)) || (action === 'revoke' && !canRevoke)) return;
+    if (uncertainRole || pendingReview || isLoading || inFlight.current || (action === 'assign' && (!canAssign || !hasMfa)) || (action === 'revoke' && !canRevoke)) return;
     setError(''); setSuccess(false); setSuccessDetails(null);
     if (!targetPrincipalId.trim()) { setError('Target Principal ID is required'); return; }
     if (targetPrincipalId.trim() === principalId) { setError('Self assignment or revocation is prohibited.'); return; }
@@ -86,7 +98,7 @@ const RoleWorkspace: React.FC<{principalId: string; hasMfa: boolean; canAssignFi
   };
 
   const confirmRoleAction = async () => {
-    if (!pendingReview || isLoading || inFlight.current) return;
+    if (uncertainRole || !pendingReview || isLoading || inFlight.current) return;
     const review = pendingReview;
     if ((review.action === 'assign' && (!(review.domain === 'finance' ? canAssignFinance : canAssignOperational) || !hasMfa)) || (review.action === 'revoke' && !(review.domain === 'finance' ? canRevokeFinance : canRevokeOperational))) return;
     const request = ++requestGeneration.current;
@@ -99,13 +111,15 @@ const RoleWorkspace: React.FC<{principalId: string; hasMfa: boolean; canAssignFi
         receipt = await ApiClient.delete(`/internal/a2/workforce/roles/${encodeURIComponent(review.target)}/${review.role}`, { body: { effectiveFrom: review.from, effectiveTo: review.to, approvalIds: review.domain === 'finance' ? review.approvals : [] } });
       }
       if (request !== requestGeneration.current) return;
-      if (!receipt || receipt.status !== (review.action === 'assign' ? 'ACTIVE' : 'REVOKED') || receipt.principalId !== review.target || receipt.roleKey !== review.role) {
-        setError('Role change outcome is unconfirmed. Check an authorized workforce record or audit trail before retrying.'); return;
+      const validDate = (value: unknown) => typeof value === 'string' && Number.isFinite(Date.parse(value));
+      const matches = receipt && typeof receipt.assignmentReference === 'string' && Boolean(receipt.assignmentReference.trim()) && Number.isSafeInteger(receipt.assignmentVersion) && receipt.assignmentVersion > 0 && receipt.status === (review.action === 'assign' ? 'ACTIVE' : 'REVOKED') && receipt.principalId === review.target && receipt.roleKey === review.role && (review.action === 'assign' ? receipt.assignedBy === principalId && validDate(receipt.assignedAt) && validDate(receipt.effectiveFrom) && validDate(receipt.effectiveTo) && Date.parse(receipt.effectiveFrom) === Date.parse(review.from) && Date.parse(receipt.effectiveTo) === Date.parse(review.to) : receipt.revokedBy === principalId && validDate(receipt.revokedAt));
+      if (!matches) {
+        setUncertainRole(review); setError('Role change outcome is unconfirmed. Check an authorized workforce record and audit trail before retrying.'); return;
       }
       setSuccess(true); setSuccessDetails(review);
       setTargetPrincipalId(''); setEffectiveFrom(''); setEffectiveTo(''); setApprovalIds('');
     } catch (err: any) {
-      if (request === requestGeneration.current) setError(`Role change outcome is unconfirmed. Check an authorized workforce record or audit trail before retrying. ${err?.message || 'Service unavailable.'}`);
+      if (request === requestGeneration.current) { setUncertainRole(review); setError(`Role change outcome is unconfirmed. Check an authorized workforce record or audit trail before retrying. ${err?.message || 'Service unavailable.'}`); }
     } finally {
       inFlight.current = false;
       if (request === requestGeneration.current) { setIsLoading(false); setPendingReview(null); }
@@ -113,7 +127,7 @@ const RoleWorkspace: React.FC<{principalId: string; hasMfa: boolean; canAssignFi
   };
 
   if (!canManageAnyRoles) {
-    return <div className="mn-operational" style={styles.container} role="alert"><div style={styles.errorBox}>Role governance requires an applicable workforce role function and the authorized initiator role.</div></div>;
+    return <div className="mn-operational" style={styles.container} role="alert"><div style={styles.errorBox}>Role governance requires an applicable workforce role function, the authorized initiator role, and a session that is not read-only.</div></div>;
   }
 
   const title = canManageFinanceRoles && canManageOperationalRoles
@@ -124,21 +138,22 @@ const RoleWorkspace: React.FC<{principalId: string; hasMfa: boolean; canAssignFi
     <div className="mn-operational mn-role-workspace role-redesign" style={styles.container}>
       <PageHeader eyebrow="Workforce and governance" title={title} description="Use the existing workforce role assignment endpoints. Current assignment listing is not available through the V1 API." />
 
+      {uncertainRole && <div className="role-redesign__boundary" role="status"><strong>Independent role review required</strong><span>The {uncertainRole.action} for {uncertainRole.target}, role {uncertainRole.role}, may have occurred. This screen cannot list current assignments. Independently inspect authorized workforce records, approvals and audit history. A missing record or fresh read cannot exclude a late commit. This local lock is lost on confirmed exit or session change.</span><button type="button" onClick={() => { setUncertainRole(null); setError(''); }}>I reviewed the role, approvals and audit history</button></div>}
       <div className="role-redesign__boundary" role="note"><strong>Governed access change</strong><span>Current assignments cannot be listed here. Verify the target in an authorized record; self changes are prohibited.</span></div>
       <div className="role-redesign__workspace"><section className="role-redesign__selectors" aria-label="Role change context">
       <p className="role-redesign__eyebrow">SELECT CONTEXT</p><h2>Role and action</h2><p>Choose an available role domain and action before entering the effective window.</p>
       {(canManageFinanceRoles && canManageOperationalRoles) && (
         <div style={styles.tabHeader} aria-label="Role governance domain">
-          <button type="button" disabled={isLoading || Boolean(pendingReview)} aria-pressed={domain === 'finance'} style={domain === 'finance' ? styles.activeTabBtn : styles.tabBtn} onClick={() => changeDomain('finance')}>Finance Roles</button>
-          <button type="button" disabled={isLoading || Boolean(pendingReview)} aria-pressed={domain === 'operational'} style={domain === 'operational' ? styles.activeTabBtn : styles.tabBtn} onClick={() => changeDomain('operational')}>Operational Roles</button>
+          <button type="button" disabled={isLoading || Boolean(pendingReview) || Boolean(uncertainRole)} aria-pressed={domain === 'finance'} style={domain === 'finance' ? styles.activeTabBtn : styles.tabBtn} onClick={() => changeDomain('finance')}>Finance Roles</button>
+          <button type="button" disabled={isLoading || Boolean(pendingReview) || Boolean(uncertainRole)} aria-pressed={domain === 'operational'} style={domain === 'operational' ? styles.activeTabBtn : styles.tabBtn} onClick={() => changeDomain('operational')}>Operational Roles</button>
         </div>
       )}
 
       <div style={styles.tabHeader} aria-label="Role assignment action">
-        {canAssign && <button type="button" disabled={isLoading || Boolean(pendingReview)} aria-pressed={action === 'assign'} style={action === 'assign' ? styles.activeTabBtn : styles.tabBtn} onClick={() => { setAction('assign'); setError(''); setSuccess(false); }}>
+        {canAssign && <button type="button" disabled={isLoading || Boolean(pendingReview) || Boolean(uncertainRole)} aria-pressed={action === 'assign'} style={action === 'assign' ? styles.activeTabBtn : styles.tabBtn} onClick={() => { setAction('assign'); setError(''); setSuccess(false); }}>
           {domain === 'finance' ? 'Assign Finance Role' : 'Assign Operational Role'}
         </button>}
-        {canRevoke && <button type="button" disabled={isLoading || Boolean(pendingReview)} aria-pressed={action === 'revoke'} style={action === 'revoke' ? styles.activeTabBtn : styles.tabBtn} onClick={() => { setAction('revoke'); setError(''); setSuccess(false); }}>
+        {canRevoke && <button type="button" disabled={isLoading || Boolean(pendingReview) || Boolean(uncertainRole)} aria-pressed={action === 'revoke'} style={action === 'revoke' ? styles.activeTabBtn : styles.tabBtn} onClick={() => { setAction('revoke'); setError(''); setSuccess(false); }}>
           {domain === 'finance' ? 'Revoke Finance Role' : 'Revoke Operational Role'}
         </button>}
       </div>
@@ -164,12 +179,12 @@ const RoleWorkspace: React.FC<{principalId: string; hasMfa: boolean; canAssignFi
         <form onSubmit={handleRoleAction} style={styles.form}>
           <div style={styles.inputGroup}>
             <label style={styles.label} htmlFor="role-target-principal">Target Principal ID (e.g. issuer:subject)</label>
-            <input id="role-target-principal" type="text" style={styles.input} placeholder="e.g. https://identity.issuer:operator-sub" value={targetPrincipalId} onChange={(event) => setTargetPrincipalId(event.target.value)} disabled={isLoading || Boolean(pendingReview)} />
+            <input id="role-target-principal" type="text" style={styles.input} placeholder="e.g. https://identity.issuer:operator-sub" value={targetPrincipalId} onChange={(event) => setTargetPrincipalId(event.target.value)} disabled={isLoading || Boolean(pendingReview) || Boolean(uncertainRole)} />
           </div>
 
           <div style={styles.inputGroup}>
             <label style={styles.label} htmlFor="role-key">Select Role Entitlement</label>
-            <select id="role-key" style={styles.select} value={roleKey} onChange={(event) => setRoleKey(event.target.value)} disabled={isLoading || Boolean(pendingReview)}>
+            <select id="role-key" style={styles.select} value={roleKey} onChange={(event) => setRoleKey(event.target.value)} disabled={isLoading || Boolean(pendingReview) || Boolean(uncertainRole)}>
               {roleOptions.map((option) => <option key={option} value={option}>{option}{domain === 'finance' ? ` (${option === 'FINANCE_PREPARER' ? 'Maker' : option === 'FINANCE_CONTROLLER' ? 'Checker' : 'Read-only'})` : ''}</option>)}
             </select>
           </div>
@@ -177,20 +192,20 @@ const RoleWorkspace: React.FC<{principalId: string; hasMfa: boolean; canAssignFi
           <div style={styles.grid}>
             <div style={styles.inputGroup}>
               <label style={styles.label} htmlFor="role-effective-from">Effective From</label>
-              <input id="role-effective-from" type="datetime-local" style={styles.input} value={effectiveFrom} onChange={(event) => setEffectiveFrom(event.target.value)} disabled={isLoading || Boolean(pendingReview)} />
+              <input id="role-effective-from" type="datetime-local" style={styles.input} value={effectiveFrom} onChange={(event) => setEffectiveFrom(event.target.value)} disabled={isLoading || Boolean(pendingReview) || Boolean(uncertainRole)} />
             </div>
             <div style={styles.inputGroup}>
               <label style={styles.label} htmlFor="role-effective-to">Effective To</label>
-              <input id="role-effective-to" type="datetime-local" style={styles.input} value={effectiveTo} onChange={(event) => setEffectiveTo(event.target.value)} disabled={isLoading || Boolean(pendingReview)} />
+              <input id="role-effective-to" type="datetime-local" style={styles.input} value={effectiveTo} onChange={(event) => setEffectiveTo(event.target.value)} disabled={isLoading || Boolean(pendingReview) || Boolean(uncertainRole)} />
             </div>
           </div>
 
           {domain === 'finance' && <div style={styles.inputGroup}>
             <label style={styles.label} htmlFor="role-approval-ids">Related Maker-Checker Approval IDs (comma separated, when required)</label>
-            <input id="role-approval-ids" type="text" style={styles.input} placeholder="e.g. UUID-1, UUID-2" value={approvalIds} onChange={(event) => setApprovalIds(event.target.value)} disabled={isLoading || Boolean(pendingReview)} />
+            <input id="role-approval-ids" type="text" style={styles.input} placeholder="e.g. UUID-1, UUID-2" value={approvalIds} onChange={(event) => setApprovalIds(event.target.value)} disabled={isLoading || Boolean(pendingReview) || Boolean(uncertainRole)} />
           </div>}
 
-          <button ref={triggerRef} type="submit" disabled={isLoading || Boolean(pendingReview) || (action === 'assign' ? !canAssign || !hasMfa : !canRevoke)} style={styles.submitBtn}>
+          <button ref={triggerRef} type="submit" disabled={isLoading || Boolean(pendingReview) || Boolean(uncertainRole) || (action === 'assign' ? !canAssign || !hasMfa : !canRevoke)} style={styles.submitBtn}>
             {isLoading ? 'Executing Request…' : action === 'assign' ? 'Commit Role Assignment' : 'Execute Revocation'}
           </button>
         </form>

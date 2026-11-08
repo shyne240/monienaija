@@ -37,8 +37,8 @@ function setPrincipal(roles: string[], scopes: string[]) {
 describe('Admin Web operational role governance', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (ApiClient.post as jest.Mock).mockImplementation((_url: string, body: any) => Promise.resolve({ status: 'ACTIVE', principalId: body.targetPrincipalId, roleKey: body.roleKey }));
-    (ApiClient.delete as jest.Mock).mockResolvedValue({ status: 'REVOKED', principalId: 'issuer:operator-28', roleKey: 'TREASURY' });
+    (ApiClient.post as jest.Mock).mockImplementation((_url: string, body: any) => Promise.resolve({ assignmentReference:'synthetic-reference', assignmentVersion:1, status:'ACTIVE', principalId:body.targetPrincipalId, roleKey:body.roleKey, assignedBy:'issuer:ADMINISTRATOR', assignedAt:'2026-10-23T09:00:00Z', effectiveFrom:body.effectiveFrom, effectiveTo:body.effectiveTo }));
+    (ApiClient.delete as jest.Mock).mockResolvedValue({ assignmentReference:'synthetic-reference', assignmentVersion:1, status:'REVOKED', principalId:'issuer:operator-28', roleKey:'TREASURY', revokedBy:'issuer:ADMINISTRATOR', revokedAt:'2026-10-23T09:00:00Z' });
   });
 
   test('ADMINISTRATOR can assign only one of the six existing operational roles through the guarded endpoint', async () => {
