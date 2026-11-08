@@ -202,6 +202,10 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
     message: string;
   } | null>(null);
   const [isSavingTrigger, setIsSavingTrigger] = useState<boolean>(false);
+  const triggerInFlight = useRef(false);
+  const [triggerReview, setTriggerReview] = useState<{ eventType: string; channel: NotificationConfigurationTarget } | null>(null);
+  const triggerDirty = Boolean(editingTriggerEvent && (triggerReason.trim() || draftEventEnabled !== (editingTriggerEvent.eventEnabled ?? false) || draftSmsEnabled !== (editingTriggerEvent.smsEnabled ?? false) || draftEmailEnabled !== (editingTriggerEvent.emailEnabled ?? false)));
+
 
   // Approvals & Governance State (Capability 8)
   const [checkerApprovalId, setCheckerApprovalId] = useState<string>('');
@@ -225,8 +229,8 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   const checkerUncertaintyVersion = useRef(0);
 
   const checkerBusy = isSubmittingChecker || Boolean(decidingChangeId || executingApprovalId);
-  const notificationGuard = templateGuard || Boolean(checkerApprovalId.trim() || checkerComment.trim() || queueDecisionComment.trim() || queueNeedsRefresh || checkerBusy);
-  const notificationBusy = templateBusy || checkerBusy;
+  const notificationGuard = templateGuard || triggerDirty || Boolean(triggerReview) || isSavingTrigger || Boolean(checkerApprovalId.trim() || checkerComment.trim() || queueDecisionComment.trim() || queueNeedsRefresh || checkerBusy);
+  const notificationBusy = templateBusy || checkerBusy || isSavingTrigger;
   useEffect(() => { onNotificationGuardChange?.(notificationGuard, notificationBusy); }, [onNotificationGuardChange, notificationGuard, notificationBusy]);
   useEffect(() => {
     if (!notificationGuard) return;
@@ -782,7 +786,8 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
 
   // Handlers — Event Trigger Configuration (Capability 2)
   const openTriggerConfigDrawer = (eventItem: NotificationEventCatalogueItem) => {
-    if (!canProposeTriggerChange || eventsSource !== 'LIVE' || loadingInitial) return;
+    if (!canProposeTriggerChange || eventsSource !== 'LIVE' || loadingInitial || triggerInFlight.current) return;
+    if (editingTriggerEvent && triggerDirty && !window.confirm('Discard the open trigger draft and switch events?')) return;
     setEditingTriggerEvent(eventItem);
     setDraftEventEnabled(eventItem.eventEnabled ?? false);
     setDraftSmsEnabled(eventItem.smsEnabled ?? false);
@@ -799,7 +804,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       !editingTriggerEvent ||
       eventsSource !== 'LIVE' ||
       loadingInitial ||
-      isSavingTrigger
+      isSavingTrigger || triggerInFlight.current || triggerReview
     ) return;
 
     setTriggerValidationErrors([]);
@@ -831,6 +836,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
     });
     const created: Array<{ channel: NotificationConfigurationTarget; approvalId: string }> = [];
     let failure: { kind: 'blocked' | 'error'; message: string } | null = null;
+    triggerInFlight.current = true;
     setIsSavingTrigger(true);
     try {
       for (const change of changes) {
@@ -845,11 +851,13 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
             },
           );
           if (result.status === 'BLOCKED') {
+            setTriggerReview({eventType: editingTriggerEvent.eventType, channel: change.channel});
             failure = { kind: 'blocked', message: `${change.channel}: ${result.message}` };
             break;
           }
           const approvalId = result.data.approvalId;
-          if (!approvalId) {
+          if (!approvalId || result.data.status !== 'PENDING_APPROVAL' || !result.data.updatedAt) {
+            setTriggerReview({eventType: editingTriggerEvent.eventType, channel: change.channel});
             failure = {
               kind: 'error',
               message: `${change.channel} submission could not be confirmed. Check the approval queue before retrying.`,
@@ -882,6 +890,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
         } catch (err: unknown) {
           const status = err instanceof ApiError ? err.status : undefined;
           const detail = err instanceof Error ? err.message : '';
+          if (status !== 400 && status !== 403 && status !== 422) setTriggerReview({eventType: editingTriggerEvent.eventType, channel: change.channel});
           const message = status === 409
             ? `Version conflict for ${change.channel}: the configuration changed since this drawer was opened. Close it, refresh the registry, and review the latest state before retrying.`
             : status === 403
@@ -910,6 +919,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
         setTriggerReason('');
       }
     } finally {
+      triggerInFlight.current = false;
       setIsSavingTrigger(false);
     }
   };
@@ -1666,6 +1676,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
             <p className="notification-redesign__event-count" role="status">Showing {filteredEvents.length} of {events.length} catalogue events.</p>
           </section>
 
+          {triggerReview && <div role="alert" data-testid="trigger-review-lock">Proposal outcome for {triggerReview.eventType} / {triggerReview.channel} requires independent review. Review the current event configuration, proposal queue and audit records before acknowledging; a fresh read or absent proposal cannot exclude a late commit. This local safeguard is lost on exit or session change. <button type="button" disabled={isSavingTrigger} onClick={() => { if (window.confirm('Have you independently reviewed event configuration, proposals and audit records, including a possible late commit? This discards the open trigger draft.')) { setEditingTriggerEvent(null); setTriggerReason(''); setTriggerReview(null); } }}>Acknowledge independent trigger review</button></div>}
           {/* Eligible Trigger Configuration Form Drawer */}
           {editingTriggerEvent && (
             <section
@@ -1680,7 +1691,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                 <h3 style={styles.cardTitle}>
                   Configure Eligible Triggers — <code>{editingTriggerEvent.eventType}</code>
                 </h3>
-                <Button size="sm" disabled={isSavingTrigger} onClick={() => { setEditingTriggerEvent(null); if (triggerOriginRef.current?.isConnected) triggerOriginRef.current.focus(); }}>
+                <Button size="sm" disabled={isSavingTrigger} onClick={() => { if (triggerDirty && !window.confirm('Discard this trigger draft? Any unconfirmed proposal may still exist.')) return; setEditingTriggerEvent(null); if (triggerOriginRef.current?.isConnected) triggerOriginRef.current.focus(); }}>
                   Close
                 </Button>
               </div>
@@ -1815,7 +1826,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   type="submit"
                   variant="primary"
                   data-testid="submit-trigger-config-btn"
-                  disabled={!canProposeTriggerChange || eventsSource !== 'LIVE' || loadingInitial || isSavingTrigger}
+                  disabled={!canProposeTriggerChange || eventsSource !== 'LIVE' || loadingInitial || isSavingTrigger || Boolean(triggerReview)}
                 >
                   {isSavingTrigger ? 'Submitting…' : 'Submit changes for approval'}
                 </Button>

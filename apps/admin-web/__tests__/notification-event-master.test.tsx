@@ -688,15 +688,14 @@ describe('H-04/H-06 — versioned event-master controls', () => {
     );
     const firstCalls = postCalls().filter(([url]) => url === '/internal/notifications/changes');
     expect(firstCalls.map((call) => configurationBody(call).channel)).toEqual(['EVENT', 'SMS']);
+    expect((maker.getByTestId('submit-trigger-config-btn') as HTMLButtonElement).disabled).toBe(true);
+    expect(maker.getByTestId('trigger-review-lock').textContent).toMatch(/cannot exclude a late commit/i);
     fireEvent.click(maker.getByTestId('submit-trigger-config-btn'));
-    await waitFor(() =>
-      expect(postCalls().filter(([url]) => url === '/internal/notifications/changes')).toHaveLength(
-        3,
-      ),
-    );
+    expect(postCalls().filter(([url]) => url === '/internal/notifications/changes')).toHaveLength(2);
+    const confirmation = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(maker.getByRole('button', {name: 'Acknowledge independent trigger review'})); confirmation.mockRestore();
+    expect(maker.queryByTestId('event-trigger-config-panel')).toBeNull();
     expect(server.proposals).toHaveLength(1);
-    const retryCalls = postCalls().filter(([url]) => url === '/internal/notifications/changes');
-    expect(configurationBody(retryCalls[2]).channel).toBe('SMS');
   });
 
   test('keeps SECURITY locked and treats target locks and unavailable versions independently', async () => {
@@ -1057,9 +1056,15 @@ describe('H-04/H-06 — versioned event-master controls', () => {
       /EVENT submission could not be confirmed.*Check the approval queue before retrying/i,
     );
     expect(view.getByTestId(`event-master-${A}`).textContent).toBe('ENABLED');
-    expect(postCalls().filter(([url]) => url === '/internal/notifications/changes')).toHaveLength(
-      1,
-    );
+    expect(postCalls().filter(([url]) => url === '/internal/notifications/changes')).toHaveLength(1);
+    const event = new Event('beforeunload', {cancelable:true}); window.dispatchEvent(event); expect(event.defaultPrevented).toBe(true);
+    const confirmation = jest.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.click(view.getByRole('button', {name:'Close'})); expect(view.getByTestId('event-trigger-config-panel')).toBeTruthy();
+    fireEvent.click(view.getByTestId('refresh-notifications-console-btn')); await ready(view);
+    expect(view.getByTestId('trigger-review-lock')).toBeTruthy(); expect((view.getByTestId('submit-trigger-config-btn') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(view.getByRole('button', {name:'Acknowledge independent trigger review'})); expect(view.getByTestId('trigger-review-lock')).toBeTruthy();
+    confirmation.mockReturnValue(true); fireEvent.click(view.getByRole('button', {name:'Acknowledge independent trigger review'})); confirmation.mockRestore();
+    expect(view.queryByTestId('event-trigger-config-panel')).toBeNull(); expect(view.queryByTestId('trigger-review-lock')).toBeNull();
   });
 });
 
