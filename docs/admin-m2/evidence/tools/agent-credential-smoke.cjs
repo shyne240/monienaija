@@ -38,6 +38,8 @@ const axe = require('axe-core');
     const controls = page.getByRole('region', { name: 'Agent credential and session controls' }); await controls.waitFor();
     const issue = controls.getByRole('button', { name: 'Issue initial credential' }); await issue.focus(); await page.keyboard.press('Enter');
     await controls.getByTestId('temporary-agent-password').waitFor();
+    await navigate('dashboard'); const secretLeave=page.getByRole('dialog',{name:'Leave Agent access review?'});await secretLeave.waitFor();await secretLeave.getByRole('button',{name:'Keep working'}).click();
+    if (!await controls.getByTestId('temporary-agent-password').count()) throw Error('Secret was lost after cancelled navigation');
     const hide = controls.getByRole('button', { name: 'Hide one-time value' }); await hide.focus(); await page.keyboard.press('Enter');
     if (await controls.getByTestId('temporary-agent-password').count()) throw Error('Synthetic one-time value remained visible after hiding');
     revokeMode = 'mismatch'; const revoke = controls.getByRole('button', { name: 'Invalidate active sessions' }); await revoke.focus(); await page.keyboard.press('Enter');
@@ -49,11 +51,15 @@ const axe = require('axe-core');
     const lockedSize=await page.evaluate(()=>({page:document.documentElement.scrollWidth,view:document.documentElement.clientWidth}));
     if(lockedSize.page>lockedSize.view)throw Error('Overflow in locked review state');
     if ([320,1440].includes(width)) await page.screenshot({path:`docs/admin-m2/evidence/agent-credential-review-${width}.png`,fullPage:true});
+    await navigate('dashboard');
+    const leave=page.getByRole('dialog',{name:'Leave Agent access review?'});await leave.waitFor();
+    await leave.getByRole('button',{name:'Keep working'}).click();
+    if (!await revoke.isDisabled()) throw Error('Agent access review lock lost after cancelled navigation');
     await controls.getByRole('button', { name: 'I reviewed Agent access and audit history' }).click();
     revokeMode = 'valid'; await revoke.focus(); await page.keyboard.press('Enter'); await controls.getByText('Active Agent sessions invalidated (0 sessions revoked).').waitFor();
     await assertVisibleLabels(page);
     const sizes = await page.evaluate(() => ({ page: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
-    report.push({ width, workspace: 'credential and session controls', synthetic: true, keyboard: true, secretHidden: true, mismatchedReceiptRejected: true, zeroRevocationsConfirmed: true, reviewLock: true, targetedAxeViolations: scan.violations.map(v=>v.id), ...sizes });
+    report.push({ width, workspace: 'credential and session controls', synthetic: true, keyboard: true, secretHidden: true, secretNavigationGuard: true, mismatchedReceiptRejected: true, zeroRevocationsConfirmed: true, reviewLock: true, shellNavigationGuard: true, targetedAxeViolations: scan.violations.map(v=>v.id), ...sizes });
     if ([320, 1440].includes(width)) { await page.evaluate(() => window.scrollTo(0, 0)); await page.screenshot({ path: `${process.cwd()}/docs/admin-m2/evidence/agent-credentials-${width}.png`, fullPage: true }); }
   }
   fs.writeFileSync(`${process.cwd()}/docs/admin-m2/evidence/agent-credential-smoke.json`, JSON.stringify(report, null, 2) + '\n');

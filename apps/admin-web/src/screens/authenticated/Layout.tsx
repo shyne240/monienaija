@@ -59,6 +59,9 @@ export const Layout: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [customerGuard, setCustomerGuard] = useState(false);
   const [customerBusy, setCustomerBusy] = useState(false);
+  const [agentGuard, setAgentGuard] = useState(false);
+  const [agentBusy, setAgentBusy] = useState(false);
+  const reportAgentGuard = useCallback((guarded: boolean, busy: boolean) => { setAgentGuard(guarded); setAgentBusy(busy); }, []);
   const [pendingLeave, setPendingLeave] = useState<{ view: View; context?: NavContext } | { logout: true } | null>(null);
   const leaveDialogRef = useRef<HTMLElement>(null);
   const reportCustomerGuard = useCallback((guarded: boolean, busy: boolean) => { setCustomerGuard(guarded); setCustomerBusy(busy); }, []);
@@ -270,6 +273,8 @@ export const Layout: React.FC = () => {
     if (!canAccessAdminView(view, principal.scopes, principal.roles, context)) return;
     setCustomerGuard(false);
     setCustomerBusy(false);
+    setAgentGuard(false);
+    setAgentBusy(false);
     setCurrentView(view);
     // Customer context belongs only to the destination explicitly selected from Customer 360°.
     // Clear it on every ordinary navigation so stale IDs cannot leak into unrelated screens.
@@ -291,11 +296,11 @@ export const Layout: React.FC = () => {
 
   const handleNav = (view: View, context?: NavContext) => {
     if (!canAccessAdminView(view, principal.scopes, principal.roles, context)) return;
-    if (customerGuard && canonicalAdminView(currentView) === 'customers') { restoreFocusRef.current = false; setMobileOpen(false); setPendingLeave({ view, context }); return; }
+    if ((customerGuard && canonicalAdminView(currentView) === 'customers') || (agentGuard && canonicalAdminView(currentView) === 'agents')) { restoreFocusRef.current = false; setMobileOpen(false); setPendingLeave({ view, context }); return; }
     performNav(view, context);
   };
   const requestLogout = () => {
-    if (customerGuard && canonicalAdminView(currentView) === 'customers') { restoreFocusRef.current = false; setMobileOpen(false); setPendingLeave({ logout: true }); return; }
+    if ((customerGuard && canonicalAdminView(currentView) === 'customers') || (agentGuard && canonicalAdminView(currentView) === 'agents')) { restoreFocusRef.current = false; setMobileOpen(false); setPendingLeave({ logout: true }); return; }
     logout();
   };
 
@@ -329,6 +334,7 @@ export const Layout: React.FC = () => {
       case 'agents':
         return (
           <AgentNetworkScreen
+            onAgentGuardChange={reportAgentGuard}
             initialAgentId={navContext.agentId}
             initialOpenApplications={navContext.openAgentApplications}
             onNavigateToSupportTickets={
@@ -498,9 +504,9 @@ export const Layout: React.FC = () => {
       {pendingLeave && (
         <div className="cm-modal-backdrop" role="presentation">
           <section ref={leaveDialogRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="mn-customer-leave-title">
-            <h2 id="mn-customer-leave-title">Leave customer information?</h2>
-            <p>Leaving discards the customer draft, one-time proof or upload retry key, and any local uncertain-outcome lock. An earlier action may already have occurred; inspect current records and audit history before acting again.</p>
-            {customerBusy && <p>A request is in progress. Leaving cannot cancel or confirm the server outcome.</p>}
+            <h2 id="mn-customer-leave-title">{canonicalAdminView(currentView) === 'agents' ? 'Leave Agent access review?' : 'Leave customer information?'}</h2>
+            <p>{canonicalAdminView(currentView) === 'agents' ? 'Leaving discards any visible one-time credential and local Agent access review lock. An earlier action may already have occurred; inspect Agent access records and audit history before acting again.' : 'Leaving discards the customer draft, one-time proof or upload retry key, and any local uncertain-outcome lock. An earlier action may already have occurred; inspect current records and audit history before acting again.'}</p>
+            {(customerBusy || agentBusy) && <p>A request is in progress. Leaving cannot cancel or confirm the server outcome.</p>}
             <div className="cm-actions-row">
               <button type="button" className="cm-button cm-button-secondary" onClick={() => setPendingLeave(null)}>Keep working</button>
               <button type="button" className="cm-button cm-button-danger" onClick={() => { const destination = pendingLeave; setPendingLeave(null); if ('logout' in destination) logout(); else performNav(destination.view, destination.context); }}>Discard and leave</button>

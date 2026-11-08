@@ -246,3 +246,15 @@ test('credential conflict requires explicit review and warns on browser unload',
  const event = new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);
  fireEvent.click(screen.getByRole('button',{name:'I reviewed Agent access and audit history'}));const after = new Event('beforeunload',{cancelable:true});window.dispatchEvent(after);expect(after.defaultPrevented).toBe(false);
 });
+
+test('uncertain Agent access action warns before changing the selected Agent or closing the detail', async()=>{
+ const confirm=jest.spyOn(window,'confirm').mockReturnValue(false);
+ useAuthStore.setState({principal:{type:'OPERATOR',principalId:'manager',sessionId:'session',audience:'workforce-admin',roles:[],scopes:['agent.view','agent.manage_credentials'],customerAccess:'NONE',assuranceLevel:'MFA'}});
+ const agent=(id:string)=>({id,reference:`AG-${id}`,status:'ACTIVE',agentClassId:null,createdAt:'2026-01-01',updatedAt:'2026-01-01'});
+ (ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.startsWith('/internal/agents?')?Promise.resolve({data:[agent('one'),agent('two')],total:2}):Promise.resolve([]));
+ (ApiClient.post as jest.Mock).mockRejectedValue(new Error('network lost'));render(<AgentNetworkScreen/>);await screen.findByText('AG-one');
+ fireEvent.click(screen.getAllByRole('button',{name:'View'})[0]);fireEvent.click(screen.getByRole('button',{name:'Issue initial credential'}));await screen.findByText(/Credential request outcome may be uncertain/);
+ fireEvent.click(screen.getAllByRole('button',{name:'View'})[1]);expect(confirm).toHaveBeenCalledTimes(1);expect(screen.getByText(/Credential request outcome may be uncertain/)).toBeTruthy();
+ fireEvent.click(screen.getByRole('button',{name:'Close'}));expect(confirm).toHaveBeenCalledTimes(2);expect(screen.getByText(/Credential request outcome may be uncertain/)).toBeTruthy();
+ confirm.mockReturnValue(true);fireEvent.click(screen.getByRole('button',{name:'Close'}));expect(screen.queryByText(/Credential request outcome may be uncertain/)).toBeNull();confirm.mockRestore();
+});

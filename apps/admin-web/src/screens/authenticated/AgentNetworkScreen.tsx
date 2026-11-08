@@ -1,6 +1,6 @@
 import './operational-surfaces.css';
 import './agent-network-redesign.css';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollRegion } from '../../design-system/primitives';
 import { formatMinorUnits } from '../../utils/financial-display';
 import { ApiClient } from '../../services/api-client';
@@ -262,6 +262,7 @@ export interface AgentNetworkScreenProps {
   initialAgentId?: string;
   initialOpenApplications?: boolean;
   onNavigateToSupportTickets?: (agentId: string) => void;
+  onAgentGuardChange?: (guarded: boolean, busy: boolean) => void;
 }
 
 function formatMinor(minorRaw: string | undefined | null, currency?: string): string {
@@ -327,10 +328,19 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   initialAgentId,
   initialOpenApplications,
   onNavigateToSupportTickets,
+  onAgentGuardChange,
 }) => {
   const { principal } = useAuthStore();
   const mountedRef = useRef(true);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+  const [credentialGuard, setCredentialGuard] = useState(false);
+  const [credentialBusy, setCredentialBusy] = useState(false);
+  const reportCredentialGuard = useCallback((guarded: boolean, busy: boolean) => { setCredentialGuard(guarded); setCredentialBusy(busy); onAgentGuardChange?.(guarded, busy); }, [onAgentGuardChange]);
+  useEffect(() => () => onAgentGuardChange?.(false, false), [onAgentGuardChange]);
+  const mayLeaveCredential = () => {
+    if (credentialBusy) return false;
+    return !credentialGuard || window.confirm('Leave this Agent? A visible one-time credential and any local access-action review lock will be lost. The action may have occurred; inspect Agent access records and audit history before acting again.');
+  };
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
   const canView = hasFn('agent.view');
   const canManageFunding =
@@ -495,7 +505,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   };
 
   const openDetail = async (a: Agent) => {
-    if (!canView) return;
+    if (!canView || (selectedAgentId.current !== a.id && !mayLeaveCredential())) return;
     selectedAgentId.current = a.id;
     setSelected(a);
     setPosition(null);
@@ -2021,7 +2031,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                 <td style={cell}>{a.agentClassId ? <code>{a.agentClassId}</code> : '—'}</td>
                 <td style={cell}>{new Date(a.createdAt).toLocaleString()}</td>
                 <td style={cell}>
-                  <button type="button" onClick={() => void openDetail(a)} style={smallBtn}>
+                  <button type="button" disabled={credentialBusy} onClick={() => void openDetail(a)} style={smallBtn}>
                     View
                   </button>
                 </td>
@@ -2076,7 +2086,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   Target in funding
                 </button>
               )}
-              <button type="button" onClick={() => { selectedAgentId.current = null; positionRequest.current += 1; setSelected(null); }} style={smallBtn}>
+              <button type="button" disabled={credentialBusy} onClick={() => { if (!mayLeaveCredential()) return; selectedAgentId.current = null; positionRequest.current += 1; setSelected(null); }} style={smallBtn}>
                 Close
               </button>
             </div>
@@ -2244,6 +2254,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                 agentId={selected.id}
                 agentStatus={selected.status}
                 canManage={canManageCredentials}
+                onGuardChange={reportCredentialGuard}
               />
             )}
 

@@ -24,6 +24,7 @@ interface AgentCredentialPanelProps {
   agentId: string;
   agentStatus: string;
   canManage: boolean;
+  onGuardChange?: (guarded: boolean, busy: boolean) => void;
 }
 
 export const AgentCredentialPanel: React.FC<AgentCredentialPanelProps> = (props) => {
@@ -34,7 +35,7 @@ export const AgentCredentialPanel: React.FC<AgentCredentialPanelProps> = (props)
   return <AgentCredentialWorkspace key={key} {...props} canManage={props.canManage && !principal?.readOnlyPrincipal} />;
 };
 
-const AgentCredentialWorkspace: React.FC<AgentCredentialPanelProps> = ({ agentId, agentStatus, canManage }) => {
+const AgentCredentialWorkspace: React.FC<AgentCredentialPanelProps> = ({ agentId, agentStatus, canManage, onGuardChange }) => {
   const [credential, setCredential] = useState<TemporaryCredential | null>(null);
   const [busy, setBusy] = useState(false);
   const [revokeBusy, setRevokeBusy] = useState(false);
@@ -61,12 +62,15 @@ const AgentCredentialWorkspace: React.FC<AgentCredentialPanelProps> = ({ agentId
     return () => { generation.current += 1; };
   }, [agentId, canManage]);
 
+  useEffect(() => { onGuardChange?.(reviewRequired || busy || revokeBusy || Boolean(credential), busy || revokeBusy); }, [onGuardChange, reviewRequired, busy, revokeBusy, credential]);
+  useEffect(() => () => onGuardChange?.(false, false), [onGuardChange]);
+
   useEffect(() => {
-    if (!reviewRequired && !busy && !revokeBusy) return;
+    if (!reviewRequired && !busy && !revokeBusy && !credential) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [reviewRequired, busy, revokeBusy]);
+  }, [reviewRequired, busy, revokeBusy, credential]);
 
   if (!canManage) return null;
 
