@@ -32,6 +32,7 @@ interface CustomerDirectoryResponse {
 interface CustomerDirectoryScreenProps {
   onNavigate?: (view: string, customerId: string) => void;
   selectedCustomerId?: string;
+  onPersonalGuardChange?: (guarded: boolean, busy: boolean) => void;
 }
 
 const CUSTOMER_STATUSES = ['DRAFT', 'ACTIVE', 'SUSPENDED', 'CLOSED'];
@@ -115,7 +116,7 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
   return <CustomerDirectoryWorkspace key={key} {...props} />;
 };
 
-const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ onNavigate, selectedCustomerId }) => {
+const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ onNavigate, selectedCustomerId, onPersonalGuardChange }) => {
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
   const canViewCustomer = scopes.includes('customer.view');
@@ -258,6 +259,7 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
         onBack={() => { requestVersion.current++; setIsLoading(true); setSelectedCustomer(null); setReloadVersion(value => value + 1); }}
         onCustomerUpdated={handleCustomerUpdated}
         onNavigate={onNavigate}
+        onPersonalGuardChange={onPersonalGuardChange}
       />
     );
   }

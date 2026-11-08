@@ -222,6 +222,8 @@ describe('CustomerPersonalInformationPanel', () => {
     const profileCard = profileHeading.closest('article') as HTMLElement;
     fireEvent.click(within(profileCard).getByRole('button', { name: 'Add profile' }));
     expect(view.getByText('Nigeria (NG)')).toBeTruthy();
+    fireEvent.click(within(profileCard).getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(view.getByRole('button', { name: 'Discard draft' }));
 
     const addressHeading = await view.findByRole('heading', {
       name: 'Residential and mailing addresses',
@@ -230,6 +232,7 @@ describe('CustomerPersonalInformationPanel', () => {
     fireEvent.click(within(addressCard).getByRole('button', { name: 'Add address' }));
     expect(within(addressCard).getByText('Nigeria (NG)')).toBeTruthy();
     fireEvent.click(within(addressCard).getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(view.getByRole('button', { name: 'Discard draft' }));
 
     const identityHeading = await view.findByRole('heading', {
       name: 'Supported identity metadata',
@@ -610,7 +613,9 @@ describe('CustomerPersonalInformationPanel', () => {
     fireEvent.click(view.getByRole('button', { name: 'Save address' }));
     expect(await view.findByText(/request outcome could not be confirmed/i)).toBeTruthy();
     expect(view.queryByText(/Address correction saved/)).toBeNull();
-    fireEvent.click(within(addressCard).getByRole('button', { name: 'Cancel' }));
+    expect((view.getByRole('button', { name: 'Save address' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(view.getByRole('button', { name: 'Refresh personal records for review' }));
+    fireEvent.click(await view.findByRole('button', { name: 'I reviewed the records; discard draft and unlock' }));
     const contactCard = view.getByRole('heading', { name: 'Phones and email' }).closest('article')!;
     fireEvent.click(within(contactCard).getByRole('button', { name: 'Edit' }));
     fireEvent.click(view.getByLabelText('Mark as primary'));
@@ -644,13 +649,15 @@ describe('CustomerPersonalInformationPanel', () => {
     await view.findByLabelText('One-time code');
     fireEvent.change(view.getByLabelText('One-time code'), { target: { value: '123456' } });
     fireEvent.click(view.getByRole('button', { name: 'Verify phone' }));
-    expect(await view.findByText(/request outcome could not be confirmed/i)).toBeTruthy();
+    expect(await view.findByText(/Phone verification outcome could not be confirmed/i)).toBeTruthy();
     expect(view.queryByText(/Phone verified. The customer remains/)).toBeNull();
     expect(callback).not.toHaveBeenCalled();
   });
 
   test('a late profile save never updates a different customer', async () => {
     setReadMocks();
+    const oldGet = (ApiClient.get as jest.Mock).getMockImplementation()!;
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) => path.endsWith('/profile') ? Promise.resolve({ ...profileInitial, customerId: path.includes('/old-customer/') ? 'old-customer' : 'new-customer' }) : oldGet(path));
     let resolveSave!: (value: typeof profileInitial) => void;
     (ApiClient.patch as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
     const onProfileUpdated = jest.fn();
@@ -824,7 +831,7 @@ describe('CustomerPersonalInformationPanel', () => {
       });
 
       (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-        if (path.endsWith('/profile')) return Promise.resolve(profileInitial);
+        if (path.endsWith('/profile')) return Promise.resolve({ ...profileInitial, customerId: 'cust-99' });
         if (path.endsWith('/addresses')) return Promise.resolve([]);
         if (path.endsWith('/contact-methods')) return Promise.resolve([]);
         if (path.endsWith('/identity-documents')) return Promise.resolve([]);
@@ -888,4 +895,113 @@ describe('CustomerPersonalInformationPanel', () => {
 
 test('read-only session retains reads but hides profile, contact, address and identity edits',async()=>{
  jest.clearAllMocks();setPrincipal();useAuthStore.setState(state=>({principal:state.principal?{...state.principal,readOnlyPrincipal:true}:null}));setReadMocks();const view=render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()}/>);await view.findByText('Synthetic Customer');expect(view.queryByRole('button',{name:'Edit profile'})).toBeNull();expect(view.queryByRole('button',{name:'Add contact'})).toBeNull();expect(view.queryByRole('button',{name:'Add address'})).toBeNull();expect(view.queryByRole('button',{name:'Verify phone'})).toBeNull();expect(ApiClient.post).not.toHaveBeenCalled();expect(ApiClient.patch).not.toHaveBeenCalled();
+});
+
+describe('personal information draft and outcome safety', () => {
+  beforeEach(() => { jest.clearAllMocks(); setPrincipal(); setReadMocks(); });
+
+  test('protects a draft from another editor and requires explicit discard', async () => {
+    const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} />);
+    await view.findByText('Synthetic Customer');
+    fireEvent.click(view.getByRole('button', { name: 'Edit profile' }));
+    fireEvent.change(view.getByLabelText(/Display name/), { target: { value: 'Unfinished synthetic draft' } });
+    expect((view.getByRole('button', { name: 'Add address' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(view.getByRole('button', { name: 'Cancel' }));
+    expect(view.getByRole('dialog')).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: 'Keep editing' }));
+    expect((view.getByLabelText(/Display name/) as HTMLInputElement).value).toBe('Unfinished synthetic draft');
+    fireEvent.click(view.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(view.getByRole('button', { name: 'Discard draft' }));
+    expect(view.queryByLabelText(/Display name/)).toBeNull();
+    expect((view.getByRole('button', { name: 'Add address' }) as HTMLButtonElement).disabled).toBe(false);
+    expect(ApiClient.patch).not.toHaveBeenCalled();
+  });
+
+  test('uncertain profile save blocks repeats, retains draft on refresh failure, and requires review and discard', async () => {
+    (ApiClient.patch as jest.Mock).mockRejectedValueOnce(new Error('connection lost'));
+    const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} />);
+    await view.findByText('Synthetic Customer');
+    fireEvent.click(view.getByRole('button', { name: 'Edit profile' }));
+    fireEvent.change(view.getByLabelText(/Display name/), { target: { value: 'Pending synthetic name' } });
+    const form = view.getByRole('button', { name: 'Save profile' }).closest('form')!;
+    fireEvent.submit(form); fireEvent.submit(form);
+    await view.findByRole('heading', { name: 'Review an unconfirmed or conflicting action' });
+    fireEvent.submit(form);
+    expect(ApiClient.patch).toHaveBeenCalledTimes(1);
+    const originalGet = (ApiClient.get as jest.Mock).getMockImplementation()!;
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) => path.endsWith('/profile') ? Promise.reject(new Error('offline')) : originalGet(path));
+    fireEvent.click(view.getByRole('button', { name: 'Refresh personal records for review' }));
+    await view.findByText(/Review remains locked/);
+    expect((view.getByLabelText(/Display name/) as HTMLInputElement).value).toBe('Pending synthetic name');
+    expect(view.queryByRole('button', { name: 'I reviewed the records; discard draft and unlock' })).toBeNull();
+    (ApiClient.get as jest.Mock).mockImplementation(originalGet);
+    fireEvent.click(view.getByRole('button', { name: 'Refresh personal records for review' }));
+    expect(await view.findByText(/Current profile: Synthetic Customer/)).toBeTruthy();
+    expect((view.getByRole('button', { name: 'Save profile' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(view.getByRole('button', { name: 'I reviewed the records; discard draft and unlock' }));
+    expect(view.queryByLabelText(/Display name/)).toBeNull();
+    expect(view.getByText(/earlier action may still have occurred/)).toBeTruthy();
+    expect(ApiClient.patch).toHaveBeenCalledTimes(1);
+  });
+
+  test('conflict and cross-customer read do not permit review unlock', async () => {
+    (ApiClient.patch as jest.Mock).mockRejectedValueOnce(Object.assign(new Error('conflict'), { status: 409 }));
+    const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} />);
+    await view.findByText('Synthetic Customer');
+    fireEvent.click(view.getByRole('button', { name: 'Edit profile' }));
+    fireEvent.change(view.getByLabelText(/Display name/), { target: { value: 'Pending synthetic name' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save profile' }));
+    await view.findByRole('heading', { name: 'Review an unconfirmed or conflicting action' });
+    const old = (ApiClient.get as jest.Mock).getMockImplementation()!;
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) => path.endsWith('/profile') ? Promise.resolve({ ...profileInitial, customerId: 'another-customer' }) : old(path));
+    fireEvent.click(view.getByRole('button', { name: 'Refresh personal records for review' }));
+    await view.findByText(/Review remains locked/);
+    expect(view.queryByRole('button', { name: 'I reviewed the records; discard draft and unlock' })).toBeNull();
+    expect(ApiClient.patch).toHaveBeenCalledTimes(1);
+  });
+
+  test('ambiguous OTP request cannot be sent again before contact review', async () => {
+    (ApiClient.post as jest.Mock).mockRejectedValueOnce(new Error('unknown delivery'));
+    const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} />);
+    fireEvent.click(await view.findByRole('button', { name: 'Verify phone' }));
+    await view.findByRole('heading', { name: 'Review an unconfirmed or conflicting action' });
+    expect((view.getByRole('button', { name: 'Verify phone' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(view.getByRole('button', { name: 'Verify phone' }));
+    expect(ApiClient.post).toHaveBeenCalledTimes(1);
+    fireEvent.click(view.getByRole('button', { name: 'Refresh personal records for review' }));
+    await view.findByRole('button', { name: 'I reviewed the records; discard draft and unlock' });
+    expect(view.getByText(/cannot prove whether an OTP was delivered/)).toBeTruthy();
+  });
+});
+
+test('phone verification save failure locks the one-time proof until fresh contact review', async () => {
+  jest.clearAllMocks(); setPrincipal(); setReadMocks();
+  (ApiClient.post as jest.Mock).mockImplementation((path: string) => path.endsWith('/otp/verify')
+    ? Promise.resolve({ status: 'PHONE_VERIFIED', verificationToken: 'synthetic-proof' })
+    : Promise.resolve({ status: 'OTP_REQUEST_ACCEPTED' }));
+  (ApiClient.patch as jest.Mock).mockRejectedValueOnce(Object.assign(new Error('rejected'), { status: 400 }));
+  const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} />);
+  fireEvent.click(await view.findByRole('button', { name: 'Verify phone' }));
+  fireEvent.change(await view.findByLabelText('One-time code'), { target: { value: '123456' } });
+  fireEvent.click(view.getByRole('button', { name: 'Verify phone' }));
+  await view.findByText(/Phone verification outcome could not be confirmed/);
+  const retry = view.getByRole('button', { name: 'Retry verification save' });
+  expect((retry as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.submit(retry.closest('form')!);
+  expect(ApiClient.patch).toHaveBeenCalledTimes(1);
+  fireEvent.click(view.getByRole('button', { name: 'Refresh personal records for review' }));
+  fireEvent.click(await view.findByRole('button', { name: 'I reviewed the records; discard draft and unlock' }));
+  expect(view.queryByLabelText('One-time code')).toBeNull();
+  expect(ApiClient.post).toHaveBeenCalledTimes(2);
+  expect(ApiClient.patch).toHaveBeenCalledTimes(1);
+});
+
+test('failed section reads do not enable new records or profile writes', async () => {
+  jest.clearAllMocks(); setPrincipal();
+  (ApiClient.get as jest.Mock).mockRejectedValue(new Error('offline'));
+  const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} />);
+  expect((await view.findByRole('button', { name: 'Add profile' }) as HTMLButtonElement).disabled).toBe(true);
+  for (const label of ['Add contact', 'Add address', 'Add document']) expect((view.getByRole('button', { name: label }) as HTMLButtonElement).disabled).toBe(true);
+  expect(ApiClient.post).not.toHaveBeenCalled();
+  expect(ApiClient.patch).not.toHaveBeenCalled();
 });

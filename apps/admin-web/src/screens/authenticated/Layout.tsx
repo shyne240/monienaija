@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import '../../design-system/tokens.css';
 import { Button } from '../../design-system/primitives';
 import { useAuthStore } from '../../store/auth-store';
+import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { DashboardScreen } from './DashboardScreen';
 import { DashboardSettingsScreen } from './DashboardSettingsScreen';
 import { RoleAssignmentScreen } from './RoleAssignmentScreen';
@@ -56,6 +57,12 @@ export const Layout: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [navContext, setNavContext] = useState<NavContext>({});
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [customerGuard, setCustomerGuard] = useState(false);
+  const [customerBusy, setCustomerBusy] = useState(false);
+  const [pendingLeave, setPendingLeave] = useState<{ view: View; context?: NavContext } | { logout: true } | null>(null);
+  const leaveDialogRef = useRef<HTMLElement>(null);
+  const reportCustomerGuard = useCallback((guarded: boolean, busy: boolean) => { setCustomerGuard(guarded); setCustomerBusy(busy); }, []);
+  useDialogFocus(leaveDialogRef, Boolean(pendingLeave), () => setPendingLeave(null));
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     home: true,
     servicing: true,
@@ -259,9 +266,10 @@ export const Layout: React.FC = () => {
   const toggleSection = (key: string) =>
     setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const handleNav = (view: View, context?: NavContext) => {
+  const performNav = (view: View, context?: NavContext) => {
     if (!canAccessAdminView(view, principal.scopes, principal.roles, context)) return;
-
+    setCustomerGuard(false);
+    setCustomerBusy(false);
     setCurrentView(view);
     // Customer context belongs only to the destination explicitly selected from Customer 360°.
     // Clear it on every ordinary navigation so stale IDs cannot leak into unrelated screens.
@@ -279,6 +287,16 @@ export const Layout: React.FC = () => {
     focusContentRef.current = true;
     restoreFocusRef.current = false;
     setMobileOpen(false);
+  };
+
+  const handleNav = (view: View, context?: NavContext) => {
+    if (!canAccessAdminView(view, principal.scopes, principal.roles, context)) return;
+    if (customerGuard && canonicalAdminView(currentView) === 'customers') { restoreFocusRef.current = false; setMobileOpen(false); setPendingLeave({ view, context }); return; }
+    performNav(view, context);
+  };
+  const requestLogout = () => {
+    if (customerGuard && canonicalAdminView(currentView) === 'customers') { restoreFocusRef.current = false; setMobileOpen(false); setPendingLeave({ logout: true }); return; }
+    logout();
   };
 
   const navigateWithCustomer = (view: View, customerId: string) => {
@@ -307,7 +325,7 @@ export const Layout: React.FC = () => {
           />
         );
       case 'dashboardSettings': return <DashboardSettingsScreen />;
-      case 'customers': return <CustomerDirectoryScreen onNavigate={(view, customerId) => navigateWithCustomer(view as View, customerId)} selectedCustomerId={navContext.customerId} />;
+      case 'customers': return <CustomerDirectoryScreen onNavigate={(view, customerId) => navigateWithCustomer(view as View, customerId)} selectedCustomerId={navContext.customerId} onPersonalGuardChange={reportCustomerGuard} />;
       case 'agents':
         return (
           <AgentNetworkScreen
@@ -443,7 +461,7 @@ export const Layout: React.FC = () => {
         </nav>
 
         <div className="mn-shell__logout">
-          <Button variant="secondary" onClick={logout}>
+          <Button variant="secondary" onClick={requestLogout}>
             Log out session
           </Button>
         </div>
@@ -477,6 +495,19 @@ export const Layout: React.FC = () => {
         {renderContent()}
       </div>
 
+      {pendingLeave && (
+        <div className="cm-modal-backdrop" role="presentation">
+          <section ref={leaveDialogRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="mn-customer-leave-title">
+            <h2 id="mn-customer-leave-title">Leave customer information?</h2>
+            <p>Leaving discards the personal-information draft, one-time proof and any local uncertain-outcome lock. An earlier action may already have occurred; inspect current records and audit history before acting again.</p>
+            {customerBusy && <p>A request is in progress. Leaving cannot cancel or confirm the server outcome.</p>}
+            <div className="cm-actions-row">
+              <button type="button" className="cm-button cm-button-secondary" onClick={() => setPendingLeave(null)}>Keep working</button>
+              <button type="button" className="cm-button cm-button-danger" onClick={() => { const destination = pendingLeave; setPendingLeave(null); if ('logout' in destination) logout(); else performNav(destination.view, destination.context); }}>Discard and leave</button>
+            </div>
+          </section>
+        </div>
+      )}
       {mobileOpen && (
         <div className="mn-drawer-layer">
           <div
@@ -512,7 +543,7 @@ export const Layout: React.FC = () => {
             </nav>
 
             <div className="mn-drawer__logout">
-              <Button variant="secondary" onClick={logout}>
+              <Button variant="secondary" onClick={requestLogout}>
                 Log out
               </Button>
             </div>

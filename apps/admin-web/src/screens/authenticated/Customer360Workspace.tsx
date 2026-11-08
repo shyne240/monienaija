@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ApiClient } from '../../services/api-client';
 import { formatFinancialAmount } from '../../utils/financial-display';
@@ -31,6 +31,7 @@ interface Customer360WorkspaceProps {
   onBack: () => void;
   onCustomerUpdated: (customer: DirectoryCustomer) => void;
   onNavigate?: (view: string, customerId: string) => void;
+  onPersonalGuardChange?: (guarded: boolean, busy: boolean) => void;
 }
 
 interface PhoneVerificationSummary {
@@ -147,12 +148,20 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
   onBack,
   onCustomerUpdated,
   onNavigate,
+  onPersonalGuardChange,
 }) => {
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
   const hasFunction = (code: string) => scopes.includes(code);
   const scopesKey = scopes.join('|');
   const [activeTab, setActiveTab] = useState<'overview' | 'personal' | 'proof'>('overview');
+  const [personalGuard, setPersonalGuard] = useState(false);
+  const [personalBusy, setPersonalBusy] = useState(false);
+  const [pendingExit, setPendingExit] = useState<'overview' | 'proof' | 'back' | null>(null);
+  const exitDialogRef = useRef<HTMLElement>(null);
+  const reportPersonalGuard = useCallback((guarded: boolean, busy: boolean) => { setPersonalGuard(guarded); setPersonalBusy(busy); onPersonalGuardChange?.(guarded, busy); }, [onPersonalGuardChange]);
+  useEffect(() => () => onPersonalGuardChange?.(false, false), [onPersonalGuardChange]);
+  useDialogFocus(exitDialogRef, Boolean(pendingExit), () => setPendingExit(null));
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [overviewReloadVersion, setOverviewReloadVersion] = useState(0);
@@ -242,6 +251,14 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
   const awaitingOverview = overviewLoading || !visibleOverview;
   const tabs = ['overview', 'personal', 'proof'] as const;
   const tabIds = ['customer-overview-tab', 'customer-personal-tab', 'customer-proof-address-tab'];
+  const requestTab = (tab: 'overview' | 'personal' | 'proof') => {
+    if (activeTab === 'personal' && tab !== 'personal' && personalGuard) { if (!personalBusy) setPendingExit(tab as 'overview' | 'proof'); return false; }
+    setActiveTab(tab); return true;
+  };
+  const requestBack = () => {
+    if (activeTab === 'personal' && personalGuard) { if (!personalBusy) setPendingExit('back'); return; }
+    onBack();
+  };
   const handleTabKey = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
     let next = index;
     if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
@@ -250,8 +267,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
     else if (event.key === 'End') next = tabs.length - 1;
     else return;
     event.preventDefault();
-    setActiveTab(tabs[next]);
-    document.getElementById(tabIds[next])?.focus();
+    if (requestTab(tabs[next])) document.getElementById(tabIds[next])?.focus();
   };
 
   const availableStatusActions = useMemo(() => {
@@ -307,7 +323,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
   return (
     <main className="customer-management cm-workspace">
       <div className="cm-workspace-topline">
-        <button className="cm-back-button" type="button" onClick={onBack}>← Back to directory</button>
+        <button className="cm-back-button" type="button" onClick={requestBack} disabled={personalBusy}>← Back to directory</button>
         <span className="cm-workspace-label">CUSTOMER 360°</span>
       </div>
 
@@ -338,7 +354,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
           tabIndex={activeTab === 'overview' ? 0 : -1}
           onKeyDown={(event) => handleTabKey(event, 0)}
           aria-controls="customer-overview-panel"
-          onClick={() => setActiveTab('overview')}
+          onClick={() => requestTab('overview')}
         >
           Overview
         </button>
@@ -351,7 +367,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
           tabIndex={activeTab === 'personal' ? 0 : -1}
           onKeyDown={(event) => handleTabKey(event, 1)}
           aria-controls="customer-personal-panel"
-          onClick={() => setActiveTab('personal')}
+          onClick={() => requestTab('personal')}
         >
           Personal information & contact
         </button>
@@ -364,7 +380,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
           tabIndex={activeTab === 'proof' ? 0 : -1}
           onKeyDown={(event) => handleTabKey(event, 2)}
           aria-controls="customer-proof-address-panel"
-          onClick={() => setActiveTab('proof')}
+          onClick={() => requestTab('proof')}
         >
           Proof of Address & physical verification
         </button>
@@ -521,6 +537,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
           <CustomerPersonalInformationPanel
             customerId={customer.id}
             customerType={customer.type}
+            onGuardChange={reportPersonalGuard}
             onProfileUpdated={(profile) => onCustomerUpdated({
               ...customer,
               displayName: profile.displayName,
@@ -535,6 +552,18 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
         </section>
       )}
 
+      {pendingExit && (
+        <div className="cm-modal-backdrop" role="presentation">
+          <section ref={exitDialogRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="cm-personal-exit-title">
+            <h2 id="cm-personal-exit-title">Leave personal information?</h2>
+            <p>Leaving discards any personal-information draft, one-time proof, and local uncertain-outcome lock. An earlier action may already have occurred. Inspect current records and audit history before acting again.</p>
+            <div className="cm-actions-row">
+              <button type="button" className="cm-button cm-button-secondary" onClick={() => setPendingExit(null)}>Keep working</button>
+              <button type="button" className="cm-button cm-button-danger" onClick={() => { const destination = pendingExit; setPendingExit(null); reportPersonalGuard(false, false); if (destination === 'back') onBack(); else setActiveTab(destination); }}>Discard and leave</button>
+            </div>
+          </section>
+        </div>
+      )}
       {pendingStatus && (
         <div className="cm-modal-backdrop" role="presentation">
           <section ref={dialogRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="cm-confirm-title">

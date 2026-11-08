@@ -324,3 +324,22 @@ test('unconfirmed lifecycle outcome cannot be retried in the same workspace',asy
 test('lifecycle confirmation synchronously prevents duplicate writes',async()=>{
  jest.clearAllMocks();setPrincipal(['customer.view','customer.suspend']);mockCustomerReads();let resolve!:(value:any)=>void;const pending=new Promise(r=>resolve=r);(ApiClient.patch as jest.Mock).mockReturnValueOnce(pending);const view=render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()}/>);fireEvent.click(view.getByRole('button',{name:'Suspend'}));const confirm=view.getByRole('button',{name:'Confirm change'});fireEvent.click(confirm);fireEvent.click(confirm);expect(ApiClient.patch).toHaveBeenCalledTimes(1);await act(async()=>{resolve({...customer,status:'SUSPENDED'});await pending;});
 });
+
+test('personal draft requires explicit confirmation before tab change or return to directory', async () => {
+  jest.clearAllMocks();
+  setPrincipal(['customer.view', 'customer.create', 'customer.view_address', 'customer.view_contact_methods', 'customer.view_identity_documents', 'kyc.review']);
+  mockCustomerReads();
+  const onBack = jest.fn();
+  const view = render(<Customer360Workspace customer={customer} onBack={onBack} onCustomerUpdated={jest.fn()} />);
+  fireEvent.click(view.getByRole('tab', { name: 'Personal information & contact' }));
+  fireEvent.click(await view.findByRole('button', { name: 'Edit profile' }));
+  fireEvent.change(view.getByLabelText(/Display name/), { target: { value: 'Unfinished name' } });
+  fireEvent.click(view.getByRole('tab', { name: 'Overview' }));
+  expect(view.getByRole('dialog', { name: 'Leave personal information?' })).toBeTruthy();
+  fireEvent.click(view.getByRole('button', { name: 'Keep working' }));
+  expect((view.getByLabelText(/Display name/) as HTMLInputElement).value).toBe('Unfinished name');
+  fireEvent.click(view.getByRole('button', { name: /Back to directory/ }));
+  expect(onBack).not.toHaveBeenCalled();
+  fireEvent.click(view.getByRole('button', { name: 'Discard and leave' }));
+  expect(onBack).toHaveBeenCalledTimes(1);
+});
