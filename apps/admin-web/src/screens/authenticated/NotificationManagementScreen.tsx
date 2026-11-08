@@ -129,7 +129,13 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   );
   const activeTabRef = useRef<NotificationAdminTab>(activeTab);
   activeTabRef.current = activeTab;
-  const [templateJumpEventType, setTemplateJumpEventType] = useState<string | undefined>(undefined);
+  const [templateJump, setTemplateJump] = useState<{ channel: ManagedNotificationChannel; eventType: string; sequence: number } | null>(null);
+  const templateJumpSequence = useRef(0);
+  const [visitedTemplates, setVisitedTemplates] = useState({ SMS: initialTab === 'smsTemplates', EMAIL: initialTab === 'emailTemplates' });
+  useEffect(() => {
+    if (activeTab === 'smsTemplates') setVisitedTemplates(previous => previous.SMS ? previous : { ...previous, SMS: true });
+    if (activeTab === 'emailTemplates') setVisitedTemplates(previous => previous.EMAIL ? previous : { ...previous, EMAIL: true });
+  }, [activeTab]);
 
   // Core data & boundary state
   const [loadingInitial, setLoadingInitial] = useState<boolean>(true);
@@ -1245,10 +1251,26 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
         ))}
       </div></div>
       <p className="notification-redesign__tab-hint">Scroll to see all sections. Use arrow keys to move between tabs, then Enter or Space to open one.</p>
-      {visibleTabs.filter((tabItem) => tabItem.key !== activeTab).map((tabItem) => (
+      {visibleTabs.filter((tabItem) => tabItem.key !== activeTab && tabItem.key !== 'smsTemplates' && tabItem.key !== 'emailTemplates').map((tabItem) => (
         <div key={tabItem.key} id={`notification-panel-${tabItem.key}`} role="tabpanel" aria-labelledby={`notification-tab-${tabItem.key}`} hidden />
       ))}
-      <div className="notification-redesign__panel" role="tabpanel" tabIndex={0} id={`notification-panel-${activeTab}`} aria-labelledby={`notification-tab-${activeTab}`}>
+      {(['SMS', 'EMAIL'] as const).map(channel => {
+        const tab = channel === 'SMS' ? 'smsTemplates' : 'emailTemplates';
+        return <div key={channel} className="notification-redesign__panel" role="tabpanel" tabIndex={activeTab === tab ? 0 : -1} id={`notification-panel-${tab}`} aria-labelledby={`notification-tab-${tab}`} hidden={activeTab !== tab}>
+          {(visitedTemplates[channel] || activeTab === tab) && <NotificationTemplateWorkspace
+            channel={channel} events={events} templates={templates}
+            templatesRegistryBlocked={Boolean(templateBlocked[channel])}
+            templatesReadPending={!loadedTemplateChannels[channel] && !templateErrors[channel]}
+            templatesReadError={templateErrors[channel]} emailChannelBlocked={emailChannelBlocked}
+            permissions={permissions} currentPrincipalId={currentPrincipalId}
+            initialEventType={templateJump?.channel === channel ? templateJump.eventType : undefined}
+            eventJump={templateJump?.channel === channel ? templateJump : null}
+            onTemplateSubmitted={(_outcome, record) => setSessionSubmittedChanges(previous => [record, ...previous])}
+            onRefreshRequested={fetchAllReadSurfaces}
+          />}
+        </div>;
+      })}
+      {activeTab !== 'smsTemplates' && activeTab !== 'emailTemplates' && <div className="notification-redesign__panel" role="tabpanel" tabIndex={0} id={`notification-panel-${activeTab}`} aria-labelledby={`notification-tab-${activeTab}`}>
       {/* TAB 1: OVERVIEW (Capability 1) */}
       {activeTab === 'overview' && (
         <div style={styles.sectionStack} data-testid="notif-panel-overview">
@@ -1912,7 +1934,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                                   style={styles.secondarySmallBtn}
                                   aria-label={`SMS Template for ${row.eventType}`}
                                   onClick={() => {
-                                    setTemplateJumpEventType(row.eventType);
+                                    setTemplateJump({ channel: 'SMS', eventType: row.eventType, sequence: ++templateJumpSequence.current });
                                     setActiveTab('smsTemplates');
                                   }}
                                 >
@@ -1923,7 +1945,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                                   style={styles.secondarySmallBtn}
                                   aria-label={`Email Template for ${row.eventType}`}
                                   onClick={() => {
-                                    setTemplateJumpEventType(row.eventType);
+                                    setTemplateJump({ channel: 'EMAIL', eventType: row.eventType, sequence: ++templateJumpSequence.current });
                                     setActiveTab('emailTemplates');
                                   }}
                                 >
@@ -1942,46 +1964,6 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
             <p className="notification-redesign__table-hint">Scroll horizontally to inspect all event and action columns.</p>
           </section>
         </div>
-      )}
-
-      {/* TAB 3: SMS TEMPLATES (Capabilities 3, 5, 6, 7) */}
-      {activeTab === 'smsTemplates' && (
-        <NotificationTemplateWorkspace
-          channel="SMS"
-          events={events}
-          templates={templates}
-          templatesRegistryBlocked={Boolean(templateBlocked.SMS)}
-          templatesReadPending={!loadedTemplateChannels.SMS && !templateErrors.SMS}
-          templatesReadError={templateErrors.SMS}
-          emailChannelBlocked={emailChannelBlocked}
-          permissions={permissions}
-          currentPrincipalId={currentPrincipalId}
-          initialEventType={templateJumpEventType}
-          onTemplateSubmitted={(_outcome, record) => {
-            setSessionSubmittedChanges((prev) => [record, ...prev]);
-          }}
-          onRefreshRequested={fetchAllReadSurfaces}
-        />
-      )}
-
-      {/* TAB 4: EMAIL TEMPLATES (Capabilities 4, 5, 6, 7) */}
-      {activeTab === 'emailTemplates' && (
-        <NotificationTemplateWorkspace
-          channel="EMAIL"
-          events={events}
-          templates={templates}
-          templatesRegistryBlocked={Boolean(templateBlocked.EMAIL)}
-          templatesReadPending={!loadedTemplateChannels.EMAIL && !templateErrors.EMAIL}
-          templatesReadError={templateErrors.EMAIL}
-          emailChannelBlocked={emailChannelBlocked}
-          permissions={permissions}
-          currentPrincipalId={currentPrincipalId}
-          initialEventType={templateJumpEventType}
-          onTemplateSubmitted={(_outcome, record) => {
-            setSessionSubmittedChanges((prev) => [record, ...prev]);
-          }}
-          onRefreshRequested={fetchAllReadSurfaces}
-        />
       )}
 
       {/* TAB 5: APPROVALS & GOVERNANCE (Capability 8) */}
@@ -3471,7 +3453,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
           />
         </div>
       )}
-      </div>
+      </div>}
     </div>
   );
 };

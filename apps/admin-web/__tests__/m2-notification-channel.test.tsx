@@ -1,5 +1,5 @@
 import React from 'react';
-import {act,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {act,fireEvent,render,screen,waitFor,within} from '@testing-library/react';
 import {NotificationManagementScreen} from '../src/screens/authenticated/NotificationManagementScreen';
 import {NotificationManagementApi} from '../src/services/notification-management-api';
 import {BASELINE_CODE_EVENT_CATALOGUE} from '../src/services/notification-domain';
@@ -10,7 +10,7 @@ const principal=(id='one')=>useAuthStore.setState({principal:{type:'OPERATOR',pr
 beforeEach(()=>{jest.restoreAllMocks();(ApiClient.get as jest.Mock).mockReset().mockRejectedValue(new ApiError('Unavailable',404));principal();jest.spyOn(NotificationManagementApi,'listEvents').mockResolvedValue({status:'LIVE',data:BASELINE_CODE_EVENT_CATALOGUE});});
 test('registry errors remain isolated to the failed template channel',async()=>{
  jest.spyOn(NotificationManagementApi,'listTemplates').mockImplementation(async (options)=>options?.channel==='SMS'?Promise.reject(new Error('Synthetic SMS failure')):{status:'LIVE',data:[]});
- render(<NotificationManagementScreen initialTab="smsTemplates"/>);expect(await screen.findByText(/Template registry unavailable: Synthetic SMS failure/)).toBeTruthy();fireEvent.click(screen.getByRole('tab',{name:'4. Email Templates'}));await waitFor(()=>expect(screen.queryByText(/Template registry unavailable: Synthetic SMS failure/)).toBeNull());fireEvent.click(screen.getByRole('tab',{name:'3. SMS Templates'}));expect(await screen.findByText(/Template registry unavailable: Synthetic SMS failure/)).toBeTruthy();
+ render(<NotificationManagementScreen initialTab="smsTemplates"/>);expect(await screen.findByText(/Template registry unavailable: Synthetic SMS failure/)).toBeTruthy();fireEvent.click(screen.getByRole('tab',{name:'4. Email Templates'}));const email=await screen.findByTestId('template-workspace-email');expect(within(email).queryByText(/Template registry unavailable: Synthetic SMS failure/)).toBeNull();expect(screen.getByTestId('template-workspace-sms').closest('[role=tabpanel]')?.hasAttribute('hidden')).toBe(true);fireEvent.click(screen.getByRole('tab',{name:'3. SMS Templates'}));expect(await screen.findByText(/Template registry unavailable: Synthetic SMS failure/)).toBeTruthy();
 });
 test('late template results from an earlier principal cannot enter the new workspace',async()=>{
  let resolve!:(value:any)=>void;const pending=new Promise<any>(r=>resolve=r);let count=0;jest.spyOn(NotificationManagementApi,'listTemplates').mockImplementation(()=>++count===1?pending:Promise.resolve({status:'LIVE',data:[]}));render(<NotificationManagementScreen initialTab="smsTemplates"/>);await waitFor(()=>expect(count).toBe(1));act(()=>principal('two'));await waitFor(()=>expect(count).toBe(2));await act(async()=>{resolve({status:'BLOCKED',message:'STALE BLOCKED'});await pending;});expect(screen.queryByText('STALE BLOCKED')).toBeNull();

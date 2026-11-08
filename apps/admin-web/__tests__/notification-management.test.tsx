@@ -1803,3 +1803,58 @@ test('template event switching protects a draft and reason without issuing a pro
   expect((view.getByTestId('template-change-summary-input') as HTMLInputElement).value).toBe('');
   expect(ApiClient.post).not.toHaveBeenCalled();
 });
+
+test('template drafts survive tab switches, but not a workforce session change', async () => {
+  jest.clearAllMocks(); mockIntegratedRegistryBackend();
+  seedPrincipal({roles:['SUPER_ADMIN'], scopes:['notification.view_deliveries'], assuranceLevel:'MFA'});
+  const view=render(<NotificationManagementScreen initialTab="smsTemplates"/>);
+  const sms=await view.findByTestId('template-workspace-sms');
+  fireEvent.change(within(sms).getByTestId('template-body-textarea'),{target:{value:'SMS local draft'}});
+  fireEvent.change(within(sms).getByTestId('template-change-summary-input'),{target:{value:'SMS local reason'}});
+  fireEvent.click(view.getByTestId('notif-tab-emailTemplates'));
+  const email=await view.findByTestId('template-workspace-email');
+  fireEvent.change(within(email).getByTestId('template-body-textarea'),{target:{value:'Email local draft'}});
+  fireEvent.click(view.getByTestId('notif-tab-smsTemplates'));
+  expect((within(sms).getByTestId('template-body-textarea') as HTMLTextAreaElement).value).toBe('SMS local draft');
+  expect((within(sms).getByTestId('template-change-summary-input') as HTMLInputElement).value).toBe('SMS local reason');
+  fireEvent.click(view.getByTestId('notif-tab-emailTemplates'));
+  expect((within(email).getByTestId('template-body-textarea') as HTMLTextAreaElement).value).toBe('Email local draft');
+  act(()=>useAuthStore.setState(state=>({principal:{...state.principal!,sessionId:'new-session'}})));
+  const newSms=await view.findByTestId('template-workspace-sms');
+  expect((within(newSms).getByTestId('template-body-textarea') as HTMLTextAreaElement).value).not.toBe('SMS local draft');
+  expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('catalogue jumps to another event ask before replacing an existing channel draft', async () => {
+  jest.clearAllMocks(); mockIntegratedRegistryBackend();
+  seedPrincipal({roles:['SUPER_ADMIN'], scopes:['notification.view_deliveries'], assuranceLevel:'MFA'});
+  const view=render(<NotificationManagementScreen initialTab="smsTemplates"/>);
+  const workspace=await view.findByTestId('template-workspace-sms');
+  fireEvent.change(within(workspace).getByTestId('template-event-select'),{target:{value:'transfer.completed'}});
+  fireEvent.change(within(workspace).getByTestId('template-body-textarea'),{target:{value:'Protected local draft'}});
+  fireEvent.click(view.getByTestId('notif-tab-events'));
+  fireEvent.click(view.getByRole('button',{name:'SMS Template for customer.funding.approved'}));
+  expect(within(workspace).getByTestId('template-event-switch-prompt')).toBeTruthy();
+  expect((within(workspace).getByTestId('template-event-select') as HTMLSelectElement).value).toBe('transfer.completed');
+  fireEvent.click(within(workspace).getByRole('button',{name:'Keep draft'}));
+  expect((within(workspace).getByTestId('template-body-textarea') as HTMLTextAreaElement).value).toBe('Protected local draft');
+  expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('switching tabs cannot start a duplicate template proposal while the first is pending', async () => {
+  jest.clearAllMocks(); mockIntegratedRegistryBackend();
+  seedPrincipal({roles:['SUPER_ADMIN'], scopes:['notification.view_deliveries'], assuranceLevel:'MFA'});
+  let resolve!: (value:any)=>void; const pending=new Promise<any>(r=>resolve=r);
+  const original=(ApiClient.post as jest.Mock).getMockImplementation()!;
+  (ApiClient.post as jest.Mock).mockImplementation((endpoint:string,...args:any[])=>endpoint==='/internal/notifications/changes'?pending:original(endpoint,...args));
+  const view=render(<NotificationManagementScreen initialTab="smsTemplates"/>);
+  const sms=await view.findByTestId('template-workspace-sms');
+  await waitFor(()=>expect(within(sms).getByTestId('template-version-history-table')).toBeTruthy());
+  fireEvent.change(within(sms).getByTestId('template-body-textarea'),{target:{value:'A controlled draft'}});
+  fireEvent.change(within(sms).getByTestId('template-change-summary-input'),{target:{value:'A detailed reason'}});
+  const submit=within(sms).getByTestId('submit-template-version-btn') as HTMLButtonElement;fireEvent.click(submit);
+  expect(submit.disabled).toBe(true);fireEvent.click(view.getByTestId('notif-tab-overview'));fireEvent.click(view.getByTestId('notif-tab-smsTemplates'));
+  expect(submit.disabled).toBe(true);fireEvent.click(submit);
+  expect((ApiClient.post as jest.Mock).mock.calls.filter(([path])=>path==='/internal/notifications/changes')).toHaveLength(1);
+  await act(async()=>{resolve({approvalId:'550e8400-e29b-41d4-a716-4466554400aa',status:'REQUESTED',actionType:'NOTIFICATION_TEMPLATE_CHANGE',requestedAt:'2026-11-01',expiresAt:'2026-11-02'});await pending;});
+});

@@ -1,0 +1,178 @@
+[
+  {
+    "width": 320,
+    "channel": "SMS",
+    "tabDraftRetained": true,
+    "historyReplacementProtected": true,
+    "focusReturned": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "channel": "EMAIL",
+    "tabDraftRetained": true,
+    "historyReplacementProtected": true,
+    "focusReturned": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "channel": "SMS",
+    "tabDraftRetained": true,
+    "historyReplacementProtected": true,
+    "focusReturned": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "channel": "EMAIL",
+    "tabDraftRetained": true,
+    "historyReplacementProtected": true,
+    "focusReturned": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "channel": "SMS",
+    "tabDraftRetained": true,
+    "historyReplacementProtected": true,
+    "focusReturned": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "channel": "EMAIL",
+    "tabDraftRetained": true,
+    "historyReplacementProtected": true,
+    "focusReturned": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "channel": "SMS",
+    "tabDraftRetained": true,
+    "historyReplacementProtected": true,
+    "focusReturned": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "channel": "EMAIL",
+    "tabDraftRetained": true,
+    "historyReplacementProtected": true,
+    "focusReturned": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "channel": "SMS",
+    "tabDraftRetained": true,
+    "historyReplacementProtected": true,
+    "focusReturned": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "channel": "EMAIL",
+    "tabDraftRetained": true,
+    "historyReplacementProtected": true,
+    "focusReturned": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "channel": "SMS",
+    "tabDraftRetained": true,
+    "historyReplacementProtected": true,
+    "focusReturned": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "channel": "EMAIL",
+    "tabDraftRetained": true,
+    "historyReplacementProtected": true,
+    "focusReturned": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "channel": "SMS",
+    "tabDraftRetained": true,
+    "historyReplacementProtected": true,
+    "focusReturned": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "channel": "EMAIL",
+    "tabDraftRetained": true,
+    "historyReplacementProtected": true,
+    "focusReturned": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "channel": "SMS",
+    "tabDraftRetained": true,
+    "historyReplacementProtected": true,
+    "focusReturned": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "channel": "EMAIL",
+    "tabDraftRetained": true,
+    "historyReplacementProtected": true,
+    "focusReturned": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 1440,
+    "view": 1440
+  }
+]

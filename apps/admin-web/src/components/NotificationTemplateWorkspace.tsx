@@ -33,6 +33,7 @@ interface NotificationTemplateWorkspaceProps {
   permissions: NotificationPermissions;
   currentPrincipalId: string;
   initialEventType?: string;
+  eventJump?: { eventType: string; sequence: number } | null;
   onTemplateSubmitted?: (
     outcome: NotificationMutationOutcome,
     changeRecord: NotificationChangeRequestRecord,
@@ -51,6 +52,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   permissions,
   currentPrincipalId,
   initialEventType,
+  eventJump = null,
   onTemplateSubmitted,
   onRefreshRequested,
 }) => {
@@ -65,9 +67,16 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   const [selectedEventType, setSelectedEventType] = useState<string>(defaultEventType);
   const [pendingEventType, setPendingEventType] = useState<string | null>(null);
   const switchPromptRef = useRef<HTMLDivElement | null>(null);
+  const replacementPromptRef = useRef<HTMLDivElement | null>(null);
+  const replacementOrigin = useRef<HTMLButtonElement | null>(null);
+  const [pendingReplacement, setPendingReplacement] = useState<{ kind: 'history' | 'active'; version: NotificationTemplateVersion; baseVersion: number | null } | null>(null);
+  const lastJumpSequence = useRef(0);
   const eventSelectRef = useRef<HTMLSelectElement | null>(null);
+  const returnToEventSelect = useRef(false);
+  const returnToReplacementOrigin = useRef(false);
   useEffect(() => {
     if (pendingEventType) switchPromptRef.current?.focus();
+    else if (returnToEventSelect.current) { returnToEventSelect.current = false; eventSelectRef.current?.focus(); }
   }, [pendingEventType]);
   const [subject, setSubject] = useState<string>('');
   const [body, setBody] = useState<string>('');
@@ -133,6 +142,49 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   );
   const referenceVersion = activeVersion ?? matchingVersions[0] ?? null;
   const activeVersionConfirmed = !templatesRegistryBlocked && !templatesReadPending && !templatesReadError && Boolean(activeVersion);
+
+  useEffect(() => {
+    if (!eventJump || eventJump.sequence === lastJumpSequence.current || isSubmitting || activatingTemplateId) return;
+    lastJumpSequence.current = eventJump.sequence;
+    if (eventJump.eventType === selectedEventType) return;
+    if (!events.some(event => event.eventType === eventJump.eventType)) return;
+    setPendingReplacement(null);
+    if (hasUserEditedRef.current || changeSummary.trim()) setPendingEventType(eventJump.eventType);
+    else setSelectedEventType(eventJump.eventType);
+  }, [eventJump, selectedEventType, events, isSubmitting, activatingTemplateId, changeSummary]);
+  useEffect(() => {
+    if (pendingReplacement) replacementPromptRef.current?.focus();
+    else if (returnToReplacementOrigin.current) {
+      returnToReplacementOrigin.current = false;
+      if (replacementOrigin.current?.isConnected) replacementOrigin.current.focus();
+      else eventSelectRef.current?.focus();
+    }
+  }, [pendingReplacement]);
+
+  const replacementCurrent = pendingReplacement && !templatesReadPending &&
+    matchingVersions.some(item => item.id === pendingReplacement.version.id && item.version === pendingReplacement.version.version && item.subject === pendingReplacement.version.subject && item.body === pendingReplacement.version.body) &&
+    (activeVersionConfirmed && activeVersion ? activeVersion.version : null) === pendingReplacement.baseVersion &&
+    (pendingReplacement.kind !== 'active' || (activeVersionConfirmed && activeVersion?.id === pendingReplacement.version.id));
+
+  const applyReplacement = (kind: 'history' | 'active', version: NotificationTemplateVersion) => {
+    hasUserEditedRef.current = kind === 'history';
+    setDraftBaseVersion(activeVersionConfirmed && activeVersion ? activeVersion.version : null);
+    setSubject(channel === 'EMAIL' ? version.subject ?? '' : '');
+    setBody(version.body);
+    if (kind === 'active') setChangeSummary('');
+  };
+  const requestReplacement = (kind: 'history' | 'active', version: NotificationTemplateVersion, origin: HTMLButtonElement) => {
+    if (isSubmitting || activatingTemplateId || pendingEventType || pendingReplacement) return;
+    if (hasUserEditedRef.current || changeSummary.trim()) {
+      replacementOrigin.current = origin;
+      setPendingReplacement({ kind, version, baseVersion: activeVersionConfirmed && activeVersion ? activeVersion.version : null });
+    } else applyReplacement(kind, version);
+  };
+  const closeReplacement = () => {
+    returnToReplacementOrigin.current = true;
+    setPendingReplacement(null);
+  };
+
 
   // Sync editor content whenever the operator switches event or channel, or when live template
   // history finishes loading before the operator begins editing.
@@ -292,7 +344,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
   const handleSubmitTemplate = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance || submitInFlight.current || activationInFlight.current || pendingEventType) return;
+    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance || submitInFlight.current || activationInFlight.current || pendingEventType || pendingReplacement) return;
 
     setValidationErrors([]);
     setSubmitError('');
@@ -382,7 +434,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
     // historical version is a governed TEMPLATE_ROLLBACK proposal created by the maker
     // (SUPER_ADMIN + MFA); a FINANCE_CONTROLLER checker approves and executes it from the
     // change queue (maker ≠ checker is enforced server-side at approval time).
-    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance || submitInFlight.current || activationInFlight.current || pendingEventType || !activeVersionConfirmed || !activeVersion) return;
+    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance || submitInFlight.current || activationInFlight.current || pendingEventType || pendingReplacement || !activeVersionConfirmed || !activeVersion) return;
     if (versionRow.sourceOrigin === 'CODE_BASELINE') {
       setActivationFeedback({
         kind: 'blocked',
@@ -438,7 +490,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         <p>
           Choose an event, prepare a draft with approved variables, then review its preview and
           version history. Proposals require approval before taking effect. Drafts are local to
-          this tab and are discarded when you leave it.
+          this notification workspace while switching tabs; leaving the workspace or session discards them.
         </p>
         <nav aria-label={`${channel} template workspace sections`}>
           <a href={`#template-editor-${channel}`}>Editor</a>
@@ -491,7 +543,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               data-testid="template-event-select"
               style={styles.select}
               value={selectedEventType}
-              disabled={isSubmitting || Boolean(activatingTemplateId)}
+              disabled={isSubmitting || Boolean(activatingTemplateId) || Boolean(pendingEventType) || Boolean(pendingReplacement)}
               onChange={(e) => {
                 const next = e.target.value;
                 if (next === selectedEventType) return;
@@ -531,8 +583,21 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               the current editor draft and reason. This does not submit a proposal.
             </p>
             <div>
-              <button type="button" onClick={() => { setPendingEventType(null); eventSelectRef.current?.focus(); }}>Keep draft</button>
-              <button type="button" onClick={() => { setSelectedEventType(pendingEventType); setPendingEventType(null); eventSelectRef.current?.focus(); }}>Discard and switch</button>
+              <button type="button" onClick={() => { returnToEventSelect.current = true; setPendingEventType(null); }}>Keep draft</button>
+              <button type="button" onClick={() => { setSelectedEventType(pendingEventType); returnToEventSelect.current = true; setPendingEventType(null); }}>Discard and switch</button>
+            </div>
+          </div>
+        )}
+
+        {pendingReplacement && (
+          <div className="mn-template-switch-prompt" ref={replacementPromptRef} tabIndex={-1}
+            role="group" aria-label="Confirm draft replacement" data-testid="template-replacement-prompt">
+            <strong>Replace the current draft?</strong>
+            <p>{pendingReplacement.kind === 'active' ? 'Reloading the active version replaces your editor content and clears the reason.' : `Loading version ${pendingReplacement.version.version} replaces the editor content; your reason is retained.`} This does not submit a proposal.</p>
+            {!replacementCurrent && <p role="status">The selected version or active registry state changed. Keep the draft and review the refreshed history before trying again.</p>}
+            <div>
+              <button type="button" onClick={closeReplacement}>Keep draft</button>
+              <button type="button" disabled={!replacementCurrent} onClick={() => { if (!replacementCurrent) return; applyReplacement(pendingReplacement.kind, pendingReplacement.version); closeReplacement(); }}>Replace draft</button>
             </div>
           </div>
         )}
@@ -731,14 +796,14 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               </div>
             )}
 
-            {activeVersionConfirmed && activeVersion && draftBaseVersion !== activeVersion.version && <div role="alert">The active template changed since this draft was loaded. Your draft is retained; reload and review the active version before submitting. <button type="button" onClick={() => { hasUserEditedRef.current = false; setSubject(channel === 'EMAIL' ? activeVersion.subject ?? '' : ''); setBody(activeVersion.body); setChangeSummary(''); setDraftBaseVersion(activeVersion.version); }}>Reload active version</button></div>}
+            {activeVersionConfirmed && activeVersion && draftBaseVersion !== activeVersion.version && <div role="alert">The active template changed since this draft was loaded. Your draft is retained; reload and review the active version before submitting. <button type="button" disabled={isSubmitting || Boolean(activatingTemplateId) || Boolean(pendingEventType) || Boolean(pendingReplacement)} onClick={(event) => requestReplacement('active', activeVersion, event.currentTarget)}>Reload active version</button></div>}
             {permissions.canManageTemplates && !permissions.hasMfaAssurance && <div role="note">MFA session assurance is required to submit template changes.</div>}
             <div style={styles.buttonRow}>
               <button
                 type="submit"
                 data-testid="submit-template-version-btn"
-                disabled={!canEditFields || !permissions.hasMfaAssurance || isSubmitting || Boolean(activatingTemplateId) || Boolean(pendingEventType)}
-                style={!canEditFields || !permissions.hasMfaAssurance || isSubmitting || activatingTemplateId || pendingEventType ? styles.primaryBtnDisabled : styles.primaryBtn}
+                disabled={!canEditFields || !permissions.hasMfaAssurance || isSubmitting || Boolean(activatingTemplateId) || Boolean(pendingEventType) || Boolean(pendingReplacement)}
+                style={!canEditFields || !permissions.hasMfaAssurance || isSubmitting || activatingTemplateId || pendingEventType || pendingReplacement ? styles.primaryBtnDisabled : styles.primaryBtn}
               >
                 {isSubmitting
                   ? 'Submitting…'
@@ -1171,7 +1236,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                   const canActivateRow =
                     permissions.canManageTemplates &&
                     permissions.hasMfaAssurance &&
-                    activeVersionConfirmed && !isSubmitting && !activatingTemplateId && !pendingEventType &&
+                    activeVersionConfirmed && !isSubmitting && !activatingTemplateId && !pendingEventType && !pendingReplacement &&
                     !ver.isActive && ver.sourceOrigin !== 'CODE_BASELINE';
                   const verifiedRegistry = !templatesReadPending && !templatesReadError && !templatesRegistryBlocked && ver.sourceOrigin !== 'CODE_BASELINE';
 
@@ -1217,13 +1282,8 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                             <button
                               type="button"
                               style={styles.secondarySmallBtn}
-                              disabled={isSubmitting || Boolean(activatingTemplateId) || Boolean(pendingEventType)}
-                              onClick={() => {
-                                hasUserEditedRef.current = true;
-                                setDraftBaseVersion(activeVersionConfirmed && activeVersion ? activeVersion.version : null);
-                                if (channel === 'EMAIL') setSubject(ver.subject ?? '');
-                                setBody(ver.body);
-                              }}
+                              disabled={isSubmitting || Boolean(activatingTemplateId) || Boolean(pendingEventType) || Boolean(pendingReplacement)}
+                              onClick={(event) => requestReplacement('history', ver, event.currentTarget)}
                             >
                               Load v{ver.version}
                             </button>

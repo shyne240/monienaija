@@ -16,7 +16,7 @@ beforeEach(()=>{jest.restoreAllMocks();(ApiClient.post as jest.Mock).mockReset()
 test('a changed active template retains but blocks an edited draft until reset',async()=>{
  const view=render(<NotificationTemplateWorkspace {...props(1)}/>);fireEvent.change(screen.getByTestId('template-body-textarea'),{target:{value:'Synthetic edited draft'}});fireEvent.change(screen.getByTestId('template-change-summary-input'),{target:{value:'Synthetic explanation'}});
  view.rerender(<NotificationTemplateWorkspace {...props(2)}/>);expect(await screen.findByText(/active template changed since this draft was loaded/)).toBeTruthy();expect((screen.getByTestId('template-body-textarea') as HTMLTextAreaElement).value).toBe('Synthetic edited draft');
- fireEvent.click(screen.getByTestId('submit-template-version-btn'));expect(screen.getByText(/confirmed, current active template is required/)).toBeTruthy();expect(ApiClient.post).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Reload active version'}));expect((screen.getByTestId('template-body-textarea') as HTMLTextAreaElement).value).toBe('Current text version 2');
+ fireEvent.click(screen.getByTestId('submit-template-version-btn'));expect(screen.getByText(/confirmed, current active template is required/)).toBeTruthy();expect(ApiClient.post).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Reload active version'}));fireEvent.click(screen.getByRole('button',{name:'Replace draft'}));expect((screen.getByTestId('template-body-textarea') as HTMLTextAreaElement).value).toBe('Current text version 2');
 });
 
 test('template change uses the reviewed version and rejects an unconfirmed receipt',async()=>{
@@ -36,4 +36,27 @@ test('a confirmed proposal remains confirmed if the later registry refresh fails
  const onTemplateSubmitted=jest.fn();render(<NotificationTemplateWorkspace {...props(1)} onTemplateSubmitted={onTemplateSubmitted} onRefreshRequested={()=>Promise.reject(new Error('offline'))}/>);
  fireEvent.change(screen.getByTestId('template-body-textarea'),{target:{value:'Synthetic edited draft'}});fireEvent.change(screen.getByTestId('template-change-summary-input'),{target:{value:'Synthetic explanation'}});fireEvent.click(screen.getByTestId('submit-template-version-btn'));
  expect((await screen.findByTestId('template-submit-success')).textContent).toMatch(/maker-checker approval.*Registry refresh failed/);expect(onTemplateSubmitted).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({id:'synthetic-approval'}));expect(screen.queryByTestId('template-submit-error')).toBeNull();
+});
+
+test('history replacement asks before discarding a draft and keeps the reason', () => {
+ const history={...version(0),isActive:false,approvalStatus:'SUPERSEDED' as const};
+ render(<NotificationTemplateWorkspace {...props(1)} templates={[version(1),history]}/>);
+ const body=screen.getByTestId('template-body-textarea') as HTMLTextAreaElement;
+ const reason=screen.getByTestId('template-change-summary-input') as HTMLInputElement;
+ fireEvent.change(body,{target:{value:'Unsaved text'}});fireEvent.change(reason,{target:{value:'My reason'}});
+ const trigger=screen.getByRole('button',{name:'Load v0'});fireEvent.click(trigger);
+ expect(document.activeElement).toBe(screen.getByTestId('template-replacement-prompt'));
+ expect(body.value).toBe('Unsaved text');expect((screen.getByTestId('submit-template-version-btn') as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole('button',{name:'Keep draft'}));expect(document.activeElement).toBe(trigger);expect(body.value).toBe('Unsaved text');
+ fireEvent.click(trigger);fireEvent.click(screen.getByRole('button',{name:'Replace draft'}));expect(body.value).toBe('Current text version 0');expect(reason.value).toBe('My reason');expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('a pending active-version replacement cannot use a stale snapshot', () => {
+ const view=render(<NotificationTemplateWorkspace {...props(1)}/>);const body=screen.getByTestId('template-body-textarea') as HTMLTextAreaElement;
+ fireEvent.change(body,{target:{value:'Unsaved text'}});view.rerender(<NotificationTemplateWorkspace {...props(2)}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Reload active version'}));
+ view.rerender(<NotificationTemplateWorkspace {...props(3)}/>);
+ expect((screen.getByRole('button',{name:'Replace draft'}) as HTMLButtonElement).disabled).toBe(true);
+ expect(screen.getByText(/selected version or active registry state changed/)).toBeTruthy();
+ fireEvent.click(screen.getByRole('button',{name:'Keep draft'}));expect(body.value).toBe('Unsaved text');expect(ApiClient.post).not.toHaveBeenCalled();
 });
