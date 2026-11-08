@@ -4,3 +4,5 @@
 .mn-transactions code, .mn-transactions [role="alert"] { overflow-wrap: anywhere; }
 .mn-transactions [aria-label="Customer transaction history table"] table { min-width: 650px; }
 .mn-transactions input, .mn-transactions select { min-height: 40px; }
+.mn-transactions__panel { box-shadow:0 4px 20px #183b2810; }
+.mn-transactions__eyebrow { margin:0 0 8px; color:#386b53; font-size:11px; font-weight:800; letter-spacing:.1em; }

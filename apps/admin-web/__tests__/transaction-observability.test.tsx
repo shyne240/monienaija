@@ -76,9 +76,10 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
 
   test('should run fee simulator calculations and display gross output', async () => {
     const mockFeeResult = {
-      feeMinor: '1500', // 15 Naira
-      vatMinor: '112',  // 1.12 Naira
-      totalMinor: '101612', // 1,016.12 Naira
+      paymentType: 'VIRTUAL_ACCOUNT', currency: 'NGN', amountMinor: '100000',
+      feeMinor: '6000', // 60 Naira
+      vatMinor: '450',  // 4.50 Naira
+      totalMinor: '106450', // 1,064.50 Naira
     };
 
     (ApiClient.post as jest.Mock).mockResolvedValue(mockFeeResult);
@@ -101,9 +102,9 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
         percentageBps: '100',
         vatBps: '750',
       });
-      expect(getByText('₦15.00')).toBeTruthy();
-      expect(getByText('₦1.12')).toBeTruthy();
-      expect(getByText('₦1,016.12')).toBeTruthy();
+      expect(getByText('₦60.00')).toBeTruthy();
+      expect(getByText('₦4.50')).toBeTruthy();
+      expect(getByText('₦1,064.50')).toBeTruthy();
     });
   });
 });

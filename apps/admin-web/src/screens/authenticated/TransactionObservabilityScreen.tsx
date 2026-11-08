@@ -22,6 +22,9 @@ interface TransactionDetail {
 }
 
 interface FeeResult {
+  paymentType: string;
+  currency: string;
+  amountMinor: string;
   feeMinor: string;
   vatMinor: string;
   totalMinor: string;
@@ -54,21 +57,25 @@ interface TransactionObservabilityProps {
 
 /** Convert naira to kobo exactly, without binary floating-point rounding. */
 function parseNaira(value: string, label: string): string {
+  if (value.trim().length > 40) throw new Error(`${label} exceeds supported integer limits.`);
   const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());
   if (!match) throw new Error(`${label} must be a non-negative amount with at most two decimal places.`);
   return (BigInt(match[1]) * 100n + BigInt((match[2] ?? '').padEnd(2, '0'))).toString();
 }
 
 export const TransactionObservabilityScreen: React.FC<TransactionObservabilityProps> = ({ initialType, initialCustomerId, onBackToCustomer }) => {
-  const { principal } = useAuthStore();
+  const { principal, sessionId } = useAuthStore();
   const canViewGlobalTransactions = principal?.scopes.includes('transaction.view') ?? false;
   const canViewCustomerTransactions = principal?.scopes.includes('customer.view_transactions') ?? false;
-  const key = `${principal?.principalId ?? ''}:${canViewGlobalTransactions}:${canViewCustomerTransactions}:${initialType ?? ''}:${initialCustomerId ?? ''}`;
-  return <TransactionWorkspace key={key} initialType={initialType} initialCustomerId={initialCustomerId} onBackToCustomer={onBackToCustomer} canViewGlobalTransactions={canViewGlobalTransactions} canViewCustomerTransactions={canViewCustomerTransactions} />;
+  const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal, initialType, initialCustomerId]);
+  const canSimulate = canViewGlobalTransactions && !principal?.readOnlyPrincipal;
+  return <TransactionWorkspace key={key} initialType={initialType} initialCustomerId={initialCustomerId} onBackToCustomer={onBackToCustomer} canSimulate={canSimulate} canViewGlobalTransactions={canViewGlobalTransactions} canViewCustomerTransactions={canViewCustomerTransactions} />;
 };
-const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlobalTransactions: boolean; canViewCustomerTransactions: boolean}> = ({initialType, initialCustomerId, onBackToCustomer, canViewGlobalTransactions, canViewCustomerTransactions}) => {
+const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlobalTransactions: boolean; canViewCustomerTransactions: boolean; canSimulate: boolean}> = ({initialType, initialCustomerId, onBackToCustomer, canViewGlobalTransactions, canViewCustomerTransactions, canSimulate}) => {
   const traceGeneration = useRef(0);
   const feeGeneration = useRef(0);
+  const traceLock = useRef(false);
+  const feeLock = useRef(false);
   useEffect(() => () => { traceGeneration.current += 1; feeGeneration.current += 1; }, []);
   const isCustomerHistoryView = Boolean(initialCustomerId) && canViewCustomerTransactions;
   const [searchTxId, setSearchTxId] = useState('');
@@ -111,7 +118,7 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
     )
       .then((response) => {
         if (!active) return;
-        if (!Array.isArray(response?.items) || response.items.some(item => !item || typeof item.id !== 'string' || typeof item.type !== 'string' || typeof item.status !== 'string' || typeof item.direction !== 'string' || typeof item.currency !== 'string' || typeof item.amountMinor !== 'string' || !/^-?\d+$/.test(item.amountMinor) || typeof item.createdAt !== 'string') || !response?.pagination || !Number.isSafeInteger(response.pagination.total) || response.pagination.total < 0 || !Number.isSafeInteger(response.pagination.totalPages) || response.pagination.totalPages < 0) {
+        if (!Array.isArray(response?.items) || response.items.some(item => !item || typeof item.id !== 'string' || typeof item.type !== 'string' || typeof item.status !== 'string' || typeof item.direction !== 'string' || typeof item.currency !== 'string' || typeof item.amountMinor !== 'string' || !/^-?\d+$/.test(item.amountMinor) || typeof item.createdAt !== 'string') || !response?.pagination || !Number.isSafeInteger(response.pagination.total) || response.pagination.total < 0 || response.pagination.page !== historyPage || response.pagination.limit !== 20 || response.items.length > response.pagination.limit || !Number.isSafeInteger(response.pagination.totalPages) || response.pagination.totalPages !== Math.ceil(response.pagination.total / response.pagination.limit) || response.pagination.hasNextPage !== (historyPage < response.pagination.totalPages) || (historyType && response.items.some(item => item.type !== historyType))) {
           throw new Error('Transaction history returned an invalid response.');
         }
         setHistoryItems(response.items);
@@ -129,11 +136,12 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
 
   const handleSearchTx = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canViewGlobalTransactions) return;
+    if (!canViewGlobalTransactions || traceLock.current) return;
     if (!searchTxId.trim()) {
       setTxError('Transaction ID (UUID) is required');
       return;
     }
+    traceLock.current = true;
     const request = ++traceGeneration.current;
     const requestedId = searchTxId.trim();
     setTxError('');
@@ -153,13 +161,15 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
     } catch (err: any) {
       if (request === traceGeneration.current) setTxError(err?.message || 'Transaction record not found.');
     } finally {
+      traceLock.current = false;
       if (request === traceGeneration.current) setTxLoading(false);
     }
   };
 
   const handleCalculateFee = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canViewGlobalTransactions) return;
+    if (!canSimulate || feeLock.current) return;
+    feeLock.current = true;
     const request = ++feeGeneration.current;
     setFeeError('');
     setFeeResult(null);
@@ -171,6 +181,12 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
       if (BigInt(amountMinor) <= 0n) throw new Error('Transaction amount must be greater than zero.');
       if (!/^\d+$/.test(percentBpsStr.trim()) || !/^\d+$/.test(vatBpsStr.trim())) throw new Error('Fee and VAT basis points must be non-negative whole numbers.');
 
+      const max = 9223372036854775807n;
+      if ([amountMinor, flatFeeMinor, percentBpsStr.trim(), vatBpsStr.trim()].some(value => value.length > 40 || BigInt(value) > max)) throw new Error('Simulation values exceed supported integer limits.');
+      const expectedFee = BigInt(flatFeeMinor) + BigInt(amountMinor) * BigInt(percentBpsStr.trim()) / 10000n;
+      const expectedVat = expectedFee * BigInt(vatBpsStr.trim()) / 10000n;
+      const expectedTotal = BigInt(amountMinor) + expectedFee + expectedVat;
+      if (expectedTotal > max) throw new Error('Simulation total exceeds supported integer limits.');
       // POST /fees/calculate
       const res = await ApiClient.post<FeeResult>('/fees/calculate', {
         amountMinor,
@@ -181,11 +197,12 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
         vatBps: vatBpsStr,
       });
       if (request !== feeGeneration.current) return;
-      if (!res || ![res.feeMinor, res.vatMinor, res.totalMinor].every(value => typeof value === 'string' && /^\d+$/.test(value)) || BigInt(res.totalMinor) !== BigInt(amountMinor) + BigInt(res.feeMinor) + BigInt(res.vatMinor)) throw new Error('Fee simulation returned an invalid or inconsistent result.');
+      if (!res || res.currency !== 'NGN' || res.paymentType !== 'VIRTUAL_ACCOUNT' || res.amountMinor !== amountMinor || ![res.feeMinor, res.vatMinor, res.totalMinor].every(value => typeof value === 'string' && /^\d+$/.test(value) && value.length <= 40) || BigInt(res.feeMinor) !== expectedFee || BigInt(res.vatMinor) !== expectedVat || BigInt(res.totalMinor) !== expectedTotal) throw new Error('Fee simulation returned an invalid or inconsistent result.');
       setFeeResult(res);
     } catch (err: any) {
       if (request === feeGeneration.current) setFeeError(err?.message || 'Fee calculation failed.');
     } finally {
+      feeLock.current = false;
       if (request === feeGeneration.current) setFeeLoading(false);
     }
   };
@@ -208,7 +225,7 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
 
       {canViewGlobalTransactions && (
         <div style={styles.gapWarning}>
-          <span style={styles.gapTitle}>⚠️ ADMIN API GAP: Global Transactions Search Listing Unavailable</span>
+          <span style={styles.gapTitle}>Global transaction listing unavailable</span>
           <p style={styles.gapText}>
             The transfer controller does not expose a general GET `/transfers` search list route. Querying transfers requires the absolute Transaction UUID reference.
           </p>
@@ -219,7 +236,7 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
         <section style={styles.historySection} aria-label="Customer transaction history">
           <div style={styles.historyHeader}>
             <div>
-              <h3 style={styles.sectionTitle}>Transactions for Customer</h3>
+              <h2 style={styles.sectionTitle}>Transactions for Customer</h2>
               <p style={styles.historyCustomer}>Customer ID: <code>{initialCustomerId}</code></p>
             </div>
             <label style={styles.historyFilterLabel}>
@@ -240,7 +257,7 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
           </div>
           {historyError && <div style={styles.errorBox} role="alert">{historyError}</div>}
           {historyLoading ? <p style={styles.historyEmpty}>Loading transaction history…</p> : historyError ? null : historyItems.length === 0 ? (
-            <p style={styles.historyEmpty}>No transactions found for this customer and type filter.</p>
+            <p style={styles.historyEmpty}>{historyTotal > 0 ? 'No transactions on this page. Return to an earlier page.' : 'No transactions found for this customer and type filter.'}</p>
           ) : (
             <div style={styles.historyTableWrap} role="region" aria-label="Customer transaction history table" tabIndex={0}>
               <table style={styles.historyTable}>
@@ -270,8 +287,9 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
 
       {(canViewGlobalTransactions || !isCustomerHistoryView) && <div style={styles.splitLayout}>
         {/* Transaction Ingress Auditing */}
-        {canViewGlobalTransactions && <div style={styles.leftSection}>
-          <h3 style={styles.sectionTitle}>Transaction Audit & Traceability</h3>
+        {canViewGlobalTransactions && <section className="mn-transactions__panel" style={styles.leftSection} aria-label="Transaction trace">
+          <p className="mn-transactions__eyebrow">TRANSACTION LOOKUP</p>
+          <h2 style={styles.sectionTitle}>Transaction Audit & Traceability</h2>
           
           <form onSubmit={handleSearchTx} style={styles.searchForm}>
             <div style={styles.grid}>
@@ -331,12 +349,14 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
               )}
             </div>
           )}
-        </div>}
+        </section>}
 
         {/* Fee Simulator Panel */}
-        {canViewGlobalTransactions && <div style={styles.rightSection}>
-          <h3 style={styles.sectionTitle}>Pricing Fee Simulator Tool</h3>
-          <p style={styles.infoText}>Deterministic pricing fee engine simulator executing the backend math endpoint.</p>
+        {canViewGlobalTransactions && <section className="mn-transactions__panel" style={styles.rightSection} aria-label="Fee simulation">
+          <p className="mn-transactions__eyebrow">HYPOTHETICAL SCENARIO</p>
+          <h2 style={styles.sectionTitle}>Pricing Fee Simulator Tool</h2>
+          <p style={styles.infoText}>Calculates an NGN virtual-account scenario using the values entered below. These example inputs are not active pricing, a quote, or evidence of a charged fee.</p>
+          {!canSimulate && <div role="note" style={styles.readOnlyNotice}>This read-only session cannot run the POST simulation endpoint.</div>}
 
           {feeError && <div style={styles.errorBox} role="alert">{feeError}</div>}
 
@@ -391,7 +411,7 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
               />
             </div>
 
-            <button type="submit" disabled={feeLoading} style={styles.submitBtn}>
+            <button type="submit" disabled={feeLoading || !canSimulate} style={styles.submitBtn}>
               {feeLoading ? 'Calculating...' : 'Run Simulation'}
             </button>
           </form>
@@ -415,7 +435,7 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
               </div>
             </div>
           )}
-        </div>}
+        </section>}
       </div>}
     </div>
   );
@@ -528,7 +548,7 @@ const styles = {
   gapTitle: {
     fontSize: '13px',
     fontWeight: 'bold',
-    color: '#D97706',
+    color: '#78350F',
     display: 'block',
     marginBottom: '6px',
   },
