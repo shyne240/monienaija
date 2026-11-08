@@ -390,7 +390,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
     setLoadingInitial(true);
     if (permissions.canViewCatalogue) { setEventsSource('LOADING'); setEventsBlockedMsg(''); }
     if (permissions.canViewProviderStatus) { setProviderStatus(null); setProviderBlockedMsg(''); }
-    setDiagnostics(null); setOutboxRows(null);
+    setDiagnostics(null); setRuntimeConfig(null); setOutboxRows(null);
     setGlobalLoadErrors({});
     loadedTemplateChannelsRef.current = { SMS: false, EMAIL: false };
     setLoadedTemplateChannels({ SMS: false, EMAIL: false });
@@ -2353,10 +2353,11 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       {/* TAB 6: PROVIDER STATUS WITHOUT EXPOSING SECRETS (Capability 9) */}
       {activeTab === 'providers' && (
         <div style={styles.sectionStack} data-testid="notif-panel-providers">
+          <div className="notification-redesign__section-heading"><p>PROVIDER OBSERVABILITY</p><h2>Provider status</h2><span>Review the latest available channel and runtime observations. A limited projection does not expose configuration details.</span></div>
           <div style={styles.infoBanner} data-testid="provider-secret-free-banner">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <div>
-                <strong>🔐 Secret-Free Provider Status & Governance:</strong> Stored provider API
+                <strong>Secret-Free Provider Status &amp; Governance:</strong> Stored provider API
                 keys are encrypted at rest with AES-256-GCM and are NEVER returned in GET responses,
                 logs, or audit trails. Only truthful lifecycle states, readiness gates, and masked
                 4-character fingerprints are displayed here.
@@ -2390,10 +2391,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
               data-testid="provider-status-blocked-banner"
             >
               <span style={styles.blockedBadge}>BLOCKED</span>{' '}
-              <strong>Provider Telemetry Endpoint Pending ARENA 3 Integration:</strong>{' '}
-              {providerBlockedMsg} Live runtime & outbox settings from{' '}
-              <code>GET /internal/configuration</code> and <code>GET /internal/diagnostics</code>{' '}
-              are shown below.
+              <strong>Provider status unavailable:</strong> {providerBlockedMsg} Runtime and outbox fields below are shown only when separately available.
             </div>
           )}
 
@@ -2401,12 +2399,14 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
             {/* SMS Provider Card */}
             <section style={styles.card} aria-label="SMS provider configuration status">
               <div style={styles.cardTitleRow}>
-                <h3 style={styles.cardTitle}>📱 SMS Provider Posture</h3>
-                <span style={providerStatus ? styles.liveBadge : styles.blockedBadge}>
-                  {providerStatus ? providerStatus.sms.operationalStatus : 'BLOCKED (ARENA 3)'}
+                <h3 style={styles.cardTitle}>SMS Provider Posture</h3>
+                <span style={providerStatus ? providerStatus.sms.operationalStatus === 'READY' ? styles.liveBadge : styles.mutedBadge : styles.blockedBadge}>
+                  {providerStatus ? providerStatus.projectionScope === 'MINIMAL' ? providerStatus.sms.operationalStatus === 'READY' ? 'AVAILABLE' : 'UNAVAILABLE' : providerStatus.sms.operationalStatus : !permissions.canViewProviderStatus ? 'SCOPE RESTRICTED' : loadingInitial ? 'LOADING' : 'STATUS UNAVAILABLE'}
                 </span>
               </div>
-              {providerStatus ? (
+              {providerStatus?.projectionScope === 'MINIMAL' ? (
+                <p className="notification-redesign__provider-note">Coarse availability only. Provider identity, configuration and credentials are redacted in this projection.</p>
+              ) : providerStatus ? (
                 <div style={styles.kvList} data-testid="sms-provider-status-details">
                   <div>
                     <strong>Selected Provider:</strong> <code>{providerStatus.sms.provider}</code>
@@ -2448,40 +2448,27 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   </div>
                 </div>
               ) : (
-                <div style={styles.kvList}>
-                  <div>
-                    <strong>Architecture:</strong> Env-configured <code>NOTIFICATION_SMS_PROVIDER</code>{' '}
-                    (<code>console</code> dev default | <code>robase</code> required in production).
-                  </div>
-                  <div>
-                    <strong>Sender Identity:</strong> Configured at Robase workspace account level
-                    (<code>POST /v1/sms/send</code> carries no per-message sender ID field).
-                  </div>
-                  <div>
-                    <strong>Live Status Inspection:</strong> Awaiting{' '}
-                    <code>GET /internal/notifications/provider-status</code> (ARENA 3).
-                  </div>
-                </div>
+                <p className="notification-redesign__provider-note">No current SMS provider observation is available.</p>
               )}
             </section>
 
             {/* Email Provider Card */}
             <section style={styles.card} aria-label="Email provider configuration status">
               <div style={styles.cardTitleRow}>
-                <h3 style={styles.cardTitle}>📧 Email Provider & Sender Identity</h3>
+                <h3 style={styles.cardTitle}>Email Provider &amp; Sender Identity</h3>
                 <span
                   style={
-                    providerStatus?.email?.channelEnabledInSchema
-                      ? styles.liveBadge
-                      : styles.blockedBadge
+                    providerStatus ? providerStatus.email.operationalStatus === 'READY' ? styles.liveBadge : styles.mutedBadge : styles.blockedBadge
                   }
                 >
                   {providerStatus?.email
-                    ? providerStatus.email.operationalStatus
-                    : 'BLOCKED (ARENA 3)'}
+                    ? providerStatus.projectionScope === 'MINIMAL' ? providerStatus.email.operationalStatus === 'READY' ? 'AVAILABLE' : 'UNAVAILABLE' : providerStatus.email.operationalStatus
+                    : !permissions.canViewProviderStatus ? 'SCOPE RESTRICTED' : loadingInitial ? 'LOADING' : 'STATUS UNAVAILABLE'}
                 </span>
               </div>
-              {providerStatus ? (
+              {providerStatus?.projectionScope === 'MINIMAL' ? (
+                <p className="notification-redesign__provider-note">Coarse availability only. Provider identity, sender and credentials are redacted in this projection.</p>
+              ) : providerStatus ? (
                 <div style={styles.kvList} data-testid="email-provider-status-details">
                   <div>
                     <strong>DB Schema Widened (EMAIL):</strong>{' '}
@@ -2519,34 +2506,23 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   </div>
                 </div>
               ) : (
-                <div style={styles.kvList}>
-                  <div>
-                    <strong>Channel Readiness:</strong> Pending ARENA 3{' '}
-                    <code>NotificationChannel</code> EMAIL widening & provider adapter (Decision D-N4).
-                  </div>
-                  <div>
-                    <strong>Destination Source:</strong> Verified{' '}
-                    <code>customer_contact_methods</code> EMAIL records.
-                  </div>
-                  <div>
-                    <strong>Customer Opt-Out Column:</strong>{' '}
-                    <code>notification_preferences.notification_email_enabled</code>.
-                  </div>
-                </div>
+                <p className="notification-redesign__provider-note">No current Email provider observation is available.</p>
               )}
             </section>
 
             {/* Worker & Live Runtime Config Card (F-12 MINIMAL projection honest display) */}
             <section style={styles.card} aria-label="Worker and retry runtime posture">
               <div style={styles.cardTitleRow}>
-                <h3 style={styles.cardTitle}>⚙️ Worker & Retry Policy</h3>
+                <h3 style={styles.cardTitle}>Worker &amp; Retry Policy</h3>
                 {providerStatus &&
                 (providerStatus.projectionScope === 'MINIMAL' || providerStatus.worker.redacted) ? (
                   <span style={styles.mutedBadge} data-testid="provider-worker-redacted-badge">
                     MINIMAL PROJECTION
                   </span>
+                ) : providerStatus ? (
+                  <span style={styles.mutedBadge}>STATUS READ</span>
                 ) : (
-                  <span style={styles.liveBadge}>RUNTIME READ-ONLY</span>
+                  <span style={styles.mutedBadge}>NOT OBSERVED</span>
                 )}
               </div>
               <div style={styles.kvList} data-testid="worker-runtime-status-details">
@@ -2557,18 +2533,16 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                 <div>
                   <strong>Environment:</strong>{' '}
                   <code>
-                    {providerStatus?.environment ??
-                      runtimeConfig?.environment ??
-                      (permissions.canViewDiagnostics ? 'unknown' : 'Redacted (MINIMAL projection)')}
+                    {runtimeConfig?.environment ??
+                      providerStatus?.environment ??
+                      (permissions.canViewDiagnostics ? 'Unavailable' : providerStatus?.projectionScope === 'MINIMAL' ? 'Redacted (MINIMAL projection)' : 'Unavailable')}
                   </code>
                 </div>
                 <div>
                   <strong>App / API Version:</strong>{' '}
                   <code>
                     {permissions.canViewDiagnostics
-                      ? `${runtimeConfig?.version ?? diagnostics?.version ?? '0.1.0'} (${
-                          runtimeConfig?.apiVersion ?? 'v1'
-                        })`
+                      ? `${runtimeConfig?.version ?? diagnostics?.version ?? 'Unavailable'} (${runtimeConfig?.apiVersion ?? 'API version unavailable'})`
                       : 'Requires diagnostics.view'}
                   </code>
                 </div>
@@ -2577,12 +2551,12 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   {providerStatus ? (
                     providerStatus.projectionScope === 'MINIMAL' || providerStatus.worker.redacted ? (
                       <span data-testid="provider-worker-redacted-value">
-                        REDACTED (requires notification.view_deliveries — not disabled)
+                        REDACTED (requires notification.provider.view — not disabled)
                       </span>
                     ) : providerStatus.worker.enabled ? (
                       'ENABLED'
                     ) : (
-                      'DISABLED (NOTIFICATION_WORKER_ENABLED=false)'
+                      'DISABLED (reported)'
                     )
                   ) : (
                     'Unloaded'
@@ -2592,23 +2566,23 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   <strong>SMS Retry Policy:</strong>{' '}
                   {providerStatus
                     ? providerStatus.projectionScope === 'MINIMAL' || providerStatus.worker.redacted
-                      ? 'REDACTED in MINIMAL projection (requires notification.view_deliveries)'
+                      ? 'REDACTED in MINIMAL projection (requires notification.provider.view)'
                       : `Max ${providerStatus.worker.smsRetryMaxAttempts} attempts · Base ${providerStatus.worker.smsRetryBaseDelaySeconds}s exponential backoff`
-                    : 'Bounded exponential backoff (FOR UPDATE SKIP LOCKED)'}
+                    : 'Unavailable'}
                 </div>
                 <div>
                   <strong>Outbox Retry Delay:</strong>{' '}
                   {runtimeConfig?.outboxRetryDelaySeconds !== undefined
                     ? `${runtimeConfig.outboxRetryDelaySeconds}s`
                     : permissions.canViewDiagnostics
-                      ? '60s'
+                      ? 'Unavailable'
                       : 'Requires diagnostics.view'}
                 </div>
                 <div>
                   <strong>Live Pending Outbox:</strong>{' '}
                   {diagnostics?.pendingOutbox !== undefined
                     ? diagnostics.pendingOutbox
-                    : 'Requires diagnostics.view'}
+                    : permissions.canViewDiagnostics ? 'Unavailable' : 'Requires diagnostics.view'}
                 </div>
               </div>
             </section>
@@ -3230,6 +3204,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       {/* TAB 8: CONTROLLED TEST-SEND (Capability 11 — Fixed Connectivity Probe Contract) */}
       {activeTab === 'testSend' && (
         <div style={styles.sectionStack} data-testid="notif-panel-test-send">
+          <div className="notification-redesign__section-heading"><p>CONTROLLED OPERATION</p><h2>Connectivity probe</h2><span>Prepare a fixed probe for an authorized workforce destination. Opening or editing this form does not send a notification.</span></div>
           {!permissions.canTestSend && (
             <div
               style={styles.infoBanner}
@@ -3242,8 +3217,9 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
             </div>
           )}
 
-          <section style={styles.card} aria-label="Controlled test notification form">
-            <h3 style={styles.cardTitle}>🧪 Controlled Connectivity Probe Test-Send</h3>
+          <section style={styles.card} className="notification-redesign__test-send" aria-label="Controlled test notification form">
+            <p className="notification-redesign__eyebrow">WORKFORCE DESTINATION ONLY</p>
+            <h3 style={styles.cardTitle}>Controlled Connectivity Probe Test-Send</h3>
             <p style={styles.cardDesc} data-testid="test-send-contract-notice">
               Dispatches a fixed non-financial connectivity probe via{' '}
               <code>POST /internal/notifications/test-send</code> accepting{' '}
@@ -3264,9 +3240,10 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     data-testid="test-send-channel-select"
                     style={styles.select}
                     value={testChannel}
-                    onChange={(e) =>
-                      setTestChannel(e.target.value as ManagedNotificationChannel)
-                    }
+                    onChange={(e) => {
+                      setTestChannel(e.target.value as ManagedNotificationChannel);
+                      setTestWorkforceConfirmed(false); setTestOutcome(null); setTestError(''); setTestBlockedMsg(''); setTestValidationErrors([]);
+                    }}
                     disabled={!permissions.canTestSend || isSendingTest}
                   >
                     <option value="SMS">SMS</option>
@@ -3291,13 +3268,16 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                         : 'ops.tester@monienaija.internal'
                     }
                     value={testDestination}
-                    onChange={(e) => setTestDestination(e.target.value)}
+                    onChange={(e) => {
+                      setTestDestination(e.target.value);
+                      setTestWorkforceConfirmed(false); setTestOutcome(null); setTestError(''); setTestBlockedMsg(''); setTestValidationErrors([]);
+                    }}
                     disabled={!permissions.canTestSend || isSendingTest}
                   />
                 </div>
               </div>
 
-              <div style={{ marginTop: 12, marginBottom: 14 }}>
+              <div className="notification-redesign__attestation" style={{ marginTop: 12, marginBottom: 14 }}>
                 <label style={styles.checkboxLabel}>
                   <input
                     type="checkbox"
@@ -3309,7 +3289,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   />
                   <span>
                     I attest that this destination belongs to an authorized MonieNaija workforce
-                    operator and is <strong>not</strong> a customer phone number or email address.
+                    operator and is <strong>not</strong> a customer phone number or email address. Changing the channel or destination requires a new attestation.
                   </span>
                 </label>
               </div>

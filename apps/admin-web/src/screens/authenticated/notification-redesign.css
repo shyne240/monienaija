@@ -37,3 +37,7 @@
 .notification-redesign [data-testid="outbox-receipts-table"]{min-width:800px}
 @media(max-width:600px){.notification-redesign__delivery-actions button{flex:1 1 100%}.notification-redesign__delivery-actions select{flex:1 1 auto}}
 .notification-redesign__inspector-note{font-size:12px;line-height:1.5;color:#52655f;margin:0 0 12px}
+.notification-redesign__provider-note{margin:0;color:#52655f;font-size:13px;line-height:1.5}
+.notification-redesign [data-testid="notif-panel-providers"] section,.notification-redesign__test-send{min-width:0;box-shadow:0 2px 12px rgba(19,43,37,.04)}
+.notification-redesign__test-send .notification-redesign__eyebrow{margin-bottom:6px}
+.notification-redesign__attestation{padding:14px;border:1px solid #cbdcd2;border-radius:8px;background:#f4f9f6}
