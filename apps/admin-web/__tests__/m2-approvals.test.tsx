@@ -82,9 +82,10 @@ test('unconfirmed decisions remain guarded when a different ID is entered and wa
 });
 
 test('an unconfirmed funding decision blocks generic checker decisions in the same workspace',async()=>{
+ const confirmation=jest.spyOn(window,'confirm').mockReturnValue(true);
  principal('checker',['privileged:approve','agent.fund']);
  const row={id:'request-one',approvalId:'approval-one',direction:'FUND',agentId:'agent-one',aggregatorId:null,amountMinor:'100',currency:'NGN',idempotencyKey:'key-one',reference:'ref',requestHash:'hash',approvalFingerprint:'fp',status:'PENDING',approvalStatus:'REQUESTED',approvalExpiresAt:'2026-11-01',approvalApprovedBy:null,reason:'reason',actionType:'AGENT_FUND',requesterPrincipalId:'maker',checkerPrincipalId:null,journalId:null,policy:{}};
  (ApiClient.get as jest.Mock).mockResolvedValue([row]);(ApiClient.post as jest.Mock).mockRejectedValue(new Error('network lost'));
  render(<ApprovalsScreen/>);fireEvent.change(screen.getByLabelText('Funding Agent ID'),{target:{value:'agent-one'}});fireEvent.click(screen.getByRole('button',{name:'Load funding instructions'}));await screen.findByRole('button',{name:/request-one.*REQUESTED/});fireEvent.click(screen.getByLabelText('I reviewed this Agent, amount, direction and business reason'));fireEvent.click(screen.getByRole('button',{name:'Approve funding instruction'}));
- expect(await screen.findByTestId('funding-review-lock')).toBeTruthy();fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'),{target:{value:'approval-one'}});expect((screen.getByRole('button',{name:'Sign & Approve Action'}) as HTMLButtonElement).disabled).toBe(true);expect(ApiClient.post).toHaveBeenCalledTimes(1);
+ expect(await screen.findByTestId('funding-review-lock')).toBeTruthy();fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'),{target:{value:'approval-one'}});expect((screen.getByRole('button',{name:'Sign & Approve Action'}) as HTMLButtonElement).disabled).toBe(true);expect(ApiClient.post).toHaveBeenCalledTimes(1);confirmation.mockRestore();
 });

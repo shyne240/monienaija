@@ -45,9 +45,11 @@ function setWorkforceSession(
 
 describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Number Auth, & Operational Workflows', () => {
   beforeEach(() => {
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
     jest.clearAllMocks();
     localStorage.clear();
   });
+  afterEach(() => jest.restoreAllMocks());
 
   test('Priority 1: Global Funding Inbox paginates & filters server-side without requiring agent.view, inspects detail, and refreshes after approve + execute', async () => {
     // Deliberately NO agent.view scope on FINANCE_CONTROLLER

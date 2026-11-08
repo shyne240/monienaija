@@ -46,9 +46,11 @@ function setPrincipal(roles: string[], scopes: string[], principalId = 'operator
 
 describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
   beforeEach(() => {
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
     jest.clearAllMocks();
     localStorage.clear();
   });
+  afterEach(() => jest.restoreAllMocks());
 
   test('Finance Controller accesses live Global Funding Inbox and Maker handoff token inside ApprovalsScreen without requiring agent.view', async () => {
     setPrincipal(['FINANCE_CONTROLLER'], ['privileged:approve', 'agent.fund', 'agent.defund'], 'checker-fc-1');

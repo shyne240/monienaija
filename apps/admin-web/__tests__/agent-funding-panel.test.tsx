@@ -66,6 +66,7 @@ function setPrincipal(role: 'AGENT_NETWORK_MANAGER' | 'FINANCE_CONTROLLER', prin
 
 describe('Agent funding maker-checker panel', () => {
   beforeEach(() => {
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
     jest.clearAllMocks();
     localStorage.clear();
     (ApiClient.get as jest.Mock).mockResolvedValue([]);
@@ -75,6 +76,7 @@ describe('Agent funding maker-checker panel', () => {
       value: () => IDEMPOTENCY_KEY,
     });
   });
+  afterEach(() => jest.restoreAllMocks());
 
   test('maker persists an idempotency key before requesting independent approval', async () => {
     setPrincipal('AGENT_NETWORK_MANAGER', 'maker-1', ['agent.fund', 'agent.defund']);
@@ -352,6 +354,13 @@ test('funding lock survives absent or mismatched fresh rows and guards unload', 
  const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);
  fireEvent.click(view.getByRole('button',{name:'Refresh affected funding instruction'}));await waitFor(()=>expect(ApiClient.get).toHaveBeenCalledTimes(2));expect((view.getByRole('button',{name:'Acknowledge independent funding review'}) as HTMLButtonElement).disabled).toBe(true);
  fireEvent.click(view.getByRole('button',{name:'Refresh affected funding instruction'}));await waitFor(()=>expect(ApiClient.get).toHaveBeenCalledTimes(3));expect((view.getByRole('button',{name:'Acknowledge independent funding review'}) as HTMLButtonElement).disabled).toBe(true);
+});
+
+
+test('canceling the funding confirmation preserves draft and issues no request',async()=>{
+ setPrincipal('AGENT_NETWORK_MANAGER','maker-1',['agent.fund']);(window.confirm as jest.Mock).mockReturnValue(false);
+ const view=render(<AgentFundingPanel agentId="agent-1"/>);fireEvent.change(view.getByLabelText('Funding amount in kobo'),{target:{value:'12500'}});fireEvent.change(view.getByLabelText('Funding reason'),{target:{value:'Liquidity allocation'}});fireEvent.click(view.getByRole('button',{name:'Request independent approval'}));
+ expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('FUND approval for Agent agent-1, 12500 minor units NGN'));expect(ApiClient.post).not.toHaveBeenCalled();expect(localStorage.length).toBe(0);expect((view.getByLabelText('Funding amount in kobo') as HTMLInputElement).value).toBe('12500');
 });
 
 });

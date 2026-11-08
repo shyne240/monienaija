@@ -363,6 +363,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
     if (instruction.agentId !== trimmedAgentId || instruction.direction !== direction) {
       throw new Error('Retained instruction does not match the selected Agent and direction');
     }
+    if (!window.confirm(`Request ${instruction.direction} approval for Agent ${instruction.agentId}, ${instruction.amountMinor} minor units ${instruction.currency}? Reason: ${instruction.reason}. The instruction will require an independent checker.`)) return;
     // Persist before sending; storage failure must stop the request rather than lose recovery data.
     localStorage.setItem(key, JSON.stringify(instruction));
     setDraft(instruction);
@@ -393,6 +394,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
       selected.approvalStatus !== 'REQUESTED' || selected.status !== 'PENDING'
     ) return;
 
+    if (!window.confirm(`${action.toUpperCase()} funding request ${selected.id}: ${selected.direction} ${selected.amountMinor} minor units ${selected.currency} for Agent ${selected.agentId}? Maker: ${selected.requesterPrincipalId}. Reason: ${selected.reason}${action === 'reject' ? `. Rejection reason: ${rejectionReason.trim()}` : ''}`)) return;
     let decision: 'APPROVED' | 'REJECTED';
     if (action === 'reject') {
       const rejection = rejectionReason.trim();
@@ -446,6 +448,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
     ) return;
     if (selected.agentId !== trimmedAgentId) throw new Error('Agent does not match the approved instruction');
 
+    if (!window.confirm(`Execute or recover funding request ${selected.id}: ${selected.direction} ${selected.amountMinor} minor units ${selected.currency} for Agent ${selected.agentId}? Verify the approval and ledger state before continuing.`)) return;
     // The server executes the immutable, persisted request by ID; the client cannot alter the
     // amount, target, metadata or ledger details at execution time.
     attemptedWrite.current = {agentId: selected.agentId, idempotencyKey: selected.idempotencyKey, requestId: selected.id, requestHash: selected.requestHash, direction: selected.direction, amountMinor: selected.amountMinor, reason: selected.reason, action: 'posting'};
