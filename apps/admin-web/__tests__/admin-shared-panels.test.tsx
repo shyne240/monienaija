@@ -171,11 +171,13 @@ describe('Admin Web shared-screen improvements', () => {
 
   test('Super-Admin recovery displays named result fields instead of a raw JSON string', async () => {
     setPrincipal(['ADMINISTRATOR'], ['workforce.super_admin.recover']);
-    (ApiClient.post as jest.Mock).mockResolvedValue({ recoveryReference: 'a2-recovery-123', operation: 'REVOKE_SUPER_ADMIN', targetPrincipalId: 'issuer:ceo', revokedSessionCount: 1, auditReference: 'audit-1' });
+    (ApiClient.post as jest.Mock).mockResolvedValue({ recoveryReference: 'a2-recovery-123', operation: 'REVOKE_SUPER_ADMIN', targetPrincipalId: 'issuer:ceo', targetAssignmentReference:'assignment', reason:'test reason', consumedBy:'issuer:ADMINISTRATOR', consumedAt:'2026-10-23T10:00:00Z', revokedSessionCount: 1, auditReference: 'audit-1' });
+    const statement = `e30.${btoa(JSON.stringify({operation:'REVOKE_SUPER_ADMIN',targetPrincipalId:'issuer:ceo',targetAssignmentReference:'assignment',reason:'test reason'})).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_')}.signature`;
 
     const view = render(<SuperAdminRecoveryScreen />);
-    fireEvent.change(view.getByPlaceholderText('Paste RS256-signed recovery statement…'), { target: { value: 'signed.statement.value' } });
+    fireEvent.change(view.getByPlaceholderText('Paste RS256-signed recovery statement…'), { target: { value: statement } });
     fireEvent.click(view.getByRole('button', { name: 'Execute Recovery' }));
+    fireEvent.click(view.getByRole('button', { name: 'Confirm recovery' }));
     expect(await view.findByText('a2-recovery-123')).toBeTruthy();
     expect(view.container.querySelector('pre')).toBeNull();
   });
