@@ -282,6 +282,17 @@ interface RegistryChangeCreation {
   expiresAt: string;
 }
 
+// The creation response identifies the approval but does not echo its frozen target.
+// Validate the available receipt fields; operators must still inspect the proposal.
+function confirmedRegistryCreation(value: RegistryChangeCreation | null | undefined, action: string): value is RegistryChangeCreation {
+  return !!value && typeof value.approvalId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.approvalId)
+    && value.status === 'REQUESTED' && value.actionType === action
+    && typeof value.actionFingerprint === 'string' && !!value.actionFingerprint.trim()
+    && typeof value.requestedAt === 'string' && Number.isFinite(Date.parse(value.requestedAt))
+    && typeof value.expiresAt === 'string' && Number.isFinite(Date.parse(value.expiresAt))
+    && Date.parse(value.expiresAt) > Date.parse(value.requestedAt);
+}
+
 /** Metadata for registry-approved variables (live names are authoritative; this only
  *  enriches the UI with descriptions/safe samples for the variable picker). */
 const VARIABLE_METADATA: Record<string, { description: string; sampleValue: string; sourceSummary: string }> = {
@@ -590,7 +601,7 @@ export const NotificationManagementApi = {
           },
           { idempotencyKey },
         );
-        if (!created.approvalId || created.status !== 'REQUESTED') {
+        if (!confirmedRegistryCreation(created, 'NOTIFICATION_EVENT_CONFIGURATION_CHANGE')) {
           throw new Error('Proposal status could not be confirmed. Check the approval queue before retrying.');
         }
         return {
@@ -697,7 +708,7 @@ export const NotificationManagementApi = {
           },
           { idempotencyKey },
         );
-        if (!created || typeof created.approvalId !== 'string' || !created.approvalId.trim() || created.status !== 'REQUESTED' || created.actionType !== 'NOTIFICATION_TEMPLATE_CHANGE' || typeof created.requestedAt !== 'string' || !created.requestedAt.trim()) throw new Error('Template proposal outcome not confirmed. Check the approval queue before retrying.');
+        if (!confirmedRegistryCreation(created, 'NOTIFICATION_TEMPLATE_CHANGE')) throw new Error('Template proposal outcome not confirmed. Check the approval queue before retrying.');
         return {
           status: 'PENDING_APPROVAL',
           approvalId: created.approvalId,
@@ -750,7 +761,7 @@ export const NotificationManagementApi = {
           },
           { idempotencyKey },
         );
-        if (!created || typeof created.approvalId !== 'string' || !created.approvalId.trim() || created.status !== 'REQUESTED' || created.actionType !== 'NOTIFICATION_TEMPLATE_CHANGE' || typeof created.requestedAt !== 'string' || !created.requestedAt.trim()) throw new Error('Template proposal outcome not confirmed. Check the approval queue before retrying.');
+        if (!confirmedRegistryCreation(created, 'NOTIFICATION_TEMPLATE_CHANGE')) throw new Error('Template proposal outcome not confirmed. Check the approval queue before retrying.');
         return {
           status: 'PENDING_APPROVAL',
           approvalId: created.approvalId,

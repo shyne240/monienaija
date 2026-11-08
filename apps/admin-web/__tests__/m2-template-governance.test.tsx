@@ -78,3 +78,14 @@ test('a blocked template submission remains unconfirmed and requires review befo
  render(<NotificationTemplateWorkspace {...props(1)}/>);fireEvent.change(screen.getByTestId('template-body-textarea'),{target:{value:'Synthetic edited draft'}});fireEvent.change(screen.getByTestId('template-change-summary-input'),{target:{value:'Synthetic explanation'}});fireEvent.click(screen.getByTestId('submit-template-version-btn'));
  expect(await screen.findByTestId('template-proposal-review-lock')).toBeTruthy();expect((screen.getByTestId('submit-template-version-btn') as HTMLButtonElement).disabled).toBe(true);expect(NotificationManagementApi.submitTemplateVersion).toHaveBeenCalledTimes(1);
 });
+
+test('configuration receipt must identify the correct governed action and a complete approval',async()=>{
+ const receipt={approvalId:'550e8400-e29b-41d4-a716-4466554400aa',status:'REQUESTED',actionType:'NOTIFICATION_TEMPLATE_CHANGE',actionFingerprint:'synthetic',requestedAt:'2026-01-01T00:00:00Z',expiresAt:'2026-01-01T01:00:00Z'};
+ const payload={channel:'SMS' as const,enabled:true,expectedVersion:1,reason:'Synthetic reason'};
+ (ApiClient.post as jest.Mock).mockResolvedValue(receipt);
+ await expect(NotificationManagementApi.submitEventConfigurationChange(event.eventType,payload)).rejects.toThrow(/not be confirmed/);
+ (ApiClient.post as jest.Mock).mockResolvedValue({...receipt,actionType:'NOTIFICATION_EVENT_CONFIGURATION_CHANGE',actionFingerprint:''});
+ await expect(NotificationManagementApi.submitEventConfigurationChange(event.eventType,payload)).rejects.toThrow(/not be confirmed/);
+ (ApiClient.post as jest.Mock).mockResolvedValue({...receipt,actionType:'NOTIFICATION_EVENT_CONFIGURATION_CHANGE'});
+ expect((await NotificationManagementApi.submitEventConfigurationChange(event.eventType,payload)).status).toBe('LIVE');
+});

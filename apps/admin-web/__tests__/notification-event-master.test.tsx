@@ -308,7 +308,7 @@ function installRegistryBackend() {
             approvedBy: null,
           };
           server.proposals.unshift(proposal);
-          return { approvalId, status: 'REQUESTED', requestedAt: proposal.createdAt };
+          return { approvalId, status: 'REQUESTED', actionType: 'NOTIFICATION_EVENT_CONFIGURATION_CHANGE', actionFingerprint: 'synthetic-fingerprint', requestedAt: proposal.createdAt, expiresAt: '2026-11-02T11:00:00.000Z' };
         }
         const approvalMatch = endpoint.match(
           /^\/internal\/a2\/workforce\/approvals\/([^/]+)\/(approve|reject)$/,
