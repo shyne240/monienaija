@@ -232,8 +232,8 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
         currentAgent = { ...currentAgent, status: 'SUSPENDED' };
         return Promise.resolve(currentAgent);
       }
-      if (path === `/internal/agents/${AGENT_ID}/outlets`) return Promise.resolve({id:'outlet-new',agentId:AGENT_ID,reference:'OUT-ABJ-02',name:'Maitama Desk',status:'ACTIVE',version:1});
-      if (path === `/internal/agents/${AGENT_ID}/terminals`) return Promise.resolve({id:'terminal-new',agentId:AGENT_ID,outletId:OUTLET_ID,reference:'TRM-ABJ-02',label:'Counter POS 2',status:'ACTIVE',version:1});
+      if (path === `/internal/agents/${AGENT_ID}/outlets`) return Promise.resolve({id:'outlet-new',agentId:AGENT_ID,reference:'OUT-ABJ-02',name:'Maitama Desk',code:null,displayName:null,addressLine:null,city:null,state:null,country:'NG',status:'ACTIVE',version:1});
+      if (path === `/internal/agents/${AGENT_ID}/terminals`) return Promise.resolve({id:'terminal-new',agentId:AGENT_ID,outletId:OUTLET_ID,reference:'TRM-ABJ-02',code:null,label:'Counter POS 2',serialNumber:null,status:'ACTIVE',version:1});
       return Promise.resolve({});
     });
     (ApiClient.patch as jest.Mock).mockResolvedValue({ id: LIMIT_ASSIGNMENT_ID, subjectType:'AGENT', subjectId:AGENT_ID, limitProfileCode:'AGENT_STANDARD', isActive:false, version:3 });

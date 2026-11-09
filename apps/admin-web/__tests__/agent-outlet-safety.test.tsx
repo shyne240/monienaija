@@ -55,3 +55,32 @@ test('terminal lifecycle rejects a receipt for a different outlet',async()=>{
  const section=await open();fireEvent.click(within(section).getByRole('button',{name:'Suspend terminal'}));
  expect(await within(section).findByText(/outcome is unconfirmed/)).toBeTruthy();
 });
+
+test.each([
+ ['unexpected code',{code:'OTHER'}],
+ ['unexpected city',{city:'Another City'}],
+ ['unexpected version',{version:2}],
+ ['incorrect default country',{country:'US'}],
+])('outlet creation rejects %s even when identity and requested fields match',async(_case,change)=>{
+ (ApiClient.post as jest.Mock).mockResolvedValue({...outlet('new'),reference:'OUT-NEW',name:'New Desk',...change});
+ const section=await open();fireEvent.change(within(section).getByLabelText('Outlet reference'),{target:{value:'OUT-NEW'}});fireEvent.change(within(section).getByLabelText('Outlet name'),{target:{value:'New Desk'}});fireEvent.click(within(section).getByRole('button',{name:'Create outlet'}));
+ expect(await within(section).findByText(/Outlet creation outcome is unconfirmed/)).toBeTruthy();expect((within(section).getByLabelText('Outlet reference') as HTMLInputElement).value).toBe('OUT-NEW');
+});
+
+test.each([
+ ['unexpected code',{code:'OTHER'}],
+ ['unexpected label',{label:'Wrong label'}],
+ ['unexpected version',{version:2}],
+])('terminal creation rejects %s even when identity and requested fields match',async(_case,change)=>{
+ (ApiClient.post as jest.Mock).mockResolvedValue({...terminal(),id:'new-terminal',reference:'TRM-NEW',...change});
+ const section=await open();fireEvent.change(within(section).getByLabelText('Terminal reference'),{target:{value:'TRM-NEW'}});fireEvent.change(within(section).getByLabelText('Terminal outlet'),{target:{value:'outlet'}});fireEvent.click(within(section).getByRole('button',{name:'Create terminal'}));
+ expect(await within(section).findByText(/Terminal creation outcome is unconfirmed/)).toBeTruthy();expect((within(section).getByLabelText('Terminal reference') as HTMLInputElement).value).toBe('TRM-NEW');
+});
+
+test('matching outlet and terminal creation receipts accept server defaults',async()=>{
+ (ApiClient.post as jest.Mock).mockResolvedValueOnce({...outlet('new'),reference:'OUT-NEW',name:'New Desk'}).mockResolvedValueOnce({...terminal(),id:'new-terminal',reference:'TRM-NEW'});
+ const section=await open();fireEvent.change(within(section).getByLabelText('Outlet reference'),{target:{value:'OUT-NEW'}});fireEvent.change(within(section).getByLabelText('Outlet name'),{target:{value:'New Desk'}});fireEvent.click(within(section).getByRole('button',{name:'Create outlet'}));
+ expect(await within(section).findByText('Outlet OUT-NEW created.')).toBeTruthy();expect((within(section).getByLabelText('Outlet reference') as HTMLInputElement).value).toBe('');
+ fireEvent.change(within(section).getByLabelText('Terminal reference'),{target:{value:'TRM-NEW'}});fireEvent.change(within(section).getByLabelText('Terminal outlet'),{target:{value:'outlet'}});fireEvent.click(within(section).getByRole('button',{name:'Create terminal'}));
+ expect(await within(section).findByText('Terminal TRM-NEW created.')).toBeTruthy();expect((within(section).getByLabelText('Terminal reference') as HTMLInputElement).value).toBe('');
+});

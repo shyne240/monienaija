@@ -1118,7 +1118,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       if (outletForm.country.trim()) body.country = outletForm.country.trim();
       const receipt = await ApiClient.post<OutletRecord>(`/internal/agents/${encodeURIComponent(selected.id)}/outlets`, body);
       if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
-      if (!validOutlet(receipt, selected.id) || receipt.reference !== reference || receipt.name !== name || receipt.status !== 'ACTIVE' || (code && receipt.code !== code.toUpperCase()) || ['displayName','addressLine','city','state','country'].some(key => key in body && (receipt as any)[key] !== body[key])) throw new Error('Outlet receipt did not match the request.');
+      if (!validOutlet(receipt, selected.id) || receipt.reference !== reference || receipt.name !== name || receipt.status !== 'ACTIVE' || receipt.version !== 1 || receipt.code !== (code ? code.toUpperCase() : null) ||
+          receipt.displayName !== (body.displayName ?? null) || receipt.addressLine !== (body.addressLine ?? null) || receipt.city !== (body.city ?? null) || receipt.state !== (body.state ?? null) || receipt.country !== (body.country ?? 'NG')) throw new Error('Outlet receipt did not match the request.');
       setOutletForm(EMPTY_OUTLET_FORM);
       setOutletsMsg(`Outlet ${reference} created.`);
       await loadOutletsAndTerminals(selected.id);
@@ -1205,7 +1206,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       const receipt = await ApiClient.post<OutletRecord>(`/internal/outlets/${encodeURIComponent(outletId)}/${action}`, { expectedVersion: current.version });
       if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
       const expected = action === 'suspend' ? 'SUSPENDED' : action === 'terminate' ? 'TERMINATED' : 'ACTIVE';
-      if (!validOutlet(receipt, selected.id) || receipt.id !== outletId || receipt.status !== expected || receipt.version !== current.version + 1) throw new Error('Outlet lifecycle receipt did not match the request.');
+      if (!validOutlet(receipt, selected.id) || receipt.id !== outletId || receipt.reference !== current.reference || receipt.code !== current.code || receipt.status !== expected || receipt.version !== current.version + 1) throw new Error('Outlet lifecycle receipt did not match the request.');
       setOutletsMsg(`Outlet ${action} succeeded.`);
       await loadOutletsAndTerminals(selected.id);
     } catch (e: any) {
@@ -1243,7 +1244,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       if (terminalForm.serialNumber.trim()) body.serialNumber = terminalForm.serialNumber.trim();
       const receipt = await ApiClient.post<TerminalRecord>(`/internal/agents/${encodeURIComponent(selected.id)}/terminals`, body);
       if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
-      if (!validTerminal(receipt, selected.id) || receipt.reference !== reference || receipt.outletId !== outletId || receipt.status !== 'ACTIVE' || (code && receipt.code !== code.toUpperCase()) || ['label','serialNumber'].some(key => key in body && (receipt as any)[key] !== body[key])) throw new Error('Terminal receipt did not match the request.');
+      if (!validTerminal(receipt, selected.id) || receipt.reference !== reference || receipt.outletId !== outletId || receipt.status !== 'ACTIVE' || receipt.version !== 1 || receipt.code !== (code ? code.toUpperCase() : null) ||
+          receipt.label !== (body.label ?? null) || receipt.serialNumber !== (body.serialNumber ?? null)) throw new Error('Terminal receipt did not match the request.');
       setTerminalForm((cur) => ({
         ...cur,
         reference: '',
@@ -1323,7 +1325,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       const receipt = await ApiClient.post<TerminalRecord>(`/internal/terminals/${encodeURIComponent(terminalId)}/${action}`, { expectedVersion: current.version });
       if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
       const expected = action === 'suspend' ? 'SUSPENDED' : action === 'terminate' ? 'TERMINATED' : 'ACTIVE';
-      if (!validTerminal(receipt, selected.id) || receipt.id !== terminalId || receipt.status !== expected || receipt.version !== current.version + 1 || receipt.outletId !== current.outletId) throw new Error('Terminal lifecycle receipt did not match the request.');
+      if (!validTerminal(receipt, selected.id) || receipt.id !== terminalId || receipt.reference !== current.reference || receipt.code !== current.code || receipt.status !== expected || receipt.version !== current.version + 1 || receipt.outletId !== current.outletId) throw new Error('Terminal lifecycle receipt did not match the request.');
       setOutletsMsg(`Terminal ${action} succeeded.`);
       await loadOutletsAndTerminals(selected.id);
     } catch (e: any) {
