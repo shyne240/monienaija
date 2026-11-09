@@ -176,7 +176,7 @@ const RegistrySection: React.FC<{ title: string; endpoint: string; columns: Stru
     <section className="commercial-registry" aria-labelledby={headingId}>
       <div className="commercial-registry__heading">
         <div><p className="commercial-kicker">READ-ONLY REGISTRY</p><h2 id={headingId}>{title}</h2><p>{description}</p></div>
-        <Button size="sm" onClick={() => void load()} disabled={loading} aria-label={`Refresh ${title}`}>{loading ? 'Loading…' : 'Refresh'}</Button>
+        <Button size="sm" onClick={() => void load()} disabled={loading} aria-label={`${loading ? 'Loading' : 'Refresh'} ${title}`}>{loading ? 'Loading…' : 'Refresh'}</Button>
       </div>
       <div className="commercial-registry__toolbar">
         <label className="commercial-search">Search this page <input type="search" value={query} onChange={event => setQuery(event.target.value)} aria-label={`Search ${title} on this page`} placeholder="Search visible columns" /></label>

@@ -4,3 +4,9 @@
 .mn-dashboard-settings__eyebrow { margin: 0 0 8px; color: #386b53; font-size: 11px; font-weight: 800; letter-spacing: .1em; }
 .mn-dashboard-settings__review { margin-top: 10px; padding: 12px; min-width: 210px; white-space: normal; border: 1px solid #b77a17; border-radius: 6px; background: #fff3d9; color: #78350f; font-size: 13px; }
 .mn-dashboard-settings__review button { min-height: 40px; }
+
+/* Real template keys and display names can be longer than the fixture names. */
+.mn-dashboard-settings__template-header { flex-wrap: wrap; gap: 8px 12px; }
+.mn-dashboard-settings__template-header > div { min-width: 0; overflow-wrap: anywhere; }
+.mn-dashboard-settings__template-header > div:last-child { flex-wrap: wrap; }
+.mn-dashboard-settings__panel { overflow-wrap: anywhere; }

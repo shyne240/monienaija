@@ -251,7 +251,10 @@ export class SupportService {
       createdById,
     });
 
-    const scope = `support.ticket.create:${principal.type}:${principal.principalId}`;
+    const scope = this.idempotencyScope('support.ticket.create', [
+      principal.type,
+      principal.principalId,
+    ]);
 
     // If idempotencyKey provided, use IdempotencyService
     if (idempotencyKey) {
@@ -823,7 +826,11 @@ export class SupportService {
       authorType,
       authorId,
     });
-    const scope = `support.ticket.message.create:${ticketId}:${authorType}:${authorId}`;
+    const scope = this.idempotencyScope('support.ticket.message.create', [
+      ticketId,
+      authorType,
+      authorId,
+    ]);
 
     // Ensure ticket exists and caller has access, and ticket is not closed for customer/agent
     const result = await this.dataSource.transaction(async (manager) => {
@@ -1149,6 +1156,16 @@ export class SupportService {
       throw new ForbiddenException(`Principal type ${p.type} not allowed for workforce operation`);
     }
     return p;
+  }
+
+  // Existing scopes that fit must remain byte-for-byte stable so retries still find their
+  // reservations. Longer real identity-provider subjects never had a valid reservation;
+  // hash a length-delimited tuple instead of truncating and risking cross-principal collisions.
+  private idempotencyScope(namespace: string, parts: string[]): string {
+    const legacy = `${namespace}:${parts.join(':')}`;
+    if (legacy.length <= 120) return legacy;
+    const digest = createHash('sha256').update(JSON.stringify(parts)).digest('hex');
+    return `${namespace}:sha256:${digest}`;
   }
 
   private computeRequestHash(params: Record<string, unknown>): string {

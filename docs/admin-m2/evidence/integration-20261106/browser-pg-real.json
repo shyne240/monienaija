@@ -22,9 +22,1994 @@
       "role": "OPERATIONS",
       "case": "Real UI required-field validation, then create DRAFT and profile in PostgreSQL",
       "result": "passed"
+    },
+    {
+      "role": "AGENT_NETWORK_MANAGER + FINANCE_CONTROLLER",
+      "case": "Real maker request, self-approval denied, independent checker approves and executes; balanced disposable journal",
+      "result": "passed"
+    },
+    {
+      "role": "AGENT_NETWORK_MANAGER + FINANCE_CONTROLLER",
+      "case": "Recover maker key; real DEFUND approve, post and replay; same journal and 700-kobo test balance",
+      "result": "passed"
+    },
+    {
+      "role": "CUSTOMER_SERVICE",
+      "case": "Keyboard ticket detail, real status/version and internal-only note; idempotent replay and conflict",
+      "result": "passed"
+    },
+    {
+      "role": "COMPLIANCE",
+      "case": "Keyboard trap, Escape/no write and confirmed Level 1 KYC review; persistence and actor attribution",
+      "result": "passed"
+    },
+    {
+      "role": "SUPER_ADMIN + FINANCE_AUDITOR",
+      "case": "Confirmed dashboard assignment persists; read-only role denied change",
+      "result": "passed"
+    },
+    {
+      "role": "FINANCE_AUDITOR",
+      "case": "Keyboard inspection of real balanced funding journal and support audit events",
+      "result": "passed"
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "case": "Read real SMS and email template histories; local event-switch draft keep/discard without notification writes",
+      "result": "passed"
     }
   ],
   "limitations": "Selected workflows only. Local workforce sessions are test-issued, not real IdP/MFA. No real SMS, provider or deployed worker.",
+  "navigation": [
+    {
+      "role": "SUPER_ADMIN",
+      "view": "dashboard",
+      "expandedTemplates": 0,
+      "headings": [
+        "System Administration Dashboard",
+        "Identity & Session",
+        "Entitlements & Scopes",
+        "Executive & Governance"
+      ],
+      "requests": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "dashboardSettings",
+      "expandedTemplates": 0,
+      "headings": [
+        "Dashboard Settings",
+        "Dashboard Templates (12)",
+        "Role → Dashboard Assignment (11)"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/a2/workforce/dashboard/templates",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/a2/workforce/dashboard/assignments",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/a2/workforce/dashboard/widget-registry",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/a2/workforce/dashboard/templates",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/a2/workforce/dashboard/assignments",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/a2/workforce/dashboard/widget-registry",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "customers",
+      "expandedTemplates": 0,
+      "headings": [
+        "Customer directory"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/customers",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/customers",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "agents",
+      "expandedTemplates": 0,
+      "headings": [
+        "Agent Network Management"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/agents",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/agents",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "agentClasses",
+      "expandedTemplates": 0,
+      "headings": [
+        "Agent classes & service eligibility",
+        "Class catalogue"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/agents/classes",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/agents/classes",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "support",
+      "expandedTemplates": 0,
+      "headings": [
+        "Support Tickets",
+        "Ticket queue"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/support/tickets",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/support/tickets",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "transfers",
+      "expandedTemplates": 0,
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "requests": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "cashIn",
+      "expandedTemplates": 0,
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "requests": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "cashOut",
+      "expandedTemplates": 0,
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "requests": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "cashToCashOps",
+      "expandedTemplates": 0,
+      "headings": [
+        "Cash-to-Cash Operations",
+        "Find a transfer"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/admin/cash-to-cash/transfers",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/admin/cash-to-cash/expiry-status",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/admin/cash-to-cash/expiry-status",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/admin/cash-to-cash/transfers",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "ledgerExplorer",
+      "expandedTemplates": 0,
+      "headings": [
+        "Ledger Core & Reversals Desk",
+        "Chart of Accounts",
+        "Journal Audit & Compensations"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/ledger/accounts",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/ledger/accounts",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "reconciliation",
+      "expandedTemplates": 0,
+      "headings": [
+        "Independent Reconciliation & Breaks Desk",
+        "Verification checks"
+      ],
+      "requests": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "feeRules",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Fees"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/fee-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/fee-rules",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "commissionRules",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Commissions"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/commission-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/commission-rules",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "rewardRules",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Rewards"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/reward-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/reward-rules",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "productCatalogue",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Products"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/products",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/products",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "limitCatalogue",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Limit profiles",
+        "Limit rules"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-profiles",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-profiles",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-rules",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "limitAssignments",
+      "expandedTemplates": 0,
+      "headings": [
+        "Limit Assignments",
+        "Existing assignments",
+        "Manage assignments",
+        "Usage Diagnostics"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-assignments",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-assignments",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "kycQueue",
+      "expandedTemplates": 0,
+      "headings": [
+        "KYC assessment lookup & review",
+        "Find a customer",
+        "KYC assessment",
+        "Submit KYC assessment decision"
+      ],
+      "requests": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "complianceCases",
+      "expandedTemplates": 0,
+      "headings": [
+        "Compliance case lookup",
+        "Find a customer",
+        "Compliance cases"
+      ],
+      "requests": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "workforceAccess",
+      "expandedTemplates": 0,
+      "headings": [
+        "Workforce Overview & Support Provisioning",
+        "Workforce Overview",
+        "Provision SUPPORT workforce user",
+        "Disable SUPPORT workforce user"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "roleGovernance",
+      "expandedTemplates": 0,
+      "headings": [
+        "Workforce Role Governance",
+        "Role and action",
+        "Create Finance Role Assignment"
+      ],
+      "requests": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "notifications",
+      "expandedTemplates": 0,
+      "headings": [
+        "SMS & Email Notification Management",
+        "Channel and service signals"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/configuration",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/events",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/outbox",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/provider-status",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/changes",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/audit",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/audit",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/audit",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/audit",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/deliveries",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/diagnostics",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/outbox-receipts",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/events",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/provider-status",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/configuration",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/outbox",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/changes",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/audit",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/audit",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/audit",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/diagnostics",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/audit",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/deliveries",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/outbox-receipts",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "systemHealth",
+      "expandedTemplates": 0,
+      "headings": [
+        "System Health",
+        "Metrics",
+        "Diagnostics",
+        "Outbox (recent events)"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/metrics",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/outbox",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/metrics",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/deliveries",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/outbox",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/diagnostics",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/deliveries",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/diagnostics",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "auditEvents",
+      "expandedTemplates": 0,
+      "headings": [
+        "Audit & Security Events",
+        "Find audit events",
+        "Search results"
+      ],
+      "requests": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "dashboard",
+      "expandedTemplates": 0,
+      "headings": [
+        "System Administration Dashboard",
+        "Identity & Session",
+        "Entitlements & Scopes",
+        "Financial Control & Approvals"
+      ],
+      "requests": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "agents",
+      "expandedTemplates": 0,
+      "headings": [],
+      "requests": [],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "ledgerExplorer",
+      "expandedTemplates": 0,
+      "headings": [
+        "Ledger Core & Reversals Desk",
+        "Chart of Accounts",
+        "Journal Audit & Compensations"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/ledger/accounts",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/ledger/accounts",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "feeRules",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Fees"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/fee-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/fee-rules",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "commissionRules",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Commissions"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/commission-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/commission-rules",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "rewardRules",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Rewards"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/reward-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/reward-rules",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "productCatalogue",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Products"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/products",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/products",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "limitCatalogue",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Limit profiles",
+        "Limit rules"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-profiles",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-profiles",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "limitAssignments",
+      "expandedTemplates": 0,
+      "headings": [
+        "Limit Assignments",
+        "Existing assignments",
+        "Manage assignments",
+        "Usage Diagnostics"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-assignments",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-assignments",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "approvalsInbox",
+      "expandedTemplates": 0,
+      "headings": [
+        "Privileged Approvals (Maker-Checker)",
+        "Funding checker workspace",
+        "Generic checker decision"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/agents/funding-requests",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/agents/funding-requests",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "notifications",
+      "expandedTemplates": 0,
+      "headings": [
+        "SMS & Email Notification Management",
+        "Channel and service signals"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/events",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/changes",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/changes",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/events",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/provider-status",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/provider-status",
+          "status": 200
+        }
+      ],
+      "width": 1440,
+      "scrollWidth": 1440,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "dashboard",
+      "expandedTemplates": 0,
+      "headings": [
+        "System Administration Dashboard",
+        "Identity & Session",
+        "Entitlements & Scopes",
+        "Executive & Governance"
+      ],
+      "requests": [],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "dashboardSettings",
+      "expandedTemplates": 12,
+      "headings": [
+        "Dashboard Settings",
+        "Dashboard Templates (12)",
+        "Role → Dashboard Assignment (11)"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/a2/workforce/dashboard/templates",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/a2/workforce/dashboard/widget-registry",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/a2/workforce/dashboard/templates",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/a2/workforce/dashboard/widget-registry",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/a2/workforce/dashboard/assignments",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/a2/workforce/dashboard/assignments",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "customers",
+      "expandedTemplates": 0,
+      "headings": [
+        "Customer directory"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/customers",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/customers",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "agents",
+      "expandedTemplates": 0,
+      "headings": [
+        "Agent Network Management"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/agents",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/agents",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "agentClasses",
+      "expandedTemplates": 0,
+      "headings": [
+        "Agent classes & service eligibility",
+        "Class catalogue"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/agents/classes",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/agents/classes",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "support",
+      "expandedTemplates": 0,
+      "headings": [
+        "Support Tickets",
+        "Ticket queue"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/support/tickets",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/support/tickets",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "transfers",
+      "expandedTemplates": 0,
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "requests": [],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "cashIn",
+      "expandedTemplates": 0,
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "requests": [],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "cashOut",
+      "expandedTemplates": 0,
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "requests": [],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "cashToCashOps",
+      "expandedTemplates": 0,
+      "headings": [
+        "Cash-to-Cash Operations",
+        "Find a transfer"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/admin/cash-to-cash/expiry-status",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/admin/cash-to-cash/transfers",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/admin/cash-to-cash/expiry-status",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/admin/cash-to-cash/transfers",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "ledgerExplorer",
+      "expandedTemplates": 0,
+      "headings": [
+        "Ledger Core & Reversals Desk",
+        "Chart of Accounts",
+        "Journal Audit & Compensations"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/ledger/accounts",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/ledger/accounts",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "reconciliation",
+      "expandedTemplates": 0,
+      "headings": [
+        "Independent Reconciliation & Breaks Desk",
+        "Verification checks"
+      ],
+      "requests": [],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "feeRules",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Fees"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/fee-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/fee-rules",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "commissionRules",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Commissions"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/commission-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/commission-rules",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "rewardRules",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Rewards"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/reward-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/reward-rules",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "productCatalogue",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Products"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/products",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/products",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "limitCatalogue",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Limit profiles",
+        "Limit rules"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-profiles",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-profiles",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-rules",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "limitAssignments",
+      "expandedTemplates": 0,
+      "headings": [
+        "Limit Assignments",
+        "Existing assignments",
+        "Manage assignments",
+        "Usage Diagnostics"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-assignments",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-assignments",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "kycQueue",
+      "expandedTemplates": 0,
+      "headings": [
+        "KYC assessment lookup & review",
+        "Find a customer",
+        "KYC assessment",
+        "Submit KYC assessment decision"
+      ],
+      "requests": [],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "complianceCases",
+      "expandedTemplates": 0,
+      "headings": [
+        "Compliance case lookup",
+        "Find a customer",
+        "Compliance cases"
+      ],
+      "requests": [],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "workforceAccess",
+      "expandedTemplates": 0,
+      "headings": [
+        "Workforce Overview & Support Provisioning",
+        "Workforce Overview",
+        "Provision SUPPORT workforce user",
+        "Disable SUPPORT workforce user"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "roleGovernance",
+      "expandedTemplates": 0,
+      "headings": [
+        "Workforce Role Governance",
+        "Role and action",
+        "Create Finance Role Assignment"
+      ],
+      "requests": [],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "notifications",
+      "expandedTemplates": 0,
+      "headings": [
+        "SMS & Email Notification Management",
+        "Channel and service signals"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/configuration",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/events",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/provider-status",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/changes",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/outbox",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/audit",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/audit",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/audit",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/audit",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/diagnostics",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/deliveries",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/configuration",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/outbox-receipts",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/provider-status",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/events",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/outbox",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/changes",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/audit",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/audit",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/diagnostics",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/audit",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/audit",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/deliveries",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/outbox-receipts",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "systemHealth",
+      "expandedTemplates": 0,
+      "headings": [
+        "System Health",
+        "Metrics",
+        "Diagnostics",
+        "Outbox (recent events)"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/metrics",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/outbox",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/metrics",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/deliveries",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/outbox",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/deliveries",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/diagnostics",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/diagnostics",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "view": "auditEvents",
+      "expandedTemplates": 0,
+      "headings": [
+        "Audit & Security Events",
+        "Find audit events",
+        "Search results"
+      ],
+      "requests": [],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "dashboard",
+      "expandedTemplates": 0,
+      "headings": [
+        "System Administration Dashboard",
+        "Identity & Session",
+        "Entitlements & Scopes",
+        "Financial Control & Approvals"
+      ],
+      "requests": [],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "agents",
+      "expandedTemplates": 0,
+      "headings": [],
+      "requests": [],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "ledgerExplorer",
+      "expandedTemplates": 0,
+      "headings": [
+        "Ledger Core & Reversals Desk",
+        "Chart of Accounts",
+        "Journal Audit & Compensations"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/ledger/accounts",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/ledger/accounts",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "feeRules",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Fees"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/fee-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/fee-rules",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "commissionRules",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Commissions"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/commission-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/commission-rules",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "rewardRules",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Rewards"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/reward-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/reward-rules",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "productCatalogue",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Products"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/products",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/products",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "limitCatalogue",
+      "expandedTemplates": 0,
+      "headings": [
+        "Commercial Rule Registries",
+        "Limit profiles",
+        "Limit rules"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-rules",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-profiles",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-profiles",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-rules",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "limitAssignments",
+      "expandedTemplates": 0,
+      "headings": [
+        "Limit Assignments",
+        "Existing assignments",
+        "Manage assignments",
+        "Usage Diagnostics"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-assignments",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/limit-assignments",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "approvalsInbox",
+      "expandedTemplates": 0,
+      "headings": [
+        "Privileged Approvals (Maker-Checker)",
+        "Funding checker workspace",
+        "Generic checker decision"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/agents/funding-requests",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/agents/funding-requests",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "view": "notifications",
+      "expandedTemplates": 0,
+      "headings": [
+        "SMS & Email Notification Management",
+        "Channel and service signals"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/events",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/provider-status",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/changes",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/events",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/provider-status",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/internal/notifications/changes",
+          "status": 200
+        }
+      ],
+      "width": 320,
+      "scrollWidth": 320,
+      "violations": []
+    }
+  ],
   "requests": [
     {
       "method": "GET",
@@ -53,12 +2038,322 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers/379dbae5-cbf4-48b4-bf35-845abc41a0e0/phone-verification",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers/379dbae5-cbf4-48b4-bf35-845abc41a0e0/transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/customers/379dbae5-cbf4-48b4-bf35-845abc41a0e0/eligibility",
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers/379dbae5-cbf4-48b4-bf35-845abc41a0e0/phone-verification",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/customers/379dbae5-cbf4-48b4-bf35-845abc41a0e0/onboarding-readiness",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/customers/379dbae5-cbf4-48b4-bf35-845abc41a0e0/onboarding-readiness",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customers",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers/379dbae5-cbf4-48b4-bf35-845abc41a0e0/transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/customers/379dbae5-cbf4-48b4-bf35-845abc41a0e0/eligibility",
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/support/tickets",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
       "status": 200
     },
     {
       "method": "GET",
       "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/support/tickets",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customers",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customers/5a71b9bd-89c6-4116-b2c9-2df9ae5ab1f3/registration-profile",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/applications",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/agent-lifecycle-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/agent-lifecycle-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/applications",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/agents/1f531703-3854-4d87-8052-121d111b2044/fund-request",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/a2/workforce/approvals/8feb0ace-7d89-425e-a24c-939744c7ce6c/approve",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
       "status": 200
     },
     {
@@ -73,7 +2368,617 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/1f531703-3854-4d87-8052-121d111b2044/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/a2/workforce/approvals/8feb0ace-7d89-425e-a24c-939744c7ce6c/approve",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/1f531703-3854-4d87-8052-121d111b2044/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/agents/funding-requests/8feb0ace-7d89-425e-a24c-939744c7ce6c/execute",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/1f531703-3854-4d87-8052-121d111b2044/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/applications",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/agent-lifecycle-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/agent-lifecycle-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/applications",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/1f531703-3854-4d87-8052-121d111b2044/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/agents/1f531703-3854-4d87-8052-121d111b2044/defund-request",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/agent-lifecycle-summary",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/applications",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/agent-lifecycle-summary",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/applications",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/1f531703-3854-4d87-8052-121d111b2044/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/a2/workforce/approvals/bfe2c0b1-a02f-462c-8e92-7b6a3658328d/approve",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/1f531703-3854-4d87-8052-121d111b2044/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/agents/funding-requests/bfe2c0b1-a02f-462c-8e92-7b6a3658328d/execute",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/1f531703-3854-4d87-8052-121d111b2044/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/agents/funding-requests/bfe2c0b1-a02f-462c-8e92-7b6a3658328d/execute",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/1f531703-3854-4d87-8052-121d111b2044/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/support/tickets",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/support/tickets",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/support/tickets",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/support/tickets",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/support/tickets/19f10074-6fbe-4435-acca-18e431cb6975",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/support/tickets/19f10074-6fbe-4435-acca-18e431cb6975/messages",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/support/tickets/19f10074-6fbe-4435-acca-18e431cb6975/status",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/support/tickets",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/support/tickets/19f10074-6fbe-4435-acca-18e431cb6975/messages",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/support/tickets/19f10074-6fbe-4435-acca-18e431cb6975/messages",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/support/tickets/19f10074-6fbe-4435-acca-18e431cb6975/messages",
+      "status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/internal/support/tickets/19f10074-6fbe-4435-acca-18e431cb6975/messages",
+      "status": 409
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/compliance-case-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/compliance-case-summary",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customers/379dbae5-cbf4-48b4-bf35-845abc41a0e0/kyc-assessment",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/customers/379dbae5-cbf4-48b4-bf35-845abc41a0e0/kyc",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/kyc-queue-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/assignments",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/assignments",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widget-registry",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widget-registry",
+      "status": 200
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/internal/a2/workforce/dashboard/assignments/TREASURY",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
       "status": 200
     },
     {
@@ -97,63 +3002,28 @@
       "status": 200
     },
     {
-      "method": "GET",
-      "path": "/api/v1/internal/customers",
-      "status": 200
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/internal/customers",
-      "status": 200
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/internal/customers/a06c1a47-24b9-4434-93e8-bfe4a6aa3007/phone-verification",
-      "status": 200
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/internal/customers/a06c1a47-24b9-4434-93e8-bfe4a6aa3007/phone-verification",
-      "status": 200
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/internal/customers/a06c1a47-24b9-4434-93e8-bfe4a6aa3007/transactions",
-      "status": 200
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/customers/a06c1a47-24b9-4434-93e8-bfe4a6aa3007/eligibility",
-      "status": 404
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/customers/a06c1a47-24b9-4434-93e8-bfe4a6aa3007/onboarding-readiness",
-      "status": 200
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/customers/a06c1a47-24b9-4434-93e8-bfe4a6aa3007/onboarding-readiness",
-      "status": 200
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/internal/customers/a06c1a47-24b9-4434-93e8-bfe4a6aa3007/transactions",
-      "status": 200
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/customers",
+      "method": "PUT",
+      "path": "/api/v1/internal/a2/workforce/dashboard/assignments/TREASURY",
       "status": 403
     },
     {
       "method": "GET",
-      "path": "/api/v1/customers/a06c1a47-24b9-4434-93e8-bfe4a6aa3007/eligibility",
-      "status": 404
+      "path": "/api/v1/ledger/accounts",
+      "status": 200
     },
     {
       "method": "GET",
-      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "path": "/api/v1/ledger/accounts",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ledger/journals/c1c3dff5-b9f9-40f2-8a67-f3d48421f4b8",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
       "status": 200
     },
     {
@@ -169,6 +3039,56 @@
     {
       "method": "GET",
       "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
       "status": 200
     },
     {
@@ -178,13 +3098,413 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
       "status": 200
     },
     {
       "method": "GET",
-      "path": "/api/v1/internal/customers",
-      "status": 403
+      "path": "/api/v1/internal/configuration",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/events",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/provider-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/outbox",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/changes",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/deliveries",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/diagnostics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/outbox-receipts",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/events",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/configuration",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/provider-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/changes",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/outbox",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/outbox-receipts",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/deliveries",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/diagnostics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/templates",
+      "status": 200
     },
     {
       "method": "GET",
@@ -223,12 +3543,632 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/internal/metrics",
       "status": 200
     },
     {
       "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/assignments",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widget-registry",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/assignments",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widget-registry",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/classes",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/classes",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/internal/support/tickets",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/support/tickets",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/admin/cash-to-cash/transfers",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/admin/cash-to-cash/expiry-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/admin/cash-to-cash/expiry-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/admin/cash-to-cash/transfers",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ledger/accounts",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ledger/accounts",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/fee-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/fee-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/commission-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/commission-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/reward-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/reward-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/products",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/products",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-profiles",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-profiles",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-assignments",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-assignments",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/configuration",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/events",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/outbox",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/provider-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/changes",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/deliveries",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/diagnostics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/outbox-receipts",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/events",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/provider-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/configuration",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/outbox",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/changes",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/diagnostics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/deliveries",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/outbox-receipts",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/outbox",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/deliveries",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/outbox",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/diagnostics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/deliveries",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/diagnostics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ledger/accounts",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ledger/accounts",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/fee-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/fee-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/commission-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/commission-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/reward-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/reward-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/products",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/products",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-profiles",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-profiles",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-assignments",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-assignments",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/events",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/changes",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/changes",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/events",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/provider-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/provider-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
       "status": 200
     },
     {
@@ -248,7 +4188,137 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widget-registry",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/templates",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widget-registry",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/assignments",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/assignments",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/classes",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/classes",
       "status": 200
     },
     {
@@ -258,32 +4328,447 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/internal/customers",
+      "path": "/api/v1/internal/support/tickets",
       "status": 200
     },
     {
       "method": "GET",
-      "path": "/api/v1/internal/customers",
+      "path": "/api/v1/internal/admin/cash-to-cash/expiry-status",
       "status": 200
     },
     {
-      "method": "POST",
-      "path": "/api/v1/customers",
-      "status": 201
-    },
-    {
       "method": "GET",
-      "path": "/api/v1/internal/customers",
+      "path": "/api/v1/internal/admin/cash-to-cash/transfers",
       "status": 200
     },
     {
-      "method": "POST",
-      "path": "/api/v1/customers/f437b4f9-9b9c-427e-88f2-ab485021e0ab/registration-profile",
-      "status": 201
+      "method": "GET",
+      "path": "/api/v1/internal/admin/cash-to-cash/expiry-status",
+      "status": 200
     },
     {
       "method": "GET",
-      "path": "/api/v1/internal/customers",
+      "path": "/api/v1/internal/admin/cash-to-cash/transfers",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ledger/accounts",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ledger/accounts",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/fee-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/fee-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/commission-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/commission-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/reward-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/reward-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/products",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/products",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-profiles",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-profiles",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-assignments",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-assignments",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/workforce-overview",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/configuration",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/events",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/provider-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/changes",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/outbox",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/diagnostics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/deliveries",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/configuration",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/outbox-receipts",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/provider-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/events",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/outbox",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/changes",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/diagnostics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/audit",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/deliveries",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/outbox-receipts",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/outbox",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/deliveries",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/outbox",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/deliveries",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/diagnostics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/diagnostics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/role-definitions/proposals",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ledger/accounts",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ledger/accounts",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/fee-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/fee-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/commission-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/commission-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/reward-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/reward-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/products",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/products",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-profiles",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-profiles",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-rules",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-assignments",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/limit-assignments",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/agents/funding-requests",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/events",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/provider-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/changes",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/events",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/provider-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/notifications/changes",
       "status": 200
     }
   ],

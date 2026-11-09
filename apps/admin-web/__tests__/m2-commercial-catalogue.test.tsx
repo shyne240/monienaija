@@ -85,3 +85,18 @@ test('limit profile invalid fields do not present a misleading empty registry',a
  session(['limit.view']);(ApiClient.get as jest.Mock).mockImplementation((url:string)=>Promise.resolve(url.includes('limit-profiles')?page([{code:'BAD_PROFILE',name:'Bad',kind:'AGENT',status:'ACTIVE',enabled:'true',configurationStatus:'CONFIGURED',version:1}]):page([])));
  render(<CommercialRulesScreen initialTab="limits" />);expect(await screen.findByText(/Limit profiles returned an invalid page/)).toBeTruthy();expect(screen.queryByText(/No limit profiles were returned/)).toBeNull();
 });
+
+
+test('registry refresh accessible name matches the visible loading label', async () => {
+  session(['limit.view']);
+  const profiles = deferred<unknown>(); const rules = deferred<unknown>();
+  (ApiClient.get as jest.Mock).mockImplementation((url: string) => url.includes('limit-profiles') ? profiles.promise : rules.promise);
+  render(<CommercialRulesScreen initialTab="limits" />);
+  const loadingProfiles = screen.getByRole('button', { name: 'Loading Limit profiles' }) as HTMLButtonElement;
+  const loadingRules = screen.getByRole('button', { name: 'Loading Limit rules' }) as HTMLButtonElement;
+  expect(loadingProfiles.textContent).toBe('Loading…'); expect(loadingProfiles.disabled).toBe(true);
+  expect(loadingRules.textContent).toBe('Loading…'); expect(loadingRules.disabled).toBe(true);
+  await act(async () => { profiles.resolve(page([])); rules.resolve(page([])); await Promise.all([profiles.promise, rules.promise]); });
+  expect(screen.getByRole('button', { name: 'Refresh Limit profiles' }).textContent).toBe('Refresh');
+  expect(screen.getByRole('button', { name: 'Refresh Limit rules' }).textContent).toBe('Refresh');
+});

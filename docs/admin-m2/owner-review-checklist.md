@@ -2,24 +2,23 @@
 
 **Status:** 38 implemented and pending acceptance; 0 accepted; four policy-blocked separately. The [38-row visual package](visual-review-package.md) links a mobile and desktop screenshot for each implemented row. The [acceptance report](acceptance-review.md) contains evidence and open limitations.
 
-## Open the preview
+## Run locally on Windows
 
-1. In Arena, open the live preview named **Admin Console review preview**, then choose **Open Admin Console preview**. On mobile, open the sidebar using the menu button. The **Synthetic preview · guide** link returns to the entry page.
-2. To inspect the funding approval queue, return to the guide and choose **Open funding checker preview**, then **Privileged Approvals**. The general preview combines roles for navigation; the application intentionally restricts the funding queue for its SUPER_ADMIN role. Neither synthetic profile is evidence of real role authorization.
-3. The preview serves the actual Admin Web UI with synthetic reads. All writes and test-send requests are rejected; unknown reads report unavailable. No backend, deployed worker, provider, real messages or real money are used. Thus it is useful for visual and navigation review, not live functional, security or settlement sign-off. Some populated states are represented only in the screenshot package.
-4. Example lookup values: `synthetic-trace` for transaction trace, `synthetic-journal` for ledger, `synthetic-customer` for KYC/case search. The Customer directory contains **Synthetic Customer**; Agent directory contains **AG-SYNTHETIC**.
+Follow [Windows local setup](windows-local-run.md) for a disposable Docker database, backend and Admin Web. The Arena preview was stopped after a reported 404; it is not available. Sign in with the development-only local seed, and use dummy data only. This account is not production authentication, and it does not represent separate operational/checker roles. Do not enable real SMS, deployed workers or providers.
+
+A fresh local database will have few business records. Empty, unavailable or role-restricted views are not necessarily defects; the seeded SUPER_ADMIN cannot exercise all role-specific surfaces (including the funding checker queue). The [historical visual package](visual-review-package.md) illustrates synthetic populated states, not local DB data or functional proof. More comprehensive role and maker/checker review requires a separately approved isolated environment and distinct principals.
 
 ## Screens to review
 
 Use the sidebar labels below, and inspect both desktop and mobile layouts. Record findings and explicit approval/rejection for each row in your owner system, including commit, reviewer and date.
 
 - [ ] **Operational Dashboard**, **Dashboard Settings** — A01–A02.
-- [ ] **Customer & KYC Servicing** — directory A03; open the synthetic customer for overview E01, registration E02, personal/contact E03, and Proof of Address E04. Physical verification remains unconfigured.
+- [ ] **Customer & KYC Servicing** — directory A03; open a locally created dummy customer for overview E01, registration E02, personal/contact E03, and Proof of Address E04. Physical verification remains unconfigured.
 - [ ] **Agent Network Management**, **Agent Classes & Capabilities**, **Support Inbox** — A04–A05, A07; inspect Agent funding E06, credential/session controls E07 and unified history E10.
 - [ ] **Transaction & Fee Ops — Transfers / Deposits / Withdrawals**, **Cash-to-Cash Operations**, **Ledger & Reversals**, **Reconciliation & Breaks** — A06, A08–A12.
-- [ ] **5.1 Fee Rules** through **5.6 Limit Assignments** — A13–A18. Review list, scrolling and diagnostics; do not infer actual authorization from preview controls.
+- [ ] **5.1 Fee Rules** through **5.6 Limit Assignments** — A13–A18. Review list, scrolling and diagnostics; do not infer complete authorization from the local administrator.
 - [ ] **6.1 KYC Assessment Lookup & Review**, **6.2 Compliance Case Lookup**, **6.3 Fraud Case Lookup** — A19–A21.
-- [ ] **Workforce Overview & Support Provisioning**, **Role Governance**, **Privileged Approvals**, **Super-Admin Recovery** — A22–A25 and E11. Use the checker preview for the queue.
+- [ ] **Workforce Overview & Support Provisioning**, **Role Governance**, **Privileged Approvals**, **Super-Admin Recovery** — A22–A25 and E11. The queue requires a distinct authorized checker; the seeded SUPER_ADMIN does not substitute.
 - [ ] **SMS & Email Notifications**, **System Health**, **Audit & Security Events** — A26–A28; inspect both channel-template workspaces E12 and provider configuration E13 without running test-send or a worker.
 
 ## Decisions and approvals required

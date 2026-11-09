@@ -234,7 +234,7 @@ const DashboardSettingsWorkspace: React.FC<{onDashboardGuardChange?: (guarded: b
       <div style={styles.templateList}>
         {templates.map((t) => (
           <div key={t.templateKey} style={styles.templateRow}>
-            <button type="button" style={styles.templateHeaderRow} aria-expanded={expandedTemplate === t.templateKey} onClick={() => setExpandedTemplate(expandedTemplate === t.templateKey ? null : t.templateKey)}>
+            <button type="button" className="mn-dashboard-settings__template-header" style={styles.templateHeaderRow} aria-expanded={expandedTemplate === t.templateKey} onClick={() => setExpandedTemplate(expandedTemplate === t.templateKey ? null : t.templateKey)}>
               <div>
                 <span style={styles.templateKey}>{t.templateKey}</span>{' '}
                 <span style={styles.templateDisplayName}>{t.displayName}</span>

@@ -992,6 +992,85 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     expect(a.body.id).not.toBe(b.body.id);
   });
 
+  it('long workforce identities retain isolated, retry-safe ticket and message idempotency scopes', async () => {
+    const longId = `https://identity.example.invalid/${'a'.repeat(95)}`;
+    const firstPrincipal = { ...operatorChecker, principalId: `${longId}a` };
+    const secondPrincipal = { ...operatorChecker, principalId: `${longId}b` };
+    const createInput = {
+      subject: 'Long identity test',
+      category: 'OTHER' as any,
+      description: 'Disposable support ticket',
+      idempotencyKey: 'same-ticket-key',
+      principal: firstPrincipal,
+    };
+    const firstTicket = await supportService.createTicket(createInput);
+    expect((await supportService.createTicket(createInput)).id).toBe(firstTicket.id);
+    await expect(
+      supportService.createTicket({ ...createInput, subject: 'Different subject' }),
+    ).rejects.toThrow();
+    const secondTicket = await supportService.createTicket({
+      ...createInput,
+      principal: secondPrincipal,
+    });
+    expect(secondTicket.id).not.toBe(firstTicket.id);
+
+    const messageInput = {
+      ticketId: firstTicket.id,
+      body: 'Internal test note',
+      isInternal: true,
+      idempotencyKey: 'same-message-key',
+      principal: firstPrincipal,
+    };
+    const firstMessage = await supportService.addMessage(messageInput);
+    expect((await supportService.addMessage(messageInput)).id).toBe(firstMessage.id);
+    await expect(
+      supportService.addMessage({ ...messageInput, body: 'Different note' }),
+    ).rejects.toThrow();
+    const secondMessage = await supportService.addMessage({
+      ...messageInput,
+      principal: secondPrincipal,
+    });
+    expect(secondMessage.id).not.toBe(firstMessage.id);
+    const rows: Array<{ scope: string }> = await dataSource.query(
+      `SELECT scope FROM idempotency_records WHERE idempotency_key IN ('same-ticket-key','same-message-key')`,
+    );
+    expect(rows).toHaveLength(4);
+    expect(rows.every((row) => row.scope.length <= 120 && row.scope.includes(':sha256:'))).toBe(
+      true,
+    );
+    expect(new Set(rows.map((row) => row.scope)).size).toBe(4);
+  });
+
+  it('short workforce identity scopes remain compatible with existing reservations', async () => {
+    const input = {
+      subject: 'Legacy scope',
+      category: 'OTHER' as any,
+      description: 'Legacy scope ticket',
+      idempotencyKey: 'legacy-ticket-key',
+      principal: operatorChecker,
+    };
+    const ticket = await supportService.createTicket(input);
+    const message = {
+      ticketId: ticket.id,
+      body: 'Legacy note',
+      isInternal: true,
+      idempotencyKey: 'legacy-message-key',
+      principal: operatorChecker,
+    };
+    await supportService.addMessage(message);
+    const rows: Array<{ scope: string }> = await dataSource.query(
+      `SELECT scope FROM idempotency_records WHERE idempotency_key IN ('legacy-ticket-key','legacy-message-key')`,
+    );
+    expect(rows.map((row) => row.scope)).toEqual(
+      expect.arrayContaining([
+        `support.ticket.create:OPERATOR:${operatorChecker.principalId}`,
+        `support.ticket.message.create:${ticket.id}:OPERATOR:${operatorChecker.principalId}`,
+      ]),
+    );
+    expect((await supportService.createTicket(input)).id).toBe(ticket.id);
+    expect((await supportService.addMessage(message)).body).toBe('Legacy note');
+  });
+
   it('22b. duplicate/idempotent reply behavior (Idempotency-Key on messages) — V1-CUSTOMER-09', async () => {
     const cust = await createCustomerWithCredential();
     const created = await request(app.getHttpServer())
