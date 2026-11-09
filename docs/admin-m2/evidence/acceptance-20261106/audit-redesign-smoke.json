@@ -1,0 +1,66 @@
+[
+  {
+    "width": 320,
+    "keyboardSearch": true,
+    "appliedFilters": true,
+    "sensitivePayloadHidden": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "keyboardSearch": true,
+    "appliedFilters": true,
+    "sensitivePayloadHidden": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "keyboardSearch": true,
+    "appliedFilters": true,
+    "sensitivePayloadHidden": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "keyboardSearch": true,
+    "appliedFilters": true,
+    "sensitivePayloadHidden": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "keyboardSearch": true,
+    "appliedFilters": true,
+    "sensitivePayloadHidden": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "keyboardSearch": true,
+    "appliedFilters": true,
+    "sensitivePayloadHidden": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "keyboardSearch": true,
+    "appliedFilters": true,
+    "sensitivePayloadHidden": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "keyboardSearch": true,
+    "appliedFilters": true,
+    "sensitivePayloadHidden": true,
+    "page": 1440,
+    "view": 1440
+  }
+]

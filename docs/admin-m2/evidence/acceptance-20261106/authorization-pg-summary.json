@@ -1,0 +1,14 @@
+{
+  "environment": "isolated real PostgreSQL, in-process HTTP, test fixtures",
+  "command": "NODE_ENV=test PG_TEST_RUN_ID=acceptauth01 NOTIFICATION_WORKER_ENABLED=false CASH_TO_CASH_EXPIRY_WORKER_ENABLED=false NODE_OPTIONS=\"--require ./test/support/mission-25c-network-guard.cjs\" npx jest --config jest.integration.config.js --runInBand <five listed suites>",
+  "suites": [
+    "test/v1-admin-authorization-read-surface-01.integration.spec.ts",
+    "test/v1-admin-authorization-hardening-01.integration.spec.ts",
+    "test/v1-admin-authorization-customer-read-01.integration.spec.ts",
+    "test/v1-admin-authorization-kyc-01.integration.spec.ts",
+    "test/v1-admin-p1-authorization-hardening.integration.spec.ts"
+  ],
+  "suitesPassed": 5,
+  "testsPassed": 154,
+  "scope": "test fixtures only; not production or live workforce authorization"
+}

@@ -1,0 +1,90 @@
+[
+  {
+    "width": 320,
+    "keyboard": true,
+    "restrictedWidgetNotFetched": true,
+    "exactAmount": true,
+    "visibleLabelMechanisms": true,
+    "scopesKeyboard": true,
+    "axeViolations": [],
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "keyboard": true,
+    "restrictedWidgetNotFetched": true,
+    "exactAmount": true,
+    "visibleLabelMechanisms": true,
+    "scopesKeyboard": true,
+    "axeViolations": [],
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "keyboard": true,
+    "restrictedWidgetNotFetched": true,
+    "exactAmount": true,
+    "visibleLabelMechanisms": true,
+    "scopesKeyboard": true,
+    "axeViolations": [],
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "keyboard": true,
+    "restrictedWidgetNotFetched": true,
+    "exactAmount": true,
+    "visibleLabelMechanisms": true,
+    "scopesKeyboard": true,
+    "axeViolations": [],
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "keyboard": true,
+    "restrictedWidgetNotFetched": true,
+    "exactAmount": true,
+    "visibleLabelMechanisms": true,
+    "scopesKeyboard": true,
+    "axeViolations": [],
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "keyboard": true,
+    "restrictedWidgetNotFetched": true,
+    "exactAmount": true,
+    "visibleLabelMechanisms": true,
+    "scopesKeyboard": true,
+    "axeViolations": [],
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "keyboard": true,
+    "restrictedWidgetNotFetched": true,
+    "exactAmount": true,
+    "visibleLabelMechanisms": true,
+    "scopesKeyboard": true,
+    "axeViolations": [],
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "keyboard": true,
+    "restrictedWidgetNotFetched": true,
+    "exactAmount": true,
+    "visibleLabelMechanisms": true,
+    "scopesKeyboard": true,
+    "axeViolations": [],
+    "page": 1440,
+    "view": 1440
+  }
+]

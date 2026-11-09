@@ -1,0 +1,200 @@
+[
+  {
+    "role": "SUPER_ADMIN",
+    "width": 320,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "role": "SUPER_ADMIN",
+    "width": 1440,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": null,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "role": "FINANCE_PREPARER",
+    "width": 320,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "role": "FINANCE_PREPARER",
+    "width": 1440,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": null,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "role": "FINANCE_CONTROLLER",
+    "width": 320,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "role": "FINANCE_CONTROLLER",
+    "width": 1440,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": null,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "role": "FINANCE_AUDITOR",
+    "width": 320,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "role": "FINANCE_AUDITOR",
+    "width": 1440,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": null,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "role": "ADMINISTRATOR",
+    "width": 320,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "role": "ADMINISTRATOR",
+    "width": 1440,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": null,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "role": "OPERATIONS",
+    "width": 320,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "role": "OPERATIONS",
+    "width": 1440,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": null,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "role": "AGENT_NETWORK_MANAGER",
+    "width": 320,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "role": "AGENT_NETWORK_MANAGER",
+    "width": 1440,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": null,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "role": "COMPLIANCE",
+    "width": 320,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "role": "COMPLIANCE",
+    "width": 1440,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": null,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "role": "RISK_FRAUD",
+    "width": 320,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "role": "RISK_FRAUD",
+    "width": 1440,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": null,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "role": "CUSTOMER_SERVICE",
+    "width": 320,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "role": "CUSTOMER_SERVICE",
+    "width": 1440,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": null,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "role": "TREASURY",
+    "width": 320,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "role": "TREASURY",
+    "width": 1440,
+    "mismatches": [],
+    "writes": 0,
+    "escapeAndFocusReturn": null,
+    "page": 1440,
+    "view": 1440
+  }
+]
