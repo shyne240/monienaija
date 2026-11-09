@@ -131,7 +131,7 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
         {canApprove && <a href="#generic-checker-workspace">Generic checker decision</a>}
       </nav>
       <div style={styles.gapWarning}>
-        <span style={styles.gapTitle}>ℹ️ Approval Discovery Scope</span>
+        <span style={styles.gapTitle}>Approval Discovery Scope</span>
         <p style={styles.gapText}>
           Agent funding and defunding requests use the Global Funding Inbox when your session meets its access rules (<code>GET /internal/agents/funding-requests</code>). Generic non-funding workforce overrides require a known Approval ID because generic <code>GET /internal/a2/workforce/approvals</code> listing is not exposed.
         </p>
@@ -290,7 +290,7 @@ const styles = {
   gapTitle: {
     fontSize: '13px',
     fontWeight: 'bold',
-    color: '#D97706',
+    color: '#8C5600',
     display: 'block',
     marginBottom: '6px',
   },

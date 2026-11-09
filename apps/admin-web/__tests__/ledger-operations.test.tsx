@@ -59,7 +59,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
     const { getByText, findByText } = render(<App />);
 
     // Click ledger navigation
-    fireEvent.click(getByText('📖 Ledger & Reversals'));
+    fireEvent.click(getByText('Ledger & Reversals'));
 
     expect(ApiClient.get).toHaveBeenCalledWith('/ledger/accounts');
     expect(await findByText('Central Settlement Asset')).toBeTruthy();
@@ -97,7 +97,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
 
     const { getByText, getByPlaceholderText, findByText, findAllByText } = render(<App />);
 
-    fireEvent.click(getByText('📖 Ledger & Reversals'));
+    fireEvent.click(getByText('Ledger & Reversals'));
 
     // Fill search
     fireEvent.change(getByPlaceholderText('e.g. ecd61345-...'), { target: { value: 'journal-uuid-999' } });
@@ -132,7 +132,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
 
     const { getByText, getByPlaceholderText, findByText, container } = render(<App />);
 
-    fireEvent.click(getByText('📖 Ledger & Reversals'));
+    fireEvent.click(getByText('Ledger & Reversals'));
 
     // Fill search
     fireEvent.change(getByPlaceholderText('e.g. ecd61345-...'), { target: { value: 'journal-uuid-999' } });
@@ -180,7 +180,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
 
     const { getByText, getByPlaceholderText, findByText } = render(<App />);
 
-    fireEvent.click(getByText('📖 Ledger & Reversals'));
+    fireEvent.click(getByText('Ledger & Reversals'));
     fireEvent.change(getByPlaceholderText('e.g. ecd61345-...'), { target: { value: 'journal-uuid-999' } });
     fireEvent.click(getByText('Audit Journal'));
 
@@ -234,7 +234,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
 
     const { getByText, getByPlaceholderText, findByText } = render(<App />);
 
-    fireEvent.click(getByText('📖 Ledger & Reversals'));
+    fireEvent.click(getByText('Ledger & Reversals'));
 
     // Fill search
     fireEvent.change(getByPlaceholderText('e.g. ecd61345-...'), { target: { value: 'journal-uuid-999' } });

@@ -1,0 +1,526 @@
+[
+  {
+    "width": 320,
+    "key": "dashboard",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "dashboardSettings",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "customers",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "agents",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "agentClasses",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "support",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "transfers",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "cashIn",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "cashOut",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "cashToCashOps",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "ledgerExplorer",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "reconciliation",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "feeRules",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "commissionRules",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "rewardRules",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "productCatalogue",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "limitCatalogue",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "limitAssignments",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "kycQueue",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "complianceCases",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "fraudCases",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "workforceAccess",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "roleGovernance",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "approvalsInbox",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          [
+            "div:nth-child(4) > span"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "width": 320,
+    "key": "superAdminRecovery",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "notifications",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "systemHealth",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 320,
+    "key": "auditEvents",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "dashboard",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "dashboardSettings",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "customers",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "agents",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "agentClasses",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "support",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "transfers",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "cashIn",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "cashOut",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "cashToCashOps",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "ledgerExplorer",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "reconciliation",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "feeRules",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "commissionRules",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "rewardRules",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "productCatalogue",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "limitCatalogue",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "limitAssignments",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "kycQueue",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "complianceCases",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "fraudCases",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "workforceAccess",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "roleGovernance",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "approvalsInbox",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          [
+            "div:nth-child(4) > span"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "width": 1440,
+    "key": "superAdminRecovery",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "notifications",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "systemHealth",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  },
+  {
+    "width": 1440,
+    "key": "auditEvents",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160,
+    "violations": []
+  }
+]

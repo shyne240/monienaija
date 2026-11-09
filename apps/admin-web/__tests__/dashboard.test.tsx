@@ -222,7 +222,7 @@ describe('Admin Web Portal — Dashboard Settings (role → template assignment)
 
     const { getByText, findByText, findAllByText, getByDisplayValue } = render(<App />);
 
-    fireEvent.click(getByText('⚙️ Dashboard Settings'));
+    fireEvent.click(getByText('Dashboard Settings'));
 
     expect((await findAllByText('EXECUTIVE_GOVERNANCE')).length).toBeGreaterThan(0);
     expect(getByText('TREASURY')).toBeTruthy();
@@ -251,7 +251,7 @@ describe('Admin Web Portal — Dashboard Settings (role → template assignment)
     });
 
     const { getByText, findByText } = render(<App />);
-    fireEvent.click(getByText('⚙️ Dashboard Settings'));
+    fireEvent.click(getByText('Dashboard Settings'));
 
     expect(await findByText(/do not have permission to view dashboard configuration/)).toBeTruthy();
   });
@@ -269,7 +269,7 @@ describe('Admin Web Portal — Dashboard Settings (role → template assignment)
     (ApiClient.put as jest.Mock).mockRejectedValue(new ApiError("Dashboard template 'GHOST' is not a known, active template.", 400));
 
     const { getByText, findByText, getByDisplayValue } = render(<App />);
-    fireEvent.click(getByText('⚙️ Dashboard Settings'));
+    fireEvent.click(getByText('Dashboard Settings'));
 
     const select = await waitFor(() => getByDisplayValue('RECONCILIATION_VISIBILITY') as HTMLSelectElement);
     fireEvent.change(select, { target: { value: 'EXECUTIVE_GOVERNANCE' } });

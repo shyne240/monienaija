@@ -1,0 +1,18 @@
+[
+  {
+    "width": 320,
+    "key": "notifications",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 1440,
+    "key": "notifications",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  }
+]

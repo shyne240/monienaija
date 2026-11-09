@@ -33,7 +33,7 @@ import './admin-shell.css';
 // Menu visibility and route selection use function scopes, not role labels.
 //
 // M1 presentation note: this file owns shell markup, scoped styles and focus/drawer
-// behaviour only. Section definitions, item labels, guards, aliases, customer context,
+// behaviour only. Section definitions, text labels, guards, aliases, customer context,
 // the route switch, logout and every destination handler are unchanged.
 
 type View = AdminView;
@@ -231,36 +231,36 @@ export const Layout: React.FC = () => {
       id: 'home',
       title: '1. Home & My Work',
       items: [
-        { key: 'dashboard' as View, label: '📊 Operational Dashboard', visible: true },
-        { key: 'dashboardSettings' as View, label: '⚙️ Dashboard Settings', visible: isVisible('dashboardSettings') },
+        { key: 'dashboard' as View, label: 'Operational Dashboard', visible: true },
+        { key: 'dashboardSettings' as View, label: 'Dashboard Settings', visible: isVisible('dashboardSettings') },
       ],
     },
     {
       id: 'servicing',
       title: '2. Customer & Agent Servicing',
       items: [
-        { key: 'customers' as View, label: '👥 Customer & KYC Servicing', visible: isVisible('customers') },
-        { key: 'agents' as View, label: '🏪 Agent Network Management', visible: isVisible('agents') },
-        { key: 'agentClasses' as View, label: '🏷️ Agent Classes & Capabilities', visible: isVisible('agentClasses') },
-        { key: 'support' as View, label: '🎧 Support Inbox', visible: isVisible('support') },
+        { key: 'customers' as View, label: 'Customer & KYC Servicing', visible: isVisible('customers') },
+        { key: 'agents' as View, label: 'Agent Network Management', visible: isVisible('agents') },
+        { key: 'agentClasses' as View, label: 'Agent Classes & Capabilities', visible: isVisible('agentClasses') },
+        { key: 'support' as View, label: 'Support Inbox', visible: isVisible('support') },
       ],
     },
     {
       id: 'money',
       title: '3. Money Movement',
       items: [
-        { key: 'transfers' as View, label: '💸 Transaction & Fee Ops — Transfers (W2W)', visible: isVisible('transfers') },
-        { key: 'cashIn' as View, label: '💸 Transaction & Fee Ops — Deposits', visible: isVisible('transfers') },
-        { key: 'cashOut' as View, label: '💸 Transaction & Fee Ops — Withdrawals', visible: isVisible('transfers') },
-        { key: 'cashToCashOps' as View, label: '💸 Cash-to-Cash Operations', visible: isVisible('cashToCashOps') },
+        { key: 'transfers' as View, label: 'Transaction & Fee Ops — Transfers (W2W)', visible: isVisible('transfers') },
+        { key: 'cashIn' as View, label: 'Transaction & Fee Ops — Deposits', visible: isVisible('transfers') },
+        { key: 'cashOut' as View, label: 'Transaction & Fee Ops — Withdrawals', visible: isVisible('transfers') },
+        { key: 'cashToCashOps' as View, label: 'Cash-to-Cash Operations', visible: isVisible('cashToCashOps') },
       ],
     },
     {
       id: 'finance',
       title: '4. Finance & Ledger',
       items: [
-        { key: 'ledgerExplorer' as View, label: '📖 Ledger & Reversals', visible: isVisible('ledgerExplorer') },
-        { key: 'reconciliation' as View, label: '⚖️ Reconciliation & Breaks', visible: isVisible('reconciliation') },
+        { key: 'ledgerExplorer' as View, label: 'Ledger & Reversals', visible: isVisible('ledgerExplorer') },
+        { key: 'reconciliation' as View, label: 'Reconciliation & Breaks', visible: isVisible('reconciliation') },
       ],
     },
     {
@@ -288,13 +288,13 @@ export const Layout: React.FC = () => {
       id: 'platform',
       title: '7. Platform Administration',
       items: [
-        { key: 'workforceAccess' as View, label: '👷 Workforce Overview & Support Provisioning', visible: isVisible('workforceAccess') },
-        { key: 'roleGovernance' as View, label: '🔑 Role Governance', visible: isVisible('roleGovernance') },
-        { key: 'approvalsInbox' as View, label: '⚖️ Privileged Approvals', visible: isVisible('approvalsInbox') },
-        { key: 'superAdminRecovery' as View, label: '🔐 Super-Admin Recovery', visible: isVisible('superAdminRecovery') },
-        { key: 'notifications' as View, label: '🔔 SMS & Email Notifications', visible: isVisible('notifications') },
-        { key: 'systemHealth' as View, label: '🩺 System Health', visible: isVisible('systemHealth') },
-        { key: 'auditEvents' as View, label: '📜 Audit & Security Events', visible: isVisible('auditEvents') },
+        { key: 'workforceAccess' as View, label: 'Workforce Overview & Support Provisioning', visible: isVisible('workforceAccess') },
+        { key: 'roleGovernance' as View, label: 'Role Governance', visible: isVisible('roleGovernance') },
+        { key: 'approvalsInbox' as View, label: 'Privileged Approvals', visible: isVisible('approvalsInbox') },
+        { key: 'superAdminRecovery' as View, label: 'Super-Admin Recovery', visible: isVisible('superAdminRecovery') },
+        { key: 'notifications' as View, label: 'SMS & Email Notifications', visible: isVisible('notifications') },
+        { key: 'systemHealth' as View, label: 'System Health', visible: isVisible('systemHealth') },
+        { key: 'auditEvents' as View, label: 'Audit & Security Events', visible: isVisible('auditEvents') },
       ],
     },
   ];

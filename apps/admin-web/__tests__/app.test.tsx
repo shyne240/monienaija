@@ -133,11 +133,11 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     expect(getAllByText('SUPER_ADMIN').length).toBeGreaterThan(0);
     
     // Admin links must be present for SUPER_ADMIN
-    expect(getByText('🔑 Role Governance')).toBeTruthy();
-    expect(getByText('⚙️ Dashboard Settings')).toBeTruthy();
+    expect(getByText('Role Governance')).toBeTruthy();
+    expect(getByText('Dashboard Settings')).toBeTruthy();
     
     // All major links present for SUPER_ADMIN
-    expect(getByText('📖 Ledger & Reversals')).toBeTruthy();
+    expect(getByText('Ledger & Reversals')).toBeTruthy();
   });
 
   test('should render Dashboard and Privileged Approvals sidebar link for FINANCE_CONTROLLER operator', async () => {
@@ -164,11 +164,11 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     expect(getAllByText('FINANCE_CONTROLLER').length).toBeGreaterThan(0);
     
     // Controller links must be present via catalogue functions
-    expect(getByText('⚖️ Privileged Approvals')).toBeTruthy();
-    expect(queryByText('🔑 Role Governance')).toBeNull();
+    expect(getByText('Privileged Approvals')).toBeTruthy();
+    expect(queryByText('Role Governance')).toBeNull();
     
     // Customers must NOT be present for finance controller
-    expect(queryByText('👥 Customer & KYC Servicing')).toBeNull();
+    expect(queryByText('Customer & KYC Servicing')).toBeNull();
   });
 
   test('should render read-only Dashboard for FINANCE_AUDITOR operator without admin or controller controls', async () => {
@@ -195,10 +195,10 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     expect(getAllByText('FINANCE_AUDITOR').length).toBeGreaterThan(0);
     
     // Admin & Controller controls must NOT be present for auditor (read-only)
-    expect(queryByText('🔑 Role Governance')).toBeNull();
-    expect(queryByText('⚖️ Privileged Approvals')).toBeNull();
+    expect(queryByText('Role Governance')).toBeNull();
+    expect(queryByText('Privileged Approvals')).toBeNull();
     // But ledger should be visible for auditor
-    expect(getByText('📖 Ledger & Reversals')).toBeTruthy();
+    expect(getByText('Ledger & Reversals')).toBeTruthy();
   });
 
   test('should execute approvals POST trigger on form submit', async () => {
@@ -224,7 +224,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     const { getByText, getByPlaceholderText } = render(<App />);
 
     // Click approvals navigation
-    fireEvent.click(getByText('⚖️ Privileged Approvals'));
+    fireEvent.click(getByText('Privileged Approvals'));
 
     // Fill verification form
     fireEvent.change(getByPlaceholderText('e.g. 5e6f7g8h-1234-...'), { target: { value: 'approval-uuid-555' } });

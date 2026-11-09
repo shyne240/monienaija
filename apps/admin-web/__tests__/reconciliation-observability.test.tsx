@@ -82,7 +82,7 @@ describe('Admin Web Portal W5 Reconciliation & Breaks Desk Tests', () => {
     const { getByText, findByText, getAllByText } = render(<App />);
 
     // Click navigation tab
-    fireEvent.click(getByText('⚖️ Reconciliation & Breaks'));
+    fireEvent.click(getByText('Reconciliation & Breaks'));
 
     expect(getByText('Independent Reconciliation & Breaks Desk')).toBeTruthy();
 
@@ -131,7 +131,7 @@ describe('Admin Web Portal W5 Reconciliation & Breaks Desk Tests', () => {
     const { getByText, findByText, getAllByText } = render(<App />);
 
     // Click navigation tab
-    fireEvent.click(getByText('⚖️ Reconciliation & Breaks'));
+    fireEvent.click(getByText('Reconciliation & Breaks'));
 
     // Switch to Trial Balance Tab
     fireEvent.click(getByText('⚖️ General Trial Balance'));

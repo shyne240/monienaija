@@ -673,10 +673,10 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     // Corrected Money Movement navigation labels (Deposits / Withdrawals instead of misleading C2W/W2C)
     const rail = appShell.getByTestId('desktop-nav');
     expect(within(rail).getByTestId('nav-cashIn').textContent).toBe(
-      '💸 Transaction & Fee Ops — Deposits',
+      'Transaction & Fee Ops — Deposits',
     );
     expect(within(rail).getByTestId('nav-cashOut').textContent).toBe(
-      '💸 Transaction & Fee Ops — Withdrawals',
+      'Transaction & Fee Ops — Withdrawals',
     );
 
     // Dashboard widget navigates directly to Agent Network Management
