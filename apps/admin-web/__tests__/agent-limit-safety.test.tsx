@@ -35,3 +35,18 @@ test('limit pagination distinguishes empty later pages and validates page metada
 test('limit draft warns before closing and can only be cleared explicitly',async()=>{
  const confirm=jest.spyOn(window,'confirm').mockReturnValue(false);const section=await open();fireEvent.change(within(section).getByLabelText('Agent limit profile code'),{target:{value:'NEW_PROFILE'}});fireEvent.click(within(section).getByRole('button',{name:'Clear limit entry'}));expect((within(section).getByLabelText('Agent limit profile code') as HTMLInputElement).value).toBe('NEW_PROFILE');fireEvent.click(screen.getByRole('button',{name:'Close'}));expect(screen.getByLabelText('Agent limit assignments')).toBeTruthy();confirm.mockReturnValue(true);fireEvent.click(within(section).getByRole('button',{name:'Clear limit entry'}));expect((within(section).getByLabelText('Agent limit profile code') as HTMLInputElement).value).toBe('');confirm.mockRestore();
 });
+
+test('assignment workspace labels manual input and keeps catalogue selection consistent',async()=>{
+ (ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.startsWith('/internal/agents?')?Promise.resolve({data:[agent()],total:1}):path.includes('/limit-assignments/agent/')?Promise.resolve(page([row()])):path==='/internal/limit-profiles'?Promise.resolve([{code:'AGENT_STD',name:'Standard'}]):Promise.resolve([]));
+ const section=await open();
+ expect(within(section).getByRole('heading',{name:'Agent limit assignments'})).toBeTruthy();
+ expect(within(section).getByRole('region',{name:'Agent assignment records'})).toBeTruthy();
+ const input=within(section).getByLabelText('Agent limit profile code') as HTMLInputElement;
+ expect(input.closest('label')?.textContent).toMatch(/Profile code \(required\)/);
+ fireEvent.change(input,{target:{value:'OTHER_PROFILE'}});
+ fireEvent.click(within(section).getByRole('button',{name:'Load limit catalog'}));
+ const select=await within(section).findByLabelText('Select catalog limit profile') as HTMLSelectElement;
+ expect(select.value).toBe('');expect(input.value).toBe('OTHER_PROFILE');
+ fireEvent.change(select,{target:{value:'AGENT_STD'}});expect(input.value).toBe('AGENT_STD');
+ expect(ApiClient.post).not.toHaveBeenCalled();expect(ApiClient.patch).not.toHaveBeenCalled();
+});

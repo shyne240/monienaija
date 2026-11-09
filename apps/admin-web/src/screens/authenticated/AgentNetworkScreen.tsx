@@ -2817,9 +2817,9 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
             </section>
 
             {(canViewLimitCatalog || canAssignLimit) && (
-              <section style={card} aria-label="Agent limit assignments">
-                <div style={sectionHead}>
-                  <strong>Agent Limit Assignments</strong>
+              <section style={card} className="agent-sites agent-limits" aria-label="Agent limit assignments">
+                <div className="agent-sites__heading">
+                  <div><p className="agent-network-eyebrow">RISK CONTROLS</p><h3>Agent limit assignments</h3><p>Review profile assignments for this Agent or submit a new profile code. Assignment status is not a usage or reservation balance.</p></div>
                   {canViewLimitCatalog && (
                     <button
                       type="button"
@@ -2841,8 +2841,11 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                 </div>}
                 {limitsError && <div style={errBox} role="alert">{limitsError}</div>}
                 {limitsMsg && <div style={successBox} role="status">{limitsMsg}</div>}
+                {canViewLimitCatalog && !limitsLoaded && !limitsLoading && !limitsError && <p className="agent-sites__notice">Load assignments to review current records.</p>}
+                {limitsLoading && <p className="agent-sites__notice" role="status">Loading assignments…</p>}
                 {canViewLimitCatalog && limitsLoaded && (
-                  <div style={{ marginTop: 10 }}>
+                  <section className="agent-sites__group agent-limits__records" aria-label="Agent assignment records">
+                    <div className="agent-sites__group-heading"><div><p className="agent-network-eyebrow">ASSIGNMENTS</p><h4>Current page</h4></div></div>
                     <p style={smallMuted}>Page {limitPage} · {limitTotal} total assignments. A page alone does not establish that an assignment is absent.</p>
                     {agentLimits.length === 0 ? (
                       <div style={smallMuted}>No limit assignments on this page.</div>
@@ -2872,21 +2875,22 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                       </ul>
                     )}
                     <div style={actionRow}><button type="button" style={smallBtn} disabled={limitsBusy || limitsLoading || limitPage <= 1} onClick={() => void loadAgentLimits(selected.id, limitPage - 1)}>Previous limit page</button><button type="button" style={smallBtn} disabled={limitsBusy || limitsLoading || !limitHasNext} onClick={() => void loadAgentLimits(selected.id, limitPage + 1)}>Next limit page</button></div>
-                  </div>
+                  </section>
                 )}
 
                 {canAssignLimit && (canViewLimitCatalog ? limitsLoaded : true) && (
                   <form
                     onSubmit={assignAgentLimit}
-                    style={{ ...actionRow, marginTop: 10 }}
+                    className="agent-sites__form agent-limits__form"
                     aria-label="Assign agent limit form"
                   >
+                    <div className="agent-sites__form-heading"><p className="agent-network-eyebrow">NEW ASSIGNMENT</p><h4>Assign a profile</h4><p>Enter a profile code or choose one from the loaded catalogue. A submission creates an assignment for the selected Agent.</p></div>
+                    <div className="agent-sites__fields">
                     {canViewLimitCatalog && limitCatalog.length > 0 && (
-                      <select
+                      <label className="agent-sites__field"><span>Choose a loaded profile (optional)</span><select
                         aria-label="Select catalog limit profile"
-                        value={newLimitProfileCode}
+                        value={limitCatalog.some(profile => profile.code === newLimitProfileCode) ? newLimitProfileCode : ''}
                         onChange={(e) => setNewLimitProfileCode(e.target.value)}
-                        style={inlineInput}
                         disabled={limitsBusy || limitsLoading || limitUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                       >
                         <option value="">Choose catalog profile…</option>
@@ -2895,16 +2899,16 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                             {profile.code}{profile.name ? ` — ${profile.name}` : ''}
                           </option>
                         ))}
-                      </select>
+                      </select></label>
                     )}
-                    <input
+                    <label className="agent-sites__field"><span>Profile code (required)</span><input
                       aria-label="Agent limit profile code"
                       placeholder="Profile code (e.g. AGENT_STANDARD)"
                       value={newLimitProfileCode}
                       onChange={(e) => setNewLimitProfileCode(e.target.value)}
-                      style={inlineInput}
                       disabled={limitsBusy || limitsLoading || limitUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                    />
+                    /></label>
+                    </div><div className="agent-sites__actions">
                     {canViewLimitCatalog && (
                       <button
                         type="button"
@@ -2918,7 +2922,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     <button type="submit" style={smallBtn} disabled={limitsBusy || limitsLoading || limitUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}>
                       Assign limit profile
                     </button>
-                    <button type="button" style={smallBtn} disabled={limitsBusy || limitsLoading || limitUnconfirmed || !newLimitProfileCode.trim()} onClick={() => { if (window.confirm('Discard the unsaved limit profile entry?')) setNewLimitProfileCode(''); }}>Clear limit entry</button>
+                    <button type="button" style={smallBtn} disabled={limitsBusy || limitsLoading || limitUnconfirmed || !newLimitProfileCode.trim()} onClick={() => { if (window.confirm('Discard the unsaved limit profile entry?')) setNewLimitProfileCode(''); }}>Clear limit entry</button></div>
                   </form>
                 )}
               </section>
