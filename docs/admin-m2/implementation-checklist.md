@@ -81,7 +81,7 @@ An earlier UI note incorrectly stated that the case endpoint had no catalogue ch
 ### Verification notes
 
 - Profile-code audit lookup uses the existing audit route authorization and provider/category restrictions; real-PostgreSQL tests cover matching events, malformed and conflicting filters, unauthenticated requests and an operator without `audit.view`.
-- An additional real-session customer-auth propagation regression could not be verified in the local environment: four tests failed during local administrator seeding because `SUPER_ADMIN` was disabled or undefined in the A2 workforce role configuration. The separate A22 admin foundation suite passed (17 tests). This configuration failure is not an acceptance pass.
+- A real-session customer-auth propagation regression initially failed four tests during local administrator seeding because the A2 workforce role configuration was absent. After generating the repository’s documented local test environment, all 6 tests passed. The separate A22 admin foundation suite passed (15 tests). These tests are not comprehensive acceptance.
 
 ## Continuation plan
 
