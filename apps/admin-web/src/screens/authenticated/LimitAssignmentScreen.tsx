@@ -5,6 +5,7 @@ import { StructuredRecordTable, type DataRecord, type StructuredColumn } from '.
 import { PageHeader, ScrollRegion } from '../../design-system/primitives';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { parseDiagnostics, type DiagnosticsResult } from './limit-diagnostics-contract';
 
 interface UsageFilters {
   limitProfileCode: string;
@@ -26,15 +27,6 @@ interface ReservationFilters extends Omit<UsageFilters, 'windowType' | 'windowFr
   reservedFrom: string;
   reservedTo: string;
   stale: string;
-}
-
-interface DiagnosticsResult {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-  data: DataRecord[];
-  staleThresholdMinutes?: number;
 }
 
 interface AgentClassSummaryOption {
@@ -90,7 +82,7 @@ function buildQuery(filters: object, page: number): string {
 
 const validAssignment = (row: any): boolean => row && typeof row.id === 'string' && Boolean(row.id.trim()) && typeof row.subjectType === 'string' && Boolean(row.subjectType.trim()) && typeof row.limitProfileCode === 'string' && Boolean(row.limitProfileCode.trim()) && typeof row.isActive === 'boolean';
 const validReceipt = (row: any, subjectType: string, subjectId: string, code: string): boolean => validAssignment(row) && row.subjectType === subjectType && row.subjectId === subjectId && row.limitProfileCode === code && Number.isSafeInteger(row.version) && row.version > 0;
-const validPage = (page: any, expected: number): page is DiagnosticsResult => page && page.page === expected && Number.isSafeInteger(page.limit) && page.limit > 0 && Number.isSafeInteger(page.total) && page.total >= 0 && Number.isSafeInteger(page.totalPages) && page.totalPages >= 0 && Array.isArray(page.data) && page.data.every((row: any) => row && typeof row === 'object' && !Array.isArray(row));
+
 interface LimitScreenProps { initialCustomerId?: string; onBackToCustomer?: () => void; onLimitGuardChange?: (guarded: boolean, busy: boolean) => void }
 export const LimitAssignmentScreen: React.FC<LimitScreenProps> = (props) => {
   const {principal, sessionId} = useAuthStore();
@@ -139,8 +131,8 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
   const [toggleError, setToggleError] = useState('');
   const [result, setResult] = useState('');
   const [resultErr, setResultErr] = useState('');
-  const [usageFilters, setUsageFilters] = useState<UsageFilters>(INITIAL_USAGE_FILTERS);
-  const [reservationFilters, setReservationFilters] = useState<ReservationFilters>(INITIAL_RESERVATION_FILTERS);
+  const [usageFilters, setUsageFilters] = useState<UsageFilters>(() => initialCustomerId ? {...INITIAL_USAGE_FILTERS, principalType:'CUSTOMER', principalId:initialCustomerId} : INITIAL_USAGE_FILTERS);
+  const [reservationFilters, setReservationFilters] = useState<ReservationFilters>(() => initialCustomerId ? {...INITIAL_RESERVATION_FILTERS, principalType:'CUSTOMER', principalId:initialCustomerId} : INITIAL_RESERVATION_FILTERS);
   const [usageResult, setUsageResult] = useState<DiagnosticsResult | null>(null);
   const [reservationResult, setReservationResult] = useState<DiagnosticsResult | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
@@ -243,8 +235,9 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
       const query = buildQuery(usageFilters, page);
       const response = await ApiClient.get<DiagnosticsResult>(`/internal/limit-usages?${query}`);
       if (generation !== generations.current.usage) return;
-      if (!validPage(response, page)) throw new Error('Diagnostics returned an invalid or mismatched page.');
-      setUsageResult(response);
+      const parsed = parseDiagnostics(response, 'usage', page, usageFilters);
+      if (!parsed) throw new Error('Diagnostics returned an invalid or mismatched page.');
+      setUsageResult(parsed);
     } catch (err: any) {
       if (generation === generations.current.usage) setUsageError(err?.message || 'Failed to load usage diagnostics');
     } finally {
@@ -262,8 +255,9 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
       const query = buildQuery(reservationFilters, page);
       const response = await ApiClient.get<DiagnosticsResult>(`/internal/limit-reservations?${query}`);
       if (generation !== generations.current.reservations) return;
-      if (!validPage(response, page)) throw new Error('Diagnostics returned an invalid or mismatched page.');
-      setReservationResult(response);
+      const parsed = parseDiagnostics(response, 'reservation', page, reservationFilters);
+      if (!parsed) throw new Error('Diagnostics returned an invalid or mismatched page.');
+      setReservationResult(parsed);
     } catch (err: any) {
       if (generation === generations.current.reservations) setReservationError(err?.message || 'Failed to load reservation diagnostics');
     } finally {
@@ -649,15 +643,15 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
       {canViewDiagnostics ? (
         <>
           <div style={diagnosticNotice}>
-            Diagnostics are read-only. The service requires <code>limit.view</code> and an allowed workforce principal type. Stale reservations are flagged for investigation only: age is not proof of an orphan, and this screen cannot release reservations.
+            {initialCustomerId && <>Diagnostics are scoped to customer <code>{initialCustomerId}</code> in this workspace. </>}Diagnostics are read-only. The service requires <code>limit.view</code> and an allowed workforce principal type. Stale reservations are flagged for investigation only: age is not proof of an orphan, and this screen cannot release reservations.
           </div>
           <section className="limit-redesign__panel limit-redesign__diagnostic" id={`${instanceId}-usage`} tabIndex={-1} aria-label="Limit usage diagnostics">
             <p className="limit-redesign__eyebrow">READ-ONLY DIAGNOSTICS</p><h2>Usage Diagnostics</h2>
             <p style={sectionHelp}>Inspect recorded and reserved usage by principal, profile, product, and window.</p>
             <form onChangeCapture={() => { generations.current.usage++; setUsageLoading(false); setUsageResult(null); setUsageError(''); }} onSubmit={(event) => { event.preventDefault(); void loadUsages(1); }} style={filterGrid}>
               {textFilter('Profile code', usageFilters.limitProfileCode, (value) => setUsageFilters((current) => ({ ...current, limitProfileCode: value })))}
-              {textFilter('Principal type', usageFilters.principalType, (value) => setUsageFilters((current) => ({ ...current, principalType: value })))}
-              {textFilter('Principal ID', usageFilters.principalId, (value) => setUsageFilters((current) => ({ ...current, principalId: value })))}
+              {textFilter('Principal type', usageFilters.principalType, (value) => setUsageFilters((current) => ({ ...current, principalType: value })), Boolean(initialCustomerId))}
+              {textFilter('Principal ID', usageFilters.principalId, (value) => setUsageFilters((current) => ({ ...current, principalId: value })), Boolean(initialCustomerId))}
               {textFilter('Product', usageFilters.product, (value) => setUsageFilters((current) => ({ ...current, product: value })))}
               {textFilter('Dimension', usageFilters.dimension, (value) => setUsageFilters((current) => ({ ...current, dimension: value })))}
               {textFilter('Currency', usageFilters.currency, (value) => setUsageFilters((current) => ({ ...current, currency: value })))}
@@ -695,8 +689,8 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
                 </select>
               </label>
               {textFilter('Profile code', reservationFilters.limitProfileCode, (value) => setReservationFilters((current) => ({ ...current, limitProfileCode: value })))}
-              {textFilter('Principal type', reservationFilters.principalType, (value) => setReservationFilters((current) => ({ ...current, principalType: value })))}
-              {textFilter('Principal ID', reservationFilters.principalId, (value) => setReservationFilters((current) => ({ ...current, principalId: value })))}
+              {textFilter('Principal type', reservationFilters.principalType, (value) => setReservationFilters((current) => ({ ...current, principalType: value })), Boolean(initialCustomerId))}
+              {textFilter('Principal ID', reservationFilters.principalId, (value) => setReservationFilters((current) => ({ ...current, principalId: value })), Boolean(initialCustomerId))}
               {textFilter('Product', reservationFilters.product, (value) => setReservationFilters((current) => ({ ...current, product: value })))}
               {textFilter('Dimension', reservationFilters.dimension, (value) => setReservationFilters((current) => ({ ...current, dimension: value })))}
               {textFilter('Currency', reservationFilters.currency, (value) => setReservationFilters((current) => ({ ...current, currency: value })))}
@@ -728,10 +722,10 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
   );
 };
 
-function textFilter(label: string, value: string, onChange: (next: string) => void) {
+function textFilter(label: string, value: string, onChange: (next: string) => void, disabled = false) {
   return (
     <label key={label} style={fieldLabel}>{label}
-      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={label} style={input} />
+      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={label} style={input} disabled={disabled} />
     </label>
   );
 }
