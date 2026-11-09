@@ -29,12 +29,12 @@ test('fee registry shows real backend fields, pages independently and searches o
 test('limit profiles and rules have independent paging and failure states', async () => {
   session(['limit.view']);
   (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
-    if (url.includes('limit-profiles')) return Promise.resolve(url.includes('page=2') ? page([{code:'PROFILE-B', name:'Second'}],2,21) : page([{code:'PROFILE-A', name:'First'}],1,21));
+    if (url.includes('limit-profiles')) return Promise.resolve(url.includes('page=2') ? page([{code:'PROFILE_B', name:'Second',kind:'AGENT',status:'ACTIVE',enabled:true,configurationStatus:'CONFIGURED',version:1}],2,21) : page([{code:'PROFILE_A', name:'First',kind:'AGENT',status:'ACTIVE',enabled:true,configurationStatus:'CONFIGURED',version:1}],1,21));
     return Promise.reject(new Error('Rules unavailable'));
   });
   render(<CommercialRulesScreen initialTab="limits" />);
-  await screen.findAllByText('PROFILE-A'); expect(await screen.findByText(/Rules unavailable/)).toBeTruthy();
-  fireEvent.click(screen.getByRole('button',{name:'Next Limit profiles page'})); await screen.findAllByText('PROFILE-B');
+  await screen.findAllByText('PROFILE_A'); expect(await screen.findByText(/Rules unavailable/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button',{name:'Next Limit profiles page'})); await screen.findAllByText('PROFILE_B');
   expect(screen.getByText(/Rules unavailable/)).toBeTruthy();
   expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-profiles?page=2&limit=20');
   expect((ApiClient.get as jest.Mock).mock.calls.filter(([url]) => url.includes('limit-rules'))).toHaveLength(1);
@@ -65,4 +65,23 @@ test('an unpaginated legacy array is explicitly labelled and does not invent a t
   expect(await screen.findAllByText('reward-one')).toBeTruthy();
   expect(screen.getByText('1 record returned · Total and pagination unavailable')).toBeTruthy();
   expect(screen.queryByRole('button',{name:'Next Rewards page'})).toBeNull();
+});
+
+test('limit catalogue rejects malformed and duplicate thresholds while isolating profiles',async()=>{
+ session(['limit.view']);
+ const profile={code:'VALID_PROFILE',name:'Agent profile',kind:'AGENT',status:'ACTIVE',enabled:true,configurationStatus:'CONFIGURED',version:1,unrecognized:{secret:'PRIVATE'}};
+ const rule={id:'d9f831b1-3166-4e9c-b812-955fc6b0818e',limitProfileCode:'VALID_PROFILE',product:'TRANSFER',direction:null,channel:null,currency:'NGN',dimension:'DAILY_AMOUNT',limitValueMinor:'10000000000000001',limitValueCount:null,version:1,effectiveFrom:'2026-01-01T00:00:00Z',effectiveTo:null,isActive:true,priority:0};
+ (ApiClient.get as jest.Mock).mockImplementation((url:string)=>Promise.resolve(url.includes('limit-profiles')?page([profile]):page([{...rule,limitValueCount:5}])));
+ render(<CommercialRulesScreen initialTab="limits" />);
+ expect((await screen.findAllByText('VALID_PROFILE')).length).toBeGreaterThan(0);expect(await screen.findByText(/Limit rules returned an invalid page/)).toBeTruthy();
+ fireEvent.click(screen.getByText('View details'));expect(screen.queryByText('PRIVATE')).toBeNull();expect(screen.queryByText('unrecognized')).toBeNull();
+ (ApiClient.get as jest.Mock).mockImplementation((url:string)=>Promise.resolve(url.includes('limit-profiles')?page([profile]):page([rule,rule])));
+ fireEvent.click(screen.getByRole('button',{name:'Refresh Limit rules'}));expect(await screen.findByText(/Limit rules returned an invalid page/)).toBeTruthy();
+ (ApiClient.get as jest.Mock).mockImplementation((url:string)=>Promise.resolve(url.includes('limit-profiles')?page([profile]):page([rule])));
+ fireEvent.click(screen.getByRole('button',{name:'Refresh Limit rules'}));expect((await screen.findAllByText('10000000000000001')).length).toBeGreaterThan(0);
+});
+
+test('limit profile invalid fields do not present a misleading empty registry',async()=>{
+ session(['limit.view']);(ApiClient.get as jest.Mock).mockImplementation((url:string)=>Promise.resolve(url.includes('limit-profiles')?page([{code:'BAD_PROFILE',name:'Bad',kind:'AGENT',status:'ACTIVE',enabled:'true',configurationStatus:'CONFIGURED',version:1}]):page([])));
+ render(<CommercialRulesScreen initialTab="limits" />);expect(await screen.findByText(/Limit profiles returned an invalid page/)).toBeTruthy();expect(screen.queryByText(/No limit profiles were returned/)).toBeNull();
 });

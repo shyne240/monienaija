@@ -48,8 +48,8 @@ describe('Admin Web shared-screen improvements', () => {
   test('Limit registry reads use the existing profile and rule endpoints and render structured rows', async () => {
     setPrincipal(['SUPER_ADMIN'], ['limit.view']);
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-      if (path === '/internal/limit-profiles?page=1&limit=20') return Promise.resolve([{ code: 'AGENT_STANDARD', name: 'Agent Standard', kind: 'AGENT', status: 'ACTIVE', enabled: true }]);
-      if (path === '/internal/limit-rules?page=1&limit=20') return Promise.resolve({ data: [{ id: 'rule-1', limitProfileCode: 'AGENT_STANDARD', product: 'CASH_IN', currency: 'NGN', dimension: 'PER_DAY', limitValueMinor: '2500000', isActive: true }], total: 1, page: 1, limit: 20, totalPages: 1, hasNextPage: false });
+      if (path === '/internal/limit-profiles?page=1&limit=20') return Promise.resolve([{ code: 'AGENT_STANDARD', name: 'Agent Standard', kind: 'AGENT', status: 'ACTIVE', enabled: true, configurationStatus: 'CONFIGURED', version: 1 }]);
+      if (path === '/internal/limit-rules?page=1&limit=20') return Promise.resolve({ data: [{ id: 'd9f831b1-3166-4e9c-b812-955fc6b0818e', limitProfileCode: 'AGENT_STANDARD', product: 'CASH_IN', direction: null, channel: null, currency: 'NGN', dimension: 'DAILY_AMOUNT', limitValueMinor: '2500000', limitValueCount: null, version: 1, effectiveFrom: '2026-01-01T00:00:00Z', effectiveTo: null, isActive: true, priority: 0 }], total: 1, page: 1, limit: 20, totalPages: 1, hasNextPage: false });
       return Promise.resolve([]);
     });
 

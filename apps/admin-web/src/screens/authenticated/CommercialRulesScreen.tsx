@@ -73,11 +73,56 @@ const LIMIT_RULE_COLUMNS: StructuredColumn[] = [
 
 interface Page { rows: DataRecord[]; page: number; total: number | null; totalPages: number | null; hasNextPage: boolean }
 const PAGE_SIZE = 20;
-function parsePage(value: unknown, requestedPage: number): Page | null {
+const PROFILE_CODE = /^[A-Z0-9_]{3,80}$/;
+const RULE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const AMOUNT_DIMENSIONS = ['MIN_AMOUNT_PER_TX', 'MAX_AMOUNT_PER_TX', 'DAILY_AMOUNT', 'WEEKLY_AMOUNT', 'MONTHLY_AMOUNT', 'YEARLY_AMOUNT', 'WALLET_BALANCE_MAX'];
+const COUNT_DIMENSIONS = ['DAILY_COUNT', 'WEEKLY_COUNT', 'MONTHLY_COUNT', 'YEARLY_COUNT'];
+const optionalText = (value: unknown) => value === undefined || value === null || typeof value === 'string';
+const optionalDate = (value: unknown) => value === undefined || value === null || (typeof value === 'string' && Number.isFinite(Date.parse(value)));
+const text = (value: unknown): value is string => typeof value === 'string' && !!value.trim();
+
+// The catalogue is read-only, but malformed thresholds or surprise nested fields must not
+// masquerade as configuration. Keep only documented safe projection fields in Details.
+function limitRows(rows: DataRecord[], endpoint: string): DataRecord[] | null {
+  const profiles = endpoint === '/internal/limit-profiles';
+  if (!profiles && endpoint !== '/internal/limit-rules') return rows;
+  const seen = new Set<string>();
+  const projected: DataRecord[] = [];
+  for (const row of rows) {
+    const id = profiles ? row.code : row.id;
+    if (!text(id) || !(profiles ? PROFILE_CODE : RULE_ID).test(id) || seen.has(id.toUpperCase())) return null;
+    seen.add(id.toUpperCase());
+    if (!Number.isSafeInteger(row.version) || (row.version as number) < 1 ||
+        !optionalText(row.createdBy) || !optionalText(row.updatedBy) || !optionalDate(row.createdAt) || !optionalDate(row.updatedAt)) return null;
+    let keys: string[];
+    if (profiles) {
+      if (!text(row.name) || !['CUSTOMER','AGENT','SYSTEM','UNIVERSAL'].includes(row.kind as string) ||
+          !['ACTIVE','DISABLED','DEPRECATED'].includes(row.status as string) || typeof row.enabled !== 'boolean' ||
+          !['CONFIGURED','NOT_CONFIGURED','DISABLED'].includes(row.configurationStatus as string) || !optionalText(row.description)) return null;
+      keys = ['code','name','description','kind','status','enabled','configurationStatus','version','createdBy','updatedBy','createdAt','updatedAt'];
+    } else {
+      const amount = AMOUNT_DIMENSIONS.includes(row.dimension as string);
+      const count = COUNT_DIMENSIONS.includes(row.dimension as string);
+      if (!text(row.limitProfileCode) || !PROFILE_CODE.test(row.limitProfileCode) || !text(row.product) ||
+          !text(row.currency) || !/^[A-Z]{3}$/.test(row.currency) || (!amount && !count) ||
+          (row.direction !== null && !['INCOMING','OUTGOING','BOTH'].includes(row.direction as string)) ||
+          !(row.channel === null || typeof row.channel === 'string') || typeof row.isActive !== 'boolean' ||
+          !Number.isSafeInteger(row.priority) || typeof row.effectiveFrom !== 'string' || !Number.isFinite(Date.parse(row.effectiveFrom)) ||
+          !optionalDate(row.effectiveTo) || (row.effectiveTo != null && Date.parse(row.effectiveTo as string) <= Date.parse(row.effectiveFrom)) ||
+          (amount && (typeof row.limitValueMinor !== 'string' || !/^\d+$/.test(row.limitValueMinor) || row.limitValueCount !== null)) ||
+          (count && (!Number.isSafeInteger(row.limitValueCount) || (row.limitValueCount as number) < 0 || row.limitValueMinor !== null))) return null;
+      keys = ['id','limitProfileCode','product','direction','channel','currency','dimension','limitValueMinor','limitValueCount','version','effectiveFrom','effectiveTo','isActive','priority','createdBy','updatedBy','createdAt','updatedAt'];
+    }
+    projected.push(Object.fromEntries(keys.filter(key => Object.prototype.hasOwnProperty.call(row, key)).map(key => [key, row[key]])));
+  }
+  return projected;
+}
+function parsePage(value: unknown, requestedPage: number, endpoint: string): Page | null {
   // Retain compatibility with legacy unpaginated responses without inventing totals or further pages.
   if (Array.isArray(value)) {
     if (requestedPage !== 1 || !value.every(row => row && typeof row === 'object' && !Array.isArray(row))) return null;
-    return { rows: value, page: 1, total: null, totalPages: null, hasNextPage: false };
+    const rows = limitRows(value, endpoint);
+    return rows ? { rows, page: 1, total: null, totalPages: null, hasNextPage: false } : null;
   }
   if (!value || typeof value !== 'object') return null;
   const p = value as Record<string, unknown>;
@@ -88,7 +133,8 @@ function parsePage(value: unknown, requestedPage: number): Page | null {
       p.totalPages !== Math.ceil((p.total as number) / PAGE_SIZE) || typeof p.hasNextPage !== 'boolean' ||
       p.hasNextPage !== (requestedPage < (p.totalPages as number)) ||
       rows.length > PAGE_SIZE || rows.length > (p.total as number)) return null;
-  return { rows, page: requestedPage, total: p.total as number, totalPages: p.totalPages as number, hasNextPage: p.hasNextPage };
+  const safeRows = limitRows(rows, endpoint);
+  return safeRows ? { rows: safeRows, page: requestedPage, total: p.total as number, totalPages: p.totalPages as number, hasNextPage: p.hasNextPage } : null;
 }
 
 /** Each registry owns its request, paging and error state; a failed rules read does not hide profiles. */
@@ -104,7 +150,7 @@ const RegistrySection: React.FC<{ title: string; endpoint: string; columns: Stru
     setLoading(true); setError(''); setData(null);
     try {
       const result = await ApiClient.get(`${endpoint}?page=${page}&limit=${PAGE_SIZE}`);
-      const parsed = parsePage(result, page);
+      const parsed = parsePage(result, page, endpoint);
       if (!parsed) throw new Error(`${title} returned an invalid page.`);
       if (id === requestId.current) setData(parsed);
     } catch (err: any) {
