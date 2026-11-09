@@ -1,0 +1,58 @@
+{
+  "navigationCases": 56,
+  "widths": [
+    320,
+    1440
+  ],
+  "keys": [
+    "dashboard",
+    "dashboardSettings",
+    "customers",
+    "agents",
+    "agentClasses",
+    "support",
+    "transfers",
+    "cashIn",
+    "cashOut",
+    "cashToCashOps",
+    "ledgerExplorer",
+    "reconciliation",
+    "feeRules",
+    "commissionRules",
+    "rewardRules",
+    "productCatalogue",
+    "limitCatalogue",
+    "limitAssignments",
+    "kycQueue",
+    "complianceCases",
+    "fraudCases",
+    "workforceAccess",
+    "roleGovernance",
+    "approvalsInbox",
+    "superAdminRecovery",
+    "notifications",
+    "systemHealth",
+    "auditEvents"
+  ],
+  "embedded": [
+    "customer overview",
+    "personal information",
+    "proof of address",
+    "agent credentials",
+    "agent history",
+    "funding",
+    "notification template tab",
+    "notification provider tab",
+    "separate funding checker queue"
+  ],
+  "blockedMutationStatuses": [
+    403,
+    403,
+    403,
+    403
+  ],
+  "unknownFixtureStatus": 503,
+  "externalRequests": [],
+  "pageErrors": [],
+  "limitation": "Synthetic preview routing and UI only; not live authorization or full action coverage."
+}

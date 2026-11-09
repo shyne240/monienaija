@@ -1,0 +1,9 @@
+{
+  "environment": "Local disposable namespaced PostgreSQL, in-process HTTP and test fixtures; no staging or production accounts",
+  "command": "NODE_ENV=test PG_TEST_RUN_ID=acceptowner03 NOTIFICATION_WORKER_ENABLED=false CASH_TO_CASH_EXPIRY_WORKER_ENABLED=false NODE_OPTIONS=\"--require ./test/support/mission-25c-network-guard.cjs\" npx jest --config jest.integration.config.js --runInBand test/customer-compliance-authorization.integration.spec.ts test/v1-agent-receiving-number-authorization.integration.spec.ts test/v1-admin-authorization-foundation-01.integration.spec.ts",
+  "suites": ["test/customer-compliance-authorization.integration.spec.ts", "test/v1-agent-receiving-number-authorization.integration.spec.ts", "test/v1-admin-authorization-foundation-01.integration.spec.ts"],
+  "suitesPassed": 3,
+  "testsPassed": 51,
+  "scope": "Selected compliance/fraud category and customer isolation, role/grant revocation and transactional audit; Agent receiving-number self and workforce authorization and non-enumeration; seeded role/function catalogue and read-only constraints.",
+  "limitations": "Synthetic sessions and data, local PostgreSQL only; does not validate live identity provider, actual role provisioning, production policy, all routes or full browser-to-server workflows. Notification and cash-to-cash expiry workers disabled; loopback network guard active. No SMS test, provider call or real user data."
+}
