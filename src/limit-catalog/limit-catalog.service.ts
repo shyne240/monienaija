@@ -3,9 +3,9 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { createHash } from 'node:crypto';
 import { DataSource, Repository, QueryFailedError } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
@@ -32,6 +32,14 @@ const PROFILE_CODE_PATTERN = /^[A-Z0-9_]{3,80}$/;
 const PRODUCT_PATTERN = /^[A-Z0-9_][A-Z0-9_.-]{1,79}$/;
 const CURRENCY_PATTERN = /^[A-Z]{3}$/;
 
+/** Stable UUID surrogate for a textual profile key; the original code remains in audit values. */
+export function limitProfileAuditEntityId(code: string): string {
+  const digest = createHash('sha256')
+    .update(`limit-profile:${code.trim().toUpperCase()}`)
+    .digest('hex');
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20, 32)}`;
+}
+
 @Injectable()
 export class LimitCatalogService {
   constructor(
@@ -40,7 +48,7 @@ export class LimitCatalogService {
     @InjectRepository(LimitRule)
     private readonly ruleRepo: Repository<LimitRule>,
     private readonly dataSource: DataSource,
-    @Optional() private readonly auditService?: AuditService,
+    private readonly auditService: AuditService,
   ) {}
 
   // ── Profiles ──
@@ -66,23 +74,25 @@ export class LimitCatalogService {
       createdBy: actor,
       updatedBy: actor,
       version: 1,
-    } as never);
+    } as never) as unknown as LimitProfile;
 
-    const saved = (await this.profileRepo.save(entity as never)) as unknown as LimitProfile;
-    if (this.auditService) {
-      try {
-        await this.dataSource.transaction(async (m) => {
-          await this.auditService!.record(m, {
-            entityType: 'LIMIT_PROFILE',
-            entityId: saved.code, // code is PK, but entityId expects uuid per audit table; use code as string via entityType
-            action: 'CREATED',
-            actor,
-            newValues: this.profileValues(saved),
-          } as never);
+    let saved: LimitProfile;
+    try {
+      saved = await this.dataSource.transaction(async (manager) => {
+        const persisted = await manager.getRepository(LimitProfile).save(entity);
+        await this.auditService.record(manager, {
+          entityType: 'LIMIT_PROFILE',
+          entityId: limitProfileAuditEntityId(persisted.code),
+          action: 'CREATED',
+          actor,
+          newValues: this.profileValues(persisted),
         });
-      } catch {
-        // Audit recording is best-effort on this existing path.
-      }
+        return persisted;
+      });
+    } catch (error) {
+      if (this.isUniqueViolation(error, 'limit_profiles_pkey'))
+        throw new ConflictException(`Limit profile ${code} already exists`);
+      throw error;
     }
     return this.toProfileSafe(saved);
   }
@@ -118,54 +128,37 @@ export class LimitCatalogService {
     // elsewhere in this codebase for row-level contention: `SELECT ... FOR UPDATE` inside an
     // explicit transaction, so a second concurrent caller blocks until the first commits, then
     // reads the POST-update version and correctly hits the existing assertVersion conflict path.
-    let saved: LimitProfile;
-    let previous: Record<string, unknown>;
-    try {
-      ({ saved, previous } = await this.dataSource.transaction(async (manager) => {
-        const repository = manager.getRepository(LimitProfile);
-        const profile = await repository
-          .createQueryBuilder('profile')
-          .where('profile.code = :code', { code: normalizedCode })
-          .setLock('pessimistic_write')
-          .getOne();
-        if (!profile) throw new NotFoundException(`Limit profile ${normalizedCode} not found`);
-        this.assertVersion(profile.version, input.version);
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const repository = manager.getRepository(LimitProfile);
+      const profile = await repository
+        .createQueryBuilder('profile')
+        .where('profile.code = :code', { code: normalizedCode })
+        .setLock('pessimistic_write')
+        .getOne();
+      if (!profile) throw new NotFoundException(`Limit profile ${normalizedCode} not found`);
+      this.assertVersion(profile.version, input.version);
 
-        const previousValues = this.profileValues(profile);
-        if (input.name !== undefined) profile.name = input.name.trim();
-        if (input.description !== undefined)
-          profile.description = input.description?.trim() ?? null;
-        if (input.kind !== undefined) profile.kind = input.kind;
-        if (input.status !== undefined) profile.status = input.status;
-        if (input.enabled !== undefined) profile.enabled = input.enabled;
-        if (input.configurationStatus !== undefined)
-          profile.configurationStatus = input.configurationStatus;
-        profile.updatedBy = actor;
-
-        const savedProfile = (await repository.save(profile as never)) as unknown as LimitProfile;
-        return { saved: savedProfile, previous: previousValues };
-      }));
-    } catch (e) {
-      if (this.isUniqueViolation(e)) throw new ConflictException('Profile version conflict');
-      throw e;
-    }
-
-    if (this.auditService) {
-      try {
-        await this.dataSource.transaction(async (m) => {
-          await this.auditService!.record(m, {
-            entityType: 'LIMIT_PROFILE',
-            entityId: saved.code as never,
-            action: 'UPDATED',
-            actor,
-            previousValues: previous,
-            newValues: this.profileValues(saved),
-          } as never);
-        });
-      } catch {
-        // Audit recording is best-effort on this existing path.
-      }
-    }
+      const previousValues = this.profileValues(profile);
+      if (input.name !== undefined) profile.name = input.name.trim();
+      if (input.description !== undefined) profile.description = input.description?.trim() ?? null;
+      if (input.kind !== undefined) profile.kind = input.kind;
+      if (input.status !== undefined) profile.status = input.status;
+      if (input.enabled !== undefined) profile.enabled = input.enabled;
+      if (input.configurationStatus !== undefined)
+        profile.configurationStatus = input.configurationStatus;
+      profile.updatedBy = actor;
+      profile.version += 1;
+      const persisted = await repository.save(profile);
+      await this.auditService.record(manager, {
+        entityType: 'LIMIT_PROFILE',
+        entityId: limitProfileAuditEntityId(persisted.code),
+        action: 'UPDATED',
+        actor,
+        previousValues,
+        newValues: this.profileValues(persisted),
+      });
+      return persisted;
+    });
     return this.toProfileSafe(saved);
   }
 
@@ -266,13 +259,23 @@ export class LimitCatalogService {
       priority: input.priority ?? 0,
       createdBy: actor,
       updatedBy: actor,
-    } as never);
+    } as never) as unknown as LimitRule;
 
     try {
-      const saved = (await this.ruleRepo.save(entity as never)) as unknown as LimitRule;
+      const saved = await this.dataSource.transaction(async (manager) => {
+        const persisted = await manager.getRepository(LimitRule).save(entity);
+        await this.auditService.record(manager, {
+          entityType: 'LIMIT_RULE',
+          entityId: persisted.id,
+          action: 'CREATED',
+          actor,
+          newValues: this.ruleValues(persisted),
+        });
+        return persisted;
+      });
       return this.toRuleSafe(saved);
     } catch (e) {
-      if (this.isUniqueViolation(e))
+      if (this.isUniqueViolation(e, 'uq_limit_rules_active_key'))
         throw new ConflictException(
           'Limit rule with same profile/product/direction/channel/currency/dimension/effectiveFrom already exists',
         );
@@ -329,6 +332,7 @@ export class LimitCatalogService {
           .getOne();
         if (!r) throw new NotFoundException(`Limit rule ${id} not found`);
         this.assertVersion(r.version, input.version);
+        const previousValues = this.ruleValues(r);
 
         if (input.product !== undefined) r.product = input.product.trim().toUpperCase();
         if (input.direction !== undefined)
@@ -352,10 +356,20 @@ export class LimitCatalogService {
         // validate amount vs count exclusive for final state
         this.validateDimensionValue(r.dimension, r.limitValueMinor, r.limitValueCount);
 
-        return (await repository.save(r as never)) as unknown as LimitRule;
+        r.version += 1;
+        const persisted = await repository.save(r);
+        await this.auditService.record(manager, {
+          entityType: 'LIMIT_RULE',
+          entityId: persisted.id,
+          action: 'UPDATED',
+          actor,
+          previousValues,
+          newValues: this.ruleValues(persisted),
+        });
+        return persisted;
       });
     } catch (e) {
-      if (this.isUniqueViolation(e))
+      if (this.isUniqueViolation(e, 'uq_limit_rules_active_key'))
         throw new ConflictException('Limit rule unique constraint violation');
       throw e;
     }
@@ -529,22 +543,29 @@ export class LimitCatalogService {
     return l;
   }
 
-  private isUniqueViolation(error: unknown): boolean {
+  private isUniqueViolation(error: unknown, constraint: string): boolean {
     return (
-      error instanceof QueryFailedError && (error as unknown as { code?: string }).code === '23505'
+      error instanceof QueryFailedError &&
+      (error as unknown as { code?: string }).code === '23505' &&
+      (error as unknown as { constraint?: string }).constraint === constraint
     );
   }
 
   private profileValues(p: LimitProfile): Record<string, unknown> {
     return {
-      code: p.code,
+      limitProfileCode: p.code,
       name: p.name,
+      description: p.description,
       kind: p.kind,
       status: p.status,
       enabled: p.enabled,
       configurationStatus: p.configurationStatus,
       version: p.version,
     };
+  }
+
+  private ruleValues(row: LimitRule): Record<string, unknown> {
+    return { ...this.toRuleSafe(row) };
   }
 
   private toProfileSafe(row: LimitProfile): LimitProfileSafeProjection {

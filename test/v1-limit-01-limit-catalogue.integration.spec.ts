@@ -4,10 +4,15 @@ import * as fs from 'node:fs';
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { DataSource } from 'typeorm';
+import { DataSource, QueryFailedError } from 'typeorm';
 import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
+import {
+  LimitCatalogService,
+  limitProfileAuditEntityId,
+} from '../src/limit-catalog/limit-catalog.service';
+import { AuditService } from '../src/operations/audit.service';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
@@ -850,5 +855,192 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     expect(finalRow).toHaveLength(1);
     expect(finalRow[0]!.version).toBe(2);
     expect(finalRow[0]!.limit_value_minor).toBe(succeeded[0]!.body.limitValueMinor);
+  });
+  it('profile and rule writes audit atomically and no-op updates consume versions', async () => {
+    const service = app.get(LimitCatalogService);
+    const audit = app.get(AuditService);
+    const actor = 'synthetic-operator';
+    const profileInput = {
+      code: 'AUDITED_PROFILE',
+      name: 'Audited profile',
+      kind: 'UNIVERSAL',
+      createdBy: actor,
+    };
+    const failAudit = () =>
+      jest.spyOn(audit, 'record').mockRejectedValue(new Error('Synthetic audit unavailable'));
+    let failure = failAudit();
+    try {
+      await expect(service.createProfile(profileInput, actor)).rejects.toThrow(
+        'Synthetic audit unavailable',
+      );
+    } finally {
+      failure.mockRestore();
+    }
+    expect(
+      await dataSource.query(`SELECT code FROM limit_profiles WHERE code=$1`, [profileInput.code]),
+    ).toHaveLength(0);
+    const profile = await service.createProfile(profileInput, actor);
+
+    failure = failAudit();
+    try {
+      await expect(
+        service.updateProfile(
+          profile.code,
+          { version: 1, name: 'Changed', updatedBy: actor },
+          actor,
+        ),
+      ).rejects.toThrow('Synthetic audit unavailable');
+    } finally {
+      failure.mockRestore();
+    }
+    expect(await service.getProfile(profile.code)).toMatchObject({
+      name: profile.name,
+      version: 1,
+    });
+    const updatedProfile = await service.updateProfile(
+      profile.code,
+      { version: 1, name: profile.name, updatedBy: actor },
+      actor,
+    );
+    expect(updatedProfile.version).toBe(2);
+    await expect(
+      service.updateProfile(
+        profile.code,
+        { version: 1, name: profile.name, updatedBy: actor },
+        actor,
+      ),
+    ).rejects.toThrow(/version/i);
+    const profileEvents: Array<{
+      entity_id: string;
+      action: string;
+      new_values: { limitProfileCode: string; version: number };
+      previous_values: { version: number } | null;
+    }> = await dataSource.query(
+      `SELECT entity_id,action,new_values,previous_values FROM audit_events WHERE entity_type='LIMIT_PROFILE' AND entity_id=$1 ORDER BY created_at`,
+      [limitProfileAuditEntityId(profile.code)],
+    );
+    expect(profileEvents.map((event) => event.action)).toEqual(['CREATED', 'UPDATED']);
+    expect(profileEvents.map((event) => event.new_values.limitProfileCode)).toEqual([
+      profile.code,
+      profile.code,
+    ]);
+    expect(profileEvents[1]!.previous_values?.version).toBe(1);
+    expect(profileEvents[1]!.new_values.version).toBe(2);
+    expect(limitProfileAuditEntityId(' audited_profile ')).toBe(
+      limitProfileAuditEntityId(profile.code),
+    );
+    const concurrentProfile = await Promise.allSettled([
+      service.updateProfile(
+        profile.code,
+        { version: 2, name: profile.name, updatedBy: actor },
+        actor,
+      ),
+      service.updateProfile(
+        profile.code,
+        { version: 2, name: profile.name, updatedBy: actor },
+        actor,
+      ),
+    ]);
+    expect(concurrentProfile.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(concurrentProfile.filter((result) => result.status === 'rejected')).toHaveLength(1);
+
+    const ruleInput = {
+      limitProfileCode: profile.code,
+      product: 'TRANSFER',
+      currency: 'NGN',
+      dimension: 'DAILY_AMOUNT',
+      limitValueMinor: '1000',
+      effectiveFrom: '2026-01-01T00:00:00Z',
+      createdBy: actor,
+    };
+    failure = failAudit();
+    try {
+      await expect(service.createRule(ruleInput, actor)).rejects.toThrow(
+        'Synthetic audit unavailable',
+      );
+    } finally {
+      failure.mockRestore();
+    }
+    expect(
+      await dataSource.query(`SELECT id FROM limit_rules WHERE limit_profile_code=$1`, [
+        profile.code,
+      ]),
+    ).toHaveLength(0);
+    const rule = await service.createRule(ruleInput, actor);
+    failure = failAudit();
+    try {
+      await expect(
+        service.updateRule(
+          rule.id,
+          { version: 1, limitValueMinor: '999', updatedBy: actor },
+          actor,
+        ),
+      ).rejects.toThrow('Synthetic audit unavailable');
+    } finally {
+      failure.mockRestore();
+    }
+    expect(await service.getRule(rule.id)).toMatchObject({ limitValueMinor: '1000', version: 1 });
+    const updatedRule = await service.updateRule(
+      rule.id,
+      { version: 1, limitValueMinor: '1000', updatedBy: actor },
+      actor,
+    );
+    expect(updatedRule.version).toBe(2);
+    await expect(
+      service.updateRule(rule.id, { version: 1, limitValueMinor: '1000', updatedBy: actor }, actor),
+    ).rejects.toThrow(/version/i);
+    const ruleEvents: Array<{
+      action: string;
+      new_values: { limitValueMinor: string; version: number };
+      previous_values: { version: number } | null;
+    }> = await dataSource.query(
+      `SELECT action,new_values,previous_values FROM audit_events WHERE entity_type='LIMIT_RULE' AND entity_id=$1 ORDER BY created_at`,
+      [rule.id],
+    );
+    expect(ruleEvents.map((event) => event.action)).toEqual(['CREATED', 'UPDATED']);
+    expect(ruleEvents[1]!.previous_values?.version).toBe(1);
+    expect(ruleEvents[1]!.new_values).toMatchObject({ limitValueMinor: '1000', version: 2 });
+    const concurrentRule = await Promise.allSettled([
+      service.updateRule(rule.id, { version: 2, limitValueMinor: '1000', updatedBy: actor }, actor),
+      service.updateRule(rule.id, { version: 2, limitValueMinor: '1000', updatedBy: actor }, actor),
+    ]);
+    expect(concurrentRule.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(concurrentRule.filter((result) => result.status === 'rejected')).toHaveLength(1);
+
+    const unrelatedUnique = new QueryFailedError(
+      'insert audit',
+      [],
+      Object.assign(new Error('audit unique'), { code: '23505', constraint: 'audit_events_pkey' }),
+    );
+    failure = jest.spyOn(audit, 'record').mockRejectedValue(unrelatedUnique);
+    try {
+      await expect(
+        service.createProfile({ ...profileInput, code: 'AUDIT_UNIQUE_PROFILE' }, actor),
+      ).rejects.toBe(unrelatedUnique);
+      await expect(service.createRule({ ...ruleInput, product: 'OTHER' }, actor)).rejects.toBe(
+        unrelatedUnique,
+      );
+      await expect(
+        service.updateRule(
+          rule.id,
+          { version: 3, limitValueMinor: '2000', updatedBy: actor },
+          actor,
+        ),
+      ).rejects.toBe(unrelatedUnique);
+    } finally {
+      failure.mockRestore();
+    }
+    expect(
+      await dataSource.query(`SELECT code FROM limit_profiles WHERE code=$1`, [
+        'AUDIT_UNIQUE_PROFILE',
+      ]),
+    ).toHaveLength(0);
+    expect(
+      await dataSource.query(
+        `SELECT id FROM limit_rules WHERE limit_profile_code=$1 AND product=$2`,
+        [profile.code, 'OTHER'],
+      ),
+    ).toHaveLength(0);
+    expect(await service.getRule(rule.id)).toMatchObject({ limitValueMinor: '1000', version: 3 });
   });
 });
