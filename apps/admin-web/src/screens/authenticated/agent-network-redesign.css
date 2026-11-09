@@ -12,3 +12,23 @@
 .agent-network-directory-heading p:not(.agent-network-eyebrow) { margin:0; color:#486157; font-size:13px; line-height:1.5; }
 @media (max-width: 600px) { .agent-network-header { padding:18px; } .agent-network-header nav { width:100%; } }
 .agent-network-form-fields { min-width:0; margin:0; padding:0; border:0; }
+
+/* Agent outlet and terminal workspace: records, editors and distinct creation contexts. */
+.agent-sites__heading, .agent-sites__group-heading { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-start; gap:12px; }
+.agent-sites__heading h3, .agent-sites__group-heading h4, .agent-sites__form h4 { margin:0; color:#103a2b; }
+.agent-sites__heading h3 { font-size:20px; }
+.agent-sites__heading p:not(.agent-network-eyebrow), .agent-sites__form-heading p:not(.agent-network-eyebrow) { margin:6px 0 0; color:#486157; line-height:1.5; max-width:700px; }
+.agent-sites__notice { color:#486157; margin:16px 0 0; }
+.agent-sites__content { display:grid; gap:16px; margin-top:18px; }
+.agent-sites__group, .agent-sites__form { min-width:0; border:1px solid #d8e5dc; border-radius:10px; padding:16px; background:#fbfdfb; }
+.agent-sites__group-heading { align-items:center; margin-bottom:12px; }
+.agent-sites__group-heading span { color:#486157; font-size:13px; }
+.agent-sites__creation { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:16px; }
+.agent-sites__form-heading { margin-bottom:16px; }
+.agent-sites__fields, .agent-sites__editor { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); gap:12px; }
+.agent-sites__editor { align-items:end; margin-top:12px; padding-top:12px; border-top:1px solid #d8e5dc; }
+.agent-sites__field { display:flex; flex-direction:column; min-width:0; gap:5px; color:#29483b; font-size:13px; font-weight:600; }
+.agent-sites__field input, .agent-sites__field select { width:100%; min-width:0; box-sizing:border-box; border:1px solid #6d817a; border-radius:7px; padding:9px 10px; background:#fff; color:#132b25; font:inherit; font-weight:400; }
+.agent-sites__field input:focus-visible, .agent-sites__field select:focus-visible { outline:2px solid #0b624a; outline-offset:2px; }
+.agent-sites__actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+@media (max-width:600px) { .agent-sites__group, .agent-sites__form { padding:12px; } }

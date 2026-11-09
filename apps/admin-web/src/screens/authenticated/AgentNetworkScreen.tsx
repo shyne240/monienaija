@@ -2361,9 +2361,9 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
               />
             )}
 
-            <section style={card} aria-label="Agent outlets and terminals">
-              <div style={sectionHead}>
-                <strong>Outlets &amp; Terminals</strong>
+            <section style={card} className="agent-sites" aria-label="Agent outlets and terminals">
+              <div className="agent-sites__heading">
+                <div><p className="agent-network-eyebrow">NETWORK INFRASTRUCTURE</p><h3>Outlets &amp; terminals</h3><p>Review locations and their devices for this Agent. Changes to a parent do not automatically change its existing children.</p></div>
                 <button
                   type="button"
                   style={smallBtn}
@@ -2388,10 +2388,12 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   <strong>Cross-Arena Integration Boundary:</strong> {terminalBoundaryMsg}
                 </div>
               )}
+              {!outletsLoaded && !outletsLoading && !outletsError && <p className="agent-sites__notice">Load the current records to review locations, devices and available actions.</p>}
+              {outletsLoading && <p role="status" className="agent-sites__notice">Loading outlet and terminal records…</p>}
               {outletsLoaded && (
-                <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div>
-                    <strong>Outlets ({outlets.length})</strong>
+                <div className="agent-sites__content">
+                  <section className="agent-sites__group" aria-label="Outlet records">
+                    <div className="agent-sites__group-heading"><div><p className="agent-network-eyebrow">LOCATIONS</p><h4>Outlets</h4></div><span>{outlets.length} {outlets.length === 1 ? 'record' : 'records'}</span></div>
                     {outlets.length === 0 ? (
                       <div style={smallMuted}>No outlets registered for this Agent.</div>
                     ) : (
@@ -2452,57 +2454,69 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                             {editingOutletId === outlet.id && canManageOutletsTerminals && (
                               <form
                                 onSubmit={(e) => void saveOutletMetadata(e, outlet)}
-                                style={{ ...actionRow, marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--mn-border-subtle, #dde7e2)' }}
+                                className="agent-sites__editor"
                                 aria-label={`Edit outlet ${outlet.reference}`}
                               >
-                                <input
+                                <label className="agent-sites__field"><span>Name</span>
+<input
                                   aria-label={`Edit outlet name for ${outlet.reference}`}
                                   placeholder="Outlet name"
                                   value={editingOutletForm.name}
                                   onChange={(e) => setEditingOutletForm((c) => ({ ...c, name: e.target.value }))}
-                                  style={inlineInput}
+
                                   disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                 />
-                                <input
+</label>
+                                <label className="agent-sites__field"><span>Display name</span>
+<input
                                   aria-label={`Edit outlet display name for ${outlet.reference}`}
                                   placeholder="Display name"
                                   value={editingOutletForm.displayName}
                                   onChange={(e) => setEditingOutletForm((c) => ({ ...c, displayName: e.target.value }))}
-                                  style={inlineInput}
+
                                   disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                 />
-                                <input
+</label>
+                                <label className="agent-sites__field"><span>Address</span>
+<input
                                   aria-label={`Edit outlet address for ${outlet.reference}`}
                                   placeholder="Street address"
                                   value={editingOutletForm.addressLine}
                                   onChange={(e) => setEditingOutletForm((c) => ({ ...c, addressLine: e.target.value }))}
-                                  style={inlineInput}
+
                                   disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                 />
-                                <input
+</label>
+                                <label className="agent-sites__field"><span>City</span>
+<input
                                   aria-label={`Edit outlet city for ${outlet.reference}`}
                                   placeholder="City"
                                   value={editingOutletForm.city}
                                   onChange={(e) => setEditingOutletForm((c) => ({ ...c, city: e.target.value }))}
-                                  style={inlineInput}
+
                                   disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                 />
-                                <input
+</label>
+                                <label className="agent-sites__field"><span>State</span>
+<input
                                   aria-label={`Edit outlet state for ${outlet.reference}`}
                                   placeholder="State"
                                   value={editingOutletForm.state}
                                   onChange={(e) => setEditingOutletForm((c) => ({ ...c, state: e.target.value }))}
-                                  style={inlineInput}
+
                                   disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                 />
-                                <input
+</label>
+                                <label className="agent-sites__field"><span>Country</span>
+<input
                                   aria-label={`Edit outlet country for ${outlet.reference}`}
                                   placeholder="Country"
                                   value={editingOutletForm.country}
                                   onChange={(e) => setEditingOutletForm((c) => ({ ...c, country: e.target.value }))}
-                                  style={inlineInput}
+
                                   disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                 />
+</label>
                                 <button type="submit" style={successBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}>
                                   Save outlet changes
                                 </button>
@@ -2520,10 +2534,10 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                         ))}
                       </ul>
                     )}
-                  </div>
+                  </section>
 
-                  <div>
-                    <strong>Terminals ({terminals.length})</strong>
+                  <section className="agent-sites__group" aria-label="Terminal records">
+                    <div className="agent-sites__group-heading"><div><p className="agent-network-eyebrow">DEVICES</p><h4>Terminals</h4></div><span>{terminals.length} {terminals.length === 1 ? 'record' : 'records'}</span></div>
                     {terminals.length === 0 ? (
                       <div style={smallMuted}>No terminals registered for this Agent.</div>
                     ) : (
@@ -2535,7 +2549,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                 <strong>{terminal.reference}</strong>
                                 {terminal.code ? <> (<code>{terminal.code}</code>)</> : null}
                                 {terminal.label ? ` — ${terminal.label}` : ''}
-                                {terminal.serialNumber ? ` · SN ${terminal.serialNumber}` : ''} · Outlet <code>{terminal.outletId}</code>{' '}
+                                {terminal.serialNumber ? ` · SN ${terminal.serialNumber}` : ''} · Outlet {outlets.find(outlet => outlet.id === terminal.outletId)?.reference ?? terminal.outletId}{' '}
                                 <span style={badge(terminal.status)}>{terminal.status}</span>
                               </span>
                               {canManageOutletsTerminals && (
@@ -2581,25 +2595,29 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                             {editingTerminalId === terminal.id && canManageOutletsTerminals && (
                               <form
                                 onSubmit={(e) => void saveTerminalMetadata(e, terminal)}
-                                style={{ ...actionRow, marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--mn-border-subtle, #dde7e2)' }}
+                                className="agent-sites__editor"
                                 aria-label={`Edit terminal ${terminal.reference}`}
                               >
-                                <input
+                                <label className="agent-sites__field"><span>Label</span>
+<input
                                   aria-label={`Edit terminal label for ${terminal.reference}`}
                                   placeholder="Label"
                                   value={editingTerminalForm.label}
                                   onChange={(e) => setEditingTerminalForm((c) => ({ ...c, label: e.target.value }))}
-                                  style={inlineInput}
+
                                   disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                 />
-                                <input
+</label>
+                                <label className="agent-sites__field"><span>Serial number</span>
+<input
                                   aria-label={`Edit terminal serial number for ${terminal.reference}`}
                                   placeholder="Serial number"
                                   value={editingTerminalForm.serialNumber}
                                   onChange={(e) => setEditingTerminalForm((c) => ({ ...c, serialNumber: e.target.value }))}
-                                  style={inlineInput}
+
                                   disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                                 />
+</label>
                                 <button type="submit" style={successBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}>
                                   Save terminal changes
                                 </button>
@@ -2617,114 +2635,142 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                         ))}
                       </ul>
                     )}
-                  </div>
+                  </section>
 
+                  {!canManageOutletsTerminals && <p className="agent-sites__notice">Records are read-only in this session. Outlet and terminal changes require the appropriate management access.</p>}
                   {canManageOutletsTerminals && (
                     selected.status !== 'ACTIVE' ? (
                       <div style={smallMuted}>Outlet and terminal creation requires an ACTIVE Agent.</div>
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        <form onSubmit={createOutlet} style={actionRow} aria-label="Create outlet form">
-                          <input
+                      <div className="agent-sites__creation">
+                        <form onSubmit={createOutlet} className="agent-sites__form" aria-label="Create outlet form">
+                          <div className="agent-sites__form-heading"><p className="agent-network-eyebrow">NEW LOCATION</p><h4>Create an outlet</h4><p>Reference and name are required. Country defaults to NG when left blank.</p></div>
+                          <div className="agent-sites__fields">
+                          <label className="agent-sites__field"><span>Reference (required)</span>
+<input
                             aria-label="Outlet reference"
                             placeholder="Outlet ref (e.g. OUT-ABJ-01)"
                             value={outletForm.reference}
                             onChange={(e) => setOutletForm((c) => ({ ...c, reference: e.target.value }))}
-                            style={inlineInput}
+
                             disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                           />
-                          <input
+</label>
+                          <label className="agent-sites__field"><span>Name (required)</span>
+<input
                             aria-label="Outlet name"
                             placeholder="Outlet name"
                             value={outletForm.name}
                             onChange={(e) => setOutletForm((c) => ({ ...c, name: e.target.value }))}
-                            style={inlineInput}
+
                             disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                           />
-                          <input
+</label>
+                          <label className="agent-sites__field"><span>Display name (optional)</span>
+<input
                             aria-label="Outlet display name"
                             placeholder="Display name (optional)"
                             value={outletForm.displayName}
                             onChange={(e) => setOutletForm((c) => ({ ...c, displayName: e.target.value }))}
-                            style={inlineInput}
+
                             disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                             maxLength={160}
                           />
-                          <input
+</label>
+                          <label className="agent-sites__field"><span>Code (optional)</span>
+<input
                             aria-label="Outlet code"
                             placeholder="Outlet code (optional)"
                             value={outletForm.code}
                             onChange={(e) => setOutletForm((c) => ({ ...c, code: e.target.value }))}
-                            style={inlineInput}
+
                             disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                             maxLength={80}
                           />
-                          <input
+</label>
+                          <label className="agent-sites__field"><span>Address line (optional)</span>
+<input
                             aria-label="Outlet address line"
                             placeholder="Address line (optional)"
                             value={outletForm.addressLine}
                             onChange={(e) => setOutletForm((c) => ({ ...c, addressLine: e.target.value }))}
-                            style={inlineInput}
+
                             disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                             maxLength={500}
                           />
-                          <input
+</label>
+                          <label className="agent-sites__field"><span>City (optional)</span>
+<input
                             aria-label="Outlet city"
                             placeholder="City (optional)"
                             value={outletForm.city}
                             onChange={(e) => setOutletForm((c) => ({ ...c, city: e.target.value }))}
-                            style={inlineInput}
+
                             disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                             maxLength={100}
                           />
-                          <input
+</label>
+                          <label className="agent-sites__field"><span>State (optional)</span>
+<input
                             aria-label="Outlet state"
                             placeholder="State (optional)"
                             value={outletForm.state}
                             onChange={(e) => setOutletForm((c) => ({ ...c, state: e.target.value }))}
-                            style={inlineInput}
+
                             disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                             maxLength={100}
                           />
-                          <input
+</label>
+                          <label className="agent-sites__field"><span>Country (optional)</span>
+<input
                             aria-label="Outlet country"
                             placeholder="Country (optional, e.g. NG)"
                             value={outletForm.country}
                             onChange={(e) => setOutletForm((c) => ({ ...c, country: e.target.value }))}
-                            style={inlineInput}
+
                             disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                             maxLength={100}
                           />
+</label>
+                          </div><div className="agent-sites__actions">
                           <button type="submit" style={smallBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId)}>
                             Create outlet
                           </button>
-                          <button type="button" style={smallBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || !Object.values(outletForm).some(value => value.trim())} onClick={() => { if (window.confirm('Discard the unsaved outlet entry?')) setOutletForm(EMPTY_OUTLET_FORM); }}>Clear outlet entry</button>
+                          <button type="button" style={smallBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || !Object.values(outletForm).some(value => value.trim())} onClick={() => { if (window.confirm('Discard the unsaved outlet entry?')) setOutletForm(EMPTY_OUTLET_FORM); }}>Clear outlet entry</button></div>
                         </form>
 
+                        {outlets.length === 0 && <p className="agent-sites__notice">Create an active outlet before adding a terminal.</p>}
                         {outlets.length > 0 && (
-                          <form onSubmit={createTerminal} style={actionRow} aria-label="Create terminal form">
-                            <input
+                          <form onSubmit={createTerminal} className="agent-sites__form" aria-label="Create terminal form">
+                            <div className="agent-sites__form-heading"><p className="agent-network-eyebrow">NEW DEVICE</p><h4>Create a terminal</h4><p>Reference and an active parent outlet are required. A later outlet status change does not cascade.</p></div>
+                            <div className="agent-sites__fields">
+                            <label className="agent-sites__field"><span>Reference (required)</span>
+<input
                               aria-label="Terminal reference"
                               placeholder="Terminal ref (e.g. TRM-001)"
                               value={terminalForm.reference}
                               onChange={(e) => setTerminalForm((c) => ({ ...c, reference: e.target.value }))}
-                              style={inlineInput}
+
                               disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                             />
-                            <input
+</label>
+                            <label className="agent-sites__field"><span>Code (optional)</span>
+<input
                               aria-label="Terminal code"
                               placeholder="Terminal code (optional)"
                               value={terminalForm.code}
                               onChange={(e) => setTerminalForm((c) => ({ ...c, code: e.target.value }))}
-                              style={inlineInput}
+
                               disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                               maxLength={80}
                             />
-                            <select
+</label>
+                            <label className="agent-sites__field"><span>Parent outlet (required)</span>
+<select
                               aria-label="Terminal outlet"
                               value={terminalForm.outletId}
                               onChange={(e) => setTerminalForm((c) => ({ ...c, outletId: e.target.value }))}
-                              style={inlineInput}
+
                               disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                             >
                               {outlets.map((o) => (
@@ -2733,28 +2779,34 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                 </option>
                               ))}
                             </select>
-                            <input
+</label>
+                            <label className="agent-sites__field"><span>Label (optional)</span>
+<input
                               aria-label="Terminal label"
                               placeholder="Label (optional)"
                               value={terminalForm.label}
                               onChange={(e) => setTerminalForm((c) => ({ ...c, label: e.target.value }))}
-                              style={inlineInput}
+
                               disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                               maxLength={160}
                             />
-                            <input
+</label>
+                            <label className="agent-sites__field"><span>Serial number (optional)</span>
+<input
                               aria-label="Terminal serial number"
                               placeholder="Serial number (optional)"
                               value={terminalForm.serialNumber}
                               onChange={(e) => setTerminalForm((c) => ({ ...c, serialNumber: e.target.value }))}
-                              style={inlineInput}
+
                               disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
                               maxLength={100}
                             />
+</label>
+                            </div><div className="agent-sites__actions">
                             <button type="submit" style={smallBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId)}>
                               Create terminal
                             </button>
-                            <button type="button" style={smallBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || !Object.entries(terminalForm).some(([key,value]) => key !== 'outletId' && value.trim())} onClick={() => { if (window.confirm('Discard the unsaved terminal entry?')) setTerminalForm(cur => ({...EMPTY_TERMINAL_FORM, outletId: cur.outletId})); }}>Clear terminal entry</button>
+                            <button type="button" style={smallBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || !Object.entries(terminalForm).some(([key,value]) => key !== 'outletId' && value.trim())} onClick={() => { if (window.confirm('Discard the unsaved terminal entry?')) setTerminalForm(cur => ({...EMPTY_TERMINAL_FORM, outletId: cur.outletId})); }}>Clear terminal entry</button></div>
                           </form>
                         )}
                       </div>

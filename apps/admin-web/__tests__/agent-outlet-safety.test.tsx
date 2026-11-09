@@ -84,3 +84,34 @@ test('matching outlet and terminal creation receipts accept server defaults',asy
  fireEvent.change(within(section).getByLabelText('Terminal reference'),{target:{value:'TRM-NEW'}});fireEvent.change(within(section).getByLabelText('Terminal outlet'),{target:{value:'outlet'}});fireEvent.click(within(section).getByRole('button',{name:'Create terminal'}));
  expect(await within(section).findByText('Terminal TRM-NEW created.')).toBeTruthy();expect((within(section).getByLabelText('Terminal reference') as HTMLInputElement).value).toBe('');
 });
+
+test('site workspace separates records and creation, gives visible labels, and identifies terminal parent',async()=>{
+ const section=await open();
+ expect(within(section).getByRole('heading',{name:'Outlets & terminals'})).toBeTruthy();
+ expect(within(section).getByRole('region',{name:'Outlet records'})).toBeTruthy();
+ expect(within(section).getByRole('region',{name:'Terminal records'}).textContent).toContain('Outlet OUT-1');
+ expect(within(section).getByRole('heading',{name:'Create an outlet'})).toBeTruthy();
+ expect(within(section).getByRole('heading',{name:'Create a terminal'})).toBeTruthy();
+ for(const name of ['Outlet reference','Outlet name','Terminal reference','Terminal outlet']) {
+   const control=within(section).getByLabelText(name);
+   expect(control.closest('label')?.textContent).toMatch(/required/i);
+ }
+ fireEvent.click(within(section).getByRole('button',{name:'Edit outlet'}));
+ expect(within(section).getByLabelText('Edit outlet name for OUT-1').closest('label')?.textContent).toContain('Name');
+ expect(ApiClient.post).not.toHaveBeenCalled(); expect(ApiClient.patch).not.toHaveBeenCalled();
+});
+
+test('an empty site list explains the terminal prerequisite without manufacturing a form',async()=>{
+ (ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.startsWith('/internal/agents?')?Promise.resolve({data:[agent()],total:1}):Promise.resolve([]));
+ render(<AgentNetworkScreen/>);await screen.findByText('AG-agent');fireEvent.click(screen.getByRole('button',{name:'View'}));fireEvent.click(screen.getByRole('button',{name:'Load outlets & terminals'}));
+ expect(await screen.findByText('Create an active outlet before adding a terminal.')).toBeTruthy();
+ expect(screen.queryByRole('form',{name:'Create terminal form'})).toBeNull();
+ expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('read-only site access displays records but no creation or lifecycle controls',async()=>{
+ useAuthStore.setState({principal:{type:'OPERATOR',principalId:'manager',sessionId:'session',audience:'workforce-admin',roles:[],scopes:['agent.view','agent.manage_outlets_terminals'],customerAccess:'NONE',assuranceLevel:'MFA',readOnlyPrincipal:true}});
+ render(<AgentNetworkScreen/>);await screen.findByText('AG-agent');fireEvent.click(screen.getByRole('button',{name:'View'}));fireEvent.click(screen.getByRole('button',{name:'Load outlets & terminals'}));
+ expect(await screen.findByText(/Records are read-only in this session/)).toBeTruthy();
+ expect(screen.queryByRole('form',{name:'Create outlet form'})).toBeNull();expect(screen.queryByRole('button',{name:'Suspend outlet'})).toBeNull();expect(ApiClient.post).not.toHaveBeenCalled();
+});
