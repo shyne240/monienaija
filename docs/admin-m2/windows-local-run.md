@@ -1,12 +1,14 @@
 # M2 Admin Web — Windows local run (development only)
 
-Use an isolated local database and dummy data only. This is **not** production authentication or acceptance verification. The local seeded administrator is a development-only credential and does not represent real OIDC/MFA or all maker/checker roles. Keep real SMS, notification workers and external providers off. A00, E05, E08 and E09 remain policy-blocked. The earlier Arena preview was stopped after a reported 404.
+Use **only a disposable local database and dummy data**. These public test passwords, the local password login and fixture-only role grants are not production authentication, real OIDC/MFA, or production authorization policy. Keep real SMS, external providers, notification workers and expiry workers off. The Arena preview is stopped. A00, E05, E08 and E09 remain policy-blocked.
 
-## Requirements
+## Requirements and safety
 
-Windows PowerShell, Git, Node.js 22 (npm 10+), Docker Desktop with Compose, and an available local port 5432, 3000 and 5173. These commands use a fresh checkout and a new Docker PostgreSQL volume. If you already have `.env` or a `postgres-data` volume, back them up and review their contents; **do not overwrite them or connect to an existing shared/production database**. Compose volume names are project-prefixed; existing volumes preserve their original database credentials. The container port is published by Compose: restrict access to your machine/firewall and do not expose this setup publicly.
+Windows PowerShell, Git, Node.js 22, Docker Desktop with Compose, and free ports 5432, 3000 and 5173. A fresh checkout and new local PostgreSQL volume are recommended. Existing Docker volumes keep their old credentials and data; back up and inspect any existing `.env` or volume. **Never point this fixture at a shared, staging or production database**, even through a localhost tunnel. Docker publishes PostgreSQL; restrict it with your local firewall.
 
-## Setup, from PowerShell
+## Fresh installation
+
+From PowerShell:
 
 ```powershell
 git clone https://github.com/shyne240/monienaija.git
@@ -14,42 +16,89 @@ cd monienaija
 git fetch origin arena/44f00580-monienaija
 git switch --track origin/arena/44f00580-monienaija
 npm ci
-Set-Location apps/admin-web
+cd apps/admin-web
 npm ci
-Set-Location ../..
-# Refuses to overwrite an existing .env; do not use --force on an existing setup.
+cd ../..
+# Refuses to overwrite an existing .env. Do not use --force on an existing setup.
 node scripts/prepare-pg-test-env.js
-```
-
-The generated ignored `.env` uses local placeholder workforce settings and `monienaija` / `monienaija-pw` for the local DB. Verify `NODE_ENV=development`, `NOTIFICATION_WORKER_ENABLED=false`, `CASH_TO_CASH_EXPIRY_WORKER_ENABLED=false`, and provider integrations disabled; do not insert production secrets. The generation script sets a working five-role test configuration; the older commented four-role block in `.env.example` is not sufficient. Local authentication is separate from the retired OIDC mock-token bypass: never enable `A2_WORKFORCE_DEV_MOCK_ENABLED`.
-
-```powershell
 docker compose up -d postgres
 docker compose ps
-# Wait until postgres is healthy before migrating.
+# Wait for PostgreSQL to be healthy before continuing.
 npm run migration:run
 npm run build
 $env:NODE_ENV = 'development'
-node scripts/local-dev-seed-admin.js
+$env:NOTIFICATION_WORKER_ENABLED = 'false'
+$env:CASH_TO_CASH_EXPIRY_WORKER_ENABLED = 'false'
+# Only after confirming the database is disposable and local:
+$env:LOCAL_DEV_SEED_CONFIRM = 'disposable-local-database'
+node scripts/local-dev-seed-11-roles.js
 npm start
 ```
 
-The seed is idempotent: an existing account's password is not replaced. Its defaults are `admin@monienaija.local` and `MonieNaijaAdmin123!` and must only be used in this disposable local environment. If migration or seed fails, stop and inspect the error and DB settings; do not point it at real data. `npm start` runs the actual backend on port 3000; leave this terminal open.
+The generated ignored `.env` supplies the full five-role legacy configuration plus the database-backed 11-role catalogue, local DB `monienaija` / `monienaija-pw`, enabled workforce authentication and a placeholder issuer. Verify `DB_HOST=127.0.0.1`, `NODE_ENV=development`, `NOTIFICATION_WORKER_ENABLED=false`, `CASH_TO_CASH_EXPIRY_WORKER_ENABLED=false` and provider integrations disabled. Do not add production secrets. The seed refuses non-loopback DB hosts, production/staging, missing explicit confirmation or enabled workers; a loopback host alone cannot prove a database is safe. It uses the same issuer as the backend: do not change `A2_WORKFORCE_OIDC_ISSUER` between seeding and running the server.
 
-In a second PowerShell terminal:
+Leave the backend running. In a second PowerShell terminal:
 
 ```powershell
 cd path\to\monienaija\apps\admin-web
 npm run dev
 ```
 
-Open `http://localhost:5173` on the Windows machine and sign in with the disposable local credential. Vite proxies same-origin `/api/v1` to the local backend at port 3000. An empty DB contains little business data; production-only integrations, notification delivery and the policy-blocked features will not become functional simply by starting locally. Seeded SUPER_ADMIN does not substitute for separate checker/operational principals. Mutations affect the local database: use synthetic records only.
+Open `http://localhost:5173`. Vite proxies same-origin `/api/v1` to the backend at port 3000. Use the test accounts below; no real messages or funds are involved.
 
-To stop, press Ctrl+C in both terminals and run `docker compose stop postgres` from the repository root. Stopping retains the database volume. Do not run `docker compose down -v` unless you intentionally want to permanently delete that local data.
+## Updating an existing disposable Windows installation
 
-## Limits and troubleshooting
+Stop both app terminals. From the repository root:
 
-- These Windows instructions are derived from repository configuration; they were not executed on Windows in this sandbox.
-- If 5432 is occupied, use an isolated PostgreSQL instance and matching `DB_*` values; Docker's first-start credentials do not update an existing volume. Do not use `--force` to overwrite an existing `.env`.
-- An authentication failure can indicate disabled workforce settings, an existing seed with a different password, or an unmigrated/wrong database. See `docs/V1/V1-ADMIN-LOCAL-LOGIN-01.md`, but note its historical claims about a mock assertion bypass and universal SUPER_ADMIN coverage are outdated.
-- Automated and synthetic evidence is listed in [acceptance-review.md](acceptance-review.md). Actual zoom, screen reader, independent role verification and full workflows are not established by the local login or screenshots.
+```powershell
+git switch arena/44f00580-monienaija
+git pull --ff-only origin arena/44f00580-monienaija
+npm ci
+cd apps/admin-web
+npm ci
+cd ../..
+docker compose up -d postgres
+docker compose ps
+# Wait for healthy; inspect existing .env and database before proceeding.
+npm run migration:run
+npm run build
+$env:NODE_ENV = 'development'
+$env:NOTIFICATION_WORKER_ENABLED = 'false'
+$env:CASH_TO_CASH_EXPIRY_WORKER_ENABLED = 'false'
+$env:LOCAL_DEV_SEED_CONFIRM = 'disposable-local-database'
+node scripts/local-dev-seed-11-roles.js
+npm start
+```
+
+Start Vite in the second terminal as above. Do **not** regenerate or overwrite an existing `.env` blindly: ensure its workforce configuration is enabled, includes all five legacy roles and has the same issuer in both processes. If uncertain, inspect the output and stop. Re-running the seed preserves existing passwords and valid assignments. If it reports a conflicting role, revoked/expired assignment, or an unknown existing password for an account without a current assignment, it rolls back and stops rather than replacing the account or overriding a deliberate restriction. Resolve that only after inspecting the disposable DB; do not delete real data. When a known default credential was seeded under a different issuer, the script adds its missing current-issuer assignment without deleting the older row.
+
+## Development-only test accounts
+
+For newly created accounts, the password is `MonieNaija_<ROLE>_123!`, using the exact uppercase role in this table. **Existing passwords are never reset**; the seed output says if a password was preserved. Do not reuse these public values outside a disposable local setup.
+
+| Role | Email | New-account password |
+|---|---|---|
+| SUPER_ADMIN | `super-admin@monienaija.local` | `MonieNaija_SUPER_ADMIN_123!` |
+| FINANCE_PREPARER | `finance-preparer@monienaija.local` | `MonieNaija_FINANCE_PREPARER_123!` |
+| FINANCE_CONTROLLER | `finance-controller@monienaija.local` | `MonieNaija_FINANCE_CONTROLLER_123!` |
+| FINANCE_AUDITOR | `finance-auditor@monienaija.local` | `MonieNaija_FINANCE_AUDITOR_123!` |
+| ADMINISTRATOR | `administrator@monienaija.local` | `MonieNaija_ADMINISTRATOR_123!` |
+| OPERATIONS | `operations@monienaija.local` | `MonieNaija_OPERATIONS_123!` |
+| AGENT_NETWORK_MANAGER | `agent-network-manager@monienaija.local` | `MonieNaija_AGENT_NETWORK_MANAGER_123!` |
+| COMPLIANCE | `compliance@monienaija.local` | `MonieNaija_COMPLIANCE_123!` |
+| RISK_FRAUD | `risk-fraud@monienaija.local` | `MonieNaija_RISK_FRAUD_123!` |
+| CUSTOMER_SERVICE | `customer-service@monienaija.local` | `MonieNaija_CUSTOMER_SERVICE_123!` |
+| TREASURY | `treasury@monienaija.local` | `MonieNaija_TREASURY_123!` |
+
+The prior guide created **`admin@monienaija.local` / `MonieNaijaAdmin123!`** as a separate SUPER_ADMIN identity, not an alias for `super-admin@…`. The new seed does not create it on fresh databases. If it already exists, its credential and valid assignment are preserved, and a missing current-issuer assignment is added only if its password matches the old default. Custom passwords are never reset; an unknown password plus missing assignment requires manual review. Use the new `super-admin@…` account for a fresh installation.
+
+## Why the old setup failed
+
+The previous Windows instructions ran the single-account seed, so a fresh database did not receive the eleven role-specific credentials. The older 11-role script also assumed a Unix manifest path and could fail finance-role creation when another principal already held that role. Password login derives its principal ID from the configured issuer and email, then resolves active, in-window assignments against the role catalogue. A credential can therefore verify successfully but receive “No valid workforce roles” if its assignment is missing, expired, disabled, or tied to a previous issuer. An issuer mismatch has been reproduced and repaired in the PostgreSQL integration test; without inspecting a particular Windows database, it is not possible to assert which condition caused that installation's error. The seeded role permissions still come from the existing runtime catalogue and legacy scopes, not a client-side bypass.
+
+## Troubleshooting and shutdown
+
+- “No valid workforce roles” means the password verified but no recognized, active, currently effective assignment was resolved for the current issuer-derived principal. Confirm the seed succeeded, backend and seed share the same `.env`/issuer/database, and the role is active. An incorrect password instead reports invalid credentials. Do not post passwords or database secrets in support logs.
+- An empty database contains little business data; use dummy records. Role-specific accounts permit local role review but do not establish real IdP/MFA or production acceptance. See [owner checklist](owner-review-checklist.md).
+- To stop, Ctrl+C in both terminals and run `docker compose stop postgres` from the root. This retains the volume. Do not run `docker compose down -v` unless intentionally deleting disposable local data.
+- These commands were exercised with real PostgreSQL in automated tests, but were not executed on Windows in this sandbox.

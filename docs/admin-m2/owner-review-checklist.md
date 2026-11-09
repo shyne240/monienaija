@@ -4,9 +4,9 @@
 
 ## Run locally on Windows
 
-Follow [Windows local setup](windows-local-run.md) for a disposable Docker database, backend and Admin Web. The Arena preview was stopped after a reported 404; it is not available. Sign in with the development-only local seed, and use dummy data only. This account is not production authentication, and it does not represent separate operational/checker roles. Do not enable real SMS, deployed workers or providers.
+Follow [Windows local setup](windows-local-run.md) for a disposable Docker database, backend and Admin Web. The Arena preview was stopped after a reported 404; it is not available. Sign in with the development-only local seed, and use dummy data only. The 11 separate disposable local test accounts provide role-specific sessions, but are not production authentication or proof of real IdP/MFA. Do not enable real SMS, deployed workers or providers.
 
-A fresh local database will have few business records. Empty, unavailable or role-restricted views are not necessarily defects; the seeded SUPER_ADMIN cannot exercise all role-specific surfaces (including the funding checker queue). The [historical visual package](visual-review-package.md) illustrates synthetic populated states, not local DB data or functional proof. More comprehensive role and maker/checker review requires a separately approved isolated environment and distinct principals.
+A fresh local database will have few business records. Empty, unavailable or role-restricted views are not necessarily defects; the seeded SUPER_ADMIN cannot exercise all role-specific surfaces (including the funding checker queue). The [historical visual package](visual-review-package.md) illustrates synthetic populated states, not local DB data or functional proof. These local principals are distinct, but production-equivalent role and maker/checker review still requires a separately approved isolated environment.
 
 ## Screens to review
 
@@ -18,7 +18,7 @@ Use the sidebar labels below, and inspect both desktop and mobile layouts. Recor
 - [ ] **Transaction & Fee Ops — Transfers / Deposits / Withdrawals**, **Cash-to-Cash Operations**, **Ledger & Reversals**, **Reconciliation & Breaks** — A06, A08–A12.
 - [ ] **5.1 Fee Rules** through **5.6 Limit Assignments** — A13–A18. Review list, scrolling and diagnostics; do not infer complete authorization from the local administrator.
 - [ ] **6.1 KYC Assessment Lookup & Review**, **6.2 Compliance Case Lookup**, **6.3 Fraud Case Lookup** — A19–A21.
-- [ ] **Workforce Overview & Support Provisioning**, **Role Governance**, **Privileged Approvals**, **Super-Admin Recovery** — A22–A25 and E11. The queue requires a distinct authorized checker; the seeded SUPER_ADMIN does not substitute.
+- [ ] **Workforce Overview & Support Provisioning**, **Role Governance**, **Privileged Approvals**, **Super-Admin Recovery** — A22–A25 and E11. Use the separate local FINANCE_CONTROLLER checker; SUPER_ADMIN does not substitute.
 - [ ] **SMS & Email Notifications**, **System Health**, **Audit & Security Events** — A26–A28; inspect both channel-template workspaces E12 and provider configuration E13 without running test-send or a worker.
 
 ## Decisions and approvals required

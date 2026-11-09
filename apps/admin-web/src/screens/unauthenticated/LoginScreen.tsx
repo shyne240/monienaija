@@ -90,9 +90,8 @@ export const LoginScreen: React.FC = () => {
           <div className="mn-login__dev-banner">
             <span className="mn-login__dev-banner-title">Local development build</span>
             <p className="mn-login__dev-banner-text">
-              Sign in with your workforce email and password. A deterministic default local
-              administrator can be created with <code>node scripts/local-dev-seed-admin.js</code>
-              {' '}(see docs/V1/V1-ADMIN-LOCAL-LOGIN-01.md).
+              For a disposable local database, follow the 11-role setup in
+              {' '}<code>docs/admin-m2/windows-local-run.md</code>. These accounts are not production credentials.
             </p>
           </div>
         )}
@@ -118,7 +117,7 @@ export const LoginScreen: React.FC = () => {
               className="mn-login__input"
               type="text"
               autoComplete="username"
-              placeholder="admin@monienaija.local"
+              placeholder={DEV_AUTH_MOCK ? 'super-admin@monienaija.local' : 'Workforce email'}
               value={email}
               onChange={(e) => { setEmail(e.target.value); if (invalidField === 'email') { setInvalidField(null); setValError(''); } }}
               disabled={isLoading}
