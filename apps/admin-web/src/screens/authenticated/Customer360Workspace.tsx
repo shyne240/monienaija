@@ -43,9 +43,17 @@ interface PhoneVerificationSummary {
 
 interface WalletSummary {
   id: string;
+  customerId: string;
   currency: string;
   status: string;
-  balanceMinor?: string | number;
+}
+
+interface WalletBalance {
+  walletId: string;
+  customerId: string;
+  currency: string;
+  status: string;
+  balanceMinor: string;
 }
 
 interface TransactionSummary {
@@ -86,7 +94,7 @@ interface OverviewData {
   eligibility: SafeResult<EligibilitySummary>;
   transactions: SafeResult<TransactionList>;
   wallets: SafeResult<{ data: Array<Omit<WalletSummary, 'balanceMinor'>> }>;
-  balances: Record<string, SafeResult<{ balanceMinor: string | number; currency: string }>>;
+  balances: Record<string, SafeResult<WalletBalance>>;
 }
 
 const CUSTOMER_STATUSES: Record<string, string> = {
@@ -122,6 +130,36 @@ function formatMinorAmount(amountMinor: string | number, currency: string): stri
   const value = String(amountMinor);
   if (!/^-?\d+$/.test(value) || !currency) return 'Amount unavailable';
   return formatFinancialAmount(value, currency);
+}
+
+// Reject a malformed or cross-customer list before making dependent balance requests.
+// An unavailable list is not an empty list.
+function validateWallets(value: unknown, customerId: string): { data: WalletSummary[] } | null {
+  if (!value || typeof value !== 'object') return null;
+  const page = value as { data?: unknown; total?: unknown };
+  if (!Array.isArray(page.data) || !Number.isSafeInteger(page.total) || page.total !== page.data.length) return null;
+  const ids = new Set<string>();
+  const data: WalletSummary[] = [];
+  for (const item of page.data) {
+    if (!item || typeof item !== 'object') return null;
+    const w = item as Record<string, unknown>;
+    if (typeof w.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(w.id) ||
+        ids.has(w.id.toLowerCase()) || w.customerId !== customerId || typeof w.currency !== 'string' || !/^[A-Z]{3}$/.test(w.currency) ||
+        typeof w.status !== 'string' || !['ACTIVE', 'SUSPENDED', 'CLOSED'].includes(w.status)) return null;
+    ids.add(w.id.toLowerCase());
+    data.push({ id: w.id, customerId, currency: w.currency, status: w.status });
+  }
+  return { data };
+}
+
+function validateBalance(value: unknown, wallet: WalletSummary): WalletBalance | null {
+  if (!value || typeof value !== 'object') return null;
+  const b = value as Record<string, unknown>;
+  // Status may change independently between the two reads.
+  if (b.walletId !== wallet.id || b.customerId !== wallet.customerId || b.currency !== wallet.currency ||
+      typeof b.status !== 'string' || !['ACTIVE', 'SUSPENDED', 'CLOSED'].includes(b.status) ||
+      typeof b.balanceMinor !== 'string' || !/^-?\d+$/.test(b.balanceMinor)) return null;
+  return { walletId: wallet.id, customerId: wallet.customerId, currency: wallet.currency, status: b.status, balanceMinor: b.balanceMinor };
 }
 
 async function safeGet<T>(path: string): Promise<SafeResult<T>> {
@@ -208,7 +246,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
       ? safeGet<TransactionList>(`/internal/customers/${customerPath}/transactions?page=1&limit=5`)
       : Promise.resolve({ value: null });
     const walletsPromise = hasFunction('customer.view_wallets')
-      ? safeGet<{ data: Array<Omit<WalletSummary, 'balanceMinor'>> }>(`/internal/customers/${customerPath}/wallets`)
+      ? safeGet<unknown>(`/internal/customers/${customerPath}/wallets`)
       : Promise.resolve({ value: null });
 
     Promise.all([
@@ -218,16 +256,15 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
       transactionsPromise,
       walletsPromise,
     ]).then(async ([phone, readiness, eligibility, transactions, wallets]) => {
-      const walletItems = Array.isArray(wallets.value?.data) ? wallets.value.data : [];
-      const balancePairs = await Promise.all(walletItems.map(async (wallet) => [
-        wallet.id,
-        await safeGet<{ balanceMinor: string | number; currency: string }>(
-          `/internal/customers/${customerPath}/wallets/${encodeURIComponent(wallet.id)}/balance`,
-        ),
-      ] as const));
+      const validatedWallets = validateWallets(wallets.value, customer.id);
+      const walletItems = validatedWallets?.data ?? [];
+      const balancePairs = await Promise.all(walletItems.map(async (wallet) => {
+        const result = await safeGet<unknown>(`/internal/customers/${customerPath}/wallets/${encodeURIComponent(wallet.id)}/balance`);
+        return [wallet.id, { ...result, value: validateBalance(result.value, wallet) }] as const;
+      }));
       const balances = Object.fromEntries(balancePairs) as OverviewData['balances'];
       if (!active) return;
-      setOverview({ customerId: customer.id, phone, readiness, eligibility, transactions, wallets, balances });
+      setOverview({ customerId: customer.id, phone, readiness, eligibility, transactions, wallets: { ...wallets, value: validatedWallets }, balances });
       setOverviewLoading(false);
     }).catch(() => {
       if (!active) return;
@@ -542,7 +579,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
                             <div className="cm-wallet-item" key={wallet.id}>
                               <div><span className="cm-wallet-currency">{wallet.currency}</span><span className="cm-secondary-line">{wallet.status}</span></div>
                               <strong>{balanceResult?.value ? formatMinorAmount(balanceResult.value.balanceMinor, balanceResult.value.currency) : 'Balance unavailable'}</strong>
-                              <span className="cm-secondary-line">Ledger-derived balance</span>
+                              {balanceResult?.value && <span className="cm-secondary-line">Ledger-derived balance</span>}
                             </div>
                           );
                         })}

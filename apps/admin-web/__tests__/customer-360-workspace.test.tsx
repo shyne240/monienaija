@@ -80,10 +80,10 @@ function mockCustomerReads() {
       });
     }
     if (path.endsWith('/wallets')) {
-      return Promise.resolve({ data: [{ id: 'wallet-1', customerId: customer.id, currency: 'NGN', status: 'ACTIVE' }] });
+      return Promise.resolve({ data: [{ id: '11111111-1111-4111-8111-111111111111', customerId: customer.id, currency: 'NGN', status: 'ACTIVE' }], total: 1 });
     }
-    if (path.endsWith('/wallets/wallet-1/balance')) {
-      return Promise.resolve({ walletId: 'wallet-1', customerId: customer.id, currency: 'NGN', balanceMinor: '350050', status: 'ACTIVE' });
+    if (path.endsWith('/wallets/11111111-1111-4111-8111-111111111111/balance')) {
+      return Promise.resolve({ walletId: '11111111-1111-4111-8111-111111111111', customerId: customer.id, currency: 'NGN', balanceMinor: '350050', status: 'ACTIVE' });
     }
     if (path.endsWith('/profile')) {
       return Promise.resolve({ displayName: customer.displayName, legalName: customer.legalName, dateOfBirth: '1990-06-12', nationality: 'NG' });
@@ -136,7 +136,7 @@ describe('Batch 1 Customer 360° workspace', () => {
     expect(view.queryByText(fullPhone)).toBeNull();
     expect(view.queryByText(fullEmail)).toBeNull();
     expect(view.container.querySelector('pre')).toBeNull();
-    expect(ApiClient.get).toHaveBeenCalledWith(`/internal/customers/${customer.id}/wallets/wallet-1/balance`);
+    expect(ApiClient.get).toHaveBeenCalledWith(`/internal/customers/${customer.id}/wallets/11111111-1111-4111-8111-111111111111/balance`);
     expect(ApiClient.get).toHaveBeenCalledWith(`/internal/customers/${customer.id}/transactions?page=1&limit=5`);
     expect(ApiClient.get).not.toHaveBeenCalledWith(`/customers/${customer.id}/identity-documents`);
     expect(view.queryByRole('button', { name: /Provision Wallet|Submit KYC Assessment|Identity Documents/i })).toBeNull();
@@ -271,14 +271,47 @@ describe('Batch 1 Customer 360° workspace', () => {
 
   test('large monetary strings retain exact precision and non-NGN units remain explicit', async () => {
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-      if (path.endsWith('/wallets')) return Promise.resolve({ data: [{ id:'wallet-big', currency:'NGN', status:'ACTIVE' }] });
-      if (path.endsWith('/wallets/wallet-big/balance')) return Promise.resolve({ currency:'NGN', balanceMinor:'900719925474099301' });
+      if (path.endsWith('/wallets')) return Promise.resolve({ data: [{ id:'22222222-2222-4222-8222-222222222222', customerId:customer.id, currency:'NGN', status:'ACTIVE' }], total:1 });
+      if (path.endsWith('/wallets/22222222-2222-4222-8222-222222222222/balance')) return Promise.resolve({ walletId:'22222222-2222-4222-8222-222222222222', customerId:customer.id, status:'ACTIVE', currency:'NGN', balanceMinor:'900719925474099301' });
       if (path.includes('/transactions?')) return Promise.resolve({ items:[{ id:'x', type:'TRANSFER', status:'DONE', amountMinor:'1200', currency:'USD', direction:'OUTGOING', createdAt:'2026-01-01' }] });
       return Promise.resolve({});
     });
     const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />);
     expect(await view.findByText('₦9,007,199,254,740,993.01')).toBeTruthy();
     expect(view.getByText('USD 1,200 minor units')).toBeTruthy();
+  });
+
+  test.each([
+    ['wrong customer', { data: [{ id: '11111111-1111-4111-8111-111111111111', customerId: 'other', currency: 'NGN', status: 'ACTIVE' }], total: 1 }],
+    ['malformed row', { data: [null], total: 1 }],
+    ['wrong total', { data: [], total: 1 }],
+    ['duplicate', { data: Array(2).fill({ id: '11111111-1111-4111-8111-111111111111', customerId: customer.id, currency: 'NGN', status: 'ACTIVE' }), total: 2 }],
+    ['invalid identifier', { data: [{ id: '../wallet', customerId: customer.id, currency: 'NGN', status: 'ACTIVE' }], total: 1 }],
+  ])('rejects %s wallet list before balance requests', async (_name, page) => {
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+      if (path.endsWith('/wallets')) return Promise.resolve(page);
+      return Promise.resolve({});
+    });
+    const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />);
+    expect(await view.findByText('Wallet information is unavailable.')).toBeTruthy();
+    expect(view.queryByText('No financial wallets are recorded for this customer.')).toBeNull();
+    expect((ApiClient.get as jest.Mock).mock.calls.some(([path]) => path.includes('/balance'))).toBe(false);
+  });
+
+  test.each([
+    ['wallet', { walletId: 'wrong' }], ['customer', { customerId: 'other' }],
+    ['currency', { currency: 'USD' }], ['amount', { balanceMinor: 9007199254740992 }],
+    ['status', { status: 'UNKNOWN' }],
+  ])('does not display mismatched balance %s', async (_name, change) => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+      if (path.endsWith('/wallets')) return Promise.resolve({ data: [{ id, customerId: customer.id, currency: 'NGN', status: 'ACTIVE' }], total: 1 });
+      if (path.endsWith('/balance')) return Promise.resolve({ walletId: id, customerId: customer.id, currency: 'NGN', status: 'ACTIVE', balanceMinor: '350050', ...change });
+      return Promise.resolve({});
+    });
+    const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />);
+    expect(await view.findByText('Balance unavailable')).toBeTruthy();
+    expect(view.queryByText('₦3,500.50')).toBeNull();
   });
 
   test('customer tabs use roving focus and arrow keys', async () => {

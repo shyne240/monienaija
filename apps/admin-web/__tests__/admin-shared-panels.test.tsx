@@ -131,7 +131,7 @@ describe('Admin Web shared-screen improvements', () => {
       if (path.endsWith('/onboarding-readiness')) return Promise.resolve({ status: 'NOT_READY', onboardingStatus: null, missing: [] });
       if (path.endsWith('/eligibility')) return Promise.resolve({ status: 'PENDING', statusChangedAt: '2026-10-23T10:00:00.000Z' });
       if (path.endsWith('/transactions?page=1&limit=5')) return Promise.resolve({ items: [] });
-      if (path.endsWith('/wallets')) return Promise.resolve({ data: [] });
+      if (path.endsWith('/wallets')) return Promise.resolve({ data: [], total: 0 });
       if (path.endsWith('/profile')) return Promise.resolve({ displayName: 'Synthetic Customer', legalName: null, dateOfBirth: null, nationality: null });
       if (path.endsWith('/addresses')) return Promise.resolve([]);
       if (path.endsWith('/contact-methods')) return Promise.resolve([{ id: 'contact-1', type: 'EMAIL', value: 'synthetic@example.test', isPrimary: true, verifiedAt: null }]);

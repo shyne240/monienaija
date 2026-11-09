@@ -80,10 +80,10 @@ function mockCustomerReads() {
       });
     }
     if (path.endsWith('/wallets')) {
-      return Promise.resolve({ data: [{ id: 'wallet-1', customerId: customer.id, currency: 'NGN', status: 'ACTIVE' }] });
+      return Promise.resolve({ data: [{ id: '11111111-1111-4111-8111-111111111111', customerId: customer.id, currency: 'NGN', status: 'ACTIVE' }], total: 1 });
     }
-    if (path.endsWith('/wallets/wallet-1/balance')) {
-      return Promise.resolve({ walletId: 'wallet-1', customerId: customer.id, currency: 'NGN', balanceMinor: '350050', status: 'ACTIVE' });
+    if (path.endsWith('/wallets/11111111-1111-4111-8111-111111111111/balance')) {
+      return Promise.resolve({ walletId: '11111111-1111-4111-8111-111111111111', customerId: customer.id, currency: 'NGN', balanceMinor: '350050', status: 'ACTIVE' });
     }
     if (path.endsWith('/profile')) {
       return Promise.resolve({ displayName: customer.displayName, legalName: customer.legalName, dateOfBirth: '1990-06-12', nationality: 'NG' });
@@ -136,7 +136,7 @@ describe('Batch 1 Customer 360° workspace', () => {
     expect(view.queryByText(fullPhone)).toBeNull();
     expect(view.queryByText(fullEmail)).toBeNull();
     expect(view.container.querySelector('pre')).toBeNull();
-    expect(ApiClient.get).toHaveBeenCalledWith(`/internal/customers/${customer.id}/wallets/wallet-1/balance`);
+    expect(ApiClient.get).toHaveBeenCalledWith(`/internal/customers/${customer.id}/wallets/11111111-1111-4111-8111-111111111111/balance`);
     expect(ApiClient.get).toHaveBeenCalledWith(`/internal/customers/${customer.id}/transactions?page=1&limit=5`);
     expect(ApiClient.get).not.toHaveBeenCalledWith(`/customers/${customer.id}/identity-documents`);
     expect(view.queryByRole('button', { name: /Provision Wallet|Submit KYC Assessment|Identity Documents/i })).toBeNull();
