@@ -1,6 +1,7 @@
-import { Controller, Get, Query, Req } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query, Req } from '@nestjs/common';
 
 import { AuthorizationService } from '../authorization/authorization.service';
+import { limitProfileAuditEntityId } from '../limit-catalog/limit-audit-identity';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { AuditService } from './audit.service';
 import { DiagnosticsService } from './diagnostics.service';
@@ -69,7 +70,21 @@ export class OperationsController {
     @Query('entityId') entityId?: string,
     @Query('correlationId') correlationId?: string,
     @Query('limit') limit?: string,
+    @Query('limitProfileCode') limitProfileCode?: string,
   ) {
+    if (limitProfileCode !== undefined) {
+      if (typeof limitProfileCode !== 'string')
+        throw new BadRequestException('Invalid limit profile code');
+      const normalized = limitProfileCode.trim().toUpperCase();
+      if (!/^[A-Z0-9_]{3,80}$/.test(normalized))
+        throw new BadRequestException('Invalid limit profile code');
+      if (entityId || (entityType && entityType !== 'LIMIT_PROFILE'))
+        throw new BadRequestException(
+          'Limit profile code cannot be combined with another entity ID or type',
+        );
+      entityType = 'LIMIT_PROFILE';
+      entityId = limitProfileAuditEntityId(normalized);
+    }
     const policy = {
       resourceType: 'notification-provider-config-audit',
       action: 'notification.provider.view',

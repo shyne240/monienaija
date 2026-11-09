@@ -4,9 +4,9 @@ import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import './audit-trail.css';
 
-type AuditFilter = { entityId: string; entityType: string; correlationId: string };
+type AuditFilter = { entityId: string; entityType: string; correlationId: string; limitProfileCode: string };
 const SEARCH_LIMIT = 100;
-const emptyFilter = (): AuditFilter => ({entityId:'', entityType:'', correlationId:''});
+const emptyFilter = (): AuditFilter => ({entityId:'', entityType:'', correlationId:'', limitProfileCode:''});
 function display(value: unknown): string { return typeof value === 'string' && value.trim() ? value : '—'; }
 type AuditRow = { id: string; entityType: string; entityId: string; action: string; actor: string; occurredAt: string };
 function parseAuditRows(value: unknown, filters: AuditFilter): AuditRow[] | null {
@@ -22,6 +22,10 @@ function parseAuditRows(value: unknown, filters: AuditFilter): AuditRow[] | null
     if (seen.has(id) || Number.isNaN(Date.parse(occurredAt)) ||
         (filters.entityId && entityId.toLowerCase() !== filters.entityId.toLowerCase()) ||
         (filters.entityType && entityType !== filters.entityType)) return null;
+    if (filters.limitProfileCode) {
+      const values = row.newValues;
+      if (entityType !== 'LIMIT_PROFILE' || !values || typeof values !== 'object' || Array.isArray(values) || (values as Record<string, unknown>).limitProfileCode !== filters.limitProfileCode) return null;
+    }
     seen.add(id);
     projected.push({ id, entityType, entityId, action: row.action as string, actor: row.actor as string, occurredAt });
   }
@@ -52,14 +56,17 @@ const AuditTrailWorkspace: React.FC<{ initialCustomerId?: string }> = ({ initial
   const fetchEvents = async (criteria = filter) => {
     if (!canView) return;
     const currentRequest = ++requestId.current;
-    const submitted = { entityId:criteria.entityId.trim(), entityType:criteria.entityType.trim(), correlationId:criteria.correlationId.trim() };
+    const submitted = { entityId:criteria.entityId.trim(), entityType:criteria.entityType.trim(), correlationId:criteria.correlationId.trim(), limitProfileCode:criteria.limitProfileCode.trim().toUpperCase() };
     setLoading(true); setError(''); setEvents([]); setApplied(null);
     if (submitted.correlationId.length > 255) { setLoading(false); setError('Correlation ID must be 255 characters or fewer.'); return; }
+    if (submitted.limitProfileCode && !/^[A-Z0-9_]{3,80}$/.test(submitted.limitProfileCode)) { setLoading(false); setError('Limit profile code must contain 3–80 letters, digits or underscores.'); return; }
+    if (submitted.limitProfileCode && (submitted.entityId || (submitted.entityType && submitted.entityType !== 'LIMIT_PROFILE'))) { setLoading(false); setError('Limit profile code cannot be combined with another entity ID or type.'); return; }
     try {
       const query = new URLSearchParams({ limit: String(SEARCH_LIMIT) });
       if (submitted.entityId) query.set('entityId', submitted.entityId);
       if (submitted.entityType) query.set('entityType', submitted.entityType);
       if (submitted.correlationId) query.set('correlationId', submitted.correlationId);
+      if (submitted.limitProfileCode) query.set('limitProfileCode', submitted.limitProfileCode);
       const res: any = await ApiClient.get(`/internal/audit?${query.toString()}`);
       if (currentRequest !== requestId.current) return;
       const rows = parseAuditRows(res, submitted);
@@ -79,16 +86,17 @@ const AuditTrailWorkspace: React.FC<{ initialCustomerId?: string }> = ({ initial
   }, [initialCustomerId, canView]);
 
   if (!canView) return <div className="mn-audit"><Alert>Audit search requires the <code>audit.search</code> function.</Alert></div>;
-  const activeFilters = applied ? [applied.entityId && `Entity: ${applied.entityId}`, applied.entityType && `Type: ${applied.entityType}`, applied.correlationId && `Correlation: ${applied.correlationId}`].filter(Boolean) : [];
+  const activeFilters = applied ? [applied.entityId && `Entity: ${applied.entityId}`, applied.entityType && `Type: ${applied.entityType}`, applied.correlationId && `Correlation: ${applied.correlationId}`, applied.limitProfileCode && `Limit profile: ${applied.limitProfileCode}`].filter(Boolean) : [];
   return (
     <div className="mn-audit">
       <PageHeader eyebrow="System administration" title="Audit & Security Events" description="Search read-only audit records by entity, type or correlation identifier." />
       <div className="mn-audit__boundary" role="note"><strong>Read-only oversight</strong><span>Results are subject to server-side access restrictions and show up to the {SEARCH_LIMIT} most recent matching events. This is not a complete event count or a paginated history. Missing records do not prove that no action occurred; access restrictions, historical gaps or late commits may affect results.</span></div>
       <section className="mn-audit__panel" aria-labelledby="audit-search-heading">
-        <div className="mn-audit__heading"><div><p className="mn-audit__eyebrow">SEARCH CRITERIA</p><h2 id="audit-search-heading">Find audit events</h2><p>Leave fields empty to search across available events. Filters are exact matches; correlation identifiers are sanitized by the server.</p></div></div>
+        <div className="mn-audit__heading"><div><p className="mn-audit__eyebrow">SEARCH CRITERIA</p><h2 id="audit-search-heading">Find audit events</h2><p>Leave fields empty to search across available events. Filters are exact matches; correlation identifiers are sanitized by the server. Limit profile code searches profile events only and cannot be combined with another entity ID or type.</p></div></div>
         <form className="mn-audit__form" onSubmit={e => { e.preventDefault(); void fetchEvents(); }}>
           <Field label="Entity ID (optional)" htmlFor="audit-entity" className="mn-audit__field"><input id="audit-entity" className="mn-audit__input" value={filter.entityId} onChange={e => updateFilter('entityId', e.target.value)} placeholder="e.g. customer or resource ID" /></Field>
           <Field label="Entity type (optional)" htmlFor="audit-type" className="mn-audit__field"><input id="audit-type" className="mn-audit__input" value={filter.entityType} onChange={e => updateFilter('entityType', e.target.value)} placeholder="e.g. CUSTOMER" /></Field>
+          <Field label="Limit profile code (optional)" htmlFor="audit-limit-profile" className="mn-audit__field"><input id="audit-limit-profile" className="mn-audit__input" value={filter.limitProfileCode} onChange={e => updateFilter('limitProfileCode', e.target.value)} maxLength={80} placeholder="e.g. AGENT_STANDARD" /></Field>
           <Field label="Correlation ID (optional)" htmlFor="audit-correlation" className="mn-audit__field"><input id="audit-correlation" className="mn-audit__input" value={filter.correlationId} onChange={e => updateFilter('correlationId', e.target.value)} maxLength={255} placeholder="Correlation identifier" /></Field>
           <div className="mn-audit__actions"><Button type="submit" variant="primary" disabled={loading}>{loading ? 'Searching…' : 'Search'}</Button><Button onClick={() => { invalidate(); setFilter(emptyFilter()); }}>Clear filters</Button></div>
         </form>

@@ -8,10 +8,8 @@ import { DataSource, QueryFailedError } from 'typeorm';
 import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
-import {
-  LimitCatalogService,
-  limitProfileAuditEntityId,
-} from '../src/limit-catalog/limit-catalog.service';
+import { LimitCatalogService } from '../src/limit-catalog/limit-catalog.service';
+import { limitProfileAuditEntityId } from '../src/limit-catalog/limit-audit-identity';
 import { AuditService } from '../src/operations/audit.service';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
@@ -46,7 +44,8 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
       Promise.resolve().then(() => {
         if (!token || !token.startsWith('workforce-'))
           throw new UnauthorizedException('invalid workforce token');
-        const type = token.replace('workforce-', '').toUpperCase();
+        const requestedType = token.replace('workforce-', '').toUpperCase();
+        const type = requestedType === 'OPERATOR_NO_AUDIT' ? 'OPERATOR' : requestedType;
         const allowed = [
           'SUPPORT',
           'OPERATOR',
@@ -67,7 +66,11 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
           // SUPPORT/AGENT/CUSTOMER stay blocked (requireWorkforce type allow-list denies SUPPORT
           // regardless of scopes), so the codes go to OPERATOR/SERVICE/PRIVILEGED only.
           scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
-            ? ['limit.view', 'limit.modify']
+            ? [
+                'limit.view',
+                'limit.modify',
+                ...(requestedType === 'OPERATOR_NO_AUDIT' ? [] : ['audit.view']),
+              ]
             : [],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
@@ -926,6 +929,51 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     ]);
     expect(profileEvents[1]!.previous_values?.version).toBe(1);
     expect(profileEvents[1]!.new_values.version).toBe(2);
+    const found = await request(app.getHttpServer())
+      .get('/api/v1/internal/audit')
+      .query({ limitProfileCode: ' audited_profile ' })
+      .set('Authorization', auth('OPERATOR'))
+      .expect(200);
+    expect(found.body).toHaveLength(2);
+    expect(
+      found.body.every(
+        (event: { entityType: string; entityId: string }) =>
+          event.entityType === 'LIMIT_PROFILE' &&
+          event.entityId === limitProfileAuditEntityId(profile.code),
+      ),
+    ).toBe(true);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/audit')
+      .query({ limitProfileCode: 'AUDITED_PROFILE', entityType: 'CUSTOMER' })
+      .set('Authorization', auth('OPERATOR'))
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/audit')
+      .query({
+        limitProfileCode: 'AUDITED_PROFILE',
+        entityId: '00000000-0000-0000-0000-000000000001',
+      })
+      .set('Authorization', auth('OPERATOR'))
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/audit')
+      .query({ limitProfileCode: 'bad!' })
+      .set('Authorization', auth('OPERATOR'))
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/audit')
+      .query({ limitProfileCode: 'AUDITED_PROFILE' })
+      .expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/audit')
+      .query({ limitProfileCode: 'AUDITED_PROFILE' })
+      .set('Authorization', auth('OPERATOR_NO_AUDIT'))
+      .expect(403);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/audit?limitProfileCode=AUDITED_PROFILE&limitProfileCode=OTHER')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(400);
+
     expect(limitProfileAuditEntityId(' audited_profile ')).toBe(
       limitProfileAuditEntityId(profile.code),
     );

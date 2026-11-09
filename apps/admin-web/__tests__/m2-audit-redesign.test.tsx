@@ -61,3 +61,18 @@ test('rejects duplicate events and oversized responses',async()=>{
  fireEvent.click(screen.getByRole('button',{name:'Search'}));
  expect(await screen.findByText('Audit search response could not be verified.')).toBeTruthy();
 });
+
+
+test('limit profile lookup validates and scopes returned profile events',async()=>{
+ const row={id:'profile-event',entityType:'LIMIT_PROFILE',entityId:'surrogate',actor:'operator',action:'CREATED',occurredAt:'2026-11-01T00:00:00Z',newValues:{limitProfileCode:'AGENT_STANDARD'}};
+ (ApiClient.get as jest.Mock).mockResolvedValueOnce([row]).mockResolvedValueOnce([{...row,newValues:{limitProfileCode:'OTHER'}}]);
+ render(<AuditTrailScreen />);
+ fireEvent.change(screen.getByLabelText('Limit profile code (optional)'),{target:{value:' agent_standard '}});
+ fireEvent.click(screen.getByRole('button',{name:'Search'}));
+ expect(await screen.findByText('1 returned')).toBeTruthy();expect(screen.getByText('Limit profile: AGENT_STANDARD')).toBeTruthy();
+ expect(ApiClient.get).toHaveBeenCalledWith('/internal/audit?limit=100&limitProfileCode=AGENT_STANDARD');
+ fireEvent.click(screen.getByRole('button',{name:'Search'}));
+ expect(await screen.findByText('Audit search response could not be verified.')).toBeTruthy();expect(screen.queryByText('1 returned')).toBeNull();
+ fireEvent.change(screen.getByLabelText('Entity ID (optional)'),{target:{value:'other'}});fireEvent.click(screen.getByRole('button',{name:'Search'}));
+ expect(await screen.findByText('Limit profile code cannot be combined with another entity ID or type.')).toBeTruthy();expect(ApiClient.get).toHaveBeenCalledTimes(2);
+});

@@ -5,11 +5,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { createHash } from 'node:crypto';
 import { DataSource, Repository, QueryFailedError } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import { LimitProfile } from './limit-profile.entity';
+import { limitProfileAuditEntityId } from './limit-audit-identity';
 import { LimitRule } from './limit-rule.entity';
 import {
   LIMIT_AMOUNT_DIMENSIONS,
@@ -31,14 +31,6 @@ import type {
 const PROFILE_CODE_PATTERN = /^[A-Z0-9_]{3,80}$/;
 const PRODUCT_PATTERN = /^[A-Z0-9_][A-Z0-9_.-]{1,79}$/;
 const CURRENCY_PATTERN = /^[A-Z]{3}$/;
-
-/** Stable UUID surrogate for a textual profile key; the original code remains in audit values. */
-export function limitProfileAuditEntityId(code: string): string {
-  const digest = createHash('sha256')
-    .update(`limit-profile:${code.trim().toUpperCase()}`)
-    .digest('hex');
-  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20, 32)}`;
-}
 
 @Injectable()
 export class LimitCatalogService {
