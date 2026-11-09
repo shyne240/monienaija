@@ -147,6 +147,197 @@ describe('A20 Outlets & Terminals Foundation (real PostgreSQL)', () => {
     return agg.id;
   }
 
+  // Force a parent update to hold its row lock before the child operation starts.
+  // The write must wait for that update, then observe its committed state.
+  async function rejectAfterParentChanges(
+    table: 'agents' | 'agent_outlets' | 'aggregators' | 'aggregator_agent_assignments',
+    id: string,
+    operation: () => Promise<unknown>,
+  ): Promise<void> {
+    const runner = dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    await runner.query(`UPDATE ${table} SET status='SUSPENDED' WHERE id=$1`, [id]);
+    const pending = operation().then(
+      () => ({ error: null }),
+      (error: Error) => ({ error }),
+    );
+    let blocked = false;
+    try {
+      const deadline = Date.now() + 10000;
+      while (Date.now() < deadline) {
+        const rows: Array<{ count: string }> = await dataSource.query(
+          `SELECT count(*)::text AS count FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query ILIKE $1`,
+          [`%${table}%FOR UPDATE%`],
+        );
+        if (Number(rows[0]!.count) > 0) {
+          blocked = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    } finally {
+      await runner.commitTransaction();
+      await runner.release();
+    }
+    const result = await pending;
+    expect(blocked).toBe(true);
+    expect(result.error).toBeTruthy();
+    expect(result.error!.message).toMatch(/SUSPENDED|relationship/i);
+  }
+
+  it('serializes outlet creation and reactivation with Agent lifecycle changes', async () => {
+    const first = await createActiveAgent();
+    const reference = uniqueRef('blocked-outlet');
+    await rejectAfterParentChanges('agents', first.agentId, () =>
+      outletService.create({
+        agentId: first.agentId,
+        reference,
+        name: 'Blocked outlet',
+        actor: 'test-actor',
+        principal: privilegedPrincipal,
+      }),
+    );
+    expect(
+      await dataSource.query('SELECT id FROM agent_outlets WHERE reference=$1', [reference]),
+    ).toHaveLength(0);
+
+    const second = await createActiveAgent();
+    const outlet = await outletService.create({
+      agentId: second.agentId,
+      reference: uniqueRef('reactivate-outlet'),
+      name: 'Outlet',
+      actor: 'test-actor',
+      principal: privilegedPrincipal,
+    });
+    await outletService.suspend(outlet.id, 'test-actor');
+    await rejectAfterParentChanges('agents', second.agentId, () =>
+      outletService.reactivate(outlet.id, 'test-actor'),
+    );
+    expect((await outletService.getById(outlet.id)).status).toBe(OutletStatus.SUSPENDED);
+  });
+
+  it('serializes terminal creation and reactivation with Outlet lifecycle changes', async () => {
+    const first = await createActiveAgent();
+    const outlet = await outletService.create({
+      agentId: first.agentId,
+      reference: uniqueRef('terminal-parent'),
+      name: 'Outlet',
+      actor: 'test-actor',
+      principal: privilegedPrincipal,
+    });
+    const reference = uniqueRef('blocked-terminal');
+    await rejectAfterParentChanges('agent_outlets', outlet.id, () =>
+      terminalService.create({
+        agentId: first.agentId,
+        outletId: outlet.id,
+        reference,
+        actor: 'test-actor',
+        principal: privilegedPrincipal,
+      }),
+    );
+    expect(
+      await dataSource.query('SELECT id FROM agent_terminals WHERE reference=$1', [reference]),
+    ).toHaveLength(0);
+
+    const second = await createActiveAgent();
+    const parent = await outletService.create({
+      agentId: second.agentId,
+      reference: uniqueRef('reactivate-parent'),
+      name: 'Outlet',
+      actor: 'test-actor',
+      principal: privilegedPrincipal,
+    });
+    const terminal = await terminalService.create({
+      agentId: second.agentId,
+      outletId: parent.id,
+      reference: uniqueRef('reactivate-terminal'),
+      actor: 'test-actor',
+      principal: privilegedPrincipal,
+    });
+    await terminalService.suspend(terminal.id, 'test-actor');
+    await rejectAfterParentChanges('agent_outlets', parent.id, () =>
+      terminalService.reactivate(terminal.id, 'test-actor'),
+    );
+    expect((await terminalService.getById(terminal.id)).status).toBe(TerminalStatus.SUSPENDED);
+  });
+
+  it('serializes terminal creation with Agent lifecycle changes', async () => {
+    const { agentId } = await createActiveAgent();
+    const outlet = await outletService.create({
+      agentId,
+      reference: uniqueRef('term-agent-parent'),
+      name: 'Outlet',
+      actor: 'test-actor',
+      principal: privilegedPrincipal,
+    });
+    const reference = uniqueRef('term-agent-blocked');
+    await rejectAfterParentChanges('agents', agentId, () =>
+      terminalService.create({
+        agentId,
+        outletId: outlet.id,
+        reference,
+        actor: 'test-actor',
+        principal: privilegedPrincipal,
+      }),
+    );
+    expect(
+      await dataSource.query('SELECT id FROM agent_terminals WHERE reference=$1', [reference]),
+    ).toHaveLength(0);
+  });
+
+  it('serializes aggregator and relationship preconditions with outlet and terminal creation', async () => {
+    const first = await createActiveAgent();
+    const aggregatorId = await createActiveAggregator();
+    await relationshipService.assign({ aggregatorId, agentId: first.agentId, actor: 'test-actor' });
+    const reference = uniqueRef('agg-blocked-outlet');
+    await rejectAfterParentChanges('aggregators', aggregatorId, () =>
+      outletService.create({
+        agentId: first.agentId,
+        aggregatorId,
+        reference,
+        name: 'Blocked outlet',
+        actor: 'test-actor',
+        principal: privilegedPrincipal,
+      }),
+    );
+    expect(
+      await dataSource.query('SELECT id FROM agent_outlets WHERE reference=$1', [reference]),
+    ).toHaveLength(0);
+
+    const second = await createActiveAgent();
+    const secondAggregator = await createActiveAggregator();
+    const relationship = await relationshipService.assign({
+      aggregatorId: secondAggregator,
+      agentId: second.agentId,
+      actor: 'test-actor',
+    });
+    const outlet = await outletService.create({
+      agentId: second.agentId,
+      aggregatorId: secondAggregator,
+      reference: uniqueRef('relationship-parent'),
+      name: 'Outlet',
+      actor: 'test-actor',
+      principal: privilegedPrincipal,
+    });
+    const terminalReference = uniqueRef('relationship-terminal');
+    await rejectAfterParentChanges('aggregator_agent_assignments', relationship.id, () =>
+      terminalService.create({
+        agentId: second.agentId,
+        aggregatorId: secondAggregator,
+        outletId: outlet.id,
+        reference: terminalReference,
+        actor: 'test-actor',
+        principal: privilegedPrincipal,
+      }),
+    );
+    expect(
+      await dataSource.query('SELECT id FROM agent_terminals WHERE reference=$1', [
+        terminalReference,
+      ]),
+    ).toHaveLength(0);
+  });
+
   // 1. Outlet creation
   it('1. Outlet creation', async () => {
     const { agentId } = await createActiveAgent();

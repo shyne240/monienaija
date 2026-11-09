@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 
 import { AuditService } from '../operations/audit.service';
@@ -76,34 +76,11 @@ export class TerminalService {
       }
     }
 
-    // Verify Agent ACTIVE for creation
-    await this.assertAgentOperable(agentId, 'create');
-
-    // Verify Outlet exists, belongs to agent, and is ACTIVE
-    const outletRows: Array<{
-      id: string;
-      agent_id: string;
-      status: string;
-      deleted_at: string | null;
-    }> = await this.dataSource.query(
-      `SELECT id, agent_id, status, deleted_at FROM agent_outlets WHERE id=$1 LIMIT 1`,
-      [outletId],
-    );
-    const outlet = outletRows[0];
-    if (!outlet || outlet.deleted_at !== null)
-      throw new NotFoundException(`Outlet ${outletId} not found`);
-    if (outlet.agent_id !== agentId)
-      throw new BadRequestException(`Outlet ${outletId} does not belong to Agent ${agentId}`);
-    if (outlet.status !== (OutletStatus.ACTIVE as string))
-      throw new ConflictException(
-        `Outlet ${outletId} is ${outlet.status} and cannot host terminal`,
-      );
-
-    if (aggregatorId) {
-      await this.assertAggregatorRelationship(aggregatorId, agentId);
-    }
-
     return this.dataSource.transaction(async (manager) => {
+      // Parent state and relationship checks stay locked through creation and audit.
+      await this.assertAgentOperable(manager, agentId, 'create');
+      await this.assertOutletOperable(manager, outletId, agentId);
+      if (aggregatorId) await this.assertAggregatorRelationship(manager, aggregatorId, agentId);
       const repo = manager.getRepository(AgentTerminal);
 
       const refRows: Array<{ id: string }> = await manager.query(
@@ -236,18 +213,10 @@ export class TerminalService {
 
   async reactivate(id: string, actor: string): Promise<AgentTerminal> {
     const terminal = await this.getById(id);
-    await this.assertAgentOperable(terminal.agentId, 'activate');
-    // Also ensure outlet still ACTIVE for reactivation
-    const outletRows: Array<{ id: string; status: string }> = await this.dataSource.query(
-      `SELECT id, status FROM agent_outlets WHERE id=$1 AND deleted_at IS NULL LIMIT 1`,
-      [terminal.outletId],
-    );
-    const outlet = outletRows[0];
-    if (!outlet || outlet.status !== (OutletStatus.ACTIVE as string))
-      throw new ConflictException(
-        `Outlet ${terminal.outletId} is ${outlet?.status ?? 'not found'} and cannot host active terminal`,
-      );
-    return this.transition(id, TerminalStatus.ACTIVE, actor, 'AGENT_TERMINAL_REACTIVATED');
+    return this.transition(id, TerminalStatus.ACTIVE, actor, 'AGENT_TERMINAL_REACTIVATED', {
+      agentId: terminal.agentId,
+      outletId: terminal.outletId,
+    });
   }
 
   async terminate(id: string, actor: string): Promise<AgentTerminal> {
@@ -259,16 +228,26 @@ export class TerminalService {
     target: TerminalStatus,
     actor: string,
     action: string,
+    activeParent?: { agentId: string; outletId: string },
   ): Promise<AgentTerminal> {
     this.assertUuid(id, 'id');
     const normalizedActor = this.normalizeActor(actor);
     if (!Object.values(TerminalStatus).includes(target))
       throw new BadRequestException(`Invalid status ${target}`);
     return this.dataSource.transaction(async (manager) => {
+      if (activeParent) {
+        await this.assertAgentOperable(manager, activeParent.agentId, 'activate');
+        await this.assertOutletOperable(manager, activeParent.outletId, activeParent.agentId);
+      }
       const repo = manager.getRepository(AgentTerminal);
       const terminal = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
       if (!terminal || terminal.deletedAt !== null)
         throw new NotFoundException(`Terminal ${id} not found`);
+      if (
+        activeParent &&
+        (terminal.agentId !== activeParent.agentId || terminal.outletId !== activeParent.outletId)
+      )
+        throw new ConflictException('Terminal parent changed; reload before reactivation');
       const allowed = ALLOWED_TERMINAL_TRANSITIONS[terminal.status] ?? [];
       if (!allowed.includes(target))
         throw new ConflictException(`Transition ${terminal.status} → ${target} is not allowed`);
@@ -290,11 +269,37 @@ export class TerminalService {
     });
   }
 
-  private async assertAgentOperable(agentId: string, operation: string): Promise<void> {
+  private async assertOutletOperable(
+    manager: EntityManager,
+    outletId: string,
+    agentId: string,
+  ): Promise<void> {
+    const rows: Array<{ id: string; agent_id: string; status: string; deleted_at: string | null }> =
+      await manager.query(
+        `SELECT id, agent_id, status, deleted_at FROM agent_outlets WHERE id=$1 LIMIT 1 FOR UPDATE`,
+        [outletId],
+      );
+    const outlet = rows[0];
+    if (!outlet || outlet.deleted_at !== null)
+      throw new NotFoundException(`Outlet ${outletId} not found`);
+    if (outlet.agent_id !== agentId)
+      throw new BadRequestException(`Outlet ${outletId} does not belong to Agent ${agentId}`);
+    if (outlet.status !== (OutletStatus.ACTIVE as string))
+      throw new ConflictException(
+        `Outlet ${outletId} is ${outlet.status} and cannot host terminal`,
+      );
+  }
+
+  private async assertAgentOperable(
+    manager: EntityManager,
+    agentId: string,
+    operation: string,
+  ): Promise<void> {
     const rows: Array<{ id: string; status: string; deleted_at: string | null }> =
-      await this.dataSource.query(`SELECT id, status, deleted_at FROM agents WHERE id=$1 LIMIT 1`, [
-        agentId,
-      ]);
+      await manager.query(
+        `SELECT id, status, deleted_at FROM agents WHERE id=$1 LIMIT 1 FOR UPDATE`,
+        [agentId],
+      );
     const agent = rows[0];
     if (!agent || agent.deleted_at !== null)
       throw new NotFoundException(`Agent ${agentId} not found`);
@@ -304,10 +309,14 @@ export class TerminalService {
       );
   }
 
-  private async assertAggregatorRelationship(aggregatorId: string, agentId: string): Promise<void> {
+  private async assertAggregatorRelationship(
+    manager: EntityManager,
+    aggregatorId: string,
+    agentId: string,
+  ): Promise<void> {
     const aggRows: Array<{ id: string; status: string; deleted_at: string | null }> =
-      await this.dataSource.query(
-        `SELECT id, status, deleted_at FROM aggregators WHERE id=$1 LIMIT 1`,
+      await manager.query(
+        `SELECT id, status, deleted_at FROM aggregators WHERE id=$1 LIMIT 1 FOR UPDATE`,
         [aggregatorId],
       );
     const agg = aggRows[0];
@@ -315,8 +324,8 @@ export class TerminalService {
       throw new NotFoundException(`Aggregator ${aggregatorId} not found`);
     if (agg.status !== (AggregatorStatus.ACTIVE as string))
       throw new ConflictException(`Aggregator ${aggregatorId} is ${agg.status}`);
-    const relRows: Array<{ id: string; status: string }> = await this.dataSource.query(
-      `SELECT id, status FROM aggregator_agent_assignments WHERE aggregator_id=$1 AND agent_id=$2 AND status='ACTIVE' LIMIT 1`,
+    const relRows: Array<{ id: string; status: string }> = await manager.query(
+      `SELECT id, status FROM aggregator_agent_assignments WHERE aggregator_id=$1 AND agent_id=$2 AND status='ACTIVE' LIMIT 1 FOR UPDATE`,
       [aggregatorId, agentId],
     );
     if (relRows.length === 0)
