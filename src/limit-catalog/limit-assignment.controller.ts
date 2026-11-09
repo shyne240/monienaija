@@ -217,39 +217,37 @@ export class LimitAssignmentController {
     if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim()))
       throw new BadRequestException('id must be UUID');
 
-    // Do not fetch the assignment to decide whether it is an Agent record. An explicit
-    // Agent target, or a caller already holding agent.assign_limit, is authorized before
-    // the service reads by identifier. Other workforce callers retain non-Agent updates,
-    // but the service constrains their lookup to non-Agent rows so an Agent identifier and
-    // a nonexistent identifier have the same non-enumerating 404 response.
-    const hasAgentAssignmentFunction =
-      req.authorizationPrincipal?.scopes.includes('agent.assign_limit') ?? false;
-    const agentAssignmentAuthorized =
-      dto.subjectType === LimitAssignmentSubjectType.AGENT || hasAgentAssignmentFunction;
-    let actor: string;
-    if (agentAssignmentAuthorized) {
-      actor = await this.requireAgentAssignmentFunction(req);
-    } else {
-      this.requireWorkforce(req);
-      await this.requireLimitFunction(req, 'limit.modify');
-      actor = this.actorOf(req);
-    }
+    // Authorize independently for both source and destination subject types before lookup.
+    // A caller with only one grant must not modify or retarget the other subject class.
+    // The service applies the allowed source filter while holding the row lock so filtered
+    // identifiers remain indistinguishable from missing records, including under races.
+    this.requireWorkforce(req);
+    const scopes = req.authorizationPrincipal?.scopes ?? [];
+    const hasAgentScope = scopes.includes('agent.assign_limit');
+    const hasLimitScope = scopes.includes('limit.modify');
+    const targetAgent = dto.subjectType === LimitAssignmentSubjectType.AGENT;
+    const targetNonAgent = dto.subjectType !== undefined && !targetAgent;
+    const agentAuthorized = hasAgentScope || targetAgent;
+    const limitAuthorized = hasLimitScope || !agentAuthorized || targetNonAgent;
+    if (agentAuthorized) await this.requireAgentAssignmentFunction(req);
+    if (limitAuthorized) await this.requireLimitFunction(req, 'limit.modify');
+    const actor = this.actorOf(req);
     return this.service.updateAssignment(
       id.trim(),
       {
         limitProfileCode: dto.limitProfileCode,
         subjectType: dto.subjectType,
-        subjectId: dto.subjectId ?? undefined,
-        segmentCode: dto.segmentCode ?? undefined,
+        subjectId: dto.subjectId,
+        segmentCode: dto.segmentCode,
         precedence: dto.precedence,
         effectiveFrom: dto.effectiveFrom ?? undefined,
-        effectiveTo: dto.effectiveTo ?? undefined,
+        effectiveTo: dto.effectiveTo,
         isActive: dto.isActive,
         updatedBy: actor,
         version: dto.version,
       },
       actor,
-      { excludeAgent: !agentAssignmentAuthorized },
+      { excludeAgent: !agentAuthorized, onlyAgent: !limitAuthorized },
     );
   }
 

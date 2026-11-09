@@ -45,7 +45,8 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
         if (!token || !token.startsWith('workforce-'))
           throw new UnauthorizedException('invalid workforce token');
         const requestedRole = token.replace('workforce-', '').toUpperCase();
-        const isAgentNetworkManager = requestedRole === 'AGENT_NETWORK_MANAGER';
+        const isAgentOnly = requestedRole === 'AGENT_ONLY';
+        const isAgentNetworkManager = requestedRole === 'AGENT_NETWORK_MANAGER' || isAgentOnly;
         const type = isAgentNetworkManager ? 'OPERATOR' : requestedRole;
         const allowed = [
           'SUPPORT',
@@ -69,7 +70,7 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
           // OPERATOR/SERVICE/PRIVILEGED only.
           scopes: [
             ...(['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
-              ? ['limit.view', 'limit.modify']
+              ? ['limit.view', ...(isAgentOnly ? [] : ['limit.modify'])]
               : []),
             ...(isAgentNetworkManager ? ['agent.assign_limit'] : []),
           ],
@@ -665,6 +666,81 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
       .send({ version: 1, isActive: false });
     expect(allowed.status).toBe(200);
     expect(allowed.body.isActive).toBe(false);
+  });
+
+  it('05b. Agent-only and non-Agent grants cannot mutate or retarget each other’s assignments', async () => {
+    const profileCode = 'PATCH_BOUNDARIES';
+    await createProfile(profileCode, { kind: 'UNIVERSAL' });
+    const agentId = await seedAgent();
+    const agent = await createAssignment(
+      { limitProfileCode: profileCode, subjectType: 'AGENT', subjectId: agentId },
+      'AGENT_NETWORK_MANAGER',
+    );
+    const global = await createAssignment({ limitProfileCode: profileCode, subjectType: 'GLOBAL' });
+    expect(agent.status).toBe(201);
+    expect(global.status).toBe(201);
+    const agentAssignmentId = agent.body.id as string;
+    const globalAssignmentId = global.body.id as string;
+    const patch = (id: string, role: string, body: object) =>
+      request(app.getHttpServer())
+        .patch(`/api/v1/internal/limit-assignments/${id}`)
+        .set('Authorization', auth(role))
+        .send(body);
+    const agentOnlyDenied = await patch(globalAssignmentId, 'AGENT_ONLY', {
+      version: 1,
+      isActive: false,
+    });
+    const missing = await patch(randomUUID(), 'AGENT_ONLY', { version: 1, isActive: false });
+    expect(agentOnlyDenied.status).toBe(404);
+    expect(agentOnlyDenied.body).toEqual(missing.body);
+    expect(
+      (await patch(agentAssignmentId, 'AGENT_ONLY', { version: 1, subjectType: 'GLOBAL' })).status,
+    ).toBe(403);
+    expect(
+      (
+        await patch(globalAssignmentId, 'OPERATOR', {
+          version: 1,
+          subjectType: 'AGENT',
+          subjectId: agentId,
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (await patch(agentAssignmentId, 'OPERATOR', { version: 1, subjectType: 'GLOBAL' })).status,
+    ).toBe(404);
+    expect(
+      (await patch(agentAssignmentId, 'AGENT_ONLY', { version: 1, isActive: false })).status,
+    ).toBe(200);
+    expect(
+      (await patch(globalAssignmentId, 'OPERATOR', { version: 1, isActive: false })).status,
+    ).toBe(200);
+    const rows: Array<{ entity_id: string }> = await dataSource.query(
+      `SELECT entity_id FROM audit_events WHERE entity_type='LIMIT_ASSIGNMENT' AND action='UPDATED'`,
+    );
+    expect(rows).toHaveLength(2);
+    expect(
+      (
+        await patch(agentAssignmentId, 'AGENT_NETWORK_MANAGER', {
+          version: 2,
+          subjectType: 'GLOBAL',
+          subjectId: null,
+        })
+      ).status,
+    ).toBe(200);
+    const retargeted = await patch(globalAssignmentId, 'AGENT_NETWORK_MANAGER', {
+      version: 2,
+      subjectType: 'AGENT',
+      subjectId: agentId,
+      effectiveTo: '2099-01-01T00:00:00Z',
+    });
+    expect(retargeted.status).toBe(200);
+    expect(retargeted.body).toMatchObject({ subjectType: 'AGENT', subjectId: agentId, version: 3 });
+    const cleared = await patch(globalAssignmentId, 'AGENT_ONLY', {
+      version: 3,
+      effectiveTo: null,
+    });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.effectiveTo).toBeNull();
   });
 
   it('06. duplicate/conflict validation — 400/404 cases', async () => {

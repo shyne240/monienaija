@@ -101,13 +101,14 @@ export class LimitAssignmentService {
     id: string,
     input: LimitAssignmentUpdateInput,
     actor: string,
-    access: { excludeAgent?: boolean } = {},
+    access: { excludeAgent?: boolean; onlyAgent?: boolean } = {},
   ): Promise<LimitAssignmentSafeProjection> {
     try {
       const saved = await this.dataSource.transaction(async (manager) => {
         const repo = manager.getRepository(LimitAssignment);
         const where: Record<string, unknown> = { id };
         if (access.excludeAgent) where.subjectType = Not(LimitAssignmentSubjectType.AGENT);
+        if (access.onlyAgent) where.subjectType = LimitAssignmentSubjectType.AGENT;
         const assignment = await repo.findOne({
           where: where as never,
           lock: { mode: 'pessimistic_write' },
@@ -131,7 +132,14 @@ export class LimitAssignmentService {
         }
         if (input.subjectType !== undefined) {
           this.assertEnum(input.subjectType, LimitAssignmentSubjectType, 'subjectType');
-          row.subjectType = input.subjectType.trim().toUpperCase();
+          const subjectType = input.subjectType.trim().toUpperCase() as LimitAssignmentSubjectType;
+          if (
+            (access.excludeAgent && subjectType === LimitAssignmentSubjectType.AGENT) ||
+            (access.onlyAgent && subjectType !== LimitAssignmentSubjectType.AGENT)
+          ) {
+            throw new NotFoundException('Limit assignment not found');
+          }
+          row.subjectType = subjectType;
         }
         if (input.subjectId !== undefined) {
           row.subjectId = input.subjectId ? input.subjectId.trim() : null;
