@@ -1,0 +1,32 @@
+[
+  {
+    "width": 320,
+    "view": "cashIn",
+    "writes": 0
+  },
+  {
+    "width": 320,
+    "view": "cashOut",
+    "writes": 0
+  },
+  {
+    "width": 320,
+    "view": "maker",
+    "writes": 0
+  },
+  {
+    "width": 1440,
+    "view": "cashIn",
+    "writes": 0
+  },
+  {
+    "width": 1440,
+    "view": "cashOut",
+    "writes": 0
+  },
+  {
+    "width": 1440,
+    "view": "maker",
+    "writes": 0
+  }
+]

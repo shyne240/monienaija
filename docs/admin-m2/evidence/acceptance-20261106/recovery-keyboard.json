@@ -1,0 +1,28 @@
+[
+  {
+    "width": 320,
+    "modalFocusTrap": true,
+    "escapeRestoresFocus": true,
+    "noWriteBeforeConfirm": true,
+    "pendingCannotDismiss": true,
+    "targetedAxeViolations": [],
+    "receiptFocus": true,
+    "receiptDismissalFocus": true,
+    "uncertainReviewFocus": true,
+    "acknowledgmentFocus": true,
+    "requestsIntercepted": 2
+  },
+  {
+    "width": 1440,
+    "modalFocusTrap": true,
+    "escapeRestoresFocus": true,
+    "noWriteBeforeConfirm": true,
+    "pendingCannotDismiss": true,
+    "targetedAxeViolations": [],
+    "receiptFocus": true,
+    "receiptDismissalFocus": true,
+    "uncertainReviewFocus": true,
+    "acknowledgmentFocus": true,
+    "requestsIntercepted": 2
+  }
+]

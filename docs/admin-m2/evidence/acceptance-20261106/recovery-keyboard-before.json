@@ -1,0 +1,28 @@
+[
+  {
+    "width": 320,
+    "modalFocusTrap": true,
+    "escapeRestoresFocus": true,
+    "noWriteBeforeConfirm": true,
+    "pendingCannotDismiss": true,
+    "targetedAxeViolations": [],
+    "focusAfterReceipt": {
+      "tag": "BODY",
+      "text": "Skip to main contentMonieNaijaWorkforce consoleSsynthetic-adminADMINISTRATOR1. Home & My WorkOperational Dashboard7. Pla",
+      "id": ""
+    }
+  },
+  {
+    "width": 1440,
+    "modalFocusTrap": true,
+    "escapeRestoresFocus": true,
+    "noWriteBeforeConfirm": true,
+    "pendingCannotDismiss": true,
+    "targetedAxeViolations": [],
+    "focusAfterReceipt": {
+      "tag": "BODY",
+      "text": "Skip to main contentMonieNaijaWorkforce consoleSsynthetic-adminADMINISTRATOR1. Home & My WorkOperational Dashboard7. Pla",
+      "id": ""
+    }
+  }
+]

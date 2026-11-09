@@ -65,3 +65,32 @@ test('recovery confirmation is single-flight and protects the sensitive statemen
 test('shell navigation protects an entered recovery statement',async()=>{
  const {Layout}=await import('../src/screens/authenticated/Layout');useAuthStore.setState({isAuthenticated:true});const view=render(<Layout/>);fireEvent.click(view.getByTestId('nav-superAdminRecovery'));fireEvent.change(view.getByLabelText('Recovery statement (JWT)'),{target:{value:fakeStatement}});fireEvent.click(view.getByTestId('nav-dashboard'));expect(view.getByRole('dialog',{name:'Leave recovery review?'})).toBeTruthy();fireEvent.click(view.getByRole('button',{name:'Keep working'}));expect(view.getByLabelText('Recovery statement (JWT)')).toHaveProperty('value',fakeStatement);fireEvent.click(view.getByTestId('nav-dashboard'));fireEvent.click(view.getByRole('button',{name:'Discard and leave'}));expect(view.queryByLabelText('Recovery statement (JWT)')).toBeNull();
 });
+
+test('recovery receipt receives focus and dismissal returns focus to the statement', async () => {
+  (ApiClient.post as jest.Mock).mockResolvedValue({operation:'REVOKE_SUPER_ADMIN', recoveryReference:'ref', targetPrincipalId:'target', targetAssignmentReference:'assignment', reason:'test reason', consumedBy:'synthetic-1', consumedAt:'2026-10-23T00:00:00Z', auditReference:'audit', revokedSessionCount:1});
+  const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
+  try {
+    render(<SuperAdminRecoveryScreen />);
+    const statement = screen.getByLabelText('Recovery statement (JWT)');
+    fireEvent.change(statement, {target:{value:fakeStatement}});
+    fireEvent.click(screen.getByRole('button', {name:'Execute Recovery'}));
+    fireEvent.click(screen.getByRole('button', {name:'Confirm recovery'}));
+    const receipt = await screen.findByRole('status', {name:'Recovery executed'});
+    expect(document.activeElement).toBe(receipt);
+    fireEvent.click(screen.getByRole('button', {name:'Dismiss recovery receipt'}));
+    expect(document.activeElement).toBe(statement);
+  } finally { confirm.mockRestore(); }
+});
+
+test('uncertain recovery focuses independent review, then returns focus after acknowledgment', async () => {
+  (ApiClient.post as jest.Mock).mockResolvedValue({});
+  render(<SuperAdminRecoveryScreen />);
+  const statement = screen.getByLabelText('Recovery statement (JWT)');
+  fireEvent.change(statement, {target:{value:fakeStatement}});
+  fireEvent.click(screen.getByRole('button', {name:'Execute Recovery'}));
+  fireEvent.click(screen.getByRole('button', {name:'Confirm recovery'}));
+  const acknowledge = await screen.findByRole('button', {name:'I reviewed recovery and audit records'});
+  expect(document.activeElement).toBe(acknowledge.closest('.mn-recovery__review'));
+  fireEvent.click(acknowledge);
+  expect(document.activeElement).toBe(statement);
+});

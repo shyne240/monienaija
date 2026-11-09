@@ -9,5 +9,6 @@
 .mn-recovery__form .mn-recovery__pending { margin: 0; }
 .mn-recovery__receipt { border-color: #8fc8af; background: #f1faf5; }
 .mn-recovery__receipt .mn-btn { margin-top: 12px; }
+.mn-recovery__receipt:focus, .mn-recovery__review:focus { outline: 2px solid var(--mn-focus-ring, #0b624a); outline-offset: 2px; }
 .mn-recovery__note { background: var(--mn-surface-sunken, #eef3f0); }
 @media (max-width: 480px) { .mn-recovery__form .mn-btn { width: 100%; } }

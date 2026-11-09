@@ -1,0 +1,28 @@
+{
+  "browserVersion": "153.0.8010.0",
+  "environment": "headless Chromium shell, no desktop display",
+  "baseline": {
+    "innerWidth": 1280,
+    "clientWidth": 1280,
+    "devicePixelRatio": 1,
+    "visualViewportWidth": 1280,
+    "visualViewportScale": 1
+  },
+  "afterFive": {
+    "innerWidth": 1280,
+    "clientWidth": 1280,
+    "devicePixelRatio": 1,
+    "visualViewportWidth": 1280,
+    "visualViewportScale": 1
+  },
+  "afterEight": {
+    "innerWidth": 1280,
+    "clientWidth": 1280,
+    "devicePixelRatio": 1,
+    "visualViewportWidth": 1280,
+    "visualViewportScale": 1
+  },
+  "changed": false,
+  "writes": 0,
+  "conclusion": "No measurable browser zoom change. 200% and 400% actual browser zoom remain unverified."
+}

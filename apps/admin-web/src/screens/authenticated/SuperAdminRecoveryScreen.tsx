@@ -51,8 +51,23 @@ const RecoveryWorkspace: React.FC<{ principalId: string; canView: boolean; canEx
   const inFlight = useRef(false);
   const dialogRef = useRef<HTMLElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const statementRef = useRef<HTMLTextAreaElement>(null);
+  const receiptRef = useRef<HTMLElement>(null);
+  const reviewRef = useRef<HTMLDivElement>(null);
+  const focusFormAfterDismiss = useRef(false);
   useDialogFocus(dialogRef, Boolean(pendingClaims), () => { if (!inFlight.current) setPendingClaims(null); }, triggerRef);
   useEffect(() => { if (loading) dialogRef.current?.focus(); }, [loading]);
+  // The dialog trigger is disabled while a receipt or an uncertain outcome is held.
+  // Move focus to that outcome instead of letting it fall back to the document body.
+  useEffect(() => {
+    if (pendingClaims || loading) return;
+    if (result) receiptRef.current?.focus();
+    else if (uncertain) reviewRef.current?.focus();
+    else if (focusFormAfterDismiss.current) {
+      focusFormAfterDismiss.current = false;
+      statementRef.current?.focus();
+    }
+  }, [pendingClaims, loading, result, uncertain]);
   const guarded = loading || Boolean(statement.trim()) || Boolean(pendingClaims) || Boolean(uncertain) || Boolean(result);
   useEffect(() => { onRecoveryGuardChange?.(guarded, loading); }, [onRecoveryGuardChange, guarded, loading]);
   useEffect(() => () => onRecoveryGuardChange?.(false, false), [onRecoveryGuardChange]);
@@ -112,19 +127,19 @@ const RecoveryWorkspace: React.FC<{ principalId: string; canView: boolean; canEx
         This action requires an ADMINISTRATOR with the recovery function and a valid RS256-signed <code>A2RecoveryStatementV1</code>. The signed statement—not the operator alone—authorizes the outcome.
       </Alert>
       {!canExecute && <Alert tone="warning" title="Recovery action unavailable">An ADMINISTRATOR MFA session that is not read-only is required.</Alert>}
-      {uncertain && <Alert tone="warning" title="Independent recovery review required">The request for {uncertain.targetPrincipalId} may have completed. Independently inspect authorized recovery, assignment, session and audit records. A fresh read cannot exclude a late commit; this local lock is lost on confirmed exit or session change. <button type="button" onClick={() => { setUncertain(null); setError(''); }}>I reviewed recovery and audit records</button></Alert>}
+      {uncertain && <div ref={reviewRef} tabIndex={-1} className="mn-recovery__review"><Alert tone="warning" title="Independent recovery review required">The request for {uncertain.targetPrincipalId} may have completed. Independently inspect authorized recovery, assignment, session and audit records. A fresh read cannot exclude a late commit; this local lock is lost on confirmed exit or session change. <button type="button" onClick={() => { focusFormAfterDismiss.current = true; setUncertain(null); setError(''); }}>I reviewed recovery and audit records</button></Alert></div>}
       <section className="mn-recovery__card" aria-labelledby="recovery-form-title">
         <h2 id="recovery-form-title">Submit recovery statement</h2>
         <p id="recovery-guidance">Paste the externally signed compact statement. Treat it as sensitive; it is cleared from this form when submitted.</p>
         <form onSubmit={reviewRecovery} className="mn-recovery__form">
           <label htmlFor="recovery-statement">Recovery statement (JWT)</label>
-          <textarea id="recovery-statement" value={statement} onChange={e => setStatement(e.target.value)} placeholder="Paste RS256-signed recovery statement…" rows={6} autoComplete="off" spellCheck={false} aria-describedby="recovery-guidance" disabled={!canExecute || loading || Boolean(pendingClaims) || Boolean(uncertain) || Boolean(result)} />
+          <textarea ref={statementRef} id="recovery-statement" value={statement} onChange={e => setStatement(e.target.value)} placeholder="Paste RS256-signed recovery statement…" rows={6} autoComplete="off" spellCheck={false} aria-describedby="recovery-guidance" disabled={!canExecute || loading || Boolean(pendingClaims) || Boolean(uncertain) || Boolean(result)} />
           <Button ref={triggerRef} type="submit" variant="primary" disabled={!canExecute || loading || Boolean(pendingClaims) || Boolean(uncertain) || Boolean(result) || !statement.trim()}>{loading ? 'Executing…' : 'Execute Recovery'}</Button>
           {loading && <p role="status" className="mn-recovery__pending">Submitting the recovery request. Do not submit the statement again while its outcome is pending.</p>}
         </form>
       </section>
       {error && <Alert tone="danger" title={uncertain ? 'Recovery outcome not confirmed' : 'Statement needs correction'}>{error}</Alert>}
-      {result && <section className="mn-recovery__receipt" role="status" aria-labelledby="recovery-result-title"><h2 id="recovery-result-title">Recovery executed</h2><p>Retain the recovery and audit references for verification.</p><StructuredKeyValueList data={result} /><Button type="button" variant="secondary" onClick={() => { if (window.confirm('Dismiss this recovery receipt after retaining its references?')) setResult(null); }}>Dismiss recovery receipt</Button></section>}
+      {result && <section ref={receiptRef} tabIndex={-1} className="mn-recovery__receipt" role="status" aria-labelledby="recovery-result-title"><h2 id="recovery-result-title">Recovery executed</h2><p>Retain the recovery and audit references for verification.</p><StructuredKeyValueList data={result} /><Button type="button" variant="secondary" onClick={() => { if (window.confirm('Dismiss this recovery receipt after retaining its references?')) { focusFormAfterDismiss.current = true; setResult(null); } }}>Dismiss recovery receipt</Button></section>}
       {pendingClaims && <div className="cm-modal-backdrop"><section ref={dialogRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="recovery-confirm-title"><h2 id="recovery-confirm-title">Confirm recovery request?</h2><p>Unverified statement claims (the server must verify the signature): target <code>{pendingClaims.targetPrincipalId}</code>, assignment <code>{pendingClaims.targetAssignmentReference}</code>.</p><p>Reason: {pendingClaims.reason}</p><div className="cm-actions-row"><button type="button" disabled={loading} onClick={() => setPendingClaims(null)}>Keep editing</button><button type="button" disabled={loading} onClick={() => void handleRecover()}>{loading ? 'Executing…' : 'Confirm recovery'}</button></div></section></div>}
       <aside className="mn-recovery__note">The recovery service separately verifies the statement and ADMINISTRATOR authority. SUPER_ADMIN cannot perform its own recovery. Use the approved recovery runbook and audit trail for the surrounding ceremony.</aside>
     </main>
