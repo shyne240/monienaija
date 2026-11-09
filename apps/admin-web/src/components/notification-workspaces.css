@@ -8,7 +8,7 @@
 .mn-template-workspace :is(button, input, select, textarea, [tabindex]):focus-visible { outline: 2px solid var(--mn-focus-ring, #0b624a); outline-offset: 2px; }
 .mn-provider-workspace [data-testid="provider-proposals-table"] { min-width: 800px; }
 .mn-template-workspace [data-testid="template-version-history-table"] { min-width: 760px; }
-.mn-provider-workspace label { min-width: 0; }
+.mn-provider-workspace label, .mn-provider-workspace fieldset { min-width: 0; }
 .mn-provider-workspace, .mn-template-workspace { overflow-wrap: anywhere; }
 @media (max-width: 600px) {
   .mn-provider-workspace form div[style*="grid-template-columns"] { grid-template-columns: minmax(0, 1fr) !important; }

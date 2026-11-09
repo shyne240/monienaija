@@ -1,0 +1,194 @@
+[
+  {
+    "width": 320,
+    "workspace": "checks",
+    "page": 320,
+    "view": 320,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 320,
+    "workspace": "trial",
+    "page": 320,
+    "view": 320,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 320,
+    "workspace": "finance",
+    "page": 320,
+    "view": 320,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 360,
+    "workspace": "checks",
+    "page": 360,
+    "view": 360,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 360,
+    "workspace": "trial",
+    "page": 360,
+    "view": 360,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 360,
+    "workspace": "finance",
+    "page": 360,
+    "view": 360,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 390,
+    "workspace": "checks",
+    "page": 390,
+    "view": 390,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 390,
+    "workspace": "trial",
+    "page": 390,
+    "view": 390,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 390,
+    "workspace": "finance",
+    "page": 390,
+    "view": 390,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 768,
+    "workspace": "checks",
+    "page": 768,
+    "view": 768,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 768,
+    "workspace": "trial",
+    "page": 768,
+    "view": 768,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 768,
+    "workspace": "finance",
+    "page": 768,
+    "view": 768,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 769,
+    "workspace": "checks",
+    "page": 769,
+    "view": 769,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 769,
+    "workspace": "trial",
+    "page": 769,
+    "view": 769,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 769,
+    "workspace": "finance",
+    "page": 769,
+    "view": 769,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 1024,
+    "workspace": "checks",
+    "page": 1024,
+    "view": 1024,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 1024,
+    "workspace": "trial",
+    "page": 1024,
+    "view": 1024,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 1024,
+    "workspace": "finance",
+    "page": 1024,
+    "view": 1024,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 1280,
+    "workspace": "checks",
+    "page": 1280,
+    "view": 1280,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 1280,
+    "workspace": "trial",
+    "page": 1280,
+    "view": 1280,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 1280,
+    "workspace": "finance",
+    "page": 1280,
+    "view": 1280,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 1440,
+    "workspace": "checks",
+    "page": 1440,
+    "view": 1440,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 1440,
+    "workspace": "trial",
+    "page": 1440,
+    "view": 1440,
+    "zeroWrites": true,
+    "axeViolations": []
+  },
+  {
+    "width": 1440,
+    "workspace": "finance",
+    "page": 1440,
+    "view": 1440,
+    "zeroWrites": true,
+    "axeViolations": []
+  }
+]

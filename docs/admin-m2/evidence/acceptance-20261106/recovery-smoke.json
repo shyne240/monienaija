@@ -1,0 +1,130 @@
+[
+  {
+    "width": 320,
+    "state": "receipt",
+    "visibleLabelMechanisms": true,
+    "page": 320,
+    "view": 320,
+    "statement": "cleared"
+  },
+  {
+    "width": 320,
+    "state": "unconfirmed",
+    "visibleLabelMechanisms": true,
+    "page": 320,
+    "view": 320,
+    "statement": "cleared"
+  },
+  {
+    "width": 360,
+    "state": "receipt",
+    "visibleLabelMechanisms": true,
+    "page": 360,
+    "view": 360,
+    "statement": "cleared"
+  },
+  {
+    "width": 360,
+    "state": "unconfirmed",
+    "visibleLabelMechanisms": true,
+    "page": 360,
+    "view": 360,
+    "statement": "cleared"
+  },
+  {
+    "width": 390,
+    "state": "receipt",
+    "visibleLabelMechanisms": true,
+    "page": 390,
+    "view": 390,
+    "statement": "cleared"
+  },
+  {
+    "width": 390,
+    "state": "unconfirmed",
+    "visibleLabelMechanisms": true,
+    "page": 390,
+    "view": 390,
+    "statement": "cleared"
+  },
+  {
+    "width": 768,
+    "state": "receipt",
+    "visibleLabelMechanisms": true,
+    "page": 768,
+    "view": 768,
+    "statement": "cleared"
+  },
+  {
+    "width": 768,
+    "state": "unconfirmed",
+    "visibleLabelMechanisms": true,
+    "page": 768,
+    "view": 768,
+    "statement": "cleared"
+  },
+  {
+    "width": 769,
+    "state": "receipt",
+    "visibleLabelMechanisms": true,
+    "page": 769,
+    "view": 769,
+    "statement": "cleared"
+  },
+  {
+    "width": 769,
+    "state": "unconfirmed",
+    "visibleLabelMechanisms": true,
+    "page": 769,
+    "view": 769,
+    "statement": "cleared"
+  },
+  {
+    "width": 1024,
+    "state": "receipt",
+    "visibleLabelMechanisms": true,
+    "page": 1024,
+    "view": 1024,
+    "statement": "cleared"
+  },
+  {
+    "width": 1024,
+    "state": "unconfirmed",
+    "visibleLabelMechanisms": true,
+    "page": 1024,
+    "view": 1024,
+    "statement": "cleared"
+  },
+  {
+    "width": 1280,
+    "state": "receipt",
+    "visibleLabelMechanisms": true,
+    "page": 1280,
+    "view": 1280,
+    "statement": "cleared"
+  },
+  {
+    "width": 1280,
+    "state": "unconfirmed",
+    "visibleLabelMechanisms": true,
+    "page": 1280,
+    "view": 1280,
+    "statement": "cleared"
+  },
+  {
+    "width": 1440,
+    "state": "receipt",
+    "visibleLabelMechanisms": true,
+    "page": 1440,
+    "view": 1440,
+    "statement": "cleared"
+  },
+  {
+    "width": 1440,
+    "state": "unconfirmed",
+    "visibleLabelMechanisms": true,
+    "page": 1440,
+    "view": 1440,
+    "statement": "cleared"
+  }
+]

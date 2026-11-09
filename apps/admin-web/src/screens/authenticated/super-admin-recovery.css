@@ -8,5 +8,6 @@
 .mn-recovery__form textarea { width: 100%; padding: 12px; border: 1px solid var(--mn-border-subtle, #dde7e2); border-radius: 8px; font: .875rem/1.5 monospace; resize: vertical; }
 .mn-recovery__form .mn-recovery__pending { margin: 0; }
 .mn-recovery__receipt { border-color: #8fc8af; background: #f1faf5; }
+.mn-recovery__receipt .mn-btn { margin-top: 12px; }
 .mn-recovery__note { background: var(--mn-surface-sunken, #eef3f0); }
 @media (max-width: 480px) { .mn-recovery__form .mn-btn { width: 100%; } }
