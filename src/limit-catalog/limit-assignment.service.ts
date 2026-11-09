@@ -3,7 +3,6 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Not, QueryFailedError, Repository, type EntityManager } from 'typeorm';
@@ -29,7 +28,7 @@ export class LimitAssignmentService {
     @InjectRepository(LimitProfile)
     private readonly profileRepo: Repository<LimitProfile>,
     private readonly dataSource: DataSource,
-    @Optional() private readonly auditService?: AuditService,
+    private readonly auditService: AuditService,
   ) {}
 
   async createAssignment(
@@ -74,25 +73,20 @@ export class LimitAssignmentService {
       createdBy: actor,
       updatedBy: actor,
       version: 1,
-    } as never);
+    } as never) as unknown as LimitAssignment;
 
     try {
-      const saved = (await this.assignmentRepo.save(entity as never)) as unknown as LimitAssignment;
-      if (this.auditService) {
-        try {
-          await this.dataSource.transaction(async (m) => {
-            await this.auditService!.record(m, {
-              entityType: 'LIMIT_ASSIGNMENT',
-              entityId: saved.id as never,
-              action: 'CREATED',
-              actor,
-              newValues: this.assignmentValues(saved),
-            } as never);
-          });
-        } catch {
-          // Audit recording is best-effort on this existing path.
-        }
-      }
+      const saved = await this.dataSource.transaction(async (manager) => {
+        const persisted = await manager.getRepository(LimitAssignment).save(entity);
+        await this.auditService.record(manager, {
+          entityType: 'LIMIT_ASSIGNMENT',
+          entityId: persisted.id,
+          action: 'CREATED',
+          actor,
+          newValues: this.assignmentValues(persisted),
+        });
+        return persisted;
+      });
       return this.toSafe(saved);
     } catch (e) {
       if (this.isUniqueViolation(e))
@@ -110,7 +104,7 @@ export class LimitAssignmentService {
     access: { excludeAgent?: boolean } = {},
   ): Promise<LimitAssignmentSafeProjection> {
     try {
-      const { saved, previous } = await this.dataSource.transaction(async (manager) => {
+      const saved = await this.dataSource.transaction(async (manager) => {
         const repo = manager.getRepository(LimitAssignment);
         const where: Record<string, unknown> = { id };
         if (access.excludeAgent) where.subjectType = Not(LimitAssignmentSubjectType.AGENT);
@@ -175,25 +169,17 @@ export class LimitAssignmentService {
         // a concurrent request using the same version must observe this increment and fail.
         row.version += 1;
 
-        const saved = await repo.save(row);
-        return { saved, previous };
+        const persisted = await repo.save(row);
+        await this.auditService.record(manager, {
+          entityType: 'LIMIT_ASSIGNMENT',
+          entityId: persisted.id,
+          action: 'UPDATED',
+          actor,
+          previousValues: previous,
+          newValues: this.assignmentValues(persisted),
+        });
+        return persisted;
       });
-      if (this.auditService) {
-        try {
-          await this.dataSource.transaction(async (m) => {
-            await this.auditService!.record(m, {
-              entityType: 'LIMIT_ASSIGNMENT',
-              entityId: saved.id as never,
-              action: 'UPDATED',
-              actor,
-              previousValues: previous,
-              newValues: this.assignmentValues(saved),
-            } as never);
-          });
-        } catch {
-          // Audit recording remains best-effort on this existing path.
-        }
-      }
       return this.toSafe(saved);
     } catch (e) {
       if (this.isUniqueViolation(e))
@@ -441,7 +427,9 @@ export class LimitAssignmentService {
 
   private isUniqueViolation(error: unknown): boolean {
     return (
-      error instanceof QueryFailedError && (error as unknown as { code?: string }).code === '23505'
+      error instanceof QueryFailedError &&
+      (error as unknown as { code?: string; constraint?: string }).code === '23505' &&
+      (error as unknown as { constraint?: string }).constraint === 'uq_limit_assignments_active_key'
     );
   }
 

@@ -4,10 +4,12 @@ import * as fs from 'node:fs';
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { DataSource } from 'typeorm';
+import { DataSource, QueryFailedError } from 'typeorm';
 import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
+import { LimitAssignmentService } from '../src/limit-catalog/limit-assignment.service';
+import { AuditService } from '../src/operations/audit.service';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
@@ -1234,6 +1236,91 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     expect(row[0]!.created_by).toBeDefined();
     expect(row[0]!.updated_by).toBeDefined();
     expect(row[0]!.version).toBe(2);
-    // audit trail would be recorded via AuditService if present — at minimum audit table not polluted unexpectedly; just ensure no error
+    const events: Array<{
+      action: string;
+      new_values: { version: number };
+      previous_values: { version: number } | null;
+    }> = await dataSource.query(
+      `SELECT action, new_values, previous_values FROM audit_events WHERE entity_type='LIMIT_ASSIGNMENT' AND entity_id=$1 ORDER BY created_at`,
+      [id],
+    );
+    expect(events.map((event) => event.action)).toEqual(['CREATED', 'UPDATED']);
+    expect(events[0]!.new_values.version).toBe(1);
+    expect(events[1]!.previous_values?.version).toBe(1);
+    expect(events[1]!.new_values.version).toBe(2);
+  });
+  it('rolls back assignment creation and updates if the audit write fails', async () => {
+    await createProfile('AUDIT_ATOMIC');
+    const service = app.get(LimitAssignmentService);
+    const audit = app.get(AuditService);
+    const input = {
+      limitProfileCode: 'AUDIT_ATOMIC',
+      subjectType: 'GLOBAL',
+      effectiveFrom: '2026-01-01T00:00:00.000Z',
+      createdBy: 'test-actor',
+    };
+    const original = audit.record.bind(audit);
+    const spy = jest
+      .spyOn(audit, 'record')
+      .mockImplementation((manager, command) =>
+        command.entityType === 'LIMIT_ASSIGNMENT'
+          ? Promise.reject(new Error('Synthetic audit unavailable'))
+          : original(manager, command),
+      );
+    try {
+      await expect(service.createAssignment(input, 'test-actor')).rejects.toThrow(
+        'Synthetic audit unavailable',
+      );
+      const missing: Array<{ count: string }> = await dataSource.query(
+        `SELECT count(*)::text AS count FROM limit_assignments WHERE limit_profile_code='AUDIT_ATOMIC'`,
+      );
+      expect(missing[0]!.count).toBe('0');
+    } finally {
+      spy.mockRestore();
+    }
+
+    // An audit-table uniqueness failure is not an assignment duplicate.
+    const auditError = new QueryFailedError(
+      'synthetic audit',
+      [],
+      Object.assign(new Error('Audit collision'), {
+        code: '23505',
+        constraint: 'audit_events_pkey',
+      }),
+    );
+    const uniqueSpy = jest.spyOn(audit, 'record').mockRejectedValue(auditError);
+    try {
+      await expect(service.createAssignment(input, 'test-actor')).rejects.toBe(auditError);
+    } finally {
+      uniqueSpy.mockRestore();
+    }
+
+    const created = await service.createAssignment(input, 'test-actor');
+    const updateSpy = jest
+      .spyOn(audit, 'record')
+      .mockImplementation((manager, command) =>
+        command.entityType === 'LIMIT_ASSIGNMENT'
+          ? Promise.reject(new Error('Synthetic audit unavailable'))
+          : original(manager, command),
+      );
+    try {
+      await expect(
+        service.updateAssignment(
+          created.id,
+          { version: created.version, isActive: false, updatedBy: 'test-actor' },
+          'test-actor',
+        ),
+      ).rejects.toThrow('Synthetic audit unavailable');
+    } finally {
+      updateSpy.mockRestore();
+    }
+    const unchanged = await service.getAssignment(created.id);
+    expect(unchanged.version).toBe(created.version);
+    expect(unchanged.isActive).toBe(true);
+    const events: Array<{ action: string }> = await dataSource.query(
+      `SELECT action FROM audit_events WHERE entity_type='LIMIT_ASSIGNMENT' AND entity_id=$1`,
+      [created.id],
+    );
+    expect(events.map((event) => event.action)).toEqual(['CREATED']);
   });
 });
