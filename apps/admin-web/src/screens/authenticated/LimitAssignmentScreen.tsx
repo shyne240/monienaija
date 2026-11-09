@@ -82,6 +82,22 @@ function buildQuery(filters: object, page: number): string {
 
 const validAssignment = (row: any): boolean => row && typeof row.id === 'string' && Boolean(row.id.trim()) && typeof row.subjectType === 'string' && Boolean(row.subjectType.trim()) && typeof row.limitProfileCode === 'string' && Boolean(row.limitProfileCode.trim()) && typeof row.isActive === 'boolean';
 const validReceipt = (row: any, subjectType: string, subjectId: string, code: string): boolean => validAssignment(row) && row.subjectType === subjectType && row.subjectId === subjectId && row.limitProfileCode === code && Number.isSafeInteger(row.version) && row.version > 0;
+type AssignmentFilters = { subjectType: string; subjectId: string; limitProfileCode: string; isActive: string };
+function matchingAssignment(row: any, filters: AssignmentFilters): boolean {
+  if (!validAssignment(row) || (row.subjectId != null && typeof row.subjectId !== 'string') ||
+      (row.segmentCode != null && typeof row.segmentCode !== 'string') ||
+      (row.effectiveFrom != null && (typeof row.effectiveFrom !== 'string' || !Number.isFinite(Date.parse(row.effectiveFrom))))) return false;
+  return (!filters.subjectType.trim() || row.subjectType === filters.subjectType.trim().toUpperCase()) &&
+    (!filters.subjectId.trim() || (typeof row.subjectId === 'string' && row.subjectId.toLowerCase() === filters.subjectId.trim().toLowerCase())) &&
+    (!filters.limitProfileCode.trim() || row.limitProfileCode === filters.limitProfileCode.trim().toUpperCase()) &&
+    (!filters.isActive.trim() || row.isActive === (filters.isActive.trim() === 'true'));
+}
+function validAssignmentPage(response: any, rows: any[], page: number): boolean {
+  return response.page === page && response.limit === PAGE_SIZE && Number.isSafeInteger(response.total) && response.total >= 0 &&
+    response.totalPages === Math.ceil(response.total / PAGE_SIZE) && typeof response.hasNextPage === 'boolean' &&
+    response.hasNextPage === (page < response.totalPages) && rows.length <= PAGE_SIZE && rows.length <= response.total;
+}
+
 
 interface LimitScreenProps { initialCustomerId?: string; onBackToCustomer?: () => void; onLimitGuardChange?: (guarded: boolean, busy: boolean) => void }
 export const LimitAssignmentScreen: React.FC<LimitScreenProps> = (props) => {
@@ -185,9 +201,10 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
       const response: any = await ApiClient.get(endpoint);
       if (generation !== generations.current.assignments) return;
       const rows = Array.isArray(response) ? response : response?.data ?? response?.items;
-      if (!Array.isArray(rows) || !rows.every(validAssignment) || (initialCustomerId && rows.some((row: any) => row.subjectType !== 'CUSTOMER' || row.subjectId !== initialCustomerId))) throw new Error('Limit assignments returned an invalid or mismatched response.');
-      const hasPageInfo = Number.isSafeInteger(response?.page) && Number.isSafeInteger(response?.total) && Number.isSafeInteger(response?.totalPages);
-      if (hasPageInfo && (response.page !== requestedPage || response.total < rows.length || response.totalPages < 0 || response.page < 1)) throw new Error('Limit assignments returned an invalid or mismatched page.');
+      const applied = initialCustomerId ? {subjectType:'CUSTOMER', subjectId:initialCustomerId, limitProfileCode:'', isActive:''} : activeFilters;
+      if (!Array.isArray(rows) || !rows.every((row: any) => matchingAssignment(row, applied)) || new Set(rows.map((row: any) => row.id)).size !== rows.length) throw new Error('Limit assignments returned an invalid or mismatched response.');
+      const hasPageInfo = response && !Array.isArray(response) && ['page','limit','total','totalPages','hasNextPage'].some(key => response[key] !== undefined);
+      if ((hasPageInfo && !validAssignmentPage(response, rows, requestedPage)) || (!hasPageInfo && requestedPage !== 1)) throw new Error('Limit assignments returned an invalid or mismatched page.');
       setAssignments(rows); setAssignmentsSearched(true);
       if (!uncertainAssignment) setToggleError('');
       setAssignmentPage(hasPageInfo ? { page: response.page, total: response.total, totalPages: response.totalPages } : null);
@@ -209,8 +226,7 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
       if (generation !== generations.current.assignments) return;
       const rows = response?.data;
       if (!Array.isArray(rows) || !rows.every((row: any) => validReceipt(row, target.subjectType, target.subjectId, target.code)) ||
-          response.page !== 1 || !Number.isSafeInteger(response.limit) || response.limit < 1 || !Number.isSafeInteger(response.total) || response.total < rows.length ||
-          !Number.isSafeInteger(response.totalPages) || response.totalPages !== Math.ceil(response.total / response.limit) || typeof response.hasNextPage !== 'boolean' || response.hasNextPage !== (response.page < response.totalPages)) throw new Error('Assignment review response could not be verified.');
+          new Set(rows.map((row: any) => row.id)).size !== rows.length || !validAssignmentPage(response, rows, 1)) throw new Error('Assignment review response could not be verified.');
       setAssignments(rows); setAssignmentsSearched(true);
       const filters = { subjectType: target.subjectType, subjectId: target.subjectId, limitProfileCode: target.code, isActive: '' };
       setAssignmentFilters(filters); setAppliedAssignmentFilters(filters);
@@ -294,6 +310,7 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
     }
     const normalizedCode = profileCode.trim().toUpperCase();
     const subjectId = agentId.trim();
+    const assignmentReadGeneration = generations.current.assignments;
     const generation = ++generations.current.assign; mutationInFlight.current = true; setAssignBusy(true);
     try {
       const receipt = await ApiClient.post('/internal/limit-assignments', {
@@ -302,14 +319,14 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
         subjectId,
       });
       if (generation !== generations.current.assign) return;
-      if (!validReceipt(receipt, 'AGENT', subjectId, normalizedCode) || (receipt as any).isActive !== true) throw new Error('Assignment receipt was incomplete or mismatched.');
+      if (!validReceipt(receipt, 'AGENT', subjectId, normalizedCode) || (receipt as any).isActive !== true || (receipt as any).version !== 1) throw new Error('Assignment receipt was incomplete or mismatched.');
       setResult(
         canReadAssignments
           ? `Assigned profile ${normalizedCode} to agent ${agentId.trim()}`
           : `Assigned profile ${normalizedCode} to agent ${agentId.trim()}. Listing assignments requires limit.view.`,
       );
       setAgentId(''); setProfileCode('');
-      if (canReadAssignments) {
+      if (canReadAssignments && assignmentReadGeneration === generations.current.assignments) {
         void fetchAssignments();
       }
     } catch (err: any) {
@@ -332,6 +349,7 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
       return;
     }
     const subjectId = agentClassId.trim();
+    const assignmentReadGeneration = generations.current.assignments;
     const generation = ++generations.current.classAssign; mutationInFlight.current = true; setClassAssignBusy(true);
     try {
       const receipt = await ApiClient.post('/internal/limit-assignments', {
@@ -340,14 +358,14 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
         subjectId,
       });
       if (generation !== generations.current.classAssign) return;
-      if (!validReceipt(receipt, 'AGENT_CLASS', subjectId, normalizedCode) || (receipt as any).isActive !== true) throw new Error('Assignment receipt was incomplete or mismatched.');
+      if (!validReceipt(receipt, 'AGENT_CLASS', subjectId, normalizedCode) || (receipt as any).isActive !== true || (receipt as any).version !== 1) throw new Error('Assignment receipt was incomplete or mismatched.');
       setClassResult(
         canReadAssignments
           ? `Assigned profile ${normalizedCode} to Agent Class ${agentClassId.trim()}`
           : `Assigned profile ${normalizedCode} to Agent Class ${agentClassId.trim()}. Listing assignments requires limit.view.`,
       );
       setAgentClassId(''); setClassProfileCode('');
-      if (canReadAssignments) {
+      if (canReadAssignments && assignmentReadGeneration === generations.current.assignments) {
         void fetchAssignments();
       }
     } catch (err: any) {
@@ -362,6 +380,7 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
     if (!assignmentsSearched || loading || typeof assignment.subjectId !== 'string' || !assignment.subjectId.trim() || !assignments.some(row => row.id === assignment.id && row.version === assignment.version) || (!isAgent && !isAgentClass) || !Number.isSafeInteger(assignment.version) || assignment.version < 1 || typeof assignment.isActive !== 'boolean') return;
 
     setToggleMessage(''); setToggleError('');
+    const assignmentReadGeneration = generations.current.assignments;
     const generation = ++generations.current.toggle;
     mutationInFlight.current = true; setToggleBusyId(assignment.id);
     try {
@@ -371,11 +390,11 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
         version: assignment.version,
       });
       if (generation !== generations.current.toggle) return;
-      if (!validReceipt(receipt, assignment.subjectType, assignment.subjectId, assignment.limitProfileCode) || receipt.id !== assignment.id || receipt.isActive !== !assignment.isActive || receipt.version <= assignment.version) throw new Error('Update receipt was incomplete or mismatched.');
+      if (!validReceipt(receipt, assignment.subjectType, assignment.subjectId, assignment.limitProfileCode) || receipt.id !== assignment.id || receipt.isActive !== !assignment.isActive || receipt.version !== assignment.version + 1) throw new Error('Update receipt was incomplete or mismatched.');
       const label = assignment.subjectType === 'AGENT_CLASS' ? 'Agent Class' : 'Agent';
       const msg = `${label} limit assignment ${assignment.limitProfileCode} ${assignment.isActive ? 'deactivated' : 'activated'}.`;
       setToggleMessage(msg);
-      if (canReadAssignments) {
+      if (canReadAssignments && assignmentReadGeneration === generations.current.assignments) {
         void fetchAssignments();
       }
     } catch (err: any) {

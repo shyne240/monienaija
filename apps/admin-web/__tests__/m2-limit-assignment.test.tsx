@@ -9,7 +9,7 @@ const row={id:'synthetic-id',subjectType:'AGENT_CLASS',subjectId:'synthetic-clas
 function deferred(){let resolve!:(v:any)=>void;const promise=new Promise<any>(r=>resolve=r);return {promise,resolve};}
 beforeEach(()=>{jest.resetAllMocks();principal();});
 test('an assignment without a version is displayed without inventing one and cannot be changed',async()=>{
- (ApiClient.get as jest.Mock).mockResolvedValue({data:[row],total:1});render(<LimitAssignmentScreen/>);expect(await screen.findByText('Unavailable')).toBeTruthy();const button=screen.getByRole('button',{name:'Deactivate CLASS_STANDARD for AGENT_CLASS synthetic-class'}) as HTMLButtonElement;expect(button.disabled).toBe(true);fireEvent.click(button);expect(ApiClient.patch).not.toHaveBeenCalled();
+ (ApiClient.get as jest.Mock).mockResolvedValue({data:[row],total:1,page:1,limit:20,totalPages:1,hasNextPage:false});render(<LimitAssignmentScreen/>);expect(await screen.findByText('Unavailable')).toBeTruthy();const button=screen.getByRole('button',{name:'Deactivate CLASS_STANDARD for AGENT_CLASS synthetic-class'}) as HTMLButtonElement;expect(button.disabled).toBe(true);fireEvent.click(button);expect(ApiClient.patch).not.toHaveBeenCalled();
 });
 test('a malformed create receipt does not claim assignment success',async()=>{
  (ApiClient.get as jest.Mock).mockResolvedValue({data:[]});(ApiClient.post as jest.Mock).mockResolvedValue({});render(<LimitAssignmentScreen/>);fireEvent.change(screen.getByLabelText('Agent class UUID'),{target:{value:'synthetic-class'}});fireEvent.change(screen.getByLabelText('Agent class limit profile code'),{target:{value:'CLASS_STANDARD'}});fireEvent.click(screen.getByRole('button',{name:'Assign to class'}));expect(await screen.findByText(/Assignment outcome not confirmed/)).toBeTruthy();expect(screen.queryByText(/Assigned profile CLASS_STANDARD/)).toBeNull();
@@ -22,13 +22,13 @@ test('an old assignment read cannot cross to another principal',async()=>{
 });
 test('assignment pagination preserves applied filters and uses the server page',async()=>{
  (ApiClient.get as jest.Mock).mockImplementation((url:string)=>{
-   if(url.includes('page=2')) return Promise.resolve({data:[{...row,id:'page-two',limitProfileCode:'SECOND_PROFILE',version:2}],total:21,page:2,totalPages:2});
-   return Promise.resolve({data:[{...row,version:1}],total:21,page:1,totalPages:2});
+   if(url.includes('page=2')) return Promise.resolve({data:[{...row,id:'page-two',limitProfileCode:'SECOND_PROFILE',version:2}],total:21,page:2,limit:20,totalPages:2,hasNextPage:false});
+   return Promise.resolve({data:[{...row,version:1}],total:21,page:1,limit:20,totalPages:2,hasNextPage:true});
  });
  render(<LimitAssignmentScreen/>);await screen.findByText('CLASS_STANDARD');fireEvent.change(screen.getByLabelText('Assignment subject type'),{target:{value:'AGENT_CLASS'}});fireEvent.click(screen.getByRole('button',{name:'Filter assignments'}));await screen.findByText('21 assignments · Page 1 of 2');fireEvent.click(screen.getByRole('button',{name:'Next assignments'}));expect(await screen.findByText('SECOND_PROFILE')).toBeTruthy();expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-assignments?page=2&subjectType=AGENT_CLASS');expect(screen.getByText('21 assignments · Page 2 of 2')).toBeTruthy();
 });
 test('assignment page metadata cannot claim a different requested page',async()=>{
- (ApiClient.get as jest.Mock).mockImplementation((url:string)=>Promise.resolve({data:[{...row,version:1}],total:21,page:1,totalPages:2}));render(<LimitAssignmentScreen/>);await screen.findByText('21 assignments · Page 1 of 2');fireEvent.click(screen.getByRole('button',{name:'Next assignments'}));expect(await screen.findByText(/invalid or mismatched page/)).toBeTruthy();expect(screen.queryByText('21 assignments · Page 1 of 2')).toBeNull();
+ (ApiClient.get as jest.Mock).mockImplementation((url:string)=>Promise.resolve({data:[{...row,version:1}],total:21,page:1,limit:20,totalPages:2,hasNextPage:true}));render(<LimitAssignmentScreen/>);await screen.findByText('21 assignments · Page 1 of 2');fireEvent.click(screen.getByRole('button',{name:'Next assignments'}));expect(await screen.findByText(/invalid or mismatched page/)).toBeTruthy();expect(screen.queryByText('21 assignments · Page 1 of 2')).toBeNull();
 });
 
 
@@ -89,4 +89,28 @@ test('assignment actions are mutually exclusive while a request is pending',asyn
 
 test('shell navigation protects an unfinished assignment draft',async()=>{
  const {Layout}=await import('../src/screens/authenticated/Layout');useAuthStore.setState(state=>({isAuthenticated:true,principal:{...state.principal!,scopes:['limit.view','limit.modify','agent.assign_limit']}}));(ApiClient.get as jest.Mock).mockResolvedValue({data:[]});const view=render(<Layout/>);fireEvent.click(view.getByTestId('nav-limitAssignments'));fireEvent.change(await view.findByLabelText('Agent UUID'),{target:{value:'draft-agent'}});fireEvent.click(view.getByTestId('nav-dashboard'));expect(view.getByRole('dialog',{name:'Leave limit assignment review?'})).toBeTruthy();fireEvent.click(view.getByRole('button',{name:'Keep working'}));expect((view.getByLabelText('Agent UUID') as HTMLInputElement).value).toBe('draft-agent');fireEvent.click(view.getByTestId('nav-dashboard'));fireEvent.click(view.getByRole('button',{name:'Discard and leave'}));expect(view.queryByLabelText('Agent UUID')).toBeNull();
+});
+
+test('assignment filters reject mismatched rows rather than offering actions',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue({data:[{...row,version:1}],page:1,limit:20,total:1,totalPages:1,hasNextPage:false});
+ render(<LimitAssignmentScreen/>);await screen.findByText('CLASS_STANDARD');fireEvent.change(screen.getByLabelText('Assignment profile code'),{target:{value:'OTHER_PROFILE'}});fireEvent.click(screen.getByRole('button',{name:'Filter assignments'}));
+ expect(await screen.findByText(/invalid or mismatched response/)).toBeTruthy();expect(screen.queryByText('CLASS_STANDARD')).toBeNull();expect(screen.queryByRole('button',{name:/Deactivate CLASS_STANDARD/})).toBeNull();
+});
+
+test('review does not unlock for duplicate assignments or incoherent page metadata',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue({data:[{...row,version:1}],page:1,limit:20,total:1,totalPages:1,hasNextPage:false});(ApiClient.patch as jest.Mock).mockResolvedValue({});
+ render(<LimitAssignmentScreen/>);fireEvent.click(await screen.findByRole('button',{name:/Deactivate CLASS_STANDARD/}));await screen.findByText(/Assignment update not confirmed/);
+ (ApiClient.get as jest.Mock).mockResolvedValue({data:[{...row,version:1},{...row,version:1}],page:1,limit:20,total:2,totalPages:1,hasNextPage:false});fireEvent.click(screen.getByRole('button',{name:'Load matching assignments for review'}));
+ expect(await screen.findByText(/review response could not be verified/)).toBeTruthy();expect(screen.queryByRole('button',{name:'I reviewed assignments and audit history'})).toBeNull();
+});
+
+test('toggle receipt must consume exactly the submitted version',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue({data:[{...row,version:1}]});(ApiClient.patch as jest.Mock).mockResolvedValue({...row,version:3,isActive:false});
+ render(<LimitAssignmentScreen/>);fireEvent.click(await screen.findByRole('button',{name:/Deactivate CLASS_STANDARD/}));expect(await screen.findByText(/Assignment update not confirmed/)).toBeTruthy();expect(screen.queryByText(/deactivated\./)).toBeNull();
+});
+
+test('filter edits while a write is pending do not trigger an outdated automatic refresh',async()=>{
+ const pending=deferred();(ApiClient.get as jest.Mock).mockResolvedValue({data:[{...row,version:1}]});(ApiClient.patch as jest.Mock).mockReturnValue(pending.promise);
+ render(<LimitAssignmentScreen/>);fireEvent.click(await screen.findByRole('button',{name:/Deactivate CLASS_STANDARD/}));fireEvent.change(screen.getByLabelText('Assignment profile code'),{target:{value:'NEW_PROFILE'}});
+ await act(async()=>{pending.resolve({...row,version:2,isActive:false});await pending.promise;});expect(screen.getByText('Agent Class limit assignment CLASS_STANDARD deactivated.')).toBeTruthy();expect(ApiClient.get).toHaveBeenCalledTimes(1);expect(screen.queryByRole('button',{name:/Deactivate CLASS_STANDARD/})).toBeNull();
 });
