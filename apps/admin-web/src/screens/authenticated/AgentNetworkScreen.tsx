@@ -565,6 +565,12 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const [classCatalogLoading, setClassCatalogLoading] = useState(false);
   const [limitCatalog, setLimitCatalog] = useState<LimitCatalogOption[]>([]);
   const [limitCatalogLoading, setLimitCatalogLoading] = useState(false);
+  const [limitCatalogLoaded, setLimitCatalogLoaded] = useState(false);
+  const [limitCatalogPage, setLimitCatalogPage] = useState(1);
+  const [limitCatalogTotal, setLimitCatalogTotal] = useState(0);
+  const [limitCatalogHasNext, setLimitCatalogHasNext] = useState(false);
+  const [limitCatalogError, setLimitCatalogError] = useState('');
+  const catalogRequest = useRef(0);
   const [agentHistoryLoaded, setAgentHistoryLoaded] = useState(false);
   const [agentHistoryLoading, setAgentHistoryLoading] = useState(false);
   const [agentHistoryError, setAgentHistoryError] = useState('');
@@ -607,6 +613,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     setDetailError('');
     agentHistoryRequest.current += 1;
     setAgentHistoryLoading(false);
+    catalogRequest.current += 1; setLimitCatalogLoading(false); setLimitCatalogLoaded(false); setLimitCatalog([]); setLimitCatalogError('');
     setLifecycleReason('');
     setActionMsg('');
     setActionErr('');
@@ -970,18 +977,28 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     }
   };
 
-  const loadLimitCatalog = async () => {
-    if (!canViewLimitCatalog || limitCatalogLoading) return;
-    setLimitCatalogLoading(true);
+  const loadLimitCatalog = async (page = 1) => {
+    const agentId = selectedAgentId.current;
+    if (!canViewLimitCatalog || limitCatalogLoading || !agentId) return;
+    const request = ++catalogRequest.current;
+    const valid = () => mountedRef.current && request === catalogRequest.current && selectedAgentId.current === agentId;
+    setLimitCatalogLoading(true); setLimitCatalogLoaded(false); setLimitCatalogError('');
     try {
-      const res: any = await ApiClient.get('/internal/limit-profiles');
-      const rows = Array.isArray(res) ? res : res?.data || res?.items || [];
-      setLimitCatalog(rows);
+      const res: any = await ApiClient.get(`/internal/limit-profiles?page=${page}&limit=20`);
+      if (!valid()) return;
+      if (!res || !Array.isArray(res.data) || res.page !== page || res.limit !== 20 ||
+          !Number.isSafeInteger(res.total) || res.total < 0 || res.totalPages !== Math.ceil(res.total / 20) ||
+          res.hasNextPage !== (page < res.totalPages) || res.data.length > 20 || res.data.length > res.total) throw new Error('Invalid limit catalogue page.');
+      const seen = new Set<string>();
+      const rows: LimitCatalogOption[] = res.data.map((profile: any) => {
+        if (!profile || typeof profile.code !== 'string' || !/^[A-Z0-9_]{3,80}$/.test(profile.code) || seen.has(profile.code) || typeof profile.name !== 'string' || !profile.name.trim()) throw new Error('Invalid limit catalogue page.');
+        seen.add(profile.code);
+        return { code: profile.code, name: profile.name };
+      });
+      setLimitCatalog(rows); setLimitCatalogPage(page); setLimitCatalogTotal(res.total); setLimitCatalogHasNext(res.hasNextPage); setLimitCatalogLoaded(true);
     } catch (e: any) {
-      setLimitsError(e?.message || 'Failed to load limit profile catalog');
-    } finally {
-      setLimitCatalogLoading(false);
-    }
+      if (valid()) { setLimitCatalog([]); setLimitCatalogError(e?.message || 'Failed to load limit profile catalog'); }
+    } finally { if (valid()) setLimitCatalogLoading(false); }
   };
 
   const loadAgentTransactions = async (agentId: string, currentPosition: AgentFinancialPosition | null) => {
@@ -2209,7 +2226,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   Target in funding
                 </button>
               )}
-              <button type="button" disabled={detailBusy} onClick={() => { if (!mayLeaveAgent()) return; selectedAgentId.current = null; positionRequest.current += 1; agentHistoryRequest.current += 1; setAgentHistoryLoading(false); outletReadGeneration.current += 1; limitReadGeneration.current += 1; setLimitUnconfirmed(false); setLimitReviewReady(false); setNewLimitProfileCode(''); setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); setSelected(null); }} style={smallBtn}>
+              <button type="button" disabled={detailBusy} onClick={() => { if (!mayLeaveAgent()) return; selectedAgentId.current = null; positionRequest.current += 1; agentHistoryRequest.current += 1; setAgentHistoryLoading(false); catalogRequest.current += 1; setLimitCatalogLoading(false); outletReadGeneration.current += 1; limitReadGeneration.current += 1; setLimitUnconfirmed(false); setLimitReviewReady(false); setNewLimitProfileCode(''); setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); setSelected(null); }} style={smallBtn}>
                 Close
               </button>
             </div>
@@ -2909,7 +2926,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   >
                     <div className="agent-sites__form-heading"><p className="agent-network-eyebrow">NEW ASSIGNMENT</p><h4>Assign a profile</h4><p>Enter a profile code or choose one from the loaded catalogue. A submission creates an assignment for the selected Agent.</p></div>
                     <div className="agent-sites__fields">
-                    {canViewLimitCatalog && limitCatalog.length > 0 && (
+                    {canViewLimitCatalog && limitCatalogLoaded && limitCatalog.length > 0 && (
                       <label className="agent-sites__field"><span>Choose a loaded profile (optional)</span><select
                         aria-label="Select catalog limit profile"
                         value={limitCatalog.some(profile => profile.code === newLimitProfileCode) ? newLimitProfileCode : ''}
@@ -2937,15 +2954,21 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                         type="button"
                         style={smallBtn}
                         disabled={limitCatalogLoading}
-                        onClick={() => void loadLimitCatalog()}
+                        onClick={() => void loadLimitCatalog(limitCatalogLoaded ? limitCatalogPage : 1)}
                       >
-                        {limitCatalogLoading ? 'Loading catalog…' : 'Load limit catalog'}
+                        {limitCatalogLoading ? 'Loading catalog…' : limitCatalogLoaded ? 'Refresh limit catalog' : 'Load limit catalog'}
                       </button>
                     )}
                     <button type="submit" style={smallBtn} disabled={limitsBusy || limitsLoading || limitUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}>
                       Assign limit profile
                     </button>
                     <button type="button" style={smallBtn} disabled={limitsBusy || limitsLoading || limitUnconfirmed || !newLimitProfileCode.trim()} onClick={() => { if (window.confirm('Discard the unsaved limit profile entry?')) setNewLimitProfileCode(''); }}>Clear limit entry</button></div>
+                    {limitCatalogError && <p role="alert" className="agent-limits__catalog-error">{limitCatalogError}</p>}
+                    {limitCatalogLoaded && <div className="agent-limits__catalog-page" aria-label="Limit catalogue pagination">
+                      <p>Catalogue page {limitCatalogPage} · {limitCatalogTotal} total profiles. Selection is limited to this page; entered codes remain in the field.</p>
+                      <div className="agent-sites__actions"><button type="button" style={smallBtn} disabled={limitCatalogLoading || limitCatalogPage <= 1} onClick={() => void loadLimitCatalog(limitCatalogPage - 1)}>Previous catalogue page</button>
+                      <button type="button" style={smallBtn} disabled={limitCatalogLoading || !limitCatalogHasNext} onClick={() => void loadLimitCatalog(limitCatalogPage + 1)}>Next catalogue page</button></div>
+                    </div>}
                   </form>
                 )}
               </section>

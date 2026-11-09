@@ -291,8 +291,8 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
       if (url === '/internal/limit-assignments/agent/agent-100?page=1&limit=20') {
         return Promise.resolve({data:[],page:1,limit:20,total:0,totalPages:0,hasNextPage:false});
       }
-      if (url === '/internal/limit-profiles') {
-        return Promise.resolve([{ code: 'AGENT_ORDINARY_T1', name: 'Ordinary Tier 1 Profile', isActive: true }]);
+      if (url === '/internal/limit-profiles?page=1&limit=20') {
+        return Promise.resolve({ data:[{ code: 'AGENT_ORDINARY_T1', name: 'Ordinary Tier 1 Profile', isActive: true }], page:1, limit:20, total:1, totalPages:1, hasNextPage:false });
       }
       if (url === '/internal/admin/cash-to-cash/transfers?page=1&limit=10&agentId=agent-100') {
         return Promise.resolve({
