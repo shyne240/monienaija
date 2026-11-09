@@ -220,6 +220,36 @@ interface AgentCashToCashRow {
   createdAt: string;
 }
 
+// These two endpoints have different identities: wallet history uses transferId,
+// while Cash-to-Cash rows carry an Agent id and an already masked phone.
+function walletHistoryRows(response: any): WalletTransferRow[] | null {
+  if (!Array.isArray(response?.items) || response.items.length > 10) return null;
+  const ids = new Set<string>(); const rows: WalletTransferRow[] = [];
+  for (const row of response.items) {
+    if (!row || typeof row.transferId !== 'string' || !row.transferId || ids.has(row.transferId) ||
+        !['SENT', 'RECEIVED'].includes(row.direction) || typeof row.amountMinor !== 'string' || !/^-?\d+$/.test(row.amountMinor) ||
+        typeof row.currency !== 'string' || !/^[A-Z]{3}$/.test(row.currency) || typeof row.status !== 'string' || !row.status ||
+        (row.reference !== null && typeof row.reference !== 'string')) return null;
+    ids.add(row.transferId);
+    rows.push({ id: row.transferId, direction: row.direction, amountMinor: row.amountMinor, currency: row.currency, status: row.status, reference: row.reference, createdAt: row.createdAt });
+  }
+  return rows;
+}
+function c2cHistoryRows(response: any, agentId: string): AgentCashToCashRow[] | null {
+  if (!Array.isArray(response?.data) || response.data.length > 10) return null;
+  const ids = new Set<string>(); const rows: AgentCashToCashRow[] = [];
+  for (const row of response.data) {
+    if (!row || typeof row.id !== 'string' || !row.id || ids.has(row.id) || row.agentId !== agentId ||
+        typeof row.beneficiaryPhoneMasked !== 'string' || !/^•{4,}(?:\d{4})?$/.test(row.beneficiaryPhoneMasked) ||
+        typeof row.principalMinor !== 'string' || !/^-?\d+$/.test(row.principalMinor) ||
+        typeof row.currency !== 'string' || !/^[A-Z]{3}$/.test(row.currency) || !['UNCLAIMED', 'CLAIMED', 'EXPIRED'].includes(row.status) ||
+        (row.reference !== null && typeof row.reference !== 'string') || ![null, 'CUSTOMER_WALLET', 'AGENT_CASH'].includes(row.redemptionMethod)) return null;
+    ids.add(row.id);
+    rows.push({ id: row.id, beneficiaryPhoneMasked: row.beneficiaryPhoneMasked, principalMinor: row.principalMinor, currency: row.currency, status: row.status, reference: row.reference, redemptionMethod: row.redemptionMethod, createdAt: row.createdAt });
+  }
+  return rows;
+}
+
 interface OutletRecord {
   id: string;
   agentId: string;
@@ -538,6 +568,9 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const [agentHistoryLoaded, setAgentHistoryLoaded] = useState(false);
   const [agentHistoryLoading, setAgentHistoryLoading] = useState(false);
   const [agentHistoryError, setAgentHistoryError] = useState('');
+  const [walletHistoryState, setWalletHistoryState] = useState<'unavailable' | 'no-wallet' | 'loaded' | 'failed'>('unavailable');
+  const [c2cHistoryState, setC2cHistoryState] = useState<'loaded' | 'failed'>('failed');
+  const agentHistoryRequest = useRef(0);
   const [walletTransfers, setWalletTransfers] = useState<WalletTransferRow[]>([]);
   const [agentC2CRows, setAgentC2CRows] = useState<AgentCashToCashRow[]>([]);
   const [handledInitialAgentId, setHandledInitialAgentId] = useState<string | null>(null);
@@ -549,6 +582,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const loadPosition = async (agentId: string) => {
     if (selectedAgentId.current !== agentId) return;
     const request = ++positionRequest.current;
+    agentHistoryRequest.current += 1; setAgentHistoryLoading(false); setAgentHistoryLoaded(false);
     setPosition(null);
     setDetailError('');
     try {
@@ -571,6 +605,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     setSelected(a);
     setPosition(null);
     setDetailError('');
+    agentHistoryRequest.current += 1;
+    setAgentHistoryLoading(false);
     setLifecycleReason('');
     setActionMsg('');
     setActionErr('');
@@ -948,48 +984,35 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     }
   };
 
-  const loadAgentTransactions = async (agentId: string, walletId: string | null) => {
-    if (!canViewTransactions || agentHistoryLoading) return;
-    setAgentHistoryLoading(true);
-    setAgentHistoryError('');
-    try {
-      const c2cPromise = ApiClient.get<any>(
-        `/internal/admin/cash-to-cash/transfers?page=1&limit=10&agentId=${encodeURIComponent(agentId)}`,
-      );
-      const walletPromise = walletId
-        ? ApiClient.get<any>(`/wallets/${encodeURIComponent(walletId)}/transactions?page=1&limit=10`)
-        : Promise.resolve({ items: [] });
-      const [c2cOutcome, walletOutcome] = await Promise.allSettled([c2cPromise, walletPromise]);
-      const errors: string[] = [];
-      if (c2cOutcome.status === 'fulfilled') {
-        const c2cRes = c2cOutcome.value;
-        setAgentC2CRows(Array.isArray(c2cRes?.data) ? c2cRes.data : Array.isArray(c2cRes) ? c2cRes : []);
-      } else {
-        setAgentC2CRows([]);
-        errors.push((c2cOutcome.reason as Error)?.message || 'Failed to load Cash-to-Cash history');
-      }
-      if (walletOutcome.status === 'fulfilled') {
-        const walletRes = walletOutcome.value;
-        setWalletTransfers(
-          Array.isArray(walletRes?.items)
-            ? walletRes.items
-            : Array.isArray(walletRes?.data)
-              ? walletRes.data
-              : [],
-        );
-      } else {
-        setWalletTransfers([]);
-        errors.push((walletOutcome.reason as Error)?.message || 'Failed to load wallet transfers');
-      }
-      setAgentHistoryLoaded(true);
-      if (errors.length > 0) {
-        setAgentHistoryError(errors.join(' · '));
-      }
-    } catch (e: any) {
-      setAgentHistoryError(e?.message || 'Failed to load Agent transaction records');
-    } finally {
-      setAgentHistoryLoading(false);
+  const loadAgentTransactions = async (agentId: string, currentPosition: AgentFinancialPosition | null) => {
+    if (!canViewTransactions || agentHistoryLoading || selectedAgentId.current !== agentId) return;
+    const request = ++agentHistoryRequest.current;
+    const valid = () => mountedRef.current && request === agentHistoryRequest.current && selectedAgentId.current === agentId;
+    setAgentHistoryLoading(true); setAgentHistoryLoaded(false); setAgentHistoryError('');
+    const walletId = currentPosition?.agentId === agentId && currentPosition.walletExists === true && typeof currentPosition.walletId === 'string' && currentPosition.walletId ? currentPosition.walletId : null;
+    const noWallet = currentPosition?.agentId === agentId && currentPosition.walletExists === false && currentPosition.walletId === null;
+    const c2cPromise = ApiClient.get<any>(`/internal/admin/cash-to-cash/transfers?page=1&limit=10&agentId=${encodeURIComponent(agentId)}`);
+    const walletPromise = walletId ? ApiClient.get<any>(`/wallets/${encodeURIComponent(walletId)}/transactions?page=1&limit=10`) : null;
+    const [c2cOutcome, walletOutcome] = await Promise.allSettled([c2cPromise, walletPromise]);
+    if (!valid()) return;
+    const errors: string[] = [];
+    const c2cRows = c2cOutcome.status === 'fulfilled' ? c2cHistoryRows(c2cOutcome.value, agentId) : null;
+    const walletRows = walletOutcome.status === 'fulfilled' && walletId ? walletHistoryRows(walletOutcome.value) : null;
+    if (c2cRows) {
+      setAgentC2CRows(c2cRows); setC2cHistoryState('loaded');
+    } else {
+      setAgentC2CRows([]); setC2cHistoryState('failed');
+      errors.push(c2cOutcome.status === 'rejected' ? (c2cOutcome.reason as Error)?.message || 'Failed to load Cash-to-Cash history' : 'Cash-to-Cash history returned an invalid response.');
     }
+    if (!walletId) {
+      setWalletTransfers([]); setWalletHistoryState(noWallet ? 'no-wallet' : 'unavailable');
+    } else if (walletRows) {
+      setWalletTransfers(walletRows); setWalletHistoryState('loaded');
+    } else {
+      setWalletTransfers([]); setWalletHistoryState('failed');
+      errors.push(walletOutcome.status === 'rejected' ? (walletOutcome.reason as Error)?.message || 'Failed to load wallet transfers' : 'Wallet history returned an invalid response.');
+    }
+    setAgentHistoryLoaded(true); setAgentHistoryError(errors.join(' · ')); setAgentHistoryLoading(false);
   };
 
   const doLifecycle = async (action: keyof typeof lifecycleFunctions, id: string) => {
@@ -2186,7 +2209,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   Target in funding
                 </button>
               )}
-              <button type="button" disabled={detailBusy} onClick={() => { if (!mayLeaveAgent()) return; selectedAgentId.current = null; positionRequest.current += 1; outletReadGeneration.current += 1; limitReadGeneration.current += 1; setLimitUnconfirmed(false); setLimitReviewReady(false); setNewLimitProfileCode(''); setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); setSelected(null); }} style={smallBtn}>
+              <button type="button" disabled={detailBusy} onClick={() => { if (!mayLeaveAgent()) return; selectedAgentId.current = null; positionRequest.current += 1; agentHistoryRequest.current += 1; setAgentHistoryLoading(false); outletReadGeneration.current += 1; limitReadGeneration.current += 1; setLimitUnconfirmed(false); setLimitReviewReady(false); setNewLimitProfileCode(''); setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); setSelected(null); }} style={smallBtn}>
                 Close
               </button>
             </div>
@@ -2936,7 +2959,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     type="button"
                     style={smallBtn}
                     disabled={agentHistoryLoading}
-                    onClick={() => void loadAgentTransactions(selected.id, position?.walletId ?? null)}
+                    onClick={() => void loadAgentTransactions(selected.id, position)}
                   >
                     {agentHistoryLoading
                       ? 'Loading…'
@@ -2949,11 +2972,15 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                 {agentHistoryLoaded && (
                   <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <div>
-                      <strong>Wallet Transfers ({walletTransfers.length})</strong>
-                      {!position?.walletId ? (
-                        <div style={smallMuted}>No NGN wallet allocated yet for wallet-transfer lookup.</div>
+                      <strong>Wallet transfers · first page (up to 10)</strong>
+                      {walletHistoryState === 'unavailable' ? (
+                        <div style={smallMuted}>Wallet position is unavailable; wallet transfers could not be queried.</div>
+                      ) : walletHistoryState === 'no-wallet' ? (
+                        <div style={smallMuted}>No NGN wallet was returned by the financial position read.</div>
+                      ) : walletHistoryState === 'failed' ? (
+                        <div style={smallMuted}>Wallet transfers are unavailable.</div>
                       ) : walletTransfers.length === 0 ? (
-                        <div style={smallMuted}>No wallet transfers recorded on wallet <code>{position.walletId}</code>.</div>
+                        <div style={smallMuted}>No wallet transfers were returned on this page.</div>
                       ) : (
                         <ul style={compactList}>
                           {walletTransfers.map((tx) => (
@@ -2970,9 +2997,11 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     </div>
 
                     <div>
-                      <strong>Cash-to-Cash Transfers ({agentC2CRows.length})</strong>
-                      {agentC2CRows.length === 0 ? (
-                        <div style={smallMuted}>No Cash-to-Cash transfers found for this Agent.</div>
+                      <strong>Cash-to-Cash transfers · first page (up to 10)</strong>
+                      {c2cHistoryState === 'failed' ? (
+                        <div style={smallMuted}>Cash-to-Cash transfers are unavailable.</div>
+                      ) : agentC2CRows.length === 0 ? (
+                        <div style={smallMuted}>No Cash-to-Cash transfers were returned on this page.</div>
                       ) : (
                         <ul style={compactList}>
                           {agentC2CRows.map((row) => (

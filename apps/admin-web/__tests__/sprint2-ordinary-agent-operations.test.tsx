@@ -299,7 +299,8 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
           data: [
             {
               id: 'c2c-100',
-              beneficiaryPhoneMasked: '801***5678',
+              agentId: 'agent-100',
+              beneficiaryPhoneMasked: '•••••••5678',
               principalMinor: '200000',
               currency: 'NGN',
               status: 'CLAIMED',
@@ -314,8 +315,8 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
         return Promise.resolve({
           items: [
             {
-              id: 'wtx-100',
-              direction: 'DEBIT',
+              transferId: 'wtx-100',
+              direction: 'SENT',
               amountMinor: '50000',
               currency: 'NGN',
               status: 'COMPLETED',

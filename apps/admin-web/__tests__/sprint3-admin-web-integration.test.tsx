@@ -511,6 +511,7 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
           data: [
             {
               id: 'c2c-surviving-1',
+              agentId: 'agent-ops-1', beneficiaryPhoneMasked: '•••••••5678', principalMinor: '25000', redemptionMethod: 'AGENT_CASH',
               reference: 'C2C-SURVIVING-01',
               status: 'CLAIMED',
               amountMinor: '25000',
