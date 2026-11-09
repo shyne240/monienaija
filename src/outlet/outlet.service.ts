@@ -234,11 +234,18 @@ export class OutletService {
     });
   }
 
-  async suspend(id: string, actor: string): Promise<AgentOutlet> {
-    return this.transition(id, OutletStatus.SUSPENDED, actor, 'AGENT_OUTLET_SUSPENDED');
+  async suspend(id: string, actor: string, expectedVersion?: number): Promise<AgentOutlet> {
+    return this.transition(
+      id,
+      OutletStatus.SUSPENDED,
+      actor,
+      'AGENT_OUTLET_SUSPENDED',
+      undefined,
+      expectedVersion,
+    );
   }
 
-  async reactivate(id: string, actor: string): Promise<AgentOutlet> {
+  async reactivate(id: string, actor: string, expectedVersion?: number): Promise<AgentOutlet> {
     // Reactivation requires Agent still operable
     const outlet = await this.getById(id);
     return this.transition(
@@ -247,11 +254,19 @@ export class OutletService {
       actor,
       'AGENT_OUTLET_REACTIVATED',
       outlet.agentId,
+      expectedVersion,
     );
   }
 
-  async terminate(id: string, actor: string): Promise<AgentOutlet> {
-    return this.transition(id, OutletStatus.TERMINATED, actor, 'AGENT_OUTLET_TERMINATED');
+  async terminate(id: string, actor: string, expectedVersion?: number): Promise<AgentOutlet> {
+    return this.transition(
+      id,
+      OutletStatus.TERMINATED,
+      actor,
+      'AGENT_OUTLET_TERMINATED',
+      undefined,
+      expectedVersion,
+    );
   }
 
   private async transition(
@@ -260,9 +275,15 @@ export class OutletService {
     actor: string,
     action: string,
     activeAgentId?: string,
+    expectedVersion?: number,
   ): Promise<AgentOutlet> {
     this.assertUuid(id, 'id');
     const normalizedActor = this.normalizeActor(actor);
+    if (
+      expectedVersion !== undefined &&
+      (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1)
+    )
+      throw new BadRequestException('expectedVersion must be a positive integer');
     if (!Object.values(OutletStatus).includes(target))
       throw new BadRequestException(`Invalid status ${target}`);
     return this.dataSource.transaction(async (manager) => {
@@ -271,6 +292,8 @@ export class OutletService {
       const outlet = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
       if (!outlet || outlet.deletedAt !== null)
         throw new NotFoundException(`Outlet ${id} not found`);
+      if (expectedVersion !== undefined && outlet.version !== expectedVersion)
+        throw new ConflictException('Outlet version is stale');
       if (activeAgentId && outlet.agentId !== activeAgentId)
         throw new ConflictException('Outlet Agent changed; reload before reactivation');
       const allowed = ALLOWED_OUTLET_TRANSITIONS[outlet.status] ?? [];

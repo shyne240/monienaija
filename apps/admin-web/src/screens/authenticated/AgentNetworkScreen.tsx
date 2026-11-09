@@ -232,7 +232,7 @@ interface OutletRecord {
   state: string | null;
   country: string | null;
   status: string;
-  version?: number;
+  version: number;
 }
 
 interface TerminalRecord {
@@ -244,7 +244,7 @@ interface TerminalRecord {
   label: string | null;
   serialNumber: string | null;
   status: string;
-  version?: number;
+  version: number;
 }
 
 interface AgentLimitAssignmentRecord {
@@ -1202,10 +1202,10 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     setOutletsError('');
     setOutletsMsg('');
     try {
-      const receipt = await ApiClient.post<OutletRecord>(`/internal/outlets/${encodeURIComponent(outletId)}/${action}`);
+      const receipt = await ApiClient.post<OutletRecord>(`/internal/outlets/${encodeURIComponent(outletId)}/${action}`, { expectedVersion: current.version });
       if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
       const expected = action === 'suspend' ? 'SUSPENDED' : action === 'terminate' ? 'TERMINATED' : 'ACTIVE';
-      if (!validOutlet(receipt, selected.id) || receipt.id !== outletId || receipt.status !== expected) throw new Error('Outlet lifecycle receipt did not match the request.');
+      if (!validOutlet(receipt, selected.id) || receipt.id !== outletId || receipt.status !== expected || receipt.version !== current.version + 1) throw new Error('Outlet lifecycle receipt did not match the request.');
       setOutletsMsg(`Outlet ${action} succeeded.`);
       await loadOutletsAndTerminals(selected.id);
     } catch (e: any) {
@@ -1320,10 +1320,10 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     setOutletsError('');
     setOutletsMsg('');
     try {
-      const receipt = await ApiClient.post<TerminalRecord>(`/internal/terminals/${encodeURIComponent(terminalId)}/${action}`);
+      const receipt = await ApiClient.post<TerminalRecord>(`/internal/terminals/${encodeURIComponent(terminalId)}/${action}`, { expectedVersion: current.version });
       if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
       const expected = action === 'suspend' ? 'SUSPENDED' : action === 'terminate' ? 'TERMINATED' : 'ACTIVE';
-      if (!validTerminal(receipt, selected.id) || receipt.id !== terminalId || receipt.status !== expected) throw new Error('Terminal lifecycle receipt did not match the request.');
+      if (!validTerminal(receipt, selected.id) || receipt.id !== terminalId || receipt.status !== expected || receipt.version !== current.version + 1 || receipt.outletId !== current.outletId) throw new Error('Terminal lifecycle receipt did not match the request.');
       setOutletsMsg(`Terminal ${action} succeeded.`);
       await loadOutletsAndTerminals(selected.id);
     } catch (e: any) {

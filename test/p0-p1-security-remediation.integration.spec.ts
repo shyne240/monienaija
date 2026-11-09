@@ -1010,16 +1010,27 @@ describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
           });
         expect(createdTerminal.status).toBe(201);
         expect(await terminalRows()).toBe(beforeTerminals + 1);
-        await request(app.getHttpServer())
-          .post(`/api/v1/internal/terminals/${createdTerminal.body.id}/suspend`)
-          .set('Authorization', bearer(roleKey))
-          .send({})
-          .expect(200);
-        await request(app.getHttpServer())
-          .post(`/api/v1/internal/outlets/${createdOutlet.body.id}/suspend`)
-          .set('Authorization', bearer(roleKey))
-          .send({})
-          .expect(200);
+        for (const [kind, id] of [
+          ['terminals', createdTerminal.body.id],
+          ['outlets', createdOutlet.body.id],
+        ]) {
+          await request(app.getHttpServer())
+            .post(`/api/v1/internal/${kind}/${id}/suspend`)
+            .set('Authorization', bearer(roleKey))
+            .send({ expectedVersion: 2 })
+            .expect(409);
+          await request(app.getHttpServer())
+            .post(`/api/v1/internal/${kind}/${id}/suspend`)
+            .set('Authorization', bearer(roleKey))
+            .send({ expectedVersion: 0 })
+            .expect(400);
+          const result = await request(app.getHttpServer())
+            .post(`/api/v1/internal/${kind}/${id}/suspend`)
+            .set('Authorization', bearer(roleKey))
+            .send({ expectedVersion: 1 })
+            .expect(200);
+          expect(result.body.version).toBe(2);
+        }
         const outletStatus = await dataSource.query(
           `SELECT status FROM agent_outlets WHERE id=$1`,
           [createdOutlet.body.id],
@@ -1030,6 +1041,15 @@ describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
         );
         expect(outletStatus[0].status).toBe('SUSPENDED');
         expect(terminalStatus[0].status).toBe('SUSPENDED');
+        // Preserve the legacy no-body lifecycle contract for existing clients.
+        await request(app.getHttpServer())
+          .post(`/api/v1/internal/outlets/${createdOutlet.body.id}/reactivate`)
+          .set('Authorization', bearer(roleKey))
+          .expect(200);
+        await request(app.getHttpServer())
+          .post(`/api/v1/internal/terminals/${createdTerminal.body.id}/reactivate`)
+          .set('Authorization', bearer(roleKey))
+          .expect(200);
       });
 
       it('agent-level limit assignment follows agent.assign_limit, not limit.modify', async () => {

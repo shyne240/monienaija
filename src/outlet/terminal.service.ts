@@ -207,20 +207,41 @@ export class TerminalService {
     });
   }
 
-  async suspend(id: string, actor: string): Promise<AgentTerminal> {
-    return this.transition(id, TerminalStatus.SUSPENDED, actor, 'AGENT_TERMINAL_SUSPENDED');
+  async suspend(id: string, actor: string, expectedVersion?: number): Promise<AgentTerminal> {
+    return this.transition(
+      id,
+      TerminalStatus.SUSPENDED,
+      actor,
+      'AGENT_TERMINAL_SUSPENDED',
+      undefined,
+      expectedVersion,
+    );
   }
 
-  async reactivate(id: string, actor: string): Promise<AgentTerminal> {
+  async reactivate(id: string, actor: string, expectedVersion?: number): Promise<AgentTerminal> {
     const terminal = await this.getById(id);
-    return this.transition(id, TerminalStatus.ACTIVE, actor, 'AGENT_TERMINAL_REACTIVATED', {
-      agentId: terminal.agentId,
-      outletId: terminal.outletId,
-    });
+    return this.transition(
+      id,
+      TerminalStatus.ACTIVE,
+      actor,
+      'AGENT_TERMINAL_REACTIVATED',
+      {
+        agentId: terminal.agentId,
+        outletId: terminal.outletId,
+      },
+      expectedVersion,
+    );
   }
 
-  async terminate(id: string, actor: string): Promise<AgentTerminal> {
-    return this.transition(id, TerminalStatus.TERMINATED, actor, 'AGENT_TERMINAL_TERMINATED');
+  async terminate(id: string, actor: string, expectedVersion?: number): Promise<AgentTerminal> {
+    return this.transition(
+      id,
+      TerminalStatus.TERMINATED,
+      actor,
+      'AGENT_TERMINAL_TERMINATED',
+      undefined,
+      expectedVersion,
+    );
   }
 
   private async transition(
@@ -229,9 +250,15 @@ export class TerminalService {
     actor: string,
     action: string,
     activeParent?: { agentId: string; outletId: string },
+    expectedVersion?: number,
   ): Promise<AgentTerminal> {
     this.assertUuid(id, 'id');
     const normalizedActor = this.normalizeActor(actor);
+    if (
+      expectedVersion !== undefined &&
+      (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1)
+    )
+      throw new BadRequestException('expectedVersion must be a positive integer');
     if (!Object.values(TerminalStatus).includes(target))
       throw new BadRequestException(`Invalid status ${target}`);
     return this.dataSource.transaction(async (manager) => {
@@ -243,6 +270,8 @@ export class TerminalService {
       const terminal = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
       if (!terminal || terminal.deletedAt !== null)
         throw new NotFoundException(`Terminal ${id} not found`);
+      if (expectedVersion !== undefined && terminal.version !== expectedVersion)
+        throw new ConflictException('Terminal version is stale');
       if (
         activeParent &&
         (terminal.agentId !== activeParent.agentId || terminal.outletId !== activeParent.outletId)

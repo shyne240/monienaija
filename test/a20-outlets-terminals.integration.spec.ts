@@ -1172,4 +1172,75 @@ describe('A20 Outlets & Terminals Foundation (real PostgreSQL)', () => {
       /^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075|ProvisionV1CommercialAccountingFamilies1785753600076|AddAgentCredentialRotation1785753600077|CreateCustomerRegistrationPhoneChallenges1785753600078|AddCustomerCredentialRotation1785753600079|AddMfaChallengePurpose1785753600080|CreateSupportWorkforceAuthentication1785753600081|CreateLocalAdminAuthentication1785753600082|CreateAuthorizationCatalogue1785753600083|RenameWorkforceBootstrapRoleToSuperAdmin1785753600084|AddAdministratorRoleAssignmentScope1785753600085|CreateRoleDefinitionGovernance1785753600086|CreateDashboardPlatform1785753600087|CreateSuperAdminRecoveryConsumptions1785753600088|WidenAuthorizationActorColumns1785753600089|CreateAgentFundingRequests1785753600090|AddSecureCustomerProofOfAddressUploads1785753600094|SecureAgentApplicationAccess1785753600095|CreateCashToCashLocators1785753600096|AddEmailNotificationChannel1785753600097|CreateNotificationTemplateRegistry1785753600098|AllowPhoneNotificationRecipients1785753600099|CreateNotificationProviderConfiguration1785753600100|NotificationReliability1785753600101|AddNotificationCredentialBinding1785753600102|ConfigureTransactionNotificationEvents1785753600103)$/,
     );
   });
+  it('versioned lifecycle transitions reject stale and concurrent outlet/terminal decisions', async () => {
+    const { agentId } = await createActiveAgent();
+    const outlet = await outletService.create({
+      agentId,
+      reference: uniqueRef('versioned-outlet'),
+      name: 'Versioned outlet',
+      actor: 'test-actor',
+    });
+    const terminal = await terminalService.create({
+      agentId,
+      outletId: outlet.id,
+      reference: uniqueRef('versioned-terminal'),
+      actor: 'test-actor',
+    });
+    const outletRace = await Promise.allSettled([
+      outletService.suspend(outlet.id, 'test-actor', outlet.version),
+      outletService.terminate(outlet.id, 'test-actor', outlet.version),
+    ]);
+    expect(outletRace.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(outletRace.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    const terminalRace = await Promise.allSettled([
+      terminalService.suspend(terminal.id, 'test-actor', terminal.version),
+      terminalService.terminate(terminal.id, 'test-actor', terminal.version),
+    ]);
+    expect(terminalRace.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(terminalRace.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect((await outletService.getById(outlet.id)).version).toBe(2);
+    expect((await terminalService.getById(terminal.id)).version).toBe(2);
+    await expect(outletService.terminate(outlet.id, 'test-actor', 1)).rejects.toThrow(
+      /version is stale/,
+    );
+    await expect(terminalService.terminate(terminal.id, 'test-actor', 1)).rejects.toThrow(
+      /version is stale/,
+    );
+    const audits: Array<{ entity_id: string }> = await dataSource.query(
+      `SELECT entity_id FROM audit_events WHERE entity_id=ANY($1::uuid[]) AND action IN ('AGENT_OUTLET_SUSPENDED','AGENT_OUTLET_TERMINATED','AGENT_TERMINAL_SUSPENDED','AGENT_TERMINAL_TERMINATED')`,
+      [[outlet.id, terminal.id]],
+    );
+    expect(audits).toHaveLength(2);
+  });
+
+  it('versioned lifecycle blocks stale action after an intervening suspend and reactivate', async () => {
+    const { agentId } = await createActiveAgent();
+    const outlet = await outletService.create({
+      agentId,
+      reference: uniqueRef('aba-outlet'),
+      name: 'ABA outlet',
+      actor: 'test-actor',
+    });
+    const terminal = await terminalService.create({
+      agentId,
+      outletId: outlet.id,
+      reference: uniqueRef('aba-terminal'),
+      actor: 'test-actor',
+    });
+    await outletService.suspend(outlet.id, 'test-actor', 1);
+    await outletService.reactivate(outlet.id, 'test-actor', 2);
+    await terminalService.suspend(terminal.id, 'test-actor', 1);
+    await terminalService.reactivate(terminal.id, 'test-actor', 2);
+    await expect(outletService.terminate(outlet.id, 'test-actor', 1)).rejects.toThrow(
+      /version is stale/,
+    );
+    await expect(terminalService.terminate(terminal.id, 'test-actor', 1)).rejects.toThrow(
+      /version is stale/,
+    );
+    expect(await outletService.getById(outlet.id)).toMatchObject({ status: 'ACTIVE', version: 3 });
+    expect(await terminalService.getById(terminal.id)).toMatchObject({
+      status: 'ACTIVE',
+      version: 3,
+    });
+  });
 });

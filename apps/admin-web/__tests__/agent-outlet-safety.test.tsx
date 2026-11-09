@@ -41,3 +41,17 @@ test('a late prior-Agent outlet read cannot populate a new Agent workspace',asyn
  render(<AgentNetworkScreen/>);await screen.findByText('AG-one');fireEvent.click(screen.getAllByRole('button',{name:'View'})[0]);fireEvent.click(screen.getByRole('button',{name:'Load outlets & terminals'}));fireEvent.click(screen.getAllByRole('button',{name:'View'})[1]);fireEvent.click(screen.getByRole('button',{name:'Load outlets & terminals'}));await screen.findByRole('button',{name:'Edit outlet'});
  await act(async()=>{resolve([outlet('old','one')]);await old;});expect(screen.getByRole('button',{name:'Edit outlet'})).toBeTruthy();expect(screen.getByRole('button',{name:'Refresh outlets & terminals'})).toBeTruthy();
 });
+
+test.each(['outlet','terminal'])('%s lifecycle submits the observed version and locks on a mismatched receipt',async(kind)=>{
+ (ApiClient.post as jest.Mock).mockResolvedValue(kind === 'outlet' ? {...outlet(),status:'SUSPENDED',version:3} : {...terminal(),status:'SUSPENDED',version:3});
+ const section=await open();fireEvent.click(within(section).getByRole('button',{name:`Suspend ${kind}`}));
+ expect(ApiClient.post).toHaveBeenCalledWith(`/internal/${kind}s/${kind}/suspend`,{expectedVersion:1});
+ expect(await within(section).findByText(/outcome is unconfirmed/)).toBeTruthy();
+ expect((within(section).getByRole('button',{name:`Suspend ${kind}`}) as HTMLButtonElement).disabled).toBe(true);
+});
+
+test('terminal lifecycle rejects a receipt for a different outlet',async()=>{
+ (ApiClient.post as jest.Mock).mockResolvedValue({...terminal(),outletId:'other',status:'SUSPENDED',version:2});
+ const section=await open();fireEvent.click(within(section).getByRole('button',{name:'Suspend terminal'}));
+ expect(await within(section).findByText(/outcome is unconfirmed/)).toBeTruthy();
+});
