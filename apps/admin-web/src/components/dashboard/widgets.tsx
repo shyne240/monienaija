@@ -433,9 +433,9 @@ export const AuditTrailWidget: React.FC = () => {
     return value as AuditWidgetRow[];
   }, []);
   return <WidgetCard title="Recent Audit Activity" description="Most recent authorized audit events; sensitive audit details are not shown here." loading={loading} error={error} empty={!!data && data.length === 0}>
-    {data && data.length > 0 && <ScrollRegion label="Recent audit activity" hint="Scroll horizontally to view all columns."><table style={styles.table}>
-      <thead><tr><th scope="col">Time</th><th scope="col">Entity</th><th scope="col">Action</th><th scope="col">Actor</th></tr></thead>
-      <tbody>{data.map(row => <tr key={row.id}><td>{formatDate(row.occurredAt)}</td><td>{row.entityType}</td><td>{row.action}</td><td>{row.actor}</td></tr>)}</tbody>
+    {data && data.length > 0 && <ScrollRegion label="Recent audit activity" hint="Scroll horizontally to view all columns."><table style={{...styles.table, minWidth: 720}}>
+      <thead><tr><th scope="col" style={{...styles.th, minWidth: 130}}>Time</th><th scope="col" style={styles.th}>Entity</th><th scope="col" style={styles.th}>Action</th><th scope="col" style={styles.th}>Actor</th></tr></thead>
+      <tbody>{data.map(row => <tr key={row.id}><td style={styles.td}>{formatDate(row.occurredAt)}</td><td style={styles.td}>{row.entityType}</td><td style={styles.td}>{row.action}</td><td style={styles.td}>{row.actor}</td></tr>)}</tbody>
     </table></ScrollRegion>}
   </WidgetCard>;
 };

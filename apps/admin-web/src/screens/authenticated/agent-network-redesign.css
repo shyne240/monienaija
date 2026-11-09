@@ -36,3 +36,7 @@
 .agent-limits__catalog-page { margin-top:14px; padding-top:12px; border-top:1px solid #d8e5dc; color:#486157; font-size:13px; }
 .agent-limits__catalog-page p { margin:0; }
 .agent-limits__catalog-error { color:#9d261e; }
+
+/* Bring retained network controls into the same field rhythm as the M2 shell. */
+.agent-network-filters label { display:flex; flex-direction:column; gap:6px; color:#29483b; font-size:13px; font-weight:700; }
+.agent-network-filters select { min-width:180px; }

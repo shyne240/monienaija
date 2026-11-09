@@ -102,3 +102,33 @@ The previous Windows instructions ran the single-account seed, so a fresh databa
 - An empty database contains little business data; use dummy records. Role-specific accounts permit local role review but do not establish real IdP/MFA or production acceptance. See [owner checklist](owner-review-checklist.md).
 - To stop, Ctrl+C in both terminals and run `docker compose stop postgres` from the root. This retains the volume. Do not run `docker compose down -v` unless intentionally deleting disposable local data.
 - These commands were exercised with real PostgreSQL in automated tests, but were not executed on Windows in this sandbox.
+
+## Verify which Admin Web your browser is serving
+
+The current login should show the green identity panel and “Clarity for the work that matters” on desktop. Compare [actual current and baseline renders](design-verification-20261106.md#the-windows-login-question). This diagnostic does not modify your database. We have not observed your Windows instance, so an older server, checkout or cache is only a possibility.
+
+From the repository root in PowerShell, first stop the old Vite terminal, then check:
+
+```powershell
+Get-Location
+git status --short --branch
+git rev-parse HEAD
+git log -1 --oneline
+Select-String -Path apps/admin-web/src/screens/unauthenticated/LoginScreen.tsx -Pattern 'Clarity for the work that matters'
+Select-String -Path apps/admin-web/src/screens/unauthenticated/login.css -Pattern 'mn-login__identity'
+cd apps/admin-web
+npm ci
+$env:ADMIN_WEB_API_BASE_URL = '/api/v1'
+$env:ADMIN_WEB_DEV_AUTH_MOCK = 'false'
+npm run build
+# Vite dev uses /api/v1 and proxies it to the local backend, as described above.
+npm run dev -- --port 5173 --strictPort
+```
+
+Open the exact URL printed by that terminal (`http://localhost:5173`); `--strictPort` prevents silently choosing a different port if another process already owns 5173. If it fails, inspect `Get-NetTCPConnection -LocalPort 5173 -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess` and `Get-Process -Id <OwningProcess>` (replace the placeholder with the observed PID) before stopping the correct process. In a second PowerShell window, check that the **dev server** on that port serves the M2 CSS:
+
+```powershell
+(Invoke-WebRequest 'http://localhost:5173/src/screens/unauthenticated/login.css' -UseBasicParsing).Content | Select-String 'mn-login__identity'
+```
+
+The CSS check is for Vite dev mode, not a production bundle. A match is an identity clue, not proof the browser uses that process; compare the exact URL and use a hard reload or a private window. If the visual still differs, record the branch, commit, printed Vite URL, port-owner process and screenshot without passwords or secrets. Do not reset or reseed your existing database merely to diagnose styling. These steps are reproducible instructions, **not** a claim that Windows was tested in this sandbox.

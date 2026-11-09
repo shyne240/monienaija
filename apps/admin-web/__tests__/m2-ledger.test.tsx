@@ -49,3 +49,11 @@ test('reversal draft and uncertain journal lock guard unload and remain visible 
 test('shell navigation protects a ledger reversal draft',async()=>{
  const {Layout}=await import('../src/screens/authenticated/Layout');useAuthStore.setState({isAuthenticated:true});(ApiClient.get as jest.Mock).mockImplementation((url:string)=>url==='/ledger/accounts'?Promise.resolve([]):url.startsWith('/ledger/journals/')?Promise.resolve(journal):Promise.resolve([]));const view=render(<Layout/>);fireEvent.click(view.getByTestId('nav-ledgerExplorer'));fireEvent.change(view.getByLabelText('Audit Journal ID (UUID)'),{target:{value:'journal'}});fireEvent.click(view.getByRole('button',{name:'Audit Journal'}));await view.findByRole('button',{name:'Execute Approved Reversal'});fireEvent.change(view.getByLabelText('Audit Reason for Reversal (must match the approved request exactly)'),{target:{value:'reason'}});fireEvent.click(view.getByTestId('nav-dashboard'));expect(view.getByRole('dialog',{name:'Leave ledger reversal review?'})).toBeTruthy();fireEvent.click(view.getByRole('button',{name:'Keep working'}));expect(view.getByLabelText('Audit Reason for Reversal (must match the approved request exactly)')).toHaveProperty('value','reason');fireEvent.click(view.getByTestId('nav-dashboard'));fireEvent.click(view.getByRole('button',{name:'Discard and leave'}));expect(view.queryByLabelText('Audit Reason for Reversal (must match the approved request exactly)')).toBeNull();
 });
+
+it('renders the real account-list contract without inventing an absent balance', async () => {
+ (ApiClient.get as jest.Mock).mockResolvedValue([{id:'real-account',code:'CASH',name:'Cash control',currency:'NGN',accountType:'ASSET',normalBalance:'DEBIT',accountingUnit:'NGN',isActive:true}]);
+ render(<LedgerOperationsScreen/>);
+ expect(await screen.findByText('Cash control')).toBeTruthy();
+ expect(screen.getByText('Balance unavailable · NGN')).toBeTruthy();
+ expect(screen.queryByText('Ledger account list returned an invalid response.')).toBeNull();
+});

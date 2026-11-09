@@ -2124,11 +2124,12 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       <div id="agent-directory" className="agent-network-directory-heading">
         <div><p className="agent-network-eyebrow">NETWORK</p><h3>Agent directory</h3><p>Find an agent to inspect their profile, financial position and available controls.</p></div>
       </div>
-      <div style={filters}>
+      <div className="agent-network-filters" style={filters}>
         <label>
           Status:{' '}
           <select
             aria-label="Agent status filter"
+            style={inlineInput}
             value={statusFilter}
             onChange={(e) => {
               setStatusFilter(e.target.value);
@@ -3072,13 +3073,13 @@ const h2: React.CSSProperties = { margin: '0 0 8px', color: 'var(--mn-nav-surfac
 const h3: React.CSSProperties = { margin: '0 0 4px', color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 16 };
 const sub: React.CSSProperties = { color: 'var(--mn-text-secondary, #52655f)', fontSize: 13, marginBottom: 16 };
 const smallMuted: React.CSSProperties = { color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 };
-const filters: React.CSSProperties = { display: 'flex', gap: 12, marginTop: 16, marginBottom: 16, alignItems: 'center' };
-const btn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)', background: '#fff', cursor: 'pointer' };
-const smallBtn: React.CSSProperties = { padding: '6px 10px', borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)', background: '#fff', cursor: 'pointer', fontSize: 12 };
+const filters: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 16, marginBottom: 16, alignItems: 'end' };
+const btn: React.CSSProperties = { minHeight: 40, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--mn-border-control, #6d817a)', background: '#fff', color: 'var(--mn-action-primary, #0b624a)', font: 'inherit', fontWeight: 700, cursor: 'pointer' };
+const smallBtn: React.CSSProperties = { minHeight: 40, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--mn-border-control, #6d817a)', background: '#fff', color: 'var(--mn-action-primary, #0b624a)', cursor: 'pointer', fontSize: 13, fontWeight: 700 };
 const warnBtn: React.CSSProperties = { ...smallBtn, background: '#FFF7ED', borderColor: '#FDBA74' };
 const dangerBtn: React.CSSProperties = { ...smallBtn, background: '#FEF2F2', borderColor: '#FCA5A5' };
-const successBtn: React.CSSProperties = { ...smallBtn, background: '#ECFDF5', borderColor: '#6EE7B7' };
-const inlineInput: React.CSSProperties = { padding: '6px 9px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 12, background: '#fff' };
+const successBtn: React.CSSProperties = { ...smallBtn, background: 'var(--mn-action-primary, #0b624a)', borderColor: 'var(--mn-action-primary, #0b624a)', color: '#fff' };
+const inlineInput: React.CSSProperties = { minHeight: 40, maxWidth: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--mn-border-control, #6d817a)', color: 'var(--mn-text-primary, #132b25)', fontSize: 14, background: '#fff' };
 const formGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 8 };
 const formFieldLabel: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--mn-text-primary, #132b25)', fontWeight: 600 };
 const table: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 8, overflow: 'hidden' };

@@ -314,7 +314,7 @@ const SupportWorkspace: React.FC<SupportProps> = ({ initialCustomerId, initialAg
       )}
       <section className="mn-support-redesign__queue" aria-label="Support ticket queue">
       <header className="mn-support-redesign__section-head"><div><p>SUPPORT OPERATIONS</p><h2>Ticket queue</h2><span>Find a ticket, review its history and act within your permissions.</span></div></header>
-      <div style={filters}>
+      <div className="mn-support-redesign__filters" style={filters}>
         <label>Status <select style={statusSelect} value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="">All</option><option value="OPEN">OPEN</option><option value="IN_PROGRESS">IN_PROGRESS</option><option value="RESOLVED">RESOLVED</option><option value="CLOSED">CLOSED</option></select></label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
           Agent ID
@@ -484,10 +484,10 @@ const wrap: React.CSSProperties = { padding: 'clamp(16px, 3vw, 32px)', maxWidth:
 const h2: React.CSSProperties = { margin: '0 0 8px', color: 'var(--mn-nav-surface-deep, #082f23)' };
 const sub: React.CSSProperties = { color: 'var(--mn-text-secondary, #52655f)', fontSize: 13, marginBottom: 16 };
 const filters: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16, alignItems: 'center' };
-const statusSelect: React.CSSProperties = { minHeight: 36, padding: '7px 10px', border: '1px solid var(--mn-border-control, #6d817a)', borderRadius: 8, background: '#fff', color: 'var(--mn-text-primary, #132b25)' };
+const statusSelect: React.CSSProperties = { minHeight: 40, padding: '7px 10px', border: '1px solid var(--mn-border-control, #6d817a)', borderRadius: 8, background: '#fff', color: 'var(--mn-text-primary, #132b25)' };
 const contextNote: React.CSSProperties = { ...filters, background: 'var(--mn-surface-canvas, #f5f8f6)', padding: 8, borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)', fontSize: 12 };
-const btn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)', background: '#fff', cursor: 'pointer' };
-const smallBtn: React.CSSProperties = { padding: '6px 10px', borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)', background: '#fff', cursor: 'pointer', fontSize: 12 };
+const btn: React.CSSProperties = { minHeight: 40, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--mn-border-control, #6d817a)', background: '#fff', color: 'var(--mn-action-primary, #0b624a)', font: 'inherit', fontWeight: 700, cursor: 'pointer' };
+const smallBtn: React.CSSProperties = { minHeight: 40, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--mn-border-control, #6d817a)', background: '#fff', color: 'var(--mn-action-primary, #0b624a)', cursor: 'pointer', fontSize: 13, fontWeight: 700 };
 const dangerBtn: React.CSSProperties = { ...smallBtn, background: '#FEF2F2', borderColor: '#FCA5A5' };
 const successBtn: React.CSSProperties = { ...smallBtn, background: '#ECFDF5', borderColor: '#6EE7B7' };
 const table: React.CSSProperties = { width: '100%', minWidth: 680, borderCollapse: 'collapse', background: '#fff', borderRadius: 8, overflow: 'hidden' };
@@ -503,7 +503,7 @@ const drawerHead: React.CSSProperties = { padding: 12, background: 'var(--mn-sur
 const drawerBody: React.CSSProperties = { padding: 16, display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13 };
 const actionRow: React.CSSProperties = { display: 'flex', gap: 8, flexWrap: 'wrap' };
 const mono: React.CSSProperties = { fontFamily: 'monospace', fontSize: 12 };
-const input: React.CSSProperties = { flex: 1, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)', minWidth: 180 };
+const input: React.CSSProperties = { flex: 1, minHeight: 40, boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--mn-border-control, #6d817a)', minWidth: 180, maxWidth: '100%' };
 const formRow: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8, alignItems: 'end' };
 const fieldLabel: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 5, flex: 1, minWidth: 220, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 };
 const helpText: React.CSSProperties = { color: 'var(--mn-text-secondary, #52655f)', fontSize: 11, marginTop: -6 };

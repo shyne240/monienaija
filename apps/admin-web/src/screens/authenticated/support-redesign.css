@@ -6,3 +6,6 @@
 .mn-support-redesign__detail-title { margin:0; color:#103a2b; font-size:17px; }
 .mn-support-redesign__detail-title:focus-visible { outline:2px solid var(--mn-focus-ring); outline-offset:3px; }
 .mn-support-redesign [role="group"] { overflow-wrap:anywhere; }
+.mn-support-redesign__filters { padding:16px 0 4px; }
+.mn-support-redesign__filters label { color:#29483b; font-weight:700; }
+.mn-support-redesign__filters button:focus-visible, .mn-support-redesign__filters input:focus-visible, .mn-support-redesign__filters select:focus-visible { outline:2px solid var(--mn-focus-ring); outline-offset:2px; }

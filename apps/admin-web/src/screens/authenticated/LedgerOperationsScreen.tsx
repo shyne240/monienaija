@@ -15,7 +15,7 @@ interface LedgerAccount {
   currency: string;
   accountingUnit: string;
   status: string;
-  balanceMinor: string;
+  balanceMinor?: string;
 }
 
 interface JournalLine {
@@ -123,7 +123,7 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
       const query = searchCurrency ? `?currency=${searchCurrency}` : '';
       const list = await ApiClient.get<LedgerAccount[]>(`/ledger/accounts${query}`);
       if (request !== generations.current.accounts) return;
-      if (!Array.isArray(list) || list.some(a => !a || typeof a.id !== 'string' || typeof a.name !== 'string' || typeof a.code !== 'string' || typeof a.currency !== 'string' || typeof a.balanceMinor !== 'string' || !/^-?\d+$/.test(a.balanceMinor))) throw new Error('Ledger account list returned an invalid response.');
+      if (!Array.isArray(list) || list.some(a => !a || typeof a.id !== 'string' || typeof a.name !== 'string' || typeof a.code !== 'string' || typeof a.currency !== 'string' || (a.balanceMinor !== undefined && (typeof a.balanceMinor !== 'string' || !/^-?\d+$/.test(a.balanceMinor))))) throw new Error('Ledger account list returned an invalid response.');
       setAccounts(list);
     } catch (err: any) {
       if (request === generations.current.accounts) setError(err?.message || 'Failed to fetch ledger accounts.');
@@ -301,8 +301,8 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
                     <span style={styles.metaLabel}>Type: {acc.accountType}</span>
                     <span style={styles.metaLabel}>Normal: {acc.normalBalance}</span>
                   </div>
-                  <div style={styles.accountBalance}>
-                    {formatFinancialAmount(acc.balanceMinor, acc.currency)}
+                  <div style={acc.balanceMinor === undefined ? styles.accountBalanceUnavailable : styles.accountBalance}>
+                    {acc.balanceMinor === undefined ? `Balance unavailable · ${acc.currency}` : formatFinancialAmount(acc.balanceMinor, acc.currency)}
                   </div>
                 </div>
               ))}
@@ -539,9 +539,11 @@ const styles = {
   },
   accountHeader: {
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column' as const,
+    alignItems: 'flex-start',
+    gap: '4px',
     marginBottom: '8px',
+    overflowWrap: 'anywhere' as const,
   },
   accountName: {
     fontSize: '13px',
@@ -569,6 +571,7 @@ const styles = {
     color: 'var(--mn-action-primary, #0b624a)',
     textAlign: 'right' as const,
   },
+  accountBalanceUnavailable: { fontSize: '12px', color: 'var(--mn-text-secondary, #52655f)', lineHeight: 1.4 },
   rightSection: {
     flex: '1 1 340px',
     minWidth: 0,
