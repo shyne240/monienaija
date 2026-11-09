@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 
 import { AuditService } from '../operations/audit.service';
@@ -536,9 +536,13 @@ export class OutletService {
   }
 
   private isUniqueViolation(error: unknown): boolean {
-    const e = error as { message?: string; code?: string } | null | undefined;
-    const msg = String(e?.message ?? '').toLowerCase();
-    const code = String(e?.code ?? '');
-    return code === '23505' || msg.includes('duplicate') || msg.includes('uq_agent_outlets');
+    if (!(error instanceof QueryFailedError)) return false;
+    const databaseError = error as unknown as { code?: string; constraint?: string };
+    return (
+      databaseError.code === '23505' &&
+      ['uq_agent_outlets_reference', 'uq_agent_outlets_code'].includes(
+        databaseError.constraint ?? '',
+      )
+    );
   }
 }

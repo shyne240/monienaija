@@ -2,11 +2,12 @@
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { DataSource } from 'typeorm';
+import { DataSource, QueryFailedError } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
 import { OutletService } from '../src/outlet/outlet.service';
+import { AuditService } from '../src/operations/audit.service';
 import { TerminalService } from '../src/outlet/terminal.service';
 import { OutletStatus, TerminalStatus } from '../src/outlet/outlet.enums';
 import { AggregatorService } from '../src/aggregator/aggregator.service';
@@ -1241,6 +1242,99 @@ describe('A20 Outlets & Terminals Foundation (real PostgreSQL)', () => {
     expect(await terminalService.getById(terminal.id)).toMatchObject({
       status: 'ACTIVE',
       version: 3,
+    });
+  });
+  it('rolls back outlet and terminal writes on audit failure without misclassifying audit uniqueness', async () => {
+    const { agentId } = await createActiveAgent();
+    const audit = app.get(AuditService);
+    const outletRef = uniqueRef('audit-outlet');
+    const terminalRef = uniqueRef('audit-terminal');
+    const unrelatedUnique = new QueryFailedError(
+      'audit insert',
+      [],
+      Object.assign(new Error('audit conflict'), {
+        code: '23505',
+        constraint: 'audit_events_pkey',
+      }),
+    );
+    let spy = jest.spyOn(audit, 'record').mockRejectedValue(unrelatedUnique);
+    try {
+      await expect(
+        outletService.create({
+          agentId,
+          reference: outletRef,
+          name: 'Atomic outlet',
+          actor: 'test-actor',
+        }),
+      ).rejects.toBe(unrelatedUnique);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(
+      await dataSource.query('SELECT id FROM agent_outlets WHERE reference=$1', [outletRef]),
+    ).toHaveLength(0);
+    const outlet = await outletService.create({
+      agentId,
+      reference: outletRef,
+      name: 'Atomic outlet',
+      actor: 'test-actor',
+    });
+    spy = jest.spyOn(audit, 'record').mockRejectedValue(unrelatedUnique);
+    try {
+      await expect(
+        terminalService.create({
+          agentId,
+          outletId: outlet.id,
+          reference: terminalRef,
+          actor: 'test-actor',
+        }),
+      ).rejects.toBe(unrelatedUnique);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(
+      await dataSource.query('SELECT id FROM agent_terminals WHERE reference=$1', [terminalRef]),
+    ).toHaveLength(0);
+    const terminal = await terminalService.create({
+      agentId,
+      outletId: outlet.id,
+      reference: terminalRef,
+      actor: 'test-actor',
+    });
+    spy = jest.spyOn(audit, 'record').mockRejectedValue(new Error('synthetic audit failure'));
+    try {
+      await expect(
+        outletService.updateMetadata(outlet.id, {
+          expectedVersion: 1,
+          name: 'Changed outlet',
+          actor: 'test-actor',
+        }),
+      ).rejects.toThrow('synthetic audit failure');
+      await expect(
+        terminalService.updateMetadata(terminal.id, {
+          expectedVersion: 1,
+          label: 'Changed terminal',
+          actor: 'test-actor',
+        }),
+      ).rejects.toThrow('synthetic audit failure');
+      await expect(outletService.suspend(outlet.id, 'test-actor', 1)).rejects.toThrow(
+        'synthetic audit failure',
+      );
+      await expect(terminalService.suspend(terminal.id, 'test-actor', 1)).rejects.toThrow(
+        'synthetic audit failure',
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await outletService.getById(outlet.id)).toMatchObject({
+      name: 'Atomic outlet',
+      status: 'ACTIVE',
+      version: 1,
+    });
+    expect(await terminalService.getById(terminal.id)).toMatchObject({
+      label: null,
+      status: 'ACTIVE',
+      version: 1,
     });
   });
 });
