@@ -1,0 +1,291 @@
+{
+  "environment": "Disposable real PostgreSQL, in-process real AppModule HTTP and actual built Admin Web in headless browser",
+  "cases": [
+    {
+      "role": "FINANCE_AUDITOR",
+      "case": "Real customer directory and 360, read-only controls",
+      "result": "passed"
+    },
+    {
+      "role": "FINANCE_AUDITOR",
+      "case": "Real backend denies customer creation without database mutation",
+      "status": 403,
+      "result": "passed"
+    },
+    {
+      "role": "TREASURY",
+      "case": "Customer navigation absent and real backend denies direct read",
+      "status": 403,
+      "result": "passed"
+    },
+    {
+      "role": "OPERATIONS",
+      "case": "Real UI required-field validation, then create DRAFT and profile in PostgreSQL",
+      "result": "passed"
+    }
+  ],
+  "limitations": "Selected workflows only. Local workforce sessions are test-issued, not real IdP/MFA. No real SMS, provider or deployed worker.",
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/ledger-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers/a06c1a47-24b9-4434-93e8-bfe4a6aa3007/phone-verification",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers/a06c1a47-24b9-4434-93e8-bfe4a6aa3007/phone-verification",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers/a06c1a47-24b9-4434-93e8-bfe4a6aa3007/transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/customers/a06c1a47-24b9-4434-93e8-bfe4a6aa3007/eligibility",
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/customers/a06c1a47-24b9-4434-93e8-bfe4a6aa3007/onboarding-readiness",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/customers/a06c1a47-24b9-4434-93e8-bfe4a6aa3007/onboarding-readiness",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers/a06c1a47-24b9-4434-93e8-bfe4a6aa3007/transactions",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customers",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/customers/a06c1a47-24b9-4434-93e8-bfe4a6aa3007/eligibility",
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/reconciliation-status",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/my-dashboard",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/support/tickets",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/transaction-trend",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/a2/workforce/dashboard/widgets/recent-transactions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/metrics",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/support/tickets",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customers",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customers/f437b4f9-9b9c-427e-88f2-ab485021e0ab/registration-profile",
+      "status": 201
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/internal/customers",
+      "status": 200
+    }
+  ],
+  "result": "passed"
+}
