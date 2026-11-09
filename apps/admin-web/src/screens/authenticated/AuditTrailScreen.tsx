@@ -8,6 +8,26 @@ type AuditFilter = { entityId: string; entityType: string; correlationId: string
 const SEARCH_LIMIT = 100;
 const emptyFilter = (): AuditFilter => ({entityId:'', entityType:'', correlationId:''});
 function display(value: unknown): string { return typeof value === 'string' && value.trim() ? value : '—'; }
+type AuditRow = { id: string; entityType: string; entityId: string; action: string; actor: string; occurredAt: string };
+function parseAuditRows(value: unknown, filters: AuditFilter): AuditRow[] | null {
+  const rows = Array.isArray(value) ? value : value && typeof value === 'object' ? ((value as Record<string, unknown>).data ?? (value as Record<string, unknown>).items) : null;
+  if (!Array.isArray(rows) || rows.length > SEARCH_LIMIT) return null;
+  const seen = new Set<string>();
+  const projected: AuditRow[] = [];
+  for (const value of rows) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const row = value as Record<string, unknown>;
+    if (['id', 'entityType', 'entityId', 'action', 'actor', 'occurredAt'].some(key => typeof row[key] !== 'string' || !(row[key] as string).trim())) return null;
+    const id = row.id as string, entityId = row.entityId as string, entityType = row.entityType as string, occurredAt = row.occurredAt as string;
+    if (seen.has(id) || Number.isNaN(Date.parse(occurredAt)) ||
+        (filters.entityId && entityId.toLowerCase() !== filters.entityId.toLowerCase()) ||
+        (filters.entityType && entityType !== filters.entityType)) return null;
+    seen.add(id);
+    projected.push({ id, entityType, entityId, action: row.action as string, actor: row.actor as string, occurredAt });
+  }
+  // Correlation identifiers are sanitized by the server, so their original query cannot be independently matched here.
+  return projected;
+}
 function formatTime(value: unknown): string {
   if (typeof value !== 'string') return '—';
   const date = new Date(value);
@@ -24,7 +44,7 @@ const AuditTrailWorkspace: React.FC<{ initialCustomerId?: string }> = ({ initial
   const canView = principal?.scopes.includes('audit.search') ?? false;
   const [filter, setFilter] = useState<AuditFilter>({ ...emptyFilter(), entityId: initialCustomerId || '' });
   const [applied, setApplied] = useState<AuditFilter | null>(null);
-  const [events, setEvents] = useState<Record<string, unknown>[]>([]);
+  const [events, setEvents] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const requestId = useRef(0);
@@ -42,8 +62,8 @@ const AuditTrailWorkspace: React.FC<{ initialCustomerId?: string }> = ({ initial
       if (submitted.correlationId) query.set('correlationId', submitted.correlationId);
       const res: any = await ApiClient.get(`/internal/audit?${query.toString()}`);
       if (currentRequest !== requestId.current) return;
-      const rows = Array.isArray(res) ? res : res?.data ?? res?.items;
-      if (!Array.isArray(rows) || rows.some((row: unknown) => !row || typeof row !== 'object' || Array.isArray(row))) throw new Error('Audit search returned an invalid response.');
+      const rows = parseAuditRows(res, submitted);
+      if (!rows) throw new Error('Audit search response could not be verified.');
       setEvents(rows); setApplied(submitted);
     } catch (e: any) { if (currentRequest === requestId.current) setError(e?.message || 'Failed to load audit trail'); }
     finally { if (currentRequest === requestId.current) setLoading(false); }
@@ -63,7 +83,7 @@ const AuditTrailWorkspace: React.FC<{ initialCustomerId?: string }> = ({ initial
   return (
     <div className="mn-audit">
       <PageHeader eyebrow="System administration" title="Audit & Security Events" description="Search read-only audit records by entity, type or correlation identifier." />
-      <div className="mn-audit__boundary" role="note"><strong>Read-only oversight</strong><span>Results are subject to server-side access restrictions and show up to the {SEARCH_LIMIT} most recent matching events. This is not a complete event count or a paginated history.</span></div>
+      <div className="mn-audit__boundary" role="note"><strong>Read-only oversight</strong><span>Results are subject to server-side access restrictions and show up to the {SEARCH_LIMIT} most recent matching events. This is not a complete event count or a paginated history. Missing records do not prove that no action occurred; access restrictions, historical gaps or late commits may affect results.</span></div>
       <section className="mn-audit__panel" aria-labelledby="audit-search-heading">
         <div className="mn-audit__heading"><div><p className="mn-audit__eyebrow">SEARCH CRITERIA</p><h2 id="audit-search-heading">Find audit events</h2><p>Leave fields empty to search across available events. Filters are exact matches; correlation identifiers are sanitized by the server.</p></div></div>
         <form className="mn-audit__form" onSubmit={e => { e.preventDefault(); void fetchEvents(); }}>
@@ -80,7 +100,7 @@ const AuditTrailWorkspace: React.FC<{ initialCustomerId?: string }> = ({ initial
         {error && <Alert title="Audit search failed">{error}</Alert>}
         {loading && <p className="mn-audit__state" role="status">Searching audit events…</p>}
         {!loading && !error && !applied && <p className="mn-audit__state">Enter an entity ID or search all events.</p>}
-        {!loading && !error && applied && events.length === 0 && <p className="mn-audit__state">No audit events — try different filters or a global search.</p>}
+        {!loading && !error && applied && events.length === 0 && <p className="mn-audit__state">No audit events returned for this search — try different filters or a global search. Missing events do not prove that no action occurred.</p>}
         {!loading && !error && applied && events.length >= SEARCH_LIMIT && <p className="mn-audit__limit" role="note">The result limit was reached. More matching events may exist; refine the filters.</p>}
         {!loading && !error && applied && events.length > 0 && <ScrollRegion label="Audit events" hint="Scroll horizontally to see all columns.">
           <table className="mn-audit__table"><thead><tr><th scope="col">Time</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Entity</th><th scope="col">Entity ID</th></tr></thead><tbody>{events.map((ev, i) => <tr key={`${display(ev.id)}-${i}`}><td>{formatTime(ev.occurredAt)}</td><td>{display(ev.actor)}</td><td>{display(ev.action)}</td><td>{display(ev.entityType)}</td><td>{display(ev.entityId)}</td></tr>)}</tbody></table>

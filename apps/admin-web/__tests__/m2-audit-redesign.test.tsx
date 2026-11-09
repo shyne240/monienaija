@@ -36,3 +36,28 @@ test('customer context pre-fills and queries automatically, then clears cleanly'
 test('missing audit.search scope renders no query controls or requests',()=>{
  session(['audit.view']);render(<AuditTrailScreen />);expect(screen.getByRole('alert').textContent).toContain('audit.search');expect(screen.queryByRole('button',{name:'Search'})).toBeNull();expect(ApiClient.get).not.toHaveBeenCalled();
 });
+
+
+test.each([
+  ['wrong entity', { id:'event', entityType:'CUSTOMER', entityId:'other', actor:'operator', action:'READ', occurredAt:'2026-11-01T00:00:00Z' }],
+  ['wrong type', { id:'event', entityType:'AGENT', entityId:'customer-1', actor:'operator', action:'READ', occurredAt:'2026-11-01T00:00:00Z' }],
+  ['invalid time', { id:'event', entityType:'CUSTOMER', entityId:'customer-1', actor:'operator', action:'READ', occurredAt:'bad' }],
+  ['missing actor', { id:'event', entityType:'CUSTOMER', entityId:'customer-1', action:'READ', occurredAt:'2026-11-01T00:00:00Z' }],
+])('rejects %s rather than presenting a trustworthy audit result', async (_case, row) => {
+  (ApiClient.get as jest.Mock).mockResolvedValue([row]); render(<AuditTrailScreen />);
+  fireEvent.change(screen.getByLabelText('Entity ID (optional)'), { target:{ value:'customer-1' } });
+  fireEvent.change(screen.getByLabelText('Entity type (optional)'), { target:{ value:'CUSTOMER' } });
+  fireEvent.click(screen.getByRole('button',{name:'Search'}));
+  expect(await screen.findByText('Audit search response could not be verified.')).toBeTruthy();
+  expect(screen.queryByText(/No audit events returned/)).toBeNull();
+  expect(screen.queryByText('1 returned')).toBeNull();
+});
+
+test('rejects duplicate events and oversized responses',async()=>{
+ const row={id:'same',entityType:'CUSTOMER',entityId:'customer-1',actor:'operator',action:'READ',occurredAt:'2026-11-01T00:00:00Z'};
+ (ApiClient.get as jest.Mock).mockResolvedValueOnce([row,row]).mockResolvedValueOnce(Array.from({length:101},(_,i)=>({...row,id:String(i)})));
+ render(<AuditTrailScreen />); fireEvent.click(screen.getByRole('button',{name:'Search'}));
+ expect(await screen.findByText('Audit search response could not be verified.')).toBeTruthy();
+ fireEvent.click(screen.getByRole('button',{name:'Search'}));
+ expect(await screen.findByText('Audit search response could not be verified.')).toBeTruthy();
+});

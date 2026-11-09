@@ -20,7 +20,7 @@ test('editing the audit query invalidates late search results',async()=>{
  principal('one',['audit.search']);const pending=deferred();(ApiClient.get as jest.Mock).mockReturnValue(pending.promise);render(<AuditTrailScreen/>);fireEvent.change(screen.getByLabelText('Entity ID (optional)'),{target:{value:'old'}});fireEvent.click(screen.getByRole('button',{name:'Search'}));fireEvent.change(screen.getByLabelText('Entity ID (optional)'),{target:{value:'new'}});await act(async()=>{pending.resolve([{id:'audit',actor:'OLD ACTOR',action:'OLD',entityType:'CUSTOMER',entityId:'old'}]);await pending.promise;});expect(screen.queryByText('OLD ACTOR')).toBeNull();expect(screen.getByText('Enter an entity ID or search all events.')).toBeTruthy();
 });
 test('audit results are cleared on principal change even when the scope remains',async()=>{
- principal('one',['audit.search']);(ApiClient.get as jest.Mock).mockResolvedValue([{id:'audit',actor:'FIRST ACTOR',action:'READ',entityType:'CUSTOMER',entityId:'old'}]);render(<AuditTrailScreen/>);fireEvent.click(screen.getByRole('button',{name:'Search'}));await screen.findByText('FIRST ACTOR');act(()=>principal('two',['audit.search']));expect(screen.queryByText('FIRST ACTOR')).toBeNull();
+ principal('one',['audit.search']);(ApiClient.get as jest.Mock).mockResolvedValue([{id:'audit',actor:'FIRST ACTOR',action:'READ',entityType:'CUSTOMER',entityId:'old',occurredAt:'2026-11-01T00:00:00Z'}]);render(<AuditTrailScreen/>);fireEvent.click(screen.getByRole('button',{name:'Search'}));await screen.findByText('FIRST ACTOR');act(()=>principal('two',['audit.search']));expect(screen.queryByText('FIRST ACTOR')).toBeNull();
 });
 
 test('health panels resolve independently and delivery filtering does not reload unrelated sources',async()=>{
