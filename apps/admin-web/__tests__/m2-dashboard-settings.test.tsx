@@ -80,3 +80,12 @@ test('dashboard assignment drafts and pending writes guard browser unload',async
 test('shell navigation protects dashboard assignment drafts',async()=>{
  const {Layout}=await import('../src/screens/authenticated/Layout');useAuthStore.setState(state=>({isAuthenticated:true,principal:state.principal?{...state.principal,roles:['SUPER_ADMIN']}:null}));const view=render(<Layout/>);fireEvent.click(view.getByTestId('nav-dashboardSettings'));await choose();fireEvent.click(view.getByTestId('nav-dashboard'));expect(view.getByRole('dialog',{name:'Leave dashboard settings?'})).toBeTruthy();fireEvent.click(view.getByRole('button',{name:'Keep working'}));expect(view.getByLabelText('Dashboard template for ROLE_A')).toHaveProperty('value','TWO');fireEvent.click(view.getByTestId('nav-dashboard'));fireEvent.click(view.getByRole('button',{name:'Discard and leave'}));expect(view.queryByLabelText('Dashboard template for ROLE_A')).toBeNull();
 });
+
+test('template catalogue search leaves role drafts and assignment choices intact',async()=>{
+ render(<DashboardSettingsScreen/>);await choose();fireEvent.change(screen.getByLabelText('Reason for ROLE_A dashboard change'),{target:{value:'Local reason'}});
+ const search=screen.getByLabelText('Search loaded templates');fireEvent.change(search,{target:{value:'TWO'}});
+ expect(screen.getByText(/Showing 1 of 2 loaded templates/)).toBeTruthy();expect(screen.queryByText('Template ONE')).toBeNull();expect(screen.getByText('Template TWO')).toBeTruthy();
+ expect(screen.getByLabelText('Dashboard template for ROLE_A')).toHaveProperty('value','TWO');expect(screen.getByLabelText('Reason for ROLE_A dashboard change')).toHaveProperty('value','Local reason');
+ expect(within(screen.getByLabelText('Dashboard template for ROLE_A')).getAllByRole('option')).toHaveLength(2);
+ fireEvent.change(search,{target:{value:'missing'}});expect(screen.getByText('No loaded templates match this search.')).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Clear search'}));expect(screen.getByText('Template ONE')).toBeTruthy();expect(ApiClient.put).not.toHaveBeenCalled();
+});

@@ -56,6 +56,7 @@ const DashboardSettingsWorkspace: React.FC<{onDashboardGuardChange?: (guarded: b
   const [assignments, setAssignments] = useState<RoleDashboardAssignmentSummary[]>([]);
   const [registry, setRegistry] = useState<WidgetRegistryEntry[]>([]);
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null);
+  const [templateSearch, setTemplateSearch] = useState('');
 
   // Per-role in-flight edit state
   const [pendingTemplateByRole, setPendingTemplateByRole] = useState<Record<string, string>>({});
@@ -130,6 +131,8 @@ const DashboardSettingsWorkspace: React.FC<{onDashboardGuardChange?: (guarded: b
 
   const widgetName = (widgetKey: string) => registry.find((w) => w.widgetKey === widgetKey)?.displayName || widgetKey;
   const activeTemplates = templates.filter((t) => t.isActive);
+  const templateQuery = templateSearch.trim().toLowerCase();
+  const visibleTemplates = templates.filter(t => !templateQuery || [t.templateKey, t.displayName, t.description ?? ''].some(value => value.toLowerCase().includes(templateQuery))); 
 
   const handleSave = async (roleKey: string) => {
     if (!canView || !canAssign || savingRef.current || needsReview[roleKey] || confirmRole !== roleKey) return;
@@ -224,15 +227,19 @@ const DashboardSettingsWorkspace: React.FC<{onDashboardGuardChange?: (guarded: b
         <button type="button" style={styles.retryBtn} disabled={savingRole !== null || confirmRole !== null} onClick={() => void load()}>Reload configuration</button>
       </div>
 
-      <section className="mn-dashboard-settings__panel" aria-label="Dashboard templates">
+      <nav className="mn-dashboard-settings__nav" aria-label="Dashboard settings sections"><a href="#dashboard-template-catalogue">Template catalogue</a><a href="#dashboard-role-assignments">Role assignments</a></nav>
+      <section id="dashboard-template-catalogue" tabIndex={-1} className="mn-dashboard-settings__panel" aria-label="Dashboard templates">
       <p className="mn-dashboard-settings__eyebrow">TEMPLATE CATALOGUE</p>
       <h2 style={styles.sectionHeader}>Dashboard Templates ({templates.length})</h2>
       <p style={styles.note}>
         Templates are read-only in this release — only the role → template assignment below can be changed. Creating or editing a
         template's widget list requires a source change (see the task report).
       </p>
+      <div className="mn-dashboard-settings__filter"><label>Search loaded templates<input type="search" value={templateSearch} onChange={event => setTemplateSearch(event.target.value)} placeholder="Name or template key" /></label><button type="button" disabled={!templateSearch} onClick={() => setTemplateSearch('')}>Clear search</button></div>
+      <p className="mn-dashboard-settings__count" role="status">Showing {visibleTemplates.length} of {templates.length} loaded templates. Assignment choices are not filtered.</p>
       <div style={styles.templateList}>
-        {templates.map((t) => (
+        {visibleTemplates.length === 0 && <p className="mn-dashboard-settings__empty">{templates.length ? 'No loaded templates match this search.' : 'No dashboard templates were returned.'}</p>}
+        {visibleTemplates.map((t) => (
           <div key={t.templateKey} style={styles.templateRow}>
             <button type="button" className="mn-dashboard-settings__template-header" style={styles.templateHeaderRow} aria-expanded={expandedTemplate === t.templateKey} onClick={() => setExpandedTemplate(expandedTemplate === t.templateKey ? null : t.templateKey)}>
               <div>
@@ -265,7 +272,7 @@ const DashboardSettingsWorkspace: React.FC<{onDashboardGuardChange?: (guarded: b
       </div>
 
       </section>
-      <section className="mn-dashboard-settings__panel" aria-label="Role dashboard assignments">
+      <section id="dashboard-role-assignments" tabIndex={-1} className="mn-dashboard-settings__panel" aria-label="Role dashboard assignments">
       <p className="mn-dashboard-settings__eyebrow">ROLE CONFIGURATION</p>
       <h2 style={styles.sectionHeader}>Role → Dashboard Assignment ({assignments.length})</h2>
       {!canAssign && <p role="note">Assignment controls are unavailable for this session.</p>}
