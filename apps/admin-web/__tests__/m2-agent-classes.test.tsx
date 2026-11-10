@@ -124,3 +124,10 @@ test('a write-only class limit principal may acknowledge externally authorized r
 test('shell warns before discarding an Agent class draft',async()=>{
  const {Layout}=await import('../src/screens/authenticated/Layout');(ApiClient.get as jest.Mock).mockResolvedValue([cls('a')]);useAuthStore.setState({isAuthenticated:true});const view=render(<Layout/>);fireEvent.click(view.getByTestId('nav-agentClasses'));fireEvent.click(await view.findByRole('button',{name:'Review / edit'}));fireEvent.change(view.getByLabelText('Class name'),{target:{value:'Local class'}});fireEvent.click(view.getByTestId('nav-dashboard'));expect(view.getByRole('dialog',{name:'Leave Agent class review?'})).toBeTruthy();fireEvent.click(view.getByRole('button',{name:'Keep working'}));expect(view.getByLabelText('Class name')).toHaveProperty('value','Local class');fireEvent.click(view.getByTestId('nav-dashboard'));fireEvent.click(view.getByRole('button',{name:'Discard and leave'}));expect(view.queryByLabelText('Class name')).toBeNull();
 });
+
+test('class catalogue filters returned data without discarding an open draft or mutating records',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue([cls('a'),{...cls('b'),isActive:false}]);render(<AgentClassesScreen/>);
+ fireEvent.click((await screen.findAllByRole('button',{name:'Review / edit'}))[0]);fireEvent.change(screen.getByLabelText('Class name'),{target:{value:'Unsaved draft'}});
+ fireEvent.click(screen.getByRole('button',{name:'Inactive'}));expect(screen.queryByText('REF-a')).toBeNull();expect(screen.getByText('REF-b')).toBeTruthy();expect(screen.getByLabelText('Class name')).toHaveProperty('value','Unsaved draft');
+ fireEvent.change(screen.getByLabelText('Search returned classes'),{target:{value:'missing'}});expect(screen.getByText('No returned classes match these filters.')).toBeTruthy();expect(screen.getByLabelText('Class name')).toHaveProperty('value','Unsaved draft');expect(ApiClient.post).not.toHaveBeenCalled();expect(ApiClient.patch).not.toHaveBeenCalled();
+});

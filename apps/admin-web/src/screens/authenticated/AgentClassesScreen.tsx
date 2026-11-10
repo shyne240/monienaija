@@ -1,6 +1,7 @@
 import './operational-surfaces.css';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { PageHeader } from '../../design-system/primitives';
+import { WorkspaceFilterTabs } from '../../design-system/WorkspaceDrawer';
 import './agent-classes-workspace.css';
 
 import { ApiClient } from '../../services/api-client';
@@ -161,6 +162,8 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
   useEffect(() => { if (pendingNavigation) keepEditingRef.current?.focus(); else if (restoreNavigationFocus.current) { restoreNavigationFocus.current = false; navigationTrigger.current?.focus(); } }, [pendingNavigation]);
   useEffect(() => () => { listGeneration.current += 1; limitGeneration.current += 1; mutationGeneration.current += 1; }, []);
   const [items, setItems] = useState<AgentClassRecord[]>([]);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [selected, setSelected] = useState<AgentClassRecord | null>(null);
   const [form, setForm] = useState<AgentClassForm>(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
@@ -485,6 +488,12 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
     );
   }
 
+  const matchingItems = items.filter(item => {
+    const query = search.trim().toLocaleLowerCase();
+    return (statusFilter === 'all' || item.isActive === (statusFilter === 'active')) &&
+      (!query || [item.reference, item.code, item.name].some(value => value.toLocaleLowerCase().includes(query)));
+  });
+
   return (
     <div className="mn-operational mn-agent-classes" style={styles.wrap}>
       <PageHeader eyebrow="Agent network" title="Agent classes & service eligibility" description="Review class configuration and manage it only with the dedicated authorization function." actions={
@@ -525,12 +534,18 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
 
       <div className="mn-agent-class-catalogue-header">
         <div><p>CLASS GOVERNANCE</p><h2>Class catalogue</h2><span>Review services, configuration and version before making changes.</span></div>
-        {!loading && !listError && <span className="mn-agent-class-count">{items.length} {items.length === 1 ? 'class' : 'classes'} returned</span>}
+        {!loading && !listError && <span className="mn-agent-class-count">{matchingItems.length} of {items.length} {items.length === 1 ? 'class' : 'classes'} shown</span>}
+      </div>
+      <div className="mn-agent-class-filters">
+        <WorkspaceFilterTabs label="Class state" value={statusFilter} options={[{value:'all',label:'All classes'},{value:'active',label:'Active'},{value:'inactive',label:'Inactive'}]} onChange={setStatusFilter} />
+        <label>Search returned classes<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Reference, code or name" /></label>
       </div>
       {loading ? (
         <div style={styles.loading}>Loading Agent classes…</div>
       ) : listError ? null : items.length === 0 ? (
         <div style={styles.empty}>No Agent classes returned by the authorized API.</div>
+      ) : matchingItems.length === 0 ? (
+        <div style={styles.empty}>No returned classes match these filters.</div>
       ) : (
         <div style={styles.tableWrap} role="region" aria-label="Agent classes" tabIndex={0}>
           <table style={styles.table}>
@@ -546,7 +561,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {matchingItems.map((item) => (
                 <tr key={item.id}>
                   <td>
                     <strong>{item.reference}</strong>

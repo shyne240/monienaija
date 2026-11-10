@@ -12,3 +12,13 @@
 .mn-agent-class-editor-note { margin:5px 0 0; }
 .mn-agent-classes table th, .mn-agent-classes table td { padding:12px; text-align:left; vertical-align:top; border-bottom:1px solid #e1ebe4; }
 .mn-agent-classes table th { color:#486157; background:#f4f8f5; font-size:12px; }
+/* Catalogue exploration filters only the authorized returned list. The governed editor stays mounted. */
+.mn-agent-class-filters { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:end; gap:12px; padding:0 20px 16px; background:#eef6f0; border:1px solid #d4e4d9; border-top:0; }
+.mn-agent-class-filters .one-workspace-filter-tabs { flex:1 1 260px; margin:0; }
+.mn-agent-class-filters label { display:flex; flex-direction:column; gap:5px; color:#29483b; font-size:12px; font-weight:700; }
+.mn-agent-class-filters input { box-sizing:border-box; min-height:40px; padding:8px 10px; border:1px solid #78978a; border-radius:7px; background:#fff; font:inherit; font-weight:400; }
+.mn-agent-class-filters input:focus-visible { outline:2px solid #0b624a; outline-offset:2px; }
+.mn-agent-classes table th:last-child,.mn-agent-classes table td:last-child { position:sticky; right:0; z-index:1; box-shadow:-3px 0 6px #18382b0d; }
+.mn-agent-classes table td:last-child { background:#fff; }
+.mn-agent-class-editor { border-radius:12px !important; }
+@media(max-width:600px) { .mn-agent-class-filters { padding:0 14px 14px; } .mn-agent-class-filters label { width:100%; } }
