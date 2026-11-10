@@ -100,3 +100,16 @@ test('registry refresh accessible name matches the visible loading label', async
   expect(screen.getByRole('button', { name: 'Refresh Limit profiles' }).textContent).toBe('Refresh');
   expect(screen.getByRole('button', { name: 'Refresh Limit rules' }).textContent).toBe('Refresh');
 });
+
+test('record details open in a read-only drawer and Escape restores focus without mutation', async () => {
+  session(['fee_rule.view']);
+  (ApiClient.get as jest.Mock).mockResolvedValue(page([{id:'fee-one',productCode:'TRANSFER',currency:'NGN',flatFeeMinor:'100',isActive:true,description:'Returned detail'}]));
+  render(<CommercialRulesScreen initialTab="fees" />);
+  const trigger = await screen.findByRole('button',{name:'View details'});
+  trigger.focus(); fireEvent.click(trigger);
+  const dialog = screen.getByRole('dialog',{name:'Fees record details'});
+  expect(dialog.textContent).toContain('Returned detail');
+  fireEvent.keyDown(document,{key:'Escape'});
+  expect(screen.queryByRole('dialog',{name:'Fees record details'})).toBeNull();
+  expect(document.activeElement).toBe(trigger); expect(ApiClient.post).not.toHaveBeenCalled();
+});

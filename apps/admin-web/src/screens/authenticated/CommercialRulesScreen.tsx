@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Button, PageHeader } from '../../design-system/primitives';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
-import { StructuredColumn, StructuredRecordTable, DataRecord } from '../../components/StructuredData';
+import { StructuredColumn, StructuredRecordTable, StructuredKeyValueList, DataRecord } from '../../components/StructuredData';
+import { WorkspaceDrawer } from '../../design-system/WorkspaceDrawer';
 import './operational-surfaces.css';
 import './commercial-catalogue.css';
 
@@ -144,10 +145,11 @@ const RegistrySection: React.FC<{ title: string; endpoint: string; columns: Stru
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selected, setSelected] = useState<DataRecord | null>(null);
   const requestId = useRef(0);
   const load = async () => {
     const id = ++requestId.current;
-    setLoading(true); setError(''); setData(null);
+    setLoading(true); setError(''); setData(null); setSelected(null);
     try {
       const result = await ApiClient.get(`${endpoint}?page=${page}&limit=${PAGE_SIZE}`);
       const parsed = parsePage(result, page, endpoint);
@@ -179,7 +181,7 @@ const RegistrySection: React.FC<{ title: string; endpoint: string; columns: Stru
         <Button size="sm" onClick={() => void load()} disabled={loading} aria-label={`${loading ? 'Loading' : 'Refresh'} ${title}`}>{loading ? 'Loading…' : 'Refresh'}</Button>
       </div>
       <div className="commercial-registry__toolbar">
-        <label className="commercial-search">Search this page <input type="search" value={query} onChange={event => setQuery(event.target.value)} aria-label={`Search ${title} on this page`} placeholder="Search visible columns" /></label>
+        <label className="commercial-search">Search this page <input type="search" value={query} onChange={event => { setQuery(event.target.value); setSelected(null); }} aria-label={`Search ${title} on this page`} placeholder="Search visible columns" /></label>
         <p>Search applies only to the current page and visible columns.</p>
       </div>
       {error && <div className="commercial-state commercial-state--error" role="alert">{error} Use Refresh to try again.</div>}
@@ -188,13 +190,17 @@ const RegistrySection: React.FC<{ title: string; endpoint: string; columns: Stru
           {data.total === null ? `${data.rows.length} record${data.rows.length === 1 ? '' : 's'} returned · Total and pagination unavailable` : `${data.total} total records · Page ${data.page} of ${Math.max(1, data.totalPages ?? 0)}`}
           {search && ` · ${rows.length} matching on this page`}
         </div>
-        <StructuredRecordTable rows={rows} columns={columns} emptyMessage={search ? 'No records match this search on the current page.' : `No ${title.toLowerCase()} were returned by the API.`} />
+        <StructuredRecordTable rows={rows} columns={columns} onViewDetails={setSelected} emptyMessage={search ? 'No records match this search on the current page.' : `No ${title.toLowerCase()} were returned by the API.`} />
         {data.total !== null && <div className="commercial-registry__pager" aria-label={`${title} pagination`}>
           <span>Showing {data.rows.length} on this page</span>
           <div><Button size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)} aria-label={`Previous ${title} page`}>Previous</Button>
             <Button size="sm" disabled={!data.hasNextPage} onClick={() => setPage(p => p + 1)} aria-label={`Next ${title} page`}>Next</Button></div>
         </div>}
       </>}
+      {selected && <WorkspaceDrawer label={`${title} record details`} className="commercial-detail" onDismiss={() => setSelected(null)}>
+        <header className="commercial-detail__header"><div><p className="commercial-kicker">READ-ONLY REGISTRY</p><h2>{title} details</h2></div><Button size="sm" onClick={() => setSelected(null)}>Close</Button></header>
+        <div className="commercial-detail__body"><p>Values returned by the registry for this record.</p><StructuredKeyValueList data={selected} /></div>
+      </WorkspaceDrawer>}
     </section>
   );
 };

@@ -43,6 +43,7 @@ test('commercial tabs reject out-of-order responses', async () => {
   render(<CommercialRulesScreen initialTab="fees" />);
   fireEvent.click(screen.getByRole('tab', { name: 'Commissions' }));
   await act(async () => { commissions.resolve([{ id: 'c1', code: 'COMMISSION' }]); await commissions.promise; });
+  fireEvent.click(screen.getByRole('button', { name: 'View details' }));
   expect(screen.getAllByText('COMMISSION').length).toBeGreaterThan(0);
   await act(async () => { fees.resolve([{ id: 'f1', code: 'OLD FEE' }]); await fees.promise; });
   expect(screen.queryByText('OLD FEE')).toBeNull();

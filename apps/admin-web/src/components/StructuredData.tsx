@@ -101,11 +101,13 @@ export function StructuredRecordTable({
   columns,
   emptyMessage = 'No records returned.',
   showDetails = true,
+  onViewDetails,
 }: {
   rows: DataRecord[];
   columns: StructuredColumn[];
   emptyMessage?: string;
   showDetails?: boolean;
+  onViewDetails?: (row: DataRecord) => void;
 }) {
   if (rows.length === 0) return <p style={styles.empty}>{emptyMessage}</p>;
 
@@ -133,10 +135,10 @@ export function StructuredRecordTable({
                 ))}
                 {showDetails && (
                   <td style={styles.cell}>
-                    <details>
+                    {onViewDetails ? <button type="button" className="commercial-detail-trigger" onClick={() => onViewDetails(row)}>View details</button> : <details>
                       <summary>View details</summary>
                       <StructuredKeyValueList data={row} />
-                    </details>
+                    </details>}
                   </td>
                 )}
               </tr>
