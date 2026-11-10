@@ -131,3 +131,10 @@ test('class catalogue filters returned data without discarding an open draft or 
  fireEvent.click(screen.getByRole('button',{name:'Inactive'}));expect(screen.queryByText('REF-a')).toBeNull();expect(screen.getByText('REF-b')).toBeTruthy();expect(screen.getByLabelText('Class name')).toHaveProperty('value','Unsaved draft');
  fireEvent.change(screen.getByLabelText('Search returned classes'),{target:{value:'missing'}});expect(screen.getByText('No returned classes match these filters.')).toBeTruthy();expect(screen.getByLabelText('Class name')).toHaveProperty('value','Unsaved draft');expect(ApiClient.post).not.toHaveBeenCalled();expect(ApiClient.patch).not.toHaveBeenCalled();
 });
+
+test('governed editor groups its existing controls and keeps errors visible in context',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue([cls('a')]);(ApiClient.patch as jest.Mock).mockRejectedValue(new Error('Synthetic update failure'));
+ render(<AgentClassesScreen/>);fireEvent.click(await screen.findByRole('button',{name:'Review / edit'}));
+ const editor=screen.getByRole('region',{name:'Agent class details'});expect(within(editor).getByRole('navigation',{name:'Class configuration sections'})).toBeTruthy();expect(within(editor).getByRole('region',{name:'Class details'})).toBeTruthy();expect(within(editor).getByRole('region',{name:'Requirements & limits'})).toBeTruthy();
+ fireEvent.change(within(editor).getByLabelText('Class name'),{target:{value:'Local draft'}});fireEvent.click(within(editor).getByRole('button',{name:'Save class'}));expect(await within(editor).findByRole('alert')).toBeTruthy();expect(within(editor).getByLabelText('Class name')).toHaveProperty('value','Local draft');
+});

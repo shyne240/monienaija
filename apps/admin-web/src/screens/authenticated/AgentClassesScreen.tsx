@@ -521,18 +521,18 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
         {!classNeedsRefresh && !loading && !listError && <button type="button" style={styles.smallButton} onClick={() => { if ((creating || selected) && !window.confirm('Acknowledge review and discard the local class editor? Copy any needed entries before continuing.')) return; setCreating(false); setSelected(null); setForm(EMPTY_FORM); formBaseline.current = EMPTY_FORM; resetClassLimitsState(); setError(''); setClassUnconfirmed(false); }}>I reviewed the class and audit history</button>}
       </div>}
       {listError && <div style={styles.error} role="alert">Agent class catalogue unavailable: {listError}. Draft values remain in this workspace; refresh before taking action.</div>}
-      {error && (
+      {error && (loading || Boolean(listError) || !(creating || selected)) && (
         <div style={styles.error} role="alert">
           {error}
         </div>
       )}
-      {message && (
+      {message && (loading || Boolean(listError) || !(creating || selected)) && (
         <div style={styles.success} role="status">
           {message}
         </div>
       )}
 
-      <div className="mn-agent-class-catalogue-header">
+      <div id="class-catalogue" className="mn-agent-class-catalogue-header">
         <div><p>CLASS GOVERNANCE</p><h2>Class catalogue</h2><span>Review services, configuration and version before making changes.</span></div>
         {!loading && !listError && <span className="mn-agent-class-count">{matchingItems.length} of {items.length} {items.length === 1 ? 'class' : 'classes'} shown</span>}
       </div>
@@ -600,7 +600,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
           style={styles.editor}
           aria-label={creating ? 'Create Agent class' : 'Agent class details'}
         >
-          <div style={styles.editorHeader}>
+          <div className="mn-agent-class-editor-header" style={styles.editorHeader}>
             <div><p className="mn-agent-class-editor-eyebrow">{creating ? 'NEW CONFIGURATION' : 'CLASS CONFIGURATION'}</p>
             <h3 style={styles.sectionTitle}>
               {creating ? 'Create Agent class' : `${selected?.reference} — configuration`}
@@ -614,6 +614,14 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
               Close
             </button>
           </div>
+          <nav className="mn-agent-class-editor-nav" aria-label="Class configuration sections">
+            <a href="#class-catalogue">Catalogue</a>
+            <a href="#class-identity">{canManage ? 'Class details' : 'Configuration'}</a>
+            {canManage && <><a href="#class-services">Services</a><a href="#class-policy">Policy fields</a></>}
+            {!creating && selected && <a href="#class-limits">Limit assignments</a>}
+          </nav>
+          {error && <div style={styles.error} role="alert">{error}</div>}
+          {message && <div style={styles.success} role="status">{message}</div>}
           {pendingNavigation && <div role="group" aria-label="Discard class changes" style={styles.warningBox}>
             <p>Discard the local class changes? Saved changes remain in the catalogue. Inspect a refreshed catalogue after an unconfirmed outcome.</p>
             <button ref={keepEditingRef} type="button" style={styles.secondaryButton} onClick={() => { restoreNavigationFocus.current = true; setPendingNavigation(null); }}>Keep editing</button>{' '}
@@ -624,6 +632,8 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
           {canManage ? (
             <form onSubmit={save} style={styles.form}>
               <fieldset disabled={saving || Boolean(pendingNavigation)} className="mn-agent-class-fields">
+              <section id="class-identity" className="mn-agent-class-editor-section" aria-labelledby="class-identity-title">
+              <div className="mn-agent-class-section-heading"><div><p className="mn-agent-class-editor-eyebrow">PROFILE</p><h4 id="class-identity-title">Class details</h4></div><span>{creating ? 'New class' : `Version ${selected?.version}`}</span></div>
               {creating && (
                 <>
                   <label style={styles.label}>
@@ -675,8 +685,9 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
                 />
                 Class active
               </label>
+              </section>
 
-              <fieldset style={styles.serviceFieldset} aria-label="Canonical applicable services">
+              <fieldset id="class-services" style={styles.serviceFieldset} aria-label="Canonical applicable services">
                 <legend style={styles.serviceLegend}>
                   Applicable services (validated canonical Ordinary Agent V1 set)
                 </legend>
@@ -757,6 +768,8 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
                 </div>
               </fieldset>
 
+              <section id="class-policy" className="mn-agent-class-editor-section" aria-labelledby="class-policy-title">
+              <div className="mn-agent-class-section-heading"><div><p className="mn-agent-class-editor-eyebrow">POLICY CONFIGURATION</p><h4 id="class-policy-title">Requirements &amp; limits</h4><p>Blank fields are saved as null; enter valid JSON where configured.</p></div></div>
               <div style={styles.configGrid}>
                 {JSON_FIELDS.map(({ key, label }) => (
                   <label key={key} style={styles.label}>
@@ -771,6 +784,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
                   </label>
                 ))}
               </div>
+              </section>
               {!creating && (
                 <p style={styles.versionNote}>
                   Update uses expected version {selected?.version}. A stale edit is rejected; refresh
@@ -783,7 +797,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
               </fieldset>
             </form>
           ) : (
-            <div style={styles.readOnlyDetails}>
+            <div id="class-identity" className="mn-agent-class-readonly" style={styles.readOnlyDetails}>
               <div>
                 <strong>Name:</strong> {selected?.name}
               </div>
@@ -811,7 +825,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
           )}
 
           {!creating && selected && (
-            <div style={styles.classLimitsSection} aria-label="Agent class limit assignments">
+            <div id="class-limits" className="mn-agent-class-limits" style={styles.classLimitsSection} aria-label="Agent class limit assignments">
               <div style={styles.editorHeader}>
                 <div>
                   <h4 style={styles.subSectionTitle}>
