@@ -10,6 +10,7 @@ The approved Login, Dashboard and Customer Directory references are the design a
 - Cash-to-Cash Operations.
 - Ledger & Reversals (account registry and journal workspace; reversal controls preserved).
 - Reconciliation & Breaks.
+- KYC Assessment Lookup & Review; Compliance Case Lookup; Fraud Case Lookup.
 - Fee Rules, Commission Rules, Reward Rules, Product Catalogue and Limit Catalogue (shared commercial registry).
 - Audit & Security Events.
 
@@ -19,7 +20,6 @@ Evidence and source commit references are in [README.md](README.md) and the evid
 
 - Customer & Agent Servicing: Agent Network Management; Agent Classes & Capabilities; Customer 360° internal sections beyond directory/preview.
 - Commercial & Risk Controls: Limit Assignments.
-- Compliance & Risk: KYC Assessment Lookup & Review; Compliance Case Lookup; Fraud Case Lookup.
 - Platform Administration: Privileged Approvals; Workforce Overview & Support Provisioning; Role Governance; Super-Admin Recovery; SMS & Email Notifications; System Health.
 - Home & My Work: Dashboard Settings.
 
