@@ -5,7 +5,8 @@ import './compliance-redesign.css';
 import { Button, PageHeader, ScrollRegion } from '../../design-system/primitives';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
-import { validCustomerCase } from '../../utils/compliance-case';
+import { CustomerComplianceCaseRow, validCustomerCase } from '../../utils/compliance-case';
+import { ComplianceCaseDrawer } from '../../components/ComplianceCaseDrawer';
 
 interface RiskFraudScreenProps {
   initialCustomerId?: string;
@@ -22,7 +23,8 @@ const FraudWorkspace: React.FC<RiskFraudScreenProps & {canView: boolean}> = ({ca
   const generation = useRef(0);
   useEffect(() => () => { generation.current += 1; }, []);
   const [customerId, setCustomerId] = useState(initialCustomerId || '');
-  const [cases, setCases] = useState<any[]>([]);
+  const [cases, setCases] = useState<CustomerComplianceCaseRow[]>([]);
+  const [selectedCase, setSelectedCase] = useState<CustomerComplianceCaseRow | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [searched, setSearched] = useState(false);
@@ -31,7 +33,7 @@ const FraudWorkspace: React.FC<RiskFraudScreenProps & {canView: boolean}> = ({ca
     if (!canView) return;
     if(!requestedId.trim()) { setError('Enter customer UUID'); return; }
     const id = requestedId.trim(); const request = ++generation.current;
-    setLoading(true); setError(''); setCases([]); setSearched(false);
+    setLoading(true); setError(''); setCases([]); setSelectedCase(null); setSearched(false);
     try {
       // The server limits categories by current grants; this screen displays only FRAUD rows.
       const res: any = await ApiClient.get(`/customers/${encodeURIComponent(id)}/compliance-cases`);
@@ -56,7 +58,7 @@ const FraudWorkspace: React.FC<RiskFraudScreenProps & {canView: boolean}> = ({ca
       <section className="compliance-workspace__panel" aria-labelledby="fraud-search-heading">
         <div className="compliance-workspace__heading"><div><p className="compliance-workspace__eyebrow">CUSTOMER LOOKUP</p><h2 id="fraud-search-heading">Find a customer</h2><p>Use a customer UUID to search authorized FRAUD cases.</p></div></div>
         <form className="compliance-workspace__lookup" onSubmit={event=>{event.preventDefault();void fetchFraud();}}>
-          <label>Customer UUID<input value={customerId} onChange={e=>{generation.current += 1;setCustomerId(e.target.value);setCases([]);setSearched(false);setError('');setLoading(false);}} placeholder={initialCustomerId ? `Customer ${initialCustomerId.slice(0,8)}…` : 'Customer UUID'} /></label>
+          <label>Customer UUID<input value={customerId} onChange={e=>{generation.current += 1;setCustomerId(e.target.value);setCases([]);setSelectedCase(null);setSearched(false);setError('');setLoading(false);}} placeholder={initialCustomerId ? `Customer ${initialCustomerId.slice(0,8)}…` : 'Customer UUID'} /></label>
           <Button type="submit" variant="primary" disabled={loading}>{loading?'Loading…':'Search FRAUD cases'}</Button>
         </form>
         {initialCustomerId && <p className="compliance-workspace__hint">Customer context carried from Customer 360°.</p>}
@@ -66,8 +68,9 @@ const FraudWorkspace: React.FC<RiskFraudScreenProps & {canView: boolean}> = ({ca
         {error && <div className="compliance-workspace__state compliance-workspace__state--error" role="alert">{error}</div>}
         {loading && <div className="compliance-workspace__state" role="status">Loading fraud cases…</div>}
         {!loading && !searched && !error && <div className="compliance-workspace__state">Search for a customer to view records.</div>}
-        {!loading && !error && cases.length > 0 ? <ScrollRegion label="Fraud cases" hint="Scroll horizontally to see all columns."><table className="compliance-workspace__table"><thead><tr><th scope="col">Case number</th><th scope="col">Status</th><th scope="col">Severity</th><th scope="col">Opened</th></tr></thead><tbody>{cases.map((c:any)=><tr key={c.id}><td><code>{c.caseNumber}</code></td><td><span className="compliance-workspace__badge">{c.status}</span></td><td>{c.severity}</td><td>{c.openedAt && Number.isFinite(Date.parse(c.openedAt)) ? new Date(c.openedAt).toLocaleString() : '—'}</td></tr>)}</tbody></table></ScrollRegion> : !loading && searched && !error && <div className="compliance-workspace__state">No FRAUD cases were returned for this customer.</div>}
+        {!loading && !error && cases.length > 0 ? <ScrollRegion label="Fraud cases" hint="Scroll horizontally to see all columns."><table className="compliance-workspace__table"><thead><tr><th scope="col">Case number</th><th scope="col">Status</th><th scope="col">Severity</th><th scope="col">Opened</th><th scope="col">Details</th></tr></thead><tbody>{cases.map((c:any)=><tr key={c.id}><td><code>{c.caseNumber}</code></td><td><span className="compliance-workspace__badge">{c.status}</span></td><td>{c.severity}</td><td>{c.openedAt && Number.isFinite(Date.parse(c.openedAt)) ? new Date(c.openedAt).toLocaleString() : '—'}</td><td><button type="button" className="compliance-case-detail" aria-label={`View case ${c.caseNumber}`} onClick={() => setSelectedCase(c)}>View details</button></td></tr>)}</tbody></table></ScrollRegion> : !loading && searched && !error && <div className="compliance-workspace__state">No FRAUD cases were returned for this customer.</div>}
       </section>
+      {selectedCase && <ComplianceCaseDrawer record={selectedCase} onClose={() => setSelectedCase(null)} />}
     </div>
   );
 };

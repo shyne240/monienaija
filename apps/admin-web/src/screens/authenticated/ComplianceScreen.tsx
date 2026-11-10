@@ -6,7 +6,8 @@ import { Button, PageHeader, ScrollRegion } from '../../design-system/primitives
 import { ApiClient } from '../../services/api-client';
 import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { useAuthStore } from '../../store/auth-store';
-import { validCustomerCase } from '../../utils/compliance-case';
+import { CustomerComplianceCaseRow, validCustomerCase } from '../../utils/compliance-case';
+import { ComplianceCaseDrawer } from '../../components/ComplianceCaseDrawer';
 
 interface ComplianceScreenProps {
   initialCustomerId?: string;
@@ -44,7 +45,8 @@ const ComplianceWorkspace: React.FC<ComplianceScreenProps & {principal: ReturnTy
   const canAccess = mode === 'cases' ? canManageCases : canViewKyc || availableKycStatuses.length > 0;
   const [customerId, setCustomerId] = useState(initialCustomerId || '');
   const [kyc, setKyc] = useState<any>(null);
-  const [cases, setCases] = useState<any[]>([]);
+  const [cases, setCases] = useState<CustomerComplianceCaseRow[]>([]);
+  const [selectedCase, setSelectedCase] = useState<CustomerComplianceCaseRow | null>(null);
   const [caseCategory, setCaseCategory] = useState(initialCategory || 'ALL');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -91,7 +93,7 @@ const ComplianceWorkspace: React.FC<ComplianceScreenProps & {principal: ReturnTy
     setError('');
     setSearched(false);
     setKyc(null);
-    setCases([]);
+    setCases([]); setSelectedCase(null);
     const errors: string[] = [];
 
     const requests: Promise<void>[] = [];
@@ -181,8 +183,8 @@ const ComplianceWorkspace: React.FC<ComplianceScreenProps & {principal: ReturnTy
   }
 
   const visibleCases = cases.filter((item) =>
-    (item.category || item.type) !== 'FRAUD' &&
-    (caseCategory === 'ALL' || (item.category || item.type) === caseCategory),
+    item.category !== 'FRAUD' &&
+    (caseCategory === 'ALL' || item.category === caseCategory),
   );
 
   const nonFraudCases = cases.filter(item => item.category !== 'FRAUD');
@@ -196,7 +198,7 @@ const ComplianceWorkspace: React.FC<ComplianceScreenProps & {principal: ReturnTy
       <section className="compliance-workspace__panel" aria-labelledby="compliance-search-heading">
         <div className="compliance-workspace__heading"><div><p className="compliance-workspace__eyebrow">CUSTOMER LOOKUP</p><h2 id="compliance-search-heading">Find a customer</h2><p>Use a customer UUID to load this workspace.</p></div></div>
         <form className="compliance-workspace__lookup" onSubmit={event => { event.preventDefault(); void fetchForCustomer(); }}>
-          <label>Customer UUID<input value={customerId} onChange={(event) => { if (decisionDirty && !window.confirm('Change customer and discard the current KYC decision draft?')) return; lookupGeneration.current += 1; setLoading(false); setCustomerId(event.target.value); setKyc(null); setCases([]); setSearched(false); setError(''); setAssessMsg(''); setAssessErr(''); setKycReason(''); if (mode === 'kyc') { setKycLevel('LEVEL_1'); setKycStatus(availableKycStatuses.includes('APPROVED') ? 'APPROVED' : availableKycStatuses[0] ?? 'APPROVED'); } setDecisionDirty(false); }} disabled={assessing || Boolean(pendingDecision) || Boolean(uncertain) || Boolean(completedDecision)} placeholder={initialCustomerId ? `Customer ${initialCustomerId.slice(0, 8)}…` : 'Customer UUID'} /></label>
+          <label>Customer UUID<input value={customerId} onChange={(event) => { if (decisionDirty && !window.confirm('Change customer and discard the current KYC decision draft?')) return; lookupGeneration.current += 1; setLoading(false); setCustomerId(event.target.value); setKyc(null); setCases([]); setSelectedCase(null); setSearched(false); setError(''); setAssessMsg(''); setAssessErr(''); setKycReason(''); if (mode === 'kyc') { setKycLevel('LEVEL_1'); setKycStatus(availableKycStatuses.includes('APPROVED') ? 'APPROVED' : availableKycStatuses[0] ?? 'APPROVED'); } setDecisionDirty(false); }} disabled={assessing || Boolean(pendingDecision) || Boolean(uncertain) || Boolean(completedDecision)} placeholder={initialCustomerId ? `Customer ${initialCustomerId.slice(0, 8)}…` : 'Customer UUID'} /></label>
           <Button type="submit" variant="primary" disabled={loading || assessing || Boolean(pendingDecision) || Boolean(uncertain)}>{loading ? 'Loading…' : 'Search'}</Button>
         </form>
         {initialCustomerId && <p className="compliance-workspace__hint">Customer context carried from Customer 360°; the customer ID is passed to the scoped lookup endpoint.</p>}
@@ -214,9 +216,9 @@ const ComplianceWorkspace: React.FC<ComplianceScreenProps & {principal: ReturnTy
         </div>}
         {mode === 'kyc' && canViewKyc && !loading && searched && !error && !kyc && <div className="compliance-workspace__state">No KYC assessment found for this customer.</div>}
         {mode === 'cases' && <>
-          <div className="compliance-workspace__filter"><label>Category<select value={caseCategory} onChange={(event) => setCaseCategory(event.target.value)}><option value="ALL">All non-FRAUD compliance cases</option><option value="AML">AML</option><option value="KYC">KYC</option><option value="SANCTIONS">SANCTIONS</option><option value="PEP">PEP</option><option value="DOCUMENT">DOCUMENT</option><option value="ACCOUNT_REVIEW">ACCOUNT_REVIEW</option><option value="MANUAL_REVIEW">MANUAL_REVIEW</option><option value="OTHER">OTHER</option></select></label></div>
+          <div className="compliance-workspace__filter"><label>Category<select value={caseCategory} onChange={(event) => { setCaseCategory(event.target.value); setSelectedCase(null); }}><option value="ALL">All non-FRAUD compliance cases</option><option value="AML">AML</option><option value="KYC">KYC</option><option value="SANCTIONS">SANCTIONS</option><option value="PEP">PEP</option><option value="DOCUMENT">DOCUMENT</option><option value="ACCOUNT_REVIEW">ACCOUNT_REVIEW</option><option value="MANUAL_REVIEW">MANUAL_REVIEW</option><option value="OTHER">OTHER</option></select></label></div>
           {!loading && !error && searched && <p className="compliance-workspace__summary">{visibleCases.length} shown · {nonFraudCases.length} non-FRAUD records returned</p>}
-          {!loading && !error && visibleCases.length > 0 ? <ScrollRegion label="Compliance cases" hint="Scroll horizontally to see all columns."><table className="compliance-workspace__table"><thead><tr><th scope="col">Case number</th><th scope="col">Category</th><th scope="col">Status</th><th scope="col">Severity</th></tr></thead><tbody>{visibleCases.map((item: any) => <tr key={item.id}><td><code>{item.caseNumber}</code></td><td>{item.category}</td><td><span className="compliance-workspace__badge">{item.status}</span></td><td>{item.severity}</td></tr>)}</tbody></table></ScrollRegion> : !loading && searched && !error && <div className="compliance-workspace__state">No compliance cases match this customer and category filter.</div>}
+          {!loading && !error && visibleCases.length > 0 ? <ScrollRegion label="Compliance cases" hint="Scroll horizontally to see all columns."><table className="compliance-workspace__table"><thead><tr><th scope="col">Case number</th><th scope="col">Category</th><th scope="col">Status</th><th scope="col">Severity</th><th scope="col">Details</th></tr></thead><tbody>{visibleCases.map((item: CustomerComplianceCaseRow) => <tr key={item.id}><td><code>{item.caseNumber}</code></td><td>{item.category}</td><td><span className="compliance-workspace__badge">{item.status}</span></td><td>{item.severity}</td><td><button type="button" className="compliance-case-detail" aria-label={`View case ${item.caseNumber}`} onClick={() => setSelectedCase(item)}>View details</button></td></tr>)}</tbody></table></ScrollRegion> : !loading && searched && !error && <div className="compliance-workspace__state">No compliance cases match this customer and category filter.</div>}
         </>}
       </section>
       {mode === 'kyc' && canSubmitKyc && <section className="compliance-workspace__panel" aria-labelledby="kyc-decision-heading">
@@ -231,6 +233,7 @@ const ComplianceWorkspace: React.FC<ComplianceScreenProps & {principal: ReturnTy
         {assessMsg && <div className="compliance-workspace__state compliance-workspace__state--success" role="status">{assessMsg}</div>}
         {assessErr && <div className="compliance-workspace__state compliance-workspace__state--error" role="alert">{assessErr}</div>}
       </section>}
+      {selectedCase && <ComplianceCaseDrawer record={selectedCase} onClose={() => setSelectedCase(null)} />}
       {pendingDecision && <div className="cm-modal-backdrop"><section ref={dialogRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="kyc-confirm-title"><h2 id="kyc-confirm-title">Confirm KYC decision?</h2><p>Customer <code>{pendingDecision.id}</code> · Level {pendingDecision.level} · Status {pendingDecision.status}</p><p>Reason: {pendingDecision.reason || 'Not provided'}</p><div className="cm-actions-row"><button type="button" disabled={assessing} onClick={() => setPendingDecision(null)}>Keep editing</button><button type="button" disabled={assessing} onClick={() => void submitAssessment()}>{assessing ? 'Submitting…' : 'Confirm KYC decision'}</button></div></section></div>}
     </div>
   );

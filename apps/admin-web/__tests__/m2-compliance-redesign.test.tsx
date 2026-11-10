@@ -39,3 +39,11 @@ test('fraud permission does not grant compliance or KYC access',()=>{
  principal(['risk_fraud.manage_fraud_case']);const view=render(<ComplianceScreen mode="cases"/>);expect(screen.getByRole('alert').textContent).toContain('compliance.manage_case');view.unmount();
  render(<ComplianceScreen mode="kyc"/>);expect(screen.getByRole('alert').textContent).toContain('kyc.view');expect(ApiClient.get).not.toHaveBeenCalled();
 });
+
+test.each([['cases','compliance.manage_case','AML'],['fraud','risk_fraud.manage_fraud_case','FRAUD']])('%s drawer shows only the authorized customer case and restores focus',async(mode,scope,category)=>{
+ principal([scope]);(ApiClient.get as jest.Mock).mockResolvedValue([row(category),row(category==='AML'?'FRAUD':'AML')]);
+ render(mode==='cases'?<ComplianceScreen mode="cases"/>:<RiskFraudScreen/>);fireEvent.change(screen.getByLabelText('Customer UUID'),{target:{value:'customer'}});fireEvent.click(screen.getByRole('button',{name:mode==='cases'?'Search':'Search FRAUD cases'}));
+ const trigger=await screen.findByRole('button',{name:`View case ${category}-1`});trigger.focus();fireEvent.click(trigger);
+ const dialog=screen.getByRole('dialog',{name:'Case details'});expect(dialog.textContent).toContain(`${category}-1`);expect(dialog.textContent).toContain('customer');expect(screen.queryByRole('button',{name:`View case ${category==='AML'?'FRAUD':'AML'}-1`})).toBeNull();
+ fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog',{name:'Case details'})).toBeNull();expect(document.activeElement).toBe(trigger);expect(ApiClient.post).not.toHaveBeenCalled();
+});

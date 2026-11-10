@@ -27,3 +27,18 @@
 .compliance-workspace__assessment strong{font-size:14px;color:#183d2e;line-height:1.5}
 .mn-compliance .compliance-workspace__table{width:100%;margin-top:14px;border-collapse:collapse}
 @media(max-width:760px){.mn-compliance form.compliance-workspace__decision,.compliance-workspace__assessment{grid-template-columns:minmax(0,1fr)}}
+/* Customer-scoped lookup, case table and detail use the shared directory pattern. */
+.compliance-workspace__boundary{background:#f2f7f2;border-color:#dce8dc;border-left:3px solid #12804e}
+.compliance-workspace__panel{background:transparent;border:0;border-radius:0;box-shadow:none;padding:0;margin-top:28px}
+.compliance-workspace__assessment>div{background:#fff}
+.mn-compliance .compliance-workspace__table{background:#fff;border:1px solid #dfe9e1}
+.mn-compliance .compliance-workspace__table th:last-child,.mn-compliance .compliance-workspace__table td:last-child{position:sticky;right:0;z-index:1;box-shadow:-3px 0 6px #18382b0d}
+.mn-compliance .compliance-workspace__table td:last-child{background:white}
+.compliance-case-detail{border:1px solid #78978a;border-radius:7px;padding:9px 12px;background:#fff;color:#006444;font:inherit;font-weight:700;cursor:pointer;white-space:nowrap}
+.compliance-case-detail:focus-visible{outline:3px solid #2179bf;outline-offset:2px}
+.compliance-case-drawer__header{position:sticky;top:0;z-index:1;display:flex;justify-content:space-between;gap:16px;padding:24px;background:#fff;border-bottom:1px solid #dfe9e1}
+.compliance-case-drawer__header h2{margin:6px 0 0;font-size:20px;color:#123c2b;overflow-wrap:anywhere}
+.compliance-case-drawer__body{padding:24px;overflow-wrap:anywhere;font-size:13px;color:#52655f}
+.compliance-case-drawer__body dl{display:grid;grid-template-columns:minmax(100px,1fr) minmax(0,2fr);gap:12px;padding:16px;border:1px solid #dfe9e1;border-radius:8px;line-height:1.5}
+.compliance-case-drawer__body dt{font-weight:600}.compliance-case-drawer__body dd{margin:0;color:#132b25}
+@media(max-width:600px){.compliance-case-drawer__header,.compliance-case-drawer__body{padding:20px}}
