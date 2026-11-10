@@ -131,3 +131,10 @@ Source `93c9ab1` moves existing read-only funding inspection into a responsive f
 Source `51c3951` adds navigation between separately permission-gated overview, provisioning and disable sections, and a local search of returned role totals with explicit result counts and an empty state. Counts remain assignment totals, not individual workforce records. Forms remain inline, so drafts, one-time credentials and independent-review safeguards stay visible; existing authorization, busy, confirmation and uncertain-outcome controls are retained.
 
 [`evidence/workforce-batch/`](evidence/workforce-batch/manifest.json) records 15 captures at 1440, 768 and 375 pixels with the synthetic local workforce in disposable PostgreSQL. GET and local-login POST only; the capture exercises local search, a local provisioning draft and disable confirmation/Escape without creating or disabling anyone. External network and workers blocked. Full tests: 82 suites / 836 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
+
+
+### Full-console batch: role governance
+
+Source `e80ad34` organizes the existing governed role-change form into principal, effective window and finance-approval sections, alongside a live local draft summary. The summary explicitly distinguishes a draft from a current assignment and changes its status during submission or an unconfirmed outcome. It does not infer approvals or assignment state. Existing role/function/MFA gates, self-change prohibition, domain-switch protection, confirmation and independent-review locks remain in force.
+
+[`evidence/role-governance-batch/`](evidence/role-governance-batch/manifest.json) records 12 captures at 1440, 768 and 375 pixels using a synthetic local principal and approval identifier. The browser checked local draft, refused domain switch and review/Escape/focus with GET and local-login POST only; no role change was sent. External network and workers blocked. Full 82 suites / 837 tests passed before the final status-label safeguard; afterward 13 targeted tests, TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
