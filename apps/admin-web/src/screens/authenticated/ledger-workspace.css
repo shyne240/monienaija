@@ -5,3 +5,22 @@
 .mn-ledger__section-head select { flex: 0 0 auto; }
 .mn-ledger__panel { box-shadow:0 4px 20px #183b2810; }
 .mn-ledger__eyebrow { margin:0 0 8px; color:#386b53; font-size:11px; font-weight:800; letter-spacing:.1em; }
+/* Account registry follows the directory's search, table and contextual detail model. */
+.mn-ledger { max-width:1440px; }
+.mn-ledger__account-search { display:grid; gap:6px; margin-top:16px; color:#344f43; font-size:12px; font-weight:700; }
+.mn-ledger__account-search input { box-sizing:border-box; width:100%; border:1px solid #7d9288; border-radius:7px; padding:8px 11px; background:#fff; font:inherit; font-weight:400; }
+.mn-ledger__hint { color:#52655f; font-size:12px; line-height:1.4; }
+.mn-ledger__count { margin:16px 0 10px; color:#203d30; font-size:13px; font-weight:700; }
+.mn-ledger__accounts { width:100%; min-width:680px; border-collapse:collapse; border:1px solid #dfe9e1; background:white; text-align:left; font-size:12px; }
+.mn-ledger__accounts th,.mn-ledger__accounts td { padding:12px; border-bottom:1px solid #e0e8e2; vertical-align:middle; }
+.mn-ledger__accounts th { background:#f2f6f2; color:#3d5b4e; }
+.mn-ledger__accounts th:last-child,.mn-ledger__accounts td:last-child { position:sticky; right:0; z-index:1; box-shadow:-3px 0 6px #18382b0d; }
+.mn-ledger__accounts td:last-child { background:white; }
+.mn-ledger__detail-button { border:1px solid #78978a; border-radius:7px; padding:9px 12px; background:white; color:#006444; font:inherit; font-weight:700; cursor:pointer; white-space:nowrap; }
+.mn-ledger__detail-button:focus-visible,.mn-ledger__account-search input:focus-visible { outline:3px solid #2179bf; outline-offset:2px; }
+.mn-ledger__drawer-header { position:sticky; top:0; z-index:1; display:flex; justify-content:space-between; gap:16px; padding:24px; background:white; border-bottom:1px solid #dfe9e1; }
+.mn-ledger__drawer-header h2 { margin:6px 0 0; font-size:20px; color:#123c2b; }
+.mn-ledger__drawer-body { padding:24px; overflow-wrap:anywhere; font-size:13px; color:#52655f; }
+.mn-ledger__drawer-body dl { display:grid; grid-template-columns:minmax(110px,1fr) minmax(0,2fr); gap:12px; padding:16px; border:1px solid #dfe9e1; border-radius:8px; line-height:1.5; }
+.mn-ledger__drawer-body dt { font-weight:600; } .mn-ledger__drawer-body dd { margin:0; color:#132b25; }
+@media(max-width:600px){.mn-ledger__drawer-header,.mn-ledger__drawer-body{padding:20px}}

@@ -57,3 +57,11 @@ it('renders the real account-list contract without inventing an absent balance',
  expect(screen.getByText('Balance unavailable · NGN')).toBeTruthy();
  expect(screen.queryByText('Ledger account list returned an invalid response.')).toBeNull();
 });
+
+test('account search and drawer use returned values without inventing a balance',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue([{id:'real-account',code:'CASH',name:'Cash control',currency:'NGN',accountType:'ASSET',normalBalance:'DEBIT'}]);
+ render(<LedgerOperationsScreen/>);const trigger=await screen.findByRole('button',{name:'View account CASH'});trigger.focus();fireEvent.click(trigger);
+ const dialog=screen.getByRole('dialog',{name:'Ledger account details'});expect(dialog.textContent).toContain('real-account');expect(dialog.textContent).toContain('Balance unavailable · NGN');
+ fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog',{name:'Ledger account details'})).toBeNull();expect(document.activeElement).toBe(trigger);
+ fireEvent.change(screen.getByLabelText('Search returned accounts'),{target:{value:'missing'}});expect(screen.getByText('No returned accounts match this search.')).toBeTruthy();expect(ApiClient.post).not.toHaveBeenCalled();
+});

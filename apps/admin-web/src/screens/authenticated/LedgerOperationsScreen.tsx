@@ -1,5 +1,6 @@
 import './operational-surfaces.css';
-import { PageHeader } from '../../design-system/primitives';
+import { PageHeader, ScrollRegion } from '../../design-system/primitives';
+import { WorkspaceDrawer } from '../../design-system/WorkspaceDrawer';
 import React, { useState, useEffect, useRef } from 'react';
 import './ledger-workspace.css';
 import { formatFinancialAmount } from '../../utils/financial-display';
@@ -60,6 +61,8 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
   useEffect(() => () => { generations.current.accounts++; generations.current.journal++; generations.current.reversal++; }, []);
   const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
   const [searchCurrency, setSearchCurrency] = useState('');
+  const [accountQuery, setAccountQuery] = useState('');
+  const [selectedAccount, setSelectedAccount] = useState<LedgerAccount | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -116,7 +119,7 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
       return;
     }
     const request = ++generations.current.accounts;
-    setIsLoading(true); setAccounts([]);
+    setIsLoading(true); setAccounts([]); setSelectedAccount(null);
     setError('');
     try {
       // GET /ledger/accounts
@@ -259,6 +262,8 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
     );
   }
 
+  const matchingAccounts = accounts.filter(account => `${account.name} ${account.code}`.toLocaleLowerCase().includes(accountQuery.trim().toLocaleLowerCase()));
+
   return (
     <div className="mn-operational mn-ledger" style={styles.container}>
       <PageHeader eyebrow="Finance and ledger" title="Ledger Core & Reversals Desk" description="Inspect accounts and journal postings, and use the existing governed reversal workflow." />
@@ -285,29 +290,21 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
             </select>
           </div>
 
+          <label className="mn-ledger__account-search">Search returned accounts<input type="search" value={accountQuery} onChange={event => { setAccountQuery(event.target.value); setSelectedAccount(null); }} placeholder="Account name or code" /></label>
+          <p className="mn-ledger__hint">Search filters the accounts returned for the selected currency.</p>
           {isLoading ? (
             <p style={styles.loadingText}>Fetching ledger accounts...</p>
           ) : error ? null : accounts.length === 0 ? (
             <p style={styles.emptyText}>No ledger accounts found.</p>
-          ) : (
-            <div style={styles.accountsGrid}>
-              {accounts.map((acc) => (
-                <div key={acc.id} style={styles.accountCard}>
-                  <div style={styles.accountHeader}>
-                    <span style={styles.accountName}>{acc.name}</span>
-                    <span style={styles.accountCode}>{acc.code}</span>
-                  </div>
-                  <div style={styles.accountMeta}>
-                    <span style={styles.metaLabel}>Type: {acc.accountType}</span>
-                    <span style={styles.metaLabel}>Normal: {acc.normalBalance}</span>
-                  </div>
-                  <div style={acc.balanceMinor === undefined ? styles.accountBalanceUnavailable : styles.accountBalance}>
-                    {acc.balanceMinor === undefined ? `Balance unavailable · ${acc.currency}` : formatFinancialAmount(acc.balanceMinor, acc.currency)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          ) : matchingAccounts.length === 0 ? <p style={styles.emptyText}>No returned accounts match this search.</p> : <>
+            <p className="mn-ledger__count">{matchingAccounts.length} of {accounts.length} returned accounts</p>
+            <ScrollRegion label="Ledger accounts" hint="Scroll horizontally to see all account columns.">
+              <table className="mn-ledger__accounts"><thead><tr><th scope="col">Account</th><th scope="col">Type</th><th scope="col">Normal</th><th scope="col">Balance</th><th scope="col">Details</th></tr></thead>
+                <tbody>{matchingAccounts.map(acc => <tr key={acc.id}><td><strong>{acc.name}</strong><br/><code>{acc.code}</code></td><td>{acc.accountType}</td><td>{acc.normalBalance}</td><td>{acc.balanceMinor === undefined ? `Balance unavailable · ${acc.currency}` : formatFinancialAmount(acc.balanceMinor, acc.currency)}</td><td><button type="button" className="mn-ledger__detail-button" aria-label={`View account ${acc.code}`} onClick={() => setSelectedAccount(acc)}>View details</button></td></tr>)}</tbody>
+              </table>
+            </ScrollRegion>
+          </>}
+
         </section>
 
         {/* Journal Inspection & Reversals */}
@@ -445,6 +442,12 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
           )}
         </section>
       </div>
+      {selectedAccount && <WorkspaceDrawer label="Ledger account details" className="mn-ledger__drawer" onDismiss={() => setSelectedAccount(null)}>
+        <header className="mn-ledger__drawer-header"><div><p className="mn-ledger__eyebrow">CHART OF ACCOUNTS</p><h2>Account details</h2></div><button type="button" className="mn-ledger__detail-button" onClick={() => setSelectedAccount(null)}>Close</button></header>
+        <div className="mn-ledger__drawer-body"><p>Read-only values returned by the account list.</p><dl>
+          <dt>Account</dt><dd>{selectedAccount.name}</dd><dt>Code</dt><dd>{selectedAccount.code}</dd><dt>Account ID</dt><dd>{selectedAccount.id}</dd><dt>Type</dt><dd>{selectedAccount.accountType || '—'}</dd><dt>Normal balance</dt><dd>{selectedAccount.normalBalance || '—'}</dd><dt>Balance</dt><dd>{selectedAccount.balanceMinor === undefined ? `Balance unavailable · ${selectedAccount.currency}` : formatFinancialAmount(selectedAccount.balanceMinor, selectedAccount.currency)}</dd>
+        </dl></div>
+      </WorkspaceDrawer>}
     </div>
   );
 };
