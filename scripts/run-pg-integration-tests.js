@@ -81,6 +81,7 @@ const { spawnSync } = require('node:child_process');
 const ROOT = path.resolve(__dirname, '..');
 const JEST_BIN = path.join(ROOT, 'node_modules', 'jest', 'bin', 'jest.js');
 const CONFIG = path.join(ROOT, 'jest.integration.config.js');
+const NETWORK_GUARD = path.join(ROOT, 'test/support/mission-25c-network-guard.cjs');
 const BATCH_SIZE = Number(process.env.PG_TEST_BATCH_SIZE ?? 15);
 // Unchanged from the prior (concurrency=1) default: this exact 3072MB ceiling is what both
 // concurrency=2 validation runs actually used, so it is not re-tuned alongside the concurrency
@@ -119,7 +120,7 @@ let RUN_IDENTIFIER;
 function listTestFiles() {
   const result = spawnSync(
     process.execPath,
-    [JEST_BIN, '--config', CONFIG, '--listTests', ...process.argv.slice(2)],
+    ['-r', NETWORK_GUARD, JEST_BIN, '--config', CONFIG, '--listTests', ...process.argv.slice(2)],
     { cwd: ROOT, encoding: 'utf8' },
   );
   if (result.status !== 0) {
@@ -147,6 +148,7 @@ function runBatch(files, index, total) {
       process.execPath,
       [
         `--max-old-space-size=${MAX_OLD_SPACE_MB}`,
+        '-r', NETWORK_GUARD,
         JEST_BIN,
         '--config',
         CONFIG,
@@ -184,6 +186,16 @@ async function runWithConcurrency(batches, concurrency) {
 }
 
 async function main() {
+  // Reject before even loading a local .env or listing tests when not explicitly confirmed.
+  if (process.env.PG_TEST_CONFIRM_DISPOSABLE_CLUSTER !== 'yes') {
+    throw new Error('PostgreSQL integration tests CREATE/DROP databases; confirm a separately verified disposable cluster with PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes.');
+  }
+  // Same precedence as Nest/dotenv: existing process variables win, and the file is read only.
+  require('dotenv').config({ path: path.join(ROOT, '.env') });
+  const host = (process.env.DB_HOST ?? '').trim().toLowerCase();
+  if (process.env.NODE_ENV !== 'test' || !['localhost', '127.0.0.1', '::1'].includes(host)) {
+    throw new Error('PostgreSQL integration tests require NODE_ENV=test and an explicit loopback DB_HOST.');
+  }
   // Resolve the run namespace FIRST (fails fast on an invalid caller-provided identifier)
   // and propagate it to every child process via the environment.
   RUN_IDENTIFIER = resolveRunIdentifier();

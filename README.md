@@ -61,38 +61,15 @@ available only to an authenticated workforce session holding `internal:access` a
 
 ## Develop & run
 
-Prerequisites: Node.js 22+, npm 10+, Docker (local PostgreSQL) or the embedded-PG script.
+Prerequisites: Node.js 22+, npm 10+, and a separately verified local PostgreSQL instance. For the established Windows/Docker setup, use the [Windows stability and preflight procedure](docs/development/WINDOWS-LOCAL-STABILITY.md). **Do not overwrite `.env`, recreate volumes or run migrations as a routine update.** The safe preflight is read-only; application startup is not.
 
-```bash
-npm ci
-cp .env.example .env          # fill DB_* values; never commit .env
-npm run migration:run
-npm run start:dev
-```
+For a verified synthetic-only local environment, `npm run local:preflight` checks the existing configuration and a read-only database connection. `npm run local:start:safe` is an opt-in guarded launcher; see the guide for the required process-only safety attestations, limitations and Admin Web commands. Legacy direct start commands are not equivalent to that safety posture.
 
-Quality gates: `npm run lint` · `npm run format:check` · `npm run build` · `npm test`
-(financial integration suites run against real PostgreSQL; run ≤5 suites per jest process when
-running the full battery).
+Quality gates: `npm run lint` · `npm run format:check` · `npm run build` · `npm test`.
 
-### PostgreSQL regression battery (`npm run test:pg`)
+### PostgreSQL integration battery
 
-The real-PostgreSQL integration suites require (1) a reachable local PostgreSQL and (2) the
-local-development workforce configuration (an enabled `SUPER_ADMIN` role in
-`A2_FINANCE_ROLES_JSON`, the maker-checker rules and rate-limit categories). Without (2), the
-admin/authorization/governance suites correctly fail closed with `SUPER_ADMIN role is disabled
-or undefined in configuration` — an environment defect, not an application defect.
-
-Reproducible local setup (ARENA 3 integration baseline):
-
-```bash
-node scripts/prepare-pg-test-env.js   # writes .env from .env.example + the committed
-                                      # v1-workforce-bootstrap.env.template (public placeholders)
-node scripts/embedded-pg.js &         # embedded PostgreSQL 18 on 127.0.0.1:5432
-npm run test:pg                       # batched runner; keep PG_TEST_CONCURRENCY=1 on <8GB RAM
-```
-
-On 4GB-class sandboxes keep `PG_TEST_CONCURRENCY=1`: at the default of 2 the batch processes
-are OOM-killed mid-run (observed as batches exiting with a null code), which corrupts results.
+`npm run test:pg` creates, migrates and drops databases; it is **not** safe on the working local database cluster. Run only after explicit approval against a separately provisioned disposable local PostgreSQL cluster. The runner requires `NODE_ENV=test`, an explicit loopback `DB_HOST`, and `PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes`; see the [Windows guide](docs/development/WINDOWS-LOCAL-STABILITY.md) for limitations. The test environment helper requires explicit `--create-if-missing` and never overwrites an existing `.env`; use it only in a disposable checkout or CI. No test configuration should be used to replace working credentials.
 
 ## Deploy / bootstrap / pilot
 

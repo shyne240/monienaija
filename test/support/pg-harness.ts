@@ -13,6 +13,7 @@ import {
   ROLE_DASHBOARD_ASSIGNMENT_SEED,
 } from '../../src/dashboard/dashboard-templates.seed';
 import { assertOwnRunDatabaseName, resolveRunIdentifier } from './pg-run-namespace';
+import { assertDisposablePgTestEnvironment } from './pg-test-safety';
 
 /**
  * Real-PostgreSQL integration harness.
@@ -33,6 +34,7 @@ export interface PostgresAdminConfig {
 }
 
 export function postgresAdminConfig(): PostgresAdminConfig {
+  assertDisposablePgTestEnvironment();
   const host = process.env.DB_HOST ?? '127.0.0.1';
   return {
     host: host === 'localhost' ? '127.0.0.1' : host,

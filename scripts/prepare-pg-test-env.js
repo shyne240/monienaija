@@ -24,8 +24,8 @@
  *   the same configuration. No secret material: every value is a committed public placeholder.
  *
  * Usage:
- *   node scripts/prepare-pg-test-env.js           # refuses to overwrite an existing .env
- *   node scripts/prepare-pg-test-env.js --force   # regenerate even if .env exists
+ *   node scripts/prepare-pg-test-env.js --create-if-missing
+ * Explicit opt-in is required, and existing .env files are never overwritten.
  */
 
 const fs = require('node:fs');
@@ -55,11 +55,12 @@ function readKeysFromTemplate(file, keys) {
 }
 
 function main() {
-  const force = process.argv.includes('--force');
-  if (fs.existsSync(ENV_TARGET) && !force) {
-    console.error(
-      `Refusing to overwrite existing ${ENV_TARGET}. Re-run with --force to regenerate.`,
-    );
+  if (process.argv.slice(2).length !== 1 || process.argv[2] !== '--create-if-missing') {
+    console.error('Refusing to write .env. Use --create-if-missing only on a disposable test checkout; --force is not supported.');
+    process.exit(1);
+  }
+  if (fs.existsSync(ENV_TARGET)) {
+    console.error('Refusing to overwrite existing .env.');
     process.exit(1);
   }
   if (!fs.existsSync(ENV_EXAMPLE)) {
@@ -129,7 +130,7 @@ function main() {
     '# Local integration-test configuration for the embedded PostgreSQL harness. Never commit.',
   );
 
-  fs.writeFileSync(ENV_TARGET, out.join('\n'));
+  fs.writeFileSync(ENV_TARGET, out.join('\n'), { flag: 'wx', mode: 0o600 });
   console.log(`Wrote ${ENV_TARGET} (workforce roles/rules/rate-limits enabled, embedded-PG DB credentials).`);
 }
 

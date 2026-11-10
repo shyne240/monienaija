@@ -22,6 +22,8 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run build
+      - name: Local preflight safety tests (mocked; no database)
+        run: node --test test/local-preflight.test.cjs
       - name: Run unit tests with outbound network blocked
         env:
           NODE_OPTIONS: --require ./test/support/mission-25c-network-guard.cjs
@@ -59,6 +61,7 @@ jobs:
       DB_USER: monienaija
       DB_PASSWORD: monienaija-ci-password
       DB_ADMIN_NAME: postgres
+      PG_TEST_CONFIRM_DISPOSABLE_CLUSTER: 'yes'
       DB_SSL: 'false'
       NOTIFICATION_WORKER_ENABLED: 'false'
       CASH_TO_CASH_EXPIRY_WORKER_ENABLED: 'false'
@@ -77,7 +80,7 @@ jobs:
       # Use the repository's public test placeholders, including the complete workforce role
       # catalogue required by AppModule integration tests. Existing CI DB env takes precedence.
       - name: Prepare isolated PostgreSQL test configuration
-        run: node scripts/prepare-pg-test-env.js
+        run: node scripts/prepare-pg-test-env.js --create-if-missing
       - name: Run the real-PostgreSQL integration suites
         env:
           NODE_OPTIONS: --require ./test/support/mission-25c-network-guard.cjs
