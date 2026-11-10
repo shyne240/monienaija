@@ -1,0 +1,217 @@
+{
+  "source": "Vite dev server from current source, real Nest AppModule and disposable migrated PostgreSQL",
+  "baseCommit": "d0f0d4c3bc4663d2892218d7e37498daa64ec697",
+  "auth": "real local development login for seeded test roles",
+  "backend": "Real API, seeded synthetic local workforce and one synthetic customer and ledger-backed wallet in disposable PostgreSQL; browser proxy permits only GET and local-login POST; no real providers or workers",
+  "screens": [
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 1440,
+      "file": "login-1440.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "overview",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "overview-1440.png",
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "wallet",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "wallet-1440.png",
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "personal",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "personal-1440.png",
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "addresses",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "addresses-1440.png",
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "proof",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "proof-1440.png",
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "physical",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "physical-1440.png",
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 768,
+      "file": "login-768.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "overview",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "overview-768.png",
+      "geometry": {
+        "client": 768,
+        "scroll": 768
+      }
+    },
+    {
+      "key": "wallet",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "wallet-768.png",
+      "geometry": {
+        "client": 768,
+        "scroll": 768
+      }
+    },
+    {
+      "key": "personal",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "personal-768.png",
+      "geometry": {
+        "client": 768,
+        "scroll": 768
+      }
+    },
+    {
+      "key": "addresses",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "addresses-768.png",
+      "geometry": {
+        "client": 768,
+        "scroll": 768
+      }
+    },
+    {
+      "key": "proof",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "proof-768.png",
+      "geometry": {
+        "client": 768,
+        "scroll": 768
+      }
+    },
+    {
+      "key": "physical",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "physical-768.png",
+      "geometry": {
+        "client": 768,
+        "scroll": 768
+      }
+    },
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 375,
+      "file": "login-375.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "overview",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "overview-375.png",
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "wallet",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "wallet-375.png",
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "personal",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "personal-375.png",
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "addresses",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "addresses-375.png",
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "proof",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "proof-375.png",
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "physical",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "physical-375.png",
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    }
+  ],
+  "globalCustomerSearch": [],
+  "warnings": []
+}

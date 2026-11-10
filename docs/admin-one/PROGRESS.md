@@ -18,7 +18,7 @@ Evidence and source commit references are in [README.md](README.md) and the evid
 
 ## Remaining — core operations first
 
-- Customer & Agent Servicing: Customer 360° internal sections beyond directory/preview.
+- Customer & Agent Servicing: Customer 360° internal sections (overview wallet inspection and in-page navigation implemented and checked; personal-information and proof workflows still need a substantive design pass).
 - Commercial & Risk Controls: Limit Assignments.
 - Platform Administration: Privileged Approvals; Workforce Overview & Support Provisioning; Role Governance; Super-Admin Recovery; SMS & Email Notifications; System Health.
 - Home & My Work: Dashboard Settings.
