@@ -59,6 +59,7 @@ const SystemHealthWorkspace: React.FC<{ onOpenNotifications?: () => void }> = ({
   const canViewAny = canViewMetrics || canViewDiagnostics || canViewOutbox || canViewDeliveries;
 
   const [metrics, setMetrics] = useState<any>(null);
+  const [metricSearch, setMetricSearch] = useState('');
   const [diagnostics, setDiagnostics] = useState<DataRecord | null>(null);
   const [outbox, setOutbox] = useState<unknown>(null);
   const [deliveries, setDeliveries] = useState<any>(null);
@@ -145,6 +146,10 @@ const SystemHealthWorkspace: React.FC<{ onOpenNotifications?: () => void }> = ({
     const values = metrics?.metrics && typeof metrics.metrics === 'object' ? metrics.metrics : {};
     return Object.entries(values as Record<string, unknown>).map(([metric, value]) => ({ metric, value }));
   }, [metrics]);
+  const filteredMetricRows = useMemo(() => {
+    const query = metricSearch.trim().toLowerCase();
+    return query ? metricRows.filter(row => row.metric.toLowerCase().includes(query)) : metricRows;
+  }, [metricRows, metricSearch]);
   const deliveryRows = extractRecords(deliveries);
   const outboxRows = extractRecords(outbox);
   const deliveryHasNextPage = Boolean(deliveries?.hasNextPage);
@@ -188,7 +193,9 @@ const SystemHealthWorkspace: React.FC<{ onOpenNotifications?: () => void }> = ({
           <p className="health-redesign__eyebrow">OPERATIONAL METRICS</p><h2>Metrics</h2>
           {panelLoading.metrics ? <div className="health-redesign__state" role="status">Loading metrics…</div> : loadErrors.metrics ? <div className="health-redesign__error" role="alert">{loadErrors.metrics}</div> : <>
             <p className="health-redesign__sub">Generated {metrics?.generatedAt && Number.isFinite(new Date(metrics.generatedAt).getTime()) ? new Date(metrics.generatedAt).toLocaleString() : 'time unavailable'}</p>
-            <StructuredRecordTable rows={metricRows} columns={[{ key: 'metric', label: 'Metric' }, { key: 'value', label: 'Value' }]} showDetails={false} emptyMessage="No metric values were returned." />
+            <div className="health-redesign__metric-tools"><label>Search loaded metrics<input type="search" value={metricSearch} onChange={event => setMetricSearch(event.target.value)} placeholder="Metric name" /></label><Button size="sm" disabled={!metricSearch} onClick={() => setMetricSearch('')}>Clear search</Button></div>
+            <p className="health-redesign__sub" role="status">Showing {filteredMetricRows.length} of {metricRows.length} loaded metrics. Search applies only to this response.</p>
+            <StructuredRecordTable rows={filteredMetricRows} columns={[{ key: 'metric', label: 'Metric' }, { key: 'value', label: 'Value' }]} showDetails={false} emptyMessage={metricRows.length ? 'No loaded metrics match this search.' : 'No metric values were returned.'} />
           </>}
         </section>}
         {canViewDiagnostics && <section id="health-diagnostics" tabIndex={-1} className="health-redesign__panel" aria-label="Diagnostics">

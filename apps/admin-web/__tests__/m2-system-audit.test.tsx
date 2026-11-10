@@ -72,3 +72,11 @@ test('notification diagnostic details discard unexpected message and payload fie
  render(<SystemHealthScreen/>);await screen.findAllByText('EVENT');fireEvent.click(screen.getByRole('button',{name:'Inspect Outbox Receipts'}));await screen.findAllByText('receipt');
  for(const secret of ['PRIVATE_MESSAGE','PRIVATE_DESTINATION','PRIVATE_DELIVERY_PAYLOAD','PRIVATE_RECEIPT_PAYLOAD']) expect(screen.queryByText(secret)).toBeNull();
 });
+
+test('metric search is local to the authorized loaded response and distinguishes no match',async()=>{
+ principal('one',['metrics.view']);(ApiClient.get as jest.Mock).mockResolvedValue({metrics:{jobs:2, failures:0}});render(<SystemHealthScreen/>);
+ await screen.findByText('jobs');const search=screen.getByLabelText('Search loaded metrics');fireEvent.change(search,{target:{value:'failure'}});
+ expect(screen.queryByText('jobs')).toBeNull();expect(screen.getByText('failures')).toBeTruthy();expect(screen.getByText(/Showing 1 of 2 loaded metrics/)).toBeTruthy();
+ fireEvent.change(search,{target:{value:'missing'}});expect(screen.getByText('No loaded metrics match this search.')).toBeTruthy();
+ fireEvent.click(screen.getByRole('button',{name:'Clear search'}));expect(screen.getByText('jobs')).toBeTruthy();expect(ApiClient.get).toHaveBeenCalledTimes(1);
+});
