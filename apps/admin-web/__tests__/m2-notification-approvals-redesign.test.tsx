@@ -63,7 +63,7 @@ test('filters the loaded queue and returns focus from the inspector even if its 
   render(<NotificationManagementScreen initialTab="approvals" />);
   const trigger = await screen.findByRole('button', { name: `Inspect change ${id}` });
   fireEvent.click(trigger); expect(document.activeElement).toBe(screen.getByTestId('notification-change-inspector'));
-  fireEvent.click(screen.getByRole('button', { name: 'Close inspection' })); expect(document.activeElement).toBe(trigger);
+  fireEvent.keyDown(screen.getByTestId('notification-change-inspector'), { key: 'Escape' }); expect(document.activeElement).toBe(trigger);
   fireEvent.click(trigger); fireEvent.change(screen.getByLabelText('Search loaded notification changes'), { target: { value: other } });
   expect(screen.queryByTestId(`change-request-row-${id}`)).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Close inspection' }));

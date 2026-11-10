@@ -772,6 +772,11 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
     );
   }, [combinedChangeRequests, queueSearch, queueStatus]);
   useEffect(() => { if (reviewedChange) reviewRef.current?.focus(); }, [reviewedChange]);
+  const closeChangeInspection = () => {
+    setReviewedChange(null);
+    if (reviewOrigin.current?.isConnected) reviewOrigin.current.focus();
+    else document.getElementById('notification-approval-queue')?.focus();
+  };
   const pendingConfigurationByEvent = useMemo(() => {
     const grouped = new Map<string, NotificationChangeRequestRecord[]>();
     for (const request of combinedChangeRequests) {
@@ -2244,8 +2249,8 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
             )}
             <p className="notification-redesign__table-hint">Scroll horizontally to inspect all change and checker columns.</p>
           </section>
-          {reviewedChange && <section ref={reviewRef} tabIndex={-1} className="notification-redesign__change-review" style={styles.drawerCard} aria-label="Notification change inspection" data-testid="notification-change-inspector">
-            <div style={styles.cardTitleRow}><h3 style={styles.cardTitle}>Change inspection — <code>{reviewedChange.approvalId ?? reviewedChange.id}</code></h3><button type="button" style={styles.secondarySmallBtn} onClick={() => { setReviewedChange(null); if (reviewOrigin.current?.isConnected) reviewOrigin.current.focus(); else document.getElementById('notification-approval-queue')?.focus(); }}>Close inspection</button></div>
+          {reviewedChange && <section ref={reviewRef} tabIndex={-1} className="notification-redesign__change-review" style={styles.drawerCard} aria-label="Notification change inspection" data-testid="notification-change-inspector" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); closeChangeInspection(); } }}>
+            <p className="notification-redesign__eyebrow">READ-ONLY QUEUE SNAPSHOT</p><div style={styles.cardTitleRow}><h3 style={styles.cardTitle}>Change inspection — <code>{reviewedChange.approvalId ?? reviewedChange.id}</code></h3><button type="button" style={styles.secondarySmallBtn} onClick={closeChangeInspection}>Close inspection</button></div>
             <p>Snapshot from the loaded queue. Frozen details may be unavailable; confirm the current proposal and policy before deciding.</p>
             <dl className="notification-redesign__review-facts"><div><dt>Event and channel</dt><dd>{reviewedChange.eventType} · {reviewedChange.channel}</dd></div><div><dt>Type and status</dt><dd>{reviewedChange.changeType} · {reviewedChange.status}</dd></div><div><dt>Requested by</dt><dd>{reviewedChange.requestedBy}</dd></div><div><dt>Summary</dt><dd>{reviewedChange.summary || 'Unavailable'}</dd></div></dl>
             {reviewedChange.proposedSubject && <div><strong>Proposed subject:</strong> {reviewedChange.proposedSubject}</div>}
