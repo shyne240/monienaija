@@ -12,3 +12,24 @@
 .mn-recovery__receipt:focus, .mn-recovery__review:focus { outline: 2px solid var(--mn-focus-ring, #0b624a); outline-offset: 2px; }
 .mn-recovery__note { background: var(--mn-surface-sunken, #eef3f0); }
 @media (max-width: 480px) { .mn-recovery__form .mn-btn { width: 100%; } }
+.mn-recovery{max-width:1440px}
+.mn-recovery__workspace{display:grid;grid-template-columns:minmax(0,2fr) minmax(260px,.85fr);gap:16px;align-items:start}
+.mn-recovery__main{display:grid;gap:16px;min-width:0}
+.mn-recovery__guide{min-width:0;padding:24px;border:1px solid #dce7e0;border-radius:12px;background:#fff;box-shadow:0 2px 12px rgba(19,43,37,.04);overflow-wrap:anywhere}
+.mn-recovery__eyebrow{margin:0 0 6px!important;color:#4a6b5a!important;font-size:11px!important;font-weight:700;letter-spacing:.08em}
+.mn-recovery__guide h2{margin:0;color:#183d2e;font-size:19px}
+.mn-recovery__guide ol{counter-reset:recovery;list-style:none;display:grid;gap:18px;padding:0;margin:20px 0}
+.mn-recovery__guide li{counter-increment:recovery;display:grid;grid-template-columns:32px minmax(0,1fr);column-gap:10px;align-items:start}
+.mn-recovery__guide li:before{content:counter(recovery,decimal-leading-zero);grid-row:span 2;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#e7f3eb;color:#1a6040;font-size:11px;font-weight:700}
+.mn-recovery__guide li strong{color:#183d2e;font-size:14px}.mn-recovery__guide li span,.mn-recovery__guide>p:last-child{color:#52655f;font-size:13px;line-height:1.5}
+.mn-recovery__guide li span{margin-top:4px}.mn-recovery__guide>p:last-child{border-top:1px solid #e1eae3;padding-top:14px;margin:0}
+.mn-recovery__form textarea{box-sizing:border-box;border-color:#7d9288}.mn-recovery__form textarea:focus-visible{outline:2px solid #0b624a;outline-offset:2px}
+.mn-recovery__form-actions{display:flex;flex-wrap:wrap;gap:8px}
+@media(max-width:850px){.mn-recovery__workspace{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:480px){.mn-recovery__guide{padding:18px}.mn-recovery__form-actions,.mn-recovery__form-actions .mn-btn{width:100%}}
+.mn-recovery__overlay{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:16px;background:rgba(8,30,22,.58)}
+.mn-recovery__dialog{box-sizing:border-box;width:min(100%,520px);max-height:90vh;overflow:auto;padding:24px;border-radius:12px;background:#fff;box-shadow:0 16px 45px rgba(0,0,0,.2);color:#132b25;overflow-wrap:anywhere}
+.mn-recovery__dialog h2{font-size:21px;margin:6px 0 10px}.mn-recovery__dialog p:not(.mn-recovery__eyebrow){font-size:14px;line-height:1.55;color:#52655f}
+.mn-recovery__dialog dl{display:grid;gap:10px;margin:18px 0;padding:14px;background:#f6faf7;border:1px solid #dce7e0;border-radius:8px}.mn-recovery__dialog dt{font-size:12px;color:#52655f;font-weight:700}.mn-recovery__dialog dd{margin:4px 0 0;font-size:13px;overflow-wrap:anywhere}
+.mn-recovery__dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+@media(max-width:480px){.mn-recovery__dialog{padding:18px}.mn-recovery__dialog-actions button{flex:1 1 100%}}

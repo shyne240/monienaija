@@ -94,3 +94,15 @@ test('uncertain recovery focuses independent review, then returns focus after ac
   fireEvent.click(acknowledge);
   expect(document.activeElement).toBe(statement);
 });
+
+test('clear statement removes the sensitive local draft without a recovery request', () => {
+  render(<SuperAdminRecoveryScreen />);
+  const statement = screen.getByLabelText('Recovery statement (JWT)');
+  fireEvent.change(statement, { target: { value: fakeStatement } });
+  expect(screen.getByLabelText('Recovery procedure guidance').textContent).not.toContain(fakeStatement);
+  fireEvent.click(screen.getByRole('button', { name: 'Clear statement' }));
+  expect(statement).toHaveProperty('value', '');
+  expect(document.activeElement).toBe(statement);
+  expect((screen.getByRole('button', { name: 'Execute Recovery' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(ApiClient.post).not.toHaveBeenCalled();
+});
