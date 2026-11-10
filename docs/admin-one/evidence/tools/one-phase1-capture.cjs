@@ -77,13 +77,54 @@ async function freePort() { const s=net.createServer(); await new Promise(r=>s.l
      await nav.click(); await page.waitForLoadState('networkidle'); await page.waitForTimeout(200);
      const h=(await page.locator('[data-testid="main-content"] h1, [data-testid="main-content"] h2').allTextContents()).slice(0,6);
      const size=await page.evaluate(()=>({client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth}));
-     const file=`${key}-${width}.png`;await page.screenshot({path:`${output}/${file}`,fullPage:true});
-     manifest.screens.push({key,role,width,file,headings:h,geometry:size});done.add(key); console.log('CAPTURE',width,role,key,JSON.stringify(h));
-     const extra=async(name)=>{const file=`${name}-${width}.png`;await page.waitForTimeout(400);await page.waitForLoadState('networkidle');await page.waitForTimeout(200);await page.evaluate(()=>window.scrollTo(0,0));await page.waitForTimeout(200);await page.screenshot({path:`${output}/${file}`,fullPage:true});manifest.screens.push({key:name,role,width,file,interaction:true});};
+     if(size.scroll!==size.client) console.log('OVERFLOW', JSON.stringify(await page.evaluate(()=>Array.from(document.querySelectorAll('*')).filter(e=>e.getBoundingClientRect().right>document.documentElement.clientWidth+1).slice(0,20).map(e=>({tag:e.tagName,cls:e.className,right:e.getBoundingClientRect().right,overflow:getComputedStyle(e).overflowX})))));
+     assert.equal(size.scroll, size.client, `Unexpected page-level horizontal overflow on ${key} at ${width}px`);
+     const file=`${key}-${width}.png`;
+     // Chromium's fullPage capture can omit off-screen contents of overflow regions.
+     // For a complete narrow directory image, expand viewport height only; separate
+     // 900px viewport captures below verify the real scrolled state.
+     let captureHeight=900;
+     if(mobile && key==='customers') {captureHeight=await page.evaluate(()=>document.documentElement.scrollHeight);await page.setViewportSize({width,height:captureHeight});await page.waitForTimeout(200);}
+     await page.screenshot({path:`${output}/${file}`,fullPage:!mobile || key!=='customers'});
+     if(captureHeight!==900) await page.setViewportSize({width,height:900});
+     manifest.screens.push({key,role,width,file,headings:h,geometry:size,captureHeight});done.add(key); console.log('CAPTURE',width,role,key,JSON.stringify(h));
+     const extra=async(name)=>{const file=`${name}-${width}.png`;await page.waitForTimeout(400);await page.waitForLoadState('networkidle');await page.waitForTimeout(200);await page.evaluate(()=>window.scrollTo(0,0));await page.waitForTimeout(200);
+      let captureHeight=900;
+      if(mobile && name==='customer-preview') {captureHeight=await page.evaluate(()=>document.documentElement.scrollHeight);await page.setViewportSize({width,height:captureHeight});await page.waitForTimeout(200);}
+      await page.screenshot({path:`${output}/${file}`,fullPage:!mobile || name!=='customer-preview'});
+      if(captureHeight!==900) await page.setViewportSize({width,height:900});
+      manifest.screens.push({key:name,role,width,file,interaction:true,captureHeight});};
      if(key==='customers') {
       const preview=page.getByRole('button',{name:'Preview Local Review Customer'});
       await preview.waitFor();await preview.click();await page.getByRole('complementary',{name:'Customer preview'}).waitFor();await extra('customer-preview');
-      await page.getByRole('button',{name:'Open Customer 360°',exact:true}).last().click();await page.getByRole('tablist',{name:'Customer 360 sections'}).waitFor();await extra('customer-360');
+      if (mobile) {
+       // Check both painted viewport states while the preview is open, not just DOM visibility.
+       const row=page.getByRole('row',{name:/Local Review Customer/});
+       const scroller=page.getByRole('region',{name:'Customer records table'});
+       await row.scrollIntoViewIfNeeded();
+       await page.waitForTimeout(300);
+       assert.equal(await row.isVisible(),true);
+       const previewGeometry=await page.evaluate(()=>({client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth}));
+       assert.equal(previewGeometry.scroll,previewGeometry.client,'Preview must not cause page-level horizontal overflow');
+       const before=await row.boundingBox();
+       assert(before && before.y < 900 && before.y + before.height > 0,'Customer row must intersect viewport');
+       await page.screenshot({path:`${output}/customer-preview-table-375.png`});
+       await scroller.evaluate(el => {el.scrollLeft=el.scrollWidth;});
+       await page.waitForTimeout(300);
+       const info=await scroller.evaluate(el=>({left:el.scrollLeft,width:el.clientWidth,total:el.scrollWidth}));
+       assert(info.left>0 && info.total>info.width,'Customer table must support horizontal scrolling');
+       const action=row.getByRole('button',{name:'Open Customer 360° for Local Review Customer'});
+       const actionRect=await action.boundingBox();
+       const scrollerRect=await scroller.boundingBox();
+       assert(actionRect && scrollerRect && actionRect.x >= scrollerRect.x && actionRect.x + actionRect.width <= scrollerRect.x + scrollerRect.width, 'Row action must be fully visible after scrolling');
+       await page.screenshot({path:`${output}/customer-preview-table-scrolled-375.png`});
+       manifest.screens.push({key:'customer-preview-table',role,width,file:'customer-preview-table-375.png',interaction:true,geometry:info});
+       manifest.screens.push({key:'customer-preview-table-scrolled',role,width,file:'customer-preview-table-scrolled-375.png',interaction:true,geometry:info});
+       await action.click();
+      } else {
+       await page.getByRole('button',{name:'Open Customer 360°',exact:true}).last().click();
+      }
+      await page.getByRole('tablist',{name:'Customer 360 sections'}).waitFor();await extra('customer-360');
      }
 
     }
