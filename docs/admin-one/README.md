@@ -166,3 +166,10 @@ Source `aaa4bb2` adds local version-number filtering and sticky actions to SMS a
 Source `3e158ab` adds channel tabs over only the loaded provider-proposal query, with scoped counts and responsive table actions. Filtering resets and locks while a checker comment, in-flight action, probe or independent-review safeguard is held, so it cannot hide a decision draft or review context. Existing provider configuration, encrypted-credential, maker-checker and uncertain-outcome controls are unchanged. Other notification work remains.
 
 [`evidence/provider-queue-batch/`](evidence/provider-queue-batch/manifest.json) has nine captures at 1440, 768 and 375 pixels under FINANCE_CONTROLLER, using two synthetic pending proposals in disposable PostgreSQL. Channel filtering and an unsent checker note were checked with GET and local-login POST only; no approval, activation, provider verification or test-send occurred. External network and workers blocked. Full 82 suites / 841 tests, TypeScript and build passed before a final mobile-only table CSS adjustment; build and browser captures passed afterward. Screen-reader and actual zoom tests were not performed.
+
+
+### Notification management: event catalogue inspection (partial)
+
+Source `068004b` adds a read-only event snapshot drawer with clear separation between live registry data and offline reference, saved channel gates and delivery guarantees. The drawer clears on refresh and leaves the existing governed trigger editor and its draft/uncertainty protections intact. Event configuration and security-locked behavior are unchanged; other notification tabs remain to be reviewed.
+
+[`evidence/notification-events-batch/`](evidence/notification-events-batch/manifest.json) contains 12 captures at 1440, 768 and 375 pixels under SUPER_ADMIN, using the disposable registry. Filtering, snapshot Escape/focus and an unsent local trigger reason were checked using GET and local-login POST only. No configuration proposal, notification send or external call was made; workers were disabled. Full tests: 82 suites / 842 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
