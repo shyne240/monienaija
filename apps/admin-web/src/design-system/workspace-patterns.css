@@ -7,3 +7,8 @@
 .one-workspace-filter-tabs button:focus-visible{outline:2px solid #0a6442;outline-offset:-2px}
 @media(min-width:1024px){.one-workspace-drawer__backdrop{background:#10271b1a}}
 @media(max-width:600px){.one-workspace-drawer__surface{width:100%}.one-workspace-filter-tabs{gap:18px}}
+/* Keep the horizontal affordance visible where filter choices extend beyond the viewport. */
+.one-workspace-filter-tabs{scrollbar-width:thin;scrollbar-color:#789986 #edf4ef}
+.one-workspace-filter-tabs::-webkit-scrollbar{height:6px}
+.one-workspace-filter-tabs::-webkit-scrollbar-track{background:#edf4ef;border-radius:6px}
+.one-workspace-filter-tabs::-webkit-scrollbar-thumb{background:#789986;border-radius:6px}
