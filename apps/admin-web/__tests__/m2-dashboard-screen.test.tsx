@@ -1,5 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import { OneSummaryCards } from '../src/components/dashboard/OneSummaryCards';
 import { DashboardScreen } from '../src/screens/authenticated/DashboardScreen';
 import { formatMinor } from '../src/components/dashboard/types';
 import { ApiClient } from '../src/services/api-client';
@@ -41,4 +42,15 @@ test('dashboard configuration error offers a working retry',async()=>{
 });
 test('session scopes are available through a keyboard-operable disclosure',async()=>{
  setPrincipal('one',['test.scope']);(ApiClient.get as jest.Mock).mockResolvedValue(dashboard('Synthetic'));render(<DashboardScreen/>);await screen.findByText('Synthetic');const disclosure=screen.getByText('Allowed scopes (1)');expect(disclosure.parentElement?.hasAttribute('open')).toBe(false);fireEvent.click(disclosure);expect(disclosure.parentElement?.hasAttribute('open')).toBe(true);expect(screen.getByText('• test.scope')).toBeTruthy();
+});
+
+test.each([0, 1, 2])('summary cards use correct singular and plural for %i', async count => {
+ (ApiClient.get as jest.Mock).mockImplementation((url:string) => {
+  if(url.includes('agent-lifecycle-summary')) return Promise.resolve({byStatus:[{status:'ACTIVE',count}],pendingApplicationCount:0});
+  if(url.includes('/internal/customers')) return Promise.resolve({data: count ? [{}] : [],page:1,limit:1,total:count,totalPages:count,hasPreviousPage:false,hasNextPage:count>1});
+  return Promise.reject(new Error('not relevant'));
+ });
+ render(<OneSummaryCards canAgents canCustomers/>);
+ expect(await screen.findByText(`${count} active ${count === 1 ? 'agent' : 'agents'}`)).toBeTruthy();
+ expect(await screen.findByText(`${count} ${count === 1 ? 'customer' : 'customers'}`)).toBeTruthy();
 });

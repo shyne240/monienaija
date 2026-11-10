@@ -13,7 +13,7 @@ function AgentCard() {
     if (!isStatusCountData(value, 'agent-lifecycle-summary') || !value.byStatus || new Set(value.byStatus.map(row => row.status)).size !== value.byStatus.length) throw new Error('Invalid agent summary');
     return value.byStatus.find(row => row.status === 'ACTIVE')?.count ?? 0;
   }, []);
-  return <Card label="Active agents" icon="♙" value={loading ? 'Loading…' : error ? 'Unavailable' : `${data?.toLocaleString()} active agents`} caption="Current lifecycle status" />;
+  return <Card label="Active agents" icon="♙" value={loading ? 'Loading…' : error ? 'Unavailable' : data === undefined ? '—' : `${data.toLocaleString()} active ${data === 1 ? 'agent' : 'agents'}`} caption="Current lifecycle status" />;
 }
 function CustomerCard() {
   const {data,loading,error} = useWidgetData<number>(async () => {
@@ -21,7 +21,7 @@ function CustomerCard() {
     if (!value || !Array.isArray(value.data) || value.page !== 1 || value.limit !== 1 || !Number.isSafeInteger(value.total) || value.total < 0 || value.data.length > Math.min(1, value.total) || value.totalPages !== Math.ceil(value.total) || value.hasPreviousPage !== false || value.hasNextPage !== (value.total > 1)) throw new Error('Invalid customer count');
     return value.total;
   }, []);
-  return <Card label="Total customers" icon="♙" value={loading ? 'Loading…' : error ? 'Unavailable' : `${data?.toLocaleString()} customers`} caption="Customer directory total" />;
+  return <Card label="Total customers" icon="♙" value={loading ? 'Loading…' : error ? 'Unavailable' : data === undefined ? '—' : `${data.toLocaleString()} ${data === 1 ? 'customer' : 'customers'}`} caption="Customer directory total" />;
 }
 /** Only mounted when the server's resolved dashboard authorizes the transaction summary. */
 export const OneSummaryCards: React.FC<{canAgents?:boolean; canCustomers?:boolean}> = ({canAgents=false,canCustomers=false}) => {
