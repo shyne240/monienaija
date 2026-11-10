@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Field, PageHeader, ScrollRegion } from '../../design-system/primitives';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { WorkspaceDrawer } from '../../design-system/WorkspaceDrawer';
 import './audit-trail.css';
 
 type AuditFilter = { entityId: string; entityType: string; correlationId: string; limitProfileCode: string };
@@ -51,13 +52,14 @@ const AuditTrailWorkspace: React.FC<{ initialCustomerId?: string }> = ({ initial
   const [events, setEvents] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [selected, setSelected] = useState<AuditRow | null>(null);
   const requestId = useRef(0);
 
   const fetchEvents = async (criteria = filter) => {
     if (!canView) return;
     const currentRequest = ++requestId.current;
     const submitted = { entityId:criteria.entityId.trim(), entityType:criteria.entityType.trim(), correlationId:criteria.correlationId.trim(), limitProfileCode:criteria.limitProfileCode.trim().toUpperCase() };
-    setLoading(true); setError(''); setEvents([]); setApplied(null);
+    setLoading(true); setError(''); setEvents([]); setApplied(null); setSelected(null);
     if (submitted.correlationId.length > 255) { setLoading(false); setError('Correlation ID must be 255 characters or fewer.'); return; }
     if (submitted.limitProfileCode && !/^[A-Z0-9_]{3,80}$/.test(submitted.limitProfileCode)) { setLoading(false); setError('Limit profile code must contain 3–80 letters, digits or underscores.'); return; }
     if (submitted.limitProfileCode && (submitted.entityId || (submitted.entityType && submitted.entityType !== 'LIMIT_PROFILE'))) { setLoading(false); setError('Limit profile code cannot be combined with another entity ID or type.'); return; }
@@ -75,7 +77,7 @@ const AuditTrailWorkspace: React.FC<{ initialCustomerId?: string }> = ({ initial
     } catch (e: any) { if (currentRequest === requestId.current) setError(e?.message || 'Failed to load audit trail'); }
     finally { if (currentRequest === requestId.current) setLoading(false); }
   };
-  const invalidate = () => { requestId.current += 1; setEvents([]); setApplied(null); setError(''); setLoading(false); };
+  const invalidate = () => { setSelected(null); requestId.current += 1; setEvents([]); setApplied(null); setError(''); setLoading(false); };
   const updateFilter = (key: keyof AuditFilter, value: string) => { invalidate(); setFilter(prev => ({ ...prev, [key]: value })); };
   useEffect(() => {
     const next = { ...emptyFilter(), entityId: initialCustomerId || '' };
@@ -111,9 +113,15 @@ const AuditTrailWorkspace: React.FC<{ initialCustomerId?: string }> = ({ initial
         {!loading && !error && applied && events.length === 0 && <p className="mn-audit__state">No audit events returned for this search — try different filters or a global search. Missing events do not prove that no action occurred.</p>}
         {!loading && !error && applied && events.length >= SEARCH_LIMIT && <p className="mn-audit__limit" role="note">The result limit was reached. More matching events may exist; refine the filters.</p>}
         {!loading && !error && applied && events.length > 0 && <ScrollRegion label="Audit events" hint="Scroll horizontally to see all columns.">
-          <table className="mn-audit__table"><thead><tr><th scope="col">Time</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Entity</th><th scope="col">Entity ID</th></tr></thead><tbody>{events.map((ev, i) => <tr key={`${display(ev.id)}-${i}`}><td>{formatTime(ev.occurredAt)}</td><td>{display(ev.actor)}</td><td>{display(ev.action)}</td><td>{display(ev.entityType)}</td><td>{display(ev.entityId)}</td></tr>)}</tbody></table>
+          <table className="mn-audit__table"><thead><tr><th scope="col">Time</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Entity</th><th scope="col">Entity ID</th><th scope="col">Details</th></tr></thead><tbody>{events.map((ev, i) => <tr key={`${display(ev.id)}-${i}`}><td>{formatTime(ev.occurredAt)}</td><td>{display(ev.actor)}</td><td>{display(ev.action)}</td><td>{display(ev.entityType)}</td><td>{display(ev.entityId)}</td><td><button type="button" className="mn-audit__detail-trigger" aria-label={`View audit event ${ev.id}`} onClick={() => setSelected(ev)}>View details</button></td></tr>)}</tbody></table>
         </ScrollRegion>}
       </section>
+      {selected && <WorkspaceDrawer label="Audit event details" className="mn-audit__drawer" onDismiss={() => setSelected(null)}>
+        <header className="mn-audit__drawer-header"><div><p className="mn-audit__eyebrow">AUDIT RECORD</p><h2>Event details</h2></div><Button size="sm" onClick={() => setSelected(null)}>Close</Button></header>
+        <div className="mn-audit__drawer-body"><p>Read-only fields verified for this search result.</p><dl>
+          <dt>Event ID</dt><dd>{display(selected.id)}</dd><dt>Time</dt><dd>{formatTime(selected.occurredAt)}</dd><dt>Actor</dt><dd>{display(selected.actor)}</dd><dt>Action</dt><dd>{display(selected.action)}</dd><dt>Entity type</dt><dd>{display(selected.entityType)}</dd><dt>Entity ID</dt><dd>{display(selected.entityId)}</dd>
+        </dl><p>Additional event payload is not exposed in this workspace.</p></div>
+      </WorkspaceDrawer>}
     </div>
   );
 };

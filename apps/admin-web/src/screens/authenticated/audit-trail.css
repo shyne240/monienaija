@@ -26,3 +26,18 @@
 .mn-audit .mn-scroll-region__hint{display:block}
 @media(max-width:900px){.mn-audit__form{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.mn-audit__form{grid-template-columns:minmax(0,1fr)}}
+/* Keep search and records in the same open workspace as the directory. */
+.mn-audit__panel{padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+.mn-audit__results{margin-top:36px}
+.mn-audit__boundary{background:#f2f7f2;border-color:#dce8dc;border-left:3px solid #12804e}
+.mn-audit__table{background:white;border:1px solid #dfe9e1}
+.mn-audit__table th:last-child,.mn-audit__table td:last-child{position:sticky;right:0;z-index:1;box-shadow:-3px 0 6px #18382b0d}
+.mn-audit__table td:last-child{background:white}
+.mn-audit__detail-trigger{white-space:nowrap;border:1px solid #78978a;border-radius:7px;padding:9px 12px;background:white;color:#006444;font:inherit;font-weight:700;cursor:pointer}
+.mn-audit__detail-trigger:focus-visible{outline:3px solid #2179bf;outline-offset:2px}
+.mn-audit__drawer-header{position:sticky;top:0;z-index:1;display:flex;justify-content:space-between;gap:16px;padding:24px;background:white;border-bottom:1px solid #dfe9e1}
+.mn-audit__drawer-header h2{margin:6px 0 0;font-size:20px;color:#123c2b}
+.mn-audit__drawer-body{padding:24px;overflow-wrap:anywhere;font-size:13px;color:#52655f}
+.mn-audit__drawer-body dl{display:grid;grid-template-columns:minmax(105px,1fr) minmax(0,2fr);gap:12px;padding:16px;border:1px solid #dfe9e1;border-radius:8px;line-height:1.5}
+.mn-audit__drawer-body dt{font-weight:600}.mn-audit__drawer-body dd{margin:0;color:#132b25}
+@media(max-width:560px){.mn-audit__drawer-header,.mn-audit__drawer-body{padding:20px}}

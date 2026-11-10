@@ -76,3 +76,11 @@ test('limit profile lookup validates and scopes returned profile events',async()
  fireEvent.change(screen.getByLabelText('Entity ID (optional)'),{target:{value:'other'}});fireEvent.click(screen.getByRole('button',{name:'Search'}));
  expect(await screen.findByText('Limit profile code cannot be combined with another entity ID or type.')).toBeTruthy();expect(ApiClient.get).toHaveBeenCalledTimes(2);
 });
+
+test('audit drawer only displays verified projection and restores focus on dismissal',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue([{id:'event-1',entityType:'CUSTOMER',entityId:'customer-1',actor:'operator',action:'READ',occurredAt:'2026-11-01T00:00:00Z',newValues:{secret:'not-rendered'}}]);
+ render(<AuditTrailScreen/>);fireEvent.click(screen.getByRole('button',{name:'Search'}));
+ const trigger=await screen.findByRole('button',{name:'View audit event event-1'});trigger.focus();fireEvent.click(trigger);
+ const dialog=screen.getByRole('dialog',{name:'Audit event details'});expect(dialog.textContent).toContain('event-1');expect(dialog.textContent).not.toContain('not-rendered');
+ fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog',{name:'Audit event details'})).toBeNull();expect(document.activeElement).toBe(trigger);
+});
