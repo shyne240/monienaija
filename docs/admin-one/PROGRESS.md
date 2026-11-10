@@ -11,14 +11,13 @@ The approved Login, Dashboard and Customer Directory references are the design a
 - Ledger & Reversals (account registry and journal workspace; reversal controls preserved).
 - Reconciliation & Breaks.
 - KYC Assessment Lookup & Review; Compliance Case Lookup; Fraud Case Lookup.
-- Fee Rules, Commission Rules, Reward Rules, Product Catalogue and Limit Catalogue (shared commercial registry).
+- Fee Rules, Commission Rules, Reward Rules, Product Catalogue and Limit Catalogue (shared commercial registry); Limit Assignments.
 - Audit & Security Events.
 
 Evidence and source commit references are in [README.md](README.md) and the evidence manifests. Browser captures use disposable data and local services, not production records.
 
 ## Remaining — core operations first
 
-- Commercial & Risk Controls: Limit Assignments.
 - Platform Administration: Privileged Approvals; Workforce Overview & Support Provisioning; Role Governance; Super-Admin Recovery; SMS & Email Notifications; System Health.
 - Home & My Work: Dashboard Settings.
 

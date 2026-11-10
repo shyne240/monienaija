@@ -1,0 +1,153 @@
+{
+  "source": "Vite dev server from current source, real Nest AppModule and disposable migrated PostgreSQL",
+  "baseCommit": "1915b315ee9e8d02dec4c60506ef3b84ca71fe44",
+  "auth": "real local development login for seeded test roles",
+  "backend": "Real API, seeded synthetic local workforce and one synthetic limit profile and assignment in disposable storage in disposable PostgreSQL; browser proxy permits only GET and local-login POST; no real providers or workers",
+  "screens": [
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 1440,
+      "file": "login-1440.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "limitAssignments",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "limitAssignments-1440.png",
+      "headings": [
+        "Limit Assignments",
+        "Existing assignments",
+        "Manage assignments",
+        "Usage Diagnostics",
+        "Reservation Diagnostics"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "register",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "register-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "detail",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "detail-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "usage",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "usage-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 768,
+      "file": "login-768.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "limitAssignments",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "limitAssignments-768.png",
+      "headings": [
+        "Limit Assignments",
+        "Existing assignments",
+        "Manage assignments",
+        "Usage Diagnostics",
+        "Reservation Diagnostics"
+      ],
+      "geometry": {
+        "client": 768,
+        "scroll": 768
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "register",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "register-768.png",
+      "interaction": true
+    },
+    {
+      "key": "detail",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "detail-768.png",
+      "interaction": true
+    },
+    {
+      "key": "usage",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "usage-768.png",
+      "interaction": true
+    },
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 375,
+      "file": "login-375.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "limitAssignments",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "limitAssignments-375.png",
+      "headings": [
+        "Limit Assignments",
+        "Existing assignments",
+        "Manage assignments",
+        "Usage Diagnostics",
+        "Reservation Diagnostics"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "register",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "register-375.png",
+      "interaction": true
+    },
+    {
+      "key": "detail",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "detail-375.png",
+      "interaction": true
+    },
+    {
+      "key": "usage",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "usage-375.png",
+      "interaction": true
+    }
+  ],
+  "warnings": []
+}
