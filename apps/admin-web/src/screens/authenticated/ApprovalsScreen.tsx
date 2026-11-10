@@ -153,13 +153,14 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
             refreshTrigger={inboxRefreshTrigger}
             activeRequestId={selectedInboxTarget?.requestId ?? null}
             onSelectRequest={(targetAgentId, idemKey, selection) => {
-              if (!mayChangeFundingTarget()) return;
+              if (!mayChangeFundingTarget()) return false;
               setSelectedInboxTarget((prev) => ({
                 agentId: targetAgentId,
                 idempotencyKey: idemKey,
                 requestId: selection?.requestId,
                 revision: (prev?.revision ?? 0) + 1,
               }));
+              return true;
             }}
           />
           {selectedInboxTarget && (

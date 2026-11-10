@@ -19,3 +19,9 @@
 .mn-agent-workspace__pager { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 12px; color: var(--mn-text-secondary, #52655f); font-size: 13px; }
 .mn-agent-workspace--stack { display: flex; flex-direction: column; gap: 10px; }
 .mn-agent-workspace__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Read-only funding inspection is separate from the governed checker panel. */
+.funding-inbox-drawer { width:min(100%,680px); }
+.funding-inbox-drawer [data-testid="funding-inbox-detail"] { margin:0 !important; padding:24px !important; border:0 !important; box-shadow:none !important; overflow-wrap:anywhere; }
+.funding-inbox-drawer [data-testid="funding-inbox-detail"] > div:first-child { flex-wrap:wrap; gap:14px; }
+.funding-inbox-drawer code { overflow-wrap:anywhere; word-break:break-word; white-space:pre-wrap; }
+@media(max-width:600px) { .funding-inbox-drawer [data-testid="funding-inbox-detail"] { padding:20px !important; } }

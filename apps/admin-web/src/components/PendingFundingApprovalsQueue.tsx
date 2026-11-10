@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './agent-workspaces.css';
 import { formatMinorUnits } from '../utils/financial-display';
 import { ApiClient } from '../services/api-client';
+import { WorkspaceDrawer } from '../design-system/WorkspaceDrawer';
 
 export interface PendingFundingQueueItem {
   id: string;
@@ -81,7 +82,7 @@ export interface PendingFundingApprovalsQueueProps {
     agentId: string,
     idempotencyKey?: string,
     selection?: FundingInboxSelection,
-  ) => void;
+  ) => void | boolean;
 }
 
 export async function fetchGlobalFundingInbox(
@@ -184,6 +185,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
       const current = ++generation.current;
       const valid = () => generation.current === current && access.current.canReviewFunding && access.current.canAccessGlobalInbox;
       setLoaded(false);
+      setInspectedItem(null);
       setLoading(true);
       setError('');
       setUnauthorizedSessionMessage('');
@@ -507,6 +509,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
           )}
 
           {loaded && !loading && !error && inspectedItem && (
+            <WorkspaceDrawer label="Inspected funding request details" className="funding-inbox-drawer" onDismiss={() => setInspectedItem(null)}>
             <section
               aria-label="Inspected funding request details"
               data-testid="funding-inbox-detail"
@@ -520,14 +523,15 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                   <button
                     type="button"
                     className="mn-agent-workspace__button mn-agent-workspace__button--primary"
-                    onClick={() =>
-                      onSelectRequest(inspectedItem.agentId, inspectedItem.idempotencyKey, {
+                    onClick={() => {
+                      const accepted = onSelectRequest(inspectedItem.agentId, inspectedItem.idempotencyKey, {
                         agentId: inspectedItem.agentId,
                         idempotencyKey: inspectedItem.idempotencyKey,
                         requestId: inspectedItem.id,
                         approvalId: inspectedItem.approvalId,
-                      })
-                    }
+                      });
+                      if (accepted !== false) setInspectedItem(null);
+                    }}
                   >
                     {inspectedItem.status === 'PENDING'
                       ? 'Proceed to Checker Decision'
@@ -634,6 +638,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                 )}
               </div>
             </section>
+            </WorkspaceDrawer>
           )}
         </>
       )}

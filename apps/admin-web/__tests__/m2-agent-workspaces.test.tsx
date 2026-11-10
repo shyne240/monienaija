@@ -289,3 +289,31 @@ test('Agent detail drawer closes with Escape and restores focus without a write'
  render(<AgentNetworkScreen/>);await screen.findByText('AG-DRAWER');const trigger=screen.getByRole('button',{name:'View'});trigger.focus();fireEvent.click(trigger);
  expect(screen.getByRole('dialog',{name:'Agent details'})).toBeTruthy();fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog',{name:'Agent details'})).toBeNull();expect(document.activeElement).toBe(trigger);expect(ApiClient.post).not.toHaveBeenCalled();
 });
+
+test('funding inspection respects checker guard, restores focus and hands off without writing', async () => {
+  const { PendingFundingApprovalsQueue } = require('../src/components/PendingFundingApprovalsQueue');
+  const row = {
+    id: 'request', approvalId: 'approval', agentId: 'agent', direction: 'FUND',
+    amountMinor: '1200', currency: 'NGN', status: 'PENDING', approvalStatus: 'REQUESTED',
+    reason: 'Synthetic', requesterPrincipalId: 'maker',
+  };
+  const choose = jest.fn().mockReturnValue(false);
+  render(<PendingFundingApprovalsQueue canReviewFunding loadQueue={jest.fn().mockResolvedValue([row])} onSelectRequest={choose} />);
+  const trigger = await screen.findByRole('button', { name: 'Inspect details' });
+  trigger.focus();
+  fireEvent.click(trigger);
+  expect(screen.getByRole('dialog', { name: 'Inspected funding request details' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Proceed to Checker Decision' }));
+  expect(choose).toHaveBeenCalledWith('agent', undefined, {
+    agentId: 'agent', idempotencyKey: undefined, requestId: 'request', approvalId: 'approval',
+  });
+  expect(screen.getByRole('dialog', { name: 'Inspected funding request details' })).toBeTruthy();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.queryByRole('dialog', { name: 'Inspected funding request details' })).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  fireEvent.click(trigger);
+  choose.mockReturnValue(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Proceed to Checker Decision' }));
+  expect(screen.queryByRole('dialog', { name: 'Inspected funding request details' })).toBeNull();
+  expect(ApiClient.post).not.toHaveBeenCalled();
+});
