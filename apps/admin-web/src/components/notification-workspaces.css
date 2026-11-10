@@ -78,3 +78,7 @@
 .mn-provider-proposal-form label{color:#344f43;font-weight:600}
 .mn-provider-proposal-form input,.mn-provider-proposal-form select,.mn-provider-proposal-form textarea{background:#fff;color:#132b25;font-weight:400}
 @media(max-width:600px){.mn-provider-proposal-form{padding:14px!important}}
+/* Distinguish unavailable verification and probe actions from enabled controls. */
+.mn-provider-workspace :is([data-testid="verify-sms-provider-btn"],[data-testid="verify-email-provider-btn"]){border:1px solid #8aa99a!important;background:#fff!important;color:#0b624a!important}
+.mn-provider-workspace :is([data-testid="sms-quick-test-send-btn"],[data-testid="email-quick-test-send-btn"]){background:#0b624a!important;color:#fff!important}
+.mn-provider-workspace :is([data-testid="verify-sms-provider-btn"],[data-testid="verify-email-provider-btn"],[data-testid="sms-quick-test-send-btn"],[data-testid="email-quick-test-send-btn"]):disabled{border:1px solid #cbd9d0!important;background:#eef3f0!important;color:#667a6e!important;cursor:not-allowed!important}
