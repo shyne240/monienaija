@@ -194,3 +194,10 @@ Source `9494236` clarifies controlled probe preparation and adds an explicit loc
 Source `19b1bd6` adds local metric-name search and an explicit loaded-response count to the responsive, scope-gated health workspace. Metrics, diagnostics, recent outbox events, deliveries and on-demand receipts remain independent reads; no health state is inferred from another source. Existing delivery API filters, pagination and authorization remain unchanged.
 
 [`evidence/system-health-batch/`](evidence/system-health-batch/manifest.json) contains 12 captures at 1440, 768 and 375 pixels under SUPER_ADMIN in a disposable local environment. Local metric filtering and the on-demand receipt GET were exercised; only GET and local-login POST were allowed, workers were disabled and outbound network was blocked. Full tests: 82 suites / 844 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
+
+
+### Dashboard Settings
+
+Source `273eaf8` adds template-catalogue search, loaded counts and section navigation while retaining the full assignment choices and keeping all role drafts and confirmation/review safeguards in place. Templates remain read-only; assignment capability remains scoped and server-authoritative. Search does not filter role assignments.
+
+[`evidence/dashboard-settings-batch/`](evidence/dashboard-settings-batch/manifest.json) contains 12 captures at 1440, 768 and 375 pixels under SUPER_ADMIN using disposable seeded dashboard templates and assignments. Catalogue filtering and a local role draft with cancelled confirmation were exercised; only GET and local-login POST were allowed, workers were disabled and outbound network was blocked. No assignment PUT was made. Full tests: 82 suites / 845 tests and TypeScript passed before the final confirmation-only CSS adjustment; build and captures passed after it. Screen-reader and actual zoom tests were not performed.
