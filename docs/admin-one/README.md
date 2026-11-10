@@ -124,3 +124,10 @@ Source `1915b31` adds a responsive, read-only assignment detail drawer from retu
 Source `93c9ab1` moves existing read-only funding inspection into a responsive focus-managed drawer while retaining all returned fields and the maker-checker handoff. Target changes still go through existing busy and unsaved-work guards; a refused handoff leaves the drawer open, and an accepted handoff closes it. Refresh clears inspection; existing decision, authorization and uncertain-outcome protections remain.
 
 [`evidence/approvals-batch/`](evidence/approvals-batch/manifest.json) records 12 captures at 1440, 768 and 375 pixels with a synthetic pending funding instruction and approval in disposable PostgreSQL. An MFA FINANCE_CONTROLLER (not SUPER_ADMIN) used GET and local-login POST only. Drawer Escape/focus and a local generic-decision confirmation/cancel were checked; no approval, rejection or execution was sent. External network and workers were blocked. Full tests: 82 suites / 835 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
+
+
+### Full-console batch: workforce overview and support provisioning
+
+Source `51c3951` adds navigation between separately permission-gated overview, provisioning and disable sections, and a local search of returned role totals with explicit result counts and an empty state. Counts remain assignment totals, not individual workforce records. Forms remain inline, so drafts, one-time credentials and independent-review safeguards stay visible; existing authorization, busy, confirmation and uncertain-outcome controls are retained.
+
+[`evidence/workforce-batch/`](evidence/workforce-batch/manifest.json) records 15 captures at 1440, 768 and 375 pixels with the synthetic local workforce in disposable PostgreSQL. GET and local-login POST only; the capture exercises local search, a local provisioning draft and disable confirmation/Escape without creating or disabling anyone. External network and workers blocked. Full tests: 82 suites / 836 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
