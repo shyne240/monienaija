@@ -152,3 +152,10 @@ Source `fc98c37` organizes the sensitive statement form and recovery guidance in
 Source `58bec59` moves the existing redacted delivery snapshot into a responsive focus-managed drawer and makes its table action sticky. The inspector remains read-only, preserves privacy-redacted data and its explicit no-manual-retry policy, and is cleared on a fresh list read. Other notification tabs remain outstanding for the full-console redesign.
 
 [`evidence/notification-deliveries-batch/`](evidence/notification-deliveries-batch/manifest.json) contains 12 captures at 1440, 768 and 375 pixels using a synthetic failed delivery in disposable PostgreSQL. GET and local-login POST only; drawer Escape/focus and disabled manual retry were checked, with no sends, retries, configuration changes, external network or workers. Full tests: 82 suites / 838 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
+
+
+### Notification management: template history (partial)
+
+Source `aaa4bb2` adds local version-number filtering and sticky actions to SMS and email template histories, with scoped counts and focus-managed comparison. A comparison closes when the relevant registry snapshot changes or becomes unconfirmed. Existing editor drafts remain mounted, and rollback, template proposals, preview and maker-checker controls are unchanged. This is not completion of every notification tab.
+
+[`evidence/notification-templates-batch/`](evidence/notification-templates-batch/manifest.json) contains 18 captures at 1440, 768 and 375 pixels with synthetic inactive template versions in disposable PostgreSQL. Both channels' filtering, empty state, comparison and focus restoration were checked via GET and local-login POST only; no template change, rollback, preview POST, sends or external calls. Workers were disabled. Full tests: 82 suites / 840 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.

@@ -18,7 +18,7 @@ Evidence and source commit references are in [README.md](README.md) and the evid
 
 ## Partially completed
 
-- SMS & Email Notifications: read-only delivery inspection is redesigned and verified. Other notification tabs require their own substantive design and browser pass; see README.
+- SMS & Email Notifications: read-only delivery inspection and SMS/email template history exploration are redesigned and verified. Other notification tabs require their own substantive design and browser pass; see README.
 
 ## Remaining — core operations first
 
