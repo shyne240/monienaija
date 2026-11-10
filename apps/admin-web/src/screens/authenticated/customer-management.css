@@ -1314,3 +1314,17 @@
 .cm-wizard-stepper li.is-visited > span { color: var(--cm-brand); background: #dcece4; }
 .cm-wizard-step-state { display: block; margin-top: 4px; color: var(--cm-muted); font-size: 10px; font-weight: 500; }
 @media (max-width: 800px) { .cm-wizard-stepper { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* In-page section links do not replace guarded tabs or discard local drafts. */
+.cm-section-nav { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:12px 0; }
+.cm-section-nav a { padding:8px 11px; border:1px solid #cfded5; border-radius:7px; background:#fff; color:#075b3e; text-decoration:none; font-size:13px; font-weight:700; }
+.cm-section-nav a:focus-visible { outline:2px solid #0b624a; outline-offset:2px; }
+.customer-management :is(#c360-profile,#c360-contacts,#c360-addresses,#c360-identity,#c360-preferences,#cm-poa-title,#cm-physical-address-title) { scroll-margin-top:18px; }
+.cm-wallet-detail-button { justify-self:start; margin-top:10px; }
+.cm-wallet-drawer header { display:flex; justify-content:space-between; align-items:start; gap:12px; position:sticky; top:0; padding:24px; background:white; border-bottom:1px solid #dfe9e1; z-index:1; }
+.cm-wallet-drawer header h2 { margin:5px 0 0; color:#103a2b; font-size:20px; }
+.cm-wallet-drawer__body { padding:24px; color:#52655f; font-size:13px; overflow-wrap:anywhere; }
+.cm-wallet-drawer__body dl { display:grid; grid-template-columns:minmax(110px,1fr) minmax(0,2fr); gap:12px; padding:16px; border:1px solid #dfe9e1; border-radius:8px; line-height:1.5; }
+.cm-wallet-drawer__body dt { font-weight:700; }.cm-wallet-drawer__body dd { margin:0; color:#132b25; }
+@media(max-width:1023px) { .customer-management :is(#c360-profile,#c360-contacts,#c360-addresses,#c360-identity,#c360-preferences,#cm-poa-title,#cm-physical-address-title) { scroll-margin-top:72px; } }
+@media(max-width:600px) { .cm-wallet-drawer header,.cm-wallet-drawer__body { padding:20px; } }

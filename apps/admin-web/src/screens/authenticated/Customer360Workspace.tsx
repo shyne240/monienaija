@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ApiClient } from '../../services/api-client';
+import { WorkspaceDrawer } from '../../design-system/WorkspaceDrawer';
 import { formatFinancialAmount } from '../../utils/financial-display';
 import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { useAuthStore } from '../../store/auth-store';
@@ -205,6 +206,8 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
   useDialogFocus(exitDialogRef, Boolean(pendingExit), () => setPendingExit(null));
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
+  const [selectedWalletId, setSelectedWalletId] = useState<string | null>(null);
+  useEffect(() => { if (overviewLoading) setSelectedWalletId(null); }, [overviewLoading]);
   const [overviewReloadVersion, setOverviewReloadVersion] = useState(0);
   const statusLock = useRef(false);
   const [statusUnconfirmed, setStatusUnconfirmed] = useState(false);
@@ -296,6 +299,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
   const primaryPhone = phone?.phones?.find((item) => item.isPrimary) ?? null;
   const transactionItems = Array.isArray(visibleOverview?.transactions.value?.items) ? visibleOverview.transactions.value.items : [];
   const walletItems = Array.isArray(visibleOverview?.wallets.value?.data) ? visibleOverview.wallets.value.data : [];
+  const selectedWallet = walletItems.find(wallet => wallet.id === selectedWalletId) ?? null;
   const walletsAvailable = Array.isArray(visibleOverview?.wallets.value?.data);
   const transactionsAvailable = Array.isArray(visibleOverview?.transactions.value?.items);
   const walletCountLabel = walletItems.length === 1 ? '1 wallet' : `${walletItems.length} wallets`;
@@ -306,7 +310,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
     const guarded = activeTab === 'personal' ? personalGuard : activeTab === 'proof' ? proofGuard : false;
     const busy = activeTab === 'personal' ? personalBusy : activeTab === 'proof' ? proofBusy : false;
     if (tab !== activeTab && guarded) { if (!busy) setPendingExit(tab); return false; }
-    setActiveTab(tab); return true;
+    setSelectedWalletId(null); setActiveTab(tab); return true;
   };
   const requestBack = () => {
     const guarded = statusUnconfirmed || (activeTab === 'personal' ? personalGuard : activeTab === 'proof' ? proofGuard : false);
@@ -580,6 +584,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
                               <div><span className="cm-wallet-currency">{wallet.currency}</span><span className="cm-secondary-line">{wallet.status}</span></div>
                               <strong>{balanceResult?.value ? formatMinorAmount(balanceResult.value.balanceMinor, balanceResult.value.currency) : 'Balance unavailable'}</strong>
                               {balanceResult?.value && <span className="cm-secondary-line">Ledger-derived balance</span>}
+                              <button type="button" className="cm-button cm-button-secondary cm-wallet-detail-button" aria-label={`View ${wallet.currency} wallet details`} onClick={() => setSelectedWalletId(wallet.id)}>View details</button>
                             </div>
                           );
                         })}
@@ -639,6 +644,14 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
           <CustomerProofOfAddressPanel customerId={customer.id} onGuardChange={reportProofGuard} />
         </section>
       )}
+
+      {selectedWallet && activeTab === 'overview' && !awaitingOverview && hasFunction('customer.view_wallets') && <WorkspaceDrawer label="Wallet details" className="cm-wallet-drawer" onDismiss={() => setSelectedWalletId(null)}>
+        <header><div><p className="cm-eyebrow">CUSTOMER WALLET</p><h2>{selectedWallet.currency} wallet</h2></div><button className="cm-button cm-button-secondary" type="button" onClick={() => setSelectedWalletId(null)}>Close</button></header>
+        <div className="cm-wallet-drawer__body"><p>Read-only wallet information for this customer.</p><dl>
+          <dt>Wallet ID</dt><dd>{selectedWallet.id}</dd><dt>Currency</dt><dd>{selectedWallet.currency}</dd><dt>Status</dt><dd>{selectedWallet.status}</dd>
+          <dt>Ledger-derived balance</dt><dd>{visibleOverview?.balances[selectedWallet.id]?.value ? formatMinorAmount(visibleOverview.balances[selectedWallet.id].value!.balanceMinor, visibleOverview.balances[selectedWallet.id].value!.currency) : 'Balance unavailable'}</dd>
+        </dl></div>
+      </WorkspaceDrawer>}
 
       {pendingExit && (
         <div className="cm-modal-backdrop" role="presentation">

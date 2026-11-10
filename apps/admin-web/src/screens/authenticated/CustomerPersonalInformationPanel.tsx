@@ -993,6 +993,7 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
 
   return (
     <div className="cm-personal-grid">
+      <nav className="cm-section-nav cm-card-wide" aria-label="Personal information sections"><a href="#c360-profile">Profile</a><a href="#c360-contacts">Contacts</a><a href="#c360-addresses">Addresses</a><a href="#c360-identity">Identity metadata</a><a href="#c360-preferences">Preferences</a></nav>
       {error && (
         <div className="cm-error cm-card-wide" role="alert">
           {error}
@@ -1025,7 +1026,7 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
           <button type="button" className="cm-button cm-button-danger" onClick={() => discardEditor(discardSection)}>Discard draft</button>
         </section>
       </div>}
-      <article className="cm-card cm-card-wide">
+      <article id="c360-profile" className="cm-card cm-card-wide">
         <div className="cm-card-heading">
           <div>
             <p className="cm-eyebrow">PROFILE</p>
@@ -1236,7 +1237,7 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
         )}
       </article>
 
-      <article className="cm-card">
+      <article id="c360-contacts" className="cm-card">
         <div className="cm-card-heading">
           <div>
             <p className="cm-eyebrow">CONTACT METHODS</p>
@@ -1454,7 +1455,7 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
         )}
       </article>
 
-      <article className="cm-card cm-card-wide">
+      <article id="c360-addresses" className="cm-card cm-card-wide">
         <div className="cm-card-heading">
           <div>
             <p className="cm-eyebrow">ADDRESSES</p>
@@ -1647,7 +1648,7 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
         )}
       </article>
 
-      <article className="cm-card cm-card-wide">
+      <article id="c360-identity" className="cm-card cm-card-wide">
         <div className="cm-card-heading">
           <div>
             <p className="cm-eyebrow">IDENTITY DOCUMENTS</p>
@@ -1859,7 +1860,7 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
       </article>
 
       {/* Customer Communication & Account Preferences — customer self-service only; workforce access not authorized */}
-      <article className="cm-card" data-testid="customer-preferences-card">
+      <article id="c360-preferences" className="cm-card" data-testid="customer-preferences-card">
         <div className="cm-card-header">
           <div>
             <h4>Communication &amp; account preferences</h4>

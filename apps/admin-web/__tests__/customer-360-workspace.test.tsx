@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react';
 
 import { Customer360Workspace, type DirectoryCustomer } from '../src/screens/authenticated/Customer360Workspace';
 import { ApiClient } from '../src/services/api-client';
@@ -436,4 +436,17 @@ test('lifecycle conflict requires a fresh matching record and explicit audit rev
   fireEvent.click(acknowledge);
   expect(view.queryByRole('heading', { name: 'Customer lifecycle review required' })).toBeNull();
   expect(ApiClient.patch).toHaveBeenCalledTimes(1);
+});
+
+
+test('wallet drawer presents only the validated customer wallet and restores focus',async()=>{
+ jest.clearAllMocks();setPrincipal(['customer.view','customer.view_wallets']);mockCustomerReads();
+ const view=render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()}/>);
+ const trigger=await view.findByRole('button',{name:'View NGN wallet details'});trigger.focus();fireEvent.click(trigger);
+ const dialog=view.getByRole('dialog',{name:'Wallet details'});expect(within(dialog).getByText('11111111-1111-4111-8111-111111111111')).toBeTruthy();expect(within(dialog).getByText('₦3,500.50')).toBeTruthy();
+ fireEvent.keyDown(document,{key:'Escape'});expect(view.queryByRole('dialog',{name:'Wallet details'})).toBeNull();expect(document.activeElement).toBe(trigger);expect(ApiClient.post).not.toHaveBeenCalled();expect(ApiClient.patch).not.toHaveBeenCalled();
+});
+test('wallet drawer is absent without wallet permission or when the returned wallet belongs to another customer',async()=>{
+ jest.clearAllMocks();setPrincipal(['customer.view']);mockCustomerReads();const view=render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()}/>);await view.findByText('Wallet information is restricted to authorized wallet viewers.');expect(view.queryByRole('button',{name:/wallet details/})).toBeNull();view.unmount();
+ setPrincipal(['customer.view_wallets']);(ApiClient.get as jest.Mock).mockResolvedValue({data:[{id:'11111111-1111-4111-8111-111111111111',customerId:'other',currency:'NGN',status:'ACTIVE'}],total:1});const other=render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()}/>);await other.findByText('Wallet information is unavailable.');expect(other.queryByRole('button',{name:/wallet details/})).toBeNull();
 });

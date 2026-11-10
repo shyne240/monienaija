@@ -825,6 +825,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
 
   return (
     <div className="cm-proof-address-stack">
+      <nav className="cm-section-nav" aria-label="Address verification sections"><a href="#cm-poa-title">Documentary evidence</a><a href="#cm-physical-address-title">Physical verification</a></nav>
       <section className="cm-card cm-card-wide" aria-labelledby="cm-poa-title">
         <div className="cm-card-heading">
           <div>
