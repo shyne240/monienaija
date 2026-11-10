@@ -201,3 +201,12 @@ Source `19b1bd6` adds local metric-name search and an explicit loaded-response c
 Source `273eaf8` adds template-catalogue search, loaded counts and section navigation while retaining the full assignment choices and keeping all role drafts and confirmation/review safeguards in place. Templates remain read-only; assignment capability remains scoped and server-authoritative. Search does not filter role assignments.
 
 [`evidence/dashboard-settings-batch/`](evidence/dashboard-settings-batch/manifest.json) contains 12 captures at 1440, 768 and 375 pixels under SUPER_ADMIN using disposable seeded dashboard templates and assignments. Catalogue filtering and a local role draft with cancelled confirmation were exercised; only GET and local-login POST were allowed, workers were disabled and outbound network was blocked. No assignment PUT was made. Full tests: 82 suites / 845 tests and TypeScript passed before the final confirmation-only CSS adjustment; build and captures passed after it. Screen-reader and actual zoom tests were not performed.
+
+
+### Notification management: overview and provider forms
+
+Source `fff38d4` provides focused shortcuts from the overview to existing event, provider and delivery tabs, and separates SMS and email provider proposal drafts visually from observed configuration. Switching tabs preserves provider drafts; the maker-checker, credential, action and uncertain-outcome safeguards are unchanged. The test-send contract reference is corrected to the server's workforce/customer-access requirements rather than implying an MFA requirement that the route does not enforce.
+
+[`evidence/notification-overview-provider-batch/`](evidence/notification-overview-provider-batch/manifest.json) contains 12 captures at 1440, 768 and 375 pixels under SUPER_ADMIN using disposable local provider configuration. The event shortcut focus and local SMS/email reason drafts across tab switches were checked. Only GET and local-login POST were permitted; no credentials, provider proposal, verification, activation or test-send was submitted. Workers and outbound network were blocked. Full tests: 82 suites / 846 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
+
+Together with the earlier notification batches, all nine tab surfaces have received a redesign and responsive browser pass. These checks do not cover every role, error, real-device layout or governed mutation; no approval, external notification or provider change was performed during verification.

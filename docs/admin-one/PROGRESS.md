@@ -12,17 +12,14 @@ The approved Login, Dashboard and Customer Directory references are the design a
 - Reconciliation & Breaks.
 - KYC Assessment Lookup & Review; Compliance Case Lookup; Fraud Case Lookup.
 - Fee Rules, Commission Rules, Reward Rules, Product Catalogue and Limit Catalogue (shared commercial registry); Limit Assignments.
-- Audit & Security Events; Privileged Approvals; Workforce Overview & Support Provisioning; Role Governance; Super-Admin Recovery; System Health; Dashboard Settings.
+- Audit & Security Events; Privileged Approvals; Workforce Overview & Support Provisioning; Role Governance; Super-Admin Recovery; System Health; Dashboard Settings; SMS & Email Notifications (all nine tabs covered in batches).
 
 Evidence and source commit references are in [README.md](README.md) and the evidence manifests. Browser captures use disposable data and local services, not production records.
 
-## Partially completed
+## Coverage and verification limits
 
-- SMS & Email Notifications: event catalogue, delivery and notification-change inspection, SMS/email template history, provider status, probe preparation, and provider proposal queue exploration are redesigned and verified. Other notification tabs require their own substantive design and browser pass; see README.
-
-## Remaining — core operations first
-
-- Platform Administration: SMS & Email Notifications.
+- Every navigation workspace in the current `Layout.tsx` inventory has received a redesign batch. Notification coverage spans overview, event catalogue, SMS/email templates, approvals, provider status, deliveries, controlled probe and provider configuration; evidence is split across batches in the README. Coverage does not mean every state, role or mutation was browser-tested.
+- Customer 360 work covers the overview, personal-information and proof workflows; the Tier 3 production policy block remains in force. Unsupported actions and missing APIs remain explicitly limited below.
 
 ## Dependencies and policy boundaries
 
