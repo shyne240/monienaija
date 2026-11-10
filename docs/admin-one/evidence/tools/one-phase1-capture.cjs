@@ -27,7 +27,7 @@ const roles=['SUPER_ADMIN','FINANCE_CONTROLLER','COMPLIANCE','RISK_FRAUD','CUSTO
 async function freePort() { const s=net.createServer(); await new Promise(r=>s.listen(0,'127.0.0.1',r)); const p=s.address().port; await new Promise(r=>s.close(r)); return p; }
 (async()=>{
  let ds,app,proxy,vite,browser;
- const manifest={source:'Vite dev server from Phase 1 source, real Nest AppModule and disposable migrated PostgreSQL',baseCommit:process.env.CAPTURE_COMMIT || null,auth:'real local development login for seeded test roles',backend:'Real API, seeded synthetic local workforce and one synthetic customer in disposable PostgreSQL; browser proxy permits only GET and local-login POST; no real providers or workers',screens:[],warnings:[]};
+ const manifest={source:'Vite dev server from Phase 1 source, real Nest AppModule and disposable migrated PostgreSQL',baseCommit:process.env.CAPTURE_COMMIT || null,auth:'real local development login for seeded test roles',backend:'Real API, seeded synthetic local workforce and one synthetic customer in disposable PostgreSQL; browser proxy permits only GET and local-login POST; no real providers or workers',screens:[],globalCustomerSearch:[],warnings:[]};
  try {
   fs.mkdirSync(output,{recursive:true});
   ds=await createIntegrationDataSourceFromScratch('m2design');
@@ -68,6 +68,13 @@ async function freePort() { const s=net.createServer(); await new Promise(r=>s.l
     await page.getByLabel('Password',{exact:true}).fill(passwordFor(role));
     await page.getByRole('button',{name:'Sign In',exact:true}).click();
     await page.getByTestId('main-content').waitFor({timeout:20000});await page.waitForLoadState('networkidle');
+    if(role==='SUPER_ADMIN') {
+     const globalSearch=page.getByRole('searchbox',{name:'Search navigation'});
+     await globalSearch.fill('Local Review');
+     await page.getByRole('group',{name:'Navigation search results'}).getByRole('button',{name:/Local Review Customer/}).click();
+     await page.getByRole('tablist',{name:'Customer 360 sections'}).waitFor();
+     manifest.globalCustomerSearch.push({width,verified:true});
+    }
     for(const key of views) {
      if(done.has(key)) continue;
      const mobile=width<1024;
@@ -75,6 +82,11 @@ async function freePort() { const s=net.createServer(); await new Promise(r=>s.l
      const nav=page.getByTestId((mobile?'mobile-':'')+'nav-'+key);
      if(!await nav.count()) {if(mobile) await page.keyboard.press('Escape');continue;}
      await nav.click(); await page.waitForLoadState('networkidle'); await page.waitForTimeout(200);
+     if(key==='dashboard') {
+      await page.locator('.one-dashboard-widgets').waitFor({timeout:20000});
+      await page.waitForFunction(() => { const root = document.querySelector('.mn-dashboard'); return root && !root.textContent?.includes('Loading'); }, null, {timeout:30000});
+      await page.waitForTimeout(500);
+     }
      const h=(await page.locator('[data-testid="main-content"] h1, [data-testid="main-content"] h2').allTextContents()).slice(0,6);
      const size=await page.evaluate(()=>({client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth}));
      if(size.scroll!==size.client) console.log('OVERFLOW', JSON.stringify(await page.evaluate(()=>Array.from(document.querySelectorAll('*')).filter(e=>e.getBoundingClientRect().right>document.documentElement.clientWidth+1).slice(0,20).map(e=>({tag:e.tagName,cls:e.className,right:e.getBoundingClientRect().right,overflow:getComputedStyle(e).overflowX})))));
@@ -84,21 +96,22 @@ async function freePort() { const s=net.createServer(); await new Promise(r=>s.l
      // For a complete narrow directory image, expand viewport height only; separate
      // 900px viewport captures below verify the real scrolled state.
      let captureHeight=900;
-     if(mobile && key==='customers') {captureHeight=await page.evaluate(()=>document.documentElement.scrollHeight);await page.setViewportSize({width,height:captureHeight});await page.waitForTimeout(200);}
-     await page.screenshot({path:`${output}/${file}`,fullPage:!mobile || key!=='customers'});
+     if(key==='dashboard' || (mobile && key==='customers')) {captureHeight=await page.evaluate(()=>document.documentElement.scrollHeight);await page.setViewportSize({width,height:captureHeight});await page.waitForTimeout(400);}
+     await page.screenshot({path:`${output}/${file}`,fullPage:key!=='dashboard' && (!mobile || key!=='customers')});
      if(captureHeight!==900) await page.setViewportSize({width,height:900});
      manifest.screens.push({key,role,width,file,headings:h,geometry:size,captureHeight});done.add(key); console.log('CAPTURE',width,role,key,JSON.stringify(h));
      const extra=async(name)=>{const file=`${name}-${width}.png`;await page.waitForTimeout(400);await page.waitForLoadState('networkidle');await page.waitForTimeout(200);await page.evaluate(()=>window.scrollTo(0,0));await page.waitForTimeout(200);
       let captureHeight=900;
-      if(mobile && name==='customer-preview') {captureHeight=await page.evaluate(()=>document.documentElement.scrollHeight);await page.setViewportSize({width,height:captureHeight});await page.waitForTimeout(200);}
+      // The mobile modal drawer is captured as a real 375 x 900 viewport.
       await page.screenshot({path:`${output}/${file}`,fullPage:!mobile || name!=='customer-preview'});
       if(captureHeight!==900) await page.setViewportSize({width,height:900});
       manifest.screens.push({key:name,role,width,file,interaction:true,captureHeight});};
      if(key==='customers') {
       const preview=page.getByRole('button',{name:'Preview Local Review Customer'});
-      await preview.waitFor();await preview.click();await page.getByRole('complementary',{name:'Customer preview'}).waitFor();await extra('customer-preview');
+      await preview.waitFor();await preview.click();await page.getByRole('dialog',{name:'Customer preview'}).waitFor();await extra('customer-preview');
       if (mobile) {
-       // Check both painted viewport states while the preview is open, not just DOM visibility.
+       await page.getByRole('button',{name:'Close customer preview'}).click();
+       // Check both painted viewport states after closing the modal drawer.
        const row=page.getByRole('row',{name:/Local Review Customer/});
        const scroller=page.getByRole('region',{name:'Customer records table'});
        await row.scrollIntoViewIfNeeded();

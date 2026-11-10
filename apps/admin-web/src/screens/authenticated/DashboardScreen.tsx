@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useAuthStore } from '../../store/auth-store';
 import { ApiClient } from '../../services/api-client';
 import { useWidgetData } from '../../components/dashboard/useWidgetData';
+import { ActionItems } from '../../components/dashboard/ActionItems';
+import { canAccessAdminView, type AdminView } from './navigation-access';
 import { OneSummaryCards } from '../../components/dashboard/OneSummaryCards';
 import { WidgetRenderer } from '../../components/dashboard/widgets';
 import './operational-surfaces.css';
@@ -14,6 +16,7 @@ const DASH = '/internal/a2/workforce/dashboard';
 interface DashboardScreenProps {
   onNavigateToCustomers?: () => void;
   onNavigateToAgents?: (options?: { openApplications?: boolean }) => void;
+  onNavigate?: (view: AdminView) => void;
 }
 
 /**
@@ -55,7 +58,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = (props) => {
   return <DashboardWorkspace key={key} {...props} />;
 };
 
-const DashboardWorkspace: React.FC<DashboardScreenProps> = ({ onNavigateToCustomers, onNavigateToAgents }) => {
+const DashboardWorkspace: React.FC<DashboardScreenProps> = ({ onNavigateToCustomers, onNavigateToAgents, onNavigate }) => {
   const { principal } = useAuthStore();
   const [loadAttempt, setLoadAttempt] = useState(0);
   const { data: dashboard, loading, error } = useWidgetData<ResolvedDashboard>(
@@ -80,7 +83,7 @@ const DashboardWorkspace: React.FC<DashboardScreenProps> = ({ onNavigateToCustom
     <div className="mn-operational mn-dashboard" style={styles.container}>
       <header className="one-dashboard-header"><div><h1>Operations dashboard</h1><p>Here's what's happening across your authorized workspace.</p></div><span>Role: {principal.roles[0]?.replace(/_/g, ' ')}</span></header>
       <div className="one-dashboard-title-compat">System Administration Dashboard</div>
-      {renderableWidgets.some(widget => widget.widgetKey === 'transaction-summary' && widget.authorized) && <OneSummaryCards />}
+      {renderableWidgets.some(widget => widget.widgetKey === 'transaction-summary' && widget.authorized) && <OneSummaryCards canAgents={principal.scopes.includes('agent.view')} canCustomers={principal.scopes.includes('customer.view')} />}
 
       <details className="one-dashboard-session"><summary>Identity &amp; session details</summary><div className="mn-dashboard__identity-grid" style={styles.grid}>
         <section className="mn-dashboard__identity" style={styles.card} aria-label="Identity and session">
@@ -147,8 +150,9 @@ const DashboardWorkspace: React.FC<DashboardScreenProps> = ({ onNavigateToCustom
         <div style={styles.emptyBox}>No widgets are configured for your current dashboard template.</div>
       )}
 
-      {!loading && !error && renderableWidgets.length > 0 && (
+      {!loading && !error && dashboard && (
         <div className="one-dashboard-widgets">
+          <div className="one-dashboard-widget one-dashboard-widget--action-queue"><ActionItems canKyc={Boolean(onNavigate) && canAccessAdminView('kycQueue', principal.scopes, principal.roles)} canSupport={Boolean(onNavigate) && canAccessAdminView('support', principal.scopes, principal.roles)} canApprovals={Boolean(onNavigate) && canAccessAdminView('approvalsInbox', principal.scopes, principal.roles)} onNavigate={view => onNavigate?.(view)} /></div>
           {renderableWidgets.map((widget) => (
             <div className={`one-dashboard-widget one-dashboard-widget--${widget.widgetKey}`} key={widget.widgetKey}><WidgetRenderer
               widget={widget}

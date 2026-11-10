@@ -445,10 +445,11 @@ describe('MonieNaija One directory interactions', () => {
   test('quick filters use the existing directory query and close a previous preview', async () => {
     const view = render(<CustomerDirectoryScreen />);
     fireEvent.click(await view.findByRole('button', { name: 'Preview Synthetic Directory Alpha' }));
-    expect(view.getByRole('complementary', { name: 'Customer preview' })).toBeTruthy();
+    expect(view.getByRole('dialog', { name: 'Customer preview' })).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.click(view.getByRole('button', { name: 'Active', pressed: false }));
     await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith('/internal/customers?page=1&limit=20&status=ACTIVE'));
-    expect(view.queryByRole('complementary', { name: 'Customer preview' })).toBeNull();
+    expect(view.queryByRole('dialog', { name: 'Customer preview' })).toBeNull();
     expect(view.getByRole('button', { name: 'Active', pressed: true })).toBeTruthy();
     expect(ApiClient.post).not.toHaveBeenCalled();
   });
@@ -456,11 +457,49 @@ describe('MonieNaija One directory interactions', () => {
   test('preview displays only returned details and opens the existing customer workspace', async () => {
     const view = render(<CustomerDirectoryScreen />);
     fireEvent.click(await view.findByRole('button', { name: 'Preview Synthetic Directory Alpha' }));
-    const preview = view.getByRole('complementary', { name: 'Customer preview' });
+    const preview = view.getByRole('dialog', { name: 'Customer preview' });
     expect(within(preview).getByText('LEVEL_1')).toBeTruthy();
     expect(within(preview).getByText('+234*****4321')).toBeTruthy();
     fireEvent.click(within(preview).getByRole('button', { name: 'Open Customer 360°' }));
     expect(await view.findByRole('tablist', { name: 'Customer 360 sections' })).toBeTruthy();
     expect(ApiClient.post).not.toHaveBeenCalled();
   });
+});
+
+test('customer drawer is modal, traps focus and restores the invoking control on Escape', async () => {
+  jest.clearAllMocks();
+  setPrincipal(DIRECTORY_SCOPES);
+  (ApiClient.get as jest.Mock).mockResolvedValue(directoryResponse());
+  const view = render(<CustomerDirectoryScreen />);
+  const trigger = await view.findByRole('button', { name: 'Preview Synthetic Directory Alpha' });
+  trigger.focus(); fireEvent.click(trigger);
+  const drawer = view.getByRole('dialog', { name: 'Customer preview' });
+  expect(drawer.getAttribute('aria-modal')).toBe('true');
+  expect(drawer.contains(document.activeElement)).toBe(true);
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(view.queryByRole('dialog', { name: 'Customer preview' })).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+});
+
+test('drawer contextual actions are scope-gated and pass the selected customer to existing navigation', async () => {
+  jest.clearAllMocks(); setPrincipal(['customer.view', 'customer.view_transactions', 'kyc.view']);
+  (ApiClient.get as jest.Mock).mockResolvedValue(directoryResponse());
+  const navigate = jest.fn();
+  const view = render(<CustomerDirectoryScreen onNavigate={navigate} />);
+  fireEvent.click(await view.findByRole('button', { name: 'Preview Synthetic Directory Alpha' }));
+  const drawer = view.getByRole('dialog', { name: 'Customer preview' });
+  expect(within(drawer).getByRole('button', { name:'KYC assessment' })).toBeTruthy();
+  fireEvent.click(within(drawer).getByRole('button', { name:'Transaction history' }));
+  expect(navigate).toHaveBeenCalledWith('transfers', 'cust-synthetic-1');
+  expect(view.queryByRole('dialog', { name:'Customer preview' })).toBeNull();
+});
+
+test('drawer does not offer contextual actions without the corresponding scopes', async () => {
+  jest.clearAllMocks(); setPrincipal(['customer.view']);
+  (ApiClient.get as jest.Mock).mockResolvedValue(directoryResponse());
+  const view = render(<CustomerDirectoryScreen onNavigate={jest.fn()} />);
+  fireEvent.click(await view.findByRole('button', { name: 'Preview Synthetic Directory Alpha' }));
+  const drawer = view.getByRole('dialog', { name:'Customer preview' });
+  expect(within(drawer).queryByRole('button', { name:'Transaction history' })).toBeNull();
+  expect(within(drawer).queryByRole('button', { name:'KYC assessment' })).toBeNull();
 });

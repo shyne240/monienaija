@@ -7,6 +7,7 @@ import './login.css';
 export const LoginScreen: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [tokenInput, setTokenInput] = useState('');
   const [bootstrapInput, setBootstrapInput] = useState('');
@@ -134,17 +135,17 @@ export const LoginScreen: React.FC = () => {
 
           <div className="mn-login__input-group">
             <label className="mn-login__label" htmlFor="admin-login-password">Password</label>
-            <input
+            <div className="one-login-password"><input
               ref={passwordRef} id="admin-login-password"
               aria-invalid={invalidField === 'password' || undefined} aria-describedby={invalidField === 'password' ? 'admin-login-error' : undefined}
               className="mn-login__input"
-              type="password"
+              type={passwordVisible ? 'text' : 'password'}
               autoComplete="current-password"
               placeholder="••••••••••••"
               value={password}
               onChange={(e) => { setPassword(e.target.value); if (invalidField === 'password') { setInvalidField(null); setValError(''); } }}
               disabled={isLoading}
-            />
+            /><button type="button" className="one-login-password-toggle" aria-label={passwordVisible ? 'Hide password' : 'Show password'} aria-pressed={passwordVisible} onClick={() => setPasswordVisible(value => !value)} disabled={isLoading}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
           </div>
 
           <button

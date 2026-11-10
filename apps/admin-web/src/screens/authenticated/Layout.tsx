@@ -5,6 +5,7 @@ import { Button } from '../../design-system/primitives';
 import { useAuthStore } from '../../store/auth-store';
 import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { DashboardScreen } from './DashboardScreen';
+import { GlobalSearch } from './GlobalSearch';
 import { DashboardSettingsScreen } from './DashboardSettingsScreen';
 import { RoleAssignmentScreen } from './RoleAssignmentScreen';
 import { ApprovalsScreen } from './ApprovalsScreen';
@@ -371,6 +372,7 @@ export const Layout: React.FC = () => {
       case 'dashboard':
         return (
           <DashboardScreen
+            onNavigate={view => handleNav(view)}
             onNavigateToCustomers={() => handleNav('customers')}
             onNavigateToAgents={(opts) =>
               handleNav('agents', opts?.openApplications ? { openAgentApplications: true } : undefined)
@@ -552,9 +554,7 @@ export const Layout: React.FC = () => {
       </header>
 
       <div className="one-command-bar">
-        <div className="one-command-search"><span aria-hidden="true">⌕</span><input type="search" aria-label="Search navigation" placeholder="Search available workspaces..." value={navigationQuery} onChange={event => setNavigationQuery(event.target.value)} />
-          {navigationQuery.trim() && <div className="one-command-results" role="group" aria-label="Navigation search results">{sections.flatMap(section => section.items).filter(item => item.visible && item.label.toLowerCase().includes(navigationQuery.trim().toLowerCase())).map(item => <button type="button" key={item.key} onClick={() => handleNav(item.key)}>{item.label}</button>)}{!sections.flatMap(section => section.items).some(item => item.visible && item.label.toLowerCase().includes(navigationQuery.trim().toLowerCase())) && <p>No matching workspaces</p>}</div>}
-        </div>
+        <GlobalSearch query={navigationQuery} onQuery={setNavigationQuery} canSearchCustomers={isVisible('customers')} sessionKey={JSON.stringify([principal.principalId, principal.sessionId, principal.scopes])} workspaces={sections.flatMap(section => section.items).filter(item => item.visible)} onWorkspace={key => handleNav(key as View)} onCustomer={customerId => handleNav('customers', {customerId})} />
         <div className="one-command-session"><span className="one-command-avatar">{principalInitial}</span><span>{principal.roles[0]?.replace(/_/g, ' ')}</span></div>
       </div>
       <div

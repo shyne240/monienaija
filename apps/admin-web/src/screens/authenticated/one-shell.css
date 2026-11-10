@@ -29,3 +29,4 @@
  .mn-shell__sidebar .mn-shell__logout .mn-btn { color:#174f31; border-color:#b4cabb; }
  .mn-shell__sidebar .mn-shell__logout .mn-btn:hover:not(:disabled) { background:#e4f0e4; color:#073c25; border-color:#83a891; }
 }
+.one-command-results .one-search-heading{margin:8px 10px 3px;color:#61766a;font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:700}.one-command-results button small{display:block;margin-top:3px;color:#63776a;font-size:11px}.one-command-results .one-search-note{margin:8px 10px;color:#6a786e;font-size:11px}

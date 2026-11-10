@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { useDialogFocus } from '../../utils/use-dialog-focus';
 import {
   Alert,
   Button,
@@ -138,6 +139,14 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
   const [reloadVersion, setReloadVersion] = useState(0);
   const [selectedCustomer, setSelectedCustomer] = useState<DirectoryCustomer | null>(null);
   const [previewCustomer, setPreviewCustomer] = useState<DirectoryCustomer | null>(null);
+  const previewDialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(previewDialogRef, Boolean(previewCustomer), () => setPreviewCustomer(null));
+  useEffect(() => {
+    if (!previewCustomer) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [Boolean(previewCustomer)]);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const createButtonRef = useRef<HTMLButtonElement>(null);
@@ -637,7 +646,7 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
           </div>
         </nav>
       </section>
-      {previewCustomer && <aside className="one-customer-detail" aria-label="Customer preview">
+      {previewCustomer && <div className="one-customer-drawer-layer"><div className="one-customer-drawer-backdrop" aria-hidden="true" onClick={() => setPreviewCustomer(null)} /><aside ref={previewDialogRef} tabIndex={-1} role="dialog" aria-modal="true" className="one-customer-detail" aria-label="Customer preview">
         <button type="button" className="one-customer-detail__close" aria-label="Close customer preview" onClick={() => setPreviewCustomer(null)}>×</button>
         <span className="one-customer-detail__avatar" aria-hidden="true">{displayName(previewCustomer).slice(0, 1).toUpperCase()}</span>
         <h2>{displayName(previewCustomer)}</h2><p className="one-customer-detail__reference">{maskCustomerReference(previewCustomer.reference) || 'Reference unavailable'}</p>
@@ -650,9 +659,13 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
           <div><dt>Verification level</dt><dd>{previewCustomer.kycLevel}</dd></div>
           <div><dt>Primary contact</dt><dd>{previewCustomer.primaryContact?.maskedValue || (scopes.includes('customer.view_contact_methods') ? 'Not recorded' : 'Restricted')}</dd></div>
         </dl>
-        <h3>Customer workspace</h3><p>Open the full workspace for available records and actions.</p>
+        <h3>Quick actions</h3><p>Actions available to your workforce session.</p>
+        <div className="one-customer-detail__actions">
+          {onNavigate && scopes.includes('customer.view_transactions') && <Button variant="secondary" disabled={createOpen || previousDataVisible} onClick={() => { const id = previewCustomer.id; setPreviewCustomer(null); onNavigate('transfers', id); }}>Transaction history</Button>}
+          {onNavigate && scopes.includes('kyc.view') && <Button variant="secondary" disabled={createOpen || previousDataVisible} onClick={() => { const id = previewCustomer.id; setPreviewCustomer(null); onNavigate('kycQueue', id); }}>KYC assessment</Button>}
+        </div>
         <Button variant="primary" disabled={createOpen || previousDataVisible} onClick={() => { requestVersion.current++; setSelectedCustomer(previewCustomer); setPreviewCustomer(null); }}>Open Customer 360°</Button>
-      </aside>}
+      </aside></div>}
       </div>
     </main>
   );

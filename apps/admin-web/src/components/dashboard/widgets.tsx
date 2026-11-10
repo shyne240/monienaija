@@ -158,7 +158,7 @@ export const TransactionSummaryWidget: React.FC = () => {
   );
 };
 
-/** 5. Historical trend: daily completed-transaction count/value, rendered as a lightweight inline SVG bar chart (no new chart-library dependency). */
+/** Daily completed-transaction count with an accessible exact-value table. */
 export const TransactionTrendWidget: React.FC = () => {
   const [period, setPeriod] = useState<DashboardPeriod>('30d');
   const [from, setFrom] = useState('');
@@ -176,7 +176,11 @@ export const TransactionTrendWidget: React.FC = () => {
 
   const daily = data?.daily ?? [];
   const maxCount = Math.max(1, ...daily.map((d) => d.completedCount));
-  const barWidth = 22;
+  const trendPoints = daily.map((day, index) => ({
+    x: daily.length > 1 ? (index / (daily.length - 1)) * 1000 : 500,
+    y: 118 - (day.completedCount / maxCount) * 100,
+  }));
+  const trendLine = trendPoints.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
 
   return (
     <WidgetCard
@@ -189,17 +193,12 @@ export const TransactionTrendWidget: React.FC = () => {
     >
       {daily.length > 0 && (
         <div style={styles.chartWrap}>
-          <svg width="100%" height={140} viewBox={`0 0 ${Math.max(daily.length * barWidth, 100)} 140`} preserveAspectRatio="none" role="img" aria-label="Daily transaction volume trend">
-            {daily.map((d, i) => {
-              const barHeight = Math.round((d.completedCount / maxCount) * 100);
-              return (
-                <g key={d.date}>
-                  <rect x={i * barWidth + 2} y={118 - barHeight} width={barWidth - 6} height={Math.max(barHeight, 1)} fill={colors.brandGreen} rx={2}>
-                    <title>{`${d.date}: ${d.completedCount} completed, ${formatMinor(d.completedValueMinor, data?.currency)}`}</title>
-                  </rect>
-                </g>
-              );
-            })}
+          <svg width="100%" height={140} viewBox="0 0 1000 140" preserveAspectRatio="none" role="img" aria-label="Daily transaction volume trend">
+            <defs><linearGradient id="one-trend-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#58ba7d" stopOpacity=".35"/><stop offset="100%" stopColor="#58ba7d" stopOpacity=".03"/></linearGradient></defs>
+            {[18, 43, 68, 93, 118].map(y => <line key={y} x1="0" x2="1000" y1={y} y2={y} stroke="#e5ede6" vectorEffect="non-scaling-stroke" />)}
+            <path d={`${trendLine} L ${trendPoints[trendPoints.length - 1].x} 118 L ${trendPoints[0].x} 118 Z`} fill="url(#one-trend-fill)" />
+            <path d={trendLine} fill="none" stroke="#087346" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+            {daily.map((day, index) => <circle key={day.date} cx={trendPoints[index].x} cy={trendPoints[index].y} r="3" fill="#087346"><title>{`${day.date}: ${day.completedCount} completed, ${formatMinor(day.completedValueMinor, data?.currency)}`}</title></circle>)}
           </svg>
           <div style={styles.chartAxis}>
             <span>{daily[0]?.date}</span>
