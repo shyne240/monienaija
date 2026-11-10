@@ -173,3 +173,10 @@ Source `3e158ab` adds channel tabs over only the loaded provider-proposal query,
 Source `068004b` adds a read-only event snapshot drawer with clear separation between live registry data and offline reference, saved channel gates and delivery guarantees. The drawer clears on refresh and leaves the existing governed trigger editor and its draft/uncertainty protections intact. Event configuration and security-locked behavior are unchanged; other notification tabs remain to be reviewed.
 
 [`evidence/notification-events-batch/`](evidence/notification-events-batch/manifest.json) contains 12 captures at 1440, 768 and 375 pixels under SUPER_ADMIN, using the disposable registry. Filtering, snapshot Escape/focus and an unsent local trigger reason were checked using GET and local-login POST only. No configuration proposal, notification send or external call was made; workers were disabled. Full tests: 82 suites / 842 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
+
+
+### Notification management: approval inspection (partial)
+
+Source `b086553` refines the read-only change inspection with structured proposal facts, keyboard Escape and focus return. It intentionally stays inline: loaded-queue filters and the existing independent-review and checker controls remain accessible, including when the inspected row is filtered out. No approval or execution policy changed.
+
+[`evidence/notification-approvals-batch/`](evidence/notification-approvals-batch/manifest.json) contains nine captures at 1440, 768 and 375 pixels under FINANCE_CONTROLLER using synthetic notification changes in disposable PostgreSQL. Inspection, Escape/focus and filtering out an inspected row were exercised with GET and local-login POST only; no decision or execution was sent, and external network and workers were blocked. Full tests: 82 suites / 842 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
