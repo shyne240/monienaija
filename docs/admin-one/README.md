@@ -117,3 +117,10 @@ Source `166eae7` adds document-state filtering over **loaded** evidence records,
 Source `1915b31` adds a responsive, read-only assignment detail drawer from returned validated rows, with sticky table actions. Selection is cleared on filter changes, refresh, review or uncertainty. Existing assignment write permissions, version checks, diagnostics, local guards and independent-review requirements remain unchanged. Missing versions remain unavailable and assignment state is not a usage balance.
 
 [`evidence/limit-assignments-batch/`](evidence/limit-assignments-batch/manifest.json) records 15 captures at 1440, 768 and 375 pixels with a synthetic profile and assignment in disposable PostgreSQL. Register, drawer Escape/focus and empty read-only usage diagnostics were checked with GET and local-login POST only; no assignment or financial write, external call or worker. Full tests: 82 suites / 834 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
+
+
+### Full-console batch: privileged approvals
+
+Source `93c9ab1` moves existing read-only funding inspection into a responsive focus-managed drawer while retaining all returned fields and the maker-checker handoff. Target changes still go through existing busy and unsaved-work guards; a refused handoff leaves the drawer open, and an accepted handoff closes it. Refresh clears inspection; existing decision, authorization and uncertain-outcome protections remain.
+
+[`evidence/approvals-batch/`](evidence/approvals-batch/manifest.json) records 12 captures at 1440, 768 and 375 pixels with a synthetic pending funding instruction and approval in disposable PostgreSQL. An MFA FINANCE_CONTROLLER (not SUPER_ADMIN) used GET and local-login POST only. Drawer Escape/focus and a local generic-decision confirmation/cancel were checked; no approval, rejection or execution was sent. External network and workers were blocked. Full tests: 82 suites / 835 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
