@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './notification-workspaces.css';
+import { WorkspaceFilterTabs } from '../design-system/WorkspaceDrawer';
 import {
   ManagedProviderChannel,
   NotificationPermissions,
@@ -218,6 +219,10 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   const [decisionComments, setDecisionComments] = useState<Record<string, string>>({});
   const [queueBusyId, setQueueBusyId] = useState<string | null>(null);
   const [queueBanner, setQueueBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [queueChannel, setQueueChannel] = useState('ALL');
+  const queueFilteringLocked = Boolean(providerReview || probeReview || providerActionBusy || probeBusy || queueBusyId || loading || Object.values(decisionComments).some(comment => comment.trim()));
+  useEffect(() => { if (queueFilteringLocked) setQueueChannel('ALL'); }, [queueFilteringLocked]);
+  const visibleProposals = queueFilteringLocked || queueChannel === 'ALL' ? proposals : proposals.filter(proposal => proposal.channel === queueChannel);
 
   useEffect(() => {
     // Drafts and write-only credentials must never cross principals or a revoked view scope.
@@ -1708,13 +1713,17 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           </div>
         )}
 
+        {!proposalsError && proposals.length > 0 && <div className="mn-provider-queue-filters">
+          <WorkspaceFilterTabs label="Filter loaded provider proposals by channel" value={queueFilteringLocked ? 'ALL' : queueChannel} onChange={setQueueChannel} disabled={queueFilteringLocked} options={[{ value: 'ALL', label: 'All channels' }, { value: 'SMS', label: 'SMS' }, { value: 'EMAIL', label: 'Email' }]} />
+          <p role="status">Showing {visibleProposals.length} of {proposals.length} returned proposals. {queueFilteringLocked ? 'Filtering is unavailable while a decision comment, action or independent review is held.' : 'This filters only the loaded query.'}</p>
+        </div>}
         {proposalsError ? (
           <div role="alert">Provider proposals unavailable: {proposalsError}</div>
         ) : proposals.length === 0 ? (
           <div style={{ fontSize: 12, color: '#64748b', padding: 12 }}>
             No provider proposals returned in the current query.
           </div>
-        ) : (
+        ) : visibleProposals.length === 0 ? <div className="mn-provider-queue-empty">No returned proposals match this channel.</div> : (
           <div style={{ overflowX: 'auto' }} role="region" aria-label="Provider configuration proposals" tabIndex={0}>
             <table
               data-testid="provider-proposals-table"
@@ -1732,7 +1741,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                 </tr>
               </thead>
               <tbody>
-                {proposals.map((prop) => {
+                {visibleProposals.map((prop) => {
                   const isSelf = Boolean(
                     principalId && principalId === prop.proposerPrincipalId,
                   );

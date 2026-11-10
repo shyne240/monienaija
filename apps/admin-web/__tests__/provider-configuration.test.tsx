@@ -919,3 +919,20 @@ describe('Governed SMS (Robase) & Email (Brevo) Provider Configuration Workspace
   });
 
 });
+
+test('provider queue channel filtering preserves decision comments and locks during review', async () => {
+  seedPrincipal({principalId:'checker',roles:['FINANCE_CONTROLLER'],scopes:['notification.provider.view','notification.provider.configure','notification.provider.approve','notification.view_deliveries','privileged:approve']});
+  const sms = {id:'sms-prop',channel:'SMS',status:'REQUESTED',expectedVersion:0,proposedProvider:'console',proposedEnabled:false,credentialAction:'CLEAR',proposerPrincipalId:'maker',reason:'SMS synthetic'} as ProviderConfigProposal;
+  const email = {...sms,id:'email-prop',channel:'EMAIL',reason:'Email synthetic'} as ProviderConfigProposal;
+  wireStandardBackendMocks(makeOverviewFixture(), [sms,email]);
+  const view = render(<NotificationManagementScreen initialTab="providerConfig" />);
+  await view.findByTestId('provider-proposal-row-sms-prop');
+  fireEvent.click(view.getByRole('button',{name:'SMS',pressed:false}));
+  expect(view.queryByTestId('provider-proposal-row-email-prop')).toBeNull();
+  expect(view.getByText(/Showing 1 of 2 returned proposals/)).toBeTruthy();
+  fireEvent.change(view.getByTestId('decision-comment-sms-prop'),{target:{value:'Local checker note'}});
+  expect(view.getByTestId('provider-proposal-row-email-prop')).toBeTruthy();
+  expect((view.getByRole('button',{name:'SMS',pressed:false}) as HTMLButtonElement).disabled).toBe(true);
+  expect(view.getByTestId('decision-comment-sms-prop')).toHaveProperty('value','Local checker note');
+  expect(ApiClient.post).not.toHaveBeenCalled();
+});
