@@ -801,6 +801,10 @@ describe('H-04/H-06 — versioned event-master controls', () => {
       true,
     );
     expect(offline.getByTestId(`effective-channels-${A}`).textContent).toBe('Unavailable');
+    fireEvent.click(offline.getByRole('button', { name: `Inspect event ${A}` }));
+    expect(offline.getByRole('dialog', { name: 'Event catalogue inspection' }).textContent).toContain('Code-derived reference only; live configuration is unavailable.');
+    expect(offline.getByRole('dialog', { name: 'Event catalogue inspection' }).textContent).toContain('Unavailable');
+    fireEvent.keyDown(document, { key: 'Escape' });
     expect(ApiClient.post).not.toHaveBeenCalled();
     offline.unmount();
 
@@ -1083,4 +1087,16 @@ test('event catalogue filters, empty state and drawer focus remain keyboard disc
   fireEvent.click(view.getByRole('button', { name: 'Close' }));
   expect(view.queryByTestId('event-trigger-config-panel')).toBeNull(); expect(document.activeElement).toBe(trigger);
   expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('read-only event inspection preserves the trigger draft and returns focus without writes', async () => {
+    jest.clearAllMocks(); installRegistryBackend(); seedPrincipal();
+    const view = render(<NotificationManagementScreen initialTab="events" />); await ready(view);
+    await openEvent(view, A); fireEvent.change(view.getByLabelText('Operational audit reason (required)'), { target: { value: 'Local draft reason' } });
+    const trigger = view.getByRole('button', { name: `Inspect event ${A}` }); trigger.focus(); fireEvent.click(trigger);
+    expect(view.getByRole('dialog', { name: 'Event catalogue inspection' }).textContent).toContain('Last loaded registry state');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(view.queryByRole('dialog', { name: 'Event catalogue inspection' })).toBeNull(); expect(document.activeElement).toBe(trigger);
+    expect(view.getByLabelText('Operational audit reason (required)')).toHaveProperty('value', 'Local draft reason');
+    expect(ApiClient.post).not.toHaveBeenCalled();
 });

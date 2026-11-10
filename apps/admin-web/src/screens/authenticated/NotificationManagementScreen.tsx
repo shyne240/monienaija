@@ -194,6 +194,8 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   const [eventSearch, setEventSearch] = useState<string>('');
   const [eventClassFilter, setEventClassFilter] = useState<string>('ALL');
   const [eventGovernanceFilter, setEventGovernanceFilter] = useState<string>('ALL');
+  const [inspectedEvent, setInspectedEvent] = useState<NotificationEventCatalogueItem | null>(null);
+  useEffect(() => { if (activeTab !== 'events') setInspectedEvent(null); }, [activeTab]);
   const [editingTriggerEvent, setEditingTriggerEvent] =
     useState<NotificationEventCatalogueItem | null>(null);
   const triggerDrawerRef = useRef<HTMLElement>(null);
@@ -442,6 +444,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
     setTemplateErrors({ SMS: '', EMAIL: '' });
     setTemplateBlocked({ SMS: '', EMAIL: '' });
     setLoadingInitial(true);
+    setInspectedEvent(null);
     if (permissions.canViewCatalogue) { setEventsSource('LOADING'); setEventsBlockedMsg(''); }
     if (permissions.canViewProviderStatus) { setProviderStatus(null); setProviderBlockedMsg(''); }
     setDiagnostics(null); setRuntimeConfig(null); setOutboxRows(null);
@@ -1935,6 +1938,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                         </td>
                         <td style={styles.td}>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            <Button size="sm" disabled={loadingInitial || eventsSource === 'LOADING'} aria-label={`Inspect event ${row.eventType}`} onClick={() => setInspectedEvent(row)}>Inspect</Button>
                             <Button
                               size="sm"
                               data-testid={`configure-trigger-${row.eventType}`}
@@ -1986,6 +1990,13 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
             </div>
             <p className="notification-redesign__table-hint">Scroll horizontally to inspect all event and action columns.</p>
           </section>
+          {inspectedEvent && <WorkspaceDrawer label="Event catalogue inspection" className="notification-redesign__event-drawer" onDismiss={() => setInspectedEvent(null)}>
+            <div className="notification-redesign__event-detail"><p className="notification-redesign__eyebrow">READ-ONLY CATALOGUE SNAPSHOT</p><div className="notification-redesign__event-detail-heading"><h3>{inspectedEvent.eventType}</h3><Button size="sm" onClick={() => setInspectedEvent(null)}>Close inspection</Button></div>
+              <p>{inspectedEvent.description}</p><p>{eventsSource === 'LIVE' ? 'Last loaded registry state. Effective configuration is not a delivery guarantee.' : 'Code-derived reference only; live configuration is unavailable.'}</p>
+              <dl><div><dt>Delivery class</dt><dd>{inspectedEvent.deliveryClass}</dd></div><div><dt>Recipient target</dt><dd>{inspectedEvent.recipientTarget}</dd></div><div><dt>Runtime wiring</dt><dd>{inspectedEvent.runtimeTriggerState}</dd></div><div><dt>Event master</dt><dd>{eventsSource !== 'LIVE' ? 'Unavailable' : inspectedEvent.eventEnabled === undefined ? inspectedEvent.deliveryClass === 'SECURITY' ? 'Not applicable' : 'Unavailable' : inspectedEvent.eventEnabled ? 'Enabled' : 'Disabled'}</dd></div><div><dt>SMS saved</dt><dd>{eventsSource !== 'LIVE' || inspectedEvent.smsEnabled === undefined ? 'Unavailable' : inspectedEvent.smsEnabled ? 'Enabled' : 'Disabled'}</dd></div><div><dt>Email saved</dt><dd>{eventsSource !== 'LIVE' || inspectedEvent.emailEnabled === undefined ? 'Unavailable' : inspectedEvent.emailEnabled ? 'Enabled' : 'Disabled'}</dd></div><div><dt>Effective channels</dt><dd>{eventsSource === 'LIVE' ? effectiveConfiguredChannels(inspectedEvent) : 'Unavailable'}</dd></div><div><dt>Governance</dt><dd>{inspectedEvent.toggleLocked || inspectedEvent.deliveryClass === 'SECURITY' || SECURITY_LOCKED_EVENT_TYPES.has(inspectedEvent.eventType) ? 'Locked' : eventsSource !== 'LIVE' || !(['EVENT','SMS','EMAIL'] as const).some(target => canEditConfigurationTarget(inspectedEvent, target)) ? 'Unavailable' : 'Eligible'}</dd></div></dl>
+              {inspectedEvent.lockReason && <p><strong>Policy:</strong> {inspectedEvent.lockReason}</p>}
+            </div>
+          </WorkspaceDrawer>}
         </div>
       )}
 
