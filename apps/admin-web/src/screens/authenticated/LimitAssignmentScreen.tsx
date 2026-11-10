@@ -3,6 +3,7 @@ import './limit-assignment.css';
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { StructuredRecordTable, type DataRecord, type StructuredColumn } from '../../components/StructuredData';
 import { PageHeader, ScrollRegion } from '../../design-system/primitives';
+import { WorkspaceDrawer } from '../../design-system/WorkspaceDrawer';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { parseDiagnostics, type DiagnosticsResult } from './limit-diagnostics-contract';
@@ -121,6 +122,8 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
   const canMutateAnyRow = canWrite && (canAssignAgent || canModifyLimits);
 
   const [assignments, setAssignments] = useState<any[]>([]);
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
+  const selectedAssignment = assignments.find(row => row.id === selectedAssignmentId) ?? null;
   const [assignmentsSearched, setAssignmentsSearched] = useState(false);
   const [assignmentPage, setAssignmentPage] = useState<{ page: number; total: number; totalPages: number } | null>(null);
   const [appliedAssignmentFilters, setAppliedAssignmentFilters] = useState({ subjectType: '', subjectId: '', limitProfileCode: '', isActive: '' });
@@ -169,7 +172,7 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
     window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
   }, [guarded]);
   const lockOutcome = (target: {subjectType: string; subjectId: string; code: string}) => {
-    generations.current.assignments++; setLoading(false); setAssignments([]); setAssignmentsSearched(false); setAssignmentPage(null);
+    generations.current.assignments++; setSelectedAssignmentId(null); setLoading(false); setAssignments([]); setAssignmentsSearched(false); setAssignmentPage(null);
     setUncertainAssignment(target); setReviewReady(false);
   };
 
@@ -180,7 +183,7 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
       return;
     }
     const generation = ++generations.current.assignments;
-    setAssignments([]); setAssignmentsSearched(false); setAssignmentPage(null);
+    setSelectedAssignmentId(null); setAssignments([]); setAssignmentsSearched(false); setAssignmentPage(null);
     const activeFilters = overrideFilters ?? assignmentFilters;
     setAppliedAssignmentFilters(activeFilters);
     setLoading(true);
@@ -218,6 +221,7 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
   const reviewAssignment = async () => {
     if (!canReadAssignments || !uncertainAssignment || mutationInFlight.current || loading) return;
     const target = uncertainAssignment;
+    setSelectedAssignmentId(null);
     const generation = ++generations.current.assignments;
     setReviewReady(false); setLoading(true); setError('');
     try {
@@ -462,7 +466,7 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
           {!initialCustomerId && (
             <form
               aria-label="Assignment filters"
-              onChangeCapture={() => { generations.current.assignments++; setLoading(false); setAssignments([]); setAssignmentsSearched(false); setError(''); }}
+              onChangeCapture={() => { generations.current.assignments++; setSelectedAssignmentId(null); setLoading(false); setAssignments([]); setAssignmentsSearched(false); setError(''); }}
               onSubmit={(event) => {
                 event.preventDefault();
                 void fetchAssignments();
@@ -561,7 +565,7 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
           ) : assignments.length === 0 ? (
             <div style={empty}>No matching limit assignments.</div>
           ) : (
-            <ScrollRegion label="Limit assignments" hint="Scroll horizontally to see all columns."><table className="mn-data-table" style={table}>
+            <ScrollRegion label="Limit assignments" hint="Scroll horizontally to see all columns."><table className="mn-data-table limit-redesign__table" style={table}>
               <thead>
                 <tr>
                   <th>Subject</th>
@@ -569,7 +573,7 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
                   <th>Active</th>
                   <th>Version</th>
                   <th>Effective</th>
-                  {canMutateAnyRow && <th>Action</th>}
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -594,9 +598,9 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
                           ? new Date(assignment.effectiveFrom).toLocaleString()
                           : '-'}
                       </td>
-                      {canMutateAnyRow && (
-                        <td>
-                          {canToggleRow ? (
+                      <td><div className="limit-redesign__row-actions">
+                        <button type="button" className="limit-redesign__detail-button" aria-label={`View ${assignment.limitProfileCode} assignment details`} onClick={() => setSelectedAssignmentId(assignment.id)}>View details</button>
+                          {canMutateAnyRow && canToggleRow ? (
                             <button
                               type="button"
                               style={smallLink}
@@ -607,11 +611,8 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
                             >
                               {assignment.isActive ? 'Deactivate' : 'Activate'}
                             </button>
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                      )}
+                          ) : null}
+                        </div></td>
                     </tr>
                   );
                 })}
@@ -736,6 +737,12 @@ const LimitAssignmentWorkspace: React.FC<LimitScreenProps> = ({ initialCustomerI
       ) : (
         <div style={note}>Usage and reservation diagnostics are shown only to principals with <code>limit.view</code>. The assignment and agent-profile actions above use their separate functions.</div>
       )}
+      {selectedAssignment && canReadAssignments && <WorkspaceDrawer label="Limit assignment details" className="limit-redesign__drawer" onDismiss={() => setSelectedAssignmentId(null)}>
+        <header><div><p className="limit-redesign__eyebrow">ASSIGNMENT RECORD</p><h2>{selectedAssignment.limitProfileCode}</h2></div><button type="button" className="limit-redesign__detail-button" onClick={() => setSelectedAssignmentId(null)}>Close</button></header>
+        <div className="limit-redesign__drawer-body"><p>Read-only details for the returned assignment. This is not a usage or reservation balance.</p><dl>
+          <dt>Assignment ID</dt><dd>{selectedAssignment.id}</dd><dt>Subject type</dt><dd>{selectedAssignment.subjectType}</dd><dt>Subject</dt><dd>{typeof selectedAssignment.subjectId === 'string' ? selectedAssignment.subjectId : typeof selectedAssignment.segmentCode === 'string' ? selectedAssignment.segmentCode : 'Not recorded'}</dd><dt>State</dt><dd>{selectedAssignment.isActive ? 'ACTIVE' : 'INACTIVE'}</dd><dt>Version</dt><dd>{Number.isSafeInteger(selectedAssignment.version) && selectedAssignment.version > 0 ? selectedAssignment.version : 'Unavailable'}</dd><dt>Effective from</dt><dd>{typeof selectedAssignment.effectiveFrom === 'string' && Number.isFinite(Date.parse(selectedAssignment.effectiveFrom)) ? new Date(selectedAssignment.effectiveFrom).toLocaleString() : 'Not recorded'}</dd>
+        </dl></div>
+      </WorkspaceDrawer>}
       <div style={note}>See Commercial → Limit Catalogue for profile definitions. Usage and reservation reads are diagnostics only; no limits or financial state are changed by these panels.</div>
     </div>
   );

@@ -1,5 +1,5 @@
 import React from 'react';
-import {act,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {act,fireEvent,render,screen,waitFor,within} from '@testing-library/react';
 import {LimitAssignmentScreen} from '../src/screens/authenticated/LimitAssignmentScreen';
 import {ApiClient} from '../src/services/api-client';
 import {useAuthStore} from '../src/store/auth-store';
@@ -113,4 +113,11 @@ test('filter edits while a write is pending do not trigger an outdated automatic
  const pending=deferred();(ApiClient.get as jest.Mock).mockResolvedValue({data:[{...row,version:1}]});(ApiClient.patch as jest.Mock).mockReturnValue(pending.promise);
  render(<LimitAssignmentScreen/>);fireEvent.click(await screen.findByRole('button',{name:/Deactivate CLASS_STANDARD/}));fireEvent.change(screen.getByLabelText('Assignment profile code'),{target:{value:'NEW_PROFILE'}});
  await act(async()=>{pending.resolve({...row,version:2,isActive:false});await pending.promise;});expect(screen.getByText('Agent Class limit assignment CLASS_STANDARD deactivated.')).toBeTruthy();expect(ApiClient.get).toHaveBeenCalledTimes(1);expect(screen.queryByRole('button',{name:/Deactivate CLASS_STANDARD/})).toBeNull();
+});
+
+
+test('assignment detail uses returned data, restores focus and clears on filter changes',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue({data:[row],total:1,page:1,limit:20,totalPages:1,hasNextPage:false});render(<LimitAssignmentScreen/>);
+ const trigger=await screen.findByRole('button',{name:'View CLASS_STANDARD assignment details'});trigger.focus();fireEvent.click(trigger);const dialog=screen.getByRole('dialog',{name:'Limit assignment details'});expect(within(dialog).getByText('synthetic-id')).toBeTruthy();expect(within(dialog).getByText('Unavailable')).toBeTruthy();fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog',{name:'Limit assignment details'})).toBeNull();expect(document.activeElement).toBe(trigger);
+ fireEvent.click(trigger);fireEvent.change(screen.getByLabelText('Assignment profile code'),{target:{value:'OTHER'}});expect(screen.queryByRole('dialog',{name:'Limit assignment details'})).toBeNull();expect(ApiClient.post).not.toHaveBeenCalled();expect(ApiClient.patch).not.toHaveBeenCalled();
 });
