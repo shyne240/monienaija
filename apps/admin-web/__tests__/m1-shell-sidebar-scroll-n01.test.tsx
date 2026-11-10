@@ -270,14 +270,12 @@ describe('Mission 19B (Defect N-01) — sidebar navigation scroll containment an
 
       const sidebar = view.getByTestId('desktop-nav');
       const nav = sidebar.querySelector('nav.mn-nav')!;
-      const logoutContainer = sidebar.querySelector('.mn-shell__logout')!;
+      const logoutContainer = view.getByRole('button', { name: 'Account menu' });
 
       expect(nav).not.toBeNull();
       expect(logoutContainer).not.toBeNull();
       expect(nav.contains(logoutContainer)).toBe(false);
-      expect(
-        Boolean(nav.compareDocumentPosition(logoutContainer) & Node.DOCUMENT_POSITION_FOLLOWING),
-      ).toBe(true);
+      expect(sidebar.contains(logoutContainer)).toBe(false);
 
       // Expand section 5 if collapsed and activate both previously obstructed items.
       const commercialToggle = sidebar.querySelector<HTMLButtonElement>(
@@ -303,7 +301,8 @@ describe('Mission 19B (Defect N-01) — sidebar navigation scroll containment an
       });
 
       expect(logoutSpy).not.toHaveBeenCalled();
-      fireEvent.click(view.getByRole('button', { name: 'Log out session' }));
+      fireEvent.click(view.getByRole('button', { name: 'Account menu' }));
+      fireEvent.click(view.getByRole('button', { name: 'Log out' }));
       expect(logoutSpy).toHaveBeenCalledTimes(1);
     } finally {
       logoutSpy.mockRestore();
@@ -341,11 +340,7 @@ describe('Mission 19B (Defect N-01) — sidebar navigation scroll containment an
       fireEvent.click(view.getByTestId('mobile-menu-toggle'));
       const drawer = view.getByTestId('mobile-nav');
       const drawerNav = drawer.querySelector('nav.mn-nav--drawer')!;
-      const drawerLogout = drawer.querySelector('.mn-drawer__logout')!;
-      expect(drawerNav.contains(drawerLogout)).toBe(false);
-      expect(
-        Boolean(drawerNav.compareDocumentPosition(drawerLogout) & Node.DOCUMENT_POSITION_FOLLOWING),
-      ).toBe(true);
+      expect(drawerNav.contains(view.getByRole('button', { name: 'Account menu', hidden: true }))).toBe(false);
 
       const drawerCommercialToggle = drawer.querySelector<HTMLButtonElement>(
         '[data-testid="section-commercial"]',

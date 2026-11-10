@@ -119,14 +119,14 @@ describe('M1 shell — structure, landmarks and accessible naming', () => {
     const section = view.getByTestId('section-servicing');
     const panelId = section.getAttribute('aria-controls');
 
-    expect(section.getAttribute('aria-expanded')).toBe('true');
+    expect(section.getAttribute('aria-expanded')).toBe('false');
     expect(panelId).toBeTruthy();
-    expect(view.container.querySelector(`#${panelId}`)?.hasAttribute('hidden')).toBe(false);
+    expect(view.container.querySelector(`#${panelId}`)?.hasAttribute('hidden')).toBe(true);
 
     fireEvent.click(section);
 
-    expect(view.getByTestId('section-servicing').getAttribute('aria-expanded')).toBe('false');
-    expect(view.container.querySelector(`#${panelId}`)?.hasAttribute('hidden')).toBe(true);
+    expect(view.getByTestId('section-servicing').getAttribute('aria-expanded')).toBe('true');
+    expect(view.container.querySelector(`#${panelId}`)?.hasAttribute('hidden')).toBe(false);
     // Collapsing is visual: the permitted destinations stay discoverable in the DOM.
     expect(view.queryByTestId('nav-customers')).not.toBeNull();
   });
@@ -322,16 +322,17 @@ describe('M1 shell — authorization, alias and context parity', () => {
     expect(rendered).not.toContain('transfers');
   });
 
-  test('logout still calls the store action from both surfaces', async () => {
+  test('logout is available through the account menu', async () => {
     setPrincipal(FULL_SCOPES);
     const logout = jest.spyOn(useAuthStore.getState(), 'logout').mockResolvedValue(undefined as never);
 
     try {
       const view = render(<Layout />);
-      fireEvent.click(view.getByRole('button', { name: 'Log out session' }));
+      fireEvent.click(view.getByRole('button', { name: 'Account menu' }));
+      fireEvent.click(view.getByRole('button', { name: 'Log out' }));
       expect(logout).toHaveBeenCalledTimes(1);
 
-      fireEvent.click(view.getByTestId('mobile-menu-toggle'));
+      fireEvent.click(view.getByRole('button', { name: 'Account menu' }));
       fireEvent.click(view.getByRole('button', { name: 'Log out' }));
       expect(logout).toHaveBeenCalledTimes(2);
     } finally {
@@ -351,7 +352,7 @@ describe('MonieNaija One workspace search', () => {
   test('returns only visible destinations and uses the normal navigation guard', async () => {
     const view = render(<Layout />);
     fireEvent.change(view.getByRole('searchbox', { name: 'Search navigation' }), { target: { value: 'customer' } });
-    fireEvent.click(within(view.getByRole('group', { name: 'Navigation search results' })).getByRole('button', { name: 'Customer & KYC Servicing' }));
+    fireEvent.click(within(view.getByRole('group', { name: 'Navigation search results' })).getByRole('button', { name: 'Customers' }));
     expect(await view.findByRole('heading', { name: 'Customer directory' })).toBeTruthy();
     fireEvent.change(view.getByRole('searchbox', { name: 'Search navigation' }), { target: { value: 'ledger' } });
     expect(view.getByText('No matching workspaces')).toBeTruthy();

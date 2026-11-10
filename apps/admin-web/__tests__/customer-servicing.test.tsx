@@ -70,7 +70,8 @@ function setPrincipal(scopes: string[]) {
 describe('Batch 1 customer directory', () => {
   test('opens the directory from the authenticated application shell and preserves masked summaries', async () => {
     const view = render(<App />);
-    fireEvent.click(view.getByRole('button', { name: /Customer & KYC Servicing/ }));
+    fireEvent.click(view.getByRole('button', { name: 'Customers & agents' }));
+    fireEvent.click(view.getByRole('button', { name: 'Customers' }));
     await view.findByRole('heading', { name: 'Customer directory' });
     const row = await view.findByRole('row', { name: /Synthetic Directory Alpha/ });
     expect(within(row).getByText('mn-••••5678')).toBeTruthy();

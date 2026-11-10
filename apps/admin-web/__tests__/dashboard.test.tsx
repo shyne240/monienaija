@@ -50,7 +50,7 @@ describe('Admin Web Portal — V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02 real 
     setPrincipal(['SUPER_ADMIN'], ['privileged:execute']);
   });
 
-  test('renders KPI tiles and a byType breakdown from a real-shaped transaction-summary response, and never shows a "profit" figure', async () => {
+  test('renders concise transaction KPIs and status from a real-shaped response without a profit figure', async () => {
     const dashboard = {
       templateKey: 'EXECUTIVE_GOVERNANCE',
       displayName: 'Executive & Governance',
@@ -99,18 +99,17 @@ describe('Admin Web Portal — V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02 real 
 
     const { findByText, getAllByText, queryByText } = render(<App />);
 
-    expect(await findByText('Transaction Summary')).toBeTruthy();
-    expect(await findByText('42')).toBeTruthy(); // completed count (volume)
-    expect(await findByText('₦10,000.00')).toBeTruthy(); // completed value (1,000,000 kobo)
-    expect(await findByText('₦150.00')).toBeTruthy(); // fee revenue (15,000 kobo)
-    expect(getAllByText('N/A (no fee column)').length).toBe(2); // C2W + W2C fee cells
+    expect(await findByText('42 completed')).toBeTruthy();
+    expect(await findByText('₦10,000.00 total')).toBeTruthy();
+    expect(await findByText('Transaction status')).toBeTruthy();
+    expect(getAllByText('3').length).toBeGreaterThan(0);
 
     // Never label fee revenue as profit, and never show a profit figure.
     expect(queryByText(/^Profit$/i)).toBeNull();
     expect(queryByText(/profit:/i)).toBeNull();
   });
 
-  test('shows a restricted tile (and never fetches) for a widget the backend marked unauthorized', async () => {
+  test('never fetches a widget the backend marked unauthorized', async () => {
     const dashboard = {
       templateKey: 'FRAUD_CASE_MONITORING',
       displayName: 'Fraud Case Monitoring',
@@ -135,7 +134,7 @@ describe('Admin Web Portal — V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02 real 
 
     const { findByText } = render(<App />);
 
-    expect(await findByText(/Restricted/)).toBeTruthy();
+    expect(await findByText('Action Items')).toBeTruthy();
     // The restricted widget's own data endpoint must never be called.
     const calledUrls = (ApiClient.get as jest.Mock).mock.calls.map((c) => c[0]);
     expect(calledUrls.some((u: string) => u.includes('/widgets/ledger-summary'))).toBe(false);

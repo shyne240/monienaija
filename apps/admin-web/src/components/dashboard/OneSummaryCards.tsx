@@ -24,7 +24,7 @@ function CustomerCard() {
   return <Card label="Total customers" icon="♙" value={loading ? 'Loading…' : error ? 'Unavailable' : data === undefined ? '—' : `${data.toLocaleString()} ${data === 1 ? 'customer' : 'customers'}`} caption="Customer directory total" />;
 }
 /** Only mounted when the server's resolved dashboard authorizes the transaction summary. */
-export const OneSummaryCards: React.FC<{canAgents?:boolean; canCustomers?:boolean}> = ({canAgents=false,canCustomers=false}) => {
+export const OneSummaryCards: React.FC<{canAgents?:boolean; canCustomers?:boolean; agentNotConfigured?:boolean}> = ({canAgents=false,canCustomers=false,agentNotConfigured=false}) => {
   const { data, loading, error } = useWidgetData<TransactionSummaryResponse>(async () => {
     const result: unknown = await ApiClient.get('/internal/a2/workforce/dashboard/widgets/transaction-summary?period=7d');
     if (!isTransactionSummary(result, '7d', false)) throw new Error('Transaction summary unavailable');
@@ -33,7 +33,7 @@ export const OneSummaryCards: React.FC<{canAgents?:boolean; canCustomers?:boolea
   return <section className="one-kpis" aria-label="Transaction summary for the last 7 days">
     <Card label="Completed transaction value" icon="◫" value={loading ? 'Loading…' : error ? 'Unavailable' : data ? `${formatMinor(data.totalCompletedValueMinor, data.currency)} total` : '—'} caption="Last 7 days" />
     <Card label="Completed transactions" icon="⇄" value={loading ? 'Loading…' : error ? 'Unavailable' : data ? `${data.totalCompletedCount.toLocaleString()} completed` : '—'} caption="Last 7 days" />
-    {canAgents ? <AgentCard/> : <Card label="Active agents" icon="♙" value="Restricted" caption="Permission required"/>}
+    {canAgents ? <AgentCard/> : <Card label="Active agents" icon="♙" value={agentNotConfigured ? 'Not configured' : 'Restricted'} caption={agentNotConfigured ? 'Not in this dashboard' : 'Permission required'}/>}
     {canCustomers ? <CustomerCard/> : <Card label="Total customers" icon="♙" value="Restricted" caption="Permission required"/>}
   </section>;
 };

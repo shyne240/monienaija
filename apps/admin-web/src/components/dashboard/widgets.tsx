@@ -184,8 +184,8 @@ export const TransactionTrendWidget: React.FC = () => {
 
   return (
     <WidgetCard
-      title="Transaction Volume Trend"
-      description={data?.definition || 'Daily completed-transaction count, zero-filled for days with no activity (max 92-day window).'}
+      title="Transaction activity"
+      description="Completed transactions over time"
       loading={loading}
       error={error}
       empty={!!data && daily.length === 0}
@@ -222,12 +222,12 @@ export const TransactionTrendWidget: React.FC = () => {
 /** 4A. Recent transaction activity (Defects #3/#4 fixed: UNION ALL syntax + wrong completed-at column for cash-to-cash). */
 export const RecentTransactionsWidget: React.FC = () => {
   const { data, loading, error } = useWidgetData<RecentTransactionRow[]>(async () => { const value: unknown = await ApiClient.get(`${DASH}/widgets/recent-transactions`); if (!isRecentTransactions(value)) throw new Error('Invalid recent transactions response.'); return value as RecentTransactionRow[]; }, []);
-  const rows = data ?? [];
+  const rows = (data ?? []).slice(0, 5);
 
   return (
     <WidgetCard
       title="Recent Transactions"
-      description="The most recent completed/failed/pending transactions across all four V1 types (no customer PII)."
+      description="Latest transaction activity"
       loading={loading}
       error={error}
       empty={!!data && rows.length === 0}

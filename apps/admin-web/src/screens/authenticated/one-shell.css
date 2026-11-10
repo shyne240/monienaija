@@ -30,3 +30,44 @@
  .mn-shell__sidebar .mn-shell__logout .mn-btn:hover:not(:disabled) { background:#e4f0e4; color:#073c25; border-color:#83a891; }
 }
 .one-command-results .one-search-heading{margin:8px 10px 3px;color:#61766a;font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:700}.one-command-results button small{display:block;margin-top:3px;color:#63776a;font-size:11px}.one-command-results .one-search-note{margin:8px 10px;color:#6a786e;font-size:11px}
+/* Persistent, independently scrollable navigation and always-visible account actions. */
+@media(min-width:1024px){
+ .mn-shell { grid-template-columns:280px minmax(0,1fr); grid-template-rows:64px auto; align-items:start; }
+ .mn-shell--collapsed { grid-template-columns:72px minmax(0,1fr); }
+ .mn-shell__sidebar { position:sticky;top:0;height:100vh;height:100dvh;max-height:100dvh;grid-template-columns:72px minmax(0,1fr);overflow:hidden;align-self:start; }
+ .mn-shell--collapsed .mn-shell__sidebar { grid-template-columns:72px; }
+ .one-rail { position:relative;height:100%;min-height:0;overflow-y:auto;gap:6px;padding:14px 8px; }
+ .one-rail__logo { flex:none;margin-bottom:12px; }
+ .one-rail__button { flex:none;width:46px;height:46px; }
+ .one-nav-panel { height:100%;min-height:0;overflow:hidden;padding:18px 12px 12px; }
+ .one-nav-panel[hidden] { display:none; }
+ .one-nav-heading { display:flex;align-items:flex-start;justify-content:space-between;gap:4px;flex:none; }
+ .one-nav-heading .mn-shell__brand { padding:0 0 20px; }
+ .one-nav-collapse,.one-nav-expand { border:0;background:transparent;color:#49705a;font-size:25px;line-height:1;cursor:pointer;border-radius:6px;padding:2px 6px; }
+ .one-nav-collapse:hover,.one-nav-expand:hover { background:#e5f0e6; }
+ .one-nav-expand { position:absolute;bottom:12px;left:20px;color:#fff; }
+ .one-nav-expand:hover { color:#174f31; }
+ .mn-nav { flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin; }
+ .mn-nav__group-toggle { font-size:12px;font-weight:700;padding:10px 8px; }
+ .mn-nav__item { font-size:13px;min-height:38px; }
+ .one-command-bar { position:sticky;top:0;min-width:0;height:64px;box-sizing:border-box;z-index:20; }
+ .mn-shell__content { min-height:calc(100vh - 64px); }
+}
+.one-account { position:relative;flex:none; }
+.one-account__trigger { display:flex;align-items:center;gap:10px;border:0;background:transparent;color:#143225;font:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:5px;border-radius:8px; }
+.one-account__trigger:hover,.one-account__trigger[aria-expanded='true'] { background:#edf4ec; }
+.one-command-avatar { display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:#f4e8cd;color:#173c27;font-weight:750; }
+.one-account__menu { position:absolute;right:0;top:calc(100% + 10px);width:230px;z-index:50;background:#fff;border:1px solid #dfe8df;border-radius:10px;box-shadow:0 10px 30px #153b2428;padding:8px;color:#18372a;font-size:13px; }
+.one-account__details { display:flex;flex-direction:column;gap:4px;padding:10px;border-bottom:1px solid #edf0eb; }.one-account__details span { color:#6a7c70;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.one-account__menu details { padding:10px; }.one-account__menu summary { cursor:pointer;font-weight:600; }.one-account__menu p { margin:8px 0;color:#68796d;overflow-wrap:anywhere; }
+.one-account__menu>button { width:100%;border:0;background:transparent;text-align:left;padding:11px 10px;border-radius:6px;color:#145b38;font:inherit;font-weight:700;cursor:pointer; }.one-account__menu>button:hover { background:#eaf3e9; }
+.one-account button:focus-visible,.one-nav-collapse:focus-visible,.one-nav-expand:focus-visible { outline:2px solid #15744a;outline-offset:2px; }
+@media(max-width:1023px){
+ .mn-shell__topbar { position:sticky;top:0;z-index:22; }
+ .one-command-bar { position:sticky;top:56px;z-index:21;gap:10px; }
+ .one-command-search { min-width:0;flex:1; }
+ .one-account__role { display:none; }
+ .one-account__trigger { gap:4px; }
+}
+
+.one-account__menu details details ul { max-height: 130px; overflow-y: auto; padding-left: 20px; overflow-wrap: anywhere; }

@@ -115,7 +115,7 @@ const SECTION_KEYS: Record<string, readonly NavKey[]> = {
 };
 
 const SCREEN_MARKERS: Record<NavKey, RegExp> = {
-  dashboard: /System Administration Dashboard/i,
+  dashboard: /Welcome back/i,
   dashboardSettings: /Dashboard Settings/i,
   customers: /Customer Directory/i,
   agents: /Agent Network Management/i,
@@ -226,8 +226,9 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
         fireEvent.click(getByTestId(`nav-${key}`));
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      if (!SCREEN_MARKERS[key].test(container.textContent ?? '')) throw new Error(`Missing screen marker for ${key} (${roleKey})`);
-      expect(container.textContent).toMatch(SCREEN_MARKERS[key]);
+      const marker = key === 'agents' && !ROLE_PRINCIPALS[roleKey].scopes.includes('agent.view' as never) ? /Agent directory and Agent receiving-number lookup require/ : SCREEN_MARKERS[key];
+      if (!marker.test(container.textContent ?? '')) throw new Error(`Missing screen marker for ${key} (${roleKey})`);
+      expect(container.textContent).toMatch(marker);
     }
   });
 

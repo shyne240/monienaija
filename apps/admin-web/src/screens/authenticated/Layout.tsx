@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import '../../design-system/tokens.css';
-import { Button } from '../../design-system/primitives';
 import { useAuthStore } from '../../store/auth-store';
 import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { DashboardScreen } from './DashboardScreen';
@@ -59,6 +58,19 @@ export const Layout: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [navContext, setNavContext] = useState<NavContext>({});
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeSection, setActiveSection] = useState('home');
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement>(null);
+  const accountButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!accountOpen) return;
+    const onPointer = (event: MouseEvent) => { if (!accountRef.current?.contains(event.target as Node)) setAccountOpen(false); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { setAccountOpen(false); accountButtonRef.current?.focus(); } };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onPointer); document.removeEventListener('keydown', onKey); };
+  }, [accountOpen]);
   const [navigationQuery, setNavigationQuery] = useState('');
   const [customerGuard, setCustomerGuard] = useState(false);
   const [customerBusy, setCustomerBusy] = useState(false);
@@ -104,7 +116,7 @@ export const Layout: React.FC = () => {
   useDialogFocus(leaveDialogRef, Boolean(pendingLeave), () => setPendingLeave(null));
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     home: true,
-    servicing: true,
+    servicing: false,
     money: false,
     finance: false,
     commercial: false,
@@ -232,78 +244,80 @@ export const Layout: React.FC = () => {
   const sections = [
     {
       id: 'home',
-      title: '1. Home & My Work',
+      title: 'Overview',
       items: [
-        { key: 'dashboard' as View, label: 'Operational Dashboard', visible: true },
+        { key: 'dashboard' as View, label: 'Dashboard', visible: true },
         { key: 'dashboardSettings' as View, label: 'Dashboard Settings', visible: isVisible('dashboardSettings') },
       ],
     },
     {
       id: 'servicing',
-      title: '2. Customer & Agent Servicing',
+      title: 'Customers & agents',
       items: [
-        { key: 'customers' as View, label: 'Customer & KYC Servicing', visible: isVisible('customers') },
-        { key: 'agents' as View, label: 'Agent Network Management', visible: isVisible('agents') },
-        { key: 'agentClasses' as View, label: 'Agent Classes & Capabilities', visible: isVisible('agentClasses') },
+        { key: 'customers' as View, label: 'Customers', visible: isVisible('customers') },
+        { key: 'agents' as View, label: 'Agents & network', visible: isVisible('agents') },
+        { key: 'agentClasses' as View, label: 'Agent classes', visible: isVisible('agentClasses') },
         { key: 'support' as View, label: 'Support Inbox', visible: isVisible('support') },
       ],
     },
     {
       id: 'money',
-      title: '3. Money Movement',
+      title: 'Transactions',
       items: [
-        { key: 'transfers' as View, label: 'Transaction & Fee Ops — Transfers (W2W)', visible: isVisible('transfers') },
-        { key: 'cashIn' as View, label: 'Transaction & Fee Ops — Deposits', visible: isVisible('transfers') },
-        { key: 'cashOut' as View, label: 'Transaction & Fee Ops — Withdrawals', visible: isVisible('transfers') },
-        { key: 'cashToCashOps' as View, label: 'Cash-to-Cash Operations', visible: isVisible('cashToCashOps') },
+        { key: 'transfers' as View, label: 'Transfers', visible: isVisible('transfers') },
+        { key: 'cashIn' as View, label: 'Deposits', visible: isVisible('transfers') },
+        { key: 'cashOut' as View, label: 'Withdrawals', visible: isVisible('transfers') },
+        { key: 'cashToCashOps' as View, label: 'Cash to cash', visible: isVisible('cashToCashOps') },
       ],
     },
     {
       id: 'finance',
-      title: '4. Finance & Ledger',
+      title: 'Finance',
       items: [
-        { key: 'ledgerExplorer' as View, label: 'Ledger & Reversals', visible: isVisible('ledgerExplorer') },
-        { key: 'reconciliation' as View, label: 'Reconciliation & Breaks', visible: isVisible('reconciliation') },
+        { key: 'ledgerExplorer' as View, label: 'Ledger & reversals', visible: isVisible('ledgerExplorer') },
+        { key: 'reconciliation' as View, label: 'Reconciliation', visible: isVisible('reconciliation') },
       ],
     },
     {
       id: 'commercial',
-      title: '5. Commercial & Risk Controls',
+      title: 'Products & pricing',
       items: [
-        { key: 'feeRules' as View, label: '5.1 Fee Rules', visible: isVisible('feeRules') },
-        { key: 'commissionRules' as View, label: '5.2 Commission Rules', visible: isVisible('commissionRules') },
-        { key: 'rewardRules' as View, label: '5.3 Reward Rules', visible: isVisible('rewardRules') },
-        { key: 'productCatalogue' as View, label: '5.4 Product Catalogue', visible: isVisible('productCatalogue') },
-        { key: 'limitCatalogue' as View, label: '5.5 Limit Catalogue', visible: isVisible('limitCatalogue') },
-        { key: 'limitAssignments' as View, label: '5.6 Limit Assignments', visible: isVisible('limitAssignments') },
+        { key: 'feeRules' as View, label: 'Fee rules', visible: isVisible('feeRules') },
+        { key: 'commissionRules' as View, label: 'Commission rules', visible: isVisible('commissionRules') },
+        { key: 'rewardRules' as View, label: 'Reward rules', visible: isVisible('rewardRules') },
+        { key: 'productCatalogue' as View, label: 'Products', visible: isVisible('productCatalogue') },
+        { key: 'limitCatalogue' as View, label: 'Limit catalogue', visible: isVisible('limitCatalogue') },
+        { key: 'limitAssignments' as View, label: 'Limit assignments', visible: isVisible('limitAssignments') },
       ],
     },
     {
       id: 'compliance',
-      title: '6. Compliance & Risk',
+      title: 'Risk & compliance',
       items: [
-        { key: 'kycQueue' as View, label: '6.1 KYC Assessment Lookup & Review', visible: isVisible('kycQueue') },
-        { key: 'complianceCases' as View, label: '6.2 Compliance Case Lookup', visible: isVisible('complianceCases') },
-        { key: 'fraudCases' as View, label: '6.3 Fraud Case Lookup', visible: isVisible('fraudCases') },
+        { key: 'kycQueue' as View, label: 'KYC reviews', visible: isVisible('kycQueue') },
+        { key: 'complianceCases' as View, label: 'Compliance cases', visible: isVisible('complianceCases') },
+        { key: 'fraudCases' as View, label: 'Fraud cases', visible: isVisible('fraudCases') },
       ],
     },
     {
       id: 'platform',
-      title: '7. Platform Administration',
+      title: 'Administration',
       items: [
-        { key: 'workforceAccess' as View, label: 'Workforce Overview & Support Provisioning', visible: isVisible('workforceAccess') },
-        { key: 'roleGovernance' as View, label: 'Role Governance', visible: isVisible('roleGovernance') },
-        { key: 'approvalsInbox' as View, label: 'Privileged Approvals', visible: isVisible('approvalsInbox') },
-        { key: 'superAdminRecovery' as View, label: 'Super-Admin Recovery', visible: isVisible('superAdminRecovery') },
-        { key: 'notifications' as View, label: 'SMS & Email Notifications', visible: isVisible('notifications') },
-        { key: 'systemHealth' as View, label: 'System Health', visible: isVisible('systemHealth') },
-        { key: 'auditEvents' as View, label: 'Audit & Security Events', visible: isVisible('auditEvents') },
+        { key: 'workforceAccess' as View, label: 'Workforce access', visible: isVisible('workforceAccess') },
+        { key: 'roleGovernance' as View, label: 'Role governance', visible: isVisible('roleGovernance') },
+        { key: 'approvalsInbox' as View, label: 'Approvals', visible: isVisible('approvalsInbox') },
+        { key: 'superAdminRecovery' as View, label: 'Admin recovery', visible: isVisible('superAdminRecovery') },
+        { key: 'notifications' as View, label: 'Notifications', visible: isVisible('notifications') },
+        { key: 'systemHealth' as View, label: 'System health', visible: isVisible('systemHealth') },
+        { key: 'auditEvents' as View, label: 'Audit events', visible: isVisible('auditEvents') },
       ],
     },
   ];
 
-  const toggleSection = (key: string) =>
-    setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  const toggleSection = (key: string) => {
+    setActiveSection(key);
+    setExpandedSections((prev) => ({ [key]: !prev[key] }));
+  };
 
   const performNav = (view: View, context?: NavContext) => {
     if (!canAccessAdminView(view, principal.scopes, principal.roles, context)) return;
@@ -334,7 +348,8 @@ export const Layout: React.FC = () => {
       section.items.some((item) => item.key === canonicalView),
     );
     if (owningSection) {
-      setExpandedSections((prev) => ({ ...prev, [owningSection.id]: true }));
+      setActiveSection(owningSection.id);
+      setExpandedSections({ [owningSection.id]: true });
     }
     // A successful navigation closes the drawer and moves focus to the page, not
     // back to the toggle; a denied navigation keeps the guard behaviour unchanged.
@@ -452,6 +467,7 @@ export const Layout: React.FC = () => {
             className="mn-nav__group-toggle"
             aria-expanded={expanded}
             aria-controls={panelId}
+            id={variant === 'rail' ? `mn-nav-rail-header-${section.id}` : undefined}
             data-testid={`${prefix}section-${section.id}`}
             onClick={() => toggleSection(section.id)}
           >
@@ -483,7 +499,7 @@ export const Layout: React.FC = () => {
   };
 
   return (
-    <div className="mn-shell">
+    <div className={`mn-shell${sidebarCollapsed ? ' mn-shell--collapsed' : ''}`}>
       <a className="mn-skip-link" href="#mn-main-workspace">
         Skip to main content
       </a>
@@ -491,48 +507,22 @@ export const Layout: React.FC = () => {
       <aside className="mn-shell__sidebar" data-testid="desktop-nav">
         <div className="one-rail" aria-label="Navigation sections">
           <img src="/favicon.png" alt="MonieNaija" className="one-rail__logo" />
-          {sections.filter(section => section.items.some(item => item.visible)).map((section, index) => (
-            <button key={section.id} type="button" aria-label={`Open ${section.title.replace(/^\d+\. /, '')} navigation`} className={section.items.some(item => item.key === canonicalAdminView(currentView)) ? 'one-rail__button one-rail__button--active' : 'one-rail__button'} onClick={() => setExpandedSections(previous => ({...previous, [section.id]: true}))}>
-              <span aria-hidden="true">{['▦', '♙', '⇄', '◫', '▤', '◇', '⚙'][index]}</span>
+          {sections.filter(section => section.items.some(item => item.visible)).map((section) => (
+            <button key={section.id} type="button" title={section.title} aria-label={`Open ${section.title} navigation`} aria-pressed={activeSection === section.id && !sidebarCollapsed} className={activeSection === section.id && !sidebarCollapsed ? 'one-rail__button one-rail__button--active' : 'one-rail__button'} onClick={() => { setSidebarCollapsed(false); setActiveSection(section.id); setExpandedSections({ [section.id]: true }); requestAnimationFrame(() => { const header = document.getElementById(`mn-nav-rail-header-${section.id}`); const nav = header?.closest('.mn-nav'); if (header && nav) nav.scrollTop = header.offsetTop - (nav as HTMLElement).offsetTop; }); }}>
+              <span aria-hidden="true">{({home:'▦',servicing:'♙',money:'⇄',finance:'◫',commercial:'▤',compliance:'◇',platform:'⚙'} as Record<string,string>)[section.id]}</span>
             </button>
           ))}
-          <span className="one-rail__avatar" aria-hidden="true">{principalInitial}</span>
         </div>
-        <div className="one-nav-panel">
-        <div className="mn-shell__brand">
-          <img className="mn-shell__brand-mark" src="/favicon.png" alt="" aria-hidden="true" />
-          <span className="mn-shell__brand-text">
-            <span className="mn-shell__brand-name">MonieNaija One</span>
-            <span className="mn-shell__brand-sub">Workforce console</span>
-          </span>
+        <div className="one-nav-panel" id="one-desktop-navigation" hidden={sidebarCollapsed}>
+        <div className="one-nav-heading"><div className="mn-shell__brand"><span className="mn-shell__brand-text"><span className="mn-shell__brand-name">MonieNaija One</span><span className="mn-shell__brand-sub">Workforce console</span></span></div>
+          <button type="button" className="one-nav-collapse" aria-label="Collapse sidebar" aria-expanded={!sidebarCollapsed} aria-controls="one-desktop-navigation" onClick={() => setSidebarCollapsed(true)}>‹</button>
         </div>
-
-        <div className="mn-identity">
-          <span className="mn-identity__avatar" aria-hidden="true">
-            {principalInitial}
-          </span>
-          <span className="mn-identity__meta">
-            <span className="mn-identity__name" title={principal.principalId}>
-              {principalHandle}
-            </span>
-            {principal.roles.slice(0, 1).map((role) => (
-              <span className="mn-identity__role" key={role}>
-                {role}
-              </span>
-            ))}
-          </span>
-        </div>
-
         <nav className="mn-nav" aria-label="Main navigation">
           {renderNavGroups('rail')}
         </nav>
 
-        <div className="mn-shell__logout">
-          <Button variant="secondary" onClick={requestLogout}>
-            Log out session
-          </Button>
         </div>
-        </div>
+        {sidebarCollapsed && <button type="button" className="one-nav-expand" aria-label="Expand sidebar" aria-expanded="false" aria-controls="one-desktop-navigation" onClick={() => setSidebarCollapsed(false)}>›</button>}
       </aside>
 
       {/* Compact top app bar: shown below the persistent-rail breakpoint. */}
@@ -555,7 +545,10 @@ export const Layout: React.FC = () => {
 
       <div className="one-command-bar">
         <GlobalSearch query={navigationQuery} onQuery={setNavigationQuery} canSearchCustomers={isVisible('customers')} sessionKey={JSON.stringify([principal.principalId, principal.sessionId, principal.scopes])} workspaces={sections.flatMap(section => section.items).filter(item => item.visible)} onWorkspace={key => handleNav(key as View)} onCustomer={customerId => handleNav('customers', {customerId})} />
-        <div className="one-command-session"><span className="one-command-avatar">{principalInitial}</span><span>{principal.roles[0]?.replace(/_/g, ' ')}</span></div>
+        <div className="one-account" ref={accountRef}>
+          <button type="button" className="one-account__trigger" ref={accountButtonRef} aria-label="Account menu" aria-expanded={accountOpen} aria-controls="one-account-menu" onClick={() => setAccountOpen(open => !open)}><span className="one-command-avatar">{principalInitial}</span><span className="one-account__role">{principal.roles[0]?.replace(/_/g, ' ')}</span><span aria-hidden="true">⌄</span></button>
+          {accountOpen && <div className="one-account__menu" id="one-account-menu"><div className="one-account__details"><strong>{principal.roles[0]?.replace(/_/g, ' ') || 'Operator'}</strong><span title={principal.principalId}>{principalHandle}</span></div><details><summary>Session details</summary><p>{principal.audience} · {principal.assuranceLevel}</p><details><summary>Allowed scopes ({principal.scopes.length})</summary><ul>{principal.scopes.map(scope => <li key={scope}>{scope}</li>)}</ul></details></details><button type="button" onClick={() => { setAccountOpen(false); requestLogout(); }}>Log out</button></div>}
+        </div>
       </div>
       <div
         className="mn-shell__content"
@@ -614,11 +607,6 @@ export const Layout: React.FC = () => {
               {renderNavGroups('drawer')}
             </nav>
 
-            <div className="mn-drawer__logout">
-              <Button variant="secondary" onClick={requestLogout}>
-                Log out
-              </Button>
-            </div>
           </div>
         </div>
       )}

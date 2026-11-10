@@ -3,7 +3,7 @@ import { ApiClient } from '../../services/api-client';
 import { useWidgetData } from './useWidgetData';
 import { isStatusCountData, type StatusCountData } from './widget-validation';
 
-interface Props { canKyc: boolean; canSupport: boolean; canApprovals: boolean; onNavigate: (view: 'kycQueue' | 'support' | 'approvalsInbox') => void }
+interface Props { canKyc: boolean; canSupport: boolean; canApprovals: boolean; onNavigate: (view: 'kycQueue' | 'support' | 'approvalsInbox') => void; onAgents?: (options?: { openApplications?: boolean }) => void; canAgentNetwork?: boolean; canAgentOnboarding?: boolean }
 
 function KycItems({ onNavigate }: { onNavigate: Props['onNavigate'] }) {
   const { data, loading, error } = useWidgetData<StatusCountData>(async () => {
@@ -21,11 +21,13 @@ function SupportItems({ onNavigate }: { onNavigate: Props['onNavigate'] }) {
   }, []);
   return <div className="one-action-item"><span aria-hidden="true">♧</span><button type="button" onClick={() => onNavigate('support')}>Open support tickets</button><span>{loading ? 'Loading…' : error ? 'Unavailable' : data}</span></div>;
 }
-export const ActionItems: React.FC<Props> = ({ canKyc, canSupport, canApprovals, onNavigate }) => <section className="one-action-queue" aria-label="Action items">
+export const ActionItems: React.FC<Props> = ({ canKyc, canSupport, canApprovals, onNavigate, onAgents, canAgentNetwork, canAgentOnboarding }) => <section className="one-action-queue" aria-label="Action items">
   <h2>Action Items</h2>
   {canKyc && <KycItems onNavigate={onNavigate} />}
   {canSupport && <SupportItems onNavigate={onNavigate} />}
   {canApprovals && <div className="one-action-item"><span aria-hidden="true">⇄</span><button type="button" onClick={() => onNavigate('approvalsInbox')}>Approvals awaiting review</button><span>Count unavailable</span></div>}
-  {!canKyc && !canSupport && !canApprovals && <p>No action sources are available to this session.</p>}
-  <p className="one-action-queue__note">Only authorized sources are shown. A combined action count and flagged transaction queue require backend support.</p>
+  {onAgents && canAgentNetwork && <div className="one-action-item"><span aria-hidden="true">♙</span><button type="button" onClick={() => onAgents()}>Agent network</button><span>Open →</span></div>}
+  {onAgents && canAgentOnboarding && <div className="one-action-item"><span aria-hidden="true">♙</span><button type="button" onClick={() => onAgents({ openApplications: true })}>Agent onboarding</button><span>Review →</span></div>}
+  {!canKyc && !canSupport && !canApprovals && !(onAgents && (canAgentNetwork || canAgentOnboarding)) && <p>No action sources are available to this session.</p>}
+
 </section>;

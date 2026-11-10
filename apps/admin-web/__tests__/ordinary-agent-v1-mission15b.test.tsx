@@ -673,14 +673,14 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     // Corrected Money Movement navigation labels (Deposits / Withdrawals instead of misleading C2W/W2C)
     const rail = appShell.getByTestId('desktop-nav');
     expect(within(rail).getByTestId('nav-cashIn').textContent).toBe(
-      'Transaction & Fee Ops — Deposits',
+      'Deposits',
     );
     expect(within(rail).getByTestId('nav-cashOut').textContent).toBe(
-      'Transaction & Fee Ops — Withdrawals',
+      'Withdrawals',
     );
 
     // Dashboard widget navigates directly to Agent Network Management
-    fireEvent.click(await appShell.findByRole('button', { name: 'Open Agent Network →' }));
+    fireEvent.click(await appShell.findByRole('button', { name: 'Agent network' }));
     expect(await appShell.findByText('AGT-NAV-01')).toBeTruthy();
 
     // Open Agent drawer -> jump to Agent-filtered Support Tickets -> return to Agent Network drawer
@@ -837,7 +837,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     });
 
     const shell = render(<Layout />);
-    fireEvent.click(await shell.findByRole('button', { name: 'Open Onboarding Queue →' }));
+    fireEvent.click(await shell.findByRole('button', { name: 'Agent onboarding' }));
     // Navigating from agent-applications-queue auto-loads the onboarding applications table
     expect(await shell.findByText('APP-QUEUE-77')).toBeTruthy();
 
