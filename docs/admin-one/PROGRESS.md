@@ -4,8 +4,8 @@ The approved Login, Dashboard and Customer Directory references are the design a
 
 ## Redesigned and batch-verified
 
-- Login (outside authenticated navigation); Operational Dashboard; Customer Directory and preview (Customer 360° sub-workspaces still require review).
-- Support Inbox; Agent Network Management; Agent Classes & Capabilities.
+- Login (outside authenticated navigation); Operational Dashboard; Customer Directory and preview (Customer 360° proof workflow still requires review).
+- Support Inbox; Agent Network Management; Agent Classes & Capabilities; Customer 360° overview and personal information.
 - Transfers, Deposits and Withdrawals (shared transaction trace and fee simulation); customer transaction history.
 - Cash-to-Cash Operations.
 - Ledger & Reversals (account registry and journal workspace; reversal controls preserved).
@@ -18,7 +18,7 @@ Evidence and source commit references are in [README.md](README.md) and the evid
 
 ## Remaining — core operations first
 
-- Customer & Agent Servicing: Customer 360° internal sections (overview wallet inspection and in-page navigation implemented and checked; personal-information and proof workflows still need a substantive design pass).
+- Customer & Agent Servicing: Customer 360° Proof of Address enabled workflows (navigation implemented and disabled-capability state checked; enabled evidence workflow still needs a substantive design pass and browser verification).
 - Commercial & Risk Controls: Limit Assignments.
 - Platform Administration: Privileged Approvals; Workforce Overview & Support Provisioning; Role Governance; Super-Admin Recovery; SMS & Email Notifications; System Health.
 - Home & My Work: Dashboard Settings.
