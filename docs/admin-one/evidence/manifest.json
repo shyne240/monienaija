@@ -1,6 +1,6 @@
 {
   "source": "Vite dev server from Phase 1 source, real Nest AppModule and disposable migrated PostgreSQL",
-  "baseCommit": "f8423fb0fb32a94ce5c8b323c5d9f799ecea3fef",
+  "baseCommit": "9c9a605499b08c4627428f13cb9347c2125d5cb7",
   "auth": "real local development login for seeded test roles",
   "backend": "Real API, seeded synthetic local workforce and one synthetic customer in disposable PostgreSQL; browser proxy permits only GET and local-login POST; no real providers or workers",
   "screens": [
@@ -27,7 +27,8 @@
       "geometry": {
         "client": 1440,
         "scroll": 1440
-      }
+      },
+      "captureHeight": 900
     },
     {
       "key": "customers",
@@ -40,21 +41,24 @@
       "geometry": {
         "client": 1440,
         "scroll": 1440
-      }
+      },
+      "captureHeight": 900
     },
     {
       "key": "customer-preview",
       "role": "SUPER_ADMIN",
       "width": 1440,
       "file": "customer-preview-1440.png",
-      "interaction": true
+      "interaction": true,
+      "captureHeight": 900
     },
     {
       "key": "customer-360",
       "role": "SUPER_ADMIN",
       "width": 1440,
       "file": "customer-360-1440.png",
-      "interaction": true
+      "interaction": true,
+      "captureHeight": 900
     },
     {
       "key": "login",
@@ -79,7 +83,8 @@
       "geometry": {
         "client": 375,
         "scroll": 375
-      }
+      },
+      "captureHeight": 900
     },
     {
       "key": "customers",
@@ -92,21 +97,48 @@
       "geometry": {
         "client": 375,
         "scroll": 375
-      }
+      },
+      "captureHeight": 1108
     },
     {
       "key": "customer-preview",
       "role": "SUPER_ADMIN",
       "width": 375,
       "file": "customer-preview-375.png",
-      "interaction": true
+      "interaction": true,
+      "captureHeight": 1745
+    },
+    {
+      "key": "customer-preview-table",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "customer-preview-table-375.png",
+      "interaction": true,
+      "geometry": {
+        "left": 687,
+        "width": 341,
+        "total": 1028
+      }
+    },
+    {
+      "key": "customer-preview-table-scrolled",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "customer-preview-table-scrolled-375.png",
+      "interaction": true,
+      "geometry": {
+        "left": 687,
+        "width": 341,
+        "total": 1028
+      }
     },
     {
       "key": "customer-360",
       "role": "SUPER_ADMIN",
       "width": 375,
       "file": "customer-360-375.png",
-      "interaction": true
+      "interaction": true,
+      "captureHeight": 900
     }
   ],
   "warnings": []
