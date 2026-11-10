@@ -43,3 +43,11 @@ Source commit `4b2f29e` aligns the fee, commission, reward, product and limit re
 Source `b8cf54f` adds a directory-aligned audit search and a contextual, read-only event drawer. The drawer exposes only the six already-validated, projected result fields (including the returned event ID); raw audit payloads remain excluded. Scope checks, exact-filter validation, late-response invalidation and the 100-result boundary remain unchanged. Capture harness correction `01be348` records separate viewport positions rather than an extremely long full-page mobile image.
 
 [`evidence/audit-batch/`](evidence/audit-batch/manifest.json) shows searches and drawers at 1440, 768 and 375 pixels using real locally generated audit records in a disposable database. Capture is limited to SUPER_ADMIN, GET and local login; workers and external calls are blocked. No zoom, screen-reader or owner visual-acceptance claim is made. Full tests: 82 suites / 816 tests; TypeScript and build passed (existing large-chunk warning).
+
+### Full-console batch: transaction trace and customer history
+
+Source `05dd72d` applies directory-style category controls to the existing Transfers, Deposits and Withdrawals trace and introduces a read-only customer-history detail drawer. Category changes select the existing endpoint and clear the prior trace; lookup validation, simulation permissions and exact integer checks remain intact. History drawers show only returned fields; pagination and type filters use the existing customer-scoped service. No global list has been invented.
+
+[`evidence/transaction-batch/`](evidence/transaction-batch/manifest.json) records the three views and customer history/drawer at 1440, 768 and 375 pixels. The real local API runs against a disposable database containing a synthetic failed transfer and synthetic customer/accounts; no journal or financial command is created. The browser proxy permits GET and local-login POST only, so the simulator was not submitted in browser checks. Automated isolated tests exercise simulation, permissions and failed responses. 82 suites / 818 tests, TypeScript and Vite build passed; the existing large-chunk warning remains. Capture uses the SUPER_ADMIN role; no zoom, screen-reader or owner visual-acceptance claim is made.
+
+See [PROGRESS.md](PROGRESS.md) for the full navigation inventory and remaining work.
