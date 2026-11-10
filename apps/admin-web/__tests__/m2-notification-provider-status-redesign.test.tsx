@@ -49,3 +49,14 @@ test('provider status distinguishes reported configuration from unreported verif
  if(result.status==='LIVE') { expect(result.data.worker.pendingOutboxCount).toBeNull();expect(result.data.sms.apiKeyPrefixValid).toBeNull();expect(result.data.sms.productionGuardSatisfied).toBeNull();expect(result.data.sms.requestTimeoutMs).toBeNull();expect(result.data.email.domainVerificationStatus).toBe('UNKNOWN'); }
  expect(ApiClient.post).not.toHaveBeenCalled();
 });
+
+test('local probe draft can be cleared without sending or retaining attestation', async () => {
+  principal(['notification.test_send']); render(<NotificationManagementScreen initialTab="testSend"/>);
+  const destination=screen.getByTestId('test-send-destination-input') as HTMLInputElement;
+  const attestation=screen.getByTestId('test-send-workforce-attestation') as HTMLInputElement;
+  const clear=screen.getByRole('button',{name:'Clear local probe draft'}) as HTMLButtonElement;
+  expect(clear.disabled).toBe(true); fireEvent.change(destination,{target:{value:'invalid'}}); fireEvent.click(attestation);
+  fireEvent.click(screen.getByTestId('submit-test-send-btn')); expect(screen.getByTestId('test-send-validation-errors')).toBeTruthy();
+  expect(clear.disabled).toBe(false); fireEvent.click(clear);
+  expect(destination.value).toBe(''); expect(attestation.checked).toBe(false); expect(screen.queryByTestId('test-send-validation-errors')).toBeNull(); expect(clear.disabled).toBe(true); expect(ApiClient.post).not.toHaveBeenCalled();
+});

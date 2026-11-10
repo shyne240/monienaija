@@ -2520,7 +2520,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   </div>
                   <div>
                     <strong>API Base URL:</strong>{' '}
-                    <code>{providerStatus.sms.baseUrl || 'Console local memory'}</code>
+                    <code>{providerStatus.sms.baseUrl || 'Not reported'}</code>
                   </div>
                   <div>
                     <strong>Provider configuration gate (reported):</strong>{' '}
@@ -3261,8 +3261,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
               data-testid="test-send-scope-restricted-banner"
             >
               <strong>Permission Required:</strong> Controlled test-send requires the{' '}
-              <code>notification.test_send</code> authorization function and MFA session assurance.
-              Submission controls are disabled for the current principal.
+              <code>notification.test_send</code> authorization function. The server also checks workforce identity, customer access and read-only status. Submission controls are disabled for the current principal.
             </div>
           )}
 
@@ -3277,6 +3276,11 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
               restricted strictly to verified workforce-owned phone numbers or email addresses.
             </p>
 
+            <div className="notification-redesign__probe-guide" aria-label="Probe preparation guidance">
+              <div><span>01</span><strong>Choose a channel</strong><p>Use the channel for the intended connectivity check.</p></div>
+              <div><span>02</span><strong>Confirm the destination</strong><p>Only an authorized workforce-owned destination is permitted; changing it requires a new attestation.</p></div>
+              <div><span>03</span><strong>Review before submitting</strong><p>A provider acceptance does not confirm delivery. Uncertain outcomes require independent review before another probe.</p></div>
+            </div>
             <form onSubmit={handleTestSendSubmit} noValidate>
               <div style={styles.filterGrid}>
                 <div>
@@ -3411,6 +3415,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                 </div>
               )}
 
+              <div className="notification-redesign__probe-actions">
               <button
                 type="submit"
                 data-testid="submit-test-send-btn"
@@ -3425,6 +3430,8 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   ? 'Submitting Test-Send…'
                   : `Submit Controlled ${testChannel} Test-Send`}
               </button>
+              <Button size="sm" disabled={!permissions.canTestSend || isSendingTest || probeBusy || Boolean(probeReview) || providerBusy || providerReviewRequired || (!testDestination && !testWorkforceConfirmed && !testValidationErrors.length && !testError && !testBlockedMsg && !testOutcome)} onClick={() => { setTestDestination(''); setTestWorkforceConfirmed(false); setTestValidationErrors([]); setTestError(''); setTestBlockedMsg(''); setTestOutcome(null); }}>Clear local probe draft</Button>
+              </div>
             </form>
           </section>
         </div>
