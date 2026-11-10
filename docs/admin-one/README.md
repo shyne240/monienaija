@@ -23,3 +23,11 @@ Chromium captured Vite and the real Nest application against a disposable migrat
 - **Login:** The diagonal composition, decorative dotted map/waves and password reveal were added without changing authentication. The reference's remember-me and password-reset controls were not invented; they require an approved authentication policy and supported backend flow. A00 production sign-in remains policy-blocked.
 
 The 81 Admin Web suites / 811 tests, TypeScript check and Vite build passed (the build reports a large-chunk warning). Chromium verified local login, authorized customer global search, directory navigation, drawer opening, horizontal scroll/action visibility and Customer 360 entry at both widths. It did not verify production login, writes, all roles, real devices, zoom or screen readers. No PR, merge or deployment was made.
+
+### Full-console batch: Support and shared contextual drawers
+
+Source commit `6b5bee476520d68c2d53958c6f45f30525788ecc` adds status filters to the Support queue and uses the shared responsive modal drawer for Support detail and Customer Directory preview. The drawer delegates close decisions to existing workflow guards; a modal stack prevents nested confirmation dialogs from competing for focus. Support assignment, status changes, message submission, retry and draft/uncertain-outcome protections remain the existing workflows.
+
+Browser evidence is in [`evidence/support-batch/`](evidence/support-batch/manifest.json), captured from the committed source at widths 1440, 768 and 375 using the real local Nest API, Vite and a disposable migrated PostgreSQL database with synthetic records. The browser proxy allows GET and local-development login only; external calls and notification/expiry workers are blocked. The harness checks Escape and dirty-draft discard without submitting a mutation. Some full-page captures use an expanded viewport height, documented in the manifest; these are not zoom or screen-reader tests. No owner visual acceptance is implied. Automated checks: 82 suites / 814 tests, TypeScript and Vite build passed (the existing large-chunk warning remains).
+
+The support assignment API does not provide an assignee directory, so the existing workforce principal ID input remains. Other console workspaces remain to be redesigned; this batch is not full-console completion.

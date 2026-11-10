@@ -1,0 +1,166 @@
+{
+  "source": "Vite dev server from current source, real Nest AppModule and disposable migrated PostgreSQL",
+  "baseCommit": "6b5bee476520d68c2d53958c6f45f30525788ecc",
+  "auth": "real local development login for seeded test roles",
+  "backend": "Real API, seeded synthetic local workforce and one synthetic customer and one synthetic support ticket in disposable PostgreSQL; browser proxy permits only GET and local-login POST; no real providers or workers",
+  "screens": [
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 1440,
+      "file": "login-1440.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "support",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "support-1440.png",
+      "headings": [
+        "Support Tickets",
+        "Ticket queue"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "support-drawer",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "support-drawer-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "customers",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "customers-1440.png",
+      "headings": [
+        "Customer directory"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "customer-drawer",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "customer-drawer-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 768,
+      "file": "login-768.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "support",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "support-768.png",
+      "headings": [
+        "Support Tickets",
+        "Ticket queue"
+      ],
+      "geometry": {
+        "client": 768,
+        "scroll": 768
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "support-drawer",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "support-drawer-768.png",
+      "interaction": true
+    },
+    {
+      "key": "customers",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "customers-768.png",
+      "headings": [
+        "Customer directory"
+      ],
+      "geometry": {
+        "client": 768,
+        "scroll": 768
+      },
+      "captureHeight": 909
+    },
+    {
+      "key": "customer-drawer",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "customer-drawer-768.png",
+      "interaction": true
+    },
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 375,
+      "file": "login-375.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "support",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "support-375.png",
+      "headings": [
+        "Support Tickets",
+        "Ticket queue"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "support-drawer",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "support-drawer-375.png",
+      "interaction": true
+    },
+    {
+      "key": "customers",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "customers-375.png",
+      "headings": [
+        "Customer directory"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      },
+      "captureHeight": 1108
+    },
+    {
+      "key": "customer-drawer",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "customer-drawer-375.png",
+      "interaction": true
+    }
+  ],
+  "globalCustomerSearch": [],
+  "warnings": []
+}
