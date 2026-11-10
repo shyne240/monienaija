@@ -1,0 +1,144 @@
+{
+  "source": "Vite dev server from current source, real Nest AppModule and disposable migrated PostgreSQL",
+  "baseCommit": "99de306219f886cb791d0c3a620e80dfbb12a48e",
+  "auth": "real local development login for seeded test roles",
+  "backend": "Real API, seeded synthetic local workforce and two synthetic Agent classes in disposable storage in disposable PostgreSQL; browser proxy permits only GET and local-login POST; no real providers or workers",
+  "screens": [
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 1440,
+      "file": "login-1440.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "agentClasses",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "agentClasses-1440.png",
+      "headings": [
+        "Agent classes & service eligibility",
+        "Class catalogue"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "catalogue",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "catalogue-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "editor",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "editor-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "policy",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "policy-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 768,
+      "file": "login-768.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "agentClasses",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "agentClasses-768.png",
+      "headings": [
+        "Agent classes & service eligibility",
+        "Class catalogue"
+      ],
+      "geometry": {
+        "client": 768,
+        "scroll": 768
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "catalogue",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "catalogue-768.png",
+      "interaction": true
+    },
+    {
+      "key": "editor",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "editor-768.png",
+      "interaction": true
+    },
+    {
+      "key": "policy",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "policy-768.png",
+      "interaction": true
+    },
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 375,
+      "file": "login-375.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "agentClasses",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "agentClasses-375.png",
+      "headings": [
+        "Agent classes & service eligibility",
+        "Class catalogue"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "catalogue",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "catalogue-375.png",
+      "interaction": true
+    },
+    {
+      "key": "editor",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "editor-375.png",
+      "interaction": true
+    },
+    {
+      "key": "policy",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "policy-375.png",
+      "interaction": true
+    }
+  ],
+  "warnings": []
+}
