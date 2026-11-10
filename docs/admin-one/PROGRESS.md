@@ -9,6 +9,7 @@ The approved Login, Dashboard and Customer Directory references are the design a
 - Transfers, Deposits and Withdrawals (shared transaction trace and fee simulation); customer transaction history.
 - Cash-to-Cash Operations.
 - Ledger & Reversals (account registry and journal workspace; reversal controls preserved).
+- Reconciliation & Breaks.
 - Fee Rules, Commission Rules, Reward Rules, Product Catalogue and Limit Catalogue (shared commercial registry).
 - Audit & Security Events.
 
@@ -16,7 +17,6 @@ Evidence and source commit references are in [README.md](README.md) and the evid
 
 ## Remaining — core operations first
 
-- Finance & Ledger: Reconciliation & Breaks.
 - Customer & Agent Servicing: Agent Network Management; Agent Classes & Capabilities; Customer 360° internal sections beyond directory/preview.
 - Commercial & Risk Controls: Limit Assignments.
 - Compliance & Risk: KYC Assessment Lookup & Review; Compliance Case Lookup; Fraud Case Lookup.
