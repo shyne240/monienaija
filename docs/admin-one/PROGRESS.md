@@ -7,6 +7,7 @@ The approved Login, Dashboard and Customer Directory references are the design a
 - Login (outside authenticated navigation); Operational Dashboard; Customer Directory and preview (Customer 360° sub-workspaces still require review).
 - Support Inbox.
 - Transfers, Deposits and Withdrawals (shared transaction trace and fee simulation); customer transaction history.
+- Cash-to-Cash Operations.
 - Fee Rules, Commission Rules, Reward Rules, Product Catalogue and Limit Catalogue (shared commercial registry).
 - Audit & Security Events.
 
@@ -14,7 +15,6 @@ Evidence and source commit references are in [README.md](README.md) and the evid
 
 ## Remaining — core operations first
 
-- Money Movement: Cash-to-Cash Operations.
 - Finance & Ledger: Ledger & Reversals; Reconciliation & Breaks.
 - Customer & Agent Servicing: Agent Network Management; Agent Classes & Capabilities; Customer 360° internal sections beyond directory/preview.
 - Commercial & Risk Controls: Limit Assignments.

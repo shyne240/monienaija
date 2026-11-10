@@ -1,0 +1,144 @@
+{
+  "source": "Vite dev server from current source, real Nest AppModule and disposable migrated PostgreSQL",
+  "baseCommit": "d190f6f582ed74c0bece1af9b160a5b6d60d4875",
+  "auth": "real local development login for seeded test roles",
+  "backend": "Real API, seeded synthetic local workforce and synthetic agent, transfer and journal in disposable storage in disposable PostgreSQL; browser proxy permits only GET and local-login POST; no real providers or workers",
+  "screens": [
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 1440,
+      "file": "login-1440.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "cashToCashOps",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "cashToCashOps-1440.png",
+      "headings": [
+        "Cash-to-Cash Operations",
+        "Find a transfer"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "results",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "results-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "receipt",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "receipt-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "journal",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "journal-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 768,
+      "file": "login-768.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "cashToCashOps",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "cashToCashOps-768.png",
+      "headings": [
+        "Cash-to-Cash Operations",
+        "Find a transfer"
+      ],
+      "geometry": {
+        "client": 768,
+        "scroll": 768
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "results",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "results-768.png",
+      "interaction": true
+    },
+    {
+      "key": "receipt",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "receipt-768.png",
+      "interaction": true
+    },
+    {
+      "key": "journal",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "journal-768.png",
+      "interaction": true
+    },
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 375,
+      "file": "login-375.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "cashToCashOps",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "cashToCashOps-375.png",
+      "headings": [
+        "Cash-to-Cash Operations",
+        "Find a transfer"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "results",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "results-375.png",
+      "interaction": true
+    },
+    {
+      "key": "receipt",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "receipt-375.png",
+      "interaction": true
+    },
+    {
+      "key": "journal",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "journal-375.png",
+      "interaction": true
+    }
+  ],
+  "warnings": []
+}

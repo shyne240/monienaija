@@ -51,3 +51,9 @@ Source `05dd72d` applies directory-style category controls to the existing Trans
 [`evidence/transaction-batch/`](evidence/transaction-batch/manifest.json) records the three views and customer history/drawer at 1440, 768 and 375 pixels. The real local API runs against a disposable database containing a synthetic failed transfer and synthetic customer/accounts; no journal or financial command is created. The browser proxy permits GET and local-login POST only, so the simulator was not submitted in browser checks. Automated isolated tests exercise simulation, permissions and failed responses. 82 suites / 818 tests, TypeScript and Vite build passed; the existing large-chunk warning remains. Capture uses the SUPER_ADMIN role; no zoom, screen-reader or owner visual-acceptance claim is made.
 
 See [PROGRESS.md](PROGRESS.md) for the full navigation inventory and remaining work.
+
+### Full-console batch: Cash-to-Cash Operations
+
+Source `d190f6f` replaces the staged status selector with directory-style controls and moves read-only receipt and authorized journal inspection into the shared contextual drawer. Search remains explicitly applied by the Search button. Receipt data, masked phone, journal permissions, stale-read invalidation, expiry boundary and the prohibition on claim/refund/release/expiry commands remain intact.
+
+[`evidence/c2c-batch/`](evidence/c2c-batch/manifest.json) captures the actual local app at 1440, 768 and 375 pixels, including filter application, receipt, journal inspection, Escape and focus return. The disposable database contains a synthetic agent, transfer and balanced synthetic journal; no financial API command runs. Browser proxy allows GET and local-login POST only; outbound network and workers are blocked. Full tests: 82 suites / 819 tests; TypeScript and build passed, with the existing Vite chunk warning. Browser capture uses SUPER_ADMIN; no zoom, screen-reader or owner visual-acceptance claim is made.
