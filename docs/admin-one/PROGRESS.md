@@ -18,7 +18,7 @@ Evidence and source commit references are in [README.md](README.md) and the evid
 
 ## Remaining — core operations first
 
-- Customer & Agent Servicing: Agent Classes & Capabilities; Customer 360° internal sections beyond directory/preview.
+- Customer & Agent Servicing: Agent Classes & Capabilities (catalogue filtering and sticky actions implemented and checked; governed editor still needs a substantive design pass); Customer 360° internal sections beyond directory/preview.
 - Commercial & Risk Controls: Limit Assignments.
 - Platform Administration: Privileged Approvals; Workforce Overview & Support Provisioning; Role Governance; Super-Admin Recovery; SMS & Email Notifications; System Health.
 - Home & My Work: Dashboard Settings.
