@@ -1039,6 +1039,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     await waitFor(() => expect(view.getByTestId('notification-deliveries-table')).toBeTruthy());
 
     // Inspect failed delivery row with 3 attempts
+    view.getByTestId('inspect-delivery-deliv-failed-2').focus();
     fireEvent.click(view.getByTestId('inspect-delivery-deliv-failed-2'));
     const inspector = view.getByTestId('delivery-inspector-panel');
     // SPRINT1-P0-02: the API returns only the sanitized errorCode — never raw provider errors.
@@ -1049,6 +1050,10 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     expect((view.getByTestId('request-manual-retry-btn') as HTMLButtonElement).disabled).toBe(true);
     expect(view.getByTestId('manual-retry-policy').textContent).toMatch(/No retry or worker action is started/);
     fireEvent.click(view.getByTestId('request-manual-retry-btn')); expect(ApiClient.post).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(view.queryByRole('dialog', { name: 'Delivery diagnostic inspector' })).toBeNull();
+    expect(document.activeElement).toBe(view.getByTestId('inspect-delivery-deliv-failed-2'));
 
     // Invalid UUID in Recipient ID filter catches client-side before hitting backend
     fireEvent.change(view.getByLabelText('Recipient UUID filter'), {

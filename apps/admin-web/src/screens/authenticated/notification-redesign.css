@@ -56,3 +56,17 @@
 .notification-redesign [data-testid="notification-change-requests-table"]{min-width:1100px}
 .notification-redesign [data-testid="notification-governance-audit-table"]{min-width:780px}
 @media(max-width:600px){.notification-redesign__approval-filters button{flex:1 1 100%}}
+/* A delivery inspector shows only the API's redacted snapshot; it cannot retry. */
+.notification-redesign__delivery-drawer{width:min(100%,680px)}
+.notification-redesign__delivery-inspector{margin:0!important;padding:24px!important;border:0!important;box-shadow:none!important;overflow-wrap:anywhere}
+.notification-redesign__delivery-inspector>div:first-child{flex-wrap:wrap;gap:12px}
+.notification-redesign__delivery-inspector code{overflow-wrap:anywhere;word-break:break-word}
+.notification-redesign [data-testid="notification-deliveries-table"] :is(th,td):last-child{position:sticky;right:0;z-index:1;box-shadow:-3px 0 6px #18382b0d}
+.notification-redesign [data-testid="notification-deliveries-table"] td:last-child{background:#fff}
+.notification-redesign [data-testid="notification-deliveries-table"] th:last-child{background:#f5f8f6}
+@media(max-width:600px){.notification-redesign__delivery-inspector{padding:18px!important}}
+.notification-redesign__delivery-inspector>div:first-child button{padding:9px 12px!important;border-color:#94aa9d!important;border-radius:7px!important;color:#0b624a;font-size:13px!important}
+.notification-redesign__delivery-facts{gap:8px!important;margin-top:16px}
+.notification-redesign__delivery-facts>div{padding:12px;border:1px solid #dce7e0;border-radius:8px;background:#fff;line-height:1.5}
+.notification-redesign__delivery-inspector [data-testid="manual-retry-policy"]{font-size:13px;line-height:1.5;color:#52655f}
+.notification-redesign__delivery-inspector [data-testid="manual-retry-policy"] button{display:block;margin-top:10px;padding:8px 10px;border:1px solid #d1ddd5;border-radius:6px;background:#eef3f0;color:#667a6e}

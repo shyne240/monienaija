@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NotificationTemplateWorkspace } from '../../components/NotificationTemplateWorkspace';
 import { ProviderConfigurationWorkspace } from '../../components/ProviderConfigurationWorkspace';
 import { Alert, Button, Field, PageHeader } from '../../design-system/primitives';
+import { WorkspaceDrawer } from '../../design-system/WorkspaceDrawer';
 import {
   BASELINE_CODE_EVENT_CATALOGUE,
   BASELINE_CODE_TEMPLATES,
@@ -243,8 +244,6 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   const [deliveryFilterError, setDeliveryFilterError] = useState<string>('');
   const deliveryReadGeneration = useRef(0);
   const outboxReadGeneration = useRef(0);
-  const deliveryInspectorRef = useRef<HTMLElement | null>(null);
-  const deliveryOriginRef = useRef<HTMLButtonElement | null>(null);
   const [deliveryChannelBlockedMsg, setDeliveryChannelBlockedMsg] = useState<string>('');
   const [deliveryPage, setDeliveryPage] = useState<number>(1);
   const [deliveryLimit, setDeliveryLimit] = useState<number>(20);
@@ -655,10 +654,6 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
     }
     return () => { outboxReadGeneration.current += 1; };
   }, [permissions.canAccessModule, permissions.canViewDeliveries, activeTab, fetchOutboxReceipts]);
-
-  useEffect(() => {
-    if (selectedDelivery) deliveryInspectorRef.current?.focus();
-  }, [selectedDelivery]);
 
   // Derived Overview Metrics (explicitly scoped to the loaded page slice vs total matching count)
   const deliveryRows = deliveryPageData?.data ?? [];
@@ -2900,8 +2895,9 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
 
               {/* Delivery Inspector Drawer */}
               {selectedDelivery && (
+                <WorkspaceDrawer label="Delivery diagnostic inspector" className="notification-redesign__delivery-drawer" onDismiss={() => setSelectedDelivery(null)}>
                 <section
-                  ref={deliveryInspectorRef} tabIndex={-1} className="notification-redesign__delivery-inspector"
+                  className="notification-redesign__delivery-inspector"
                   style={styles.drawerCard}
                   aria-label="Delivery diagnostic inspector"
                   data-testid="delivery-inspector-panel"
@@ -2913,16 +2909,13 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     <button
                       type="button"
                       style={styles.secondarySmallBtn}
-                      onClick={() => {
-                        setSelectedDelivery(null);
-                        if (deliveryOriginRef.current?.isConnected) deliveryOriginRef.current.focus();
-                      }}
+                      onClick={() => setSelectedDelivery(null)}
                     >
                       Close Inspector
                     </button>
                   </div>
                   <p className="notification-redesign__inspector-note">This is the delivery snapshot captured when the inspector opened. Refresh the list and reopen it to inspect newer data.</p>
-                  <div style={styles.kvList}>
+                  <div className="notification-redesign__delivery-facts" style={styles.kvList}>
                     <div>
                       <strong>Event:</strong> <code>{selectedDelivery.eventType}</code> · Event Key:{' '}
                       <code>{selectedDelivery.eventKey}</code>
@@ -2968,6 +2961,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     <button type="button" data-testid="request-manual-retry-btn" disabled>Manual retry unavailable</button>
                   </div>}
                 </section>
+                </WorkspaceDrawer>
               )}
 
               {/* Deliveries Table */}
@@ -3039,10 +3033,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                                 data-testid={`inspect-delivery-${row.id}`}
                                 aria-label={`Inspect delivery ${row.id}`}
                                 style={styles.secondarySmallBtn}
-                                onClick={(event) => {
-                                  deliveryOriginRef.current = event.currentTarget;
-                                  setSelectedDelivery(row);
-                                }}
+                                onClick={() => setSelectedDelivery(row)}
                               >
                                 Inspect
                               </button>

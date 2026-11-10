@@ -25,8 +25,9 @@ test('latest applied delivery filter wins over a late earlier read and inspector
   expect(screen.queryByTestId('delivery-row-old')).toBeNull();
   const results = screen.getByRole('region',{name:'Delivery results'});
   expect(within(results).getByText(/Filters applied: FAILED/)).toBeTruthy();
-  const trigger = screen.getByRole('button',{name:'Inspect delivery fresh'}); fireEvent.click(trigger);
-  expect(document.activeElement).toBe(screen.getByTestId('delivery-inspector-panel'));
+  const trigger = screen.getByRole('button',{name:'Inspect delivery fresh'}); trigger.focus(); fireEvent.click(trigger);
+  expect(screen.getByRole('dialog',{name:'Delivery diagnostic inspector'})).toBeTruthy();
+  expect(document.activeElement).toBe(screen.getByRole('button',{name:'Close Inspector'}));
   fireEvent.click(screen.getByRole('button',{name:'Close Inspector'})); expect(document.activeElement).toBe(trigger);
   expect(ApiClient.post).not.toHaveBeenCalled();
 });
