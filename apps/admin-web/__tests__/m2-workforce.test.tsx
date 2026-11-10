@@ -91,3 +91,21 @@ test('a visible one-time credential cannot be replaced or dismissed without conf
 test('shell navigation warns before losing a visible one-time credential',async()=>{
  const {Layout}=await import('../src/screens/authenticated/Layout');principal('one',['workforce.user.create']);useAuthStore.setState({isAuthenticated:true});(ApiClient.post as jest.Mock).mockResolvedValue({username:'user',supportUserId:'id',temporaryPassword:'synthetic-secret',passwordExpiresAt:'2027-01-01'});const view=render(<Layout/>);fireEvent.click(view.getByTestId('nav-workforceAccess'));fireEvent.change(view.getByLabelText('Support username or email'),{target:{value:'user'}});fireEvent.click(view.getByRole('button',{name:'Create SUPPORT User'}));await view.findByText(/synthetic-secret/);fireEvent.click(view.getByTestId('nav-dashboard'));expect(view.getByRole('dialog',{name:'Leave workforce access review?'})).toBeTruthy();fireEvent.click(view.getByRole('button',{name:'Keep working'}));expect(view.getByText(/synthetic-secret/)).toBeTruthy();fireEvent.click(view.getByTestId('nav-dashboard'));fireEvent.click(view.getByRole('button',{name:'Discard and leave'}));expect(view.queryByText(/synthetic-secret/)).toBeNull();
 });
+
+test('filters only returned role totals without changing support drafts or making requests', async () => {
+  principal('one', ['workforce.dashboard.view', 'workforce.user.create']);
+  (ApiClient.get as jest.Mock).mockResolvedValue({ activeWorkforceHeadcount: 4, activeSessionCount: 2, roleDistribution: [{ roleKey: 'OPERATIONS', count: 3 }, { roleKey: 'SUPPORT', count: 1 }] });
+  render(<WorkforceAdminScreen />);
+  await screen.findByText('OPERATIONS');
+  fireEvent.change(screen.getByLabelText('Support username or email'), { target: { value: 'local-draft' } });
+  const calls = (ApiClient.get as jest.Mock).mock.calls.length;
+  fireEvent.change(screen.getByLabelText('Search returned roles'), { target: { value: 'support' } });
+  expect(screen.queryByText('OPERATIONS')).toBeNull();
+  expect(screen.getByText('SUPPORT')).toBeTruthy();
+  expect(screen.getByText('1 of 2 returned roles shown')).toBeTruthy();
+  expect(screen.getByLabelText('Support username or email')).toHaveProperty('value', 'local-draft');
+  expect((ApiClient.get as jest.Mock).mock.calls.length).toBe(calls);
+  expect(ApiClient.post).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Search returned roles'), { target: { value: 'not-present' } });
+  expect(screen.getByText('No returned roles match this search.')).toBeTruthy();
+});

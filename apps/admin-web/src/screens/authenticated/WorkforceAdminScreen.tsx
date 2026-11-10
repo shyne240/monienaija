@@ -37,6 +37,7 @@ const WorkforceWorkspace: React.FC<{ canView: boolean; canViewOverview: boolean;
   const disableRequest = useRef(0);
   const [overview, setOverview] = useState<WorkforceOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [roleSearch, setRoleSearch] = useState('');
   const [error, setError] = useState('');
   const [createUsername, setCreateUsername] = useState('');
   const [createRes, setCreateRes] = useState('');
@@ -160,23 +161,30 @@ const WorkforceWorkspace: React.FC<{ canView: boolean; canViewOverview: boolean;
     );
   }
 
-  const roleRows: DataRecord[] = (overview?.roleDistribution ?? []).map((item) => ({ roleKey: item.roleKey, count: item.count }));
+  const roleRows: DataRecord[] = (overview?.roleDistribution ?? []).filter(item => item.roleKey.toLocaleLowerCase().includes(roleSearch.trim().toLocaleLowerCase())).map((item) => ({ roleKey: item.roleKey, count: item.count }));
 
   return (
     <div className="mn-operational mn-workforce workforce-redesign" style={wrap}>
       <PageHeader eyebrow="Workforce and governance" title="Workforce Overview & Support Provisioning" description="Review the workforce summary and manage SUPPORT identities according to your function grants." />
       {uncertain && <div className="workforce-redesign__boundary" role="status"><strong>Independent workforce review required</strong><span>The {uncertain.action} action for {uncertain.target} may have occurred. Inspect authorized workforce and audit records before acting again. A missing record or fresh read cannot exclude a late commit. A lost one-time credential may be unrecoverable. This lock is local and lost on confirmed exit or session change.</span><button type="button" onClick={() => { setUncertain(null); setCreateErr(''); setDisableErr(''); }}>I reviewed workforce and audit records</button></div>}
       <div className="workforce-redesign__boundary" role="note"><strong>Access controls</strong><span>Workforce metrics are read-only. SUPPORT provisioning and disabling are separate permission-gated actions; no enable action is available here.</span></div>
-      {canViewOverview && <section className="workforce-redesign__panel" aria-label="Workforce overview">
+      <nav className="workforce-redesign__nav" aria-label="Workforce workspace sections">
+        {canViewOverview && <a href="#workforce-overview">Overview</a>}
+        {canCreateSupportUser && <a href="#workforce-provision">Provision SUPPORT</a>}
+        {canSuspendSupportUser && <a href="#workforce-disable">Disable SUPPORT</a>}
+      </nav>
+      {canViewOverview && <section id="workforce-overview" className="workforce-redesign__panel" aria-label="Workforce overview">
         <div className="workforce-redesign__heading"><div><p className="workforce-redesign__eyebrow">READ-ONLY SUMMARY</p><h2>Workforce Overview</h2><p>Current workforce dashboard figures returned by the service.</p></div><Button size="sm" onClick={() => void fetchOverview()} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</Button></div>
         {error && <div className="workforce-redesign__state workforce-redesign__state--error" role="alert">{error}</div>}
         {loading ? <div className="workforce-redesign__state" role="status">Loading workforce overview…</div> : overview ? <>
           <div className="workforce-redesign__stats"><div><span>Active workforce headcount</span><strong>{overview.activeWorkforceHeadcount ?? '—'}</strong></div><div><span>Active sessions</span><strong>{overview.activeSessionCount ?? '—'}</strong></div></div>
-          <h3 className="workforce-redesign__subheading">Active role distribution</h3><StructuredRecordTable rows={roleRows} columns={ROLE_COLUMNS} showDetails={false} emptyMessage="No active role assignments were returned." />
+          <div className="workforce-redesign__distribution-heading"><div><h3 className="workforce-redesign__subheading">Active role distribution</h3><p>Filter the role totals returned by this overview. Counts are assignments, not a workforce directory.</p></div><label>Search returned roles<input value={roleSearch} onChange={event => setRoleSearch(event.target.value)} placeholder="Role name" type="search" /></label></div>
+          <p className="workforce-redesign__result-count" role="status">{roleRows.length} of {overview.roleDistribution?.length ?? 0} returned roles shown</p>
+          <StructuredRecordTable rows={roleRows} columns={ROLE_COLUMNS} showDetails={false} emptyMessage={roleSearch.trim() ? 'No returned roles match this search.' : 'No active role assignments were returned.'} />
         </> : !error && <div className="workforce-redesign__state">No overview data was returned by the workforce widget.</div>}
       </section>}
       <div className="workforce-redesign__actions-grid">
-        {canCreateSupportUser && <section className="workforce-redesign__panel" aria-label="Provision SUPPORT workforce user">
+        {canCreateSupportUser && <section id="workforce-provision" className="workforce-redesign__panel" aria-label="Provision SUPPORT workforce user">
           <div className="workforce-redesign__heading"><div><p className="workforce-redesign__eyebrow">PROVISIONING</p><h2>Provision SUPPORT workforce user</h2><p>Creates a SUPPORT-type identity. The temporary password is shown once and must be delivered out-of-band.</p></div></div>
           <form onSubmit={handleCreate} className="workforce-redesign__form">
             <label>Support username or email<input disabled={workforceBusy || Boolean(uncertain) || Boolean(createRes) || Boolean(pendingDisable)} value={createUsername} onChange={event => setCreateUsername(event.target.value)} placeholder="Support username or email" /></label>
@@ -186,7 +194,7 @@ const WorkforceWorkspace: React.FC<{ canView: boolean; canViewOverview: boolean;
           {createErr && <div className="workforce-redesign__state workforce-redesign__state--error" role="alert">{createErr}</div>}
           <p className="workforce-redesign__hint">SUPPORT cannot self-provision; the backend requires <code>workforce.user.create</code>.</p>
         </section>}
-        {canSuspendSupportUser && <section className="workforce-redesign__panel" aria-label="Disable SUPPORT workforce user">
+        {canSuspendSupportUser && <section id="workforce-disable" className="workforce-redesign__panel" aria-label="Disable SUPPORT workforce user">
           <div className="workforce-redesign__heading"><div><p className="workforce-redesign__eyebrow">ACCESS CONTROL</p><h2>Disable SUPPORT workforce user</h2><p>Use the ID returned during provisioning or from an authorized workforce record. There is no workforce-user list route here.</p></div></div>
           <form onSubmit={handleDisable} className="workforce-redesign__form">
             <label>Support user ID<input disabled={workforceBusy || Boolean(uncertain) || Boolean(createRes) || Boolean(pendingDisable)} value={disableUserId} onChange={event => setDisableUserId(event.target.value)} placeholder="SUPPORT user ID" /></label>
