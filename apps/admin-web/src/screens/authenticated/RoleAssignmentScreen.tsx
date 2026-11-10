@@ -158,6 +158,12 @@ const RoleWorkspace: React.FC<{principalId: string; hasMfa: boolean; canAssignFi
         </button>}
       </div>
 
+      <div className="role-redesign__draft-summary" aria-label="Local role change draft">
+        <p className="role-redesign__eyebrow">{uncertainRole ? 'OUTCOME UNCONFIRMED · REVIEW REQUIRED' : isLoading ? 'SUBMISSION IN PROGRESS' : 'LOCAL DRAFT · NOT SUBMITTED'}</p>
+        <h3>Change at a glance</h3>
+        <dl><div><dt>Domain</dt><dd>{domain === 'finance' ? 'Finance' : 'Operational'}</dd></div><div><dt>Action</dt><dd>{action === 'assign' ? 'Assign' : 'Revoke'}</dd></div><div><dt>Role</dt><dd><code>{roleKey}</code></dd></div><div><dt>Target principal</dt><dd>{targetPrincipalId.trim() ? <code>{targetPrincipalId.trim()}</code> : 'Not entered'}</dd></div><div><dt>Effective window</dt><dd>{effectiveFrom && effectiveTo ? 'Entered · review UTC before sending' : 'Not complete'}</dd></div></dl>
+        <p>This is your draft, not a current assignment or an approval. Verify the target independently.</p>
+      </div>
       </section><section className="role-redesign__form-panel" aria-label="Role change details">
       {domain === 'operational' && <div style={styles.infoBox}>
         Only the six existing operational role keys are selectable. The API and database guard reject Finance roles and <code>SUPER_ADMIN</code> on this path. Operational assignment uses its existing direct-execute policy; no finance approval IDs are sent.
@@ -177,6 +183,7 @@ const RoleWorkspace: React.FC<{principalId: string; hasMfa: boolean; canAssignFi
         <p className="role-redesign__eyebrow">CHANGE DETAILS</p><h2 style={styles.cardTitle}>{action === 'assign' ? `Create ${domain === 'finance' ? 'Finance' : 'Operational'} Role Assignment` : `Revoke ${domain === 'finance' ? 'Finance' : 'Operational'} Role Assignment`}</h2>
         <p className="role-redesign__form-help">Enter the effective window in your local time; the review shows the UTC values sent to the service.</p>
         <form onSubmit={handleRoleAction} style={styles.form}>
+          <div className="role-redesign__form-section"><div className="role-redesign__section-title"><span>01</span><div><h3>Principal and entitlement</h3><p>Select the role and identify the principal from an authorized record.</p></div></div>
           <div style={styles.inputGroup}>
             <label style={styles.label} htmlFor="role-target-principal">Target Principal ID (e.g. issuer:subject)</label>
             <input id="role-target-principal" type="text" style={styles.input} placeholder="e.g. https://identity.issuer:operator-sub" value={targetPrincipalId} onChange={(event) => setTargetPrincipalId(event.target.value)} disabled={isLoading || Boolean(pendingReview) || Boolean(uncertainRole)} />
@@ -189,6 +196,8 @@ const RoleWorkspace: React.FC<{principalId: string; hasMfa: boolean; canAssignFi
             </select>
           </div>
 
+          </div>
+          <div className="role-redesign__form-section"><div className="role-redesign__section-title"><span>02</span><div><h3>Effective window</h3><p>Enter both dates in local time. The confirmation uses UTC.</p></div></div>
           <div style={styles.grid}>
             <div style={styles.inputGroup}>
               <label style={styles.label} htmlFor="role-effective-from">Effective From</label>
@@ -200,10 +209,11 @@ const RoleWorkspace: React.FC<{principalId: string; hasMfa: boolean; canAssignFi
             </div>
           </div>
 
-          {domain === 'finance' && <div style={styles.inputGroup}>
+          </div>
+          {domain === 'finance' && <div className="role-redesign__form-section"><div className="role-redesign__section-title"><span>03</span><div><h3>Related approvals</h3><p>Provide existing approval identifiers when required by the governed workflow.</p></div></div><div style={styles.inputGroup}>
             <label style={styles.label} htmlFor="role-approval-ids">Related Maker-Checker Approval IDs (comma separated, when required)</label>
             <input id="role-approval-ids" type="text" style={styles.input} placeholder="e.g. UUID-1, UUID-2" value={approvalIds} onChange={(event) => setApprovalIds(event.target.value)} disabled={isLoading || Boolean(pendingReview) || Boolean(uncertainRole)} />
-          </div>}
+          </div></div>}
 
           <button ref={triggerRef} type="submit" disabled={isLoading || Boolean(pendingReview) || Boolean(uncertainRole) || (action === 'assign' ? !canAssign || !hasMfa : !canRevoke)} style={styles.submitBtn}>
             {isLoading ? 'Executing Request…' : action === 'assign' ? 'Commit Role Assignment' : 'Execute Revocation'}

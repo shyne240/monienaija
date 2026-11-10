@@ -53,7 +53,7 @@ test('read-only principal cannot write despite privileged role and mutation scop
 });
 
 test('a mismatched assignment window locks all changes until independent role and audit review',async()=>{
- const report=jest.fn();(ApiClient.post as jest.Mock).mockResolvedValue({assignmentReference:'ref',assignmentVersion:1,status:'ACTIVE',principalId:'synthetic-target',roleKey:'FINANCE_PREPARER',assignedBy:'one',assignedAt:'2026-10-23T09:00:00Z',effectiveFrom:'2026-01-01T00:00:00Z',effectiveTo:'2027-10-23T10:00:00Z'});render(<RoleAssignmentScreen onRoleGuardChange={report}/>);fill();fireEvent.click(screen.getByRole('button',{name:'Commit Role Assignment'}));fireEvent.click(screen.getByRole('button',{name:'Confirm role change'}));await screen.findByText(/outcome is unconfirmed/);expect((screen.getByRole('button',{name:'Commit Role Assignment'}) as HTMLButtonElement).disabled).toBe(true);expect((screen.getByRole('button',{name:'Operational Roles'}) as HTMLButtonElement).disabled).toBe(true);expect(screen.getByText(/fresh read cannot exclude a late commit/)).toBeTruthy();expect(report).toHaveBeenLastCalledWith(true,false);const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);fireEvent.submit(screen.getByRole('button',{name:'Commit Role Assignment'}).closest('form')!);expect(ApiClient.post).toHaveBeenCalledTimes(1);fireEvent.click(screen.getByRole('button',{name:'I reviewed the role, approvals and audit history'}));expect((screen.getByRole('button',{name:'Commit Role Assignment'}) as HTMLButtonElement).disabled).toBe(false);expect((screen.getByLabelText('Target Principal ID (e.g. issuer:subject)') as HTMLInputElement).value).toBe('synthetic-target');
+ const report=jest.fn();(ApiClient.post as jest.Mock).mockResolvedValue({assignmentReference:'ref',assignmentVersion:1,status:'ACTIVE',principalId:'synthetic-target',roleKey:'FINANCE_PREPARER',assignedBy:'one',assignedAt:'2026-10-23T09:00:00Z',effectiveFrom:'2026-01-01T00:00:00Z',effectiveTo:'2027-10-23T10:00:00Z'});render(<RoleAssignmentScreen onRoleGuardChange={report}/>);fill();fireEvent.click(screen.getByRole('button',{name:'Commit Role Assignment'}));fireEvent.click(screen.getByRole('button',{name:'Confirm role change'}));await screen.findByText(/outcome is unconfirmed/);expect(screen.getByLabelText('Local role change draft').textContent).toContain('OUTCOME UNCONFIRMED');expect(screen.getByLabelText('Local role change draft').textContent).not.toContain('NOT SUBMITTED');expect((screen.getByRole('button',{name:'Commit Role Assignment'}) as HTMLButtonElement).disabled).toBe(true);expect((screen.getByRole('button',{name:'Operational Roles'}) as HTMLButtonElement).disabled).toBe(true);expect(screen.getByText(/fresh read cannot exclude a late commit/)).toBeTruthy();expect(report).toHaveBeenLastCalledWith(true,false);const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);fireEvent.submit(screen.getByRole('button',{name:'Commit Role Assignment'}).closest('form')!);expect(ApiClient.post).toHaveBeenCalledTimes(1);fireEvent.click(screen.getByRole('button',{name:'I reviewed the role, approvals and audit history'}));expect((screen.getByRole('button',{name:'Commit Role Assignment'}) as HTMLButtonElement).disabled).toBe(false);expect((screen.getByLabelText('Target Principal ID (e.g. issuer:subject)') as HTMLInputElement).value).toBe('synthetic-target');
 });
 
 test('changing role domain protects entered approval identifiers',()=>{
@@ -66,4 +66,19 @@ test('a store session change clears the local role draft and pending review',()=
 
 test('shell navigation protects a role governance draft',async()=>{
  const {Layout}=await import('../src/screens/authenticated/Layout');useAuthStore.setState({isAuthenticated:true});const view=render(<Layout/>);fireEvent.click(view.getByTestId('nav-roleGovernance'));fill();fireEvent.click(view.getByTestId('nav-dashboard'));expect(view.getByRole('dialog',{name:'Leave role change review?'})).toBeTruthy();fireEvent.click(view.getByRole('button',{name:'Keep working'}));expect(view.getByLabelText('Target Principal ID (e.g. issuer:subject)')).toHaveProperty('value','synthetic-target');fireEvent.click(view.getByTestId('nav-dashboard'));fireEvent.click(view.getByRole('button',{name:'Discard and leave'}));expect(view.queryByLabelText('Target Principal ID (e.g. issuer:subject)')).toBeNull();
+});
+
+test('local summary tracks the governed draft without implying a current assignment or writing', () => {
+  render(<RoleAssignmentScreen />);
+  const summary = screen.getByLabelText('Local role change draft');
+  expect(summary.textContent).toContain('NOT SUBMITTED');
+  expect(summary.textContent).toContain('Not entered');
+  fill();
+  expect(summary.textContent).toContain('synthetic-target');
+  expect(summary.textContent).toContain('Entered · review UTC before sending');
+  fireEvent.click(screen.getByRole('button', { name: 'Operational Roles' }));
+  expect(summary.textContent).toContain('OPERATIONS');
+  expect(summary.textContent).toContain('synthetic-target');
+  expect(ApiClient.post).not.toHaveBeenCalled();
+  expect(ApiClient.delete).not.toHaveBeenCalled();
 });

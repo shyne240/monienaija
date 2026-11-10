@@ -23,3 +23,16 @@
 .role-redesign__dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 @media(max-width:850px){.role-redesign__workspace{grid-template-columns:minmax(0,1fr)}.role-redesign__selectors [aria-label]{flex-direction:row;flex-wrap:wrap}.role-redesign__selectors button{flex:1 1 160px!important;text-align:center}}
 @media(max-width:480px){.role-redesign__form-panel>div{padding:14px!important}.role-redesign__dialog{padding:18px}.role-redesign__dialog-actions button{flex:1 1 100%}}
+.role-redesign__draft-summary{border:1px solid #dce7e0;border-radius:10px;background:#f7faf7;padding:15px;margin-top:20px;overflow-wrap:anywhere}
+.role-redesign__draft-summary h3{margin:5px 0 12px;color:#183d2e;font-size:16px}
+.role-redesign__draft-summary dl{margin:0;display:grid;gap:0}
+.role-redesign__draft-summary dl div{display:grid;grid-template-columns:minmax(90px,.8fr) minmax(0,1.2fr);gap:10px;padding:8px 0;border-top:1px solid #e1eae3;font-size:12px;line-height:1.45}
+.role-redesign__draft-summary dt{font-weight:700;color:#52655f}.role-redesign__draft-summary dd{margin:0;color:#173a2b}
+.role-redesign__draft-summary>p:last-child{margin:12px 0 0;color:#52655f;font-size:12px;line-height:1.5}
+.role-redesign__form-section{padding:16px;margin:0 0 14px;border:1px solid #dce7e0;border-radius:9px;background:#fbfdfb;min-width:0}
+.role-redesign__section-title{display:flex;align-items:flex-start;gap:10px;margin-bottom:15px}
+.role-redesign__section-title>span{display:grid;place-items:center;flex:0 0 29px;height:29px;border-radius:50%;background:#e7f3eb;color:#1a6040;font-size:11px;font-weight:700}
+.role-redesign__section-title h3{margin:0 0 4px;font-size:15px;color:#173a2b}.role-redesign__section-title p{margin:0;color:#52655f;font-size:12px;line-height:1.45}
+.role-redesign__form-section>div:last-child{margin-bottom:0!important}
+.role-redesign__form-panel :is(input,select):focus-visible{outline:2px solid #0b624a;outline-offset:2px}
+@media(max-width:480px){.role-redesign__form-section{padding:12px}.role-redesign__draft-summary dl div{grid-template-columns:minmax(0,1fr);gap:2px}}
