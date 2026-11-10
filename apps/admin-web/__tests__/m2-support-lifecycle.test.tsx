@@ -141,3 +141,27 @@ test('closing an uncertain status requires explicit discard of the local lock',a
 test('shell navigation protects support message drafts',async()=>{
  const {Layout}=await import('../src/screens/authenticated/Layout');(ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.includes('/internal/support/tickets?')?Promise.resolve({items:[ticket('A')],pagination:{total:1}}):path.endsWith('/messages')?Promise.resolve([]):path.endsWith('/tickets/A')?Promise.resolve(ticket('A')):Promise.resolve([]));const view=render(<Layout/>);fireEvent.click(view.getByTestId('nav-support'));await view.findByText('T-A');fireEvent.click(view.getAllByRole('button',{name:'View'})[0]);await view.findByText('No messages on this ticket.');fireEvent.change(view.getByLabelText('Message'),{target:{value:'Draft message'}});fireEvent.click(view.getByTestId('nav-dashboard'));expect(view.getByRole('dialog',{name:'Leave support ticket review?'})).toBeTruthy();fireEvent.click(view.getByRole('button',{name:'Keep working'}));expect(view.getByLabelText('Message')).toHaveProperty('value','Draft message');fireEvent.click(view.getByTestId('nav-dashboard'));fireEvent.click(view.getByRole('button',{name:'Discard and leave'}));expect(view.queryByLabelText('Message')).toBeNull();
 });
+
+test('ticket drawer traps focus and Escape respects unsaved-message protection', async () => {
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => path.includes('?') ? Promise.resolve({ items: [ticket('A')], pagination: { total: 1 } }) : path.endsWith('/messages') ? Promise.resolve([]) : Promise.resolve(ticket('A')));
+  render(<SupportTicketsScreen />); await screen.findByText('T-A');
+  const trigger = views()[0]; trigger.focus(); fireEvent.click(trigger);
+  const dialog = await screen.findByRole('dialog', { name: 'Support ticket detail' });
+  expect(dialog.getAttribute('aria-modal')).toBe('true');
+  fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'unsent draft' } });
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.getByRole('group', { name: 'Discard ticket changes' })).toBeTruthy();
+  expect(screen.getByDisplayValue('unsent draft')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name:'Discard changes' }));
+  expect(screen.queryByRole('dialog', { name:'Support ticket detail' })).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('status tabs use the existing support API status filter', async () => {
+  (ApiClient.get as jest.Mock).mockResolvedValue({ items: [ticket('A')], pagination: { total: 1 } });
+  render(<SupportTicketsScreen />); await screen.findByText('T-A');
+  fireEvent.click(screen.getByRole('button', { name:'Open', pressed:false }));
+  await waitFor(() => expect((ApiClient.get as jest.Mock).mock.calls.some(([url]) => url.includes('status=OPEN'))).toBe(true));
+  expect(screen.getByRole('button', { name:'Open', pressed:true })).toBeTruthy();
+});

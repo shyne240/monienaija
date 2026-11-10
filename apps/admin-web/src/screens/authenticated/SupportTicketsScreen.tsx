@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { PageHeader, ScrollRegion } from '../../design-system/primitives';
+import { WorkspaceDrawer, WorkspaceFilterTabs } from '../../design-system/WorkspaceDrawer';
 import './operational-surfaces.css';
 import './support-redesign.css';
 import { ApiClient } from '../../services/api-client';
@@ -314,6 +315,7 @@ const SupportWorkspace: React.FC<SupportProps> = ({ initialCustomerId, initialAg
       )}
       <section className="mn-support-redesign__queue" aria-label="Support ticket queue">
       <header className="mn-support-redesign__section-head"><div><p>SUPPORT OPERATIONS</p><h2>Ticket queue</h2><span>Find a ticket, review its history and act within your permissions.</span></div></header>
+      <WorkspaceFilterTabs label="Ticket status filters" value={status} options={[{ value:'',label:'All Tickets' },{ value:'OPEN',label:'Open' },{ value:'IN_PROGRESS',label:'In Progress' },{ value:'RESOLVED',label:'Resolved' },{ value:'CLOSED',label:'Closed' }]} onChange={value => { setStatus(value); setPage(1); }} />
       <div className="mn-support-redesign__filters" style={filters}>
         <label>Status <select style={statusSelect} value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="">All</option><option value="OPEN">OPEN</option><option value="IN_PROGRESS">IN_PROGRESS</option><option value="RESOLVED">RESOLVED</option><option value="CLOSED">CLOSED</option></select></label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
@@ -387,7 +389,7 @@ const SupportWorkspace: React.FC<SupportProps> = ({ initialCustomerId, initialAg
       {detailLoading && <div role="status" style={loadingBox}>Loading ticket…</div>}
       {!selected && detailErr && <div style={errBox} role="alert">{detailErr}</div>}
       {selected && (
-        <section style={drawer} aria-label="Support ticket detail">
+        <WorkspaceDrawer className="one-support-drawer" label="Support ticket detail" onDismiss={() => requestDetailExit('close')}>
           <div style={drawerHead}><h2 ref={detailTitleRef} tabIndex={-1} className="mn-support-redesign__detail-title">Ticket {selected.reference || selected.id.slice(0, 8)}</h2><button type="button" onClick={() => requestDetailExit('close')} disabled={saving || Boolean(pendingExit)} style={smallBtn}>Close</button></div>
           <div style={drawerBody}>
             {pendingExit && <div role="group" aria-label="Discard ticket changes" style={errBox}>
@@ -474,7 +476,7 @@ const SupportWorkspace: React.FC<SupportProps> = ({ initialCustomerId, initialAg
             </form>
             {selected.status === 'CLOSED' && <div style={helpText}>Closed tickets cannot receive new messages.</div>}
           </div>
-        </section>
+        </WorkspaceDrawer>
       )}
     </div>
   );
