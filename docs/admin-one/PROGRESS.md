@@ -12,7 +12,7 @@ The approved Login, Dashboard and Customer Directory references are the design a
 - Reconciliation & Breaks.
 - KYC Assessment Lookup & Review; Compliance Case Lookup; Fraud Case Lookup.
 - Fee Rules, Commission Rules, Reward Rules, Product Catalogue and Limit Catalogue (shared commercial registry); Limit Assignments.
-- Audit & Security Events; Privileged Approvals; Workforce Overview & Support Provisioning; Role Governance; Super-Admin Recovery.
+- Audit & Security Events; Privileged Approvals; Workforce Overview & Support Provisioning; Role Governance; Super-Admin Recovery; System Health.
 
 Evidence and source commit references are in [README.md](README.md) and the evidence manifests. Browser captures use disposable data and local services, not production records.
 
@@ -22,7 +22,7 @@ Evidence and source commit references are in [README.md](README.md) and the evid
 
 ## Remaining — core operations first
 
-- Platform Administration: SMS & Email Notifications; System Health.
+- Platform Administration: SMS & Email Notifications.
 - Home & My Work: Dashboard Settings.
 
 ## Dependencies and policy boundaries

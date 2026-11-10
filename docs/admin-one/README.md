@@ -187,3 +187,10 @@ Source `b086553` refines the read-only change inspection with structured proposa
 Source `9494236` clarifies controlled probe preparation and adds an explicit local draft clear that is disabled during busy or independent-review safeguards. Destination and attestation reset together without sending. Provider base URL missing from the observation is labeled not reported; authorization and send policy remain server-enforced and unchanged.
 
 [`evidence/notification-probe-batch/`](evidence/notification-probe-batch/manifest.json) contains 12 captures at 1440, 768 and 375 pixels under SUPER_ADMIN in a disposable local environment. Provider status and an invalid synthetic local draft were inspected and cleared; the submit button was not invoked. Only GET and local-login POST were allowed, workers were disabled and outbound network was blocked. Full tests: 82 suites / 843 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
+
+
+### System Health
+
+Source `19b1bd6` adds local metric-name search and an explicit loaded-response count to the responsive, scope-gated health workspace. Metrics, diagnostics, recent outbox events, deliveries and on-demand receipts remain independent reads; no health state is inferred from another source. Existing delivery API filters, pagination and authorization remain unchanged.
+
+[`evidence/system-health-batch/`](evidence/system-health-batch/manifest.json) contains 12 captures at 1440, 768 and 375 pixels under SUPER_ADMIN in a disposable local environment. Local metric filtering and the on-demand receipt GET were exercised; only GET and local-login POST were allowed, workers were disabled and outbound network was blocked. Full tests: 82 suites / 844 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
