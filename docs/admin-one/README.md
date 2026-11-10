@@ -145,3 +145,10 @@ Source `e80ad34` organizes the existing governed role-change form into principal
 Source `fc98c37` organizes the sensitive statement form and recovery guidance into responsive surfaces, provides an explicit local clear action, and structures the confirmation around unverified claims. The statement is not reproduced in the guide. Existing ADMINISTRATOR/MFA/function gates, server signature verification, sensitive-statement clearing on submit, confirmation, receipt matching and independent-review safeguards remain intact.
 
 [`evidence/recovery-batch/`](evidence/recovery-batch/manifest.json) records six captures at 1440, 768 and 375 pixels under an authorized seeded ADMINISTRATOR. An unsigned synthetic statement was entered locally solely to exercise clear, review and Escape/focus; no recovery request was submitted. Browser proxy allowed GET and local-login POST only; external network and workers blocked. Full 82 suites / 838 tests passed before the final confirmation presentation; afterward 19 targeted tests, TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
+
+
+### Notification management: delivery inspection (partial)
+
+Source `58bec59` moves the existing redacted delivery snapshot into a responsive focus-managed drawer and makes its table action sticky. The inspector remains read-only, preserves privacy-redacted data and its explicit no-manual-retry policy, and is cleared on a fresh list read. Other notification tabs remain outstanding for the full-console redesign.
+
+[`evidence/notification-deliveries-batch/`](evidence/notification-deliveries-batch/manifest.json) contains 12 captures at 1440, 768 and 375 pixels using a synthetic failed delivery in disposable PostgreSQL. GET and local-login POST only; drawer Escape/focus and disabled manual retry were checked, with no sends, retries, configuration changes, external network or workers. Full tests: 82 suites / 838 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.

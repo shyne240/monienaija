@@ -16,6 +16,10 @@ The approved Login, Dashboard and Customer Directory references are the design a
 
 Evidence and source commit references are in [README.md](README.md) and the evidence manifests. Browser captures use disposable data and local services, not production records.
 
+## Partially completed
+
+- SMS & Email Notifications: read-only delivery inspection is redesigned and verified. Other notification tabs require their own substantive design and browser pass; see README.
+
 ## Remaining — core operations first
 
 - Platform Administration: SMS & Email Notifications; System Health.
