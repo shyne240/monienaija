@@ -115,3 +115,10 @@ test('read-only site access displays records but no creation or lifecycle contro
  expect(await screen.findByText(/Records are read-only in this session/)).toBeTruthy();
  expect(screen.queryByRole('form',{name:'Create outlet form'})).toBeNull();expect(screen.queryByRole('button',{name:'Suspend outlet'})).toBeNull();expect(ApiClient.post).not.toHaveBeenCalled();
 });
+
+test('Escape respects an unsaved Agent outlet draft before closing the drawer',async()=>{
+ const confirm=jest.spyOn(window,'confirm').mockReturnValue(false);const section=await open();
+ fireEvent.change(within(section).getByLabelText('Outlet reference'),{target:{value:'OUT-DRAFT'}});
+ fireEvent.keyDown(document,{key:'Escape'});expect(screen.getByRole('dialog',{name:'Agent details'})).toBeTruthy();expect(confirm).toHaveBeenCalled();expect((within(section).getByLabelText('Outlet reference') as HTMLInputElement).value).toBe('OUT-DRAFT');
+ confirm.mockReturnValue(true);fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog',{name:'Agent details'})).toBeNull();expect(ApiClient.post).not.toHaveBeenCalled();confirm.mockRestore();
+});

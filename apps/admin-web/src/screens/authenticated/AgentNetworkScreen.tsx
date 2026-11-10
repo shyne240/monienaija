@@ -2,6 +2,7 @@ import './operational-surfaces.css';
 import './agent-network-redesign.css';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollRegion } from '../../design-system/primitives';
+import { WorkspaceDrawer, WorkspaceFilterTabs } from '../../design-system/WorkspaceDrawer';
 import { formatMinorUnits } from '../../utils/financial-display';
 import { ApiClient } from '../../services/api-client';
 import {
@@ -1503,6 +1504,16 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     }
   };
 
+  const closeDetail = () => {
+    if (detailBusy || !mayLeaveAgent()) return;
+    selectedAgentId.current = null; positionRequest.current += 1; agentHistoryRequest.current += 1;
+    setAgentHistoryLoading(false); catalogRequest.current += 1; setLimitCatalogLoading(false);
+    outletReadGeneration.current += 1; limitReadGeneration.current += 1;
+    setLimitUnconfirmed(false); setLimitReviewReady(false); setNewLimitProfileCode('');
+    setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false);
+    setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); setSelected(null);
+  };
+
   if (!canView) {
     return (
       <div className="mn-operational" style={wrap}>
@@ -2125,27 +2136,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
         <div><p className="agent-network-eyebrow">NETWORK</p><h3>Agent directory</h3><p>Find an agent to inspect their profile, financial position and available controls.</p></div>
       </div>
       <div className="agent-network-filters" style={filters}>
-        <label>
-          Status:{' '}
-          <select
-            aria-label="Agent status filter"
-            style={inlineInput}
-            value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value);
-              setPage(1);
-            }}
-          >
-            <option value="">All</option>
-            <option value="PENDING">PENDING</option>
-            <option value="ACTIVE">ACTIVE</option>
-            <option value="SUSPENDED">SUSPENDED</option>
-            <option value="TERMINATED">TERMINATED</option>
-          </select>
-        </label>
-        <button type="button" onClick={() => void fetchAgents()} style={btn} disabled={loading}>
-          Refresh
-        </button>
+        <WorkspaceFilterTabs label="Agent status filter" value={statusFilter} options={[{value:'',label:'All agents'},{value:'PENDING',label:'Pending'},{value:'ACTIVE',label:'Active'},{value:'SUSPENDED',label:'Suspended'},{value:'TERMINATED',label:'Terminated'}]} onChange={(value) => { setStatusFilter(value); setPage(1); }} />
+        <button type="button" onClick={() => void fetchAgents()} style={btn} disabled={loading}>Refresh</button>
       </div>
 
       {error && <div style={errBox} role="alert">{error}</div>}
@@ -2154,7 +2146,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       ) : error ? null : agents.length === 0 ? (
         <div style={empty}>No agents found for this filter.</div>
       ) : (
-        <ScrollRegion label="Agent records" hint="Scroll horizontally to see all columns."><table className="mn-data-table" style={table}>
+        <ScrollRegion label="Agent records" hint="Scroll horizontally to see all columns."><table className="mn-data-table agent-network-directory-table" style={table}>
           <thead>
             <tr>
               <th>Reference</th>
@@ -2202,8 +2194,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       </div>}
 
       {selected && (
-        <div style={drawer}>
-          <div style={drawerHead}>
+        <WorkspaceDrawer label="Agent details" className="agent-network-drawer" onDismiss={closeDetail}>
+          <div className="agent-network-drawer__header" style={drawerHead}>
             <div>
               <strong>{selected.reference}</strong> — <span style={badge(selected.status)}>{selected.status}</span>
             </div>
@@ -2227,12 +2219,12 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   Target in funding
                 </button>
               )}
-              <button type="button" disabled={detailBusy} onClick={() => { if (!mayLeaveAgent()) return; selectedAgentId.current = null; positionRequest.current += 1; agentHistoryRequest.current += 1; setAgentHistoryLoading(false); catalogRequest.current += 1; setLimitCatalogLoading(false); outletReadGeneration.current += 1; limitReadGeneration.current += 1; setLimitUnconfirmed(false); setLimitReviewReady(false); setNewLimitProfileCode(''); setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); setSelected(null); }} style={smallBtn}>
+              <button type="button" disabled={detailBusy} onClick={closeDetail} style={smallBtn}>
                 Close
               </button>
             </div>
           </div>
-          <div style={drawerBody}>
+          <div className="agent-network-drawer__body" style={drawerBody}>
             <div><strong>ID:</strong> <code>{selected.id}</code></div>
             <div>
               <strong>Class:</strong>{' '}
@@ -3062,7 +3054,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
               />
             )}
           </div>
-        </div>
+        </WorkspaceDrawer>
       )}
     </div>
   );
@@ -3102,7 +3094,6 @@ const pager: React.CSSProperties = { marginTop: 12, display: 'flex', gap: 8, ali
 const denied: React.CSSProperties = { background: '#FFF7ED', border: '1px solid #FDBA74', color: '#92400E', padding: 12, borderRadius: 8, fontSize: 13 };
 const sectionCard: React.CSSProperties = { marginTop: 16, padding: 16, border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8, background: '#fff' };
 const sectionHead: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' };
-const drawer: React.CSSProperties = { marginTop: 16, border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8, background: '#fff', overflow: 'hidden' };
 const drawerHead: React.CSSProperties = { padding: 12, background: 'var(--mn-surface-canvas, #f5f8f6)', borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 };
 const drawerBody: React.CSSProperties = { padding: 16, display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13 };
 const card: React.CSSProperties = { padding: 12, background: 'var(--mn-surface-canvas, #f5f8f6)', borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)' };

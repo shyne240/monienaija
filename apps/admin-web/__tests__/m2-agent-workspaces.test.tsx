@@ -166,7 +166,7 @@ test('Agent list discards a late response from the previous filter', async () =>
   const old = deferred<unknown>(); const current = deferred<unknown>();
   (ApiClient.get as jest.Mock).mockImplementation((path: string) => path.startsWith('/internal/agents?') ? (path.includes('status=ACTIVE') ? current.promise : old.promise) : Promise.resolve([]));
   render(<AgentNetworkScreen />);
-  fireEvent.change(screen.getByLabelText('Agent status filter'), { target:{ value:'ACTIVE' } });
+  fireEvent.click(screen.getByRole('button', { name:'Active' }));
   const row = (id: string) => ({ id, reference:`REF-${id}`, status:'ACTIVE', agentClassId:null, createdAt:'2026-01-01', updatedAt:'2026-01-01' });
   await act(async () => { current.resolve({ data:[row('current')], total:1 }); await current.promise; });
   expect(screen.getByText('REF-current')).toBeTruthy();
@@ -279,4 +279,13 @@ test('Agent lifecycle conflict locks until review; rejected termination confirma
  (ApiClient.post as jest.Mock).mockRejectedValue(Object.assign(new Error('conflict'),{status:409}));render(<AgentNetworkScreen/>);await screen.findByText('AG-conflict');fireEvent.click(screen.getByRole('button',{name:'View'}));fireEvent.click(screen.getByRole('button',{name:'Terminate'}));expect(ApiClient.post).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole('button',{name:'Suspend'}));await screen.findByText(/Agent lifecycle outcome is unconfirmed/);expect((screen.getByRole('button',{name:'Suspend'}) as HTMLButtonElement).disabled).toBe(true);
  const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);confirm.mockRestore();
+});
+
+
+test('Agent detail drawer closes with Escape and restores focus without a write',async()=>{
+ useAuthStore.setState({principal:{type:'OPERATOR',principalId:'reader',sessionId:'reader',audience:'workforce-admin',roles:[],scopes:['agent.view'],customerAccess:'NONE',assuranceLevel:'MFA'}});
+ const agent={id:'agent',reference:'AG-DRAWER',status:'ACTIVE',agentClassId:null,createdAt:'2026-01-01',updatedAt:'2026-01-01'};
+ (ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.startsWith('/internal/agents?')?Promise.resolve({data:[agent],total:1}):Promise.resolve([]));
+ render(<AgentNetworkScreen/>);await screen.findByText('AG-DRAWER');const trigger=screen.getByRole('button',{name:'View'});trigger.focus();fireEvent.click(trigger);
+ expect(screen.getByRole('dialog',{name:'Agent details'})).toBeTruthy();fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog',{name:'Agent details'})).toBeNull();expect(document.activeElement).toBe(trigger);expect(ApiClient.post).not.toHaveBeenCalled();
 });

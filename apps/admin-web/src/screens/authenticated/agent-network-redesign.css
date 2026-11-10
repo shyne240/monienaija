@@ -40,3 +40,13 @@
 /* Bring retained network controls into the same field rhythm as the M2 shell. */
 .agent-network-filters label { display:flex; flex-direction:column; gap:6px; color:#29483b; font-size:13px; font-weight:700; }
 .agent-network-filters select { min-width:180px; }
+/* The selected Agent retains its governed controls in a contextual workspace. */
+.agent-network-drawer { width:min(100%,760px); }
+.agent-network-drawer__header { position:sticky; top:0; z-index:4; flex-wrap:wrap; padding:18px 20px !important; background:#fff !important; overflow-wrap:anywhere; }
+.agent-network-drawer__header strong { font-size:19px; color:#103a2b; }
+.agent-network-drawer__body { padding:20px !important; overflow-wrap:anywhere; }
+.agent-network-drawer__body > div, .agent-network-drawer__body > section { min-width:0; }
+@media(max-width:600px) { .agent-network-drawer__header,.agent-network-drawer__body { padding:16px !important; } }
+.agent-network-filters .one-workspace-filter-tabs { flex:1 1 420px; margin:0; }
+.agent-network-directory-table th:last-child,.agent-network-directory-table td:last-child { position:sticky;right:0;z-index:1;box-shadow:-3px 0 6px #18382b0d }
+.agent-network-directory-table td:last-child { background:#fff }
