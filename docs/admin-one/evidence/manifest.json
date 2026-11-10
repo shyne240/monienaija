@@ -1,6 +1,6 @@
 {
   "source": "Vite dev server from Phase 1 source, real Nest AppModule and disposable migrated PostgreSQL",
-  "baseCommit": "9c9a605499b08c4627428f13cb9347c2125d5cb7",
+  "baseCommit": "74053064c3f97d226d68fe7f90de47abe259a743",
   "auth": "real local development login for seeded test roles",
   "backend": "Real API, seeded synthetic local workforce and one synthetic customer in disposable PostgreSQL; browser proxy permits only GET and local-login POST; no real providers or workers",
   "screens": [
@@ -22,13 +22,14 @@
         "Operations dashboard",
         "Identity & Session",
         "Entitlements & Scopes",
-        "Executive & Governance"
+        "Executive & Governance",
+        "Action Items"
       ],
       "geometry": {
         "client": 1440,
         "scroll": 1440
       },
-      "captureHeight": 900
+      "captureHeight": 3578
     },
     {
       "key": "customers",
@@ -78,13 +79,14 @@
         "Operations dashboard",
         "Identity & Session",
         "Entitlements & Scopes",
-        "Executive & Governance"
+        "Executive & Governance",
+        "Action Items"
       ],
       "geometry": {
         "client": 375,
         "scroll": 375
       },
-      "captureHeight": 900
+      "captureHeight": 5790
     },
     {
       "key": "customers",
@@ -106,7 +108,7 @@
       "width": 375,
       "file": "customer-preview-375.png",
       "interaction": true,
-      "captureHeight": 1745
+      "captureHeight": 900
     },
     {
       "key": "customer-preview-table",
@@ -139,6 +141,16 @@
       "file": "customer-360-375.png",
       "interaction": true,
       "captureHeight": 900
+    }
+  ],
+  "globalCustomerSearch": [
+    {
+      "width": 1440,
+      "verified": true
+    },
+    {
+      "width": 375,
+      "verified": true
     }
   ],
   "warnings": []
