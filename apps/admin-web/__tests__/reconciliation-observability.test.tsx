@@ -134,7 +134,7 @@ describe('Admin Web Portal W5 Reconciliation & Breaks Desk Tests', () => {
     fireEvent.click(getByText('Reconciliation & Breaks'));
 
     // Switch to Trial Balance Tab
-    fireEvent.click(getByText('⚖️ General Trial Balance'));
+    fireEvent.click(getByText('General Trial Balance'));
 
     expect(ApiClient.get).toHaveBeenCalledWith('/internal/reconciliation/trial-balance');
 

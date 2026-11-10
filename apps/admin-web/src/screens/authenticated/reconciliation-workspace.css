@@ -11,3 +11,23 @@
 .mn-reconciliation__workspace > h2 { margin: 0 0 8px; font-size: 20px; color: var(--mn-text-primary); }
 .mn-reconciliation__workspace > p:not(.mn-reconciliation__eyebrow) { color: var(--mn-text-secondary); font-size: 14px; }
 .mn-reconciliation__eyebrow { margin: 0 0 8px; color: #386b53; font-size: 11px; font-weight: 800; letter-spacing: .1em; }
+/* Workspace and discrepancy registry use the same directory controls and drawer. */
+.mn-reconciliation { max-width:1440px; }
+.mn-reconciliation__workspace { background:transparent; border:0; border-radius:0; box-shadow:none; padding:0; }
+.mn-reconciliation__breaks-table { width:100%; min-width:680px; border-collapse:collapse; background:white; border:1px solid #dfe9e1; text-align:left; font-size:12px; }
+.mn-reconciliation__breaks-table th,.mn-reconciliation__breaks-table td { padding:12px; border-bottom:1px solid #e0e8e2; vertical-align:middle; overflow-wrap:anywhere; }
+.mn-reconciliation__breaks-table th { background:#f2f6f2; color:#3d5b4e; }
+.mn-reconciliation__breaks-table th:last-child,.mn-reconciliation__breaks-table td:last-child { position:sticky; right:0; z-index:1; box-shadow:-3px 0 6px #18382b0d; }
+.mn-reconciliation__breaks-table td:last-child { background:#fff; }
+.mn-reconciliation__detail-button { border:1px solid #78978a; border-radius:7px; padding:9px 12px; background:#fff; color:#006444; font:inherit; font-weight:700; cursor:pointer; white-space:nowrap; }
+.mn-reconciliation__detail-button:focus-visible { outline:3px solid #2179bf; outline-offset:2px; }
+.mn-reconciliation__drawer-header { position:sticky; top:0; z-index:1; display:flex; justify-content:space-between; gap:16px; padding:24px; background:white; border-bottom:1px solid #dfe9e1; }
+.mn-reconciliation__drawer-header h2 { margin:6px 0 0; font-size:20px; color:#123c2b; }
+.mn-reconciliation__drawer-body { padding:24px; overflow-wrap:anywhere; font-size:13px; color:#52655f; }
+.mn-reconciliation__drawer-body dl { display:grid; grid-template-columns:minmax(100px,1fr) minmax(0,2fr); gap:12px; padding:16px; border:1px solid #dfe9e1; border-radius:8px; line-height:1.5; }
+.mn-reconciliation__drawer-body dt { font-weight:600; } .mn-reconciliation__drawer-body dd { margin:0; color:#132b25; }
+@media(max-width:600px){.mn-reconciliation__drawer-header,.mn-reconciliation__drawer-body{padding:20px}}
+.mn-reconciliation__check-header { gap:8px; }
+.mn-reconciliation__check-name { min-width:0; overflow-wrap:anywhere; }
+.mn-reconciliation__check-header > span:last-child { flex:none; }
+.mn-reconciliation__breaks { grid-column:1 / -1; min-width:0; }

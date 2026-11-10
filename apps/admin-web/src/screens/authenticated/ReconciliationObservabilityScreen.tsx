@@ -1,6 +1,7 @@
 import './operational-surfaces.css';
 import React, { useEffect, useRef, useState } from 'react';
-import { PageHeader } from '../../design-system/primitives';
+import { PageHeader, ScrollRegion } from '../../design-system/primitives';
+import { WorkspaceDrawer, WorkspaceFilterTabs } from '../../design-system/WorkspaceDrawer';
 import './reconciliation-workspace.css';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
@@ -139,6 +140,7 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
 
   // Reconciliation Runs State
   const [report, setReport] = useState<ReconciliationReport | null>(null);
+  const [selectedBreak, setSelectedBreak] = useState<BindingDiscrepancy | null>(null);
   const [runLoading, setRunLoading] = useState(false);
   const [runError, setRunError] = useState('');
 
@@ -160,6 +162,7 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
     if (!canView) return;
     const request = ++generations.current.run;
     setRunError('');
+    setSelectedBreak(null);
     setReport(null);
     setRunLoading(true);
 
@@ -258,29 +261,14 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
         </p>
       </div>
 
-      <div className="mn-reconciliation__tabs" style={styles.tabHeader} aria-label="Reconciliation workspaces">
-        <button
-          style={activeTab === 'runs' ? styles.activeTabBtn : styles.tabBtn}
-          aria-pressed={activeTab === 'runs'}
-          onClick={() => { setActiveTab('runs'); setRunError(''); }}
-        >
-          ⚙️ Run Verification Audits
-        </button>
-        <button
-          style={activeTab === 'trial-balance' ? styles.activeTabBtn : styles.tabBtn}
-          aria-pressed={activeTab === 'trial-balance'}
-          onClick={() => { setActiveTab('trial-balance'); setTbError(''); handleLoadTrialBalance(); }}
-        >
-          ⚖️ General Trial Balance
-        </button>
-        <button
-          style={activeTab === 'finance' ? styles.activeTabBtn : styles.tabBtn}
-          aria-pressed={activeTab === 'finance'}
-          onClick={() => { setActiveTab('finance'); setFinanceError(''); void handleLoadFinanceVerification(); }}
-        >
-          🏦 Finance Verification &amp; Activity
-        </button>
-      </div>
+      <WorkspaceFilterTabs label="Reconciliation workspaces" value={activeTab} options={[
+        {value:'runs',label:'Run Verification Audits'}, {value:'trial-balance',label:'General Trial Balance'}, {value:'finance',label:'Finance Verification & Activity'},
+      ]} onChange={value => {
+        setSelectedBreak(null);
+        if (value === 'runs') { setActiveTab('runs'); setRunError(''); }
+        else if (value === 'trial-balance') { setActiveTab('trial-balance'); setTbError(''); void handleLoadTrialBalance(); }
+        else if (value === 'finance') { setActiveTab('finance'); setFinanceError(''); void handleLoadFinanceVerification(); }
+      }} />
 
       {activeTab === 'runs' ? (
         <div className="mn-reconciliation__workspace" style={styles.content}>
@@ -330,8 +318,8 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
                 <div style={styles.checksList}>
                   {report.checks.map((c) => (
                     <div key={c.name} style={styles.checkItem}>
-                      <div style={styles.checkHeader}>
-                        <span style={styles.checkName}>{c.name}</span>
+                      <div className="mn-reconciliation__check-header" style={styles.checkHeader}>
+                        <span className="mn-reconciliation__check-name" style={styles.checkName}>{c.name}</span>
                         <span style={c.status === 'PASS' ? styles.passBadge : styles.failBadge}>{c.status}</span>
                       </div>
                       <p style={styles.checkMsg}>{c.message}</p>
@@ -341,27 +329,16 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
               </div>
 
               {/* Binding Breaks / Discrepancies */}
-              <div style={styles.breaksCard}>
+              <div className="mn-reconciliation__breaks" style={styles.breaksCard}>
                 <h4 style={styles.cardTitle}>Binding Breaks & Discrepancies</h4>
                 {report.binding.discrepancies.length === 0 ? (
                   <p style={styles.emptyText}>No binding discrepancies were returned. This does not establish that the books are balanced; review the reported check statuses and trial balance.</p>
                 ) : (
-                  <div style={styles.breaksList}>
-                    {report.binding.discrepancies.map((d) => (
-                      <div key={d.key} style={styles.breakItem}>
-                        <div style={styles.breakHeader}>
-                          <span style={styles.breakName}>{d.type}</span>
-                          <span style={d.severity === 'ERROR' ? styles.errorBadge : styles.warnBadge}>{d.severity}</span>
-                        </div>
-                        <p style={styles.breakMsg}>{d.message}</p>
-                        <div style={styles.breakMeta}>
-                          {d.bindingId && <span>Binding: {d.bindingId}</span>}
-                          {d.customerId && <span>Customer: {d.customerId}</span>}
-                          <span>Owner: {d.owner}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <ScrollRegion label="Binding discrepancies" hint="Scroll horizontally to see all discrepancy columns.">
+                    <table className="mn-reconciliation__breaks-table"><thead><tr><th scope="col">Type</th><th scope="col">Severity</th><th scope="col">Message</th><th scope="col">Owner</th><th scope="col">Details</th></tr></thead><tbody>
+                      {report.binding.discrepancies.map(d => <tr key={d.key}><td>{d.type}</td><td><span style={d.severity === 'ERROR' ? styles.errorBadge : styles.warnBadge}>{d.severity}</span></td><td>{d.message}</td><td>{d.owner}</td><td><button type="button" className="mn-reconciliation__detail-button" aria-label={`View discrepancy ${d.key}`} onClick={() => setSelectedBreak(d)}>View details</button></td></tr>)}
+                    </tbody></table>
+                  </ScrollRegion>
                 )}
               </div>
             </div>
@@ -586,6 +563,12 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
           </div>
         </div>
       )}
+      {selectedBreak && <WorkspaceDrawer label="Binding discrepancy details" className="mn-reconciliation__drawer" onDismiss={() => setSelectedBreak(null)}>
+        <header className="mn-reconciliation__drawer-header"><div><p className="mn-reconciliation__eyebrow">INTERNAL VERIFICATION</p><h2>Binding discrepancy</h2></div><button type="button" className="mn-reconciliation__detail-button" onClick={() => setSelectedBreak(null)}>Close</button></header>
+        <div className="mn-reconciliation__drawer-body"><p>This record is from the generated internal report; it is not external settlement confirmation.</p><dl>
+          <dt>Type</dt><dd>{selectedBreak.type}</dd><dt>Severity</dt><dd>{selectedBreak.severity}</dd><dt>Message</dt><dd>{selectedBreak.message}</dd><dt>Owner</dt><dd>{selectedBreak.owner}</dd><dt>Binding</dt><dd>{typeof selectedBreak.bindingId === 'string' ? selectedBreak.bindingId : '—'}</dd><dt>Customer</dt><dd>{typeof selectedBreak.customerId === 'string' ? selectedBreak.customerId : '—'}</dd><dt>Wallet account</dt><dd>{typeof selectedBreak.walletAccountId === 'string' ? selectedBreak.walletAccountId : '—'}</dd><dt>Ledger account</dt><dd>{typeof selectedBreak.ledgerAccountId === 'string' ? selectedBreak.ledgerAccountId : '—'}</dd><dt>Recovery state</dt><dd>{typeof selectedBreak.recoveryState === 'string' ? selectedBreak.recoveryState : '—'}</dd>
+        </dl></div>
+      </WorkspaceDrawer>}
     </div>
   );
 };
@@ -593,7 +576,7 @@ const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
 const styles = {
   container: {
     padding: 'clamp(16px, 3vw, 32px)',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
+    fontFamily: 'var(--mn-font-sans)',
   },
   header: {
     marginBottom: '24px',
