@@ -34,3 +34,36 @@ test('read-only notification principals retain read access but cannot mutate any
   expect(perms.canViewDeliveries).toBe(true); expect(perms.canViewProviderConfig).toBe(true);
   for (const key of ['canManageTemplates','canApproveTemplates','canManageConfiguration','canApproveConfiguration','canProposeProviderConfig','canApproveProviderConfig','canActivateProviderConfig','canTestSend','canUseWorkforceApprovalEndpoint'] as const) expect(perms[key]).toBe(false);
 });
+
+test('version filter explores loaded history without replacing the draft or mutating the registry', () => {
+  const baseline = BASELINE_CODE_TEMPLATES.find(item => item.eventType === 'transfer.completed' && item.channel === 'SMS')!;
+  const versions = [{ ...baseline, id: 'active', version: 2, body: 'Active text', isActive: true, sourceOrigin: 'DATABASE' as const }, { ...baseline, id: 'old', version: 1, body: 'Old text', isActive: false, sourceOrigin: 'DATABASE' as const }];
+  render(<NotificationTemplateWorkspace {...props} templates={versions} templatesRegistryBlocked={false} />);
+  fireEvent.change(screen.getByLabelText(/SMS Message Body/), { target: { value: 'Local draft' } });
+  fireEvent.change(screen.getByLabelText('SMS version number filter'), { target: { value: '1' } });
+  expect(screen.getByText('Showing 1 of 2 loaded versions. Filtering does not change a draft or propose a rollback.')).toBeTruthy();
+  expect(screen.getByLabelText(/SMS Message Body/)).toHaveProperty('value', 'Local draft');
+  const compare = screen.getByRole('button', { name: 'Compare version 1 with active version' });
+  compare.focus(); fireEvent.click(compare);
+  expect(screen.getByTestId('template-version-comparison').textContent).toContain('Old text');
+  expect(document.activeElement).toBe(screen.getByTestId('template-version-comparison'));
+  fireEvent.click(screen.getByRole('button', { name: 'Close Comparison' }));
+  expect(document.activeElement).toBe(compare);
+  fireEvent.change(screen.getByLabelText('SMS version number filter'), { target: { value: '999' } });
+  expect(screen.getByText('No loaded versions match this filter.')).toBeTruthy();
+  expect(screen.getByLabelText(/SMS Message Body/)).toHaveProperty('value', 'Local draft');
+});
+
+test('a comparison is cleared if the loaded registry version changes or becomes unconfirmed', () => {
+  const baseline = BASELINE_CODE_TEMPLATES.find(item => item.eventType === 'transfer.completed' && item.channel === 'SMS')!;
+  const active = { ...baseline, id: 'active', version: 2, isActive: true, sourceOrigin: 'DATABASE' as const };
+  const old = { ...baseline, id: 'old', version: 1, isActive: false, sourceOrigin: 'DATABASE' as const };
+  const view = render(<NotificationTemplateWorkspace {...props} templates={[active, old]} templatesRegistryBlocked={false} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Compare version 1 with active version' }));
+  expect(screen.getByTestId('template-version-comparison')).toBeTruthy();
+  view.rerender(<NotificationTemplateWorkspace {...props} templates={[active, { ...old, body: 'changed' }]} templatesRegistryBlocked={false} />);
+  expect(screen.queryByTestId('template-version-comparison')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Compare version 1 with active version' }));
+  view.rerender(<NotificationTemplateWorkspace {...props} templates={[active, old]} templatesRegistryBlocked={false} templatesReadPending />);
+  expect(screen.queryByTestId('template-version-comparison')).toBeNull();
+});

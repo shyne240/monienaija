@@ -98,6 +98,10 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   const [isPreviewLoading, setIsPreviewLoading] = useState<boolean>(false);
 
   const [comparedVersion, setComparedVersion] = useState<NotificationTemplateVersion | null>(null);
+  const [historyQuery, setHistoryQuery] = useState('');
+  const comparisonRef = useRef<HTMLDivElement | null>(null);
+  const comparisonOrigin = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => { if (comparedVersion) comparisonRef.current?.focus(); }, [comparedVersion]);
   const [activatingTemplateId, setActivatingTemplateId] = useState<string | null>(null);
   const [activationComment, setActivationComment] = useState<string>('');
   const [activationFeedback, setActivationFeedback] = useState<{
@@ -143,12 +147,17 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
     [templates, selectedEventType, channel],
   );
 
+  const visibleVersions = matchingVersions.filter(item => String(item.version).includes(historyQuery.trim()));
+
   const activeVersion = useMemo(
     () => matchingVersions.find((item) => item.isActive && item.sourceOrigin !== 'CODE_BASELINE') ?? null,
     [matchingVersions],
   );
   const referenceVersion = activeVersion ?? matchingVersions[0] ?? null;
   const activeVersionConfirmed = !templatesRegistryBlocked && !templatesReadPending && !templatesReadError && Boolean(activeVersion);
+  // A snapshot is not an authoritative comparison after registry data changes or fails.
+  const comparisonCurrent = Boolean(comparedVersion && activeVersionConfirmed && activeVersion && comparedVersion.id !== activeVersion.id && matchingVersions.some(item => item.id === comparedVersion.id && item.version === comparedVersion.version && item.subject === comparedVersion.subject && item.body === comparedVersion.body && item.approvalStatus === comparedVersion.approvalStatus));
+  useEffect(() => { if (comparedVersion && !comparisonCurrent) setComparedVersion(null); }, [comparedVersion, comparisonCurrent]);
 
   useEffect(() => {
     if (!eventJump || eventJump.sequence === lastJumpSequence.current || isSubmitting || activatingTemplateId) return;
@@ -1222,11 +1231,12 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
           </div>
         )}
 
+        {matchingVersions.length > 0 && <div className="mn-template-history-filters"><label>Filter loaded version numbers<input type="search" value={historyQuery} onChange={event => setHistoryQuery(event.target.value)} placeholder="Version number" aria-label={`${channel} version number filter`} /></label><p role="status">Showing {visibleVersions.length} of {matchingVersions.length} loaded versions. Filtering does not change a draft or propose a rollback.</p></div>}
         {matchingVersions.length === 0 ? (
           <div style={styles.emptyBox}>
             {templatesReadPending ? 'Loading template registry…' : templatesRegistryBlocked || templatesReadError ? 'Template registry unavailable; history cannot be confirmed.' : <>No persisted {channel} template versions exist yet for <code>{selectedEventType}</code>.</>}
           </div>
-        ) : (
+        ) : visibleVersions.length === 0 ? <div style={styles.emptyBox}>No loaded versions match this filter.</div> : (
           <div style={{ overflowX: 'auto' }} role="region" aria-label={`${channel} template versions`} tabIndex={0}>
             <table style={styles.table} data-testid="template-version-history-table">
               <thead>
@@ -1243,7 +1253,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                 </tr>
               </thead>
               <tbody>
-                {matchingVersions.map((ver) => {
+                {visibleVersions.map((ver) => {
                   // INTEGRATION (Phase 5): proposing a governed TEMPLATE_ROLLBACK is a
                   // maker action; maker ≠ checker separation is enforced server-side when
                   // the FINANCE_CONTROLLER checker approves — a maker MAY propose rolling
@@ -1308,7 +1318,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                               type="button"
                               style={styles.secondarySmallBtn}
                               aria-label={`Compare version ${ver.version} with active version`}
-                              onClick={() => setComparedVersion(ver)}
+                              onClick={(event) => { comparisonOrigin.current = event.currentTarget; setComparedVersion(ver); }}
                             >
                               Compare
                             </button>
@@ -1351,8 +1361,8 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         )}
 
         {/* Structured Side-by-Side Comparison View */}
-        {comparedVersion && activeVersionConfirmed && activeVersion && (
-          <div style={styles.compareBox} data-testid="template-version-comparison">
+        {comparedVersion && comparisonCurrent && activeVersion && (
+          <div ref={comparisonRef} tabIndex={-1} className="mn-template-comparison" style={styles.compareBox} data-testid="template-version-comparison" aria-label={`${channel} template version comparison`}>
             <div style={styles.labelRow}>
               <strong>
                 Comparing Active (v{activeVersion.version}) vs Selected (v{comparedVersion.version})
@@ -1360,7 +1370,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               <button
                 type="button"
                 style={styles.secondarySmallBtn}
-                onClick={() => setComparedVersion(null)}
+                onClick={() => { setComparedVersion(null); if (comparisonOrigin.current?.isConnected) comparisonOrigin.current.focus(); else document.getElementById(`template-history-${channel}`)?.focus(); }}
               >
                 Close Comparison
               </button>
