@@ -180,3 +180,10 @@ Source `068004b` adds a read-only event snapshot drawer with clear separation be
 Source `b086553` refines the read-only change inspection with structured proposal facts, keyboard Escape and focus return. It intentionally stays inline: loaded-queue filters and the existing independent-review and checker controls remain accessible, including when the inspected row is filtered out. No approval or execution policy changed.
 
 [`evidence/notification-approvals-batch/`](evidence/notification-approvals-batch/manifest.json) contains nine captures at 1440, 768 and 375 pixels under FINANCE_CONTROLLER using synthetic notification changes in disposable PostgreSQL. Inspection, Escape/focus and filtering out an inspected row were exercised with GET and local-login POST only; no decision or execution was sent, and external network and workers were blocked. Full tests: 82 suites / 842 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
+
+
+### Notification management: provider status and probe preparation (partial)
+
+Source `9494236` clarifies controlled probe preparation and adds an explicit local draft clear that is disabled during busy or independent-review safeguards. Destination and attestation reset together without sending. Provider base URL missing from the observation is labeled not reported; authorization and send policy remain server-enforced and unchanged.
+
+[`evidence/notification-probe-batch/`](evidence/notification-probe-batch/manifest.json) contains 12 captures at 1440, 768 and 375 pixels under SUPER_ADMIN in a disposable local environment. Provider status and an invalid synthetic local draft were inspected and cleared; the submit button was not invoked. Only GET and local-login POST were allowed, workers were disabled and outbound network was blocked. Full tests: 82 suites / 843 tests; TypeScript and build passed. Screen-reader and actual zoom tests were not performed.
