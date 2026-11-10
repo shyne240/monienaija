@@ -1299,6 +1299,9 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       {activeTab === 'overview' && (
         <div style={styles.sectionStack} data-testid="notif-panel-overview">
           <div className="notification-redesign__section-heading"><p>WORKSPACE OVERVIEW</p><h2>Channel and service signals</h2><span>Read each source independently. A configured provider or enabled trigger does not guarantee a delivery.</span></div>
+          <nav className="notification-redesign__overview-links" aria-label="Notification overview shortcuts">
+            {([['events', 'Explore event catalogue', 'Review saved trigger gates'], ['providers', 'Review provider status', 'Inspect reported channel posture'], ['deliveries', 'Inspect deliveries', 'Review loaded delivery records']] as const).filter(([key]) => visibleTabs.some(tab => tab.key === key)).map(([key, label, description]) => <button type="button" key={key} onClick={() => { setActiveTab(key); document.getElementById(`notification-tab-${key}`)?.focus(); }}><strong>{label} <span aria-hidden="true">→</span></strong><small>{description}</small></button>)}
+          </nav>
           {/* Channel Status Cards */}
           <div style={styles.cardGrid3}>
             <section style={styles.card} aria-label="SMS channel status">
@@ -1571,7 +1574,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                       <code>destination</code>)
                     </td>
                     <td style={styles.td}>
-                      <code>notification.test_send</code> (MFA)
+                      <code>notification.test_send</code> (workforce, no customer access)
                     </td>
                     <td style={styles.td}>
                       <span style={styles.mutedBadge}>CONTRACT LISTED</span>

@@ -950,7 +950,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           )}
 
           {/* Governed SMS Proposal Form */}
-          <form aria-label="SMS provider proposal" onSubmit={(e) => void handleSubmitSmsProposal(e)} style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}><fieldset disabled={providerActionBusy || probeBusy} style={{ border: 0, padding: 0, margin: 0 }}>
+          <form className="mn-provider-proposal-form" aria-label="SMS provider proposal" onSubmit={(e) => void handleSubmitSmsProposal(e)} style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}><fieldset disabled={providerActionBusy || probeBusy} style={{ border: 0, padding: 0, margin: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
               Propose SMS Provider Change (Maker-Checker + MFA)
             </div>
@@ -1402,7 +1402,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           )}
 
           {/* Governed Email Proposal Form */}
-          <form aria-label="Email provider proposal" onSubmit={(e) => void handleSubmitEmailProposal(e)} style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}><fieldset disabled={providerActionBusy || probeBusy} style={{ border: 0, padding: 0, margin: 0 }}>
+          <form className="mn-provider-proposal-form" aria-label="Email provider proposal" onSubmit={(e) => void handleSubmitEmailProposal(e)} style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}><fieldset disabled={providerActionBusy || probeBusy} style={{ border: 0, padding: 0, margin: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
               Propose Email Provider Change (Maker-Checker + MFA)
             </div>

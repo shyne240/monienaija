@@ -60,3 +60,8 @@ test('local probe draft can be cleared without sending or retaining attestation'
   expect(clear.disabled).toBe(false); fireEvent.click(clear);
   expect(destination.value).toBe(''); expect(attestation.checked).toBe(false); expect(screen.queryByTestId('test-send-validation-errors')).toBeNull(); expect(clear.disabled).toBe(true); expect(ApiClient.post).not.toHaveBeenCalled();
 });
+
+test('overview shortcuts move focus to the existing section tabs without sending',async()=>{
+ render(<NotificationManagementScreen initialTab="overview"/>);await screen.findByRole('button',{name:/Explore event catalogue/});
+ fireEvent.click(screen.getByRole('button',{name:/Explore event catalogue/}));const tab=screen.getByRole('tab',{name:'2. Event Catalogue & Triggers'});expect(tab.getAttribute('aria-selected')).toBe('true');expect(document.activeElement).toBe(tab);expect(ApiClient.post).not.toHaveBeenCalled();
+});
