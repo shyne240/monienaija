@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react';
 
 import { Layout } from '../src/screens/authenticated/Layout';
 import { ApiClient } from '../src/services/api-client';
@@ -337,5 +337,23 @@ describe('M1 shell — authorization, alias and context parity', () => {
     } finally {
       logout.mockRestore();
     }
+  });
+});
+
+describe('MonieNaija One workspace search', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setPrincipal(['customer.view']);
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) => path.startsWith('/internal/customers?')
+      ? Promise.resolve({ data: [], total: 0, page: 1, limit: 20, totalPages: 0, hasNextPage: false, hasPreviousPage: false })
+      : Promise.resolve({ templateKey: 'DEFAULT_FALLBACK', displayName: 'Dashboard', description: '', isFallback: true, widgets: [] }));
+  });
+  test('returns only visible destinations and uses the normal navigation guard', async () => {
+    const view = render(<Layout />);
+    fireEvent.change(view.getByRole('searchbox', { name: 'Search navigation' }), { target: { value: 'customer' } });
+    fireEvent.click(within(view.getByRole('group', { name: 'Navigation search results' })).getByRole('button', { name: 'Customer & KYC Servicing' }));
+    expect(await view.findByRole('heading', { name: 'Customer directory' })).toBeTruthy();
+    fireEvent.change(view.getByRole('searchbox', { name: 'Search navigation' }), { target: { value: 'ledger' } });
+    expect(view.getByText('No matching workspaces')).toBeTruthy();
   });
 });

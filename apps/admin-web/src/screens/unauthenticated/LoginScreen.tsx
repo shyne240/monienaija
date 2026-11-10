@@ -79,12 +79,20 @@ export const LoginScreen: React.FC = () => {
     <main className="mn-login mn-login__container">
       <div className="mn-login__shell">
         <section className="mn-login__identity" aria-label="MonieNaija administration">
-          <div className="mn-login__brand"><img src="/favicon.png" alt="" className="mn-login__logo-icon" /><span>MonieNaija</span></div>
-          <div><p className="mn-login__kicker">WORKFORCE OPERATIONS</p><p className="mn-login__statement">Clarity for the work that matters.</p><p>One workspace for governed administration, operational review and support.</p></div>
+          <div className="one-login-brand"><span>MonieNaija <em>One</em></span><small>Financial Operations Console</small></div>
+          <div className="one-login-message"><span className="one-login-rule" aria-hidden="true" /><p className="one-login-lead">A secure, unified workspace<br />for your financial network</p>
+            <ul className="one-login-features">
+              <li><span aria-hidden="true">◇</span>Manage customers &amp; agents</li>
+              <li><span aria-hidden="true">⇄</span>Oversee transactions &amp; operations</li>
+              <li><span aria-hidden="true">⌑</span>Control risk, compliance &amp; approvals</li>
+              <li><span aria-hidden="true">▥</span>Monitor performance &amp; growth</li>
+            </ul>
+          </div>
+          <div className="one-login-art" aria-hidden="true"><i /><i /><i /><i /><i /></div>
           <p className="mn-login__identity-note">Access is governed by your workforce identity and assigned permissions.</p>
         </section>
       <section className="mn-login__card" aria-labelledby="admin-login-title">
-        <header className="mn-login__intro"><p className="mn-login__eyebrow">ADMIN CONSOLE</p><h1 id="admin-login-title">Sign in to your workspace</h1><p>Use your workforce credentials to continue.</p></header>
+        <header className="mn-login__intro"><h1 id="admin-login-title">Welcome back</h1><p>Sign in to your MonieNaija One admin console</p></header>
 
         {DEV_AUTH_MOCK && (
           <div className="mn-login__dev-banner">
@@ -144,7 +152,7 @@ export const LoginScreen: React.FC = () => {
             disabled={isLoading}
             className="mn-login__submit-btn"
           >
-            {isLoading ? activeAction === 'password' ? 'Signing in...' : 'Please wait...' : 'Sign In'}
+            {isLoading ? activeAction === 'password' ? 'Signing in...' : 'Please wait...' : 'Sign In'} <span aria-hidden="true">→</span>
           </button>
         </form>
 

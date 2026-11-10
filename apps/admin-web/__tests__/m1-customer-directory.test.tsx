@@ -434,3 +434,33 @@ describe('Customer directory session and response safeguards',()=>{
     const view=render(<CustomerDirectoryScreen/>);const open=await view.findByRole('button',{name:'Open Customer 360° for Synthetic Directory Alpha'});fireEvent.change(view.getByRole('searchbox',{name:'Search customers'}),{target:{value:'other'}});expect((open as HTMLButtonElement).disabled).toBe(true);expect(view.getByText(/search is being updated|filters or results are being updated/)).toBeTruthy();
   });
 });
+
+describe('MonieNaija One directory interactions', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setPrincipal(DIRECTORY_SCOPES);
+    (ApiClient.get as jest.Mock).mockResolvedValue(directoryResponse());
+  });
+
+  test('quick filters use the existing directory query and close a previous preview', async () => {
+    const view = render(<CustomerDirectoryScreen />);
+    fireEvent.click(await view.findByRole('button', { name: 'Preview Synthetic Directory Alpha' }));
+    expect(view.getByRole('complementary', { name: 'Customer preview' })).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: 'Active', pressed: false }));
+    await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith('/internal/customers?page=1&limit=20&status=ACTIVE'));
+    expect(view.queryByRole('complementary', { name: 'Customer preview' })).toBeNull();
+    expect(view.getByRole('button', { name: 'Active', pressed: true })).toBeTruthy();
+    expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+
+  test('preview displays only returned details and opens the existing customer workspace', async () => {
+    const view = render(<CustomerDirectoryScreen />);
+    fireEvent.click(await view.findByRole('button', { name: 'Preview Synthetic Directory Alpha' }));
+    const preview = view.getByRole('complementary', { name: 'Customer preview' });
+    expect(within(preview).getByText('LEVEL_1')).toBeTruthy();
+    expect(within(preview).getByText('+234*****4321')).toBeTruthy();
+    fireEvent.click(within(preview).getByRole('button', { name: 'Open Customer 360°' }));
+    expect(await view.findByRole('tablist', { name: 'Customer 360 sections' })).toBeTruthy();
+    expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+});

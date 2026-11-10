@@ -27,6 +27,7 @@ import { AuditTrailScreen } from './AuditTrailScreen';
 import { LimitAssignmentScreen } from './LimitAssignmentScreen';
 import { canonicalAdminView, canAccessAdminView, type AdminView } from './navigation-access';
 import './admin-shell.css';
+import './one-shell.css';
 
 // Seven-section Admin Web navigation. Money movement includes the dedicated read-only
 // Cash-to-Cash operations view; Agent classes are managed through their separate function scope.
@@ -57,6 +58,7 @@ export const Layout: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [navContext, setNavContext] = useState<NavContext>({});
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [navigationQuery, setNavigationQuery] = useState('');
   const [customerGuard, setCustomerGuard] = useState(false);
   const [customerBusy, setCustomerBusy] = useState(false);
   const [agentGuard, setAgentGuard] = useState(false);
@@ -102,11 +104,11 @@ export const Layout: React.FC = () => {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     home: true,
     servicing: true,
-    money: true,
-    finance: true,
-    commercial: true,
-    compliance: true,
-    platform: true,
+    money: false,
+    finance: false,
+    commercial: false,
+    compliance: false,
+    platform: false,
   });
 
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -320,6 +322,7 @@ export const Layout: React.FC = () => {
     setRecoveryGuard(false); setRecoveryBusy(false);
     setLedgerGuard(false); setLedgerBusy(false);
     setNotificationGuard(false); setNotificationBusy(false);
+    setNavigationQuery('');
     setCurrentView(view);
     // Customer context belongs only to the destination explicitly selected from Customer 360°.
     // Clear it on every ordinary navigation so stale IDs cannot leak into unrelated screens.
@@ -484,10 +487,20 @@ export const Layout: React.FC = () => {
       </a>
 
       <aside className="mn-shell__sidebar" data-testid="desktop-nav">
+        <div className="one-rail" aria-label="Navigation sections">
+          <img src="/favicon.png" alt="MonieNaija" className="one-rail__logo" />
+          {sections.filter(section => section.items.some(item => item.visible)).map((section, index) => (
+            <button key={section.id} type="button" aria-label={`Open ${section.title.replace(/^\d+\. /, '')} navigation`} className={section.items.some(item => item.key === canonicalAdminView(currentView)) ? 'one-rail__button one-rail__button--active' : 'one-rail__button'} onClick={() => setExpandedSections(previous => ({...previous, [section.id]: true}))}>
+              <span aria-hidden="true">{['▦', '♙', '⇄', '◫', '▤', '◇', '⚙'][index]}</span>
+            </button>
+          ))}
+          <span className="one-rail__avatar" aria-hidden="true">{principalInitial}</span>
+        </div>
+        <div className="one-nav-panel">
         <div className="mn-shell__brand">
           <img className="mn-shell__brand-mark" src="/favicon.png" alt="" aria-hidden="true" />
           <span className="mn-shell__brand-text">
-            <span className="mn-shell__brand-name">MonieNaija</span>
+            <span className="mn-shell__brand-name">MonieNaija One</span>
             <span className="mn-shell__brand-sub">Workforce console</span>
           </span>
         </div>
@@ -517,6 +530,7 @@ export const Layout: React.FC = () => {
             Log out session
           </Button>
         </div>
+        </div>
       </aside>
 
       {/* Compact top app bar: shown below the persistent-rail breakpoint. */}
@@ -537,6 +551,12 @@ export const Layout: React.FC = () => {
         <span className="mn-topbar__role">{principal.roles[0]}</span>
       </header>
 
+      <div className="one-command-bar">
+        <div className="one-command-search"><span aria-hidden="true">⌕</span><input type="search" aria-label="Search navigation" placeholder="Search available workspaces..." value={navigationQuery} onChange={event => setNavigationQuery(event.target.value)} />
+          {navigationQuery.trim() && <div className="one-command-results" role="group" aria-label="Navigation search results">{sections.flatMap(section => section.items).filter(item => item.visible && item.label.toLowerCase().includes(navigationQuery.trim().toLowerCase())).map(item => <button type="button" key={item.key} onClick={() => handleNav(item.key)}>{item.label}</button>)}{!sections.flatMap(section => section.items).some(item => item.visible && item.label.toLowerCase().includes(navigationQuery.trim().toLowerCase())) && <p>No matching workspaces</p>}</div>}
+        </div>
+        <div className="one-command-session"><span className="one-command-avatar">{principalInitial}</span><span>{principal.roles[0]?.replace(/_/g, ' ')}</span></div>
+      </div>
       <div
         className="mn-shell__content"
         id="mn-main-workspace"

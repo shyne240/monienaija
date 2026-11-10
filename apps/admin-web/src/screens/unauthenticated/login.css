@@ -58,3 +58,28 @@
   .mn-login__identity .mn-login__identity-note { display: none; }
   .mn-login__card { padding: 28px 24px 40px; }
 }
+
+/* MonieNaija One — approved Phase 1 sign-in. Existing authentication remains unchanged. */
+.mn-login__container { padding:0; min-height:100vh; background:#faf9f6; }
+.mn-login__shell { width:100%; min-height:100vh; grid-template-columns: minmax(0, .94fr) minmax(0, 1.06fr); border:0; border-radius:0; box-shadow:none; background:#faf9f6; }
+.mn-login__identity { position:relative; isolation:isolate; min-height:100vh; justify-content:flex-start; gap:clamp(45px,6vh,75px); padding:clamp(54px,8vh,105px) clamp(40px,5.8vw,96px); background:radial-gradient(ellipse at 5% 0%,#096146 0%,#003b28 46%,#002e20 100%); overflow:hidden; }
+.mn-login__identity::before { content:''; position:absolute; width:480px; height:480px; right:-190px; bottom:-170px; border:1px solid #b59c4c; border-radius:50%; box-shadow:0 0 0 30px #83a36a12, 0 0 0 70px #83a36a0e, 0 0 0 110px #83a36a0b, 0 0 0 150px #83a36a08; transform:rotate(-30deg); z-index:-1; }
+.one-login-brand { display:flex; flex-direction:column; color:#fff; font-weight:800; font-size:clamp(34px,4vw,58px); letter-spacing:-.045em; line-height:1; white-space:nowrap; }
+.one-login-brand em { color:#dbb956; font-style:normal; }
+.one-login-brand small { font-size:clamp(16px,1.7vw,25px); font-weight:400; letter-spacing:0; margin-top:12px; }
+.one-login-message { position:relative; z-index:1; }
+.one-login-rule { display:block; height:6px; width:80px; border-radius:8px; background:#d5af4f; margin-bottom:38px; }
+.mn-login__identity .one-login-lead { max-width:26ch; color:#fff; font-size:clamp(23px,2.1vw,30px); line-height:1.35; font-weight:550; }
+.one-login-features { padding:0; margin:36px 0 0; list-style:none; display:grid; gap:12px; }
+.one-login-features li { display:flex; align-items:center; gap:20px; color:#fff; font-size:clamp(15px,1.2vw,18px); }
+.one-login-features li span { display:grid; place-items:center; width:52px; height:52px; flex:none; border:1px solid #43866a; border-radius:50%; background:#17644877; color:#e1bb57; font-size:28px; }
+.one-login-art { display:flex; gap:8px; align-items:flex-end; justify-content:flex-end; height:125px; margin-top:auto; opacity:.6; }
+.one-login-art i { width:22px; border-radius:3px 3px 0 0; background:linear-gradient(#d6b653,#327554); }
+.one-login-art i:nth-child(1){height:20%}.one-login-art i:nth-child(2){height:35%}.one-login-art i:nth-child(3){height:52%}.one-login-art i:nth-child(4){height:73%}.one-login-art i:nth-child(5){height:95%}
+.mn-login__identity .mn-login__identity-note { margin-top:0; border:0; padding:0; font-size:12px; }
+.mn-login__card { width:min(100%,690px); justify-self:center; padding:clamp(40px,7vw,100px); background:transparent; }
+.mn-login__intro { margin-bottom:44px; }.mn-login__intro h1 { color:#073629; font-size:clamp(38px,4vw,58px); line-height:1.1; letter-spacing:-.045em; margin:0 0 12px; }.mn-login__intro p { font-size:clamp(16px,1.5vw,21px); color:#59645f; }
+.mn-login__label { font-size:15px; color:#17231f; margin-bottom:9px; }.mn-login__input-group { margin-bottom:28px; }.mn-login__input,.mn-login__textarea { min-height:56px; border:1px solid #c8d0cc; border-radius:9px; background:#fff; padding:14px 16px; font-size:16px; box-shadow:0 1px 2px #092d2010; }
+.mn-login__submit-btn { min-height:60px; border:2px solid #d0ad4e; border-radius:10px; background:#00452e; box-shadow:0 7px 14px #1b312125; font-size:17px; }.mn-login__submit-btn span { margin-left:12px; font-size:22px; }
+.mn-login__availability { margin-top:18px; }.mn-login__advanced-section { margin-top:24px; }
+@media(max-width:700px){.mn-login__shell{display:flex;flex-direction:column;min-height:100vh}.mn-login__identity{min-height:0;padding:32px 24px;gap:26px}.one-login-brand{font-size:33px}.one-login-brand small{font-size:15px;margin-top:8px}.one-login-rule{margin-bottom:20px;width:58px;height:4px}.mn-login__identity .one-login-lead{font-size:21px}.one-login-features{grid-template-columns:1fr 1fr;gap:12px;margin-top:22px}.one-login-features li{gap:8px;font-size:12px;line-height:1.35}.one-login-features li span{width:30px;height:30px;font-size:17px}.one-login-art,.mn-login__identity .mn-login__identity-note{display:none}.mn-login__card{padding:36px 24px 48px}.mn-login__intro{margin-bottom:28px}.mn-login__intro h1{font-size:38px}.mn-login__input-group{margin-bottom:20px}}

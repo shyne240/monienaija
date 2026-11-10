@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { useAuthStore } from '../../store/auth-store';
 import { ApiClient } from '../../services/api-client';
 import { useWidgetData } from '../../components/dashboard/useWidgetData';
+import { OneSummaryCards } from '../../components/dashboard/OneSummaryCards';
 import { WidgetRenderer } from '../../components/dashboard/widgets';
-import { PageHeader } from '../../design-system/primitives';
 import './operational-surfaces.css';
 import './dashboard-workspace.css';
+import './one-dashboard.css';
 import type { ResolvedDashboard } from '../../components/dashboard/types';
 
 const DASH = '/internal/a2/workforce/dashboard';
@@ -77,9 +78,11 @@ const DashboardWorkspace: React.FC<DashboardScreenProps> = ({ onNavigateToCustom
 
   return (
     <div className="mn-operational mn-dashboard" style={styles.container}>
-      <PageHeader eyebrow="Overview" title="System Administration Dashboard" description="Your workforce session and assigned operational widgets." />
+      <header className="one-dashboard-header"><div><h1>Operations dashboard</h1><p>Here's what's happening across your authorized workspace.</p></div><span>Role: {principal.roles[0]?.replace(/_/g, ' ')}</span></header>
+      <div className="one-dashboard-title-compat">System Administration Dashboard</div>
+      {renderableWidgets.some(widget => widget.widgetKey === 'transaction-summary' && widget.authorized) && <OneSummaryCards />}
 
-      <div className="mn-dashboard__identity-grid" style={styles.grid}>
+      <details className="one-dashboard-session"><summary>Identity &amp; session details</summary><div className="mn-dashboard__identity-grid" style={styles.grid}>
         <section className="mn-dashboard__identity" style={styles.card} aria-label="Identity and session">
           <p className="mn-dashboard__eyebrow">YOUR SESSION</p>
           <h2 style={styles.cardTitle}>Identity & Session</h2>
@@ -114,7 +117,7 @@ const DashboardWorkspace: React.FC<DashboardScreenProps> = ({ onNavigateToCustom
             </div>
           </details>
         </section>
-      </div>
+      </div></details>
 
       <div style={styles.sectionHeaderRow}>
         <h2 style={styles.sectionHeader}>{dashboard ? dashboard.displayName : 'Your Dashboard'}</h2>
@@ -145,14 +148,13 @@ const DashboardWorkspace: React.FC<DashboardScreenProps> = ({ onNavigateToCustom
       )}
 
       {!loading && !error && renderableWidgets.length > 0 && (
-        <div style={styles.widgetGrid}>
+        <div className="one-dashboard-widgets">
           {renderableWidgets.map((widget) => (
-            <WidgetRenderer
-              key={widget.widgetKey}
+            <div className={`one-dashboard-widget one-dashboard-widget--${widget.widgetKey}`} key={widget.widgetKey}><WidgetRenderer
               widget={widget}
               onNavigateToCustomers={customerDirectoryNavigation}
               onNavigateToAgents={agentNetworkNavigation}
-            />
+            /></div>
           ))}
         </div>
       )}

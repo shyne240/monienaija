@@ -18,6 +18,7 @@ import { Customer360Workspace, type DirectoryCustomer } from './Customer360Works
 import '../../design-system/tokens.css';
 import './customer-management.css';
 import './customer-directory-pilot.css';
+import './one-directory.css';
 
 interface CustomerDirectoryResponse {
   data: DirectoryCustomer[];
@@ -136,6 +137,7 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
   const [error, setError] = useState<string | null>(null);
   const [reloadVersion, setReloadVersion] = useState(0);
   const [selectedCustomer, setSelectedCustomer] = useState<DirectoryCustomer | null>(null);
+  const [previewCustomer, setPreviewCustomer] = useState<DirectoryCustomer | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const createButtonRef = useRef<HTMLButtonElement>(null);
@@ -163,6 +165,9 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
     if (kycStatus) params.set('kycStatus', kycStatus);
     return params.toString();
   }, [page, pageSize, search, status, type, kycLevel, kycStatus]);
+
+  // A preview describes the current result set; do not leave it visible after filters change.
+  useEffect(() => { setPreviewCustomer(null); }, [queryString]);
 
   useEffect(() => {
     if (!canViewCustomer) { setIsLoading(false); return; }
@@ -341,7 +346,15 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
         </div>
       )}
 
+      <div className={previewCustomer ? 'one-directory-layout one-directory-layout--detail' : 'one-directory-layout'}>
       <section className="mn-dir-panel" aria-label="Customer search and results">
+        <div className="one-directory-tabs" aria-label="Quick customer filters">
+          <button type="button" aria-pressed={!status && !kycStatus} onClick={() => {setStatus('');setKycStatus('');setPage(1);}}>All Customers</button>
+          <button type="button" aria-pressed={status === 'ACTIVE' && !kycStatus} onClick={() => {setStatus('ACTIVE');setKycStatus('');setPage(1);}}>Active</button>
+          <button type="button" aria-pressed={kycStatus === 'PENDING' && !status} onClick={() => {setStatus('');setKycStatus('PENDING');setPage(1);}}>Pending KYC</button>
+          <button type="button" aria-pressed={status === 'SUSPENDED' && !kycStatus} onClick={() => {setStatus('SUSPENDED');setKycStatus('');setPage(1);}}>Suspended</button>
+          <button type="button" aria-pressed={status === 'CLOSED' && !kycStatus} onClick={() => {setStatus('CLOSED');setKycStatus('');setPage(1);}}>Closed</button>
+        </div>
         <div className="mn-dir-toolbar">
           <div className="mn-dir-toolbar__filters">
             <Field label="Search" htmlFor="mn-dir-search" className="mn-dir-filter mn-dir-filter--search">
@@ -531,16 +544,12 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
                 return (
                   <tr key={customer.id} className="mn-dir-table__row">
                     <td className="mn-dir-table__cell mn-dir-table__sticky">
-                      <span className="mn-dir-table__identity">{displayName(customer)}</span>
+                      <div className="one-customer-identity"><span className="one-customer-avatar" aria-hidden="true">{displayName(customer).slice(0, 1).toUpperCase()}</span><span><button type="button" className="one-customer-preview-link" disabled={createOpen || previousDataVisible} onClick={() => setPreviewCustomer(customer)} aria-label={`Preview ${displayName(customer)}`}>{displayName(customer)}</button></span></div>
                       {customer.legalName && customer.legalName !== customer.displayName && (
                         <span className="mn-dir-table__secondary">Legal name: {customer.legalName}</span>
                       )}
                     </td>
-                    <td className="mn-dir-table__cell">
-                      <span className="mn-dir-table__reference">
-                        {maskCustomerReference(customer.reference) || 'Reference unavailable'}
-                      </span>
-                    </td>
+                    <td className="mn-dir-table__cell"><span className="mn-dir-table__reference">{maskCustomerReference(customer.reference) || 'Reference unavailable'}</span></td>
                     <td className="mn-dir-table__cell">{customer.type}</td>
                     <td className="mn-dir-table__cell">
                       <StatusBadge tone={customerStatus.tone} shape={customerStatus.shape}>
@@ -628,6 +637,23 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
           </div>
         </nav>
       </section>
+      {previewCustomer && <aside className="one-customer-detail" aria-label="Customer preview">
+        <button type="button" className="one-customer-detail__close" aria-label="Close customer preview" onClick={() => setPreviewCustomer(null)}>×</button>
+        <span className="one-customer-detail__avatar" aria-hidden="true">{displayName(previewCustomer).slice(0, 1).toUpperCase()}</span>
+        <h2>{displayName(previewCustomer)}</h2><p className="one-customer-detail__reference">{maskCustomerReference(previewCustomer.reference) || 'Reference unavailable'}</p>
+        <div className="one-customer-detail__section">Overview</div>
+        <dl>
+          <div><dt>Customer type</dt><dd>{previewCustomer.type}</dd></div>
+          <div><dt>Registered</dt><dd>{formatDate(previewCustomer.createdAt)}</dd></div>
+          <div><dt>Account status</dt><dd>{previewCustomer.status}</dd></div>
+          <div><dt>KYC status</dt><dd>{previewCustomer.kycStatus}</dd></div>
+          <div><dt>Verification level</dt><dd>{previewCustomer.kycLevel}</dd></div>
+          <div><dt>Primary contact</dt><dd>{previewCustomer.primaryContact?.maskedValue || (scopes.includes('customer.view_contact_methods') ? 'Not recorded' : 'Restricted')}</dd></div>
+        </dl>
+        <h3>Customer workspace</h3><p>Open the full workspace for available records and actions.</p>
+        <Button variant="primary" disabled={createOpen || previousDataVisible} onClick={() => { requestVersion.current++; setSelectedCustomer(previewCustomer); setPreviewCustomer(null); }}>Open Customer 360°</Button>
+      </aside>}
+      </div>
     </main>
   );
 };

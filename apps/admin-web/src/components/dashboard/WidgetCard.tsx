@@ -33,11 +33,11 @@ export const WidgetCard: React.FC<WidgetCardProps> = ({
   children,
 }) => {
   return (
-    <section style={styles.card}>
-      <div style={styles.headerRow}>
+    <section className="one-widget-card" style={styles.card}>
+      <div className="one-widget-card__header" style={styles.headerRow}>
         <div>
-          <h3 style={styles.title}>{title}</h3>
-          {description && <p style={styles.description}>{description}</p>}
+          <h3 className="one-widget-card__title" style={styles.title}>{title}</h3>
+          {description && <p className="one-widget-card__description" style={styles.description}>{description}</p>}
         </div>
         {actions && !restricted && <div style={styles.actions}>{actions}</div>}
       </div>
