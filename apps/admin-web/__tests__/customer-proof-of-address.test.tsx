@@ -713,3 +713,16 @@ test('address section navigation reflects enabled evidence capability without up
  jest.clearAllMocks();setPermissions(['customer.view_proof_of_address_metadata','customer.upload_proof_of_address','customer.view_address']);configureEnabledApi();render(<CustomerProofOfAddressPanel customerId={customerId}/>);
  const nav=await screen.findByRole('navigation',{name:'Address verification sections'});await within(nav).findByRole('link',{name:'Evidence upload'});expect(within(nav).getByRole('link',{name:'Submission history'}).getAttribute('href')).toBe('#cm-poa-history-heading');expect(ApiClient.postForm).not.toHaveBeenCalled();
 });
+
+test('evidence filters only loaded records and keeps lifecycle review locks visible',async()=>{
+ jest.clearAllMocks();setPermissions(operationsScopes);configureEnabledApi({documents:[documentRecord(),documentRecord({id:'other',submissionGroupId:'other-group',documentStatus:'QUARANTINED',scannerResult:'UNAVAILABLE',originalFileName:'quarantined.pdf'})]});
+ (ApiClient.post as jest.Mock).mockResolvedValueOnce(documentRecord({id:'wrong',documentStatus:'WITHDRAWN'}));render(<CustomerProofOfAddressPanel customerId={customerId}/>);await screen.findByText(/utility-bill.pdf/);
+ fireEvent.click(screen.getByRole('button',{name:'Available'}));expect(screen.queryByText(/quarantined.pdf/)).toBeNull();expect(screen.getByText('1 of 2 loaded records shown')).toBeTruthy();
+ fireEvent.click(screen.getByRole('button',{name:'Withdraw'}));const dialog=screen.getByRole('dialog');fireEvent.change(within(dialog).getByLabelText('Reason (required)'),{target:{value:'Synthetic reason'}});fireEvent.click(within(dialog).getByRole('button',{name:'Confirm withdrawal'}));await within(dialog).findByText(/outcome could not be confirmed/);fireEvent.click(within(dialog).getByRole('button',{name:'Cancel'}));
+ expect(screen.getByText(/quarantined.pdf/)).toBeTruthy();expect((screen.getByRole('button',{name:'Available'}) as HTMLButtonElement).disabled).toBe(true);expect(screen.getByText(/previous document action was not confirmed/)).toBeTruthy();expect(ApiClient.post).toHaveBeenCalledTimes(1);
+});
+
+test('metadata-only evidence does not imply a zero-byte upload or upload timestamp',async()=>{
+ jest.clearAllMocks();setPermissions(operationsScopes);configureEnabledApi({documents:[documentRecord({documentStatus:'QUARANTINED',scannerResult:'UNAVAILABLE',originalFileName:null,fileSizeBytes:null,uploadedAt:null})]});render(<CustomerProofOfAddressPanel customerId={customerId}/>);
+ expect(await screen.findByText(/File name not recorded · Not recorded · recorded/)).toBeTruthy();expect(screen.queryByText(/0 B · uploaded/)).toBeNull();
+});

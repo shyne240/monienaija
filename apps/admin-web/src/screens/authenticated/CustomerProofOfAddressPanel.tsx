@@ -8,6 +8,7 @@ import {
   isCandidateProofType,
 } from '../../../../../src/customer-proof-of-address/customer-proof-of-address.constants';
 import { ApiClient } from '../../services/api-client';
+import { WorkspaceFilterTabs } from '../../design-system/WorkspaceDrawer';
 import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { useAuthStore } from '../../store/auth-store';
 
@@ -149,6 +150,7 @@ function mutationErrorMessage(error: unknown, action: string): string {
 }
 
 function formatBytes(value: number | string | null | undefined): string {
+  if (value == null || value === '') return 'Not recorded';
   const bytes = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(bytes) || bytes < 0) return 'Not recorded';
   if (bytes < 1024) return `${bytes} B`;
@@ -278,6 +280,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
   const [addresses, setAddresses] = useState<AddressRecord[]>([]);
   const [addressError, setAddressError] = useState<string | null>(null);
   const [documents, setDocuments] = useState<ProofOfAddressDocument[]>([]);
+  const [documentFilter, setDocumentFilter] = useState('ALL');
   const [documentPage, setDocumentPage] = useState(1);
   const [documentTotal, setDocumentTotal] = useState(0);
   const [listLoaded, setListLoaded] = useState(false);
@@ -323,6 +326,8 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
   const [lifecycleReviews, setLifecycleReviews] = useState<Record<string, boolean>>({});
+  const reviewLocked = Object.keys(lifecycleReviews).length > 0;
+  useEffect(() => { if (reviewLocked) setDocumentFilter('ALL'); }, [reviewLocked]);
   const draftGuarded = Boolean(uploadDraftTouched || selectedFile || replacementTarget || pendingUpload || pendingLifecycle || uploadBusy || lifecycleBusy || Object.keys(lifecycleReviews).length);
   useEffect(() => { onGuardChange?.(draftGuarded, uploadBusy || lifecycleBusy || Boolean(pendingLifecycle) || confirmDiscardDraft); }, [draftGuarded, uploadBusy, lifecycleBusy, pendingLifecycle, confirmDiscardDraft, onGuardChange]);
   useEffect(() => {
@@ -350,6 +355,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
     setPendingLifecycle(null);
     setHistoryByDocument({});
     setDocuments([]);
+    setDocumentFilter('ALL');
     setAddresses([]);
     setAddressId('');
     setCategory(CANDIDATE_CATEGORIES[0] ?? '');
@@ -503,6 +509,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
   const refresh = () => { listGeneration.current++; setListLoaded(false); setLoading(true); setUploadReviewRead(false); setUploadReviewed(false); setLifecycleReviews(current => Object.fromEntries(Object.keys(current).map(id => [id, false]))); setReloadVersion((version) => version + 1); };
   const hasMoreDocuments = documentPage * PAGE_SIZE < documentTotal;
   const latestIds = latestRevisionIds(documents);
+  const visibleDocuments = documentFilter === 'ALL' ? documents : documents.filter(document => document.documentStatus === documentFilter);
   const canShowUploadForm = canUpload && capabilities?.enabled === true;
   const maxUploadBytes = capabilities?.maxUploadBytes ?? 0;
   const fileTooLarge = Boolean(
@@ -1076,8 +1083,14 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                 not a verification or eligibility result.
               </p>
             )}
+            {listLoaded && documents.length > 0 && <div className="cm-poa-filter-panel">
+              <p>Filter loaded records by document state. Other records may be available on later pages; document state is not a review decision.</p>
+              <WorkspaceFilterTabs label="Loaded evidence state" value={documentFilter} disabled={reviewLocked || Boolean(pendingLifecycle)} options={[{value:'ALL',label:'All loaded'},{value:'AVAILABLE',label:'Available'},{value:'QUARANTINED',label:'Quarantined'},{value:'SUPERSEDED',label:'Superseded'},{value:'WITHDRAWN',label:'Withdrawn'},{value:'ARCHIVED',label:'Archived'}]} onChange={setDocumentFilter} />
+              <span>{visibleDocuments.length} of {documents.length} loaded records shown</span>
+            </div>}
+            {listLoaded && documents.length > 0 && visibleDocuments.length === 0 && <p className="cm-empty-state">No loaded records match this state. Load more records or select another state.</p>}
             <div className="cm-poa-document-list">
-              {documents.map((document) => {
+              {visibleDocuments.map((document) => {
                 const history = historyByDocument[document.id];
                 const contentAvailable =
                   capabilities.previewAvailable &&
@@ -1102,7 +1115,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                         </h3>
                         <p className="cm-secondary-line">
                           {document.originalFileName || 'File name not recorded'} ·{' '}
-                          {formatBytes(document.fileSizeBytes)} · uploaded{' '}
+                          {formatBytes(document.fileSizeBytes)} · {document.uploadedAt ? 'uploaded' : 'recorded'}{' '}
                           {formatDate(document.uploadedAt ?? document.createdAt)}
                         </p>
                       </div>
