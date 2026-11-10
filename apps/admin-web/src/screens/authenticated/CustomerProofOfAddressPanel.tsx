@@ -825,7 +825,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
 
   return (
     <div className="cm-proof-address-stack">
-      <nav className="cm-section-nav" aria-label="Address verification sections"><a href="#cm-poa-title">Documentary evidence</a><a href="#cm-physical-address-title">Physical verification</a></nav>
+      <nav className="cm-section-nav" aria-label="Address verification sections"><a href="#cm-poa-title">Documentary evidence</a>{capabilities?.enabled && !loading && canShowUploadForm && <a href="#cm-poa-upload-heading">Evidence upload</a>}{capabilities?.enabled && !loading && <a href="#cm-poa-history-heading">Submission history</a>}<a href="#cm-physical-address-title">Physical verification</a></nav>
       <section className="cm-card cm-card-wide" aria-labelledby="cm-poa-title">
         <div className="cm-card-heading">
           <div>
@@ -1045,7 +1045,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
               </section>
             )}
 
-            <div className="cm-table-meta cm-poa-history-heading">
+            <div id="cm-poa-history-heading" className="cm-table-meta cm-poa-history-heading">
               <span>Submission history</span>
               <span>
                 {listLoaded

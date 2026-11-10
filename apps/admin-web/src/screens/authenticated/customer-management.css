@@ -1328,3 +1328,12 @@
 .cm-wallet-drawer__body dt { font-weight:700; }.cm-wallet-drawer__body dd { margin:0; color:#132b25; }
 @media(max-width:1023px) { .customer-management :is(#c360-profile,#c360-contacts,#c360-addresses,#c360-identity,#c360-preferences,#cm-poa-title,#cm-physical-address-title) { scroll-margin-top:72px; } }
 @media(max-width:600px) { .cm-wallet-drawer header,.cm-wallet-drawer__body { padding:20px; } }
+/* Retained customer edits remain in-page so review locks and records stay visible. */
+.cm-personal-draft-banner { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; padding:14px 16px; border:1px solid #e5d6ad; border-left:3px solid #b58421; border-radius:8px; background:#fffaf0; color:#654e1c; font-size:13px; }
+.cm-personal-draft-banner p { margin:4px 0 0; line-height:1.5; }
+.cm-personal-draft-banner a { flex:none; color:#075b3e; font-weight:700; }
+.cm-personal-editor { padding:18px !important; border:1px solid #d8e7dd !important; border-radius:10px; background:#f8fbf8; }
+.cm-personal-editor h3 { font-size:17px; color:#103a2b; }
+.cm-personal-editor__heading p:not(.cm-eyebrow) { margin:5px 0 0; color:#52655f; font-size:13px; }
+.customer-management :is(#c360-profile-editor,#c360-contact-editor,#c360-address-editor,#c360-identity-editor,#c360-otp-editor,#cm-poa-upload-heading,#cm-poa-history-heading) { scroll-margin-top:18px; }
+@media(max-width:1023px) { .customer-management :is(#c360-profile-editor,#c360-contact-editor,#c360-address-editor,#c360-identity-editor,#c360-otp-editor,#cm-poa-upload-heading,#cm-poa-history-heading) { scroll-margin-top:72px; } }

@@ -708,3 +708,8 @@ test('upload draft cannot be silently replaced or discarded', async () => {
   expect((screen.getByRole('button', { name: 'Withdraw' }) as HTMLButtonElement).disabled).toBe(false);
   expect(ApiClient.post).not.toHaveBeenCalled(); expect(ApiClient.postForm).not.toHaveBeenCalled();
 });
+
+test('address section navigation reflects enabled evidence capability without uploading',async()=>{
+ jest.clearAllMocks();setPermissions(['customer.view_proof_of_address_metadata','customer.upload_proof_of_address','customer.view_address']);configureEnabledApi();render(<CustomerProofOfAddressPanel customerId={customerId}/>);
+ const nav=await screen.findByRole('navigation',{name:'Address verification sections'});await within(nav).findByRole('link',{name:'Evidence upload'});expect(within(nav).getByRole('link',{name:'Submission history'}).getAttribute('href')).toBe('#cm-poa-history-heading');expect(ApiClient.postForm).not.toHaveBeenCalled();
+});

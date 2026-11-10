@@ -298,6 +298,7 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
   const [identityForm, setIdentityForm] = useState<IdentityFormState | null>(null);
 
   const editorActive = Boolean(profileEditing || addressForm || contactForm || identityForm || verifyContactId);
+  const draftTarget = profileEditing ? 'c360-profile-editor' : contactForm ? 'c360-contact-editor' : addressForm ? 'c360-address-editor' : identityForm ? 'c360-identity-editor' : verifyContactId && otpRequested ? 'c360-otp-editor' : null;
   const guarded = editorActive || Boolean(uncertain) || busy;
   useEffect(() => { onGuardChange?.(guarded, busy); }, [guarded, busy, onGuardChange]);
   useEffect(() => {
@@ -1005,7 +1006,7 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
         </div>
       )}
 
-      {editorActive && !uncertain && <p className="cm-muted cm-card-wide">Finish or discard the current draft before starting another action. Leaving the customer workspace or changing session discards local drafts and one-time proofs.</p>}
+      {editorActive && !uncertain && <div className="cm-personal-draft-banner cm-card-wide" role="status"><div><strong>Draft in progress</strong><p>Finish or discard the current draft before starting another action. Leaving the customer workspace or changing session discards local drafts and one-time proofs.</p></div>{draftTarget && <a href={`#${draftTarget}`}>Return to draft</a>}</div>}
       {uncertain && <section className="cm-card cm-card-wide cm-policy-notice cm-policy-notice-warning" aria-labelledby="c360-review-title">
         <h2 id="c360-review-title">Review an unconfirmed or conflicting action</h2>
         <p>The {uncertain} action may already have taken effect. Further writes are blocked. Refresh and inspect the current records before deciding what to do. A refreshed list cannot prove whether an OTP was delivered or an earlier operation occurred.</p>
@@ -1051,7 +1052,8 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
         {!canViewProfile ? (
           <p className="cm-muted">Profile fields are restricted to authorized customer viewers.</p>
         ) : profileEditing ? (
-          <form className="cm-editor-form" noValidate onSubmit={saveProfile}>
+          <form id="c360-profile-editor" className="cm-editor-form cm-personal-editor" noValidate onSubmit={saveProfile}>
+            <div className="cm-personal-editor__heading"><p className="cm-eyebrow">PROFILE DRAFT</p><h3>Update personal information</h3><p>Changes remain local until saved.</p></div>
             <div className="cm-wizard-field-grid">
               <label htmlFor="c360-display-name">
                 Display name <span className="cm-required-indicator">Required</span>
@@ -1319,7 +1321,7 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
                     ))}
                 </div>
                 {canWriteContacts && verifyContactId === contact.id && otpRequested && (
-                  <form className="cm-otp-form cm-contact-otp" noValidate onSubmit={verifyPhone}>
+                  <form id="c360-otp-editor" className="cm-otp-form cm-contact-otp" noValidate onSubmit={verifyPhone}>
                     <label htmlFor="c360-otp-code">
                       One-time code
                       <input
@@ -1362,7 +1364,7 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
           </p>
         )}
         {contactForm && canWriteContacts && (
-          <form className="cm-editor-form" noValidate onSubmit={saveContact}>
+          <form id="c360-contact-editor" className="cm-editor-form cm-personal-editor" noValidate onSubmit={saveContact}>
             <h3>{contactForm.id ? 'Edit contact method' : 'Add contact method'}</h3>
             <div className="cm-wizard-field-grid">
               <label htmlFor="c360-contact-type">
@@ -1514,7 +1516,7 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
           </p>
         )}
         {addressForm && canWriteAddress && (
-          <form className="cm-editor-form" noValidate onSubmit={saveAddress}>
+          <form id="c360-address-editor" className="cm-editor-form cm-personal-editor" noValidate onSubmit={saveAddress}>
             <h3>{addressId ? 'Edit address' : 'Add address'}</h3>
             <div className="cm-wizard-field-grid">
               <label htmlFor="c360-address-type">
@@ -1718,7 +1720,7 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
           </p>
         )}
         {identityForm && canWriteIdentity && (
-          <form className="cm-editor-form" noValidate onSubmit={saveIdentity}>
+          <form id="c360-identity-editor" className="cm-editor-form cm-personal-editor" noValidate onSubmit={saveIdentity}>
             <h3>{identityForm.id ? 'Correct identity metadata' : 'Add identity metadata'}</h3>
             <div className="cm-wizard-field-grid">
               <label htmlFor="c360-identity-type">

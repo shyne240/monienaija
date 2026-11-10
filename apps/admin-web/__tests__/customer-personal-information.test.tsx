@@ -1005,3 +1005,10 @@ test('failed section reads do not enable new records or profile writes', async (
   expect(ApiClient.post).not.toHaveBeenCalled();
   expect(ApiClient.patch).not.toHaveBeenCalled();
 });
+
+test('draft navigation keeps the local profile edit and its discard safeguard',async()=>{
+ jest.clearAllMocks();setPrincipal();setReadMocks();const view=render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()}/>);await view.findByText('Synthetic Customer');
+ fireEvent.click(view.getByRole('button',{name:'Edit profile'}));fireEvent.change(view.getByLabelText(/Display name/),{target:{value:'Local draft'}});
+ const jump=view.getByRole('link',{name:'Return to draft'});expect(jump.getAttribute('href')).toBe('#c360-profile-editor');expect(view.getByLabelText(/Display name/)).toHaveProperty('value','Local draft');
+ fireEvent.click(view.getByRole('button',{name:'Cancel'}));expect(view.getByRole('dialog',{name:'Discard profile draft?'})).toBeTruthy();fireEvent.click(view.getByRole('button',{name:'Keep editing'}));expect(view.getByLabelText(/Display name/)).toHaveProperty('value','Local draft');expect(ApiClient.patch).not.toHaveBeenCalled();
+});
