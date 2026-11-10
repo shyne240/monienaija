@@ -80,6 +80,7 @@ async function freePort() { const s=net.createServer(); await new Promise(r=>s.l
      const size=await page.evaluate(()=>({client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth}));
      if(size.scroll!==size.client) console.log('OVERFLOW', JSON.stringify(await page.evaluate(()=>Array.from(document.querySelectorAll('*')).filter(e=>e.getBoundingClientRect().right>document.documentElement.clientWidth+1).slice(0,20).map(e=>({tag:e.tagName,cls:e.className,right:e.getBoundingClientRect().right,overflow:getComputedStyle(e).overflowX})))));
      assert.equal(size.scroll, size.client, `Unexpected page-level horizontal overflow on ${key} at ${width}px`);
+     await page.evaluate(()=>window.scrollTo(0,0)); await page.waitForTimeout(200);
      const file=`${key}-${width}.png`;
      // Chromium's fullPage capture can omit off-screen contents of overflow regions.
      // For a complete narrow directory image, expand viewport height only; separate
@@ -89,7 +90,7 @@ async function freePort() { const s=net.createServer(); await new Promise(r=>s.l
      await page.screenshot({path:`${output}/${file}`});
      if(captureHeight!==900) await page.setViewportSize({width,height:900});
      manifest.screens.push({key,role,width,file,headings:h,geometry:size,captureHeight});done.add(key); console.log('CAPTURE',width,role,key,JSON.stringify(h));
-     await page.getByRole('heading',{name:'Search results'}).scrollIntoViewIfNeeded();
+     await page.locator('.mn-audit__table').evaluate(e=>e.scrollIntoView({block:'start'})); await page.waitForTimeout(200);
      await page.screenshot({path:`${output}/${key}-results-${width}.png`});
      manifest.screens.push({key:`${key}-results`,role,width,file:`${key}-results-${width}.png`,interaction:true});
      const trigger=page.getByRole('button',{name:/View audit event/}).first();
