@@ -12,3 +12,7 @@
 .one-workspace-filter-tabs::-webkit-scrollbar{height:6px}
 .one-workspace-filter-tabs::-webkit-scrollbar-track{background:#edf4ef;border-radius:6px}
 .one-workspace-filter-tabs::-webkit-scrollbar-thumb{background:#789986;border-radius:6px}
+
+.one-workspace-filter-control{min-width:0}
+.one-workspace-filter-control--overflow .one-workspace-filter-tabs{margin-bottom:4px}
+.one-workspace-filter-hint{margin:0 0 12px;color:#52655f;font-size:12px;line-height:1.4}

@@ -47,6 +47,7 @@
 .agent-network-drawer__body { padding:20px !important; overflow-wrap:anywhere; }
 .agent-network-drawer__body > div, .agent-network-drawer__body > section { min-width:0; }
 @media(max-width:600px) { .agent-network-drawer__header,.agent-network-drawer__body { padding:16px !important; } }
-.agent-network-filters .one-workspace-filter-tabs { flex:1 1 420px; margin:0; }
+.agent-network-filters .one-workspace-filter-control { flex:1 1 420px; }
+.agent-network-filters .one-workspace-filter-tabs { margin:0; }
 .agent-network-directory-table th:last-child,.agent-network-directory-table td:last-child { position:sticky;right:0;z-index:1;box-shadow:-3px 0 6px #18382b0d }
 .agent-network-directory-table td:last-child { background:#fff }
