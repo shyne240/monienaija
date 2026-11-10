@@ -24,6 +24,12 @@ describe('Admin Web API client configuration safety', () => {
     Object.defineProperty(global, 'fetch', { value: fetchSpy, writable: true });
 
     await expect(ApiClient.get('/internal/readiness')).rejects.toBeInstanceOf(NetworkError);
+    await expect(
+      ApiClient.postForm('/customers/customer-1/proof-of-address', new FormData()),
+    ).rejects.toThrow('Admin API base URL is not configured');
+    await expect(
+      ApiClient.getBlob('/customers/customer-1/proof-of-address/document-1/content'),
+    ).rejects.toThrow('Admin API base URL is not configured');
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

@@ -41,6 +41,35 @@ describe('Admin Web API client requests', () => {
     expect(init.headers['Content-Type']).toBeUndefined();
   });
 
+  it('uses the configured absolute API base for multipart uploads and blob downloads', async () => {
+    const form = new FormData();
+    const signal = new AbortController().signal;
+    await ApiClient.postForm('/customers/customer-1/proof-of-address', form, {
+      idempotencyKey: 'upload-key', signal,
+    });
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      'https://admin-api.example.com/api/v1/customers/customer-1/proof-of-address',
+    );
+    expect(fetchSpy.mock.calls[0][1]).toEqual({
+      method: 'POST',
+      headers: { Accept: 'application/json', Authorization: 'Bearer workforce-token-123', 'idempotency-key': 'upload-key' },
+      body: form,
+      signal,
+    });
+
+    const blob = new Blob(['synthetic']);
+    fetchSpy.mockResolvedValueOnce({ ok: true, blob: async () => blob });
+    await expect(ApiClient.getBlob('/customers/customer-1/proof-of-address/doc-1/content', { signal })).resolves.toBe(blob);
+    expect(fetchSpy.mock.calls[1][0]).toBe(
+      'https://admin-api.example.com/api/v1/customers/customer-1/proof-of-address/doc-1/content',
+    );
+    expect(fetchSpy.mock.calls[1][1]).toEqual({
+      method: 'GET',
+      headers: { Accept: 'application/pdf, image/jpeg, image/png', Authorization: 'Bearer workforce-token-123' },
+      signal,
+    });
+  });
+
   it('sets Content-Type application/json only when a JSON body is supplied', async () => {
     await ApiClient.post('/internal/agents/applications/app-1/review');
     const bodylessInit = fetchSpy.mock.calls[0]?.[1] as { headers: Record<string, string> };
