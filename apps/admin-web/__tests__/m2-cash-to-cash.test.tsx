@@ -27,7 +27,7 @@ test('receipt focus returns to its trigger after closing',async()=>{
  (ApiClient.get as jest.Mock).mockResolvedValue({data:[row],total:1,page:1,limit:20,totalPages:1});render(<CashToCashOperationsScreen/>);const trigger=await screen.findByRole('button',{name:'Inspect receipt'});trigger.focus();fireEvent.click(trigger);expect(document.activeElement).toBe(screen.getByRole('heading',{name:'Transfer receipt and ledger references'}));fireEvent.click(screen.getByRole('button',{name:'Close'}));expect(document.activeElement).toBe(trigger);
 });
 test('response that does not match applied filters is unavailable rather than a misleading result',async()=>{
- (ApiClient.get as jest.Mock).mockResolvedValue({data:[row],total:1,page:1,limit:20,totalPages:1});render(<CashToCashOperationsScreen/>);await screen.findByRole('button',{name:'Inspect receipt'});fireEvent.change(screen.getByLabelText('Status'),{target:{value:'CLAIMED'}});expect(screen.getByText('Applied: All transfers')).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Search'}));expect(await screen.findByText(/invalid or mismatched response/)).toBeTruthy();expect(screen.getByText('Applied: status: CLAIMED')).toBeTruthy();expect(screen.queryByRole('button',{name:'Inspect receipt'})).toBeNull();
+ (ApiClient.get as jest.Mock).mockResolvedValue({data:[row],total:1,page:1,limit:20,totalPages:1});render(<CashToCashOperationsScreen/>);await screen.findByRole('button',{name:'Inspect receipt'});fireEvent.click(screen.getByRole('button',{name:'Claimed'}));expect(screen.getByText('Applied: All transfers')).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Search'}));expect(await screen.findByText(/invalid or mismatched response/)).toBeTruthy();expect(screen.getByText('Applied: status: CLAIMED')).toBeTruthy();expect(screen.queryByRole('button',{name:'Inspect receipt'})).toBeNull();
 });
 test('journal inspection is invalidated if a refresh changes its journal reference',async()=>{
  const journal={id:'synthetic-journal',status:'POSTED',currency:'NGN',lines:[{id:'d',accountId:'a',direction:'DEBIT',amountMinor:'1000'},{id:'c',accountId:'b',direction:'CREDIT',amountMinor:'1000'}]};let listReads=0;
@@ -36,4 +36,13 @@ test('journal inspection is invalidated if a refresh changes its journal referen
 });
 test('unauthorized principal cannot load transfer data even if a scope is present',async()=>{
  act(()=>useAuthStore.setState(state=>({principal:state.principal?{...state.principal,type:'CUSTOMER'} as any:null})));render(<CashToCashOperationsScreen/>);expect(screen.getByText(/Cash-to-Cash operations require/)).toBeTruthy();expect(ApiClient.get).not.toHaveBeenCalled();expect(fetchCashToCashExpiryStatus).not.toHaveBeenCalled();
+});
+
+test('receipt drawer Escape restores focus and invalidates an in-flight journal read',async()=>{
+ const pending=deferred();
+ (ApiClient.get as jest.Mock).mockImplementation((url:string)=>url.includes('/ledger/journals/')?pending.promise:Promise.resolve({data:[row],total:1,page:1,limit:20,totalPages:1}));
+ render(<CashToCashOperationsScreen/>);const trigger=await screen.findByRole('button',{name:'Inspect receipt'});trigger.focus();fireEvent.click(trigger);
+ expect(screen.getByRole('dialog',{name:'Cash-to-Cash receipt details'})).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Inspect initiation journal'}));
+ fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog',{name:'Cash-to-Cash receipt details'})).toBeNull();expect(document.activeElement).toBe(trigger);
+ await act(async()=>{pending.resolve({id:'synthetic-journal',status:'POSTED',currency:'NGN',lines:[]});await pending.promise;});expect(screen.queryByTestId('c2c-inspected-journal')).toBeNull();
 });

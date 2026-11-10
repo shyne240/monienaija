@@ -3,6 +3,7 @@ import './cash-to-cash-workspace.css';
 import React, { useEffect, useRef, useState } from 'react';
 
 import { PageHeader, ScrollRegion } from '../../design-system/primitives';
+import { WorkspaceDrawer, WorkspaceFilterTabs } from '../../design-system/WorkspaceDrawer';
 import { formatMinorUnits } from '../../utils/financial-display';
 import { ApiClient } from '../../services/api-client';
 import {
@@ -374,21 +375,10 @@ const CashToCashWorkspace: React.FC = () => {
 
       <section className="mn-c2c__investigation" aria-label="Transfer investigation">
       <header className="mn-c2c__section-header"><div><p>TRANSFER INVESTIGATION</p><h2>Find a transfer</h2><span>Search exact references or IDs, then inspect the recorded receipt and journal links.</span></div></header>
+      <WorkspaceFilterTabs label="Draft transfer status" value={filters.status} disabled={loading} options={[
+        {value:'',label:'All transfers'}, {value:'UNCLAIMED',label:'Unclaimed'}, {value:'CLAIMED',label:'Claimed'}, {value:'EXPIRED',label:'Expired'},
+      ]} onChange={value => changeFilter('status', value)} />
       <form onSubmit={search} style={styles.filters} aria-label="Cash-to-Cash filters">
-        <label style={styles.label}>
-          Status
-          <select
-            aria-label="Status"
-            style={styles.input}
-            value={filters.status}
-            onChange={(event) => changeFilter('status', event.target.value)}
-          >
-            <option value="">All statuses</option>
-            <option value="UNCLAIMED">UNCLAIMED</option>
-            <option value="CLAIMED">CLAIMED</option>
-            <option value="EXPIRED">EXPIRED</option>
-          </select>
-        </label>
         <label style={styles.label}>
           Agent UUID
           <input
@@ -518,8 +508,9 @@ const CashToCashWorkspace: React.FC = () => {
 
       </section>
       {selected && !loading && (
-        <section className="mn-c2c__receipt" style={styles.detail} aria-label="Cash-to-Cash receipt details">
-          <div style={styles.detailHeader}>
+        <WorkspaceDrawer label="Cash-to-Cash receipt details" onDismiss={() => { restoreReceiptFocus.current = true; setSelected(null); }}>
+        <div className="mn-c2c__receipt" style={styles.detail}>
+          <div className="mn-c2c__receipt-header" style={styles.detailHeader}>
             <h3 ref={receiptTitle} tabIndex={-1} style={styles.detailTitle}>Transfer receipt and ledger references</h3>
             <button type="button" style={styles.button} onClick={() => { restoreReceiptFocus.current = true; setSelected(null); }}>
               Close
@@ -707,14 +698,15 @@ const CashToCashWorkspace: React.FC = () => {
                 })()}
             </div>
           )}
-        </section>
+        </div>
+        </WorkspaceDrawer>
       )}
     </div>
   );
 };
 
 const styles: Record<string, React.CSSProperties> = {
-  wrap: { padding: 24, maxWidth: 1400, color: 'var(--mn-text-primary, #132b25)', fontFamily: 'system-ui, -apple-system, sans-serif' },
+  wrap: { padding: 24, maxWidth: 1400, color: 'var(--mn-text-primary, #132b25)', fontFamily: 'var(--mn-font-sans)' },
   header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' },
   title: { margin: '0 0 6px', color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 22 },
   subtitle: { margin: 0, color: 'var(--mn-text-secondary, #52655f)', fontSize: 13 },
@@ -741,7 +733,7 @@ const styles: Record<string, React.CSSProperties> = {
   unclaimed: { background: '#FFFBEB', color: '#92400E' },
   unknown: { background: 'var(--mn-surface-canvas, #f5f8f6)', color: 'var(--mn-text-secondary, #52655f)' },
   pager: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 12, color: 'var(--mn-text-secondary, #52655f)', fontSize: 13 },
-  detail: { marginTop: 20, padding: 16, border: '1px solid #CBD5E1', borderRadius: 8, background: '#fff' },
+  detail: { padding: 24, background: '#fff' },
   detailHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   detailTitle: { margin: 0, color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 16 },
   details: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 12, marginTop: 14, alignItems: 'start' },

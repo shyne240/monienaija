@@ -169,7 +169,7 @@ describe('Agent classes and Cash-to-Cash Admin Web integrations', () => {
     (ApiClient.get as jest.Mock).mockResolvedValue({ data: [], total: 0, page: 1, limit: 20, totalPages: 0 });
     const view = render(<CashToCashOperationsScreen />);
     await view.findByText('No Cash-to-Cash transfers match these filters.');
-    fireEvent.change(view.getByLabelText('Status'), { target: { value: 'CLAIMED' } });
+    fireEvent.click(view.getByRole('button', { name: 'Claimed' }));
     fireEvent.change(view.getByLabelText('Agent UUID'), { target: { value: 'agent-uuid' } });
     fireEvent.click(view.getByRole('button', { name: 'Search' }));
     await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith(
@@ -275,7 +275,7 @@ describe('Agent classes and Cash-to-Cash Admin Web integrations', () => {
     );
 
     (ApiClient.get as jest.Mock).mockClear();
-    fireEvent.change(view.getByLabelText('Status'), { target: { value: 'EXPIRED' } });
+    fireEvent.click(view.getByRole('button', { name: 'Expired' }));
     fireEvent.click(view.getByRole('button', { name: 'Search' }));
 
     await waitFor(() =>
