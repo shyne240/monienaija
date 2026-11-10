@@ -1,0 +1,1646 @@
+{
+  "source": "Real Vite UI and Nest AppModule with disposable migrated PostgreSQL",
+  "baseCommit": "1a893d3efd4e9ee690203dcee6e931c7ac1452ca",
+  "safety": "GET and local-login POST only; workers and outbound requests disabled",
+  "screens": [
+    {
+      "key": "dashboard",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "dashboard-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Operations dashboard",
+        "Identity & Session",
+        "Entitlements & Scopes",
+        "Executive & Governance",
+        "Action Items"
+      ],
+      "text": "Operations dashboard\n\nHere's what's happening across your authorized workspace.\n\nRole: SUPER ADMIN\nSystem Administration Dashboard\n◫\nCompleted transaction value\n₦0.00 total\nLast 7 days\n⇄\nCompleted transactions\n0 completed\nLast 7 days\n♙\nActive agents\n0 active agents\nCurrent lifecycle status\n♙\nTotal customers\n1 customer\nCustomer directory total\nIdentity & session details\nExecutive & Governance\n\nPlatform-wide executive overview: transaction/financial summary, ledger position, reconciliation health,"
+    },
+    {
+      "key": "dashboardSettings",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "dashboardSettings-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Dashboard Settings",
+        "Dashboard Templates (12)",
+        "Role → Dashboard Assignment (11)"
+      ],
+      "text": "WORKFORCE CONFIGURATION\n\nDashboard Settings\n\nReview templates and role assignments.\n\nAssign which dashboard template each role displays. Assigning a template never grants or changes any permission — it only changes which widgets that role's dashboard shows.\n\nChanges and outcome safeguards are local to this workspace and are lost on navigation, browser refresh or session change. Assignments do not use an optimistic version. Reload and independently review the current assignment and audit history "
+    },
+    {
+      "key": "customers",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "customers-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Customer directory"
+      ],
+      "text": "CUSTOMER SERVICING\n\nCustomer directory\n\nSearch authorized customer records and open a read-first Customer 360° workspace.\n\nNew Customer\nAll Customers\nActive\nPending KYC\nSuspended\nClosed\nSearch\nStatus\nAll statuses\nDRAFT\nACTIVE\nSUSPENDED\nCLOSED\nType\nAll types\nINDIVIDUAL\nBUSINESS\nKYC level\nAll levels\nNONE\nLEVEL_1\nLEVEL_2\nLEVEL_3\nKYC status\nAll KYC statuses\nNOT_STARTED\nPENDING\nAPPROVED\nREJECTED\nRefresh\n1 customer\nCustomer directory results, page 1 of 1\nCUSTOMER\tREFERENCE\tTYPE\tSTATUS\tKYC\tPRIMARY CONT"
+    },
+    {
+      "key": "agents",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "agents-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Agent Network Management"
+      ],
+      "text": "AGENT OPERATIONS\n\nAgent Network Management\n\nReview onboarding and manage your agent network in one place. Available actions depend on your workforce access.\n\nAgent directory\nOnboarding applications\n\nONBOARDING & REVIEW\n\nAgent Onboarding Applications\n\nCreate and edit workforce-assisted DRAFT applications, submit drafts, review submitted applications, record approval/rejection decisions, and activate approved Ordinary Agents.\n\nNew Agent Application\nLoad applications\n\nNETWORK\n\nAgent directory\n\nFind"
+    },
+    {
+      "key": "agentClasses",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "agentClasses-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Agent classes & service eligibility",
+        "Class catalogue"
+      ],
+      "text": "AGENT NETWORK\n\nAgent classes & service eligibility\n\nReview class configuration and manage it only with the dedicated authorization function.\n\nRefresh\nCreate class\nClass fields are policy-bearing configuration. Applicable services are restricted to validated canonical Ordinary Agent V1 service identifiers; leaving all services unchecked saves null. Blank JSON fields are saved as null; no capability or regulatory defaults are supplied. New classes default to inactive; activation must be selected e"
+    },
+    {
+      "key": "support",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "support-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Support Tickets",
+        "Ticket queue"
+      ],
+      "text": "SUPPORT\n\nSupport Tickets\n\nView customer and agent support tickets, assign an operator, update status and record messages.\n\nSUPPORT OPERATIONS\n\nTicket queue\nFind a ticket, review its history and act within your permissions.\nAll Tickets\nOpen\nIn Progress\nResolved\nClosed\nStatus\nAll\nOPEN\nIN_PROGRESS\nRESOLVED\nCLOSED\nAgent ID\nFilter Agent\nRefresh\nNo tickets for this filter. Tickets are created from customer/agent support flows.\nTotal 0 — Page 1 of 1\nPrev\nNext"
+    },
+    {
+      "key": "transfers",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "transfers-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "text": "TRANSACTIONS AND FINANCE\n\nTransaction trace & fee simulation\n\nRead-only transaction tracing and fee simulation; no settlement or financial commands run from this screen.\n\nGlobal transaction listing unavailable\n\nThe transfer controller does not expose a general GET `/transfers` search list route. Querying transfers requires the absolute Transaction UUID reference.\n\nTRANSACTION LOOKUP\n\nTransaction Audit & Traceability\nTransfers\nDeposits\nWithdrawals\n\nFind an existing record by its exact transaction"
+    },
+    {
+      "key": "cashIn",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "cashIn-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "text": "TRANSACTIONS AND FINANCE\n\nTransaction trace & fee simulation\n\nRead-only transaction tracing and fee simulation; no settlement or financial commands run from this screen.\n\nGlobal transaction listing unavailable\n\nThe transfer controller does not expose a general GET `/transfers` search list route. Querying transfers requires the absolute Transaction UUID reference.\n\nTRANSACTION LOOKUP\n\nTransaction Audit & Traceability\nTransfers\nDeposits\nWithdrawals\n\nFind an existing record by its exact transaction"
+    },
+    {
+      "key": "cashOut",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "cashOut-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "text": "TRANSACTIONS AND FINANCE\n\nTransaction trace & fee simulation\n\nRead-only transaction tracing and fee simulation; no settlement or financial commands run from this screen.\n\nGlobal transaction listing unavailable\n\nThe transfer controller does not expose a general GET `/transfers` search list route. Querying transfers requires the absolute Transaction UUID reference.\n\nTRANSACTION LOOKUP\n\nTransaction Audit & Traceability\nTransfers\nDeposits\nWithdrawals\n\nFind an existing record by its exact transaction"
+    },
+    {
+      "key": "cashToCashOps",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "cashToCashOps-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Cash-to-Cash Operations",
+        "Find a transfer"
+      ],
+      "text": "MONEY MOVEMENT\n\nCash-to-Cash Operations\n\nPaginated, read-only investigation and receipt references for Agent V1 transfers.\n\nRefresh expiry status\nRefresh\nThis surface does not reveal transfer codes or internal idempotency/fingerprint data and cannot claim, refund, release, or manually expire a transfer. Cash handover and unresolved KYC/expiry policies remain separate operational decisions.\nExpiry Worker & Unclaimed Backlog Status (Read-Only)\nExpiry worker\nDISABLED\nOverdue unclaimed backlog\n0\nTot"
+    },
+    {
+      "key": "ledgerExplorer",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "ledgerExplorer-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Ledger Core & Reversals Desk",
+        "Chart of Accounts",
+        "Journal Audit & Compensations"
+      ],
+      "text": "FINANCE AND LEDGER\n\nLedger Core & Reversals Desk\n\nInspect accounts and journal postings, and use the existing governed reversal workflow.\n\nJournal listing and backlog search unavailable\n\nSearch by a known journal UUID. A journal listing or backlog search is not available here.\n\nACCOUNTS\n\nChart of Accounts\nAll Currencies\nNGN (Naira)\nSearch returned accounts\n\nSearch filters the accounts returned for the selected currency.\n\n9 of 9 returned accounts\n\nAccount\tType\tNormal\tBalance\tDetails\nAgent Funding"
+    },
+    {
+      "key": "reconciliation",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "reconciliation-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Independent Reconciliation & Breaks Desk",
+        "Verification checks"
+      ],
+      "text": "FINANCE AND LEDGER\n\nIndependent Reconciliation & Breaks Desk\n\nReview reported ledger balance conservation, trial balances and reconciliation breaks.\n\nInternal verification boundaries\n\nThese reports check internal ledger and wallet relationships. They do not compare external bank statements or establish settlement with an external provider.\n\nRun Verification Audits\nGeneral Trial Balance\nFinance Verification & Activity\n\nINTERNAL MATCHING\n\nVerification checks\n\nGenerate a point-in-time report of int"
+    },
+    {
+      "key": "feeRules",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "feeRules-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Commercial Rule Registries",
+        "Fees"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nCommercial Rule Registries\n\nExplore the fee, commission, reward, product and limit catalogues available to your role.\n\nRead-only workspace\nThese registries show configuration, not transaction decisions. No rule, product or limit changes can be made here.\nFees\nCommissions\nRewards\nProducts\nLimits\n\nREAD-ONLY REGISTRY\n\nFees\n\nReview configured fee rules, their currency, rate and effective dates.\n\nRefresh\nSearch this page\n\nSearch applies only to the current page and visible "
+    },
+    {
+      "key": "commissionRules",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "commissionRules-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Commercial Rule Registries",
+        "Commissions"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nCommercial Rule Registries\n\nExplore the fee, commission, reward, product and limit catalogues available to your role.\n\nRead-only workspace\nThese registries show configuration, not transaction decisions. No rule, product or limit changes can be made here.\nFees\nCommissions\nRewards\nProducts\nLimits\n\nREAD-ONLY REGISTRY\n\nCommissions\n\nReview configured commission rules and who may receive them.\n\nRefresh\nSearch this page\n\nSearch applies only to the current page and visible col"
+    },
+    {
+      "key": "rewardRules",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "rewardRules-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Commercial Rule Registries",
+        "Rewards"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nCommercial Rule Registries\n\nExplore the fee, commission, reward, product and limit catalogues available to your role.\n\nRead-only workspace\nThese registries show configuration, not transaction decisions. No rule, product or limit changes can be made here.\nFees\nCommissions\nRewards\nProducts\nLimits\n\nREAD-ONLY REGISTRY\n\nRewards\n\nReview configured reward rules and their beneficiary and calculation model.\n\nRefresh\nSearch this page\n\nSearch applies only to the current page and "
+    },
+    {
+      "key": "productCatalogue",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "productCatalogue-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Commercial Rule Registries",
+        "Products"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nCommercial Rule Registries\n\nExplore the fee, commission, reward, product and limit catalogues available to your role.\n\nRead-only workspace\nThese registries show configuration, not transaction decisions. No rule, product or limit changes can be made here.\nFees\nCommissions\nRewards\nProducts\nLimits\n\nREAD-ONLY REGISTRY\n\nProducts\n\nReview product configuration, status and scope across the catalogue.\n\nRefresh\nSearch this page\n\nSearch applies only to the current page and visibl"
+    },
+    {
+      "key": "limitCatalogue",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "limitCatalogue-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Commercial Rule Registries",
+        "Limit profiles",
+        "Limit rules"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nCommercial Rule Registries\n\nExplore the fee, commission, reward, product and limit catalogues available to your role.\n\nRead-only workspace\nThese registries show configuration, not transaction decisions. No rule, product or limit changes can be made here.\nFees\nCommissions\nRewards\nProducts\nLimits\n\nREAD-ONLY REGISTRY\n\nLimit profiles\n\nProfile configuration and availability. Profiles are not assignments.\n\nRefresh\nSearch this page\n\nSearch applies only to the current page and"
+    },
+    {
+      "key": "limitAssignments",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "limitAssignments-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Limit Assignments",
+        "Existing assignments",
+        "Manage assignments",
+        "Usage Diagnostics",
+        "Reservation Diagnostics"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nLimit Assignments\n\nReview assignments and read-only usage or reservation diagnostics.\n\nScope and permissions\nAssignments require their respective functions. Usage and reservations are read-only diagnostics; profile definitions are managed in Limit Catalogue.\nAssignments\nManage assignments\nUsage diagnostics\nReservation diagnostics\n\nASSIGNMENT REGISTER\n\nExisting assignments\n\nReview profile, subject, effective date and version. Available actions depend on your grants.\n\nAs"
+    },
+    {
+      "key": "kycQueue",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "kycQueue-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "KYC assessment lookup & review",
+        "Find a customer",
+        "KYC assessment",
+        "Submit KYC assessment decision"
+      ],
+      "text": "COMPLIANCE AND RISK\n\nKYC assessment lookup & review\n\nLook up an existing customer KYC assessment and perform only the review decision allowed by your function grants.\n\nCustomer-scoped assessment\nAssessment visibility and decisions are governed by separate function grants. A lookup does not itself change customer status.\n\nCUSTOMER LOOKUP\n\nFind a customer\n\nUse a customer UUID to load this workspace.\n\nCustomer UUID\nSearch\n\nCURRENT RECORD\n\nKYC assessment\n\nThe current assessment is shown when you hav"
+    },
+    {
+      "key": "complianceCases",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "complianceCases-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Compliance case lookup",
+        "Find a customer",
+        "Compliance cases"
+      ],
+      "text": "COMPLIANCE AND RISK\n\nCompliance case lookup\n\nLook up compliance cases for a customer. FRAUD-category rows are excluded from this display.\n\nAuthorized case categories\nThe server returns cases in categories authorized by your active role grants. This view excludes FRAUD and filters the returned records locally.\n\nCUSTOMER LOOKUP\n\nFind a customer\n\nUse a customer UUID to load this workspace.\n\nCustomer UUID\nSearch\n\nAUTHORIZED RECORDS\n\nCompliance cases\n\nCategory selection filters the records returned f"
+    },
+    {
+      "key": "workforceAccess",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "workforceAccess-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Workforce Overview & Support Provisioning",
+        "Workforce Overview",
+        "Provision SUPPORT workforce user",
+        "Disable SUPPORT workforce user"
+      ],
+      "text": "WORKFORCE AND GOVERNANCE\n\nWorkforce Overview & Support Provisioning\n\nReview the workforce summary and manage SUPPORT identities according to your function grants.\n\nAccess controls\nWorkforce metrics are read-only. SUPPORT provisioning and disabling are separate permission-gated actions; no enable action is available here.\nOverview\nProvision SUPPORT\nDisable SUPPORT\n\nREAD-ONLY SUMMARY\n\nWorkforce Overview\n\nCurrent workforce dashboard figures returned by the service.\n\nRefresh\nActive workforce headcou"
+    },
+    {
+      "key": "roleGovernance",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "roleGovernance-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Workforce Role Governance",
+        "Role and action",
+        "Create Finance Role Assignment"
+      ],
+      "text": "WORKFORCE AND GOVERNANCE\n\nWorkforce Role Governance\n\nUse the existing workforce role assignment endpoints. Current assignment listing is not available through the V1 API.\n\nGoverned access change\nCurrent assignments cannot be listed here. Verify the target in an authorized record; self changes are prohibited.\n\nSELECT CONTEXT\n\nRole and action\n\nChoose an available role domain and action before entering the effective window.\n\nFinance Roles\nOperational Roles\nAssign Finance Role\nRevoke Finance Role\n\nL"
+    },
+    {
+      "key": "notifications",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "notifications-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "SMS & Email Notification Management",
+        "Channel and service signals"
+      ],
+      "text": "SYSTEM ADMINISTRATION\n\nSMS & Email Notification Management\n\nReview event triggers, templates, provider configuration and delivery diagnostics under the existing governance controls.\n\nRefresh Console\nGoverned operations\nChanges require their existing authorization and approval steps. Reference data, provider configuration and delivery outcomes are distinct; opening this workspace does not start workers or send tests.\n1. Overview\n2. Event Catalogue & Triggers\n3. SMS Templates\n4. Email Templates\n5."
+    },
+    {
+      "key": "systemHealth",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "systemHealth-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "System Health",
+        "Metrics",
+        "Diagnostics",
+        "Outbox (recent events)",
+        "Notification Deliveries"
+      ],
+      "text": "SYSTEM ADMINISTRATION\n\nSystem Health\n\nRead-only operational data. Each panel is requested only when its matching function is granted.\n\nRead-only diagnostics\nMetrics, diagnostics, outbox events and notification receipts are separate sources; one does not imply the health or delivery state of another. No workers or deliveries are started here.\nMetrics\nDiagnostics\nOutbox events\nDeliveries & receipts\nRefresh\n\nOPERATIONAL METRICS\n\nMetrics\n\nGenerated 11/10/2026, 7:44:47 PM\n\nSearch loaded metrics\nClear"
+    },
+    {
+      "key": "auditEvents",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "auditEvents-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Audit & Security Events",
+        "Find audit events",
+        "Search results"
+      ],
+      "text": "SYSTEM ADMINISTRATION\n\nAudit & Security Events\n\nSearch read-only audit records by entity, type or correlation identifier.\n\nRead-only oversight\nResults are subject to server-side access restrictions and show up to the 100 most recent matching events. This is not a complete event count or a paginated history. Missing records do not prove that no action occurred; access restrictions, historical gaps or late commits may affect results.\n\nSEARCH CRITERIA\n\nFind audit events\n\nLeave fields empty to searc"
+    },
+    {
+      "key": "approvalsInbox",
+      "role": "FINANCE_CONTROLLER",
+      "width": 1440,
+      "file": "approvalsInbox-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Privileged Approvals (Maker-Checker)",
+        "Funding checker workspace",
+        "Generic checker decision"
+      ],
+      "text": "WORKFORCE AND GOVERNANCE\n\nPrivileged Approvals (Maker-Checker)\n\nReview funding requests and record authorized checker decisions.\n\nSeparate checker workflows\nFunding requests have a dedicated inbox and decision flow. Other privileged approvals require a known approval ID.\nFunding checker\nGeneric checker decision\nApproval Discovery Scope\n\nAgent funding and defunding requests use the Global Funding Inbox when your session meets its access rules (GET /internal/agents/funding-requests). Generic non-f"
+    },
+    {
+      "key": "superAdminRecovery",
+      "role": "ADMINISTRATOR",
+      "width": 1440,
+      "file": "superAdminRecovery-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Super-Admin recovery",
+        "Submit recovery statement",
+        "Recovery procedure"
+      ],
+      "text": "WORKFORCE GOVERNANCE\n\nSuper-Admin recovery\n\nConsume an externally signed recovery statement to revoke a compromised SUPER_ADMIN assignment and its sessions.\n\nControlled recovery\n\nThis action requires an ADMINISTRATOR with the recovery function and a valid RS256-signed A2RecoveryStatementV1. The signed statement—not the operator alone—authorizes the outcome.\n\nSENSITIVE STATEMENT\n\nSubmit recovery statement\n\nPaste the externally signed compact statement. Treat it as sensitive; it is cleared from th"
+    },
+    {
+      "key": "fraudCases",
+      "role": "RISK_FRAUD",
+      "width": 1440,
+      "file": "fraudCases-1440.jpg",
+      "client": 1440,
+      "scroll": 1440,
+      "headings": [
+        "Fraud case lookup",
+        "Find a customer",
+        "Fraud cases"
+      ],
+      "text": "COMPLIANCE AND RISK\n\nFraud case lookup\n\nThis screen displays FRAUD-category compliance cases for a customer. Search by customer UUID.\n\nAuthorized case categories\nThe server returns cases in categories authorized by your active role grants. This view displays FRAUD cases from those results; the server remains authoritative.\n\nCUSTOMER LOOKUP\n\nFind a customer\n\nUse a customer UUID to search authorized FRAUD cases.\n\nCustomer UUID\nSearch FRAUD cases\n\nAUTHORIZED RECORDS\n\nFraud cases\n\nOnly FRAUD-categor"
+    },
+    {
+      "key": "dashboard",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "dashboard-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Operations dashboard",
+        "Identity & Session",
+        "Entitlements & Scopes",
+        "Executive & Governance",
+        "Action Items"
+      ],
+      "text": "Operations dashboard\n\nHere's what's happening across your authorized workspace.\n\nRole: SUPER ADMIN\nSystem Administration Dashboard\n◫\nCompleted transaction value\n₦0.00 total\nLast 7 days\n⇄\nCompleted transactions\n0 completed\nLast 7 days\n♙\nActive agents\n0 active agents\nCurrent lifecycle status\n♙\nTotal customers\n1 customer\nCustomer directory total\nIdentity & session details\nExecutive & Governance\n\nPlatform-wide executive overview: transaction/financial summary, ledger position, reconciliation health,"
+    },
+    {
+      "key": "dashboardSettings",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "dashboardSettings-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Dashboard Settings",
+        "Dashboard Templates (12)",
+        "Role → Dashboard Assignment (11)"
+      ],
+      "text": "WORKFORCE CONFIGURATION\n\nDashboard Settings\n\nReview templates and role assignments.\n\nAssign which dashboard template each role displays. Assigning a template never grants or changes any permission — it only changes which widgets that role's dashboard shows.\n\nChanges and outcome safeguards are local to this workspace and are lost on navigation, browser refresh or session change. Assignments do not use an optimistic version. Reload and independently review the current assignment and audit history "
+    },
+    {
+      "key": "customers",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "customers-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Customer directory"
+      ],
+      "text": "CUSTOMER SERVICING\n\nCustomer directory\n\nSearch authorized customer records and open a read-first Customer 360° workspace.\n\nNew Customer\nAll Customers\nActive\nPending KYC\nSuspended\nClosed\nSearch\nStatus\nAll statuses\nDRAFT\nACTIVE\nSUSPENDED\nCLOSED\nType\nAll types\nINDIVIDUAL\nBUSINESS\nKYC level\nAll levels\nNONE\nLEVEL_1\nLEVEL_2\nLEVEL_3\nKYC status\nAll KYC statuses\nNOT_STARTED\nPENDING\nAPPROVED\nREJECTED\nRefresh\n1 customer\nCustomer directory results, page 1 of 1\nCUSTOMER\tREFERENCE\tTYPE\tSTATUS\tKYC\tPRIMARY CONT"
+    },
+    {
+      "key": "agents",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "agents-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Agent Network Management"
+      ],
+      "text": "AGENT OPERATIONS\n\nAgent Network Management\n\nReview onboarding and manage your agent network in one place. Available actions depend on your workforce access.\n\nAgent directory\nOnboarding applications\n\nONBOARDING & REVIEW\n\nAgent Onboarding Applications\n\nCreate and edit workforce-assisted DRAFT applications, submit drafts, review submitted applications, record approval/rejection decisions, and activate approved Ordinary Agents.\n\nNew Agent Application\nLoad applications\n\nNETWORK\n\nAgent directory\n\nFind"
+    },
+    {
+      "key": "agentClasses",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "agentClasses-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Agent classes & service eligibility",
+        "Class catalogue"
+      ],
+      "text": "AGENT NETWORK\n\nAgent classes & service eligibility\n\nReview class configuration and manage it only with the dedicated authorization function.\n\nRefresh\nCreate class\nClass fields are policy-bearing configuration. Applicable services are restricted to validated canonical Ordinary Agent V1 service identifiers; leaving all services unchecked saves null. Blank JSON fields are saved as null; no capability or regulatory defaults are supplied. New classes default to inactive; activation must be selected e"
+    },
+    {
+      "key": "support",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "support-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Support Tickets",
+        "Ticket queue"
+      ],
+      "text": "SUPPORT\n\nSupport Tickets\n\nView customer and agent support tickets, assign an operator, update status and record messages.\n\nSUPPORT OPERATIONS\n\nTicket queue\nFind a ticket, review its history and act within your permissions.\nAll Tickets\nOpen\nIn Progress\nResolved\nClosed\nStatus\nAll\nOPEN\nIN_PROGRESS\nRESOLVED\nCLOSED\nAgent ID\nFilter Agent\nRefresh\nNo tickets for this filter. Tickets are created from customer/agent support flows.\nTotal 0 — Page 1 of 1\nPrev\nNext"
+    },
+    {
+      "key": "transfers",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "transfers-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "text": "TRANSACTIONS AND FINANCE\n\nTransaction trace & fee simulation\n\nRead-only transaction tracing and fee simulation; no settlement or financial commands run from this screen.\n\nGlobal transaction listing unavailable\n\nThe transfer controller does not expose a general GET `/transfers` search list route. Querying transfers requires the absolute Transaction UUID reference.\n\nTRANSACTION LOOKUP\n\nTransaction Audit & Traceability\nTransfers\nDeposits\nWithdrawals\n\nFind an existing record by its exact transaction"
+    },
+    {
+      "key": "cashIn",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "cashIn-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "text": "TRANSACTIONS AND FINANCE\n\nTransaction trace & fee simulation\n\nRead-only transaction tracing and fee simulation; no settlement or financial commands run from this screen.\n\nGlobal transaction listing unavailable\n\nThe transfer controller does not expose a general GET `/transfers` search list route. Querying transfers requires the absolute Transaction UUID reference.\n\nTRANSACTION LOOKUP\n\nTransaction Audit & Traceability\nTransfers\nDeposits\nWithdrawals\n\nFind an existing record by its exact transaction"
+    },
+    {
+      "key": "cashOut",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "cashOut-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "text": "TRANSACTIONS AND FINANCE\n\nTransaction trace & fee simulation\n\nRead-only transaction tracing and fee simulation; no settlement or financial commands run from this screen.\n\nGlobal transaction listing unavailable\n\nThe transfer controller does not expose a general GET `/transfers` search list route. Querying transfers requires the absolute Transaction UUID reference.\n\nTRANSACTION LOOKUP\n\nTransaction Audit & Traceability\nTransfers\nDeposits\nWithdrawals\n\nFind an existing record by its exact transaction"
+    },
+    {
+      "key": "cashToCashOps",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "cashToCashOps-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Cash-to-Cash Operations",
+        "Find a transfer"
+      ],
+      "text": "MONEY MOVEMENT\n\nCash-to-Cash Operations\n\nPaginated, read-only investigation and receipt references for Agent V1 transfers.\n\nRefresh expiry status\nRefresh\nThis surface does not reveal transfer codes or internal idempotency/fingerprint data and cannot claim, refund, release, or manually expire a transfer. Cash handover and unresolved KYC/expiry policies remain separate operational decisions.\nExpiry Worker & Unclaimed Backlog Status (Read-Only)\nExpiry worker\nDISABLED\nOverdue unclaimed backlog\n0\nTot"
+    },
+    {
+      "key": "ledgerExplorer",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "ledgerExplorer-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Ledger Core & Reversals Desk",
+        "Chart of Accounts",
+        "Journal Audit & Compensations"
+      ],
+      "text": "FINANCE AND LEDGER\n\nLedger Core & Reversals Desk\n\nInspect accounts and journal postings, and use the existing governed reversal workflow.\n\nJournal listing and backlog search unavailable\n\nSearch by a known journal UUID. A journal listing or backlog search is not available here.\n\nACCOUNTS\n\nChart of Accounts\nAll Currencies\nNGN (Naira)\nSearch returned accounts\n\nSearch filters the accounts returned for the selected currency.\n\n9 of 9 returned accounts\n\nAccount\tType\tNormal\tBalance\tDetails\nAgent Funding"
+    },
+    {
+      "key": "reconciliation",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "reconciliation-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Independent Reconciliation & Breaks Desk",
+        "Verification checks"
+      ],
+      "text": "FINANCE AND LEDGER\n\nIndependent Reconciliation & Breaks Desk\n\nReview reported ledger balance conservation, trial balances and reconciliation breaks.\n\nInternal verification boundaries\n\nThese reports check internal ledger and wallet relationships. They do not compare external bank statements or establish settlement with an external provider.\n\nRun Verification Audits\nGeneral Trial Balance\nFinance Verification & Activity\n\nINTERNAL MATCHING\n\nVerification checks\n\nGenerate a point-in-time report of int"
+    },
+    {
+      "key": "feeRules",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "feeRules-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Commercial Rule Registries",
+        "Fees"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nCommercial Rule Registries\n\nExplore the fee, commission, reward, product and limit catalogues available to your role.\n\nRead-only workspace\nThese registries show configuration, not transaction decisions. No rule, product or limit changes can be made here.\nFees\nCommissions\nRewards\nProducts\nLimits\n\nREAD-ONLY REGISTRY\n\nFees\n\nReview configured fee rules, their currency, rate and effective dates.\n\nRefresh\nSearch this page\n\nSearch applies only to the current page and visible "
+    },
+    {
+      "key": "commissionRules",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "commissionRules-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Commercial Rule Registries",
+        "Commissions"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nCommercial Rule Registries\n\nExplore the fee, commission, reward, product and limit catalogues available to your role.\n\nRead-only workspace\nThese registries show configuration, not transaction decisions. No rule, product or limit changes can be made here.\nFees\nCommissions\nRewards\nProducts\nLimits\n\nREAD-ONLY REGISTRY\n\nCommissions\n\nReview configured commission rules and who may receive them.\n\nRefresh\nSearch this page\n\nSearch applies only to the current page and visible col"
+    },
+    {
+      "key": "rewardRules",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "rewardRules-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Commercial Rule Registries",
+        "Rewards"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nCommercial Rule Registries\n\nExplore the fee, commission, reward, product and limit catalogues available to your role.\n\nRead-only workspace\nThese registries show configuration, not transaction decisions. No rule, product or limit changes can be made here.\nFees\nCommissions\nRewards\nProducts\nLimits\n\nREAD-ONLY REGISTRY\n\nRewards\n\nReview configured reward rules and their beneficiary and calculation model.\n\nRefresh\nSearch this page\n\nSearch applies only to the current page and "
+    },
+    {
+      "key": "productCatalogue",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "productCatalogue-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Commercial Rule Registries",
+        "Products"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nCommercial Rule Registries\n\nExplore the fee, commission, reward, product and limit catalogues available to your role.\n\nRead-only workspace\nThese registries show configuration, not transaction decisions. No rule, product or limit changes can be made here.\nFees\nCommissions\nRewards\nProducts\nLimits\n\nREAD-ONLY REGISTRY\n\nProducts\n\nReview product configuration, status and scope across the catalogue.\n\nRefresh\nSearch this page\n\nSearch applies only to the current page and visibl"
+    },
+    {
+      "key": "limitCatalogue",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "limitCatalogue-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Commercial Rule Registries",
+        "Limit profiles",
+        "Limit rules"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nCommercial Rule Registries\n\nExplore the fee, commission, reward, product and limit catalogues available to your role.\n\nRead-only workspace\nThese registries show configuration, not transaction decisions. No rule, product or limit changes can be made here.\nFees\nCommissions\nRewards\nProducts\nLimits\n\nREAD-ONLY REGISTRY\n\nLimit profiles\n\nProfile configuration and availability. Profiles are not assignments.\n\nRefresh\nSearch this page\n\nSearch applies only to the current page and"
+    },
+    {
+      "key": "limitAssignments",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "limitAssignments-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Limit Assignments",
+        "Existing assignments",
+        "Manage assignments",
+        "Usage Diagnostics",
+        "Reservation Diagnostics"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nLimit Assignments\n\nReview assignments and read-only usage or reservation diagnostics.\n\nScope and permissions\nAssignments require their respective functions. Usage and reservations are read-only diagnostics; profile definitions are managed in Limit Catalogue.\nAssignments\nManage assignments\nUsage diagnostics\nReservation diagnostics\n\nASSIGNMENT REGISTER\n\nExisting assignments\n\nReview profile, subject, effective date and version. Available actions depend on your grants.\n\nAs"
+    },
+    {
+      "key": "kycQueue",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "kycQueue-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "KYC assessment lookup & review",
+        "Find a customer",
+        "KYC assessment",
+        "Submit KYC assessment decision"
+      ],
+      "text": "COMPLIANCE AND RISK\n\nKYC assessment lookup & review\n\nLook up an existing customer KYC assessment and perform only the review decision allowed by your function grants.\n\nCustomer-scoped assessment\nAssessment visibility and decisions are governed by separate function grants. A lookup does not itself change customer status.\n\nCUSTOMER LOOKUP\n\nFind a customer\n\nUse a customer UUID to load this workspace.\n\nCustomer UUID\nSearch\n\nCURRENT RECORD\n\nKYC assessment\n\nThe current assessment is shown when you hav"
+    },
+    {
+      "key": "complianceCases",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "complianceCases-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Compliance case lookup",
+        "Find a customer",
+        "Compliance cases"
+      ],
+      "text": "COMPLIANCE AND RISK\n\nCompliance case lookup\n\nLook up compliance cases for a customer. FRAUD-category rows are excluded from this display.\n\nAuthorized case categories\nThe server returns cases in categories authorized by your active role grants. This view excludes FRAUD and filters the returned records locally.\n\nCUSTOMER LOOKUP\n\nFind a customer\n\nUse a customer UUID to load this workspace.\n\nCustomer UUID\nSearch\n\nAUTHORIZED RECORDS\n\nCompliance cases\n\nCategory selection filters the records returned f"
+    },
+    {
+      "key": "workforceAccess",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "workforceAccess-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Workforce Overview & Support Provisioning",
+        "Workforce Overview",
+        "Provision SUPPORT workforce user",
+        "Disable SUPPORT workforce user"
+      ],
+      "text": "WORKFORCE AND GOVERNANCE\n\nWorkforce Overview & Support Provisioning\n\nReview the workforce summary and manage SUPPORT identities according to your function grants.\n\nAccess controls\nWorkforce metrics are read-only. SUPPORT provisioning and disabling are separate permission-gated actions; no enable action is available here.\nOverview\nProvision SUPPORT\nDisable SUPPORT\n\nREAD-ONLY SUMMARY\n\nWorkforce Overview\n\nCurrent workforce dashboard figures returned by the service.\n\nRefresh\nActive workforce headcou"
+    },
+    {
+      "key": "roleGovernance",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "roleGovernance-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Workforce Role Governance",
+        "Role and action",
+        "Create Finance Role Assignment"
+      ],
+      "text": "WORKFORCE AND GOVERNANCE\n\nWorkforce Role Governance\n\nUse the existing workforce role assignment endpoints. Current assignment listing is not available through the V1 API.\n\nGoverned access change\nCurrent assignments cannot be listed here. Verify the target in an authorized record; self changes are prohibited.\n\nSELECT CONTEXT\n\nRole and action\n\nChoose an available role domain and action before entering the effective window.\n\nFinance Roles\nOperational Roles\nAssign Finance Role\nRevoke Finance Role\n\nL"
+    },
+    {
+      "key": "notifications",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "notifications-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "SMS & Email Notification Management",
+        "Channel and service signals"
+      ],
+      "text": "SYSTEM ADMINISTRATION\n\nSMS & Email Notification Management\n\nReview event triggers, templates, provider configuration and delivery diagnostics under the existing governance controls.\n\nRefresh Console\nGoverned operations\nChanges require their existing authorization and approval steps. Reference data, provider configuration and delivery outcomes are distinct; opening this workspace does not start workers or send tests.\n1. Overview\n2. Event Catalogue & Triggers\n3. SMS Templates\n4. Email Templates\n5."
+    },
+    {
+      "key": "systemHealth",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "systemHealth-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "System Health",
+        "Metrics",
+        "Diagnostics",
+        "Outbox (recent events)",
+        "Notification Deliveries"
+      ],
+      "text": "SYSTEM ADMINISTRATION\n\nSystem Health\n\nRead-only operational data. Each panel is requested only when its matching function is granted.\n\nRead-only diagnostics\nMetrics, diagnostics, outbox events and notification receipts are separate sources; one does not imply the health or delivery state of another. No workers or deliveries are started here.\nMetrics\nDiagnostics\nOutbox events\nDeliveries & receipts\nRefresh\n\nOPERATIONAL METRICS\n\nMetrics\n\nGenerated 11/10/2026, 7:45:31 PM\n\nSearch loaded metrics\nClear"
+    },
+    {
+      "key": "auditEvents",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "auditEvents-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Audit & Security Events",
+        "Find audit events",
+        "Search results"
+      ],
+      "text": "SYSTEM ADMINISTRATION\n\nAudit & Security Events\n\nSearch read-only audit records by entity, type or correlation identifier.\n\nRead-only oversight\nResults are subject to server-side access restrictions and show up to the 100 most recent matching events. This is not a complete event count or a paginated history. Missing records do not prove that no action occurred; access restrictions, historical gaps or late commits may affect results.\n\nSEARCH CRITERIA\n\nFind audit events\n\nLeave fields empty to searc"
+    },
+    {
+      "key": "approvalsInbox",
+      "role": "FINANCE_CONTROLLER",
+      "width": 768,
+      "file": "approvalsInbox-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Privileged Approvals (Maker-Checker)",
+        "Funding checker workspace",
+        "Generic checker decision"
+      ],
+      "text": "WORKFORCE AND GOVERNANCE\n\nPrivileged Approvals (Maker-Checker)\n\nReview funding requests and record authorized checker decisions.\n\nSeparate checker workflows\nFunding requests have a dedicated inbox and decision flow. Other privileged approvals require a known approval ID.\nFunding checker\nGeneric checker decision\nApproval Discovery Scope\n\nAgent funding and defunding requests use the Global Funding Inbox when your session meets its access rules (GET /internal/agents/funding-requests). Generic non-f"
+    },
+    {
+      "key": "superAdminRecovery",
+      "role": "ADMINISTRATOR",
+      "width": 768,
+      "file": "superAdminRecovery-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Super-Admin recovery",
+        "Submit recovery statement",
+        "Recovery procedure"
+      ],
+      "text": "WORKFORCE GOVERNANCE\n\nSuper-Admin recovery\n\nConsume an externally signed recovery statement to revoke a compromised SUPER_ADMIN assignment and its sessions.\n\nControlled recovery\n\nThis action requires an ADMINISTRATOR with the recovery function and a valid RS256-signed A2RecoveryStatementV1. The signed statement—not the operator alone—authorizes the outcome.\n\nSENSITIVE STATEMENT\n\nSubmit recovery statement\n\nPaste the externally signed compact statement. Treat it as sensitive; it is cleared from th"
+    },
+    {
+      "key": "fraudCases",
+      "role": "RISK_FRAUD",
+      "width": 768,
+      "file": "fraudCases-768.jpg",
+      "client": 768,
+      "scroll": 768,
+      "headings": [
+        "Fraud case lookup",
+        "Find a customer",
+        "Fraud cases"
+      ],
+      "text": "COMPLIANCE AND RISK\n\nFraud case lookup\n\nThis screen displays FRAUD-category compliance cases for a customer. Search by customer UUID.\n\nAuthorized case categories\nThe server returns cases in categories authorized by your active role grants. This view displays FRAUD cases from those results; the server remains authoritative.\n\nCUSTOMER LOOKUP\n\nFind a customer\n\nUse a customer UUID to search authorized FRAUD cases.\n\nCustomer UUID\nSearch FRAUD cases\n\nAUTHORIZED RECORDS\n\nFraud cases\n\nOnly FRAUD-categor"
+    },
+    {
+      "key": "dashboard",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "dashboard-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Operations dashboard",
+        "Identity & Session",
+        "Entitlements & Scopes",
+        "Executive & Governance",
+        "Action Items"
+      ],
+      "text": "Operations dashboard\n\nHere's what's happening across your authorized workspace.\n\nRole: SUPER ADMIN\nSystem Administration Dashboard\n◫\nCompleted transaction value\n₦0.00 total\nLast 7 days\n⇄\nCompleted transactions\n0 completed\nLast 7 days\n♙\nActive agents\n0 active agents\nCurrent lifecycle status\n♙\nTotal customers\n1 customer\nCustomer directory total\nIdentity & session details\nExecutive & Governance\n\nPlatform-wide executive overview: transaction/financial summary, ledger position, reconciliation health,"
+    },
+    {
+      "key": "dashboardSettings",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "dashboardSettings-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Dashboard Settings",
+        "Dashboard Templates (12)",
+        "Role → Dashboard Assignment (11)"
+      ],
+      "text": "WORKFORCE CONFIGURATION\n\nDashboard Settings\n\nReview templates and role assignments.\n\nAssign which dashboard template each role displays. Assigning a template never grants or changes any permission — it only changes which widgets that role's dashboard shows.\n\nChanges and outcome safeguards are local to this workspace and are lost on navigation, browser refresh or session change. Assignments do not use an optimistic version. Reload and independently review the current assignment and audit history "
+    },
+    {
+      "key": "customers",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "customers-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Customer directory"
+      ],
+      "text": "CUSTOMER SERVICING\n\nCustomer directory\n\nSearch authorized customer records and open a read-first Customer 360° workspace.\n\nNew Customer\nAll Customers\nActive\nPending KYC\nSuspended\nClosed\nSearch\nStatus\nAll statuses\nDRAFT\nACTIVE\nSUSPENDED\nCLOSED\nType\nAll types\nINDIVIDUAL\nBUSINESS\nKYC level\nAll levels\nNONE\nLEVEL_1\nLEVEL_2\nLEVEL_3\nKYC status\nAll KYC statuses\nNOT_STARTED\nPENDING\nAPPROVED\nREJECTED\nRefresh\n1 customer\nCustomer directory results, page 1 of 1\nCUSTOMER\tREFERENCE\tTYPE\tSTATUS\tKYC\tPRIMARY CONT"
+    },
+    {
+      "key": "agents",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "agents-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Agent Network Management"
+      ],
+      "text": "AGENT OPERATIONS\n\nAgent Network Management\n\nReview onboarding and manage your agent network in one place. Available actions depend on your workforce access.\n\nAgent directory\nOnboarding applications\n\nONBOARDING & REVIEW\n\nAgent Onboarding Applications\n\nCreate and edit workforce-assisted DRAFT applications, submit drafts, review submitted applications, record approval/rejection decisions, and activate approved Ordinary Agents.\n\nNew Agent Application\nLoad applications\n\nNETWORK\n\nAgent directory\n\nFind"
+    },
+    {
+      "key": "agentClasses",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "agentClasses-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Agent classes & service eligibility",
+        "Class catalogue"
+      ],
+      "text": "AGENT NETWORK\n\nAgent classes & service eligibility\n\nReview class configuration and manage it only with the dedicated authorization function.\n\nRefresh\nCreate class\nClass fields are policy-bearing configuration. Applicable services are restricted to validated canonical Ordinary Agent V1 service identifiers; leaving all services unchecked saves null. Blank JSON fields are saved as null; no capability or regulatory defaults are supplied. New classes default to inactive; activation must be selected e"
+    },
+    {
+      "key": "support",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "support-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Support Tickets",
+        "Ticket queue"
+      ],
+      "text": "SUPPORT\n\nSupport Tickets\n\nView customer and agent support tickets, assign an operator, update status and record messages.\n\nSUPPORT OPERATIONS\n\nTicket queue\nFind a ticket, review its history and act within your permissions.\nAll Tickets\nOpen\nIn Progress\nResolved\nClosed\n\nScroll horizontally to see all filters.\n\nStatus\nAll\nOPEN\nIN_PROGRESS\nRESOLVED\nCLOSED\nAgent ID\nFilter Agent\nRefresh\nNo tickets for this filter. Tickets are created from customer/agent support flows.\nTotal 0 — Page 1 of 1\nPrev\nNext"
+    },
+    {
+      "key": "transfers",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "transfers-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "text": "TRANSACTIONS AND FINANCE\n\nTransaction trace & fee simulation\n\nRead-only transaction tracing and fee simulation; no settlement or financial commands run from this screen.\n\nGlobal transaction listing unavailable\n\nThe transfer controller does not expose a general GET `/transfers` search list route. Querying transfers requires the absolute Transaction UUID reference.\n\nTRANSACTION LOOKUP\n\nTransaction Audit & Traceability\nTransfers\nDeposits\nWithdrawals\n\nFind an existing record by its exact transaction"
+    },
+    {
+      "key": "cashIn",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "cashIn-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "text": "TRANSACTIONS AND FINANCE\n\nTransaction trace & fee simulation\n\nRead-only transaction tracing and fee simulation; no settlement or financial commands run from this screen.\n\nGlobal transaction listing unavailable\n\nThe transfer controller does not expose a general GET `/transfers` search list route. Querying transfers requires the absolute Transaction UUID reference.\n\nTRANSACTION LOOKUP\n\nTransaction Audit & Traceability\nTransfers\nDeposits\nWithdrawals\n\nFind an existing record by its exact transaction"
+    },
+    {
+      "key": "cashOut",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "cashOut-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "text": "TRANSACTIONS AND FINANCE\n\nTransaction trace & fee simulation\n\nRead-only transaction tracing and fee simulation; no settlement or financial commands run from this screen.\n\nGlobal transaction listing unavailable\n\nThe transfer controller does not expose a general GET `/transfers` search list route. Querying transfers requires the absolute Transaction UUID reference.\n\nTRANSACTION LOOKUP\n\nTransaction Audit & Traceability\nTransfers\nDeposits\nWithdrawals\n\nFind an existing record by its exact transaction"
+    },
+    {
+      "key": "cashToCashOps",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "cashToCashOps-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Cash-to-Cash Operations",
+        "Find a transfer"
+      ],
+      "text": "MONEY MOVEMENT\n\nCash-to-Cash Operations\n\nPaginated, read-only investigation and receipt references for Agent V1 transfers.\n\nRefresh expiry status\nRefresh\nThis surface does not reveal transfer codes or internal idempotency/fingerprint data and cannot claim, refund, release, or manually expire a transfer. Cash handover and unresolved KYC/expiry policies remain separate operational decisions.\nExpiry Worker & Unclaimed Backlog Status (Read-Only)\nExpiry worker\nDISABLED\nOverdue unclaimed backlog\n0\nTot"
+    },
+    {
+      "key": "ledgerExplorer",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "ledgerExplorer-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Ledger Core & Reversals Desk",
+        "Chart of Accounts",
+        "Journal Audit & Compensations"
+      ],
+      "text": "FINANCE AND LEDGER\n\nLedger Core & Reversals Desk\n\nInspect accounts and journal postings, and use the existing governed reversal workflow.\n\nJournal listing and backlog search unavailable\n\nSearch by a known journal UUID. A journal listing or backlog search is not available here.\n\nACCOUNTS\n\nChart of Accounts\nAll Currencies\nNGN (Naira)\nSearch returned accounts\n\nSearch filters the accounts returned for the selected currency.\n\n9 of 9 returned accounts\n\nAccount\tType\tNormal\tBalance\tDetails\nAgent Funding"
+    },
+    {
+      "key": "reconciliation",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "reconciliation-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Independent Reconciliation & Breaks Desk",
+        "Verification checks"
+      ],
+      "text": "FINANCE AND LEDGER\n\nIndependent Reconciliation & Breaks Desk\n\nReview reported ledger balance conservation, trial balances and reconciliation breaks.\n\nInternal verification boundaries\n\nThese reports check internal ledger and wallet relationships. They do not compare external bank statements or establish settlement with an external provider.\n\nRun Verification Audits\nGeneral Trial Balance\nFinance Verification & Activity\n\nScroll horizontally to see all filters.\n\nINTERNAL MATCHING\n\nVerification check"
+    },
+    {
+      "key": "feeRules",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "feeRules-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Commercial Rule Registries",
+        "Fees"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nCommercial Rule Registries\n\nExplore the fee, commission, reward, product and limit catalogues available to your role.\n\nRead-only workspace\nThese registries show configuration, not transaction decisions. No rule, product or limit changes can be made here.\nFees\nCommissions\nRewards\nProducts\nLimits\n\nREAD-ONLY REGISTRY\n\nFees\n\nReview configured fee rules, their currency, rate and effective dates.\n\nRefresh\nSearch this page\n\nSearch applies only to the current page and visible "
+    },
+    {
+      "key": "commissionRules",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "commissionRules-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Commercial Rule Registries",
+        "Commissions"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nCommercial Rule Registries\n\nExplore the fee, commission, reward, product and limit catalogues available to your role.\n\nRead-only workspace\nThese registries show configuration, not transaction decisions. No rule, product or limit changes can be made here.\nFees\nCommissions\nRewards\nProducts\nLimits\n\nREAD-ONLY REGISTRY\n\nCommissions\n\nReview configured commission rules and who may receive them.\n\nRefresh\nSearch this page\n\nSearch applies only to the current page and visible col"
+    },
+    {
+      "key": "rewardRules",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "rewardRules-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Commercial Rule Registries",
+        "Rewards"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nCommercial Rule Registries\n\nExplore the fee, commission, reward, product and limit catalogues available to your role.\n\nRead-only workspace\nThese registries show configuration, not transaction decisions. No rule, product or limit changes can be made here.\nFees\nCommissions\nRewards\nProducts\nLimits\n\nREAD-ONLY REGISTRY\n\nRewards\n\nReview configured reward rules and their beneficiary and calculation model.\n\nRefresh\nSearch this page\n\nSearch applies only to the current page and "
+    },
+    {
+      "key": "productCatalogue",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "productCatalogue-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Commercial Rule Registries",
+        "Products"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nCommercial Rule Registries\n\nExplore the fee, commission, reward, product and limit catalogues available to your role.\n\nRead-only workspace\nThese registries show configuration, not transaction decisions. No rule, product or limit changes can be made here.\nFees\nCommissions\nRewards\nProducts\nLimits\n\nREAD-ONLY REGISTRY\n\nProducts\n\nReview product configuration, status and scope across the catalogue.\n\nRefresh\nSearch this page\n\nSearch applies only to the current page and visibl"
+    },
+    {
+      "key": "limitCatalogue",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "limitCatalogue-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Commercial Rule Registries",
+        "Limit profiles",
+        "Limit rules"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nCommercial Rule Registries\n\nExplore the fee, commission, reward, product and limit catalogues available to your role.\n\nRead-only workspace\nThese registries show configuration, not transaction decisions. No rule, product or limit changes can be made here.\nFees\nCommissions\nRewards\nProducts\nLimits\n\nREAD-ONLY REGISTRY\n\nLimit profiles\n\nProfile configuration and availability. Profiles are not assignments.\n\nRefresh\nSearch this page\n\nSearch applies only to the current page and"
+    },
+    {
+      "key": "limitAssignments",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "limitAssignments-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Limit Assignments",
+        "Existing assignments",
+        "Manage assignments",
+        "Usage Diagnostics",
+        "Reservation Diagnostics"
+      ],
+      "text": "COMMERCIAL ADMINISTRATION\n\nLimit Assignments\n\nReview assignments and read-only usage or reservation diagnostics.\n\nScope and permissions\nAssignments require their respective functions. Usage and reservations are read-only diagnostics; profile definitions are managed in Limit Catalogue.\nAssignments\nManage assignments\nUsage diagnostics\nReservation diagnostics\n\nASSIGNMENT REGISTER\n\nExisting assignments\n\nReview profile, subject, effective date and version. Available actions depend on your grants.\n\nAs"
+    },
+    {
+      "key": "kycQueue",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "kycQueue-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "KYC assessment lookup & review",
+        "Find a customer",
+        "KYC assessment",
+        "Submit KYC assessment decision"
+      ],
+      "text": "COMPLIANCE AND RISK\n\nKYC assessment lookup & review\n\nLook up an existing customer KYC assessment and perform only the review decision allowed by your function grants.\n\nCustomer-scoped assessment\nAssessment visibility and decisions are governed by separate function grants. A lookup does not itself change customer status.\n\nCUSTOMER LOOKUP\n\nFind a customer\n\nUse a customer UUID to load this workspace.\n\nCustomer UUID\nSearch\n\nCURRENT RECORD\n\nKYC assessment\n\nThe current assessment is shown when you hav"
+    },
+    {
+      "key": "complianceCases",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "complianceCases-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Compliance case lookup",
+        "Find a customer",
+        "Compliance cases"
+      ],
+      "text": "COMPLIANCE AND RISK\n\nCompliance case lookup\n\nLook up compliance cases for a customer. FRAUD-category rows are excluded from this display.\n\nAuthorized case categories\nThe server returns cases in categories authorized by your active role grants. This view excludes FRAUD and filters the returned records locally.\n\nCUSTOMER LOOKUP\n\nFind a customer\n\nUse a customer UUID to load this workspace.\n\nCustomer UUID\nSearch\n\nAUTHORIZED RECORDS\n\nCompliance cases\n\nCategory selection filters the records returned f"
+    },
+    {
+      "key": "workforceAccess",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "workforceAccess-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Workforce Overview & Support Provisioning",
+        "Workforce Overview",
+        "Provision SUPPORT workforce user",
+        "Disable SUPPORT workforce user"
+      ],
+      "text": "WORKFORCE AND GOVERNANCE\n\nWorkforce Overview & Support Provisioning\n\nReview the workforce summary and manage SUPPORT identities according to your function grants.\n\nAccess controls\nWorkforce metrics are read-only. SUPPORT provisioning and disabling are separate permission-gated actions; no enable action is available here.\nOverview\nProvision SUPPORT\nDisable SUPPORT\n\nREAD-ONLY SUMMARY\n\nWorkforce Overview\n\nCurrent workforce dashboard figures returned by the service.\n\nRefresh\nActive workforce headcou"
+    },
+    {
+      "key": "roleGovernance",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "roleGovernance-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Workforce Role Governance",
+        "Role and action",
+        "Create Finance Role Assignment"
+      ],
+      "text": "WORKFORCE AND GOVERNANCE\n\nWorkforce Role Governance\n\nUse the existing workforce role assignment endpoints. Current assignment listing is not available through the V1 API.\n\nGoverned access change\nCurrent assignments cannot be listed here. Verify the target in an authorized record; self changes are prohibited.\n\nSELECT CONTEXT\n\nRole and action\n\nChoose an available role domain and action before entering the effective window.\n\nFinance Roles\nOperational Roles\nAssign Finance Role\nRevoke Finance Role\n\nL"
+    },
+    {
+      "key": "notifications",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "notifications-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "SMS & Email Notification Management",
+        "Channel and service signals"
+      ],
+      "text": "SYSTEM ADMINISTRATION\n\nSMS & Email Notification Management\n\nReview event triggers, templates, provider configuration and delivery diagnostics under the existing governance controls.\n\nRefresh Console\nGoverned operations\nChanges require their existing authorization and approval steps. Reference data, provider configuration and delivery outcomes are distinct; opening this workspace does not start workers or send tests.\n1. Overview\n2. Event Catalogue & Triggers\n3. SMS Templates\n4. Email Templates\n5."
+    },
+    {
+      "key": "systemHealth",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "systemHealth-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "System Health",
+        "Metrics",
+        "Diagnostics",
+        "Outbox (recent events)",
+        "Notification Deliveries"
+      ],
+      "text": "SYSTEM ADMINISTRATION\n\nSystem Health\n\nRead-only operational data. Each panel is requested only when its matching function is granted.\n\nRead-only diagnostics\nMetrics, diagnostics, outbox events and notification receipts are separate sources; one does not imply the health or delivery state of another. No workers or deliveries are started here.\nMetrics\nDiagnostics\nOutbox events\nDeliveries & receipts\nRefresh\n\nOPERATIONAL METRICS\n\nMetrics\n\nGenerated 11/10/2026, 7:46:16 PM\n\nSearch loaded metrics\nClear"
+    },
+    {
+      "key": "auditEvents",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "auditEvents-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Audit & Security Events",
+        "Find audit events",
+        "Search results"
+      ],
+      "text": "SYSTEM ADMINISTRATION\n\nAudit & Security Events\n\nSearch read-only audit records by entity, type or correlation identifier.\n\nRead-only oversight\nResults are subject to server-side access restrictions and show up to the 100 most recent matching events. This is not a complete event count or a paginated history. Missing records do not prove that no action occurred; access restrictions, historical gaps or late commits may affect results.\n\nSEARCH CRITERIA\n\nFind audit events\n\nLeave fields empty to searc"
+    },
+    {
+      "key": "approvalsInbox",
+      "role": "FINANCE_CONTROLLER",
+      "width": 375,
+      "file": "approvalsInbox-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Privileged Approvals (Maker-Checker)",
+        "Funding checker workspace",
+        "Generic checker decision"
+      ],
+      "text": "WORKFORCE AND GOVERNANCE\n\nPrivileged Approvals (Maker-Checker)\n\nReview funding requests and record authorized checker decisions.\n\nSeparate checker workflows\nFunding requests have a dedicated inbox and decision flow. Other privileged approvals require a known approval ID.\nFunding checker\nGeneric checker decision\nApproval Discovery Scope\n\nAgent funding and defunding requests use the Global Funding Inbox when your session meets its access rules (GET /internal/agents/funding-requests). Generic non-f"
+    },
+    {
+      "key": "superAdminRecovery",
+      "role": "ADMINISTRATOR",
+      "width": 375,
+      "file": "superAdminRecovery-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Super-Admin recovery",
+        "Submit recovery statement",
+        "Recovery procedure"
+      ],
+      "text": "WORKFORCE GOVERNANCE\n\nSuper-Admin recovery\n\nConsume an externally signed recovery statement to revoke a compromised SUPER_ADMIN assignment and its sessions.\n\nControlled recovery\n\nThis action requires an ADMINISTRATOR with the recovery function and a valid RS256-signed A2RecoveryStatementV1. The signed statement—not the operator alone—authorizes the outcome.\n\nSENSITIVE STATEMENT\n\nSubmit recovery statement\n\nPaste the externally signed compact statement. Treat it as sensitive; it is cleared from th"
+    },
+    {
+      "key": "fraudCases",
+      "role": "RISK_FRAUD",
+      "width": 375,
+      "file": "fraudCases-375.jpg",
+      "client": 375,
+      "scroll": 375,
+      "headings": [
+        "Fraud case lookup",
+        "Find a customer",
+        "Fraud cases"
+      ],
+      "text": "COMPLIANCE AND RISK\n\nFraud case lookup\n\nThis screen displays FRAUD-category compliance cases for a customer. Search by customer UUID.\n\nAuthorized case categories\nThe server returns cases in categories authorized by your active role grants. This view displays FRAUD cases from those results; the server remains authoritative.\n\nCUSTOMER LOOKUP\n\nFind a customer\n\nUse a customer UUID to search authorized FRAUD cases.\n\nCustomer UUID\nSearch FRAUD cases\n\nAUTHORIZED RECORDS\n\nFraud cases\n\nOnly FRAUD-categor"
+    }
+  ],
+  "roles": [
+    {
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "visible": [
+        "dashboard",
+        "dashboardSettings",
+        "customers",
+        "agents",
+        "agentClasses",
+        "support",
+        "transfers",
+        "cashIn",
+        "cashOut",
+        "cashToCashOps",
+        "ledgerExplorer",
+        "reconciliation",
+        "feeRules",
+        "commissionRules",
+        "rewardRules",
+        "productCatalogue",
+        "limitCatalogue",
+        "limitAssignments",
+        "kycQueue",
+        "complianceCases",
+        "workforceAccess",
+        "roleGovernance",
+        "notifications",
+        "systemHealth",
+        "auditEvents"
+      ]
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "width": 1440,
+      "visible": [
+        "dashboard",
+        "agents",
+        "ledgerExplorer",
+        "feeRules",
+        "commissionRules",
+        "rewardRules",
+        "productCatalogue",
+        "limitCatalogue",
+        "limitAssignments",
+        "approvalsInbox",
+        "notifications"
+      ]
+    },
+    {
+      "role": "ADMINISTRATOR",
+      "width": 1440,
+      "visible": [
+        "dashboard",
+        "dashboardSettings",
+        "customers",
+        "agents",
+        "agentClasses",
+        "workforceAccess",
+        "roleGovernance",
+        "superAdminRecovery"
+      ]
+    },
+    {
+      "role": "OPERATIONS",
+      "width": 1440,
+      "visible": [
+        "dashboard",
+        "customers",
+        "support",
+        "transfers",
+        "cashIn",
+        "cashOut",
+        "cashToCashOps",
+        "workforceAccess",
+        "notifications",
+        "systemHealth"
+      ]
+    },
+    {
+      "role": "CUSTOMER_SERVICE",
+      "width": 1440,
+      "visible": [
+        "dashboard",
+        "customers",
+        "support"
+      ]
+    },
+    {
+      "role": "COMPLIANCE",
+      "width": 1440,
+      "visible": [
+        "dashboard",
+        "customers",
+        "kycQueue",
+        "complianceCases"
+      ]
+    },
+    {
+      "role": "RISK_FRAUD",
+      "width": 1440,
+      "visible": [
+        "dashboard",
+        "fraudCases"
+      ]
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "visible": [
+        "dashboard",
+        "dashboardSettings",
+        "customers",
+        "agents",
+        "agentClasses",
+        "support",
+        "transfers",
+        "cashIn",
+        "cashOut",
+        "cashToCashOps",
+        "ledgerExplorer",
+        "reconciliation",
+        "feeRules",
+        "commissionRules",
+        "rewardRules",
+        "productCatalogue",
+        "limitCatalogue",
+        "limitAssignments",
+        "kycQueue",
+        "complianceCases",
+        "workforceAccess",
+        "roleGovernance",
+        "notifications",
+        "systemHealth",
+        "auditEvents"
+      ]
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "width": 768,
+      "visible": [
+        "dashboard",
+        "agents",
+        "ledgerExplorer",
+        "feeRules",
+        "commissionRules",
+        "rewardRules",
+        "productCatalogue",
+        "limitCatalogue",
+        "limitAssignments",
+        "approvalsInbox",
+        "notifications"
+      ]
+    },
+    {
+      "role": "ADMINISTRATOR",
+      "width": 768,
+      "visible": [
+        "dashboard",
+        "dashboardSettings",
+        "customers",
+        "agents",
+        "agentClasses",
+        "workforceAccess",
+        "roleGovernance",
+        "superAdminRecovery"
+      ]
+    },
+    {
+      "role": "OPERATIONS",
+      "width": 768,
+      "visible": [
+        "dashboard",
+        "customers",
+        "support",
+        "transfers",
+        "cashIn",
+        "cashOut",
+        "cashToCashOps",
+        "workforceAccess",
+        "notifications",
+        "systemHealth"
+      ]
+    },
+    {
+      "role": "CUSTOMER_SERVICE",
+      "width": 768,
+      "visible": [
+        "dashboard",
+        "customers",
+        "support"
+      ]
+    },
+    {
+      "role": "COMPLIANCE",
+      "width": 768,
+      "visible": [
+        "dashboard",
+        "customers",
+        "kycQueue",
+        "complianceCases"
+      ]
+    },
+    {
+      "role": "RISK_FRAUD",
+      "width": 768,
+      "visible": [
+        "dashboard",
+        "fraudCases"
+      ]
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "visible": [
+        "dashboard",
+        "dashboardSettings",
+        "customers",
+        "agents",
+        "agentClasses",
+        "support",
+        "transfers",
+        "cashIn",
+        "cashOut",
+        "cashToCashOps",
+        "ledgerExplorer",
+        "reconciliation",
+        "feeRules",
+        "commissionRules",
+        "rewardRules",
+        "productCatalogue",
+        "limitCatalogue",
+        "limitAssignments",
+        "kycQueue",
+        "complianceCases",
+        "workforceAccess",
+        "roleGovernance",
+        "notifications",
+        "systemHealth",
+        "auditEvents"
+      ]
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "width": 375,
+      "visible": [
+        "dashboard",
+        "agents",
+        "ledgerExplorer",
+        "feeRules",
+        "commissionRules",
+        "rewardRules",
+        "productCatalogue",
+        "limitCatalogue",
+        "limitAssignments",
+        "approvalsInbox",
+        "notifications"
+      ]
+    },
+    {
+      "role": "ADMINISTRATOR",
+      "width": 375,
+      "visible": [
+        "dashboard",
+        "dashboardSettings",
+        "customers",
+        "agents",
+        "agentClasses",
+        "workforceAccess",
+        "roleGovernance",
+        "superAdminRecovery"
+      ]
+    },
+    {
+      "role": "OPERATIONS",
+      "width": 375,
+      "visible": [
+        "dashboard",
+        "customers",
+        "support",
+        "transfers",
+        "cashIn",
+        "cashOut",
+        "cashToCashOps",
+        "workforceAccess",
+        "notifications",
+        "systemHealth"
+      ]
+    },
+    {
+      "role": "CUSTOMER_SERVICE",
+      "width": 375,
+      "visible": [
+        "dashboard",
+        "customers",
+        "support"
+      ]
+    },
+    {
+      "role": "COMPLIANCE",
+      "width": 375,
+      "visible": [
+        "dashboard",
+        "customers",
+        "kycQueue",
+        "complianceCases"
+      ]
+    },
+    {
+      "role": "RISK_FRAUD",
+      "width": 375,
+      "visible": [
+        "dashboard",
+        "fraudCases"
+      ]
+    }
+  ],
+  "unauthenticated": [
+    {
+      "endpoint": "/internal/notifications/changes",
+      "status": 401
+    },
+    {
+      "endpoint": "/internal/notifications/provider-config",
+      "status": 401
+    },
+    {
+      "endpoint": "/internal/metrics",
+      "status": 401
+    },
+    {
+      "endpoint": "/internal/a2/workforce/dashboard/assignments",
+      "status": 401
+    }
+  ],
+  "restricted": [
+    {
+      "role": "CUSTOMER_SERVICE",
+      "endpoint": "/internal/notifications/provider-config",
+      "status": 403
+    },
+    {
+      "role": "CUSTOMER_SERVICE",
+      "endpoint": "/internal/a2/workforce/dashboard/assignments",
+      "status": 403
+    },
+    {
+      "role": "RISK_FRAUD",
+      "endpoint": "/internal/notifications/provider-config",
+      "status": 403
+    },
+    {
+      "role": "RISK_FRAUD",
+      "endpoint": "/internal/a2/workforce/dashboard/assignments",
+      "status": 403
+    }
+  ],
+  "interactions": [
+    {
+      "key": "dashboardSettings",
+      "width": 1440,
+      "check": "template filter empty and clear"
+    },
+    {
+      "key": "customers",
+      "width": 1440,
+      "check": "customer preview Escape/focus and table scrolling",
+      "dimensions": {
+        "width": 1094,
+        "total": 1094
+      }
+    },
+    {
+      "key": "support",
+      "width": 1440,
+      "check": "status filter scrolling and selection",
+      "dimensions": {
+        "width": 1102,
+        "total": 1102
+      }
+    },
+    {
+      "key": "productCatalogue",
+      "width": 1440,
+      "check": "local filter and product drawer Escape/focus"
+    },
+    {
+      "key": "notifications",
+      "width": 1440,
+      "check": "event shortcut and tab focus"
+    },
+    {
+      "key": "systemHealth",
+      "width": 1440,
+      "check": "metric search/clear and independent receipts read"
+    },
+    {
+      "key": "dashboardSettings",
+      "width": 768,
+      "check": "template filter empty and clear"
+    },
+    {
+      "key": "customers",
+      "width": 768,
+      "check": "customer preview Escape/focus and table scrolling",
+      "dimensions": {
+        "width": 720,
+        "total": 1028
+      }
+    },
+    {
+      "key": "support",
+      "width": 768,
+      "check": "status filter scrolling and selection",
+      "dimensions": {
+        "width": 728,
+        "total": 728
+      }
+    },
+    {
+      "key": "productCatalogue",
+      "width": 768,
+      "check": "local filter and product drawer Escape/focus"
+    },
+    {
+      "key": "notifications",
+      "width": 768,
+      "check": "event shortcut and tab focus"
+    },
+    {
+      "key": "systemHealth",
+      "width": 768,
+      "check": "metric search/clear and independent receipts read"
+    },
+    {
+      "key": "dashboardSettings",
+      "width": 375,
+      "check": "template filter empty and clear"
+    },
+    {
+      "key": "customers",
+      "width": 375,
+      "check": "customer preview Escape/focus and table scrolling",
+      "dimensions": {
+        "width": 341,
+        "total": 1028
+      }
+    },
+    {
+      "key": "support",
+      "width": 375,
+      "check": "status filter scrolling and selection",
+      "dimensions": {
+        "width": 343,
+        "total": 385
+      }
+    },
+    {
+      "key": "productCatalogue",
+      "width": 375,
+      "check": "local filter and product drawer Escape/focus"
+    },
+    {
+      "key": "notifications",
+      "width": 375,
+      "check": "event shortcut and tab focus"
+    },
+    {
+      "key": "systemHealth",
+      "width": 375,
+      "check": "metric search/clear and independent receipts read"
+    }
+  ],
+  "browserErrors": [],
+  "apiFailures": [],
+  "requestFailures": [],
+  "blockedExternalHosts": [],
+  "warnings": []
+}

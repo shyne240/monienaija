@@ -30,3 +30,7 @@ Evidence and source commit references are in [README.md](README.md) and the evid
 - Vite build reports its existing large-chunk warning. Screen-reader and actual zoom testing have not been performed.
 
 No merge, deployment, external notifications, real financial operations or production-data changes are authorized.
+
+## Consolidated acceptance audit
+
+The final audit, fixes, role-sampled browser sweep and staging-only verification conditions are documented in [FINAL-ACCEPTANCE-AUDIT.md](FINAL-ACCEPTANCE-AUDIT.md). The recommendation is readiness for controlled staging acceptance testing, not production release or owner visual approval.
