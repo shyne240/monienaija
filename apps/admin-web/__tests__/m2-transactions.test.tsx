@@ -45,3 +45,19 @@ test('an empty later customer history page is recoverable without claiming no hi
  (ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.includes('page=2')?Promise.resolve({items:[],pagination:{page:2,limit:20,total:1,totalPages:1,hasNextPage:false}}):Promise.resolve({items:[item],pagination:{page:1,limit:20,total:21,totalPages:2,hasNextPage:true}}));
  render(<TransactionObservabilityScreen initialCustomerId="customer-1"/>);await screen.findByText('FUNDING');fireEvent.click(screen.getByRole('button',{name:'Next'}));expect(await screen.findByText('No transactions on this page. Return to an earlier page.')).toBeTruthy();expect(screen.queryByText(/No transactions found for this customer/)).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Previous'}));expect(await screen.findByText('FUNDING')).toBeTruthy();
 });
+
+test('category controls route trace to the selected existing endpoint',async()=>{
+ (ApiClient.get as jest.Mock).mockResolvedValue({id:'requested',status:'PENDING',currency:'NGN',amountMinor:'100',createdAt:'2026-01-01'});
+ render(<TransactionObservabilityScreen/>);fireEvent.click(screen.getByRole('button',{name:'Withdrawals'}));
+ expect(screen.getByRole('button',{name:'Withdrawals'}).getAttribute('aria-pressed')).toBe('true');
+ fireEvent.change(screen.getByLabelText('Transaction ID (UUID)'),{target:{value:'requested'}});fireEvent.click(screen.getByRole('button',{name:'Track'}));
+ expect(await screen.findByText('WITHDRAWAL Detail View')).toBeTruthy();expect(ApiClient.get).toHaveBeenCalledWith('/withdrawals/requested');expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('customer history detail drawer uses returned fields and restores focus',async()=>{
+ principal('customer-reviewer',['customer.view_transactions']);
+ (ApiClient.get as jest.Mock).mockResolvedValue({items:[{id:'one',type:'FUNDING',status:'APPROVED',direction:'CREDIT',currency:'NGN',amountMinor:'100',createdAt:'2026-01-01',reference:'local-ref'}],pagination:{page:1,limit:20,total:1,totalPages:1,hasNextPage:false}});
+ render(<TransactionObservabilityScreen initialCustomerId="customer-1"/>);const trigger=await screen.findByRole('button',{name:'View transaction one'});trigger.focus();fireEvent.click(trigger);
+ const dialog=screen.getByRole('dialog',{name:'Customer transaction details'});expect(dialog.textContent).toContain('local-ref');expect(dialog.textContent).toContain('one');
+ fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog',{name:'Customer transaction details'})).toBeNull();expect(document.activeElement).toBe(trigger);expect(ApiClient.post).not.toHaveBeenCalled();
+});

@@ -58,8 +58,7 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
     const { getByText, getByPlaceholderText, findByText, queryByText } = render(<App />);
 
     fireEvent.click(getByText('Transaction & Fee Ops — Transfers (W2W)'));
-    const selectEl = getByText('P2P TRANSFER').parentElement as HTMLSelectElement;
-    fireEvent.change(selectEl, { target: { value: 'DEPOSIT' } });
+    fireEvent.click(getByText('Deposits'));
     fireEvent.change(getByPlaceholderText('e.g. 5e6f7g8h-...'), { target: { value: 'dep-uuid-777' } });
     fireEvent.click(getByText('Track'));
 

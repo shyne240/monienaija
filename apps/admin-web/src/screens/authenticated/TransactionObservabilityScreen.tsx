@@ -1,6 +1,7 @@
 import './operational-surfaces.css';
 import React, { useEffect, useRef, useState } from 'react';
 import { PageHeader } from '../../design-system/primitives';
+import { WorkspaceDrawer, WorkspaceFilterTabs } from '../../design-system/WorkspaceDrawer';
 import './transaction-workspace.css';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
@@ -96,6 +97,7 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
   // Customer 360° uses the implemented customer-scoped unified history endpoint; a customer UUID
   // is never treated as a transaction UUID.
   const [historyItems, setHistoryItems] = useState<CustomerTransaction[]>([]);
+  const [selectedHistory, setSelectedHistory] = useState<CustomerTransaction | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
   const [historyType, setHistoryType] = useState('');
   const [historyTotal, setHistoryTotal] = useState(0);
@@ -108,6 +110,7 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
     let active = true;
     const params = new URLSearchParams({ page: String(historyPage), limit: '20' });
     if (historyType) params.set('type', historyType);
+    setSelectedHistory(null);
     setHistoryLoading(true);
     setHistoryError('');
     setHistoryItems([]);
@@ -233,8 +236,8 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
       )}
 
       {isCustomerHistoryView && (
-        <section style={styles.historySection} aria-label="Customer transaction history">
-          <div style={styles.historyHeader}>
+        <section className="mn-transactions__history" style={styles.historySection} aria-label="Customer transaction history">
+          <div className="mn-transactions__history-header" style={styles.historyHeader}>
             <div>
               <h2 style={styles.sectionTitle}>Transactions for Customer</h2>
               <p style={styles.historyCustomer}>Customer ID: <code>{initialCustomerId}</code></p>
@@ -244,7 +247,7 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
               <select
                 style={styles.historyFilter}
                 value={historyType}
-                onChange={(event) => { setHistoryType(event.target.value); setHistoryPage(1); }}
+                onChange={(event) => { setSelectedHistory(null); setHistoryType(event.target.value); setHistoryPage(1); }}
               >
                 <option value="">All transaction types</option>
                 <option value="WALLET_TRANSFER">Wallet transfer</option>
@@ -261,7 +264,7 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
           ) : (
             <div style={styles.historyTableWrap} role="region" aria-label="Customer transaction history table" tabIndex={0}>
               <table style={styles.historyTable}>
-                <thead><tr><th>Type</th><th>Status</th><th>Direction</th><th>Amount</th><th>Reference</th><th>Created</th></tr></thead>
+                <thead><tr><th>Type</th><th>Status</th><th>Direction</th><th>Amount</th><th>Reference</th><th>Created</th><th>Details</th></tr></thead>
                 <tbody>
                   {historyItems.map((item) => (
                     <tr key={item.id}>
@@ -271,6 +274,7 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
                       <td>{formatMinorUnits(item.amountMinor, item.currency)}</td>
                       <td>{item.reference || '—'}</td>
                       <td>{new Date(item.createdAt).toLocaleString()}</td>
+                      <td><button type="button" className="mn-transactions__detail-button" aria-label={`View transaction ${item.id}`} onClick={() => setSelectedHistory(item)}>View details</button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -279,8 +283,8 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
           )}
           {!historyLoading && !historyError && <div style={styles.historyPager}>
             <span>{historyTotal} transaction{historyTotal === 1 ? '' : 's'} · Page {historyPage}{historyTotalPages ? ` of ${historyTotalPages}` : ''}</span>
-            <button type="button" style={styles.historyPageButton} disabled={historyPage <= 1 || historyLoading} onClick={() => setHistoryPage((page) => Math.max(1, page - 1))}>Previous</button>
-            <button type="button" style={styles.historyPageButton} disabled={historyPage >= historyTotalPages || historyLoading} onClick={() => setHistoryPage((page) => page + 1)}>Next</button>
+            <button type="button" style={styles.historyPageButton} disabled={historyPage <= 1 || historyLoading} onClick={() => { setSelectedHistory(null); setHistoryPage((page) => Math.max(1, page - 1)); }}>Previous</button>
+            <button type="button" style={styles.historyPageButton} disabled={historyPage >= historyTotalPages || historyLoading} onClick={() => { setSelectedHistory(null); setHistoryPage((page) => page + 1); }}>Next</button>
           </div>}
         </section>
       )}
@@ -291,17 +295,12 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
           <p className="mn-transactions__eyebrow">TRANSACTION LOOKUP</p>
           <h2 style={styles.sectionTitle}>Transaction Audit & Traceability</h2>
           
+          <WorkspaceFilterTabs label="Transaction category" value={txType} disabled={txLoading} options={[
+            { value: 'TRANSFER', label: 'Transfers' }, { value: 'DEPOSIT', label: 'Deposits' }, { value: 'WITHDRAWAL', label: 'Withdrawals' },
+          ]} onChange={value => { setTxType(value as typeof txType); setTxDetail(null); setTxError(''); }} />
+          <p className="mn-transactions__description">Find an existing record by its exact transaction UUID. Category changes select the corresponding trace endpoint.</p>
           <form onSubmit={handleSearchTx} style={styles.searchForm}>
             <div style={styles.grid}>
-              <div style={styles.inputGroup}>
-                <label htmlFor="transaction-category" style={styles.label}>Select Category</label>
-                <select id="transaction-category" style={styles.select} value={txType} disabled={txLoading} onChange={(e: any) => { setTxType(e.target.value); setTxDetail(null); setTxError(''); }}>
-                  <option value="TRANSFER">P2P TRANSFER</option>
-                  <option value="DEPOSIT">DEPOSIT FUNDING</option>
-                  <option value="WITHDRAWAL">WITHDRAWAL OUTFLOW</option>
-                </select>
-              </div>
-
               <div style={styles.inputGroup}>
                 <label htmlFor="transaction-id" style={styles.label}>Transaction ID (UUID)</label>
                 <div style={styles.searchRow}>
@@ -437,6 +436,12 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
           )}
         </section>}
       </div>}
+      {selectedHistory && <WorkspaceDrawer label="Customer transaction details" className="mn-transactions__drawer" onDismiss={() => setSelectedHistory(null)}>
+        <header className="mn-transactions__drawer-header"><div><p className="mn-transactions__eyebrow">CUSTOMER TRANSACTION</p><h2>Transaction details</h2></div><button type="button" className="mn-transactions__detail-button" onClick={() => setSelectedHistory(null)}>Close</button></header>
+        <div className="mn-transactions__drawer-body"><p>Read-only details from the customer transaction history.</p><dl>
+          <dt>Transaction ID</dt><dd>{selectedHistory.id}</dd><dt>Type</dt><dd>{selectedHistory.type}</dd><dt>Status</dt><dd>{selectedHistory.status}</dd><dt>Direction</dt><dd>{selectedHistory.direction}</dd><dt>Amount</dt><dd>{formatMinorUnits(selectedHistory.amountMinor, selectedHistory.currency)}</dd><dt>Reference</dt><dd>{selectedHistory.reference || '—'}</dd><dt>Created</dt><dd>{new Date(selectedHistory.createdAt).toLocaleString()}</dd>
+        </dl></div>
+      </WorkspaceDrawer>}
     </div>
   );
 };
@@ -444,7 +449,7 @@ const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlo
 const styles = {
   container: {
     padding: 'clamp(16px, 3vw, 32px)',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
+    fontFamily: 'var(--mn-font-sans)',
   },
   header: {
     marginBottom: '24px',
@@ -480,6 +485,7 @@ const styles = {
     display: 'flex',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
+    flexWrap: 'wrap' as const,
     gap: '16px',
     marginBottom: '16px',
   },

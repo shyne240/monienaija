@@ -28,6 +28,7 @@ export const WorkspaceFilterTabs: React.FC<{
   value: string;
   options: Array<{ value: string; label: string }>;
   onChange: (value: string) => void;
-}> = ({ label, value, options, onChange }) => <div className="one-workspace-filter-tabs" role="group" aria-label={label}>
-  {options.map(option => <button type="button" key={option.value} aria-pressed={value === option.value} onClick={() => onChange(option.value)}>{option.label}</button>)}
+  disabled?: boolean;
+}> = ({ label, value, options, onChange, disabled }) => <div className="one-workspace-filter-tabs" role="group" aria-label={label}>
+  {options.map(option => <button type="button" key={option.value} aria-pressed={value === option.value} disabled={disabled} onClick={() => onChange(option.value)}>{option.label}</button>)}
 </div>;
