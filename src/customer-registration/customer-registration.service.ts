@@ -10,6 +10,7 @@ import {
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Inject,
   Injectable,
   Logger,
@@ -172,6 +173,17 @@ export class CustomerRegistrationService {
       correlationId,
     );
 
+    try {
+      await this.consumeRateLimit(
+        'CUSTOMER_REGISTRATION_OTP_COOLDOWN_PER_PHONE',
+        phone.canonical,
+        correlationId,
+      );
+    } catch (error) {
+      // Preserve the legacy enumeration-safe resend response while sharing the cooldown.
+      if (error instanceof HttpException && error.getStatus() === 429) return view;
+      throw error;
+    }
     const now = new Date();
     const issued = await runSerializableWithRetry(
       this.dataSource,

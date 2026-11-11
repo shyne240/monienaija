@@ -38,6 +38,13 @@ export const REGISTRATION_PHONE_VERIFICATION_EVENT_TYPE =
 
 /** Rate-limit buckets for the public registration surface (behaviour-neutral generic rules). */
 export const CUSTOMER_REGISTRATION_RATE_LIMITS: readonly A2RateLimitRuleV1[] = [
+  // Shared across legacy and session issuance, including concurrent requests.
+  {
+    category: 'CUSTOMER_REGISTRATION_OTP_COOLDOWN_PER_PHONE',
+    capacity: 1,
+    refillRatePerSecond: 1 / REGISTRATION_OTP_RESEND_COOLDOWN_SECONDS,
+    enabled: true,
+  },
   // OTP issuance per phone — throttles SMS-bombing of a single victim number.
   {
     category: 'CUSTOMER_REGISTRATION_OTP_ISSUE_PER_PHONE',

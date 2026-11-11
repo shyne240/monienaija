@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
+import { KycRegistrationAttempts1785753600108 } from '../src/migrations/1785753600108-KycRegistrationAttempts';
+import {
+  KycRegistrationVerificationService,
+  RegistrationSyntheticProvider,
+} from '../src/kyc-verification/kyc-registration-verification.service';
 import { KycRegistrationSessions1785753600107 } from '../src/migrations/1785753600107-KycRegistrationSessions';
 import { KycRegistrationSessionService } from '../src/kyc-verification/kyc-registration-session.service';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
@@ -18,8 +23,19 @@ const db = new DataSource({
   logging: false,
   extra: { options: `-c search_path=${schema}` },
 });
+const sharedRateLimit = { consume: jest.fn().mockResolvedValue(undefined) };
 let provider: TestNotificationProvider;
 let service: KycRegistrationSessionService;
+let verifier: KycRegistrationVerificationService;
+const verifyRequest = (id: string, authorization: string, consentId: string, kind: 'BVN' | 'NIN') =>
+  verifier.verify({
+    sessionId: id,
+    authorization,
+    consentId,
+    kind,
+    requestId: randomUUID(),
+    identifier: '00000000000',
+  });
 let created = false;
 const phone = (n: number) => `080${String(n).padStart(8, '0')}`;
 const ip = (n: number) => `192.0.2.${n}`;
@@ -51,9 +67,11 @@ beforeAll(async () => {
   created = true;
   const runner = db.createQueryRunner();
   await new KycRegistrationSessions1785753600107().up(runner);
+  await new KycRegistrationAttempts1785753600108().up(runner);
   await runner.release();
+  verifier = new KycRegistrationVerificationService(db, new RegistrationSyntheticProvider());
   provider = new TestNotificationProvider();
-  service = new KycRegistrationSessionService(db, provider);
+  service = new KycRegistrationSessionService(db, provider, sharedRateLimit);
 });
 afterAll(async () => {
   if (db.isInitialized) {
@@ -66,7 +84,7 @@ describe('isolated pre-customer registration sessions', () => {
   it('issues to the bound Nigerian phone, verifies once and survives a service restart', async () => {
     const s = await issue(1);
     expect(s.destination).toBe('+2348000000001');
-    const restarted = new KycRegistrationSessionService(db, provider);
+    const restarted = new KycRegistrationSessionService(db, provider, sharedRateLimit);
     const { authorization } = await restarted.verifyOtp(s.id, s.token, s.code, ip(1));
     await expect(restarted.verifyOtp(s.id, s.token, s.code, ip(1))).rejects.toMatchObject({
       code: 'BLOCKED',
@@ -77,7 +95,7 @@ describe('isolated pre-customer registration sessions', () => {
         s.token,
         randomUUID(),
         'BVN',
-        'notice-v1',
+        'synthetic-test-v1',
         new Date(Date.now() + 60000),
       ),
     ).rejects.toMatchObject({ code: 'BLOCKED' });
@@ -88,16 +106,23 @@ describe('isolated pre-customer registration sessions', () => {
       authorization,
       requestId,
       'BVN',
-      'notice-v1',
+      'synthetic-test-v1',
       expiry,
     );
     expect(
-      await restarted.grantConsent(s.id, authorization, requestId, 'BVN', 'notice-v1', expiry),
+      await restarted.grantConsent(
+        s.id,
+        authorization,
+        requestId,
+        'BVN',
+        'synthetic-test-v1',
+        expiry,
+      ),
     ).toBe(consent);
     await expect(
-      restarted.grantConsent(s.id, authorization, requestId, 'NIN', 'notice-v1', expiry),
+      restarted.grantConsent(s.id, authorization, requestId, 'NIN', 'synthetic-test-v1', expiry),
     ).rejects.toMatchObject({ code: 'CONFLICT' });
-    await restarted.assertIdentityRequestAuthorized(s.id, authorization, consent, 'BVN');
+    await verifyRequest(s.id, authorization, consent, 'BVN');
     const rows = JSON.stringify(
       await db.query<unknown[]>('SELECT * FROM kyc_registration_sessions WHERE id=$1', [s.id]),
     );
@@ -146,7 +171,7 @@ describe('isolated pre-customer registration sessions', () => {
       send: jest.fn().mockRejectedValue(new Error('sensitive synthetic provider error')),
     };
     try {
-      const isolated = new KycRegistrationSessionService(db, failing);
+      const isolated = new KycRegistrationSessionService(db, failing, sharedRateLimit);
       const s = await isolated.create(phone(16), ip(16));
       await isolated.issueOtp(s.id, s.token, randomUUID(), ip(16));
       expect(log).not.toHaveBeenCalled();
@@ -205,37 +230,37 @@ describe('isolated pre-customer registration sessions', () => {
       a.authorization,
       randomUUID(),
       'BVN',
-      'notice-v1',
+      'synthetic-test-v1',
       expiry,
     );
-    await expect(
-      service.assertIdentityRequestAuthorized(a.id, a.authorization, randomUUID(), 'BVN'),
-    ).rejects.toMatchObject({ code: 'BLOCKED' });
-    await expect(
-      service.assertIdentityRequestAuthorized(a.id, a.authorization, c, 'NIN'),
-    ).rejects.toMatchObject({ code: 'BLOCKED' });
-    await expect(
-      service.assertIdentityRequestAuthorized(b.id, b.authorization, c, 'BVN'),
-    ).rejects.toMatchObject({ code: 'BLOCKED' });
-    await expect(
-      service.assertIdentityRequestAuthorized(a.id, b.authorization, c, 'BVN'),
-    ).rejects.toMatchObject({ code: 'BLOCKED' });
+    await expect(verifyRequest(a.id, a.authorization, randomUUID(), 'BVN')).rejects.toMatchObject({
+      code: 'BLOCKED',
+    });
+    await expect(verifyRequest(a.id, a.authorization, c, 'NIN')).rejects.toMatchObject({
+      code: 'BLOCKED',
+    });
+    await expect(verifyRequest(b.id, b.authorization, c, 'BVN')).rejects.toMatchObject({
+      code: 'BLOCKED',
+    });
+    await expect(verifyRequest(a.id, b.authorization, c, 'BVN')).rejects.toMatchObject({
+      code: 'BLOCKED',
+    });
     await service.withdrawConsent(a.id, a.authorization, c);
-    await expect(
-      service.assertIdentityRequestAuthorized(a.id, a.authorization, c, 'BVN'),
-    ).rejects.toMatchObject({ code: 'BLOCKED' });
+    await expect(verifyRequest(a.id, a.authorization, c, 'BVN')).rejects.toMatchObject({
+      code: 'BLOCKED',
+    });
     const c2 = await service.grantConsent(
       a.id,
       a.authorization,
       randomUUID(),
       'NIN',
-      'notice-v1',
+      'synthetic-test-v1',
       expiry,
     );
     await service.revoke(a.id, a.authorization);
-    await expect(
-      service.assertIdentityRequestAuthorized(a.id, a.authorization, c2, 'NIN'),
-    ).rejects.toMatchObject({ code: 'BLOCKED' });
+    await expect(verifyRequest(a.id, a.authorization, c2, 'NIN')).rejects.toMatchObject({
+      code: 'BLOCKED',
+    });
   });
   it('limits guesses and resend even across sessions for the same phone', async () => {
     const a = await issue(10),
@@ -290,16 +315,16 @@ describe('isolated pre-customer registration sessions', () => {
       s.authorization,
       randomUUID(),
       'BVN',
-      'notice-v1',
+      'synthetic-test-v1',
       new Date(Date.now() + 60000),
     );
     await db.query(
       "UPDATE kyc_registration_consents SET granted_at=clock_timestamp()-interval '2 minutes',expires_at=clock_timestamp()-interval '1 minute' WHERE id=$1",
       [c],
     );
-    await expect(
-      service.assertIdentityRequestAuthorized(s.id, s.authorization, c, 'BVN'),
-    ).rejects.toMatchObject({ code: 'BLOCKED' });
+    await expect(verifyRequest(s.id, s.authorization, c, 'BVN')).rejects.toMatchObject({
+      code: 'BLOCKED',
+    });
     await db.query(
       "UPDATE kyc_registration_sessions SET created_at=clock_timestamp()-interval '20 minutes',expires_at=clock_timestamp()-interval '1 minute' WHERE id=$1",
       [s.id],
@@ -310,7 +335,7 @@ describe('isolated pre-customer registration sessions', () => {
         s.authorization,
         randomUUID(),
         'NIN',
-        'notice-v1',
+        'synthetic-test-v1',
         new Date(Date.now() + 60000),
       ),
     ).rejects.toMatchObject({ code: 'BLOCKED' });

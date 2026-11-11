@@ -1,4 +1,6 @@
-# Pre-customer registration sessions — partial, not production-ready
+# Pre-customer registration sessions — prior partial checkpoint
+
+This historical report describes commit `d110de4`. For the subsequent synthetic application integration and current limitations, see [REGISTRATION-INTEGRATION.md](REGISTRATION-INTEGRATION.md).
 
 This increment implements and tests an **unwired internal service**, not an end-to-end application feature. No endpoint, Nest provider, user-facing flow or pre-customer identity dispatch is enabled. It does not satisfy the requested completion standard and must not be treated as authorization to begin Batch 2 or enable live KYC.
 

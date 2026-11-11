@@ -9,12 +9,14 @@ import {
 import type { DataSource, EntityManager } from 'typeorm';
 import { normalizeNigerianPhone } from '../customer-registration/phone-normalization';
 import {
+  CUSTOMER_REGISTRATION_RATE_LIMITS,
   REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS,
   REGISTRATION_OTP_PBKDF2_ITERATIONS,
   REGISTRATION_OTP_RESEND_COOLDOWN_SECONDS,
   REGISTRATION_OTP_TTL_SECONDS,
   REGISTRATION_PHONE_VERIFICATION_EVENT_TYPE,
 } from '../customer-registration/customer-registration.constants';
+import type { A2SecurityRateLimitService } from '../authorization/security-rate-limit.service';
 import type { NotificationProvider } from '../notification/notification.types';
 import { UUID } from './kyc-orchestrator';
 import { KycFoundationError, type IdentityKind } from './kyc.types';
@@ -37,12 +39,18 @@ function otpHash(code: string, salt: string): string {
   ).toString('base64url');
 }
 type Session = { id: string; phone: string; expires_at: Date };
-/** Isolated, not wired to public routes. Callers must derive sourceIp from a trusted transport. */
+/** Callers must derive sourceIp from a trusted transport and always provide the shared limiter. */
 export class KycRegistrationSessionService {
   constructor(
     private readonly db: DataSource,
     private readonly sms: NotificationProvider,
+    private readonly sharedRateLimit: Pick<A2SecurityRateLimitService, 'consume'>,
   ) {}
+  private async shared(category: string, value: string): Promise<void> {
+    const rule = CUSTOMER_REGISTRATION_RATE_LIMITS.find((item) => item.category === category);
+    if (!rule || !rule.enabled || !this.sharedRateLimit) throw new KycFoundationError('DISABLED');
+    await this.sharedRateLimit.consume(rule, [value], randomUUID());
+  }
   private async audit(
     m: EntityManager,
     sessionId: string,
@@ -123,8 +131,20 @@ export class KycRegistrationSessionService {
   }
   async issueOtp(id: string, token: string, requestId: string, sourceIp: string): Promise<void> {
     if (!UUID.test(requestId)) throw new KycFoundationError('INVALID');
+    await this.shared('CUSTOMER_REGISTRATION_OTP_ISSUE_PER_IP', this.ip(sourceIp));
     // Authenticate before consuming phone quota. Check again under the write lock.
     const session = await this.db.transaction((m) => this.locked(m, id, token, 'PENDING'));
+    const replay = await this.db.transaction(async (m) => {
+      await this.locked(m, id, token, 'PENDING');
+      const rows = await m.query<Array<{ id: string }>>(
+        'SELECT id FROM kyc_registration_otps WHERE session_id=$1 AND request_id=$2',
+        [id, requestId],
+      );
+      return !!rows[0];
+    });
+    if (replay) return;
+    await this.shared('CUSTOMER_REGISTRATION_OTP_ISSUE_PER_PHONE', session.phone);
+    await this.shared('CUSTOMER_REGISTRATION_OTP_COOLDOWN_PER_PHONE', session.phone);
     await this.limit([
       { category: 'issue-phone', value: session.phone, max: 3 },
       { category: 'issue-ip', value: this.ip(sourceIp), max: 20 },
@@ -209,6 +229,7 @@ export class KycRegistrationSessionService {
   ): Promise<{ authorization: string }> {
     if (typeof code !== 'string' || !/^\d{6}$/.test(code)) throw new KycFoundationError('BLOCKED');
     const session = await this.db.transaction((m) => this.locked(m, id, token, 'PENDING'));
+    await this.shared('CUSTOMER_REGISTRATION_OTP_VERIFY_PER_PHONE', session.phone);
     await this.limit([
       { category: 'verify-phone', value: session.phone, max: 10 },
       { category: 'verify-ip', value: this.ip(sourceIp), max: 50 },
@@ -232,15 +253,15 @@ export class KycRegistrationSessionService {
       }
       const authorization = secret();
       const consumed = await m.query<Array<{ id: string }>>(
-        `UPDATE kyc_registration_otps SET used_at=clock_timestamp()
+        `WITH changed AS (UPDATE kyc_registration_otps SET used_at=clock_timestamp()
          WHERE id=$1 AND expires_at>clock_timestamp() AND EXISTS
          (SELECT 1 FROM kyc_registration_sessions WHERE id=$2 AND expires_at>clock_timestamp())
-         RETURNING id`,
+         RETURNING id) SELECT id FROM changed`,
         [otp.id, id],
       );
       if (!consumed[0]) return null;
       const authorized = await m.query<Array<{ id: string }>>(
-        "UPDATE kyc_registration_sessions SET status='VERIFIED',verified_at=clock_timestamp(),pending_token_hash=NULL,authorization_hash=$1 WHERE id=$2 AND expires_at>clock_timestamp() RETURNING id",
+        "WITH changed AS (UPDATE kyc_registration_sessions SET status='VERIFIED',verified_at=clock_timestamp(),pending_token_hash=NULL,authorization_hash=$1 WHERE id=$2 AND expires_at>clock_timestamp() RETURNING id) SELECT id FROM changed",
         [tokenHash(authorization), id],
       );
       if (!authorized[0]) throw new KycFoundationError('BLOCKED');
@@ -300,37 +321,32 @@ export class KycRegistrationSessionService {
     await this.db.transaction(async (m) => {
       await this.locked(m, id, authorization, 'VERIFIED');
       const changed = await m.query<Array<{ id: string }>>(
-        'UPDATE kyc_registration_consents SET withdrawn_at=clock_timestamp() WHERE id=$1 AND session_id=$2 AND withdrawn_at IS NULL RETURNING id',
+        'WITH changed AS (UPDATE kyc_registration_consents SET withdrawn_at=clock_timestamp() WHERE id=$1 AND session_id=$2 AND withdrawn_at IS NULL RETURNING id) SELECT id FROM changed',
         [consentId, id],
       );
       if (!changed[0]) throw new KycFoundationError('BLOCKED');
       await this.audit(m, id, consentId, 'CONSENT_WITHDRAWN');
     });
   }
-  /** Gate for future request handling only; it does NOT dispatch or authorize a later provider call. */
-  async assertIdentityRequestAuthorized(
+  async status(
     id: string,
-    authorization: string,
-    consentId: string,
-    kind: IdentityKind,
-  ): Promise<void> {
-    if (!UUID.test(consentId) || !['BVN', 'NIN'].includes(kind))
-      throw new KycFoundationError('BLOCKED');
-    await this.db.transaction(async (m) => {
-      await this.locked(m, id, authorization, 'VERIFIED');
-      const rows = await m.query<Array<{ id: string }>>(
-        `SELECT id FROM kyc_registration_consents WHERE id=$1 AND session_id=$2 AND kind=$3 AND withdrawn_at IS NULL AND expires_at>clock_timestamp() FOR UPDATE`,
-        [consentId, id, kind],
-      );
-      if (!rows[0]) throw new KycFoundationError('BLOCKED');
-    });
+    credential: string,
+  ): Promise<{ status: 'PENDING' | 'VERIFIED'; expiresAt: Date }> {
+    if (!UUID.test(id)) throw new KycFoundationError('BLOCKED');
+    const digest = tokenHash(credential);
+    const rows = await this.db.query<Array<{ status: 'PENDING' | 'VERIFIED'; expires_at: Date }>>(
+      `SELECT status,expires_at FROM kyc_registration_sessions WHERE id=$1 AND status IN ('PENDING','VERIFIED') AND expires_at>clock_timestamp() AND (pending_token_hash=$2 OR authorization_hash=$2)`,
+      [id, digest],
+    );
+    if (!rows[0]) throw new KycFoundationError('BLOCKED');
+    return { status: rows[0].status, expiresAt: rows[0].expires_at };
   }
   async revoke(id: string, credential: string): Promise<void> {
     if (!UUID.test(id)) throw new KycFoundationError('BLOCKED');
     const credentialHash = tokenHash(credential);
     await this.db.transaction(async (m) => {
       const rows = await m.query<Array<{ id: string }>>(
-        `UPDATE kyc_registration_sessions SET status='REVOKED',pending_token_hash=NULL,authorization_hash=NULL,revoked_at=clock_timestamp() WHERE id=$1 AND status IN ('PENDING','VERIFIED') AND expires_at>clock_timestamp() AND (pending_token_hash=$2 OR authorization_hash=$2) RETURNING id`,
+        `WITH changed AS (UPDATE kyc_registration_sessions SET status='REVOKED',pending_token_hash=NULL,authorization_hash=NULL,revoked_at=clock_timestamp() WHERE id=$1 AND status IN ('PENDING','VERIFIED') AND expires_at>clock_timestamp() AND (pending_token_hash=$2 OR authorization_hash=$2) RETURNING id) SELECT id FROM changed`,
         [id, credentialHash],
       );
       if (!rows[0]) throw new KycFoundationError('BLOCKED');

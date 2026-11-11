@@ -53,6 +53,14 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/v1/customers/registration/otp',
   'POST /api/v1/customers/registration/otp/verify',
   'POST /api/v1/customers/registration',
+  'POST /api/v1/customers/registration-sessions/start',
+  'POST /api/v1/customers/registration-sessions/otp',
+  'POST /api/v1/customers/registration-sessions/otp/verify',
+  'POST /api/v1/customers/registration-sessions/consent',
+  'POST /api/v1/customers/registration-sessions/consent/withdraw',
+  'POST /api/v1/customers/registration-sessions/verification',
+  'POST /api/v1/customers/registration-sessions/status',
+  'POST /api/v1/customers/registration-sessions/revoke',
 ]);
 
 /**
