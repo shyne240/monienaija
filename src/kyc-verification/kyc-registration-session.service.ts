@@ -1,3 +1,4 @@
+import { isEmail } from 'class-validator';
 import {
   createHash,
   pbkdf2Sync,
@@ -18,6 +19,7 @@ import {
 } from '../customer-registration/customer-registration.constants';
 import type { A2SecurityRateLimitService } from '../authorization/security-rate-limit.service';
 import type { NotificationProvider } from '../notification/notification.types';
+import { TestNotificationProvider } from '../notification/notification-provider.interface';
 import { UUID } from './kyc-orchestrator';
 import { KycFoundationError, type IdentityKind } from './kyc.types';
 
@@ -46,6 +48,10 @@ export class KycRegistrationSessionService {
     private readonly sms: NotificationProvider,
     private readonly sharedRateLimit: Pick<A2SecurityRateLimitService, 'consume'>,
   ) {}
+  /** Simulation UI requires an in-memory test SMS sink, never a configured live provider. */
+  simulationAvailable(): boolean {
+    return process.env.NODE_ENV === 'test' && this.sms instanceof TestNotificationProvider;
+  }
   private async shared(category: string, value: string): Promise<void> {
     const rule = CUSTOMER_REGISTRATION_RATE_LIMITS.find((item) => item.category === category);
     if (!rule || !rule.enabled || !this.sharedRateLimit) throw new KycFoundationError('DISABLED');
@@ -326,6 +332,88 @@ export class KycRegistrationSessionService {
       );
       if (!changed[0]) throw new KycFoundationError('BLOCKED');
       await this.audit(m, id, consentId, 'CONSENT_WITHDRAWN');
+    });
+  }
+  /** Synthetic profile is session scoped, immutable once an identity request is reserved. */
+  async syntheticProfile(
+    id: string,
+    authorization: string,
+    profile?: {
+      firstName: string;
+      lastName: string;
+      dateOfBirth: string;
+      email?: string;
+    },
+  ): Promise<{
+    firstName: string;
+    lastName: string;
+    dateOfBirth: string;
+    email: string | null;
+  } | null> {
+    if (process.env.NODE_ENV !== 'test') throw new KycFoundationError('DISABLED');
+    if (profile) {
+      const date = new Date(`${profile.dateOfBirth}T00:00:00Z`);
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(profile.dateOfBirth) ||
+        !Number.isFinite(date.getTime()) ||
+        date.toISOString().slice(0, 10) !== profile.dateOfBirth ||
+        date.getUTCFullYear() < 1900 ||
+        date > new Date() ||
+        ![profile.firstName, profile.lastName].every(
+          (v) =>
+            typeof v === 'string' &&
+            v.trim().length > 0 &&
+            v.length <= 100 &&
+            ![...v].some((ch) => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127),
+        ) ||
+        (profile.email !== undefined &&
+          (typeof profile.email !== 'string' ||
+            profile.email.length > 254 ||
+            !isEmail(profile.email.trim())))
+      )
+        throw new KycFoundationError('INVALID');
+    }
+    return this.db.transaction(async (m) => {
+      await this.locked(m, id, authorization, 'VERIFIED');
+      if (profile) {
+        const attempts = await m.query<Array<{ id: string }>>(
+          'SELECT id FROM kyc_registration_attempts WHERE session_id=$1 LIMIT 1',
+          [id],
+        );
+        if (attempts[0]) throw new KycFoundationError('CONFLICT');
+        await m.query(
+          `INSERT INTO kyc_registration_synthetic_profiles(session_id,first_name,last_name,date_of_birth,email)
+          VALUES($1,$2,$3,$4,$5) ON CONFLICT(session_id) DO UPDATE SET first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,date_of_birth=EXCLUDED.date_of_birth,email=EXCLUDED.email,updated_at=clock_timestamp()`,
+          [
+            id,
+            profile.firstName.trim(),
+            profile.lastName.trim(),
+            profile.dateOfBirth,
+            profile.email?.trim() || null,
+          ],
+        );
+        await this.audit(m, id, id, 'SYNTHETIC_PROFILE_SAVED');
+      }
+      const rows = await m.query<
+        Array<{
+          first_name: string;
+          last_name: string;
+          date_of_birth: string;
+          email: string | null;
+        }>
+      >(
+        'SELECT first_name,last_name,date_of_birth::text,email FROM kyc_registration_synthetic_profiles WHERE session_id=$1',
+        [id],
+      );
+      const row = rows[0];
+      return row
+        ? {
+            firstName: row.first_name,
+            lastName: row.last_name,
+            dateOfBirth: row.date_of_birth,
+            email: row.email,
+          }
+        : null;
     });
   }
   async status(

@@ -1,3 +1,5 @@
+import { KycRegistrationSyntheticProfile1785753600111 } from '../src/migrations/1785753600111-KycRegistrationSyntheticProfile';
+import { RegistrationSyntheticProvider } from '../src/kyc-verification/kyc-registration-verification.service';
 import { KycProviderGovernance1785753600109 } from '../src/migrations/1785753600109-KycProviderGovernance';
 import { KycProviderGovernanceService } from '../src/kyc-verification/kyc-provider-governance.service';
 import { AuthorizationService } from '../src/authorization/authorization.service';
@@ -121,6 +123,7 @@ beforeAll(async () => {
   await new KycRegistrationSessions1785753600107().up(runner);
   await new KycRegistrationAttempts1785753600108().up(runner);
   await new KycProviderGovernance1785753600109().up(runner);
+  await new KycRegistrationSyntheticProfile1785753600111().up(runner);
   await db.query(
     `UPDATE kyc_provider_configuration SET version=1, configuration='{"providers":{"MONNIFY":{"enabled":false,"capabilities":[]},"SYNTHETIC":{"enabled":true,"capabilities":["BVN","NIN"]}},"routes":{"BVN":{"primary":"SYNTHETIC","fallback":null},"NIN":{"primary":"SYNTHETIC","fallback":null}}}'::jsonb WHERE singleton=true`,
   );
@@ -186,11 +189,149 @@ afterAll(async () => {
     await db.destroy();
   }
 });
-beforeEach(() => {
+beforeEach(async () => {
+  await db.query('DELETE FROM a2_security_rate_buckets');
+  await db.query('DELETE FROM kyc_registration_rate_buckets');
   call.mockReset().mockResolvedValue({ outcome: 'MATCH' });
 });
 
 describe('registration session Nest/Fastify API on synthetic PostgreSQL', () => {
+  it.each(['BVN', 'NIN'] as const)(
+    'uses session-owned profile and consent for %s synthetic identity matching',
+    async (kind) => {
+      const s = await setup(kind === 'BVN' ? 27 : 28);
+      const body = {
+        sessionId: s.id,
+        firstName: 'Synthetic',
+        lastName: 'Person',
+        dateOfBirth: '2000-01-01',
+        email: 'fixture@example.test',
+      };
+      expect((await post('synthetic-profile', body, s.token)).statusCode).toBe(401);
+      expect((await post('synthetic-profile', body, s.authorization)).statusCode).toBe(200);
+      expect(
+        (await post('synthetic-profile/status', { sessionId: s.id }, s.authorization)).json(),
+      ).toEqual({
+        firstName: 'Synthetic',
+        lastName: 'Person',
+        dateOfBirth: '2000-01-01',
+        email: 'fixture@example.test',
+      });
+      const c = await consent(s, kind);
+      const command = verification(s.id, c, randomUUID(), kind);
+      call.mockImplementation((input) => new RegistrationSyntheticProvider().verify(input));
+      const r = await post('synthetic-verification', command, s.authorization);
+      expect(r.json()).toMatchObject({ status: 'MATCH', simulated: true });
+      expect(call.mock.calls[0]![0].identity).toEqual({
+        firstName: 'Synthetic',
+        lastName: 'Person',
+        dateOfBirth: '2000-01-01',
+        phone: `+234${phone(kind === 'BVN' ? 27 : 28).slice(1)}`,
+      });
+      expect(
+        (await post('synthetic-profile', { ...body, lastName: 'Changed' }, s.authorization))
+          .statusCode,
+      ).toBe(409);
+      expect((await post('synthetic-verification', command, s.authorization)).json()).toMatchObject(
+        { status: 'MATCH', simulated: true },
+      );
+      expect(call).toHaveBeenCalledTimes(1);
+    },
+  );
+  it('returns review for synthetic mismatch and cannot dispatch without consent', async () => {
+    const s = await setup(29);
+    expect(
+      (
+        await post(
+          'synthetic-profile',
+          { sessionId: s.id, firstName: 'Wrong', lastName: 'Person', dateOfBirth: '2000-01-01' },
+          s.authorization,
+        )
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (await post('synthetic-verification', verification(s.id, randomUUID()), s.authorization))
+        .statusCode,
+    ).not.toBe(200);
+    expect(call).not.toHaveBeenCalled();
+    const c = await consent(s);
+    call.mockImplementation((input) => new RegistrationSyntheticProvider().verify(input));
+    expect(
+      (await post('synthetic-verification', verification(s.id, c), s.authorization)).json(),
+    ).toMatchObject({ status: 'REVIEW', simulated: true });
+  });
+  it('quarantines a timed-out profile-bound verification and never dispatches it twice', async () => {
+    const s = await setup(31);
+    expect(
+      (
+        await post(
+          'synthetic-profile',
+          {
+            sessionId: s.id,
+            firstName: 'Synthetic',
+            lastName: 'Person',
+            dateOfBirth: '2000-01-01',
+          },
+          s.authorization,
+        )
+      ).statusCode,
+    ).toBe(200);
+    const c = await consent(s);
+    const command = verification(s.id, c);
+    call.mockImplementation(() => new Promise<ProviderResult>(() => undefined));
+    const responses = await Promise.all([
+      post('synthetic-verification', command, s.authorization),
+      post('synthetic-verification', command, s.authorization),
+    ]);
+    expect(responses.map((r) => r.json<{ status: string }>().status)).toContain('UNKNOWN');
+    expect(call).toHaveBeenCalledTimes(1);
+    expect((await post('synthetic-verification', command, s.authorization)).json()).toMatchObject({
+      status: 'UNKNOWN',
+      simulated: true,
+    });
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+  it('advertises simulation only with a test SMS sink in test runtime', async () => {
+    expect((await post('simulation-availability', {})).json()).toEqual({
+      available: true,
+      simulated: true,
+    });
+    const configuredLiveLikeSink = { name: 'not-a-test-provider', send: jest.fn() };
+    const alternate = new KycRegistrationSessionService(
+      db,
+      configuredLiveLikeSink as never,
+      limiter,
+    );
+    expect(alternate.simulationAvailable()).toBe(false);
+  });
+  it('synthetic profile fails closed outside test runtime', async () => {
+    const s = await setup(30);
+    const original = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      expect((await post('simulation-availability', {})).json()).toEqual({
+        available: false,
+        simulated: true,
+      });
+      expect(
+        (
+          await post(
+            'synthetic-profile',
+            {
+              sessionId: s.id,
+              firstName: 'Synthetic',
+              lastName: 'Person',
+              dateOfBirth: '2000-01-01',
+            },
+            s.authorization,
+          )
+        ).statusCode,
+      ).toBe(503);
+    } finally {
+      process.env.NODE_ENV = original;
+    }
+  });
+
   it('completes phone, consent and synthetic verification through the API; replay cannot dispatch twice', async () => {
     const s = await setup(1);
     const status = await post('status', { sessionId: s.id }, s.authorization);

@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import type { DataSource, EntityManager } from 'typeorm';
 import { KycOrchestrator, UUID } from './kyc-orchestrator';
+import type { IdentityDetails } from './kyc.types';
 import type { KycProviderGovernanceService } from './kyc-provider-governance.service';
 import {
   KycFoundationError,
@@ -29,8 +30,16 @@ export const REGISTRATION_SYNTHETIC_PROVIDER = 'REGISTRATION_SYNTHETIC_PROVIDER'
 /** Never connected to a real provider: synthetic output cannot become customer KYC evidence. */
 export class RegistrationSyntheticProvider implements KycProvider {
   readonly code = 'SYNTHETIC';
-  async verify(): Promise<{ outcome: 'MATCH' }> {
-    return Promise.resolve({ outcome: 'MATCH' });
+  verify(input: VerificationInput): Promise<{ outcome: 'MATCH' | 'REVIEW' }> {
+    const i = input.identity;
+    return Promise.resolve({
+      outcome:
+        i.firstName.toLowerCase() === 'synthetic' &&
+        i.lastName.toLowerCase() === 'person' &&
+        i.dateOfBirth === '2000-01-01'
+          ? 'MATCH'
+          : 'REVIEW',
+    });
   }
 }
 type Row = {
@@ -63,13 +72,31 @@ class RegistrationStore implements KycStore {
     private readonly db: DataSource,
     private readonly governance: KycProviderGovernanceService,
     private readonly routeVersion: number,
+    private readonly profileIdentity: IdentityDetails | null,
   ) {}
   private async authorized(m: EntityManager, r: Reservation): Promise<void> {
-    const sessions = await m.query<Array<{ id: string }>>(
-      `SELECT id FROM kyc_registration_sessions WHERE id=$1 AND authorization_hash=$2 AND status='VERIFIED' AND verified_at IS NOT NULL AND expires_at>clock_timestamp() FOR UPDATE`,
+    const sessions = await m.query<Array<{ id: string; phone: string }>>(
+      `SELECT id,phone FROM kyc_registration_sessions WHERE id=$1 AND authorization_hash=$2 AND status='VERIFIED' AND verified_at IS NOT NULL AND expires_at>clock_timestamp() FOR UPDATE`,
       [r.customerId, createHash('sha256').update(r.sessionToken).digest('hex')],
     );
     if (!sessions[0]) throw new KycFoundationError('BLOCKED');
+    if (this.profileIdentity) {
+      const profiles = await m.query<
+        Array<{ first_name: string; last_name: string; date_of_birth: string }>
+      >(
+        'SELECT first_name,last_name,date_of_birth::text FROM kyc_registration_synthetic_profiles WHERE session_id=$1',
+        [r.customerId],
+      );
+      const p = profiles[0];
+      if (
+        !p ||
+        p.first_name !== this.profileIdentity.firstName ||
+        p.last_name !== this.profileIdentity.lastName ||
+        p.date_of_birth !== this.profileIdentity.dateOfBirth ||
+        `+234${sessions[0].phone}` !== this.profileIdentity.phone
+      )
+        throw new KycFoundationError('CONFLICT');
+    }
     const consents = await m.query<Array<{ id: string }>>(
       `SELECT id FROM kyc_registration_consents WHERE id=$1 AND session_id=$2 AND kind=$3 AND notice_version='synthetic-test-v1' AND withdrawn_at IS NULL AND expires_at>clock_timestamp() FOR UPDATE`,
       [r.consentId, r.customerId, r.kind],
@@ -268,6 +295,7 @@ export class KycRegistrationVerificationService {
     requestId: string;
     kind: 'BVN' | 'NIN';
     identifier: string;
+    useProfile?: boolean;
   }): Promise<{ id: string; status: string; simulated: true }> {
     // Synthetic verification is a test facility, never available in development,
     // staging, production or an unknown runtime environment.
@@ -285,16 +313,38 @@ export class KycRegistrationVerificationService {
     if (route.provider !== 'SYNTHETIC' || this.synthetic.code !== 'SYNTHETIC')
       throw new KycFoundationError('DISABLED');
     const chosen = this.synthetic;
-    const store = new RegistrationStore(this.db, this.governance, route.version);
+    let identity: IdentityDetails = {
+      firstName: 'Synthetic',
+      lastName: 'Person',
+      dateOfBirth: '2000-01-01',
+      phone: '00000000000',
+    };
+    if (command.useProfile) {
+      const rows = await this.db.query<
+        Array<{ first_name: string; last_name: string; date_of_birth: string; phone: string }>
+      >(
+        `SELECT p.first_name,p.last_name,p.date_of_birth::text,s.phone FROM kyc_registration_sessions s JOIN kyc_registration_synthetic_profiles p ON p.session_id=s.id WHERE s.id=$1 AND s.authorization_hash=$2 AND s.status='VERIFIED' AND s.expires_at>clock_timestamp()`,
+        [command.sessionId, createHash('sha256').update(command.authorization).digest('hex')],
+      );
+      const p = rows[0];
+      if (!p) throw new KycFoundationError('BLOCKED');
+      identity = {
+        firstName: p.first_name,
+        lastName: p.last_name,
+        dateOfBirth: p.date_of_birth,
+        phone: `+234${p.phone}`,
+      };
+    }
+    const store = new RegistrationStore(
+      this.db,
+      this.governance,
+      route.version,
+      command.useProfile ? identity : null,
+    );
     const input: VerificationInput = {
       kind: command.kind,
       identifier: command.identifier,
-      identity: {
-        firstName: 'Synthetic',
-        lastName: 'Person',
-        dateOfBirth: '2000-01-01',
-        phone: '00000000000',
-      },
+      identity,
     };
     const expected = JSON.stringify(input);
     const guarded: KycProvider = {

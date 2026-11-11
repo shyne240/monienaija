@@ -11,7 +11,17 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Equals, IsIn, IsISO8601, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
+import {
+  Equals,
+  IsEmail,
+  IsIn,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 import type { FastifyRequest } from 'fastify';
 import { KycRegistrationSessionService } from './kyc-registration-session.service';
 import { KycRegistrationVerificationService } from './kyc-registration-verification.service';
@@ -35,6 +45,12 @@ class ConsentDto extends SessionDto {
   @Equals(true) accepted!: boolean;
   @Equals('synthetic-test-v1') noticeVersion!: string;
   @IsISO8601({ strict: true }) expiresAt!: string;
+}
+class SyntheticProfileDto extends SessionDto {
+  @IsString() @MaxLength(100) firstName!: string;
+  @IsString() @MaxLength(100) lastName!: string;
+  @Matches(/^\d{4}-\d{2}-\d{2}$/) dateOfBirth!: string;
+  @IsOptional() @IsEmail() @MaxLength(254) email?: string;
 }
 class WithdrawDto extends SessionDto {
   @IsUUID() consentId!: string;
@@ -80,6 +96,13 @@ export class KycRegistrationSessionController {
       throw new ServiceUnavailableException('Registration service unavailable');
     }
   }
+  /** The simulation is never enabled outside test runtime. */
+  @Header('Cache-Control', 'no-store')
+  @Post('simulation-availability')
+  @HttpCode(200)
+  simulationAvailability() {
+    return { available: this.sessions.simulationAvailable(), simulated: true };
+  }
   @Header('Cache-Control', 'no-store')
   @Post('start')
   @HttpCode(200)
@@ -101,6 +124,41 @@ export class KycRegistrationSessionController {
   verifyOtp(@Body() body: OtpVerifyDto, @Req() req: FastifyRequest) {
     return this.run(() =>
       this.sessions.verifyOtp(body.sessionId, this.bearer(req), body.code, this.ip(req)),
+    );
+  }
+  @Header('Cache-Control', 'no-store')
+  @Post('synthetic-profile')
+  @HttpCode(200)
+  profile(@Body() body: SyntheticProfileDto, @Req() req: FastifyRequest) {
+    return this.run(() =>
+      this.sessions.syntheticProfile(body.sessionId, this.bearer(req), {
+        firstName: body.firstName,
+        lastName: body.lastName,
+        dateOfBirth: body.dateOfBirth,
+        email: body.email,
+      }),
+    );
+  }
+  @Header('Cache-Control', 'no-store')
+  @Post('synthetic-profile/status')
+  @HttpCode(200)
+  profileStatus(@Body() body: SessionDto, @Req() req: FastifyRequest) {
+    return this.run(() => this.sessions.syntheticProfile(body.sessionId, this.bearer(req)));
+  }
+  @Header('Cache-Control', 'no-store')
+  @Post('synthetic-verification')
+  @HttpCode(200)
+  syntheticVerify(@Body() body: VerifyDto, @Req() req: FastifyRequest) {
+    return this.run(() =>
+      this.verification.verify({
+        sessionId: body.sessionId,
+        authorization: this.bearer(req),
+        consentId: body.consentId,
+        requestId: body.requestId,
+        kind: body.kind,
+        identifier: body.identifier,
+        useProfile: true,
+      }),
     );
   }
   @Header('Cache-Control', 'no-store')

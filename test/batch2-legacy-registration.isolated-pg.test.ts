@@ -120,3 +120,80 @@ test('legacy HTTP completion cannot consume phone proof, create a customer, cred
   );
   expect(challenge).toEqual({ status: 'VERIFIED', consumed_at: null });
 });
+
+test.each(['BVN', 'NIN'] as const)(
+  'full AppModule matches a session-bound %s synthetic profile without creating financial records',
+  async (kind) => {
+    await db.query(
+      `UPDATE kyc_provider_configuration SET version=1, configuration='{"providers":{"MONNIFY":{"enabled":false,"capabilities":[]},"SYNTHETIC":{"enabled":true,"capabilities":["BVN","NIN"]}},"routes":{"BVN":{"primary":"SYNTHETIC","fallback":null},"NIN":{"primary":"SYNTHETIC","fallback":null}}}'::jsonb WHERE singleton=true`,
+    );
+    const send = (path: string, payload: object, token?: string) =>
+      app.inject({
+        method: 'POST',
+        url: `/api/v1/customers/registration-sessions/${path}`,
+        payload,
+        headers: token ? { authorization: `Bearer ${token}` } : {},
+      });
+    const before = await db.query<
+      Array<{ customers: string; wallets: string; credentials: string }>
+    >(
+      'SELECT (SELECT count(*) FROM customers) AS customers,(SELECT count(*) FROM wallet_accounts) AS wallets,(SELECT count(*) FROM customer_authentication_credentials) AS credentials',
+    );
+    const start = await send('start', { phone: kind === 'BVN' ? '08022223331' : '08022223332' });
+    expect(start.statusCode).toBe(200);
+    const s = start.json<{ id: string; token: string }>();
+    expect(
+      (await send('otp', { sessionId: s.id, requestId: randomUUID() }, s.token)).statusCode,
+    ).toBe(200);
+    const code = /code is (\d{6})/.exec(sms.sent.at(-1)?.message ?? '')?.[1];
+    expect(code).toBeDefined();
+    const verified = await send('otp/verify', { sessionId: s.id, code }, s.token);
+    expect(verified.statusCode).toBe(200);
+    const { authorization } = verified.json<{ authorization: string }>();
+    expect(
+      (
+        await send(
+          'synthetic-profile',
+          {
+            sessionId: s.id,
+            firstName: 'Synthetic',
+            lastName: 'Person',
+            dateOfBirth: '2000-01-01',
+          },
+          authorization,
+        )
+      ).statusCode,
+    ).toBe(200);
+    const consent = await send(
+      'consent',
+      {
+        sessionId: s.id,
+        requestId: randomUUID(),
+        kind,
+        accepted: true,
+        noticeVersion: 'synthetic-test-v1',
+        expiresAt: new Date(Date.now() + 300000).toISOString(),
+      },
+      authorization,
+    );
+    expect(consent.statusCode).toBe(200);
+    const response = await send(
+      'synthetic-verification',
+      {
+        sessionId: s.id,
+        requestId: randomUUID(),
+        consentId: consent.json<{ id: string }>().id,
+        kind,
+        identifier: '00000000000',
+      },
+      authorization,
+    );
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ status: 'MATCH', simulated: true });
+    expect(
+      await db.query(
+        'SELECT (SELECT count(*) FROM customers) AS customers,(SELECT count(*) FROM wallet_accounts) AS wallets,(SELECT count(*) FROM customer_authentication_credentials) AS credentials',
+      ),
+    ).toEqual(before);
+  },
+);

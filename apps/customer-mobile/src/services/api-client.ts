@@ -6,6 +6,8 @@ export interface ApiClientOptions {
   body?: unknown;
   idempotencyKey?: string;
   signal?: AbortSignal;
+  /** Purpose-limited registration bearer. null means no bearer, never customer auth. */
+  registrationBearer?: string | null;
   /**
    * Step-up PIN or password verification endpoints return 401 when the submitted
    * PIN/password is wrong while the customer's bearer session remains valid.
@@ -116,7 +118,10 @@ export async function request<T>(endpoint: string, options: ApiClientOptions = {
   }
 
   // Dynamically load the customer auth session token
-  const token = await SecureStorage.get('auth_session_token');
+  const registrationRequest = options.registrationBearer !== undefined;
+  const token = registrationRequest
+    ? options.registrationBearer
+    : await SecureStorage.get('auth_session_token');
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -164,18 +169,14 @@ export async function request<T>(endpoint: string, options: ApiClientOptions = {
       if (
         status === 401 &&
         Boolean(token) &&
+        !registrationRequest &&
         !options.preserveSessionOn401 &&
         !isStepUpOrLogin401(endpoint, normalizedMessage)
       ) {
         await purgeExpiredCustomerSession(true);
       }
 
-      throw new ApiError(
-        normalizedMessage,
-        status,
-        code,
-        validationErrors,
-      );
+      throw new ApiError(normalizedMessage, status, code, validationErrors);
     }
 
     return data as T;
@@ -194,11 +195,17 @@ export const ApiClient = {
   get: <T>(endpoint: string, options?: Omit<ApiClientOptions, 'method' | 'body'>) =>
     request<T>(endpoint, { ...options, method: 'GET' }),
 
-  post: <T>(endpoint: string, body?: unknown, options?: Omit<ApiClientOptions, 'method' | 'body'>) =>
-    request<T>(endpoint, { ...options, method: 'POST', body }),
+  post: <T>(
+    endpoint: string,
+    body?: unknown,
+    options?: Omit<ApiClientOptions, 'method' | 'body'>,
+  ) => request<T>(endpoint, { ...options, method: 'POST', body }),
 
-  patch: <T>(endpoint: string, body?: unknown, options?: Omit<ApiClientOptions, 'method' | 'body'>) =>
-    request<T>(endpoint, { ...options, method: 'PATCH', body }),
+  patch: <T>(
+    endpoint: string,
+    body?: unknown,
+    options?: Omit<ApiClientOptions, 'method' | 'body'>,
+  ) => request<T>(endpoint, { ...options, method: 'PATCH', body }),
 
   delete: <T>(endpoint: string, options?: Omit<ApiClientOptions, 'method' | 'body'>) =>
     request<T>(endpoint, { ...options, method: 'DELETE' }),
