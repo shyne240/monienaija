@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { DataSource, EntityManager } from 'typeorm';
 import { constantTimeMacEqual, identityBindingMac, UUID } from './kyc-orchestrator';
 import {
@@ -53,6 +53,23 @@ export class PostgresKycStore implements KycStore {
     );
     if (!rows.length) throw new KycFoundationError('NOT_FOUND');
   }
+  private async authenticatedSession(
+    m: EntityManager,
+    customerId: string,
+    token: string,
+  ): Promise<string> {
+    if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token))
+      throw new KycFoundationError('BLOCKED');
+    const hash = createHash('sha256').update(token).digest('hex');
+    const sessions = await m.query<Array<{ id: string }>>(
+      `SELECT s.id FROM authentication_sessions s JOIN customers c ON c.id=s.customer_id
+      WHERE s.token_hash=$1 AND s.customer_id=$2 AND s.audience='customer-api' AND s.status='ACTIVE'
+      AND s.expires_at > clock_timestamp() AND c.status='ACTIVE' AND c.deleted_at IS NULL FOR SHARE OF s`,
+      [hash, customerId],
+    );
+    if (!sessions[0]) throw new KycFoundationError('BLOCKED');
+    return sessions[0].id;
+  }
   private async audit(
     m: EntityManager,
     customerId: string,
@@ -66,16 +83,75 @@ export class PostgresKycStore implements KycStore {
       [randomUUID(), customerId, resourceId, action, actorId, outcome],
     );
   }
+  private async requestRefresh(m: EntityManager, customerId: string): Promise<void> {
+    await m.query(
+      `INSERT INTO kyc_evaluation_refresh(customer_id) VALUES ($1)
+      ON CONFLICT (customer_id) DO UPDATE SET revision=kyc_evaluation_refresh.revision+1,requested_at=clock_timestamp()`,
+      [customerId],
+    );
+  }
+  private async openReconciliation(
+    m: EntityManager,
+    attemptId: string,
+    customerId: string,
+    reason: 'UNKNOWN' | 'INTERRUPTED',
+  ): Promise<boolean> {
+    const id = randomUUID();
+    const rows = await m.query<Array<{ id: string }>>(
+      `INSERT INTO kyc_reconciliation_cases(id,attempt_id,customer_id,reason,status)
+      VALUES($1,$2,$3,$4,'OPEN') ON CONFLICT(attempt_id) DO NOTHING RETURNING id`,
+      [id, attemptId, customerId, reason],
+    );
+    if (rows.length) await this.audit(m, customerId, id, 'RECONCILIATION_OPENED', null, null);
+    return rows.length > 0;
+  }
+  /** Queue only; never re-dispatch, change evidence, or declare an uncertain billable request safe to repeat. */
+  async queueInterrupted(minimumAgeSeconds: number, limit = 100): Promise<number> {
+    if (
+      !Number.isInteger(minimumAgeSeconds) ||
+      minimumAgeSeconds < 60 ||
+      minimumAgeSeconds > 2592000 ||
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > 100
+    )
+      throw new KycFoundationError('INVALID');
+    const candidates = await this.db.query<Array<{ id: string; customer_id: string }>>(
+      `SELECT a.id,a.customer_id FROM kyc_verification_attempts a
+      JOIN customers c ON c.id=a.customer_id AND c.deleted_at IS NULL
+      WHERE a.outcome='DISPATCHING' AND a.created_at < clock_timestamp()-($1 * interval '1 second')
+      AND NOT EXISTS (SELECT 1 FROM kyc_reconciliation_cases x WHERE x.attempt_id=a.id)
+      ORDER BY a.created_at LIMIT $2`,
+      [minimumAgeSeconds, limit],
+    );
+    let count = 0;
+    for (const candidate of candidates) {
+      const opened = await this.db.transaction(async (m) => {
+        // Same customer -> attempt lock order as finish, preventing a lock cycle.
+        await this.lockCustomer(m, candidate.customer_id);
+        const rows = await m.query<Array<{ id: string }>>(
+          `SELECT id FROM kyc_verification_attempts WHERE id=$1 AND customer_id=$2 AND outcome='DISPATCHING'
+          AND created_at < clock_timestamp()-($3 * interval '1 second') FOR UPDATE`,
+          [candidate.id, candidate.customer_id, minimumAgeSeconds],
+        );
+        return rows.length
+          ? this.openReconciliation(m, candidate.id, candidate.customer_id, 'INTERRUPTED')
+          : false;
+      });
+      if (opened) count++;
+    }
+    return count;
+  }
+
   async grantConsent(command: {
     customerId: string;
-    actorId: string;
+    sessionToken: string;
     kind: IdentityKind;
     noticeVersion: string;
     expiresAt: Date;
   }): Promise<string> {
     if (
       !UUID.test(command.customerId) ||
-      !UUID.test(command.actorId) ||
       !['BVN', 'NIN'].includes(command.kind) ||
       !/^[A-Za-z0-9._-]{1,64}$/.test(command.noticeVersion) ||
       !(command.expiresAt instanceof Date) ||
@@ -86,33 +162,45 @@ export class PostgresKycStore implements KycStore {
     const id = randomUUID();
     await this.db.transaction(async (m) => {
       await this.lockCustomer(m, command.customerId);
+      const sessionId = await this.authenticatedSession(
+        m,
+        command.customerId,
+        command.sessionToken,
+      );
       await m.query(
-        'INSERT INTO kyc_consents (id,customer_id,kind,notice_version,actor_id,expires_at) VALUES ($1,$2,$3,$4,$5,$6)',
+        'INSERT INTO kyc_consents (id,customer_id,kind,notice_version,actor_id,expires_at,session_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
         [
           id,
           command.customerId,
           command.kind,
           command.noticeVersion,
-          command.actorId,
+          command.customerId,
           command.expiresAt,
+          sessionId,
         ],
       );
-      await this.audit(m, command.customerId, id, 'CONSENT_GRANTED', command.actorId, null);
+      await this.audit(m, command.customerId, id, 'CONSENT_GRANTED', command.customerId, null);
     });
     return id;
   }
-  async withdrawConsent(customerId: string, consentId: string, actorId: string): Promise<void> {
-    if (![customerId, consentId, actorId].every((s) => UUID.test(s)))
+  async withdrawConsent(
+    customerId: string,
+    consentId: string,
+    sessionToken: string,
+  ): Promise<void> {
+    if (![customerId, consentId].every((s) => UUID.test(s)))
       throw new KycFoundationError('INVALID');
     await this.db.transaction(async (m) => {
       await this.lockCustomer(m, customerId);
+      await this.authenticatedSession(m, customerId, sessionToken);
       const rows = await m.query<Array<{ id: string }>>(
         'WITH updated AS (UPDATE kyc_consents SET withdrawn_at=clock_timestamp() WHERE id=$1 AND customer_id=$2 AND withdrawn_at IS NULL RETURNING id) SELECT id FROM updated',
         [consentId, customerId],
       );
-      if (rows.length)
-        await this.audit(m, customerId, consentId, 'CONSENT_WITHDRAWN', actorId, null);
-      else {
+      if (rows.length) {
+        await this.audit(m, customerId, consentId, 'CONSENT_WITHDRAWN', customerId, null);
+        await this.requestRefresh(m, customerId);
+      } else {
         const existing = await m.query<Array<{ id: string }>>(
           'SELECT id FROM kyc_consents WHERE id=$1 AND customer_id=$2',
           [consentId, customerId],
@@ -130,10 +218,13 @@ export class PostgresKycStore implements KycStore {
       !/^[A-Z][A-Z0-9_]{0,31}$/.test(r.provider) ||
       !/^[0-9a-f]{64}$/.test(r.requestMac) ||
       !/^[0-9a-f]{64}$/.test(r.identityMac) ||
+      !/^[0-9a-f]{64}$/.test(r.identifierMac) ||
+      !/^[0-9a-f]{64}$/.test(r.ownershipKeyProof) ||
+      !/^[A-Za-z0-9._-]{1,64}$/.test(r.ownershipKeyVersion) ||
       !/^[A-Za-z0-9._-]{1,64}$/.test(r.macKeyVersion)
     )
       throw new KycFoundationError('INVALID');
-    return this.db.transaction(async (m) => {
+    const result = await this.db.transaction(async (m) => {
       // Fixed lock order makes the per-provider and per-customer rate limits atomic across processes.
       await m.query('INSERT INTO kyc_provider_locks(provider) VALUES ($1) ON CONFLICT DO NOTHING', [
         r.provider,
@@ -141,11 +232,25 @@ export class PostgresKycStore implements KycStore {
       await m.query('SELECT provider FROM kyc_provider_locks WHERE provider=$1 FOR UPDATE', [
         r.provider,
       ]);
+      await m.query(
+        `INSERT INTO kyc_ownership_key_state(singleton,key_version,key_proof) VALUES(true,$1,$2) ON CONFLICT DO NOTHING`,
+        [r.ownershipKeyVersion, r.ownershipKeyProof],
+      );
+      const keys = await m.query<Array<{ key_version: string; key_proof: string }>>(
+        'SELECT key_version,key_proof FROM kyc_ownership_key_state WHERE singleton=true FOR UPDATE',
+      );
+      if (
+        !keys[0] ||
+        keys[0].key_version !== r.ownershipKeyVersion ||
+        !constantTimeMacEqual(keys[0].key_proof, r.ownershipKeyProof)
+      )
+        throw new KycFoundationError('BLOCKED');
       await this.lockCustomer(m, r.customerId);
+      await this.authenticatedSession(m, r.customerId, r.sessionToken);
       const prior = await m.query<
         Array<AttemptRow & { consent_usable: boolean; evidence_usable: boolean }>
       >(
-        `SELECT a.*, (c.withdrawn_at IS NULL AND c.expires_at > clock_timestamp()) AS consent_usable, (a.expires_at > clock_timestamp()) AS evidence_usable FROM kyc_verification_attempts a JOIN kyc_consents c ON c.id=a.consent_id WHERE a.customer_id=$1 AND a.request_id=$2`,
+        `SELECT a.*, (c.session_id IS NOT NULL AND c.withdrawn_at IS NULL AND c.expires_at > clock_timestamp()) AS consent_usable, (a.expires_at > clock_timestamp()) AS evidence_usable FROM kyc_verification_attempts a JOIN kyc_consents c ON c.id=a.consent_id WHERE a.customer_id=$1 AND a.request_id=$2`,
         [r.customerId, r.requestId],
       );
       if (prior[0]) {
@@ -165,7 +270,7 @@ export class PostgresKycStore implements KycStore {
         return { attempt, isNew: false };
       }
       const consent = await m.query<Array<{ id: string }>>(
-        'SELECT id FROM kyc_consents WHERE id=$1 AND customer_id=$2 AND kind=$3 AND withdrawn_at IS NULL AND expires_at > clock_timestamp()',
+        'SELECT id FROM kyc_consents WHERE id=$1 AND customer_id=$2 AND kind=$3 AND session_id IS NOT NULL AND withdrawn_at IS NULL AND expires_at > clock_timestamp()',
         [r.consentId, r.customerId, r.kind],
       );
       if (!consent.length) throw new KycFoundationError('BLOCKED');
@@ -206,6 +311,20 @@ export class PostgresKycStore implements KycStore {
         providerCount[0].count >= r.policy.providerWindowLimit
       )
         throw new KycFoundationError('BLOCKED');
+      const claims = await m.query<Array<{ id: string; customer_id: string }>>(
+        'SELECT id,customer_id FROM kyc_identity_claims WHERE kind=$1 AND identifier_mac=$2 FOR UPDATE',
+        [r.kind, r.identifierMac],
+      );
+      if (claims[0] && claims[0].customer_id !== r.customerId) {
+        const conflictId = randomUUID();
+        const inserted = await m.query<Array<{ id: string }>>(
+          `INSERT INTO kyc_identity_conflicts(id,requester_customer_id,claim_id,claimed_customer_id,kind) VALUES($1,$2,$3,$4,$5) ON CONFLICT (requester_customer_id,claim_id) DO NOTHING RETURNING id`,
+          [conflictId, r.customerId, claims[0].id, claims[0].customer_id, r.kind],
+        );
+        if (inserted.length)
+          await this.audit(m, r.customerId, conflictId, 'OWNERSHIP_CONFLICT', null, null);
+        return { conflict: true as const };
+      }
       const id = randomUUID();
       const rows = await m.query<AttemptRow[]>(
         `INSERT INTO kyc_verification_attempts (id,customer_id,consent_id,request_id,kind,provider,policy_version,request_mac,mac_key_version,identity_mac,outcome,created_at)
@@ -223,10 +342,22 @@ export class PostgresKycStore implements KycStore {
           r.identityMac,
         ],
       );
+      if (claims[0])
+        await m.query("UPDATE kyc_identity_claims SET attempt_id=$1,status='PENDING' WHERE id=$2", [
+          id,
+          claims[0].id,
+        ]);
+      else
+        await m.query(
+          "INSERT INTO kyc_identity_claims(id,kind,identifier_mac,customer_id,attempt_id,status) VALUES($1,$2,$3,$4,$5,'PENDING')",
+          [randomUUID(), r.kind, r.identifierMac, r.customerId, id],
+        );
       await this.audit(m, r.customerId, id, 'ATTEMPT_RESERVED', null, 'DISPATCHING');
       if (!rows[0]) throw new KycFoundationError('BLOCKED');
       return { attempt: project(rows[0]), isNew: true };
     });
+    if ('conflict' in result) throw new KycFoundationError('BLOCKED');
+    return result;
   }
   /** Restricted internal history; authorization and scoped presentation belong to a later batch. */
   async listHistory(customerId: string, limit = 50): Promise<Attempt[]> {
@@ -255,7 +386,7 @@ export class PostgresKycStore implements KycStore {
     >(
       `SELECT a.kind,a.expires_at,a.identity_mac,a.mac_key_version
       FROM kyc_verification_attempts a JOIN kyc_consents c ON c.id=a.consent_id
-      WHERE a.customer_id=$1 AND a.outcome='MATCH' AND a.expires_at > clock_timestamp() AND c.withdrawn_at IS NULL AND c.expires_at > clock_timestamp()`,
+      WHERE a.customer_id=$1 AND a.outcome='MATCH' AND a.expires_at > clock_timestamp() AND c.session_id IS NOT NULL AND c.withdrawn_at IS NULL AND c.expires_at > clock_timestamp()`,
       [customerId],
     );
     const verified: EvidenceState[] = rows
@@ -305,6 +436,37 @@ export class PostgresKycStore implements KycStore {
         [attempt.id, attempt.customerId, outcome, validitySeconds, referenceMac],
       );
       if (!rows[0]) throw new KycFoundationError('CONFLICT');
+      await m.query(
+        `UPDATE kyc_identity_claims SET status=$1 WHERE attempt_id=$2 AND customer_id=$3`,
+        [
+          rows[0].outcome === 'MATCH'
+            ? 'VERIFIED'
+            : rows[0].outcome === 'REVIEW'
+              ? 'REVIEW'
+              : 'UNKNOWN',
+          attempt.id,
+          attempt.customerId,
+        ],
+      );
+      if (rows[0].outcome === 'UNKNOWN' || rows[0].outcome === 'CONSENT_WITHDRAWN')
+        await this.openReconciliation(m, attempt.id, attempt.customerId, 'UNKNOWN');
+      else {
+        const closed = await m.query<Array<{ id: string }>>(
+          `WITH closed AS (UPDATE kyc_reconciliation_cases SET status='NO_ACTION', closed_at=clock_timestamp()
+          WHERE attempt_id=$1 AND status='OPEN' AND reason='INTERRUPTED' RETURNING id) SELECT id FROM closed`,
+          [attempt.id],
+        );
+        if (closed[0])
+          await this.audit(
+            m,
+            attempt.customerId,
+            closed[0].id,
+            'RECONCILIATION_CLOSED',
+            null,
+            null,
+          );
+      }
+      await this.requestRefresh(m, attempt.customerId);
       await this.audit(
         m,
         attempt.customerId,

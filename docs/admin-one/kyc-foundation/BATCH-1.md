@@ -1,5 +1,7 @@
 # Secure KYC foundation — Batch 1 implementation report
 
+Historical checkpoint: see [Batch 1B](BATCH-1B.md) for later session, ownership and queue changes and current limitations.
+
 ## Status and safety boundary
 
 This is a **partially completed, isolated foundation, not an onboarding or production-ready KYC system**. No endpoint, Nest module, worker, existing customer flow, tier, permission, wallet, transaction, configuration, `.env`, existing database, or deployed environment has been wired or changed. No live provider calls or credentials were used. The migration is additive and has not been applied to any actual database. **Do not enable or integrate this code until the remaining controls below are completed and approved.**

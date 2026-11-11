@@ -30,6 +30,7 @@ function validInput(input: VerificationInput): boolean {
   if (
     !input ||
     !['BVN', 'NIN'].includes(input.kind) ||
+    typeof input.identifier !== 'string' ||
     !/^\d{11}$/.test(input.identifier) ||
     !input.identity
   )
@@ -84,11 +85,14 @@ export class KycOrchestrator {
     private readonly policy: KycPolicy,
     private readonly macKey: Buffer,
     private readonly macKeyVersion: string,
+    private readonly ownershipKey: Buffer,
+    private readonly ownershipKeyVersion: string,
   ) {}
   async verify(command: {
     customerId: string;
     consentId: string;
     requestId: string;
+    sessionToken: string;
     input: VerificationInput;
   }): Promise<Attempt> {
     const policy = { ...this.policy };
@@ -102,6 +106,11 @@ export class KycOrchestrator {
       !/^[A-Z][A-Z0-9_]{0,31}$/.test(this.provider.code) ||
       !Buffer.isBuffer(this.macKey) ||
       this.macKey.length < 32 ||
+      !Buffer.isBuffer(this.ownershipKey) ||
+      this.ownershipKey.length < 32 ||
+      !/^[A-Za-z0-9._-]{1,64}$/.test(this.ownershipKeyVersion) ||
+      typeof command.sessionToken !== 'string' ||
+      !/^[A-Za-z0-9_-]{43}$/.test(command.sessionToken) ||
       !/^[A-Za-z0-9._-]{1,64}$/.test(this.macKeyVersion)
     )
       throw new KycFoundationError('INVALID');
@@ -132,6 +141,17 @@ export class KycOrchestrator {
       requestId: command.requestId,
       kind,
       provider: this.provider.code,
+      sessionToken: command.sessionToken,
+      identifierMac: createHmac('sha256', this.ownershipKey)
+        .update('kyc-identifier-v1\0')
+        .update(kind)
+        .update('\0')
+        .update(identifier)
+        .digest('hex'),
+      ownershipKeyProof: createHmac('sha256', this.ownershipKey)
+        .update('kyc-ownership-key-proof-v1')
+        .digest('hex'),
+      ownershipKeyVersion: this.ownershipKeyVersion,
       requestMac,
       identityMac: identityBindingMac(command.customerId, identity, macKey),
       macKeyVersion: this.macKeyVersion,

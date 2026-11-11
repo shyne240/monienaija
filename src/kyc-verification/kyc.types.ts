@@ -55,6 +55,10 @@ export interface Reservation {
   requestId: string;
   kind: IdentityKind;
   provider: string;
+  sessionToken: string;
+  identifierMac: string;
+  ownershipKeyProof: string;
+  ownershipKeyVersion: string;
   requestMac: string;
   identityMac: string;
   macKeyVersion: string;

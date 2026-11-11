@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest assertions inspect mock functions without invoking them. */
 import { randomUUID } from 'node:crypto';
 import type { MonnifyVerificationProvider } from '../src/identity-verification/monnify-verification.provider';
+import { selectKycProvider } from '../src/kyc-verification/kyc-provider-router';
 import { KycOrchestrator } from '../src/kyc-verification/kyc-orchestrator';
 import { assertPolicy, evaluateEligibility } from '../src/kyc-verification/kyc-policy';
 import { matchNinDetails, MonnifyKycProvider } from '../src/kyc-verification/monnify-kyc.provider';
@@ -37,6 +38,7 @@ const command = {
   customerId: randomUUID(),
   consentId: randomUUID(),
   requestId: randomUUID(),
+  sessionToken: 'a'.repeat(43),
   input,
 };
 const attempt: Attempt = {
@@ -71,6 +73,8 @@ describe('KYC foundation policy and orchestration', () => {
         { ...policy, enabled: false },
         Buffer.alloc(32, 1),
         'v1',
+        Buffer.alloc(32, 2),
+        'owner-v1',
       ).verify(command),
     ).rejects.toMatchObject({ code: 'DISABLED' });
     expect(db.reserve).not.toHaveBeenCalled();
@@ -86,6 +90,8 @@ describe('KYC foundation policy and orchestration', () => {
       policy,
       Buffer.alloc(32, 1),
       'v1',
+      Buffer.alloc(32, 2),
+      'owner-v1',
     );
     await expect(
       orchestrator.verify({
@@ -109,6 +115,8 @@ describe('KYC foundation policy and orchestration', () => {
       policy,
       Buffer.alloc(32, 1),
       'v1',
+      Buffer.alloc(32, 2),
+      'owner-v1',
     ).verify(command);
     expect(result.outcome).toBe('DISPATCHING');
     expect(verify).not.toHaveBeenCalled();
@@ -124,6 +132,8 @@ describe('KYC foundation policy and orchestration', () => {
       policy,
       Buffer.alloc(32, 1),
       'v1',
+      Buffer.alloc(32, 2),
+      'owner-v1',
     ).verify(command);
     expect(result.outcome).toBe('UNKNOWN');
     expect(db.finish).toHaveBeenCalledTimes(1);
@@ -131,9 +141,15 @@ describe('KYC foundation policy and orchestration', () => {
     const failing: KycProvider['verify'] = () => Promise.reject(new Error('sensitive error'));
     expect(
       (
-        await new KycOrchestrator(db2, provider(failing), policy, Buffer.alloc(32, 1), 'v1').verify(
-          command,
-        )
+        await new KycOrchestrator(
+          db2,
+          provider(failing),
+          policy,
+          Buffer.alloc(32, 1),
+          'v1',
+          Buffer.alloc(32, 2),
+          'owner-v1',
+        ).verify(command)
       ).outcome,
     ).toBe('UNKNOWN');
   });
@@ -156,6 +172,8 @@ describe('KYC foundation policy and orchestration', () => {
       currentPolicy,
       Buffer.alloc(32, 1),
       'v1',
+      Buffer.alloc(32, 2),
+      'owner-v1',
     ).verify({ ...command, input: mutable });
     expect(verify.mock.calls[0]![0].identity.firstName).toBe('Synthetic');
     expect(db.finish.mock.calls[0]![2]).toBe(3600);
@@ -185,6 +203,22 @@ describe('KYC foundation policy and orchestration', () => {
       'PENDING',
     );
     expect(evaluateEligibility(p, [validPhone, validNin], now)).toBe('SATISFIED');
+  });
+  it('routes only to a single explicitly enabled capable provider and never falls back', () => {
+    const first = provider(jest.fn());
+    const backup = { ...provider(jest.fn()), code: 'BACKUP' };
+    const config = { version: 'v1', enabled: true, routes: { BVN: 'SYNTHETIC' } };
+    const registry = [
+      { provider: first, enabled: true, capabilities: ['BVN'] as const },
+      { provider: backup, enabled: true, capabilities: ['BVN', 'NIN'] as const },
+    ];
+    expect(selectKycProvider(config, 'BVN', registry)).toBe(first);
+    expect(() => selectKycProvider(undefined, 'BVN', registry)).toThrow('DISABLED');
+    expect(() => selectKycProvider(config, 'NIN', registry)).toThrow('BLOCKED');
+    expect(() =>
+      selectKycProvider(config, 'BVN', [{ ...registry[0]!, enabled: false }, registry[1]!]),
+    ).toThrow('BLOCKED');
+    expect(() => selectKycProvider(config, 'BVN', [registry[0]!, registry[0]!])).toThrow('BLOCKED');
   });
   it('uses verified NIN names and birth date, not the untrusted provider match flag', async () => {
     expect(
