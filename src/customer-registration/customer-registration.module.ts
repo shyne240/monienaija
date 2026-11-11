@@ -1,3 +1,6 @@
+import { KycRegistrationCompletionController } from '../kyc-verification/kyc-registration-completion.controller';
+import { KycRegistrationCompletionService } from '../kyc-verification/kyc-registration-completion.service';
+import { AuditService } from '../operations/audit.service';
 import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -54,6 +57,7 @@ import type { KycProvider } from '../kyc-verification/kyc.types';
   controllers: [
     CustomerRegistrationController,
     KycRegistrationSessionController,
+    KycRegistrationCompletionController,
     KycProviderGovernanceController,
   ],
   providers: [
@@ -66,6 +70,12 @@ import type { KycProvider } from '../kyc-verification/kyc.types';
         sms: NotificationProvider,
         limiter: A2SecurityRateLimitService,
       ) => new KycRegistrationSessionService(db, sms, limiter),
+    },
+    {
+      provide: KycRegistrationCompletionService,
+      inject: [DataSource, AuditService, KycRegistrationSessionService],
+      useFactory: (db: DataSource, audit: AuditService, sessions: KycRegistrationSessionService) =>
+        new KycRegistrationCompletionService(db, audit, sessions),
     },
     { provide: REGISTRATION_SYNTHETIC_PROVIDER, useClass: RegistrationSyntheticProvider },
     {

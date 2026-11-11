@@ -1,3 +1,4 @@
+import { KycSyntheticAttemptBinding1785753600112 } from '../src/migrations/1785753600112-KycSyntheticAttemptBinding';
 import { KycRegistrationSyntheticProfile1785753600111 } from '../src/migrations/1785753600111-KycRegistrationSyntheticProfile';
 import { RegistrationSyntheticProvider } from '../src/kyc-verification/kyc-registration-verification.service';
 import { KycProviderGovernance1785753600109 } from '../src/migrations/1785753600109-KycProviderGovernance';
@@ -124,6 +125,7 @@ beforeAll(async () => {
   await new KycRegistrationAttempts1785753600108().up(runner);
   await new KycProviderGovernance1785753600109().up(runner);
   await new KycRegistrationSyntheticProfile1785753600111().up(runner);
+  await new KycSyntheticAttemptBinding1785753600112().up(runner);
   await db.query(
     `UPDATE kyc_provider_configuration SET version=1, configuration='{"providers":{"MONNIFY":{"enabled":false,"capabilities":[]},"SYNTHETIC":{"enabled":true,"capabilities":["BVN","NIN"]}},"routes":{"BVN":{"primary":"SYNTHETIC","fallback":null},"NIN":{"primary":"SYNTHETIC","fallback":null}}}'::jsonb WHERE singleton=true`,
   );

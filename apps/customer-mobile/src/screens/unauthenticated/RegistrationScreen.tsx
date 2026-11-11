@@ -20,6 +20,7 @@ type Session = {
   consentId?: string;
   kind?: Kind;
   verificationId?: string;
+  matchedAttemptId?: string;
 };
 const STORAGE_KEY = 'synthetic_registration_session_v1';
 const base = '/customers/registration-sessions/';
@@ -125,7 +126,12 @@ export const RegistrationScreen: React.FC = () => {
           setEmail(profile.email ?? '');
         }
         if (saved.kind) setKind(saved.kind);
-        setStep(profile ? 'IDENTITY' : 'PROFILE');
+        if (saved.matchedAttemptId) {
+          setResult(
+            'Synthetic identity matched. Complete your test draft or retry if interrupted.',
+          );
+          setStep('RESULT');
+        } else setStep(profile ? 'IDENTITY' : 'PROFILE');
       } catch (e) {
         if (!availabilityConfirmed || (e instanceof ApiError && e.status !== 401)) {
           if (live) setStep('UNAVAILABLE');
@@ -215,9 +221,21 @@ export const RegistrationScreen: React.FC = () => {
       );
       setStep('IDENTITY');
     });
+  const completeDraft = () =>
+    withError(async () => {
+      if (!session?.matchedAttemptId) return;
+      await post(
+        'synthetic-complete',
+        { sessionId: session.id, attemptId: session.matchedAttemptId },
+        session.token,
+      );
+      setResult(
+        'Synthetic DRAFT created. No account or wallet is active, and this is not production KYC.',
+      );
+    });
   const verifyIdentity = () =>
     withError(async () => {
-      if (!session || !accepted || identifier !== '00000000000')
+      if (!session || !accepted || !/^0000000000[0-9]$/.test(identifier))
         throw new Error('fixture or consent');
       let next = session;
       if (next.kind && next.kind !== kind) throw new Error('kind cannot change');
@@ -237,7 +255,7 @@ export const RegistrationScreen: React.FC = () => {
         next = { ...next, consentId: c.id, kind, verificationId: await uuid() };
         await save(next);
       }
-      const r = await post<{ status: string; simulated: true }>(
+      const r = await post<{ id: string; status: string; simulated: true }>(
         'synthetic-verification',
         {
           sessionId: next.id,
@@ -249,11 +267,10 @@ export const RegistrationScreen: React.FC = () => {
         next.token,
       );
       setIdentifier('');
-      if (r.status === 'MATCH')
-        setResult(
-          'Synthetic identity matched. This is a simulation only: no Tier 1 approval, account or wallet has been created.',
-        );
-      else if (r.status === 'REVIEW')
+      if (r.status === 'MATCH') {
+        await save({ ...next, matchedAttemptId: r.id });
+        setResult('Synthetic identity matched. Complete your test draft or retry if interrupted.');
+      } else if (r.status === 'REVIEW')
         setResult(
           'The synthetic identity details did not match. Start a new session and check the fixture details.',
         );
@@ -358,7 +375,8 @@ export const RegistrationScreen: React.FC = () => {
         <View>
           <Text>Step 4 of 4: Synthetic identity</Text>
           <Text style={styles.message}>
-            For a match use Synthetic Person, born 2000-01-01 and identifier 00000000000.
+            For a match use Synthetic Person, born 2000-01-01 and a test identifier from 00000000000
+            to 00000000009. Each test identifier can be claimed only once per type.
           </Text>
           <Button
             label={`Selected: ${kind} (tap to change)`}
@@ -390,13 +408,17 @@ export const RegistrationScreen: React.FC = () => {
       {step === 'RESULT' && (
         <View>
           <Text style={styles.message}>{result}</Text>
-          {!result.startsWith('Synthetic identity matched') && (
-            <Button
-              label="Return to verification"
-              variant="outline"
-              onPress={() => setStep('IDENTITY')}
-            />
+          {result.startsWith('Synthetic identity matched') && (
+            <Button label="Create test draft" loading={busy} onPress={completeDraft} />
           )}
+          {!result.startsWith('Synthetic identity matched') &&
+            !result.startsWith('Synthetic DRAFT created') && (
+              <Button
+                label="Return to verification"
+                variant="outline"
+                onPress={() => setStep('IDENTITY')}
+              />
+            )}
           <Button label="Start again" variant="text" onPress={() => void reset()} />
         </View>
       )}

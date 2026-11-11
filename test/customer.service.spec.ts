@@ -228,6 +228,17 @@ describe('CustomerService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('rejects activation of a synthetic customer before the phone gate', async () => {
+    const { service, repositories } = fixture();
+    const customer = await createCustomer(service);
+    customer.isSynthetic = true;
+    const repo = repositories.get(Customer)!;
+    await repo.save(customer);
+    await expect(
+      service.updateStatus(customer.id, { status: CustomerStatus.ACTIVE, actor: 'customer-ops' }),
+    ).rejects.toThrow('Synthetic customers cannot be activated');
+  });
+
   it('masks phone-derived customer references in customer audit records', async () => {
     const { service, audit } = fixture();
     await service.create({

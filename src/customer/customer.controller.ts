@@ -461,6 +461,7 @@ export class CustomerController {
       reference: maskCustomerReference(customer.reference),
       type: customer.type,
       status: customer.status,
+      isSynthetic: customer.isSynthetic,
       kycLevel: customer.kycLevel,
       kycStatus: customer.kycStatus,
       version: customer.version,

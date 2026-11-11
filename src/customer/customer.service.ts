@@ -160,6 +160,8 @@ export class CustomerService {
       }
       this.assertCustomerTransition(customer.status, command.status);
       if (command.status === CustomerStatus.ACTIVE) {
+        if (customer.isSynthetic)
+          throw new ConflictException('Synthetic customers cannot be activated');
         await this.assertVerifiedPrimaryPhone(manager, id);
       }
       const previous = this.auditCustomer(customer);

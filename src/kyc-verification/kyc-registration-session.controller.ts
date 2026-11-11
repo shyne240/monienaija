@@ -61,7 +61,7 @@ class AvailabilityDto extends SessionDto {
 class VerifyDto extends WithdrawDto {
   @IsUUID() requestId!: string;
   @IsIn(['BVN', 'NIN']) kind!: 'BVN' | 'NIN';
-  @Equals('00000000000') identifier!: string;
+  @Matches(/^0000000000[0-9]$/) identifier!: string;
 }
 /** Public entrypoints authenticate with a purpose-limited registration bearer, never a customer session. */
 @Controller('customers/registration-sessions')

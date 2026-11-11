@@ -49,7 +49,8 @@ test.each(['BVN', 'NIN'])(
       if (path.endsWith('/status')) return { status: 'PENDING', expiresAt: future };
       if (path.endsWith('/otp/verify')) return { authorization: 'verified-token' };
       if (path.endsWith('/consent')) return { id: 'consent-id' };
-      if (path.endsWith('/synthetic-verification')) return { status: 'MATCH', simulated: true };
+      if (path.endsWith('/synthetic-verification'))
+        return { id: 'attempt-id', status: 'MATCH', simulated: true };
       return {};
     });
     const v = render(<RegistrationScreen />);
@@ -68,9 +69,13 @@ test.each(['BVN', 'NIN'])(
     fireEvent.changeText(v.getByTestId('test-identifier'), '00000000000');
     fireEvent.press(v.getByText('Accept synthetic test consent'));
     fireEvent.press(v.getByText('Verify test identity'));
-    expect(
-      await v.findByText(/no Tier 1 approval, account or wallet has been created/),
-    ).toBeTruthy();
+    fireEvent.press(await v.findByText('Create test draft'));
+    expect(await v.findByText(/Synthetic DRAFT created/)).toBeTruthy();
+    expect(post).toHaveBeenCalledWith(
+      expect.stringContaining('/synthetic-complete'),
+      { sessionId: 'session-id', attemptId: 'attempt-id' },
+      { registrationBearer: 'verified-token' },
+    );
     expect(post).toHaveBeenCalledWith(
       expect.stringContaining('/synthetic-verification'),
       expect.objectContaining({ kind, identifier: '00000000000' }),
@@ -97,4 +102,28 @@ test('resumes a verified profile without retaining an identifier or OTP', async 
   const v = render(<RegistrationScreen />);
   expect(await v.findByText('Step 4 of 4: Synthetic identity')).toBeTruthy();
   expect(v.getByTestId('test-identifier').props.value).toBe('');
+});
+
+test('resumes matched attempt and retries draft completion without another identity request', async () => {
+  (SecureStorage.get as jest.Mock).mockResolvedValue(
+    JSON.stringify({
+      id: 'session-id',
+      token: 'verified-token',
+      expiresAt: future,
+      phase: 'VERIFIED',
+      matchedAttemptId: 'attempt-id',
+    }),
+  );
+  post.mockImplementation(async (path: string) => {
+    if (path.endsWith('/simulation-availability')) return { available: true };
+    if (path.endsWith('/synthetic-profile/status'))
+      return { firstName: 'Synthetic', lastName: 'Person', dateOfBirth: '2000-01-01', email: null };
+    return { status: 'VERIFIED', expiresAt: future };
+  });
+  const v = render(<RegistrationScreen />);
+  fireEvent.press(await v.findByText('Create test draft'));
+  expect(await v.findByText(/Synthetic DRAFT created/)).toBeTruthy();
+  expect(post.mock.calls.some(([p]: [string]) => p.endsWith('/synthetic-verification'))).toBe(
+    false,
+  );
 });

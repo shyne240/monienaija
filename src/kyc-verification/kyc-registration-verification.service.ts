@@ -73,6 +73,7 @@ class RegistrationStore implements KycStore {
     private readonly governance: KycProviderGovernanceService,
     private readonly routeVersion: number,
     private readonly profileIdentity: IdentityDetails | null,
+    private readonly fixtureHash: string | null,
   ) {}
   private async authorized(m: EntityManager, r: Reservation): Promise<void> {
     const sessions = await m.query<Array<{ id: string; phone: string }>>(
@@ -162,6 +163,12 @@ class RegistrationStore implements KycStore {
         `INSERT INTO kyc_registration_attempts(id,session_id,consent_id,request_id,kind,provider,request_mac,state) VALUES($1,$2,$3,$4,$5,'SYNTHETIC',$6,'RESERVED') RETURNING *`,
         [id, r.customerId, r.consentId, r.requestId, r.kind, r.requestMac],
       );
+      if (this.profileIdentity && this.fixtureHash) {
+        await m.query(
+          'INSERT INTO kyc_registration_synthetic_attempt_bindings(attempt_id,identity_mac,fixture_hash) VALUES($1,$2,$3)',
+          [id, r.identityMac, this.fixtureHash],
+        );
+      }
       await m.query(
         'INSERT INTO kyc_registration_private_audit(id,session_id,resource_id,action) VALUES($1,$2,$3,$4)',
         [randomUUID(), r.customerId, id, 'VERIFY_RESERVED'],
@@ -305,7 +312,7 @@ export class KycRegistrationVerificationService {
       !UUID.test(command.consentId) ||
       !UUID.test(command.requestId) ||
       !['BVN', 'NIN'].includes(command.kind) ||
-      command.identifier !== '00000000000' ||
+      !/^0000000000[0-9]$/.test(command.identifier) ||
       !/^[A-Za-z0-9_-]{43}$/.test(command.authorization)
     )
       throw new KycFoundationError('INVALID');
@@ -340,6 +347,11 @@ export class KycRegistrationVerificationService {
       this.governance,
       route.version,
       command.useProfile ? identity : null,
+      command.useProfile
+        ? createHash('sha256')
+            .update(`synthetic-fixture-v1\0${command.kind}\0${command.identifier}`)
+            .digest('hex')
+        : null,
     );
     const input: VerificationInput = {
       kind: command.kind,

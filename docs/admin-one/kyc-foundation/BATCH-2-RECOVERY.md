@@ -1,3 +1,5 @@
+> Historical recovery snapshot; Batch 2A subsequently adds isolated synthetic DRAFT creation. See [BATCH-2A.md](BATCH-2A.md) for current scope and limitations.
+
 # Batch 2 recovery — partial synthetic journey, not complete
 
 The mobile registration screen now runs a **test-only simulation**, not a real customer registration. It is shown only in a development build when the backend's simulation-availability endpoint confirms `NODE_ENV=test` and an in-memory test SMS provider. The backend independently enforces `NODE_ENV=test` on the synthetic profile and verification paths, and governance must route to SYNTHETIC. Outside that runtime the screen says registration is unavailable. Do not use real identity numbers or personal data in this simulation.

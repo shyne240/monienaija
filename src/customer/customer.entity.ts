@@ -31,6 +31,10 @@ export class Customer {
   @Column({ type: 'varchar', length: 20 })
   status!: CustomerStatus;
 
+  /** Test-only synthetic subjects are permanently non-financial. */
+  @Column({ name: 'is_synthetic', type: 'boolean', default: false })
+  isSynthetic!: boolean;
+
   @Column({ name: 'kyc_level', type: 'varchar', length: 20 })
   kycLevel!: CustomerKycLevel;
 
