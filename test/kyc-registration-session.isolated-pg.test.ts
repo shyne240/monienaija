@@ -1,3 +1,6 @@
+import { KycProviderGovernance1785753600109 } from '../src/migrations/1785753600109-KycProviderGovernance';
+import { KycProviderGovernanceService } from '../src/kyc-verification/kyc-provider-governance.service';
+import { AuthorizationService } from '../src/authorization/authorization.service';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { KycRegistrationAttempts1785753600108 } from '../src/migrations/1785753600108-KycRegistrationAttempts';
@@ -68,8 +71,19 @@ beforeAll(async () => {
   const runner = db.createQueryRunner();
   await new KycRegistrationSessions1785753600107().up(runner);
   await new KycRegistrationAttempts1785753600108().up(runner);
+  await new KycProviderGovernance1785753600109().up(runner);
+  await db.query(
+    `UPDATE kyc_provider_configuration SET version=1, configuration='{"providers":{"MONNIFY":{"enabled":false,"capabilities":[]},"SYNTHETIC":{"enabled":true,"capabilities":["BVN","NIN"]}},"routes":{"BVN":{"primary":"SYNTHETIC","fallback":null},"NIN":{"primary":"SYNTHETIC","fallback":null}}}'::jsonb WHERE singleton=true`,
+  );
   await runner.release();
-  verifier = new KycRegistrationVerificationService(db, new RegistrationSyntheticProvider());
+  verifier = new KycRegistrationVerificationService(
+    db,
+    new RegistrationSyntheticProvider(),
+    new KycProviderGovernanceService(
+      db,
+      new AuthorizationService(db, { record: jest.fn().mockResolvedValue(undefined) } as never),
+    ),
+  );
   provider = new TestNotificationProvider();
   service = new KycRegistrationSessionService(db, provider, sharedRateLimit);
 });

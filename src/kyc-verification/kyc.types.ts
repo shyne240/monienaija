@@ -26,6 +26,10 @@ export interface KycProvider {
   readonly code: string;
   verify(input: VerificationInput, signal: AbortSignal): Promise<ProviderResult>;
 }
+/** Server-side routing authority; no client-provided provider choice. */
+export interface KycRoutingAuthority {
+  assert(provider: string, kind: IdentityKind): Promise<void>;
+}
 export interface KycPolicy {
   version: string;
   enabled: boolean;

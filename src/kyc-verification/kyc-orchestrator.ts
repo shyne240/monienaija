@@ -6,6 +6,7 @@ import {
   type IdentityDetails,
   type KycPolicy,
   type KycProvider,
+  type KycRoutingAuthority,
   type KycStore,
   type VerificationInput,
 } from './kyc.types';
@@ -87,6 +88,7 @@ export class KycOrchestrator {
     private readonly macKeyVersion: string,
     private readonly ownershipKey: Buffer,
     private readonly ownershipKeyVersion: string,
+    private readonly routing: KycRoutingAuthority,
   ) {}
   async verify(command: {
     customerId: string;
@@ -114,6 +116,9 @@ export class KycOrchestrator {
       !/^[A-Za-z0-9._-]{1,64}$/.test(this.macKeyVersion)
     )
       throw new KycFoundationError('INVALID');
+    if (!this.routing || typeof this.routing.assert !== 'function')
+      throw new KycFoundationError('DISABLED');
+    await this.routing.assert(this.provider.code, command.input.kind);
     const macKey = Buffer.from(this.macKey);
     const { kind, identifier } = command.input;
     const identity = { ...command.input.identity };
@@ -162,6 +167,7 @@ export class KycOrchestrator {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
+      await this.routing.assert(this.provider.code, input.kind);
       result = await Promise.race([
         this.provider.verify(input, controller.signal),
         new Promise<never>((_, reject) => {

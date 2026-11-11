@@ -837,6 +837,38 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
     assignable: true,
   },
 
+  // KYC provider routing: dedicated functions prevent assessment authority from implying configuration authority.
+  {
+    functionCode: 'kyc.provider.view',
+    domain: 'COMPLIANCE',
+    name: 'View KYC provider configuration',
+    description: 'View non-secret KYC provider configuration and history.',
+    sensitivity: READ,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+  },
+  {
+    functionCode: 'kyc.provider.propose',
+    domain: 'COMPLIANCE',
+    name: 'Propose KYC provider configuration',
+    description: 'Propose KYC provider routing under independent approval.',
+    sensitivity: PRIVILEGED,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    makerCheckerRequired: true,
+    approvalRequired: true,
+  },
+  {
+    functionCode: 'kyc.provider.approve',
+    domain: 'COMPLIANCE',
+    name: 'Approve KYC provider configuration',
+    description: 'Independently approve KYC provider routing.',
+    sensitivity: PRIVILEGED,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    makerCheckerRequired: true,
+    approvalRequired: true,
+  },
   // ----------------------------------------------------------------- COMPLIANCE
   {
     functionCode: 'kyc.view',
@@ -1271,6 +1303,8 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('SUPER_ADMIN', 'workforce.user.view', VIEW),
   nowAssign('SUPER_ADMIN', 'workforce.user.create', EXECUTE),
   nowAssign('SUPER_ADMIN', 'workforce.user.suspend', EXECUTE),
+  nowAssign('SUPER_ADMIN', 'kyc.provider.view', VIEW),
+  nowAssign('SUPER_ADMIN', 'kyc.provider.propose', INITIATE),
   nowAssign('SUPER_ADMIN', 'kyc.view', VIEW),
   nowAssign('SUPER_ADMIN', 'kyc.review', EXECUTE),
   nowAssign('SUPER_ADMIN', 'kyc.approve', EXECUTE),
@@ -1444,6 +1478,8 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('AGENT_NETWORK_MANAGER', 'limit.view', VIEW),
 
   // ------------------------------------------------------------------- COMPLIANCE
+  nowAssign('COMPLIANCE', 'kyc.provider.view', VIEW),
+  nowAssign('COMPLIANCE', 'kyc.provider.approve', APPROVE),
   nowAssign('COMPLIANCE', 'kyc.view', VIEW),
   nowAssign('COMPLIANCE', 'kyc.review', EXECUTE),
   nowAssign('COMPLIANCE', 'kyc.approve', EXECUTE),

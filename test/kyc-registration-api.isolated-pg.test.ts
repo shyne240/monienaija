@@ -1,3 +1,6 @@
+import { KycProviderGovernance1785753600109 } from '../src/migrations/1785753600109-KycProviderGovernance';
+import { KycProviderGovernanceService } from '../src/kyc-verification/kyc-provider-governance.service';
+import { AuthorizationService } from '../src/authorization/authorization.service';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { MODULE_METADATA } from '@nestjs/common/constants';
@@ -117,6 +120,10 @@ beforeAll(async () => {
   const runner = db.createQueryRunner();
   await new KycRegistrationSessions1785753600107().up(runner);
   await new KycRegistrationAttempts1785753600108().up(runner);
+  await new KycProviderGovernance1785753600109().up(runner);
+  await db.query(
+    `UPDATE kyc_provider_configuration SET version=1, configuration='{"providers":{"MONNIFY":{"enabled":false,"capabilities":[]},"SYNTHETIC":{"enabled":true,"capabilities":["BVN","NIN"]}},"routes":{"BVN":{"primary":"SYNTHETIC","fallback":null},"NIN":{"primary":"SYNTHETIC","fallback":null}}}'::jsonb WHERE singleton=true`,
+  );
   await runner.release();
   limiter = new A2SecurityRateLimitService(db, {
     record: jest.fn().mockResolvedValue(undefined),
@@ -128,11 +135,13 @@ beforeAll(async () => {
       typeof entry === 'object' &&
       entry !== null &&
       'provide' in entry &&
-      [KycRegistrationSessionService, KycRegistrationVerificationService].includes(
-        entry.provide as typeof KycRegistrationSessionService,
-      ),
+      [
+        KycRegistrationSessionService,
+        KycRegistrationVerificationService,
+        KycProviderGovernanceService,
+      ].includes(entry.provide as typeof KycRegistrationSessionService),
   );
-  expect(wired).toHaveLength(2);
+  expect(wired).toHaveLength(3);
   expect(Reflect.getMetadata(MODULE_METADATA.CONTROLLERS, CustomerRegistrationModule)).toContain(
     KycRegistrationSessionController,
   );
@@ -150,6 +159,12 @@ beforeAll(async () => {
     providers: [
       ...wired,
       { provide: DataSource, useValue: db },
+      {
+        provide: AuthorizationService,
+        useValue: new AuthorizationService(db, {
+          record: jest.fn().mockResolvedValue(undefined),
+        } as never),
+      },
       { provide: NOTIFICATION_PROVIDER_TOKEN, useValue: sms },
       { provide: A2SecurityRateLimitService, useValue: limiter },
       { provide: REGISTRATION_SYNTHETIC_PROVIDER, useValue: provider },
@@ -317,6 +332,24 @@ describe('registration session Nest/Fastify API on synthetic PostgreSQL', () => 
       status: 'UNKNOWN',
     });
     expect(call).toHaveBeenCalledTimes(1);
+    await db.query(
+      `UPDATE kyc_registration_attempts SET created_at=clock_timestamp()-interval '2 minutes' WHERE session_id=$1`,
+      [s.id],
+    );
+    const newConsent = await consent(s, 'NIN');
+    expect(
+      (
+        await post(
+          'verification',
+          verification(s.id, newConsent, randomUUID(), 'NIN'),
+          s.authorization,
+        )
+      ).statusCode,
+    ).not.toBe(200);
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(
+      (await post('availability', { sessionId: s.id, kind: 'NIN' }, s.authorization)).json(),
+    ).toEqual({ status: 'PENDING_RECONCILIATION' });
   });
   it('fails closed if session expires between reservation and dispatch', async () => {
     const s = await setup(8);
@@ -468,6 +501,35 @@ describe('registration session Nest/Fastify API on synthetic PostgreSQL', () => 
       (await post('otp', { sessionId: s.id, requestId: randomUUID() }, s.token)).statusCode,
     ).toBe(429);
     expect(sms.sent).toHaveLength(before + 1);
+  });
+  it('exposes session-scoped availability and prevents dispatch after configuration changes', async () => {
+    const s = await setup(21),
+      c = await consent(s);
+    expect(
+      (await post('availability', { sessionId: s.id, kind: 'BVN' }, s.authorization)).json(),
+    ).toEqual({ status: 'AVAILABLE' });
+    expect(
+      (await post('availability', { sessionId: s.id, kind: 'BVN' }, 'x'.repeat(43))).statusCode,
+    ).not.toBe(200);
+    await db.query(
+      `CREATE FUNCTION change_route_after_reserve() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN UPDATE kyc_provider_configuration SET version=version+1,configuration=jsonb_set(configuration,'{providers,SYNTHETIC,enabled}','false'::jsonb) WHERE singleton=true; RETURN NEW; END $$`,
+    );
+    await db.query(
+      'CREATE TRIGGER change_route_after_reserve AFTER INSERT ON kyc_registration_attempts FOR EACH ROW EXECUTE FUNCTION change_route_after_reserve()',
+    );
+    try {
+      await post('verification', verification(s.id, c), s.authorization);
+      expect(call).not.toHaveBeenCalled();
+      expect(
+        (await post('availability', { sessionId: s.id, kind: 'BVN' }, s.authorization)).json(),
+      ).toEqual({ status: 'CONFIGURATION_INCOMPLETE' });
+    } finally {
+      await db.query('DROP TRIGGER change_route_after_reserve ON kyc_registration_attempts');
+      await db.query('DROP FUNCTION change_route_after_reserve()');
+      await db.query(
+        `UPDATE kyc_provider_configuration SET version=1,configuration=jsonb_set(configuration,'{providers,SYNTHETIC,enabled}','true'::jsonb) WHERE singleton=true`,
+      );
+    }
   });
   it('rechecks consent after consumption and before provider invocation', async () => {
     const s = await setup(18),

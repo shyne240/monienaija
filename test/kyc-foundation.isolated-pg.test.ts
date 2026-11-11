@@ -33,6 +33,7 @@ const db = new DataSource({
   logging: false,
   extra: { options: `-c search_path=${schema}` },
 });
+const testRouting = { assert: () => Promise.resolve() };
 const policy: KycPolicy = {
   version: 'synthetic-v1',
   enabled: true,
@@ -145,6 +146,7 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
       'test-key-v1',
       ownerKey,
       'owner-v1',
+      testRouting,
     );
     const command = { customerId, consentId, requestId, sessionToken: tokenFor(customerId), input };
     const first = orchestrator.verify(command);
@@ -216,6 +218,7 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
       'test-key-v1',
       ownerKey,
       'owner-v1',
+      testRouting,
     );
     expect(
       (
@@ -299,6 +302,7 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
       'test-key-v1',
       ownerKey,
       'owner-v1',
+      testRouting,
     );
     await expect(
       orchestrator.verify({
@@ -346,6 +350,7 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
       'test-key-v1',
       ownerKey,
       'owner-v1',
+      testRouting,
     );
     const pending = orchestrator.verify({
       customerId,
@@ -379,6 +384,7 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
       'test-key-v1',
       ownerKey,
       'owner-v1',
+      testRouting,
     );
     await expect(
       orchestrator.verify({
@@ -428,6 +434,7 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
       'test-key-v1',
       ownerKey,
       'owner-v1',
+      testRouting,
     );
     const results = await Promise.allSettled([
       orchestrator.verify({
@@ -465,6 +472,7 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
       'test-key-v1',
       ownerKey,
       'owner-v1',
+      testRouting,
     );
     await orchestrator.verify({
       customerId,
@@ -494,6 +502,7 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
       'test-key-v1',
       ownerKey,
       'owner-v1',
+      testRouting,
     );
     expect(
       (
@@ -555,6 +564,7 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
       'test-key-v1',
       ownerKey,
       'owner-v1',
+      testRouting,
     );
     await expect(
       orchestrator.verify({
@@ -636,6 +646,7 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
       'test-key-v1',
       ownerKey,
       'owner-v1',
+      testRouting,
     );
     await expect(
       orchestrator.verify({
@@ -665,6 +676,7 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
         'test-key-v1',
         ownerKey,
         'owner-v1',
+        testRouting,
       );
       await expect(
         orchestrator.verify({
@@ -702,6 +714,7 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
       'test-key-v1',
       ownerKey,
       'owner-v1',
+      testRouting,
     );
     await expect(
       orchestrator.verify({
@@ -744,6 +757,7 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
       'test-key-v1',
       ownerKey,
       'owner-v1',
+      testRouting,
     );
     const shared = { ...input, identifier: '99999999999' };
     const results = await Promise.allSettled([
@@ -838,6 +852,7 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
       'test-key-v1',
       Buffer.alloc(32, 8),
       'rotated',
+      testRouting,
     );
     await expect(
       o.verify({

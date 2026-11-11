@@ -22,6 +22,7 @@ const input: VerificationInput = {
     phone: '00000000000',
   },
 };
+const testRouting = { assert: () => Promise.resolve() };
 const policy: KycPolicy = {
   version: 'test-v1',
   enabled: true,
@@ -75,6 +76,7 @@ describe('KYC foundation policy and orchestration', () => {
         'v1',
         Buffer.alloc(32, 2),
         'owner-v1',
+        testRouting,
       ).verify(command),
     ).rejects.toMatchObject({ code: 'DISABLED' });
     expect(db.reserve).not.toHaveBeenCalled();
@@ -92,6 +94,7 @@ describe('KYC foundation policy and orchestration', () => {
       'v1',
       Buffer.alloc(32, 2),
       'owner-v1',
+      testRouting,
     );
     await expect(
       orchestrator.verify({
@@ -117,6 +120,7 @@ describe('KYC foundation policy and orchestration', () => {
       'v1',
       Buffer.alloc(32, 2),
       'owner-v1',
+      testRouting,
     ).verify(command);
     expect(result.outcome).toBe('DISPATCHING');
     expect(verify).not.toHaveBeenCalled();
@@ -134,6 +138,7 @@ describe('KYC foundation policy and orchestration', () => {
       'v1',
       Buffer.alloc(32, 2),
       'owner-v1',
+      testRouting,
     ).verify(command);
     expect(result.outcome).toBe('UNKNOWN');
     expect(db.finish).toHaveBeenCalledTimes(1);
@@ -149,6 +154,7 @@ describe('KYC foundation policy and orchestration', () => {
           'v1',
           Buffer.alloc(32, 2),
           'owner-v1',
+          testRouting,
         ).verify(command)
       ).outcome,
     ).toBe('UNKNOWN');
@@ -174,6 +180,7 @@ describe('KYC foundation policy and orchestration', () => {
       'v1',
       Buffer.alloc(32, 2),
       'owner-v1',
+      testRouting,
     ).verify({ ...command, input: mutable });
     expect(verify.mock.calls[0]![0].identity.firstName).toBe('Synthetic');
     expect(db.finish.mock.calls[0]![2]).toBe(3600);

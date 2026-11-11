@@ -39,6 +39,9 @@ class ConsentDto extends SessionDto {
 class WithdrawDto extends SessionDto {
   @IsUUID() consentId!: string;
 }
+class AvailabilityDto extends SessionDto {
+  @IsIn(['BVN', 'NIN']) kind!: 'BVN' | 'NIN';
+}
 class VerifyDto extends WithdrawDto {
   @IsUUID() requestId!: string;
   @IsIn(['BVN', 'NIN']) kind!: 'BVN' | 'NIN';
@@ -123,6 +126,14 @@ export class KycRegistrationSessionController {
       await this.sessions.withdrawConsent(body.sessionId, this.bearer(req), body.consentId);
       return { status: 'WITHDRAWN' };
     });
+  }
+  @Header('Cache-Control', 'no-store')
+  @Post('availability')
+  @HttpCode(200)
+  availability(@Body() body: AvailabilityDto, @Req() req: FastifyRequest) {
+    return this.run(() =>
+      this.verification.availability(body.sessionId, this.bearer(req), body.kind),
+    );
   }
   @Header('Cache-Control', 'no-store')
   @Post('verification')

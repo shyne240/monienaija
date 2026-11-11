@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import type { DataSource, EntityManager } from 'typeorm';
 import { KycOrchestrator, UUID } from './kyc-orchestrator';
-import { selectKycProvider } from './kyc-provider-router';
+import type { KycProviderGovernanceService } from './kyc-provider-governance.service';
 import {
   KycFoundationError,
   type Attempt,
@@ -59,7 +59,11 @@ function project(row: Row): Attempt {
 /** Per-request adapter; only the synthetic provider is allowed. Never use this for paid or live KYC. */
 class RegistrationStore implements KycStore {
   private reserved: Reservation | undefined;
-  constructor(private readonly db: DataSource) {}
+  constructor(
+    private readonly db: DataSource,
+    private readonly governance: KycProviderGovernanceService,
+    private readonly routeVersion: number,
+  ) {}
   private async authorized(m: EntityManager, r: Reservation): Promise<void> {
     const sessions = await m.query<Array<{ id: string }>>(
       `SELECT id FROM kyc_registration_sessions WHERE id=$1 AND authorization_hash=$2 AND status='VERIFIED' AND verified_at IS NOT NULL AND expires_at>clock_timestamp() FOR UPDATE`,
@@ -73,6 +77,7 @@ class RegistrationStore implements KycStore {
     if (!consents[0]) throw new KycFoundationError('BLOCKED');
     if (r.provider !== 'SYNTHETIC' || r.policy.version !== policy.version || !r.policy.enabled)
       throw new KycFoundationError('DISABLED');
+    await this.governance.resolveIn(m, r.kind, this.routeVersion, 'SYNTHETIC');
   }
   async reserve(r: Reservation): Promise<{ attempt: Attempt; isNew: boolean }> {
     this.reserved = r;
@@ -92,6 +97,12 @@ class RegistrationStore implements KycStore {
         if (prior[0].state === 'CANCELLED') throw new KycFoundationError('BLOCKED');
         return { attempt: project(prior[0]), isNew: false };
       }
+      // An unresolved dispatch must not be evaded by a fresh idempotency key or consent.
+      const unresolved = await m.query<Array<{ id: string }>>(
+        `SELECT id FROM kyc_registration_attempts WHERE session_id=$1 AND kind=$2 AND state IN ('RESERVED','DISPATCHING','UNKNOWN') LIMIT 1`,
+        [r.customerId, r.kind],
+      );
+      if (unresolved[0]) throw new KycFoundationError('BLOCKED');
       const providerLock = await m.query<Array<{ provider: string }>>(
         "SELECT provider FROM kyc_registration_synthetic_provider_lock WHERE provider='SYNTHETIC' FOR UPDATE",
       );
@@ -205,7 +216,51 @@ export class KycRegistrationVerificationService {
   constructor(
     private readonly db: DataSource,
     private readonly synthetic: KycProvider,
+    private readonly governance: KycProviderGovernanceService,
   ) {}
+  async availability(
+    sessionId: string,
+    authorization: string,
+    kind: 'BVN' | 'NIN',
+  ): Promise<{
+    status:
+      | 'AVAILABLE'
+      | 'TEMPORARILY_UNAVAILABLE'
+      | 'CONFIGURATION_INCOMPLETE'
+      | 'PENDING_RECONCILIATION';
+  }> {
+    if (
+      !UUID.test(sessionId) ||
+      !/^[A-Za-z0-9_-]{43}$/.test(authorization) ||
+      !['BVN', 'NIN'].includes(kind)
+    )
+      throw new KycFoundationError('BLOCKED');
+    return this.db
+      .transaction(async (m) => {
+        const sessions = await m.query<Array<{ id: string }>>(
+          `SELECT id FROM kyc_registration_sessions WHERE id=$1 AND authorization_hash=$2 AND status='VERIFIED' AND expires_at>clock_timestamp() FOR SHARE`,
+          [sessionId, createHash('sha256').update(authorization).digest('hex')],
+        );
+        if (!sessions[0]) throw new KycFoundationError('BLOCKED');
+        const pending = await m.query<Array<{ id: string }>>(
+          `SELECT id FROM kyc_registration_attempts WHERE session_id=$1 AND kind=$2 AND state IN ('UNKNOWN','RESERVED','DISPATCHING') LIMIT 1`,
+          [sessionId, kind],
+        );
+        if (pending[0]) return { status: 'PENDING_RECONCILIATION' as const };
+        try {
+          await this.governance.resolveIn(m, kind);
+          return { status: 'AVAILABLE' as const };
+        } catch (e) {
+          if (e instanceof KycFoundationError)
+            return { status: 'CONFIGURATION_INCOMPLETE' as const };
+          throw e;
+        }
+      })
+      .catch((e: unknown) => {
+        if (e instanceof KycFoundationError) throw e;
+        return { status: 'TEMPORARILY_UNAVAILABLE' as const };
+      });
+  }
   async verify(command: {
     sessionId: string;
     authorization: string;
@@ -214,6 +269,9 @@ export class KycRegistrationVerificationService {
     kind: 'BVN' | 'NIN';
     identifier: string;
   }): Promise<{ id: string; status: string; simulated: true }> {
+    // Synthetic verification is a test facility, never available in development,
+    // staging, production or an unknown runtime environment.
+    if (process.env.NODE_ENV !== 'test') throw new KycFoundationError('DISABLED');
     if (
       !UUID.test(command.sessionId) ||
       !UUID.test(command.consentId) ||
@@ -223,18 +281,11 @@ export class KycRegistrationVerificationService {
       !/^[A-Za-z0-9_-]{43}$/.test(command.authorization)
     )
       throw new KycFoundationError('INVALID');
-    const chosen = selectKycProvider(
-      { version: 'synthetic-v1', enabled: true, routes: { BVN: 'SYNTHETIC', NIN: 'SYNTHETIC' } },
-      command.kind,
-      [
-        {
-          provider: this.synthetic,
-          enabled: this.synthetic.code === 'SYNTHETIC',
-          capabilities: ['BVN', 'NIN'],
-        },
-      ],
-    );
-    const store = new RegistrationStore(this.db);
+    const route = await this.governance.resolve(command.kind);
+    if (route.provider !== 'SYNTHETIC' || this.synthetic.code !== 'SYNTHETIC')
+      throw new KycFoundationError('DISABLED');
+    const chosen = this.synthetic;
+    const store = new RegistrationStore(this.db, this.governance, route.version);
     const input: VerificationInput = {
       kind: command.kind,
       identifier: command.identifier,
@@ -266,6 +317,13 @@ export class KycRegistrationVerificationService {
       'synthetic-v1',
       ownerKey,
       'synthetic-v1',
+      {
+        assert: async (provider, kind) => {
+          const current = await this.governance.resolve(kind);
+          if (current.version !== route.version || current.provider !== provider)
+            throw new KycFoundationError('BLOCKED');
+        },
+      },
     );
     const result = await orchestrator.verify({
       customerId: command.sessionId,

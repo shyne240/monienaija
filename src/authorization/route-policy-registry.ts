@@ -59,6 +59,7 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/v1/customers/registration-sessions/consent',
   'POST /api/v1/customers/registration-sessions/consent/withdraw',
   'POST /api/v1/customers/registration-sessions/verification',
+  'POST /api/v1/customers/registration-sessions/availability',
   'POST /api/v1/customers/registration-sessions/status',
   'POST /api/v1/customers/registration-sessions/revoke',
 ]);
@@ -1308,6 +1309,24 @@ export class RoutePolicyRegistry {
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    if (
+      path === '/api/v1/internal/kyc/providers' ||
+      path.startsWith('/api/v1/internal/kyc/providers/')
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'KYC_PROVIDER_CONFIGURATION',
+        policy: {
+          resourceType: 'KYC_PROVIDER_CONFIGURATION',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+          minimumAssurance: 'MFA',
+          customerAccess: 'NONE',
         },
       };
     }
