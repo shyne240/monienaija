@@ -30,7 +30,7 @@ export class KycRegistrationCompletionService {
     private readonly audit: AuditService,
     private readonly sessions: KycRegistrationSessionService,
   ) {}
-  private async assertDisposable(m: EntityManager): Promise<void> {
+  async assertDisposable(m: EntityManager): Promise<void> {
     const options = this.db.options;
     if (
       !this.sessions.simulationAvailable() ||

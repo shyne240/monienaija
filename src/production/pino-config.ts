@@ -34,6 +34,9 @@ export function buildPinoHttpOptions(): PinoHttpOptions {
         // should any future serializer change reintroduce it.
         'req.query',
         'req.body.password',
+        'req.body.passcode',
+        'req.body.passcodeConfirmation',
+        'req.body.pinConfirmation',
         'req.body.currentPassword',
         'req.body.newPassword',
         'req.body.temporaryPassword',

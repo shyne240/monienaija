@@ -61,6 +61,8 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/v1/customers/registration-sessions/synthetic-profile/status',
   'POST /api/v1/customers/registration-sessions/synthetic-verification',
   'POST /api/v1/customers/registration-sessions/synthetic-complete',
+  'POST /api/v1/customers/registration-sessions/synthetic-credentials',
+  'POST /api/v1/customers/registration-sessions/synthetic-credentials/status',
   'POST /api/v1/customers/registration-sessions/consent',
   'POST /api/v1/customers/registration-sessions/consent/withdraw',
   'POST /api/v1/customers/registration-sessions/verification',

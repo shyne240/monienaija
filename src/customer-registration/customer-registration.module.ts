@@ -1,3 +1,5 @@
+import { KycSyntheticCredentialsController } from '../kyc-verification/kyc-synthetic-credentials.controller';
+import { KycSyntheticCredentialsService } from '../kyc-verification/kyc-synthetic-credentials.service';
 import { KycRegistrationCompletionController } from '../kyc-verification/kyc-registration-completion.controller';
 import { KycRegistrationCompletionService } from '../kyc-verification/kyc-registration-completion.service';
 import { AuditService } from '../operations/audit.service';
@@ -58,6 +60,7 @@ import type { KycProvider } from '../kyc-verification/kyc.types';
     CustomerRegistrationController,
     KycRegistrationSessionController,
     KycRegistrationCompletionController,
+    KycSyntheticCredentialsController,
     KycProviderGovernanceController,
   ],
   providers: [
@@ -76,6 +79,15 @@ import type { KycProvider } from '../kyc-verification/kyc.types';
       inject: [DataSource, AuditService, KycRegistrationSessionService],
       useFactory: (db: DataSource, audit: AuditService, sessions: KycRegistrationSessionService) =>
         new KycRegistrationCompletionService(db, audit, sessions),
+    },
+    {
+      provide: KycSyntheticCredentialsService,
+      inject: [DataSource, AuditService, KycRegistrationCompletionService],
+      useFactory: (
+        db: DataSource,
+        audit: AuditService,
+        completion: KycRegistrationCompletionService,
+      ) => new KycSyntheticCredentialsService(db, audit, completion),
     },
     { provide: REGISTRATION_SYNTHETIC_PROVIDER, useClass: RegistrationSyntheticProvider },
     {

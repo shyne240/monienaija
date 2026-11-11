@@ -71,6 +71,15 @@ test.each(['BVN', 'NIN'])(
     fireEvent.press(v.getByText('Verify test identity'));
     fireEvent.press(await v.findByText('Create test draft'));
     expect(await v.findByText(/Synthetic DRAFT created/)).toBeTruthy();
+    fireEvent.changeText(v.getByTestId('test-passcode'), '112233');
+    fireEvent.changeText(v.getByTestId('test-passcode-confirm'), '112233');
+    fireEvent.changeText(v.getByTestId('test-pin'), '334455');
+    fireEvent.changeText(v.getByTestId('test-pin-confirm'), '334455');
+    fireEvent.press(v.getByText('Save test credentials'));
+    expect(await v.findByText(/Test credentials saved/)).toBeTruthy();
+    const stored = JSON.stringify((SecureStorage.set as jest.Mock).mock.calls);
+    expect(stored).not.toContain('112233');
+    expect(stored).not.toContain('334455');
     expect(post).toHaveBeenCalledWith(
       expect.stringContaining('/synthetic-complete'),
       { sessionId: 'session-id', attemptId: 'attempt-id' },
@@ -126,4 +135,28 @@ test('resumes matched attempt and retries draft completion without another ident
   expect(post.mock.calls.some(([p]: [string]) => p.endsWith('/synthetic-verification'))).toBe(
     false,
   );
+});
+
+test('recovers completed test credential setup after an interrupted response', async () => {
+  (SecureStorage.get as jest.Mock).mockResolvedValue(
+    JSON.stringify({
+      id: 'session-id',
+      token: 'verified-token',
+      expiresAt: future,
+      phase: 'VERIFIED',
+      matchedAttemptId: 'attempt-id',
+      draftCreated: true,
+    }),
+  );
+  post.mockImplementation(async (path: string) => {
+    if (path.endsWith('/simulation-availability')) return { available: true };
+    if (path.endsWith('/synthetic-profile/status'))
+      return { firstName: 'Synthetic', lastName: 'Person', dateOfBirth: '2000-01-01', email: null };
+    if (path.endsWith('/synthetic-credentials/status'))
+      return { status: 'SET_UP', simulated: true };
+    return { status: 'VERIFIED', expiresAt: future };
+  });
+  const v = render(<RegistrationScreen />);
+  expect(await v.findByText(/Test credentials saved/)).toBeTruthy();
+  expect(post.mock.calls.some(([p]: [string]) => p.endsWith('/synthetic-credentials'))).toBe(false);
 });

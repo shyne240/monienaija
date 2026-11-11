@@ -1,3 +1,5 @@
+> Batch 2A snapshot. Subsequent partial synthetic credential work is described in [BATCH-2B-PARTIAL.md](BATCH-2B-PARTIAL.md); it does not enable production login or account claiming.
+
 # Batch 2A — isolated synthetic draft completion
 
 This is **not production registration or KYC**. It creates a persistent customer DRAFT only when NODE_ENV=test, an in-memory test notification provider is installed, and the database is a socket-only, PostgreSQL 16 disposable test cluster in the explicitly verified workspace namespace. The completion endpoint fails closed anywhere else, even if synthetic verification is available. The mobile simulation availability endpoint currently checks only the test runtime/SMS sink, so it can show the simulation in an environment where completion will return 503. A portable, explicitly provisioned isolated demo environment is still needed; never relax this guard to use a production or shared database.

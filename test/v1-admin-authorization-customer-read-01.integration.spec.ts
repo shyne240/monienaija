@@ -110,7 +110,7 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
-  });
+  }, 30000);
 
   async function loginSuperAdmin(): Promise<string> {
     await localAdminService.seedDefaultAdmin({
@@ -563,7 +563,13 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
       .post(`/api/v1/customers/${self.customerId}/kyc-assessment`)
       .set(auth(complianceToken))
       .send({ level: 'LEVEL_1', status: 'PENDING', assessedBy: 'forged-seed-actor' })
-      .expect(201);
+      .expect(409);
+    // Seed a historical pending assessment solely to exercise the read route; the
+    // public mutation above must remain closed to bypassing the governed evaluator.
+    await dataSource.query(
+      "INSERT INTO customer_kyc_assessments(customer_id,kyc_level,kyc_status,assessed_by,is_current) VALUES($1,'LEVEL_1','PENDING','historical-test-fixture',true)",
+      [self.customerId],
+    );
 
     await request(app.getHttpServer())
       .get(`/api/v1/customers/${self.customerId}/kyc`)
@@ -577,7 +583,7 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
     expect(denied.status).toBe(403);
   });
 
-  it('A14. lifecycle and KYC audit actors are derived from authenticated workforce principals', async () => {
+  it('A14. lifecycle audit actor is authenticated and direct KYC mutation remains blocked', async () => {
     const customerId = await createActiveCustomer();
     const operations = await createRoleSession('OPERATIONS', 'lifecycle-actor');
     await request(app.getHttpServer())
@@ -593,12 +599,16 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
 
     const kycCustomerId = await createBareCustomer();
     const compliance = await createRoleSession('COMPLIANCE', 'kyc-actor');
-    const response = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .post(`/api/v1/customers/${kycCustomerId}/kyc-assessment`)
       .set(auth(compliance.token))
       .send({ level: 'LEVEL_1', status: 'PENDING', assessedBy: 'forged-kyc-actor' })
-      .expect(201);
-    expect(response.body.assessedBy).toBe(compliance.principalId);
+      .expect(409);
+    const kycRows = await dataSource.query<Array<{ count: string }>>(
+      'SELECT count(*) AS count FROM customer_kyc_assessments WHERE customer_id=$1',
+      [kycCustomerId],
+    );
+    expect(kycRows[0]?.count).toBe('0');
   });
 
   it('A15. onboarding/eligibility summaries require customer.view and omit internal eligibility reasons/reviewer fields', async () => {

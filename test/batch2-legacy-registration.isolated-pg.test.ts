@@ -1,3 +1,6 @@
+import { CustomerTransactionPinService } from '../src/customer/customer-transaction-pin.service';
+import { PasswordHashVerificationService } from '../src/customer-authentication/password-hash-verification.service';
+import { PasswordHashAlgorithm } from '../src/customer-authentication/customer-authentication.enums';
 import { randomUUID } from 'node:crypto';
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -199,6 +202,16 @@ test.each(['BVN', 'NIN'] as const)(
     try {
       process.env.NODE_ENV = 'production';
       expect((await complete()).statusCode).toBe(503);
+      const isolatedOnly = {
+        sessionId: s.id,
+        passcode: '112233',
+        passcodeConfirmation: '112233',
+        pin: '334455',
+        pinConfirmation: '334455',
+      };
+      expect((await send('synthetic-credentials', isolatedOnly, authorization)).statusCode).toBe(
+        503,
+      );
     } finally {
       process.env.NODE_ENV = oldEnv;
     }
@@ -290,6 +303,112 @@ test.each(['BVN', 'NIN'] as const)(
       ]),
     ).rejects.toThrow('Synthetic customer cannot hold financial privileges');
 
+    const setupBody = {
+      sessionId: s.id,
+      passcode: '112233',
+      passcodeConfirmation: '112233',
+      pin: '334455',
+      pinConfirmation: '334455',
+    };
+    expect((await send('synthetic-credentials', setupBody, 'x'.repeat(43))).statusCode).toBe(401);
+    expect(
+      (
+        await send(
+          'synthetic-credentials',
+          { ...setupBody, pin: '112233', pinConfirmation: '112233' },
+          authorization,
+        )
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await send(
+          'synthetic-credentials',
+          { ...setupBody, passcodeConfirmation: '999999' },
+          authorization,
+        )
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (await send('synthetic-credentials/status', { sessionId: s.id }, authorization)).json(),
+    ).toMatchObject({ status: 'NOT_SET' });
+    const setupReplies = await Promise.all([
+      send('synthetic-credentials', setupBody, authorization),
+      send('synthetic-credentials', setupBody, authorization),
+    ]);
+    expect(setupReplies.map((r) => r.statusCode).sort()).toEqual([200, 409]);
+    expect(
+      (await send('synthetic-credentials/status', { sessionId: s.id }, authorization)).json(),
+    ).toMatchObject({ status: 'SET_UP' });
+    expect((await send('synthetic-credentials', setupBody, authorization)).statusCode).toBe(409);
+    const stored = await db.query<Array<{ password_hash: string; pin_hash: string }>>(
+      `SELECT a.password_hash,p.pin_hash FROM customer_authentication_credentials a JOIN customer_transaction_pins p ON p.customer_id=a.customer_id WHERE a.customer_id=$1`,
+      [customerId],
+    );
+    expect(stored).toHaveLength(1);
+    const verify = new PasswordHashVerificationService();
+    expect(
+      verify.verify('112233', PasswordHashAlgorithm.PBKDF2, stored[0]!.password_hash).verified,
+    ).toBe(true);
+    expect(
+      verify.verify('334455', PasswordHashAlgorithm.PBKDF2, stored[0]!.pin_hash).verified,
+    ).toBe(true);
+    expect(
+      verify.verify('112233', PasswordHashAlgorithm.PBKDF2, stored[0]!.pin_hash).verified,
+    ).toBe(false);
+    expect(stored[0]!.password_hash).not.toContain('112233');
+    expect(stored[0]!.pin_hash).not.toContain('334455');
+    const pinService = app.get(CustomerTransactionPinService);
+    const pinVerifier = {
+      verify: (value: string, _algorithm: string, encoded: string) =>
+        verify.verify(value, PasswordHashAlgorithm.PBKDF2, encoded),
+    };
+    expect(
+      (
+        await pinService.verifyTransactionPin(
+          customerId,
+          { pin: '334455', actor: 'synthetic-test' },
+          pinVerifier,
+        )
+      ).verified,
+    ).toBe(true);
+    for (let i = 0; i < 5; i++)
+      await pinService.verifyTransactionPin(
+        customerId,
+        { pin: '000001', actor: 'synthetic-test' },
+        pinVerifier,
+      );
+    expect(
+      await pinService.verifyTransactionPin(
+        customerId,
+        { pin: '334455', actor: 'synthetic-test' },
+        pinVerifier,
+      ),
+    ).toMatchObject({ verified: false, locked: true });
+    expect(
+      verify.verify('112233', PasswordHashAlgorithm.PBKDF2, stored[0]!.password_hash).verified,
+    ).toBe(true);
+    // Existing full customer sessions must not authenticate an inactive DRAFT.
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/v1/customers/sessions',
+      payload: { phone: kind === 'BVN' ? '08022223331' : '08022223332', password: '112233' },
+    });
+    expect(login.statusCode).toBe(401);
+    expect(
+      await db.query('SELECT count(*)::int AS count FROM wallet_accounts WHERE customer_id=$1', [
+        customerId,
+      ]),
+    ).toEqual([{ count: 0 }]);
+    await db.query(
+      'UPDATE kyc_registration_consents SET withdrawn_at=clock_timestamp() WHERE id=$1',
+      [consent.json<{ id: string }>().id],
+    );
+    expect((await send('synthetic-credentials', setupBody, authorization)).statusCode).toBe(401);
+    // Restore the test fixture for the remaining session-lifecycle assertions.
+    await db.query('UPDATE kyc_registration_consents SET withdrawn_at=NULL WHERE id=$1', [
+      consent.json<{ id: string }>().id,
+    ]);
     // A second verified phone can match the same fake fixture but cannot claim it.
     const s2 = (
       await send('start', { phone: kind === 'BVN' ? '08022223341' : '08022223342' })
@@ -364,6 +483,10 @@ test.each(['BVN', 'NIN'] as const)(
       [s.id],
     );
     expect((await complete()).statusCode).toBe(401);
+    expect((await send('synthetic-credentials', setupBody, authorization)).statusCode).toBe(401);
+    expect(
+      (await send('synthetic-credentials/status', { sessionId: s.id }, authorization)).statusCode,
+    ).toBe(401);
   },
 );
 

@@ -10,7 +10,15 @@ import { ApiClient, ApiError } from '../../services/api-client';
 import { SecureStorage } from '../../services/secure-storage';
 import { theme } from '../../theme';
 
-type Step = 'LOADING' | 'UNAVAILABLE' | 'PHONE' | 'OTP' | 'PROFILE' | 'IDENTITY' | 'RESULT';
+type Step =
+  | 'LOADING'
+  | 'UNAVAILABLE'
+  | 'PHONE'
+  | 'OTP'
+  | 'PROFILE'
+  | 'IDENTITY'
+  | 'RESULT'
+  | 'CREDENTIALS';
 type Kind = 'BVN' | 'NIN';
 type Session = {
   id: string;
@@ -21,6 +29,7 @@ type Session = {
   kind?: Kind;
   verificationId?: string;
   matchedAttemptId?: string;
+  draftCreated?: boolean;
 };
 const STORAGE_KEY = 'synthetic_registration_session_v1';
 const base = '/customers/registration-sessions/';
@@ -48,6 +57,10 @@ export const RegistrationScreen: React.FC = () => {
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState('');
+  const [passcode, setPasscode] = useState('');
+  const [passcodeConfirmation, setPasscodeConfirmation] = useState('');
+  const [pin, setPin] = useState('');
+  const [pinConfirmation, setPinConfirmation] = useState('');
   const [busy, setBusy] = useState(false);
   const [resendAt, setResendAt] = useState(0);
   const [now, setNow] = useState(Date.now());
@@ -62,6 +75,10 @@ export const RegistrationScreen: React.FC = () => {
     setSession(null);
     setCode('');
     setIdentifier('');
+    setPasscode('');
+    setPasscodeConfirmation('');
+    setPin('');
+    setPinConfirmation('');
     setAccepted(false);
     setError('');
     setStep('PHONE');
@@ -126,7 +143,20 @@ export const RegistrationScreen: React.FC = () => {
           setEmail(profile.email ?? '');
         }
         if (saved.kind) setKind(saved.kind);
-        if (saved.matchedAttemptId) {
+        if (saved.draftCreated) {
+          const credentials = await post<{ status: 'SET_UP' | 'NOT_SET' }>(
+            'synthetic-credentials/status',
+            { sessionId: saved.id },
+            saved.token,
+          );
+          if (!live) return;
+          if (credentials.status === 'SET_UP') {
+            setResult(
+              'Test credentials saved. This DRAFT cannot sign in or access financial services.',
+            );
+            setStep('RESULT');
+          } else setStep('CREDENTIALS');
+        } else if (saved.matchedAttemptId) {
           setResult(
             'Synthetic identity matched. Complete your test draft or retry if interrupted.',
           );
@@ -229,9 +259,37 @@ export const RegistrationScreen: React.FC = () => {
         { sessionId: session.id, attemptId: session.matchedAttemptId },
         session.token,
       );
-      setResult(
-        'Synthetic DRAFT created. No account or wallet is active, and this is not production KYC.',
-      );
+      await save({ ...session, draftCreated: true });
+      setStep('CREDENTIALS');
+    });
+  const setupCredentials = () =>
+    withError(async () => {
+      if (
+        !session ||
+        !/^\d{6}$/.test(passcode) ||
+        passcode !== passcodeConfirmation ||
+        !/^\d{6}$/.test(pin) ||
+        pin !== pinConfirmation ||
+        pin === passcode
+      ) {
+        throw new Error('invalid credentials');
+      }
+      try {
+        await post(
+          'synthetic-credentials',
+          { sessionId: session.id, passcode, passcodeConfirmation, pin, pinConfirmation },
+          session.token,
+        );
+        setResult(
+          'Test credentials saved. This DRAFT cannot sign in or access financial services.',
+        );
+        setStep('RESULT');
+      } finally {
+        setPasscode('');
+        setPasscodeConfirmation('');
+        setPin('');
+        setPinConfirmation('');
+      }
     });
   const verifyIdentity = () =>
     withError(async () => {
@@ -405,6 +463,51 @@ export const RegistrationScreen: React.FC = () => {
           <Button label="Start again" variant="text" onPress={() => void reset()} />
         </View>
       )}
+      {step === 'CREDENTIALS' && (
+        <View>
+          <Text style={styles.message}>
+            Synthetic DRAFT created. Choose separate six-digit test passcode and PIN. This DRAFT
+            cannot sign in or access financial services.
+          </Text>
+          <Input
+            testID="test-passcode"
+            label="Test login passcode"
+            secureTextEntry
+            keyboardType="number-pad"
+            maxLength={6}
+            value={passcode}
+            onChangeText={setPasscode}
+          />
+          <Input
+            testID="test-passcode-confirm"
+            label="Confirm test login passcode"
+            secureTextEntry
+            keyboardType="number-pad"
+            maxLength={6}
+            value={passcodeConfirmation}
+            onChangeText={setPasscodeConfirmation}
+          />
+          <Input
+            testID="test-pin"
+            label="Test transaction PIN"
+            secureTextEntry
+            keyboardType="number-pad"
+            maxLength={6}
+            value={pin}
+            onChangeText={setPin}
+          />
+          <Input
+            testID="test-pin-confirm"
+            label="Confirm test transaction PIN"
+            secureTextEntry
+            keyboardType="number-pad"
+            maxLength={6}
+            value={pinConfirmation}
+            onChangeText={setPinConfirmation}
+          />
+          <Button label="Save test credentials" loading={busy} onPress={setupCredentials} />
+        </View>
+      )}
       {step === 'RESULT' && (
         <View>
           <Text style={styles.message}>{result}</Text>
@@ -412,7 +515,8 @@ export const RegistrationScreen: React.FC = () => {
             <Button label="Create test draft" loading={busy} onPress={completeDraft} />
           )}
           {!result.startsWith('Synthetic identity matched') &&
-            !result.startsWith('Synthetic DRAFT created') && (
+            !result.startsWith('Synthetic DRAFT created') &&
+            !result.startsWith('Test credentials saved') && (
               <Button
                 label="Return to verification"
                 variant="outline"

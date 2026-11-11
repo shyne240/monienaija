@@ -60,6 +60,26 @@ describe('sensitive data protection', () => {
     );
   });
 
+  it('redacts passcodes, confirmations and transaction PINs from structured and text diagnostics', () => {
+    const record = redactRecord({
+      passcode: '112233',
+      passcodeConfirmation: '112233',
+      pin: '334455',
+      pinConfirmation: '334455',
+    });
+    expect(record).toEqual({
+      passcode: REDACTED_VALUE,
+      passcodeConfirmation: REDACTED_VALUE,
+      pin: REDACTED_VALUE,
+      pinConfirmation: REDACTED_VALUE,
+    });
+    const text = redactSensitiveText(
+      'passcode=112233 passcodeConfirmation=112233 pin=334455 pinConfirmation=334455',
+    );
+    expect(text).not.toContain('112233');
+    expect(text).not.toContain('334455');
+  });
+
   it('redacts audit values before persistence', async () => {
     const { manager, repository } = managerFor({} as Record<string, unknown>);
     const service = new AuditService({} as Repository<AuditEvent>);
