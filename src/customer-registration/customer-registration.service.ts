@@ -9,12 +9,12 @@ import {
 
 import {
   BadRequestException,
-  ConflictException,
   HttpException,
   Inject,
   Injectable,
   Logger,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { DataSource, EntityManager, In, IsNull } from 'typeorm';
 
@@ -24,30 +24,8 @@ import { NOTIFICATION_PROVIDER_TOKEN } from '../notification/notification.consta
 import { ConsoleNotificationProvider } from '../notification/notification-provider.interface';
 import type { NotificationProvider } from '../notification/notification.types';
 import { AuditService } from '../operations/audit.service';
-import { IdempotencyService } from '../operations/idempotency.service';
-import { IdempotencyRecord } from '../operations/idempotency-record.entity';
-import {
-  ContactMethodType,
-  CustomerStatus,
-  CustomerType,
-  CustomerKycLevel,
-  CustomerKycStatus,
-} from '../customer/customer.enums';
-import { maskCustomerReference } from '../customer/customer-privacy';
-import { Customer } from '../customer/customer.entity';
+import { ContactMethodType, CustomerStatus } from '../customer/customer.enums';
 import { CustomerContactMethod } from '../customer/customer-contact-method.entity';
-import { CustomerProfile } from '../customer/customer-profile.entity';
-import { CustomerAuthenticationCredential } from '../customer-authentication/customer-authentication-credential.entity';
-import {
-  AuthenticationCredentialStatus,
-  AuthenticationCredentialType,
-  PasswordHashAlgorithm,
-} from '../customer-authentication/customer-authentication.enums';
-import { LedgerAccount } from '../ledger/ledger-account.entity';
-import { LedgerAccountType, LedgerNormalBalance } from '../ledger/ledger.enums';
-import { WalletAccount } from '../wallet/wallet-account.entity';
-import { WalletStatus } from '../wallet/wallet.enums';
-import { WalletService } from '../wallet/wallet.service';
 import {
   CUSTOMER_REGISTRATION_ACTOR,
   CUSTOMER_REGISTRATION_RATE_LIMITS,
@@ -100,30 +78,11 @@ type VerifyFailureReason =
   | 'LOCKED'
   | 'MISMATCH';
 
-type RegistrationFailureReason =
-  | 'NO_CHALLENGE'
-  | 'NOT_VERIFIED'
-  | 'TOKEN_CONSUMED'
-  | 'VERIFICATION_STALE'
-  | 'TOKEN_MISMATCH';
-
 type VerifyOutcome = { ok: true; verificationToken: string } | { ok: false };
-type RegisterOutcome = { ok: true; view: CompleteRegistrationView } | { ok: false };
 
 const GENERIC_VERIFY_FAILURE = 'OTP verification failed';
-const GENERIC_REGISTRATION_VERIFY_FAILURE = 'Registration verification is invalid or expired';
-const GENERIC_REGISTRATION_CONFLICT = 'Registration could not be completed';
 
-/**
- * V1-CUSTOMER-01 — Customer self-service lifecycle foundation.
- *
- * Implements end-to-end customer self-service onboarding:
- * 1. OTP phone challenge issuance & CSPRNG verification.
- * 2. Self-service password configuration with server-side PBKDF2 hashing.
- * 3. Atomic primary NGN wallet provisioning via double-entry liability ledger binding.
- * 4. Activation out of DRAFT to ACTIVE upon verified primary phone prerequisite satisfaction.
- * 5. Idempotent replay safety and duplicate protection.
- */
+/** Legacy phone challenge service; self-service completion is fail-closed pending live KYC. */
 @Injectable()
 export class CustomerRegistrationService {
   private readonly logger = new Logger(CustomerRegistrationService.name);
@@ -135,10 +94,6 @@ export class CustomerRegistrationService {
     @Inject(NOTIFICATION_PROVIDER_TOKEN)
     @Optional()
     private readonly injectedProvider: NotificationProvider | null,
-    @Optional()
-    private readonly walletService?: WalletService,
-    @Optional()
-    private readonly idempotencyService?: IdempotencyService,
   ) {}
 
   private get provider(): NotificationProvider {
@@ -386,307 +341,29 @@ export class CustomerRegistrationService {
 
   // ---------------------------------------------------------------- completion
 
-  async completeRegistration(
-    phoneRaw: string,
-    verificationToken: string,
-    sourceIp: string,
-    password?: string,
-    displayName?: string,
-    idempotencyKey?: string,
+  /**
+   * The legacy self-service completion used phone OTP as its only activation gate.
+   * No live, identity-bound KYC evidence adapter is available yet. Do not consume
+   * the token or create a draft, credential, customer or wallet through this path.
+   * Workforce phone verification uses the challenge independently and remains intact.
+   */
+  completeRegistration(
+    _phoneRaw: string,
+    _verificationToken: string,
+    _sourceIp: string,
+    _password?: string,
+    _displayName?: string,
+    _idempotencyKey?: string,
   ): Promise<CompleteRegistrationView> {
-    const correlationId = randomUUID();
-    await this.consumeRateLimit('CUSTOMER_REGISTRATION_COMPLETE_PER_IP', sourceIp, correlationId);
-    const phone = this.normalizeNigerianPhone(phoneRaw);
-    const tokenHash = createHash('sha256').update(verificationToken).digest('hex');
-
-    const outcome = await runSerializableWithRetry(
-      this.dataSource,
-      'CUSTOMER_REGISTRATION_COMPLETE',
-      async (manager) => {
-        // Idempotency check if idempotencyKey is supplied
-        if (idempotencyKey && this.idempotencyService) {
-          const reqHash = createHash('sha256')
-            .update(JSON.stringify({ phone: phone.canonical, verificationToken, displayName }))
-            .digest('hex');
-          const reservation = await this.idempotencyService.reserve(manager, {
-            scope: 'CUSTOMER_REGISTRATION',
-            key: idempotencyKey,
-            requestHash: reqHash,
-            retentionSeconds: 86400,
-          });
-          if (reservation.kind === 'REPLAY') {
-            return {
-              ok: true,
-              view: reservation.record.responseBody as unknown as CompleteRegistrationView,
-            };
-          }
-        }
-
-        const challengeRepository = manager.getRepository(CustomerRegistrationPhoneChallenge);
-        const challenge = await challengeRepository
-          .createQueryBuilder('challenge')
-          .where('challenge.normalized_phone = :phone', { phone: phone.canonical })
-          .orderBy('challenge.created_at', 'DESC')
-          .setLock('pessimistic_write')
-          .getOne();
-        const now = new Date();
-
-        const failVerification = async (
-          reason: RegistrationFailureReason,
-        ): Promise<RegisterOutcome> => {
-          await this.audit(
-            manager,
-            'CUSTOMER_REGISTRATION_CHALLENGE',
-            challenge?.id ?? randomUUID(),
-            'REGISTRATION_FAILED',
-            { reason, normalizedPhoneSuffix: phone.canonical.slice(-4) },
-          );
-          return { ok: false };
-        };
-
-        if (!challenge) return failVerification('NO_CHALLENGE');
-        if (challenge.consumedAt !== null) return failVerification('TOKEN_CONSUMED');
-        if (challenge.status !== 'VERIFIED') return failVerification('NOT_VERIFIED');
-        const verificationStale =
-          now.getTime() - challenge.verifiedAt!.getTime() >
-          REGISTRATION_VERIFICATION_TOKEN_TTL_SECONDS * 1000;
-        if (verificationStale) return failVerification('VERIFICATION_STALE');
-        if (
-          challenge.verificationTokenHash === null ||
-          !this.safeEqualHex(challenge.verificationTokenHash, tokenHash)
-        ) {
-          return failVerification('TOKEN_MISMATCH');
-        }
-
-        // Consume BEFORE any customer insert so a later failure rolls the token back cleanly.
-        challenge.consumedAt = now;
-        await challengeRepository.save(challenge);
-
-        const bound = await manager.getRepository(CustomerContactMethod).findOne({
-          where: {
-            type: ContactMethodType.PHONE,
-            normalizedValue: In([phone.canonical, phone.e164]),
-            deletedAt: IsNull(),
-          },
-        });
-        if (bound) {
-          throw new ConflictException(GENERIC_REGISTRATION_CONFLICT);
-        }
-
-        await this.audit(
-          manager,
-          'CUSTOMER_REGISTRATION_CHALLENGE',
-          challenge.id,
-          'REGISTRATION_INITIATED',
-          { normalizedPhoneSuffix: phone.canonical.slice(-4) },
-        );
-
-        // Determine customer lifecycle status:
-        // If password is provided (customer self-service onboarding), customer activates immediately
-        // upon satisfying the verified primary phone prerequisite.
-        // If password is not provided, maintains backward compatibility (DRAFT status for workforce review).
-        const hasPassword = typeof password === 'string' && password.length >= 8;
-        const initialStatus = hasPassword ? CustomerStatus.ACTIVE : CustomerStatus.DRAFT;
-
-        const customerRepository = manager.getRepository(Customer);
-        const customerDraft = customerRepository.create({
-          id: randomUUID(),
-          reference: `mn-${phone.canonical}`,
-          type: CustomerType.INDIVIDUAL,
-          status: initialStatus,
-          kycLevel: CustomerKycLevel.NONE,
-          kycStatus: CustomerKycStatus.NOT_STARTED,
-          version: 1,
-          deletedAt: null,
-        });
-        const customer = await customerRepository.save(customerDraft);
-        await this.audit(manager, 'CUSTOMER', customer.id, 'CREATED', {
-          reference: maskCustomerReference(customer.reference),
-          type: customer.type,
-          status: customer.status,
-          kycLevel: customer.kycLevel,
-          kycStatus: customer.kycStatus,
-          registeredVia: 'customer-self-service',
-        });
-
-        if (initialStatus === CustomerStatus.ACTIVE) {
-          await this.audit(manager, 'CUSTOMER', customer.id, 'STATUS_UPDATED', {
-            previousStatus: 'DRAFT',
-            status: 'ACTIVE',
-            reason: 'SELF_SERVICE_REGISTRATION_ACTIVATED',
-          });
-        }
-
-        const contactRepository = manager.getRepository(CustomerContactMethod);
-        const contactDraft = contactRepository.create({
-          id: randomUUID(),
-          customerId: customer.id,
-          type: ContactMethodType.PHONE,
-          value: phone.e164,
-          normalizedValue: phone.canonical,
-          isPrimary: true,
-          verifiedAt: challenge.verifiedAt,
-          deletedAt: null,
-        });
-        const contact = await contactRepository.save(contactDraft);
-        await this.audit(manager, 'CUSTOMER_CONTACT_METHOD', contact.id, 'CREATED', {
-          customerId: customer.id,
-          type: contact.type,
-          isPrimary: contact.isPrimary,
-        });
-        await this.audit(manager, 'CUSTOMER_CONTACT_METHOD', contact.id, 'PHONE_VERIFIED', {
-          customerId: customer.id,
-          normalizedPhoneSuffix: phone.canonical.slice(-4),
-          verifiedAt: contact.verifiedAt,
-        });
-
-        // Optional profile creation if displayName is provided
-        if (displayName && displayName.trim().length > 0) {
-          const profileRepository = manager.getRepository(CustomerProfile);
-          const profileDraft = profileRepository.create({
-            id: randomUUID(),
-            customerId: customer.id,
-            displayName: displayName.trim(),
-            legalName: displayName.trim(),
-            isActive: true,
-            deletedAt: null,
-          });
-          const profile = await profileRepository.save(profileDraft);
-          await this.audit(manager, 'CUSTOMER_PROFILE', profile.id, 'CREATED', {
-            customerId: customer.id,
-            displayName: profile.displayName,
-          });
-        }
-
-        // Provision Password Credential & Primary NGN Wallet if self-service password provided
-        let provisionedWallet: WalletAccount | null = null;
-        if (hasPassword) {
-          const passwordHash = this.pbkdf2PasswordHash(password);
-          const credentialRepository = manager.getRepository(CustomerAuthenticationCredential);
-          const credentialDraft = credentialRepository.create({
-            id: randomUUID(),
-            customerId: customer.id,
-            type: AuthenticationCredentialType.PASSWORD,
-            passwordHash,
-            hashAlgorithm: PasswordHashAlgorithm.PBKDF2,
-            passwordVersion: 1,
-            passwordChangedAt: now,
-            status: AuthenticationCredentialStatus.ACTIVE,
-            failedAuthenticationCount: 0,
-            accountLocked: false,
-            lockedAt: null,
-            lockReason: null,
-            rotationRequired: false,
-            version: 1,
-            deletedAt: null,
-          });
-          const credential = await credentialRepository.save(credentialDraft);
-          await this.audit(
-            manager,
-            'CUSTOMER_AUTHENTICATION_CREDENTIAL',
-            credential.id,
-            'CREATED',
-            {
-              customerId: customer.id,
-              credentialId: credential.id,
-              hashAlgorithm: credential.hashAlgorithm,
-              passwordVersion: credential.passwordVersion,
-              status: credential.status,
-              rotationRequired: false,
-            },
-          );
-
-          // Atomic Primary NGN Wallet Provisioning
-          const walletCreationIdempotencyKey = idempotencyKey ?? `wallet-provision-${customer.id}`;
-          if (this.walletService) {
-            provisionedWallet = await this.walletService.createWalletInTransaction(manager, {
-              customerId: customer.id,
-              currency: 'NGN',
-              idempotencyKey: walletCreationIdempotencyKey,
-            });
-          } else {
-            // Direct fallback if WalletService is not injected
-            const walletId = randomUUID();
-            const ledgerAccountRepository = manager.getRepository(LedgerAccount);
-            const ledgerAccount = await ledgerAccountRepository.save(
-              ledgerAccountRepository.create({
-                id: randomUUID(),
-                code: `WALLET-${walletId}`,
-                name: `Customer wallet ${walletId}`,
-                accountType: LedgerAccountType.LIABILITY,
-                normalBalance: LedgerNormalBalance.CREDIT,
-                currency: 'NGN',
-                accountingUnit: 'CUSTOMER_FUNDS',
-                allowNegativeBalance: false,
-                isActive: true,
-              }),
-            );
-            const walletRepository = manager.getRepository(WalletAccount);
-            provisionedWallet = await walletRepository.save(
-              walletRepository.create({
-                id: walletId,
-                customerId: customer.id,
-                currency: 'NGN',
-                status: WalletStatus.ACTIVE,
-                ledgerAccountId: ledgerAccount.id,
-                creationIdempotencyKey: walletCreationIdempotencyKey,
-              }),
-            );
-          }
-
-          await this.audit(manager, 'CUSTOMER_WALLET', provisionedWallet.id, 'PROVISIONED', {
-            customerId: customer.id,
-            walletId: provisionedWallet.id,
-            currency: provisionedWallet.currency,
-            status: provisionedWallet.status,
-            ledgerAccountId: provisionedWallet.ledgerAccountId,
-          });
-        }
-
-        const view: CompleteRegistrationView = {
-          id: customer.id,
-          reference: customer.reference,
-          status: customer.status,
-          phone: this.maskPhone(phone),
-          phoneVerifiedAt: contact.verifiedAt!.toISOString(),
-          ...(provisionedWallet
-            ? {
-                wallet: {
-                  id: provisionedWallet.id,
-                  currency: provisionedWallet.currency,
-                  status: provisionedWallet.status,
-                },
-              }
-            : {}),
-        };
-
-        if (idempotencyKey && this.idempotencyService) {
-          // Complete the reservation
-          const existingRecord = await manager
-            .getRepository(IdempotencyRecord)
-            .createQueryBuilder('rec')
-            .where('rec.scope = :s AND rec.idempotency_key = :k', {
-              s: 'CUSTOMER_REGISTRATION',
-              k: idempotencyKey,
-            })
-            .getOne()
-            .catch(() => null);
-          if (existingRecord) {
-            await this.idempotencyService.complete(manager, existingRecord.id, {
-              responseBody: view as unknown as Record<string, unknown>,
-              statusCode: 201,
-              resourceType: 'CUSTOMER',
-              resourceId: customer.id,
-            });
-          }
-        }
-
-        return { ok: true, view };
-      },
+    void _phoneRaw;
+    void _verificationToken;
+    void _sourceIp;
+    void _password;
+    void _displayName;
+    void _idempotencyKey;
+    return Promise.reject(
+      new ServiceUnavailableException('Customer registration is temporarily unavailable'),
     );
-
-    if (!outcome.ok) throw new BadRequestException(GENERIC_REGISTRATION_VERIFY_FAILURE);
-    return outcome.view;
   }
 
   // ---------------------------------------------------------------- internals
@@ -708,13 +385,6 @@ export class CustomerRegistrationService {
     ).toString('base64url');
   }
 
-  private pbkdf2PasswordHash(password: string): string {
-    const salt = randomBytes(16);
-    const iterations = 10000;
-    const derived = pbkdf2Sync(password, salt, iterations, 32, 'sha256');
-    return `PBKDF2$sha256$${iterations}$${salt.toString('base64url')}$${derived.toString('base64url')}`;
-  }
-
   private verifyOtpCode(candidate: string, codeSalt: string, expectedHash: string): boolean {
     const candidateHash = this.hashOtp(candidate, codeSalt);
     return this.safeEqualString(candidateHash, expectedHash);
@@ -724,14 +394,6 @@ export class CustomerRegistrationService {
     const left = Buffer.from(a);
     const right = Buffer.from(b);
     return left.length === right.length && timingSafeEqual(left, right);
-  }
-
-  private safeEqualHex(storedHash: string, presentedHash: string): boolean {
-    return /^[0-9a-f]{64}$/.test(presentedHash) && this.safeEqualString(storedHash, presentedHash);
-  }
-
-  private maskPhone(phone: NormalizedNigerianPhone): string {
-    return `+234*****${phone.canonical.slice(-4)}`;
   }
 
   private async consumeRateLimit(

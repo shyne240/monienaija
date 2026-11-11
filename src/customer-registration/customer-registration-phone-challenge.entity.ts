@@ -17,8 +17,8 @@ import {
  * requires NOT NULL customer_id + enrollment_id + method_id + session_id, i.e. a subject
  * that already exists and is already authenticated. This table binds an OTP challenge to a
  * normalized Nigerian phone BEFORE any customer row exists, and after successful verification
- * issues a one-time `verification_token_hash` that the registration endpoint must consume to
- * create the DRAFT customer + verified PHONE contact method in a single transaction.
+ * issues a one-time `verification_token_hash` for workforce contact verification. Legacy
+ * self-service registration completion is disabled until genuine KYC is integrated.
  *
  * Security properties (V1-CUSTOMER-ONBOARDING-DECISION-01 SUB-1):
  * - The OTP itself is NEVER stored (only a per-challenge salted PBKDF2 digest + salt).
@@ -77,7 +77,7 @@ export class CustomerRegistrationPhoneChallenge {
   @Column({ name: 'verified_at', type: 'timestamptz', nullable: true })
   verifiedAt!: Date | null;
 
-  /** Set when the registration endpoint consumes the verification token. */
+  /** Set when an authorized workflow consumes the verification token. */
   @Column({ name: 'consumed_at', type: 'timestamptz', nullable: true })
   consumedAt!: Date | null;
 

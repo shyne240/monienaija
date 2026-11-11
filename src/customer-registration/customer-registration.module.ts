@@ -32,7 +32,8 @@ import type { KycProvider } from '../kyc-verification/kyc.types';
 
 /**
  * V1-CUSTOMER-01 — Customer registration module.
- * Public front door (OTP phone verification -> customer creation, password setup, and primary NGN wallet provisioning).
+ * Legacy OTP phone verification remains available for workforce contact verification.
+ * Public self-service completion is disabled until genuine KYC activation is implemented.
  */
 @Module({
   imports: [

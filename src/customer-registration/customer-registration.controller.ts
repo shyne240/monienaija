@@ -11,8 +11,7 @@ import { CustomerRegistrationService } from './customer-registration.service';
  * Provides:
  * - Phone OTP request (bounded by cooldown and rate limits).
  * - Phone OTP verification -> one-time registration token.
- * - Customer registration completion (creates active customer with verified phone,
- *   provisions primary NGN wallet, sets password credential, or creates draft).
+ * - Legacy self-service completion is unavailable until genuine KYC is integrated.
  */
 @Controller('customers/registration')
 export class CustomerRegistrationController {
@@ -32,12 +31,7 @@ export class CustomerRegistrationController {
     return this.registrationService.verifyOtp(dto.phone, dto.code);
   }
 
-  /**
-   * Complete registration: consumes the verification token.
-   * If password is provided: creates an ACTIVE customer, hashes password with PBKDF2,
-   * provisions primary NGN wallet atomically, and creates verified phone contact record.
-   * If password is not provided: creates a DRAFT customer with verified phone.
-   */
+  /** Legacy completion is fail-closed; it creates no customer or wallet. */
   @Post()
   @HttpCode(201)
   complete(@Body() dto: CompleteRegistrationDto, @Req() req: { ip?: string }) {

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument */
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import type { DataSource, EntityManager } from 'typeorm';
 
 import { CustomerRegistrationService } from '../src/customer-registration/customer-registration.service';
@@ -10,7 +10,6 @@ import { CustomerProfile } from '../src/customer/customer-profile.entity';
 import { CustomerAuthenticationCredential } from '../src/customer-authentication/customer-authentication-credential.entity';
 import { WalletAccount } from '../src/wallet/wallet-account.entity';
 import { LedgerAccount } from '../src/ledger/ledger-account.entity';
-import { CustomerStatus } from '../src/customer/customer.enums';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
 
 describe('CustomerRegistrationService (Unit Tests)', () => {
@@ -241,117 +240,24 @@ describe('CustomerRegistrationService (Unit Tests)', () => {
     });
   });
 
-  describe('OTP flow & Self-Service Registration Completion', () => {
-    it('requests OTP, sends SMS, verifies OTP, and completes self-service registration with active status, password, and wallet', async () => {
+  describe('legacy completion safety gate', () => {
+    it('leaves a verified token unconsumed and creates no customer, credential or wallet', async () => {
       const phone = '08034567890';
-      const otpRes = await service.requestOtp(phone, '127.0.0.1');
-      expect(otpRes.status).toBe('OTP_REQUEST_ACCEPTED');
-      expect(provider.sent).toHaveLength(1);
-      expect(provider.sent[0]?.destination).toBe('+2348034567890');
-
-      const match = /code is (\d{6})/.exec(provider.sent[0]?.message ?? '');
-      expect(match).not.toBeNull();
-      const code = match![1]!;
-
-      // Verify OTP
-      const verifyRes = await service.verifyOtp(phone, code);
-      expect(verifyRes.status).toBe('PHONE_VERIFIED');
-      expect(verifyRes.verificationToken).toBeTruthy();
-
-      // Complete registration with password and display name
-      const regRes = await service.completeRegistration(
-        phone,
-        verifyRes.verificationToken,
-        '127.0.0.1',
-        'SecurePass123!',
-        'Adebayo Ogunlesi',
-      );
-
-      expect(regRes.id).toBeTruthy();
-      expect(regRes.reference).toBe('mn-8034567890');
-      expect(regRes.status).toBe(CustomerStatus.ACTIVE);
-      expect(regRes.phone).toBe('+234*****7890');
-      expect(regRes.wallet).toBeDefined();
-      expect(regRes.wallet?.currency).toBe('NGN');
-      expect(regRes.wallet?.status).toBe('ACTIVE');
-
-      // Verify credential created
-      expect(credentials.size).toBe(1);
-      const cred = Array.from(credentials.values())[0];
-      expect(cred?.customerId).toBe(regRes.id);
-      expect(cred?.hashAlgorithm).toBe('PBKDF2');
-      expect(cred?.passwordHash).toContain('PBKDF2$sha256$10000$');
-      expect(cred?.rotationRequired).toBe(false);
-
-      // Verify profile created
-      expect(profiles.size).toBe(1);
-      const prof = Array.from(profiles.values())[0];
-      expect(prof?.displayName).toBe('Adebayo Ogunlesi');
-
-      // Verify wallet & ledger account created
-      expect(wallets.size).toBe(1);
-      expect(ledgerAccounts.size).toBe(1);
-      const wal = Array.from(wallets.values())[0];
-      const led = Array.from(ledgerAccounts.values())[0];
-      expect(wal?.ledgerAccountId).toBe(led?.id);
-      expect(led?.currency).toBe('NGN');
-
-      // Verify audit trail
-      const auditActions = auditLogs.map((a) => `${a.entityType}/${a.action}`);
-      expect(auditActions).toContain('CUSTOMER_REGISTRATION_CHALLENGE/OTP_REQUESTED');
-      expect(auditActions).toContain('CUSTOMER_REGISTRATION_CHALLENGE/OTP_VERIFIED');
-      expect(auditActions).toContain('CUSTOMER/CREATED');
-      expect(auditActions).toContain('CUSTOMER/STATUS_UPDATED');
-      expect(auditActions).toContain('CUSTOMER_CONTACT_METHOD/PHONE_VERIFIED');
-      expect(auditActions).toContain('CUSTOMER_AUTHENTICATION_CREDENTIAL/CREATED');
-      expect(auditActions).toContain('CUSTOMER_WALLET/PROVISIONED');
-
-      // Audit logs must never contain raw password or verification token
-      const auditDump = JSON.stringify(auditLogs);
-      expect(auditDump).not.toContain('SecurePass123!');
-      expect(auditDump).not.toContain(verifyRes.verificationToken);
-    });
-
-    it('rejects registration with already consumed verification token', async () => {
-      const phone = '08099887766';
       await service.requestOtp(phone, '127.0.0.1');
       const code = /code is (\d{6})/.exec(provider.sent[0]?.message ?? '')![1]!;
-      const verifyRes = await service.verifyOtp(phone, code);
-
-      await service.completeRegistration(
-        phone,
-        verifyRes.verificationToken,
-        '127.0.0.1',
-        'SecurePass123!',
-      );
-
-      // Re-using the consumed token must fail
-      await expect(
-        service.completeRegistration(
-          phone,
-          verifyRes.verificationToken,
-          '127.0.0.1',
-          'SecurePass123!',
-        ),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('creates DRAFT customer when password is omitted for backward-compatible workforce activation flow', async () => {
-      const phone = '07011223344';
-      await service.requestOtp(phone, '127.0.0.1');
-      const code = /code is (\d{6})/.exec(provider.sent[0]?.message ?? '')![1]!;
-      const verifyRes = await service.verifyOtp(phone, code);
-
-      const regRes = await service.completeRegistration(
-        phone,
-        verifyRes.verificationToken,
-        '127.0.0.1',
-      );
-
-      expect(regRes.status).toBe(CustomerStatus.DRAFT);
-      expect(regRes.wallet).toBeUndefined();
+      const verified = await service.verifyOtp(phone, code);
+      for (const password of ['SecurePass123!', undefined]) {
+        await expect(
+          service.completeRegistration(phone, verified.verificationToken, '127.0.0.1', password),
+        ).rejects.toThrow(ServiceUnavailableException);
+      }
+      expect([...challenges.values()][0]?.consumedAt).toBeNull();
+      expect(customers.size).toBe(0);
+      expect(contacts.size).toBe(0);
+      expect(profiles.size).toBe(0);
       expect(credentials.size).toBe(0);
       expect(wallets.size).toBe(0);
+      expect(ledgerAccounts.size).toBe(0);
     });
   });
 });
