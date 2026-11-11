@@ -307,6 +307,9 @@ test.each(['BVN', 'NIN'] as const)(
       ]),
     ).rejects.toThrow('Synthetic customer cannot hold financial privileges');
 
+    expect((await send('onboarding-route', { sessionId: s.id }, authorization)).json()).toEqual({
+      next: 'RESUME',
+    });
     const setupBody = {
       sessionId: s.id,
       passcode: '112233',
@@ -658,6 +661,20 @@ test('existing non-synthetic customer permissions remain compatible', async () =
     [customerId, `existing-${customerId}`],
   );
   await db.query(
+    "INSERT INTO customer_identity_documents(id,customer_id,type,document_number,issuing_country) VALUES($1,$2,'BVN','12345678901','NG')",
+    [randomUUID(), customerId],
+  );
+  const { createHmac } = await import('node:crypto');
+  const key = Buffer.from('test ownership key 32 bytes fixed!!');
+  const prevKey = process.env.KYC_OWNERSHIP_KEY_BASE64,
+    prevVersion = process.env.KYC_OWNERSHIP_KEY_VERSION;
+  process.env.KYC_OWNERSHIP_KEY_BASE64 = key.toString('base64');
+  process.env.KYC_OWNERSHIP_KEY_VERSION = 'test-v1';
+  await db.query(
+    `INSERT INTO kyc_ownership_key_state(singleton,key_version,key_proof) VALUES(true,'test-v1',$1) ON CONFLICT(singleton) DO UPDATE SET key_version=excluded.key_version,key_proof=excluded.key_proof`,
+    [createHmac('sha256', key).update('kyc-ownership-key-proof-v1').digest('hex')],
+  );
+  await db.query(
     "INSERT INTO customer_eligibilities(customer_id,status,reviewed_by) VALUES($1,'PENDING','test')",
     [customerId],
   );
@@ -688,12 +705,25 @@ test('existing non-synthetic customer permissions remain compatible', async () =
     await send('otp/verify', { sessionId: session.id, code }, session.token)
   ).json<{ authorization: string }>().authorization;
   expect((await send('onboarding-route', { sessionId: session.id }, authorization)).json()).toEqual(
-    { next: 'PENDING' },
+    { next: 'CLAIM' },
   );
+  expect(
+    (
+      await send(
+        'claim-match',
+        { sessionId: session.id, kind: 'BVN', identifier: '12345678901' },
+        authorization,
+      )
+    ).json(),
+  ).toEqual({ status: 'PENDING' });
   expect(
     (await send('onboarding-login', { sessionId: session.id, passcode: '112233' }, authorization))
       .statusCode,
   ).toBe(401);
+  if (prevKey === undefined) delete process.env.KYC_OWNERSHIP_KEY_BASE64;
+  else process.env.KYC_OWNERSHIP_KEY_BASE64 = prevKey;
+  if (prevVersion === undefined) delete process.env.KYC_OWNERSHIP_KEY_VERSION;
+  else process.env.KYC_OWNERSHIP_KEY_VERSION = prevVersion;
   expect(await db.query('SELECT is_synthetic FROM customers WHERE id=$1', [customerId])).toEqual([
     { is_synthetic: false },
   ]);
@@ -701,3 +731,232 @@ test('existing non-synthetic customer permissions remain compatible', async () =
     await db.query('SELECT status FROM customer_eligibilities WHERE customer_id=$1', [customerId]),
   ).toEqual([{ status: 'PENDING' }]);
 });
+
+test.each(['BVN', 'NIN'] as const)(
+  'verified existing %s owner can claim without a provider call',
+  async (kind) => {
+    const { createHmac } = await import('node:crypto');
+    const { REGISTRATION_SYNTHETIC_PROVIDER } = await import(
+      '../src/kyc-verification/kyc-registration-verification.service'
+    );
+    const provider = app.get<{ verify: jest.Mock }>(REGISTRATION_SYNTHETIC_PROVIDER);
+    const spy = jest.spyOn(provider, 'verify');
+    const key = Buffer.from('test ownership key 32 bytes fixed!!');
+    const previousKey = process.env.KYC_OWNERSHIP_KEY_BASE64,
+      previousVersion = process.env.KYC_OWNERSHIP_KEY_VERSION;
+    process.env.KYC_OWNERSHIP_KEY_BASE64 = key.toString('base64');
+    process.env.KYC_OWNERSHIP_KEY_VERSION = 'test-v1';
+    try {
+      const proof = createHmac('sha256', key).update('kyc-ownership-key-proof-v1').digest('hex');
+      await db.query(
+        `INSERT INTO kyc_ownership_key_state(singleton,key_version,key_proof) VALUES(true,'test-v1',$1) ON CONFLICT(singleton) DO UPDATE SET key_version=excluded.key_version,key_proof=excluded.key_proof`,
+        [proof],
+      );
+      const id = randomUUID(),
+        cred = randomUUID(),
+        oldSession = randomUUID(),
+        consent = randomUUID(),
+        attempt = randomUUID();
+      const phone = kind === 'BVN' ? '08033334441' : '08033334442',
+        normalized = phone.slice(1),
+        identifier = kind === 'BVN' ? '12345678901' : '23456789012';
+      const mac = createHmac('sha256', key)
+        .update('kyc-identifier-v1\0')
+        .update(kind)
+        .update('\0')
+        .update(identifier)
+        .digest('hex');
+      await db.query(
+        `INSERT INTO customers(id,reference,customer_type,status,kyc_level,kyc_status) VALUES($1,$2,'INDIVIDUAL',$3,'NONE','NOT_STARTED')`,
+        [id, `claim-${id}`, kind === 'BVN' ? 'ACTIVE' : 'DRAFT'],
+      );
+      await db.query(
+        `INSERT INTO customer_contact_methods(id,customer_id,type,value,normalized_value,is_primary) VALUES($1,$2,'PHONE',$3,$4,true)`,
+        [randomUUID(), id, phone, normalized],
+      );
+      // Historical session-backed provider evidence fixture. The historical credential is deleted,
+      // preserving the foreign key while leaving this customer without an active credential.
+      await db.query(
+        `INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,password_changed_at,status,deleted_at) VALUES($1,$2,'historic','PBKDF2',1,clock_timestamp(),'REVOKED',clock_timestamp())`,
+        [cred, id],
+      );
+      await db.query(
+        `INSERT INTO authentication_sessions(id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at) VALUES($1,$2,$3,$4,'customer-api','REVOKED',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp())`,
+        [oldSession, id, cred, 'f'.repeat(63) + (kind === 'BVN' ? '1' : '2')],
+      );
+      await db.query(
+        `INSERT INTO kyc_consents(id,customer_id,kind,notice_version,actor_id,session_id,expires_at) VALUES($1,$2,$3,'test',$2,$4,clock_timestamp()+interval '1 day')`,
+        [consent, id, kind, oldSession],
+      );
+      await db.query(
+        `INSERT INTO kyc_verification_attempts(id,customer_id,consent_id,request_id,kind,provider,policy_version,request_mac,identity_mac,mac_key_version,outcome,completed_at,expires_at) VALUES($1,$2,$3,$4,$5,'MONNIFY','test',$6,$6,'test','MATCH',clock_timestamp(),clock_timestamp()+interval '1 day')`,
+        [attempt, id, consent, randomUUID(), kind, 'a'.repeat(64)],
+      );
+      await db.query(
+        `INSERT INTO kyc_identity_claims(id,kind,identifier_mac,customer_id,attempt_id,status) VALUES($1,$2,$3,$4,$5,'VERIFIED')`,
+        [randomUUID(), kind, mac, id, attempt],
+      );
+      const send = (path: string, payload: object, token?: string) =>
+        app.inject({
+          method: 'POST',
+          url: `/api/v1/customers/registration-sessions/${path}`,
+          payload,
+          headers: token ? { authorization: `Bearer ${token}` } : {},
+        });
+      const before = await db.query<Array<{ customers: string; wallets: string }>>(
+        'SELECT (SELECT count(*) FROM customers) customers,(SELECT count(*) FROM wallet_accounts) wallets',
+      );
+      const s = (await send('start', { phone })).json<{ id: string; token: string }>();
+      expect((await send('onboarding-route', { sessionId: s.id }, s.token)).statusCode).toBe(401);
+      expect(
+        (await send('otp', { sessionId: s.id, requestId: randomUUID() }, s.token)).statusCode,
+      ).toBe(200);
+      const code = /code is (\d{6})/.exec(sms.sent.at(-1)?.message ?? '')?.[1];
+      const auth = (await send('otp/verify', { sessionId: s.id, code }, s.token)).json<{
+        authorization: string;
+      }>().authorization;
+      expect((await send('onboarding-route', { sessionId: s.id }, auth)).json()).toEqual({
+        next: 'CLAIM',
+      });
+      await db.query("UPDATE kyc_verification_attempts SET provider='SYNTHETIC' WHERE id=$1", [
+        attempt,
+      ]);
+      expect(
+        (await send('claim-match', { sessionId: s.id, kind, identifier }, auth)).json(),
+      ).toEqual({ status: 'PENDING' });
+      await db.query(
+        "UPDATE kyc_verification_attempts SET provider='MONNIFY',expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",
+        [attempt],
+      );
+      expect(
+        (await send('claim-match', { sessionId: s.id, kind, identifier }, auth)).json(),
+      ).toEqual({ status: 'PENDING' });
+      await db.query(
+        "UPDATE kyc_verification_attempts SET expires_at=clock_timestamp()+interval '1 day' WHERE id=$1",
+        [attempt],
+      );
+      const ownership = (
+        await db.query<Array<{ id: string }>>(
+          'SELECT id FROM kyc_identity_claims WHERE attempt_id=$1',
+          [attempt],
+        )
+      )[0]!.id;
+      const other = (
+        await db.query<Array<{ id: string }>>('SELECT id FROM customers WHERE id<>$1 LIMIT 1', [id])
+      )[0]!.id;
+      const conflict = randomUUID();
+      await db.query(
+        `INSERT INTO kyc_identity_conflicts(id,requester_customer_id,claim_id,claimed_customer_id,kind) VALUES($1,$2,$3,$4,$5)`,
+        [conflict, other, ownership, id, kind],
+      );
+      expect(
+        (await send('claim-match', { sessionId: s.id, kind, identifier }, auth)).json(),
+      ).toEqual({ status: 'PENDING' });
+      await db.query('DELETE FROM kyc_identity_conflicts WHERE id=$1', [conflict]);
+      await db.query(
+        "UPDATE mobile_claim_attempt_windows SET started_at=clock_timestamp()-interval '61 minutes' WHERE customer_id=$1",
+        [id],
+      );
+      process.env.KYC_OWNERSHIP_KEY_BASE64 = Buffer.alloc(32, 8).toString('base64');
+      expect(
+        (await send('claim-match', { sessionId: s.id, kind, identifier }, auth)).json(),
+      ).toEqual({ status: 'PENDING' });
+      process.env.KYC_OWNERSHIP_KEY_BASE64 = key.toString('base64');
+      expect(
+        (
+          await send('claim-match', { sessionId: s.id, kind, identifier: '99999999999' }, auth)
+        ).json(),
+      ).toEqual({ status: 'MISMATCH' });
+      const failures = await Promise.all(
+        Array.from({ length: 3 }, () =>
+          send('claim-match', { sessionId: s.id, kind, identifier: '99999999999' }, auth),
+        ),
+      );
+      expect(failures.map((r) => r.json<{ status: string }>().status).sort()).toEqual([
+        'MISMATCH',
+        'MISMATCH',
+        'MISMATCH',
+      ]);
+      expect(
+        (
+          await send('claim-match', { sessionId: s.id, kind, identifier: '99999999999' }, auth)
+        ).json(),
+      ).toEqual({ status: 'MISMATCH' });
+      expect(
+        (await send('claim-match', { sessionId: s.id, kind, identifier }, auth)).json(),
+      ).toEqual({ status: 'LOCKED' });
+      await db.query(
+        "UPDATE mobile_claim_attempt_windows SET started_at=clock_timestamp()-interval '61 minutes' WHERE customer_id=$1",
+        [id],
+      );
+      expect(
+        (await send('claim-match', { sessionId: s.id, kind, identifier }, auth)).json(),
+      ).toEqual({ status: 'MATCH' });
+      expect((await send('onboarding-route', { sessionId: s.id }, auth)).json()).toEqual({
+        next: 'RESUME_CLAIM',
+      });
+      const body = {
+        sessionId: s.id,
+        passcode: '112233',
+        passcodeConfirmation: '112233',
+        pin: '334455',
+        pinConfirmation: '334455',
+      };
+      process.env.KYC_OWNERSHIP_KEY_BASE64 = Buffer.alloc(32, 8).toString('base64');
+      expect((await send('claim-credentials', body, auth)).statusCode).toBe(401);
+      process.env.KYC_OWNERSHIP_KEY_BASE64 = key.toString('base64');
+      await db.query('UPDATE kyc_consents SET withdrawn_at=clock_timestamp() WHERE id=$1', [
+        consent,
+      ]);
+      expect((await send('claim-credentials', body, auth)).statusCode).toBe(401);
+      await db.query('UPDATE kyc_consents SET withdrawn_at=NULL WHERE id=$1', [consent]);
+      const setups = await Promise.all([
+        send('claim-credentials', body, auth),
+        send('claim-credentials', body, auth),
+      ]);
+      expect(setups.map((r) => r.statusCode).sort()).toEqual([200, 401]);
+      expect((await send('onboarding-route', { sessionId: s.id }, auth)).json()).toEqual({
+        next: 'LOGIN',
+      });
+      const login = await send('onboarding-login', { sessionId: s.id, passcode: '112233' }, auth);
+      expect(login.json()).toMatchObject({ customerId: id, audience: 'customer-onboarding' });
+      const bearer = login.json<{ accessToken: string }>().accessToken;
+      expect(
+        (
+          await app.inject({
+            method: 'GET',
+            url: '/api/v1/customers/me/wallets',
+            headers: { authorization: `Bearer ${bearer}` },
+          })
+        ).statusCode,
+      ).toBe(401);
+      const audit = await db.query<Array<{ new_values: unknown }>>(
+        'SELECT new_values FROM audit_events WHERE entity_id=$1 AND action=$2',
+        [id, 'MOBILE_CLAIM_MATCH'],
+      );
+      expect(JSON.stringify(audit)).not.toContain(identifier);
+      expect(JSON.stringify(audit)).not.toContain(mac);
+      expect(
+        (
+          await app.inject({
+            method: 'POST',
+            url: '/api/v1/customers/sessions',
+            payload: { phone, password: '112233' },
+          })
+        ).statusCode,
+      ).toBe(401);
+      expect(
+        await db.query(
+          'SELECT (SELECT count(*) FROM customers) customers,(SELECT count(*) FROM wallet_accounts) wallets',
+        ),
+      ).toEqual(before);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+      if (previousKey === undefined) delete process.env.KYC_OWNERSHIP_KEY_BASE64;
+      else process.env.KYC_OWNERSHIP_KEY_BASE64 = previousKey;
+      if (previousVersion === undefined) delete process.env.KYC_OWNERSHIP_KEY_VERSION;
+      else process.env.KYC_OWNERSHIP_KEY_VERSION = previousVersion;
+    }
+  },
+);

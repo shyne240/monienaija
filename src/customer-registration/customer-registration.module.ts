@@ -1,3 +1,4 @@
+import { MobileAccountClaimService } from './mobile-account-claim.service';
 import { MobileOnboardingAuthController } from './mobile-onboarding-auth.controller';
 import { MobileOnboardingAuthService } from './mobile-onboarding-auth.service';
 import { KycSyntheticCredentialsController } from '../kyc-verification/kyc-synthetic-credentials.controller';
@@ -68,6 +69,11 @@ import type { KycProvider } from '../kyc-verification/kyc.types';
   ],
   providers: [
     CustomerRegistrationService,
+    {
+      provide: MobileAccountClaimService,
+      inject: [DataSource, AuditService],
+      useFactory: (db: DataSource, audit: AuditService) => new MobileAccountClaimService(db, audit),
+    },
     {
       provide: KycRegistrationSessionService,
       inject: [DataSource, NOTIFICATION_PROVIDER_TOKEN, A2SecurityRateLimitService],

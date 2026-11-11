@@ -19,6 +19,7 @@ type Step =
   | 'IDENTITY'
   | 'RESULT'
   | 'CREDENTIALS'
+  | 'CLAIM'
   | 'ONBOARDING_PENDING'
   | 'ONBOARDING_LOGIN'
   | 'ONBOARDING_AUTHENTICATED';
@@ -33,6 +34,7 @@ type Session = {
   verificationId?: string;
   matchedAttemptId?: string;
   draftCreated?: boolean;
+  claimMatched?: boolean;
 };
 const STORAGE_KEY = 'synthetic_registration_session_v1';
 const ONBOARDING_TOKEN_KEY = 'synthetic_onboarding_token_v1';
@@ -45,11 +47,13 @@ async function uuid(): Promise<string> {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-/** This test-only simulation never claims to activate a real account or wallet. */
+/** Phone-first entry. Synthetic registration remains test-only. */
 export const RegistrationScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'Registration'>>();
   const [step, setStep] = useState<Step>('LOADING');
   const [session, setSession] = useState<Session | null>(null);
+  const [simulation, setSimulation] = useState(false);
+  const [claimFlow, setClaimFlow] = useState(false);
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -78,6 +82,7 @@ export const RegistrationScreen: React.FC = () => {
   const reset = async () => {
     await SecureStorage.remove(STORAGE_KEY);
     setSession(null);
+    setClaimFlow(false);
     setCode('');
     setIdentifier('');
     setPasscode('');
@@ -97,15 +102,9 @@ export const RegistrationScreen: React.FC = () => {
     let availabilityConfirmed = false;
     (async () => {
       try {
-        if (!__DEV__) {
-          if (live) setStep('UNAVAILABLE');
-          return;
-        }
         const a = await post<{ available: boolean }>('simulation-availability', {});
-        if (!a.available) {
-          if (live) setStep('UNAVAILABLE');
-          return;
-        }
+        const canSimulate = __DEV__ && a.available;
+        if (live) setSimulation(canSimulate);
         availabilityConfirmed = true;
         const priorToken = await SecureStorage.get(ONBOARDING_TOKEN_KEY);
         if (priorToken) {
@@ -148,21 +147,34 @@ export const RegistrationScreen: React.FC = () => {
           setError('If your code has expired, request a new one.');
           return;
         }
-        const route = await post<{ next: 'NEW' | 'LOGIN' | 'PENDING' }>(
-          'onboarding-route',
-          { sessionId: saved.id },
-          saved.token,
-        );
+        const route = await post<{
+          next: 'NEW' | 'LOGIN' | 'CLAIM' | 'RESUME' | 'RESUME_CLAIM' | 'PENDING';
+        }>('onboarding-route', { sessionId: saved.id }, saved.token);
         if (!live) return;
         if (route.next === 'LOGIN') {
           setStep('ONBOARDING_LOGIN');
+          return;
+        }
+        if (route.next === 'RESUME_CLAIM') {
+          setClaimFlow(true);
+          setStep('CREDENTIALS');
+          return;
+        }
+        if (route.next === 'CLAIM') {
+          setClaimFlow(true);
+          setStep(saved.claimMatched ? 'CREDENTIALS' : 'CLAIM');
+          return;
+        }
+        if (route.next === 'NEW' && !canSimulate) {
+          setStep('ONBOARDING_PENDING');
           return;
         }
         if (route.next === 'PENDING' && !saved.draftCreated) {
           setStep('ONBOARDING_PENDING');
           return;
         }
-        if (route.next !== 'NEW' && route.next !== 'PENDING') throw new Error('unknown route');
+        if (route.next !== 'NEW' && route.next !== 'PENDING' && route.next !== 'RESUME')
+          throw new Error('unknown route');
         const profile = await post<{
           firstName: string;
           lastName: string;
@@ -267,17 +279,22 @@ export const RegistrationScreen: React.FC = () => {
       );
       setCode('');
       await save({ ...session, token: r.authorization, phase: 'VERIFIED' });
-      const route = await post<{ next: 'NEW' | 'LOGIN' | 'PENDING' }>(
-        'onboarding-route',
-        { sessionId: session.id },
-        r.authorization,
-      );
+      const route = await post<{
+        next: 'NEW' | 'LOGIN' | 'CLAIM' | 'RESUME' | 'RESUME_CLAIM' | 'PENDING';
+      }>('onboarding-route', { sessionId: session.id }, r.authorization);
+      setClaimFlow(route.next === 'CLAIM' || route.next === 'RESUME_CLAIM');
       setStep(
-        route.next === 'NEW'
-          ? 'PROFILE'
-          : route.next === 'LOGIN'
-            ? 'ONBOARDING_LOGIN'
-            : 'ONBOARDING_PENDING',
+        route.next === 'LOGIN'
+          ? 'ONBOARDING_LOGIN'
+          : route.next === 'RESUME_CLAIM'
+            ? 'CREDENTIALS'
+            : route.next === 'CLAIM'
+              ? 'CLAIM'
+              : route.next === 'NEW' && simulation
+                ? 'PROFILE'
+                : route.next === 'RESUME' && session.draftCreated
+                  ? 'CREDENTIALS'
+                  : 'ONBOARDING_PENDING',
       );
     });
   const saveProfile = () =>
@@ -321,12 +338,14 @@ export const RegistrationScreen: React.FC = () => {
       }
       try {
         await post(
-          'synthetic-credentials',
+          claimFlow ? 'claim-credentials' : 'synthetic-credentials',
           { sessionId: session.id, passcode, passcodeConfirmation, pin, pinConfirmation },
           session.token,
         );
         setResult(
-          'Test credentials saved. You can sign in to onboarding only; financial services remain unavailable.',
+          claimFlow
+            ? 'Credentials saved. Continue to onboarding sign in; financial services remain unavailable.'
+            : 'Test credentials saved. You can sign in to onboarding only; financial services remain unavailable.',
         );
         setStep('RESULT');
       } finally {
@@ -334,6 +353,28 @@ export const RegistrationScreen: React.FC = () => {
         setPasscodeConfirmation('');
         setPin('');
         setPinConfirmation('');
+      }
+    });
+  const claimIdentity = () =>
+    withError(async () => {
+      if (!session || !/^\d{11}$/.test(identifier)) throw new Error('identifier');
+      try {
+        const response = await post<{ status: 'MATCH' | 'MISMATCH' | 'PENDING' | 'LOCKED' }>(
+          'claim-match',
+          { sessionId: session.id, kind, identifier },
+          session.token,
+        );
+        if (response.status === 'MATCH') {
+          await save({ ...session, claimMatched: true });
+          setClaimFlow(true);
+          setStep('CREDENTIALS');
+        } else if (response.status === 'MISMATCH')
+          setError('The identifier did not match. Check it and try again.');
+        else if (response.status === 'LOCKED')
+          setError('Too many attempts. Wait before trying again.');
+        else setStep('ONBOARDING_PENDING');
+      } finally {
+        setIdentifier('');
       }
     });
   const onboardingLogin = () =>
@@ -413,7 +454,7 @@ export const RegistrationScreen: React.FC = () => {
   const cooldown = Math.max(0, Math.ceil((resendAt - now) / 1000));
   return (
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <Text style={styles.title}>Create Account</Text>
+      <Text style={styles.title}>Continue with your phone</Text>
       {step === 'LOADING' && <Text>Checking registration availability…</Text>}
       {step === 'UNAVAILABLE' && (
         <>
@@ -424,7 +465,7 @@ export const RegistrationScreen: React.FC = () => {
           </Text>
         </>
       )}
-      {step !== 'LOADING' && step !== 'UNAVAILABLE' && (
+      {simulation && ['PROFILE', 'IDENTITY', 'RESULT'].includes(step) && !claimFlow && (
         <Text style={styles.message}>
           Development simulation only. Use test data; never enter a real BVN or NIN. No account or
           wallet will be activated.
@@ -538,12 +579,13 @@ export const RegistrationScreen: React.FC = () => {
       {step === 'CREDENTIALS' && (
         <View>
           <Text style={styles.message}>
-            Synthetic DRAFT created. Choose separate six-digit test passcode and PIN. Financial
-            services remain unavailable.
+            {claimFlow
+              ? 'Account matched. Choose a six-digit passcode and a separate transaction PIN.'
+              : 'Synthetic DRAFT created. Choose separate six-digit test passcode and PIN. Financial services remain unavailable.'}
           </Text>
           <Input
             testID="test-passcode"
-            label="Test login passcode"
+            label={claimFlow ? 'Login passcode' : 'Test login passcode'}
             secureTextEntry
             keyboardType="number-pad"
             maxLength={6}
@@ -552,7 +594,7 @@ export const RegistrationScreen: React.FC = () => {
           />
           <Input
             testID="test-passcode-confirm"
-            label="Confirm test login passcode"
+            label={claimFlow ? 'Confirm login passcode' : 'Confirm test login passcode'}
             secureTextEntry
             keyboardType="number-pad"
             maxLength={6}
@@ -561,7 +603,7 @@ export const RegistrationScreen: React.FC = () => {
           />
           <Input
             testID="test-pin"
-            label="Test transaction PIN"
+            label={claimFlow ? 'Transaction PIN' : 'Test transaction PIN'}
             secureTextEntry
             keyboardType="number-pad"
             maxLength={6}
@@ -570,31 +612,56 @@ export const RegistrationScreen: React.FC = () => {
           />
           <Input
             testID="test-pin-confirm"
-            label="Confirm test transaction PIN"
+            label={claimFlow ? 'Confirm transaction PIN' : 'Confirm test transaction PIN'}
             secureTextEntry
             keyboardType="number-pad"
             maxLength={6}
             value={pinConfirmation}
             onChangeText={setPinConfirmation}
           />
-          <Button label="Save test credentials" loading={busy} onPress={setupCredentials} />
+          <Button
+            label={claimFlow ? 'Save credentials' : 'Save test credentials'}
+            loading={busy}
+            onPress={setupCredentials}
+          />
+        </View>
+      )}
+      {step === 'CLAIM' && (
+        <View>
+          <Text>Existing account found. Enter a previously verified identifier.</Text>
+          <Button
+            label={`Selected: ${kind} (tap to change)`}
+            variant="outline"
+            onPress={() => setKind(kind === 'BVN' ? 'NIN' : 'BVN')}
+          />
+          <Input
+            testID="claim-identifier"
+            label={`${kind} identifier`}
+            value={identifier}
+            onChangeText={setIdentifier}
+            keyboardType="number-pad"
+            maxLength={11}
+            secureTextEntry
+          />
+          <Button label="Match verified identifier" loading={busy} onPress={claimIdentity} />
+          <Button label="Start again" variant="text" onPress={() => void reset()} />
         </View>
       )}
       {step === 'ONBOARDING_PENDING' && (
         <View>
           <Text>
-            Existing account or incomplete setup requires review. Claiming is not available in this
-            simulation.
+            Verification or registration is pending. Please try again when verification is
+            available.
           </Text>
           <Button label="Start again" onPress={() => void reset()} />
         </View>
       )}
       {step === 'ONBOARDING_LOGIN' && (
         <View>
-          <Text>Sign in to test onboarding</Text>
+          <Text>Enter your passcode</Text>
           <Input
             testID="onboarding-passcode"
-            label="Test login passcode"
+            label="Login passcode"
             secureTextEntry
             keyboardType="number-pad"
             maxLength={6}
@@ -607,14 +674,15 @@ export const RegistrationScreen: React.FC = () => {
       )}
       {step === 'ONBOARDING_AUTHENTICATED' && (
         <View>
-          <Text>Signed in to test onboarding only. Financial services remain unavailable.</Text>
+          <Text>Signed in to onboarding only. Financial services remain unavailable.</Text>
           <Button label="Sign out of onboarding" loading={busy} onPress={onboardingLogout} />
         </View>
       )}
       {step === 'RESULT' && (
         <View>
           <Text style={styles.message}>{result}</Text>
-          {result.startsWith('Test credentials saved') && (
+          {(result.startsWith('Test credentials saved') ||
+            result.startsWith('Credentials saved')) && (
             <Button
               label="Continue to onboarding sign in"
               onPress={() => setStep('ONBOARDING_LOGIN')}
@@ -625,7 +693,8 @@ export const RegistrationScreen: React.FC = () => {
           )}
           {!result.startsWith('Synthetic identity matched') &&
             !result.startsWith('Synthetic DRAFT created') &&
-            !result.startsWith('Test credentials saved') && (
+            !result.startsWith('Test credentials saved') &&
+            !result.startsWith('Credentials saved') && (
               <Button
                 label="Return to verification"
                 variant="outline"

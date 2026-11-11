@@ -9,7 +9,7 @@ import { UUID } from './kyc-orchestrator';
 
 const derive = promisify(pbkdf2);
 const ITERATIONS = 310_000;
-async function hash(secret: string): Promise<string> {
+export async function hashMobileSecret(secret: string): Promise<string> {
   const salt = randomBytes(16);
   const result = await derive(secret, salt, ITERATIONS, 32, 'sha256');
   return `PBKDF2$sha256$${ITERATIONS}$${salt.toString('base64url')}$${result.toString('base64url')}`;
@@ -89,8 +89,8 @@ export class KycSyntheticCredentialsService {
         );
         if (existing[0]?.present) throw new KycFoundationError('CONFLICT');
         const [passcodeHash, pinHash] = await Promise.all([
-          hash(command.passcode),
-          hash(command.pin),
+          hashMobileSecret(command.passcode),
+          hashMobileSecret(command.pin),
         ]);
         // Recheck expiry after expensive hashing; no expired authorization may commit.
         const active = await m.query<Array<{ active: boolean }>>(

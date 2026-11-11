@@ -31,11 +31,10 @@ beforeEach(() => {
   (SecureStorage.get as jest.Mock).mockResolvedValue(null);
 });
 
-test('fails closed when simulation is not available', async () => {
+test('allows phone entry when simulation is unavailable', async () => {
   post.mockResolvedValue({ available: false });
   const v = render(<RegistrationScreen />);
-  expect(await v.findByText('Registration is temporarily unavailable.')).toBeTruthy();
-  expect(v.queryByPlaceholderText('e.g. 08012345678')).toBeNull();
+  expect(await v.findByPlaceholderText('e.g. 08012345678')).toBeTruthy();
   fireEvent.press(v.getByText('Back to Sign In'));
   expect(mockNavigate).toHaveBeenCalledWith('Login');
 });
@@ -194,7 +193,7 @@ test('signs into an isolated onboarding session and signs out without storing a 
   fireEvent.changeText(input, '112233');
   fireEvent.press(v.getByText('Sign in to onboarding'));
   expect(
-    await v.findByText('Signed in to test onboarding only. Financial services remain unavailable.'),
+    await v.findByText('Signed in to onboarding only. Financial services remain unavailable.'),
   ).toBeTruthy();
   expect(post).toHaveBeenCalledWith(
     expect.stringContaining('/onboarding-login'),
@@ -208,4 +207,130 @@ test('signs into an isolated onboarding session and signs out without storing a 
   );
   fireEvent.press(v.getByText('Sign out of onboarding'));
   expect(await v.findByPlaceholderText('e.g. 08012345678')).toBeTruthy();
+});
+
+test.each(['BVN', 'NIN'])(
+  'claims an existing %s account after OTP without retaining secrets',
+  async (kind) => {
+    post.mockImplementation(async (path: string) => {
+      if (path.endsWith('/simulation-availability')) return { available: false };
+      if (path.endsWith('/start')) return { id: 'session-id', token: 'pending-token' };
+      if (path.endsWith('/status')) return { status: 'PENDING', expiresAt: future };
+      if (path.endsWith('/otp/verify')) return { authorization: 'verified-token' };
+      if (path.endsWith('/onboarding-route')) return { next: 'CLAIM' };
+      if (path.endsWith('/claim-match')) return { status: 'MATCH' };
+      if (path.endsWith('/claim-credentials')) return { status: 'SET_UP' };
+      if (path.endsWith('/onboarding-login'))
+        return { accessToken: 'onboarding-token', audience: 'customer-onboarding' };
+      return {};
+    });
+    const v = render(<RegistrationScreen />);
+    fireEvent.changeText(await v.findByPlaceholderText('e.g. 08012345678'), '08012345678');
+    fireEvent.press(v.getByText('Send Verification Code'));
+    fireEvent.changeText(await v.findByPlaceholderText('123456'), '123456');
+    fireEvent.press(v.getByText('Verify Code'));
+    expect(
+      await v.findByText('Existing account found. Enter a previously verified identifier.'),
+    ).toBeTruthy();
+    if (kind === 'NIN') fireEvent.press(v.getByText('Selected: BVN (tap to change)'));
+    fireEvent.changeText(v.getByTestId('claim-identifier'), '12345678901');
+    fireEvent.press(v.getByText('Match verified identifier'));
+    expect(
+      await v.findByText(
+        'Account matched. Choose a six-digit passcode and a separate transaction PIN.',
+      ),
+    ).toBeTruthy();
+    fireEvent.changeText(v.getByTestId('test-passcode'), '112233');
+    fireEvent.changeText(v.getByTestId('test-passcode-confirm'), '112233');
+    fireEvent.changeText(v.getByTestId('test-pin'), '334455');
+    fireEvent.changeText(v.getByTestId('test-pin-confirm'), '334455');
+    fireEvent.press(v.getByText('Save credentials'));
+    fireEvent.press(await v.findByText('Continue to onboarding sign in'));
+    fireEvent.changeText(await v.findByTestId('onboarding-passcode'), '112233');
+    fireEvent.press(v.getByText('Sign in to onboarding'));
+    expect(
+      await v.findByText('Signed in to onboarding only. Financial services remain unavailable.'),
+    ).toBeTruthy();
+    expect(post).toHaveBeenCalledWith(
+      expect.stringContaining('/claim-match'),
+      { sessionId: 'session-id', kind, identifier: '12345678901' },
+      { registrationBearer: 'verified-token' },
+    );
+    const saved = JSON.stringify((SecureStorage.set as jest.Mock).mock.calls);
+    expect(saved).not.toContain('12345678901');
+    expect(saved).not.toContain('112233');
+    expect(saved).not.toContain('334455');
+  },
+);
+
+test('unverified evidence is shown as pending', async () => {
+  (SecureStorage.get as jest.Mock).mockImplementation(async (key: string) =>
+    key === 'synthetic_registration_session_v1'
+      ? JSON.stringify({
+          id: 'session-id',
+          token: 'verified-token',
+          expiresAt: future,
+          phase: 'VERIFIED',
+        })
+      : null,
+  );
+  post.mockImplementation(async (path: string) => {
+    if (path.endsWith('/simulation-availability')) return { available: false };
+    if (path.endsWith('/onboarding-route')) return { next: 'CLAIM' };
+    if (path.endsWith('/claim-match')) return { status: 'PENDING' };
+    return { status: 'VERIFIED', expiresAt: future };
+  });
+  const v = render(<RegistrationScreen />);
+  fireEvent.changeText(await v.findByTestId('claim-identifier'), '12345678901');
+  fireEvent.press(v.getByText('Match verified identifier'));
+  expect(await v.findByText(/Verification or registration is pending/)).toBeTruthy();
+});
+
+test('shows a mismatch without retaining the identifier', async () => {
+  (SecureStorage.get as jest.Mock).mockImplementation(async (key: string) =>
+    key === 'synthetic_registration_session_v1'
+      ? JSON.stringify({
+          id: 'session-id',
+          token: 'verified-token',
+          expiresAt: future,
+          phase: 'VERIFIED',
+        })
+      : null,
+  );
+  post.mockImplementation(async (path: string) => {
+    if (path.endsWith('/simulation-availability')) return { available: false };
+    if (path.endsWith('/onboarding-route')) return { next: 'CLAIM' };
+    if (path.endsWith('/claim-match')) return { status: 'MISMATCH' };
+    return { status: 'VERIFIED', expiresAt: future };
+  });
+  const v = render(<RegistrationScreen />);
+  fireEvent.changeText(await v.findByTestId('claim-identifier'), '12345678901');
+  fireEvent.press(v.getByText('Match verified identifier'));
+  expect(await v.findByText('The identifier did not match. Check it and try again.')).toBeTruthy();
+  expect(v.getByTestId('claim-identifier').props.value).toBe('');
+});
+
+test('resumes a previously matched claim from the server', async () => {
+  (SecureStorage.get as jest.Mock).mockImplementation(async (key: string) =>
+    key === 'synthetic_registration_session_v1'
+      ? JSON.stringify({
+          id: 'session-id',
+          token: 'verified-token',
+          expiresAt: future,
+          phase: 'VERIFIED',
+        })
+      : null,
+  );
+  post.mockImplementation(async (path: string) => {
+    if (path.endsWith('/simulation-availability')) return { available: false };
+    if (path.endsWith('/onboarding-route')) return { next: 'RESUME_CLAIM' };
+    return { status: 'VERIFIED', expiresAt: future };
+  });
+  const v = render(<RegistrationScreen />);
+  expect(
+    await v.findByText(
+      'Account matched. Choose a six-digit passcode and a separate transaction PIN.',
+    ),
+  ).toBeTruthy();
+  expect(post.mock.calls.some(([path]: [string]) => path.endsWith('/claim-match'))).toBe(false);
 });

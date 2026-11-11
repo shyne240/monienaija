@@ -8,12 +8,23 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { IsUUID, Matches } from 'class-validator';
+import { IsIn, IsUUID, Matches } from 'class-validator';
 import type { FastifyRequest } from 'fastify';
 import { KycFoundationError } from '../kyc-verification/kyc.types';
+import { MobileAccountClaimService } from './mobile-account-claim.service';
 import { MobileOnboardingAuthService } from './mobile-onboarding-auth.service';
 class RouteDto {
   @IsUUID() sessionId!: string;
+}
+class MatchDto extends RouteDto {
+  @IsIn(['BVN', 'NIN']) kind!: 'BVN' | 'NIN';
+  @Matches(/^\d{11}$/) identifier!: string;
+}
+class SetupDto extends RouteDto {
+  @Matches(/^\d{6}$/) passcode!: string;
+  @Matches(/^\d{6}$/) passcodeConfirmation!: string;
+  @Matches(/^\d{6}$/) pin!: string;
+  @Matches(/^\d{6}$/) pinConfirmation!: string;
 }
 class LoginDto {
   @IsUUID() sessionId!: string;
@@ -21,7 +32,10 @@ class LoginDto {
 }
 @Controller('customers/registration-sessions')
 export class MobileOnboardingAuthController {
-  constructor(private readonly auth: MobileOnboardingAuthService) {}
+  constructor(
+    private readonly auth: MobileOnboardingAuthService,
+    private readonly claims: MobileAccountClaimService,
+  ) {}
   private token(req: FastifyRequest): string {
     const token =
       typeof req.headers.authorization === 'string'
@@ -43,6 +57,18 @@ export class MobileOnboardingAuthController {
   @HttpCode(200)
   route(@Body() b: RouteDto, @Req() req: FastifyRequest) {
     return this.run(() => this.auth.route(b.sessionId, this.token(req)));
+  }
+  @Header('Cache-Control', 'no-store')
+  @Post('claim-match')
+  @HttpCode(200)
+  match(@Body() b: MatchDto, @Req() req: FastifyRequest) {
+    return this.run(() => this.claims.match(b.sessionId, this.token(req), b.kind, b.identifier));
+  }
+  @Header('Cache-Control', 'no-store')
+  @Post('claim-credentials')
+  @HttpCode(200)
+  setup(@Body() b: SetupDto, @Req() req: FastifyRequest) {
+    return this.run(() => this.claims.setup({ ...b, authorization: this.token(req) }));
   }
   @Header('Cache-Control', 'no-store')
   @Post('onboarding-login')

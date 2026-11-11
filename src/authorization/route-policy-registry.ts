@@ -64,6 +64,8 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/v1/customers/registration-sessions/synthetic-credentials',
   'POST /api/v1/customers/registration-sessions/synthetic-credentials/status',
   'POST /api/v1/customers/registration-sessions/onboarding-route',
+  'POST /api/v1/customers/registration-sessions/claim-match',
+  'POST /api/v1/customers/registration-sessions/claim-credentials',
   'POST /api/v1/customers/registration-sessions/onboarding-login',
   'POST /api/v1/customers/registration-sessions/onboarding-session',
   'POST /api/v1/customers/registration-sessions/onboarding-logout',

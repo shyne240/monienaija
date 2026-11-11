@@ -84,7 +84,7 @@ export class AuthenticationExecutionService {
     const credential = await this.credentialRepository.findOne({
       where: { customerId, deletedAt: IsNull() },
     });
-    if (!credential || credential.deletedAt !== null) {
+    if (!credential || credential.deletedAt !== null || credential.mobileOtpRequired) {
       return this.invalidCredentials(customerId);
     }
 
