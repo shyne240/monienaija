@@ -206,3 +206,60 @@ export function decideTier(input: {
     supporting.sort(),
   );
 }
+
+export type TierTransitionPlan =
+  | { action: 'HOLD_FOR_REVIEW'; reason: string; decision: TierDecision }
+  | { action: 'NO_CHANGE'; reason: string; decision: TierDecision }
+  | {
+      action: 'PROPOSE_TRANSITION';
+      oldTier: TierLevel;
+      newTier: TierLevel;
+      direction: 'UPGRADE' | 'DOWNGRADE';
+      reason: string;
+      decision: TierDecision;
+    };
+
+/**
+ * Candidate plan only, never a mutation. Callers must re-evaluate in the same
+ * transaction as any eventual authorized change. In particular a legacy or
+ * Level 3 assessment is not silently downgraded by missing new evidence.
+ */
+export function planTierTransition(input: {
+  currentTier: TierLevel | 'LEVEL_3';
+  legacyAssessment: boolean;
+  decision: TierDecision;
+}): TierTransitionPlan {
+  const { currentTier, legacyAssessment, decision } = input;
+  if (
+    !['NONE', 'LEVEL_1', 'LEVEL_2', 'LEVEL_3'].includes(currentTier) ||
+    typeof legacyAssessment !== 'boolean' ||
+    !decision ||
+    !['PENDING', 'ELIGIBLE'].includes(decision.status) ||
+    !decision.policyVersion ||
+    !/^[A-Za-z0-9._-]{1,64}$/.test(decision.policyVersion) ||
+    !Array.isArray(decision.supportingEvidenceIds) ||
+    decision.supportingEvidenceIds.some((id) => !idPattern.test(id)) ||
+    (decision.status === 'PENDING' &&
+      (decision.highestTier !== 'NONE' || decision.supportingEvidenceIds.length !== 0)) ||
+    (decision.status === 'ELIGIBLE' &&
+      (!['LEVEL_1', 'LEVEL_2'].includes(decision.highestTier ?? '') ||
+        decision.supportingEvidenceIds.length === 0)) ||
+    decision.highestTier === null
+  )
+    return { action: 'HOLD_FOR_REVIEW', reason: 'DECISION_NOT_ACTIONABLE', decision };
+  if (currentTier === 'LEVEL_3' || legacyAssessment)
+    return { action: 'HOLD_FOR_REVIEW', reason: 'LEGACY_OR_LEVEL_3', decision };
+  const rank: Record<TierLevel, number> = { NONE: 0, LEVEL_1: 1, LEVEL_2: 2 };
+  if (!(decision.highestTier in rank))
+    return { action: 'HOLD_FOR_REVIEW', reason: 'INVALID_CANDIDATE', decision };
+  if (decision.highestTier === currentTier)
+    return { action: 'NO_CHANGE', reason: 'ALREADY_AT_CANDIDATE_TIER', decision };
+  return {
+    action: 'PROPOSE_TRANSITION',
+    oldTier: currentTier,
+    newTier: decision.highestTier,
+    direction: rank[decision.highestTier] > rank[currentTier] ? 'UPGRADE' : 'DOWNGRADE',
+    reason: decision.reason,
+    decision,
+  };
+}

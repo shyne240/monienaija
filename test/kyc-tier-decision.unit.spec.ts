@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   decideTier,
+  planTierTransition,
   type TierDecisionPolicy,
   type TierEvidence,
   type TierEvidenceType,
@@ -114,5 +115,76 @@ describe('non-authoritative KYC tier decision', () => {
   it('does not let empty operator rules weaken the fixed BVN/NIN floor', () => {
     expect(evaluate([evidence('PHONE')]).highestTier).toBe('NONE');
     expect(evaluate([evidence('NIN')]).highestTier).toBe('LEVEL_1');
+  });
+});
+
+describe('non-authoritative transition planning', () => {
+  it('proposes both upgrade and downgrade but never applies either', () => {
+    const one = evaluate([evidence('BVN')]);
+    expect(
+      planTierTransition({ currentTier: 'NONE', legacyAssessment: false, decision: one }),
+    ).toMatchObject({
+      action: 'PROPOSE_TRANSITION',
+      oldTier: 'NONE',
+      newTier: 'LEVEL_1',
+      direction: 'UPGRADE',
+    });
+    expect(
+      planTierTransition({ currentTier: 'LEVEL_2', legacyAssessment: false, decision: one }),
+    ).toMatchObject({
+      action: 'PROPOSE_TRANSITION',
+      oldTier: 'LEVEL_2',
+      newTier: 'LEVEL_1',
+      direction: 'DOWNGRADE',
+    });
+    const expired = evaluate([evidence('BVN', { expiresAt: new Date('2026-10-15') })]);
+    expect(
+      planTierTransition({ currentTier: 'LEVEL_1', legacyAssessment: false, decision: expired }),
+    ).toMatchObject({ action: 'PROPOSE_TRANSITION', newTier: 'NONE', direction: 'DOWNGRADE' });
+  });
+  it('does not propose downgrades for ambiguous, unconfigured, legacy or Tier 3 assessments', () => {
+    const review = evaluate([evidence('BVN', { status: 'REVIEW' })]);
+    expect(
+      planTierTransition({ currentTier: 'LEVEL_2', legacyAssessment: false, decision: review })
+        .action,
+    ).toBe('HOLD_FOR_REVIEW');
+    const missing = evaluate([], null);
+    expect(
+      planTierTransition({ currentTier: 'LEVEL_1', legacyAssessment: false, decision: missing })
+        .action,
+    ).toBe('HOLD_FOR_REVIEW');
+    const eligible = evaluate([evidence('BVN')]);
+    expect(
+      planTierTransition({ currentTier: 'LEVEL_2', legacyAssessment: true, decision: eligible })
+        .action,
+    ).toBe('HOLD_FOR_REVIEW');
+    expect(
+      planTierTransition({ currentTier: 'LEVEL_3', legacyAssessment: false, decision: eligible })
+        .action,
+    ).toBe('HOLD_FOR_REVIEW');
+  });
+  it('refuses contradictory or forged decision shapes', () => {
+    const d = evaluate([]);
+    expect(
+      planTierTransition({
+        currentTier: 'NONE',
+        legacyAssessment: false,
+        decision: { ...d, highestTier: 'LEVEL_2' },
+      }).action,
+    ).toBe('HOLD_FOR_REVIEW');
+    expect(
+      planTierTransition({
+        currentTier: 'NONE',
+        legacyAssessment: false,
+        decision: { ...d, status: 'ELIGIBLE', highestTier: 'LEVEL_1' },
+      }).action,
+    ).toBe('HOLD_FOR_REVIEW');
+  });
+  it('returns no change for a duplicate equivalent evaluation', () => {
+    const eligible = evaluate([evidence('NIN')]);
+    expect(
+      planTierTransition({ currentTier: 'LEVEL_1', legacyAssessment: false, decision: eligible })
+        .action,
+    ).toBe('NO_CHANGE');
   });
 });
