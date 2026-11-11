@@ -1,7 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument */
 import { randomUUID } from 'node:crypto';
 
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 
@@ -26,7 +31,13 @@ export class CustomerTransactionPinService {
 
   async setTransactionPin(
     customerId: string,
-    command: { pinHash: string; hashAlgorithm: string; pinVersion: number; actor: string },
+    command: {
+      pinHash: string;
+      hashAlgorithm: string;
+      pinVersion: number;
+      actor: string;
+      createOnly?: boolean;
+    },
   ): Promise<CustomerTransactionPin> {
     this.assertUuid(customerId, 'customerId');
     const actor = this.normalizeActor(command.actor);
@@ -38,14 +49,20 @@ export class CustomerTransactionPinService {
       throw new BadRequestException('pinVersion must be a positive integer');
     }
     return this.dataSource.transaction(async (manager) => {
-      const customer = await manager.getRepository(Customer).findOne({ where: { id: customerId } });
+      const customer = await manager
+        .getRepository(Customer)
+        .findOne({ where: { id: customerId }, lock: { mode: 'pessimistic_write' } });
       if (!customer || customer.deletedAt !== null) {
         throw new NotFoundException(`Customer ${customerId} was not found`);
       }
       const pinRepo = manager.getRepository(CustomerTransactionPin);
-      let pin = await pinRepo.findOne({ where: { customerId } });
+      let pin = await pinRepo.findOne({
+        where: { customerId },
+        lock: { mode: 'pessimistic_write' },
+      });
       const now = new Date();
       if (pin && pin.deletedAt === null) {
+        if (command.createOnly) throw new ConflictException('Transaction PIN already exists');
         const previous = this.pinValues(pin);
         pin.pinHash = pinHash;
         pin.hashAlgorithm = command.hashAlgorithm;
@@ -108,23 +125,25 @@ export class CustomerTransactionPinService {
     if (typeof pin !== 'string' || pin.length === 0 || pin.length > 1024) {
       return { verified: false, failureReason: 'INVALID_PIN' };
     }
-    const stored = await this.pinRepository.findOne({ where: { customerId } });
-    if (!stored || stored.deletedAt !== null) {
-      return { verified: false, failureReason: 'PIN_NOT_FOUND' };
-    }
-    if (stored.accountLocked) {
-      return { verified: false, locked: true, failureReason: 'PIN_LOCKED' };
-    }
-    const result = verificationService.verify(pin, stored.hashAlgorithm, stored.pinHash);
-    if (result.verified) {
-      await this.dataSource.transaction(async (manager) => {
-        const fresh = await manager
-          .getRepository(CustomerTransactionPin)
-          .findOne({ where: { id: stored.id } });
-        if (!fresh) return;
-        if (fresh.failedCount > 0) {
-          fresh.failedCount = 0;
-          await manager.getRepository(CustomerTransactionPin).save(fresh);
+    return this.dataSource.transaction(async (manager) => {
+      const pinRepo = manager.getRepository(CustomerTransactionPin);
+      const stored = await pinRepo.findOne({
+        where: { customerId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!stored || stored.deletedAt !== null)
+        return { verified: false, failureReason: 'PIN_NOT_FOUND' };
+      if (stored.accountLocked)
+        return { verified: false, locked: true, failureReason: 'PIN_LOCKED' };
+      const verified = verificationService.verify(
+        pin,
+        stored.hashAlgorithm,
+        stored.pinHash,
+      ).verified;
+      if (verified) {
+        if (stored.failedCount > 0) {
+          stored.failedCount = 0;
+          await pinRepo.save(stored);
         }
         await this.audit(
           manager,
@@ -133,27 +152,18 @@ export class CustomerTransactionPinService {
           'PIN_VERIFIED',
           actor,
           undefined,
-          {
-            customerId,
-            pinVersion: stored.pinVersion,
-            outcome: 'VERIFIED',
-          } as unknown as Record<string, unknown>,
+          { customerId, pinVersion: stored.pinVersion, outcome: 'VERIFIED' },
         );
-      });
-      return { verified: true };
-    }
-    await this.dataSource.transaction(async (manager) => {
-      const pinRepo = manager.getRepository(CustomerTransactionPin);
-      const fresh = await pinRepo.findOne({ where: { id: stored.id } });
-      if (!fresh) return;
-      const previous = this.pinValues(fresh);
-      fresh.failedCount += 1;
-      if (fresh.failedCount >= MAX_FAILED_PINS) {
-        fresh.accountLocked = true;
-        fresh.lockedAt ??= new Date();
-        fresh.lockReason = 'Maximum failed PIN attempts reached';
+        return { verified: true };
       }
-      const saved = await pinRepo.save(fresh);
+      const previous = this.pinValues(stored);
+      stored.failedCount += 1;
+      if (stored.failedCount >= MAX_FAILED_PINS) {
+        stored.accountLocked = true;
+        stored.lockedAt ??= new Date();
+        stored.lockReason = 'Maximum failed PIN attempts reached';
+      }
+      const saved = await pinRepo.save(stored);
       await this.audit(
         manager,
         'CUSTOMER_TRANSACTION_PIN',
@@ -163,12 +173,10 @@ export class CustomerTransactionPinService {
         previous,
         this.pinValues(saved),
       );
+      return saved.accountLocked
+        ? { verified: false, locked: true, failureReason: 'PIN_LOCKED' }
+        : { verified: false, failureReason: 'MISMATCH' };
     });
-    const reloaded = await this.pinRepository.findOne({ where: { customerId } });
-    if (reloaded?.accountLocked) {
-      return { verified: false, locked: true, failureReason: 'PIN_LOCKED' };
-    }
-    return { verified: false, failureReason: 'MISMATCH' };
   }
 
   async getTransactionPin(customerId: string): Promise<CustomerTransactionPin | null> {

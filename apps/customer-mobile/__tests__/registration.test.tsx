@@ -45,6 +45,7 @@ test.each(['BVN', 'NIN'])(
   async (kind) => {
     post.mockImplementation(async (path: string) => {
       if (path.endsWith('/simulation-availability')) return { available: true };
+      if (path.endsWith('/onboarding-route')) return { next: 'NEW' };
       if (path.endsWith('/start')) return { id: 'session-id', token: 'pending-token' };
       if (path.endsWith('/status')) return { status: 'PENDING', expiresAt: future };
       if (path.endsWith('/otp/verify')) return { authorization: 'verified-token' };
@@ -94,16 +95,19 @@ test.each(['BVN', 'NIN'])(
 );
 
 test('resumes a verified profile without retaining an identifier or OTP', async () => {
-  (SecureStorage.get as jest.Mock).mockResolvedValue(
-    JSON.stringify({
-      id: 'session-id',
-      token: 'verified-token',
-      expiresAt: future,
-      phase: 'VERIFIED',
-    }),
+  (SecureStorage.get as jest.Mock).mockImplementation(async (key: string) =>
+    key === 'synthetic_registration_session_v1'
+      ? JSON.stringify({
+          id: 'session-id',
+          token: 'verified-token',
+          expiresAt: future,
+          phase: 'VERIFIED',
+        })
+      : null,
   );
   post.mockImplementation(async (path: string) => {
     if (path.endsWith('/simulation-availability')) return { available: true };
+    if (path.endsWith('/onboarding-route')) return { next: 'NEW' };
     if (path.endsWith('/synthetic-profile/status'))
       return { firstName: 'Synthetic', lastName: 'Person', dateOfBirth: '2000-01-01', email: null };
     return { status: 'VERIFIED', expiresAt: future };
@@ -114,17 +118,20 @@ test('resumes a verified profile without retaining an identifier or OTP', async 
 });
 
 test('resumes matched attempt and retries draft completion without another identity request', async () => {
-  (SecureStorage.get as jest.Mock).mockResolvedValue(
-    JSON.stringify({
-      id: 'session-id',
-      token: 'verified-token',
-      expiresAt: future,
-      phase: 'VERIFIED',
-      matchedAttemptId: 'attempt-id',
-    }),
+  (SecureStorage.get as jest.Mock).mockImplementation(async (key: string) =>
+    key === 'synthetic_registration_session_v1'
+      ? JSON.stringify({
+          id: 'session-id',
+          token: 'verified-token',
+          expiresAt: future,
+          phase: 'VERIFIED',
+          matchedAttemptId: 'attempt-id',
+        })
+      : null,
   );
   post.mockImplementation(async (path: string) => {
     if (path.endsWith('/simulation-availability')) return { available: true };
+    if (path.endsWith('/onboarding-route')) return { next: 'NEW' };
     if (path.endsWith('/synthetic-profile/status'))
       return { firstName: 'Synthetic', lastName: 'Person', dateOfBirth: '2000-01-01', email: null };
     return { status: 'VERIFIED', expiresAt: future };
@@ -138,18 +145,21 @@ test('resumes matched attempt and retries draft completion without another ident
 });
 
 test('recovers completed test credential setup after an interrupted response', async () => {
-  (SecureStorage.get as jest.Mock).mockResolvedValue(
-    JSON.stringify({
-      id: 'session-id',
-      token: 'verified-token',
-      expiresAt: future,
-      phase: 'VERIFIED',
-      matchedAttemptId: 'attempt-id',
-      draftCreated: true,
-    }),
+  (SecureStorage.get as jest.Mock).mockImplementation(async (key: string) =>
+    key === 'synthetic_registration_session_v1'
+      ? JSON.stringify({
+          id: 'session-id',
+          token: 'verified-token',
+          expiresAt: future,
+          phase: 'VERIFIED',
+          matchedAttemptId: 'attempt-id',
+          draftCreated: true,
+        })
+      : null,
   );
   post.mockImplementation(async (path: string) => {
     if (path.endsWith('/simulation-availability')) return { available: true };
+    if (path.endsWith('/onboarding-route')) return { next: 'NEW' };
     if (path.endsWith('/synthetic-profile/status'))
       return { firstName: 'Synthetic', lastName: 'Person', dateOfBirth: '2000-01-01', email: null };
     if (path.endsWith('/synthetic-credentials/status'))
@@ -159,4 +169,43 @@ test('recovers completed test credential setup after an interrupted response', a
   const v = render(<RegistrationScreen />);
   expect(await v.findByText(/Test credentials saved/)).toBeTruthy();
   expect(post.mock.calls.some(([p]: [string]) => p.endsWith('/synthetic-credentials'))).toBe(false);
+});
+
+test('signs into an isolated onboarding session and signs out without storing a passcode', async () => {
+  (SecureStorage.get as jest.Mock).mockImplementation(async (key: string) =>
+    key === 'synthetic_registration_session_v1'
+      ? JSON.stringify({
+          id: 'session-id',
+          token: 'verified-token',
+          expiresAt: future,
+          phase: 'VERIFIED',
+        })
+      : null,
+  );
+  post.mockImplementation(async (path: string) => {
+    if (path.endsWith('/simulation-availability')) return { available: true };
+    if (path.endsWith('/onboarding-route')) return { next: 'LOGIN' };
+    if (path.endsWith('/onboarding-login'))
+      return { accessToken: 'onboarding-token', audience: 'customer-onboarding' };
+    return { status: 'VERIFIED', expiresAt: future };
+  });
+  const v = render(<RegistrationScreen />);
+  const input = await v.findByTestId('onboarding-passcode');
+  fireEvent.changeText(input, '112233');
+  fireEvent.press(v.getByText('Sign in to onboarding'));
+  expect(
+    await v.findByText('Signed in to test onboarding only. Financial services remain unavailable.'),
+  ).toBeTruthy();
+  expect(post).toHaveBeenCalledWith(
+    expect.stringContaining('/onboarding-login'),
+    { sessionId: 'session-id', passcode: '112233' },
+    { registrationBearer: 'verified-token' },
+  );
+  expect(JSON.stringify((SecureStorage.set as jest.Mock).mock.calls)).not.toContain('112233');
+  expect(SecureStorage.set).toHaveBeenCalledWith(
+    'synthetic_onboarding_token_v1',
+    'onboarding-token',
+  );
+  fireEvent.press(v.getByText('Sign out of onboarding'));
+  expect(await v.findByPlaceholderText('e.g. 08012345678')).toBeTruthy();
 });

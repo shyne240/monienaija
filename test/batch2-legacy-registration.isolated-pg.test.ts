@@ -145,6 +145,7 @@ test.each(['BVN', 'NIN'] as const)(
     const start = await send('start', { phone: kind === 'BVN' ? '08022223331' : '08022223332' });
     expect(start.statusCode).toBe(200);
     const s = start.json<{ id: string; token: string }>();
+    expect((await send('onboarding-route', { sessionId: s.id }, s.token)).statusCode).toBe(401);
     expect(
       (await send('otp', { sessionId: s.id, requestId: randomUUID() }, s.token)).statusCode,
     ).toBe(200);
@@ -153,6 +154,9 @@ test.each(['BVN', 'NIN'] as const)(
     const verified = await send('otp/verify', { sessionId: s.id, code }, s.token);
     expect(verified.statusCode).toBe(200);
     const { authorization } = verified.json<{ authorization: string }>();
+    expect((await send('onboarding-route', { sessionId: s.id }, authorization)).json()).toEqual({
+      next: 'NEW',
+    });
     expect(
       (
         await send(
@@ -359,6 +363,19 @@ test.each(['BVN', 'NIN'] as const)(
     expect(stored[0]!.password_hash).not.toContain('112233');
     expect(stored[0]!.pin_hash).not.toContain('334455');
     const pinService = app.get(CustomerTransactionPinService);
+    const overwrites = await Promise.allSettled(
+      Array.from({ length: 2 }, () =>
+        pinService.setTransactionPin(customerId, {
+          pinHash: stored[0]!.pin_hash,
+          hashAlgorithm: 'PBKDF2',
+          pinVersion: 1,
+          actor: 'synthetic-test',
+          createOnly: true,
+        }),
+      ),
+    );
+    expect(overwrites.map((r) => r.status)).toEqual(['rejected', 'rejected']);
+
     const pinVerifier = {
       verify: (value: string, _algorithm: string, encoded: string) =>
         verify.verify(value, PasswordHashAlgorithm.PBKDF2, encoded),
@@ -372,12 +389,21 @@ test.each(['BVN', 'NIN'] as const)(
         )
       ).verified,
     ).toBe(true);
-    for (let i = 0; i < 5; i++)
-      await pinService.verifyTransactionPin(
-        customerId,
-        { pin: '000001', actor: 'synthetic-test' },
-        pinVerifier,
-      );
+    await Promise.all(
+      Array.from({ length: 5 }, () =>
+        pinService.verifyTransactionPin(
+          customerId,
+          { pin: '000001', actor: 'synthetic-test' },
+          pinVerifier,
+        ),
+      ),
+    );
+    expect(
+      await db.query(
+        'SELECT failed_count,account_locked FROM customer_transaction_pins WHERE customer_id=$1',
+        [customerId],
+      ),
+    ).toEqual([{ failed_count: 5, account_locked: true }]);
     expect(
       await pinService.verifyTransactionPin(
         customerId,
@@ -478,6 +504,73 @@ test.each(['BVN', 'NIN'] as const)(
         [s2.id],
       ),
     ).toEqual([{ count: 0 }]);
+    // OTP-bound passcode login issues an onboarding-only bearer, never customer-api access.
+    expect((await send('onboarding-route', { sessionId: s.id }, 'x'.repeat(43))).statusCode).toBe(
+      401,
+    );
+    expect((await send('onboarding-route', { sessionId: s.id }, authorization)).json()).toEqual({
+      next: 'LOGIN',
+    });
+    const failed = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        send('onboarding-login', { sessionId: s.id, passcode: '000001' }, authorization),
+      ),
+    );
+    expect(failed.map((r) => r.statusCode)).toEqual([401, 401, 401, 401, 401]);
+    expect(
+      (await send('onboarding-login', { sessionId: s.id, passcode: '112233' }, authorization))
+        .statusCode,
+    ).toBe(401);
+    expect(
+      await db.query(
+        'SELECT failed_authentication_count,account_locked FROM customer_authentication_credentials WHERE customer_id=$1',
+        [customerId],
+      ),
+    ).toEqual([{ failed_authentication_count: 5, account_locked: true }]);
+    await db.query(
+      "UPDATE customer_authentication_credentials SET locked_at=clock_timestamp()-interval '16 minutes' WHERE customer_id=$1",
+      [customerId],
+    );
+    const exchanges = await Promise.all([
+      send('onboarding-login', { sessionId: s.id, passcode: '112233' }, authorization),
+      send('onboarding-login', { sessionId: s.id, passcode: '112233' }, authorization),
+    ]);
+    expect(exchanges.map((r) => r.statusCode).sort()).toEqual([200, 401]);
+    const bearer = exchanges
+      .find((r) => r.statusCode === 200)!
+      .json<{ accessToken: string; sessionId: string; audience: string }>();
+    expect(bearer.audience).toBe('customer-onboarding');
+    expect((await send('onboarding-session', {}, bearer.accessToken)).json()).toMatchObject({
+      customerId,
+      status: 'ACTIVE',
+      audience: 'customer-onboarding',
+    });
+    await db.query(
+      "UPDATE authentication_sessions SET issued_at=clock_timestamp()-interval '2 seconds',expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",
+      [bearer.sessionId],
+    );
+    expect((await send('onboarding-session', {}, bearer.accessToken)).statusCode).toBe(401);
+    await db.query(
+      "UPDATE authentication_sessions SET issued_at=clock_timestamp(),expires_at=clock_timestamp()+interval '1 minute' WHERE id=$1",
+      [bearer.sessionId],
+    );
+    await db.query(
+      'UPDATE customer_authentication_credentials SET password_version=password_version+1 WHERE customer_id=$1',
+      [customerId],
+    );
+    expect((await send('onboarding-session', {}, bearer.accessToken)).statusCode).toBe(401);
+    await db.query(
+      'UPDATE customer_authentication_credentials SET password_version=password_version-1 WHERE customer_id=$1',
+      [customerId],
+    );
+    const financial = await app.inject({
+      method: 'GET',
+      url: '/api/v1/customers/me/wallets',
+      headers: { authorization: `Bearer ${bearer.accessToken}` },
+    });
+    expect(financial.statusCode).not.toBe(200);
+    expect((await send('onboarding-logout', {}, bearer.accessToken)).statusCode).toBe(200);
+    expect((await send('onboarding-session', {}, bearer.accessToken)).statusCode).toBe(401);
     await db.query(
       "UPDATE kyc_registration_sessions SET created_at=clock_timestamp()-interval '2 seconds',expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",
       [s.id],
@@ -568,6 +661,39 @@ test('existing non-synthetic customer permissions remain compatible', async () =
     "INSERT INTO customer_eligibilities(customer_id,status,reviewed_by) VALUES($1,'PENDING','test')",
     [customerId],
   );
+  await db.query(
+    `INSERT INTO customer_contact_methods(id,customer_id,type,value,normalized_value,is_primary) VALUES($1,$2,'PHONE','+2348022223369','8022223369',true)`,
+    [randomUUID(), customerId],
+  );
+  const send = (path: string, payload: object, token?: string) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/v1/customers/registration-sessions/${path}`,
+      payload,
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    });
+  const session = (await send('start', { phone: '08022223369' })).json<{
+    id: string;
+    token: string;
+  }>();
+  expect(
+    (await send('onboarding-route', { sessionId: session.id }, session.token)).statusCode,
+  ).toBe(401);
+  expect(
+    (await send('otp', { sessionId: session.id, requestId: randomUUID() }, session.token))
+      .statusCode,
+  ).toBe(200);
+  const code = /code is (\d{6})/.exec(sms.sent.at(-1)?.message ?? '')?.[1];
+  const authorization = (
+    await send('otp/verify', { sessionId: session.id, code }, session.token)
+  ).json<{ authorization: string }>().authorization;
+  expect((await send('onboarding-route', { sessionId: session.id }, authorization)).json()).toEqual(
+    { next: 'PENDING' },
+  );
+  expect(
+    (await send('onboarding-login', { sessionId: session.id, passcode: '112233' }, authorization))
+      .statusCode,
+  ).toBe(401);
   expect(await db.query('SELECT is_synthetic FROM customers WHERE id=$1', [customerId])).toEqual([
     { is_synthetic: false },
   ]);

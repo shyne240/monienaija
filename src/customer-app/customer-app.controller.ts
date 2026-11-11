@@ -1223,6 +1223,7 @@ export class CustomerAppController {
       hashAlgorithm: 'PBKDF2',
       pinVersion: 1,
       actor: principal.customerId!,
+      createOnly: true,
     });
     return {
       customerId: result.customerId,

@@ -1,3 +1,5 @@
+import { MobileOnboardingAuthController } from './mobile-onboarding-auth.controller';
+import { MobileOnboardingAuthService } from './mobile-onboarding-auth.service';
 import { KycSyntheticCredentialsController } from '../kyc-verification/kyc-synthetic-credentials.controller';
 import { KycSyntheticCredentialsService } from '../kyc-verification/kyc-synthetic-credentials.service';
 import { KycRegistrationCompletionController } from '../kyc-verification/kyc-registration-completion.controller';
@@ -61,6 +63,7 @@ import type { KycProvider } from '../kyc-verification/kyc.types';
     KycRegistrationSessionController,
     KycRegistrationCompletionController,
     KycSyntheticCredentialsController,
+    MobileOnboardingAuthController,
     KycProviderGovernanceController,
   ],
   providers: [
@@ -88,6 +91,15 @@ import type { KycProvider } from '../kyc-verification/kyc.types';
         audit: AuditService,
         completion: KycRegistrationCompletionService,
       ) => new KycSyntheticCredentialsService(db, audit, completion),
+    },
+    {
+      provide: MobileOnboardingAuthService,
+      inject: [DataSource, AuditService, KycRegistrationCompletionService],
+      useFactory: (
+        db: DataSource,
+        audit: AuditService,
+        completion: KycRegistrationCompletionService,
+      ) => new MobileOnboardingAuthService(db, audit, completion),
     },
     { provide: REGISTRATION_SYNTHETIC_PROVIDER, useClass: RegistrationSyntheticProvider },
     {

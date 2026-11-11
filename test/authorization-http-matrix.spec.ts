@@ -1,3 +1,4 @@
+import { KycTierTransitionService } from '../src/kyc-verification/kyc-tier-transition.service';
 import { APP_GUARD } from '@nestjs/core';
 import { HttpException, UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -341,6 +342,7 @@ describe('HTTP authorization matrix', () => {
         { provide: A2SecurityRateLimitService, useValue: securityRateLimits },
         { provide: CUSTOMER_AUTH_RATE_LIMIT_RULES, useValue: CUSTOMER_AUTH_RATE_LIMIT_DEFAULTS },
         { provide: CustomerService, useValue: customerService },
+        { provide: KycTierTransitionService, useValue: {} },
         { provide: ApiVersionService, useValue: apiVersionService },
         { provide: ProductionConfigurationService, useValue: productionConfigurationService },
         { provide: ProductionReadinessService, useValue: productionReadinessService },
