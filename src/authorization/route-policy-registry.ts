@@ -479,6 +479,22 @@ export class RoutePolicyRegistry {
       return { public: true, resourceType: 'customer-authentication' };
     }
 
+    if (lookedUpMethod === 'POST' && /^\/api\/v1\/customers\/[^/]+\/kyc-assessment$/.test(path)) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'customer-kyc-assessment',
+        policy: {
+          resourceType: 'customer-kyc-assessment',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     const customerId = input.params?.id;
     if (path.startsWith('/api/v1/customers/')) {
       return {
@@ -1315,7 +1331,10 @@ export class RoutePolicyRegistry {
 
     if (
       path === '/api/v1/internal/kyc/providers' ||
-      path.startsWith('/api/v1/internal/kyc/providers/')
+      path.startsWith('/api/v1/internal/kyc/providers/') ||
+      path === '/api/v1/internal/kyc/tier-reviews' ||
+      path === '/api/v1/internal/kyc/tier-policies' ||
+      path.startsWith('/api/v1/internal/kyc/tier-policies/')
     ) {
       return {
         public: false,

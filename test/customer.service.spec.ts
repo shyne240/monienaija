@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import type {
   DataSource,
   DeepPartial,
@@ -407,28 +407,16 @@ describe('CustomerService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('supports KYC lifecycle and rejects invalid transitions', async () => {
+  it('rejects legacy direct KYC assessment mutations', async () => {
     const { service } = fixture();
     const customer = await createCustomer(service);
-    const pending = await service.createKycAssessment(customer.id, {
-      level: CustomerKycLevel.LEVEL_1,
-      status: CustomerKycStatus.PENDING,
-      assessedBy: 'kyc-ops',
-    });
-    const approved = await service.createKycAssessment(customer.id, {
-      level: CustomerKycLevel.LEVEL_1,
-      status: CustomerKycStatus.APPROVED,
-      assessedBy: 'kyc-ops',
-    });
-
-    expect(pending.status).toBe(CustomerKycStatus.PENDING);
-    expect(approved.status).toBe(CustomerKycStatus.APPROVED);
     await expect(
       service.createKycAssessment(customer.id, {
-        level: CustomerKycLevel.LEVEL_3,
-        status: CustomerKycStatus.NOT_STARTED,
+        level: CustomerKycLevel.LEVEL_1,
+        status: CustomerKycStatus.APPROVED,
         assessedBy: 'kyc-ops',
       }),
-    ).rejects.toBeInstanceOf(ConflictException);
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect((await service.get(customer.id)).kycLevel).toBe(CustomerKycLevel.NONE);
   });
 });

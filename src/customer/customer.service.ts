@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -31,7 +32,6 @@ import {
 } from './customer-validation';
 import {
   ContactMethodType,
-  CustomerKycStatus,
   CustomerStatus,
   CustomerType,
   IdentityDocumentType,
@@ -262,7 +262,8 @@ export class CustomerService {
     this.assertUuid(customerId, 'customerId');
     const actor = this.normalizeActor(command.actor);
     return this.dataSource.transaction(async (manager) => {
-      const customer = await this.requireCustomer(manager, customerId);
+      const customer = await this.lockCustomer(manager, customerId);
+      if (!customer) throw new NotFoundException(`Customer ${customerId} was not found`);
       const errors = validateProfileFields(
         {
           customerType: customer.type,
@@ -334,7 +335,8 @@ export class CustomerService {
     this.assertUuid(customerId, 'customerId');
     const actor = this.normalizeActor(command.actor);
     return this.dataSource.transaction(async (manager) => {
-      const customer = await this.requireCustomer(manager, customerId);
+      const customer = await this.lockCustomer(manager, customerId);
+      if (!customer) throw new NotFoundException(`Customer ${customerId} was not found`);
       const repository = manager.getRepository(CustomerProfile);
       const profile = await repository.findOne({
         where: { customerId, isActive: true, deletedAt: IsNull() },
@@ -1002,66 +1004,16 @@ export class CustomerService {
     });
   }
 
-  async createKycAssessment(
-    customerId: string,
-    command: CreateKycAssessmentCommand,
+  /** Legacy direct mutation is deliberately closed; use the authenticated tier service. */
+  createKycAssessment(
+    _customerId: string,
+    _command: CreateKycAssessmentCommand,
   ): Promise<CustomerKycAssessment> {
-    this.assertUuid(customerId, 'customerId');
-    const actor = this.normalizeActor(command.assessedBy);
-    return this.dataSource.transaction(async (manager) => {
-      const customer = await this.requireCustomer(manager, customerId);
-      this.assertKycTransition(customer.kycStatus, command.status);
-      const repository = manager.getRepository(CustomerKycAssessment);
-      const current = await repository.findOne({ where: { customerId, isCurrent: true } });
-      if (current) {
-        current.isCurrent = false;
-        await repository.save(current);
-        await this.audit(
-          manager,
-          'CUSTOMER_KYC_ASSESSMENT',
-          current.id,
-          'SUPERSEDED',
-          actor,
-          { isCurrent: true },
-          { isCurrent: false },
-        );
-      }
-      const assessment = await repository.save(
-        repository.create({
-          id: randomUUID(),
-          customerId,
-          level: command.level,
-          status: command.status,
-          reason: command.reason?.trim() ?? null,
-          assessedBy: actor,
-          isCurrent: true,
-          expiresAt: command.expiresAt ? new Date(command.expiresAt) : null,
-        }),
-      );
-      const previousCustomer = this.auditCustomer(customer);
-      customer.kycLevel = command.level;
-      customer.kycStatus = command.status;
-      await manager.getRepository(Customer).save(customer);
-      await this.audit(
-        manager,
-        'CUSTOMER_KYC_ASSESSMENT',
-        assessment.id,
-        'CREATED',
-        actor,
-        undefined,
-        this.serializableValues(assessment),
-      );
-      await this.audit(
-        manager,
-        'CUSTOMER',
-        customer.id,
-        'KYC_UPDATED',
-        actor,
-        previousCustomer,
-        this.auditCustomer(customer),
-      );
-      return assessment;
-    });
+    void _customerId;
+    void _command;
+    return Promise.reject(
+      new ForbiddenException('KYC assessments require the governed transition service'),
+    );
   }
 
   async getKyc(customerId: string): Promise<CustomerKycAssessment> {
@@ -1202,14 +1154,6 @@ export class CustomerService {
     return verifiedAt;
   }
 
-  private async requireCustomer(manager: EntityManager, id: string): Promise<Customer> {
-    const customer = await manager.getRepository(Customer).findOne({ where: { id } });
-    if (!customer) {
-      throw new NotFoundException(`Customer ${id} was not found`);
-    }
-    return customer;
-  }
-
   private async lockCustomer(manager: EntityManager, id: string): Promise<Customer | null> {
     return manager
       .getRepository(Customer)
@@ -1277,21 +1221,6 @@ export class CustomerService {
     };
     if (!allowed[current].includes(next)) {
       throw new ConflictException(`Invalid customer status transition from ${current} to ${next}`);
-    }
-  }
-
-  private assertKycTransition(current: CustomerKycStatus, next: CustomerKycStatus): void {
-    const allowed: Record<CustomerKycStatus, CustomerKycStatus[]> = {
-      [CustomerKycStatus.NOT_STARTED]: [CustomerKycStatus.PENDING],
-      [CustomerKycStatus.PENDING]: [CustomerKycStatus.APPROVED, CustomerKycStatus.REJECTED],
-      [CustomerKycStatus.APPROVED]: [CustomerKycStatus.PENDING],
-      [CustomerKycStatus.REJECTED]: [CustomerKycStatus.PENDING],
-    };
-    if (current === next) {
-      throw new ConflictException(`KYC assessment is already ${current}`);
-    }
-    if (!allowed[current].includes(next)) {
-      throw new ConflictException(`Invalid KYC status transition from ${current} to ${next}`);
     }
   }
 
