@@ -5,6 +5,8 @@ import { AuthorizationService } from '../src/authorization/authorization.service
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 import type { AuditService } from '../src/operations/audit.service';
 import { KycExceptionReviewService } from '../src/kyc-verification/kyc-exception-review.service';
+import { KycReconciliationReview1785753600106 } from '../src/migrations/1785753600106-KycReconciliationReview';
+import { KycReconciliationService } from '../src/kyc-verification/kyc-reconciliation.service';
 import { KycSessionAndOwnership1785753600105 } from '../src/migrations/1785753600105-KycSessionAndOwnership';
 import { CreateKycFoundation1785753600104 } from '../src/migrations/1785753600104-CreateKycFoundation';
 import { KycOrchestrator } from '../src/kyc-verification/kyc-orchestrator';
@@ -105,6 +107,7 @@ beforeAll(async () => {
   const runner = db.createQueryRunner();
   await new CreateKycFoundation1785753600104().up(runner);
   await new KycSessionAndOwnership1785753600105().up(runner);
+  await new KycReconciliationReview1785753600106().up(runner);
   await runner.release();
   store = new PostgresKycStore(db);
 });
@@ -245,6 +248,80 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
         input,
       }),
     ).rejects.toMatchObject({ code: 'BLOCKED' });
+  });
+  it('processes unresolved cases with separate authorized reviewers without releasing the claim or retrying', async () => {
+    const customerId = customers[1]!;
+    const cases = await db.query<Array<{ id: string }>>(
+      'SELECT id FROM kyc_reconciliation_cases WHERE customer_id=$1',
+      [customerId],
+    );
+    const audit = { record: jest.fn().mockResolvedValue({}) } as unknown as AuditService;
+    const review = new KycReconciliationService(db, new AuthorizationService(db, audit));
+    const maker: AuthorizationPrincipal = {
+      type: 'OPERATOR',
+      principalId: randomUUID(),
+      sessionId: randomUUID(),
+      roles: ['COMPLIANCE'],
+      scopes: ['kyc.review', 'kyc.approve'],
+      customerAccess: 'NONE',
+      assuranceLevel: 'MFA',
+    };
+    const checker = { ...maker, principalId: randomUUID(), sessionId: randomUUID() };
+    const cmd = {
+      caseId: cases[0]!.id,
+      requestId: randomUUID(),
+      action: 'REVIEW' as const,
+      reason: 'OUTCOME_UNPROVEN' as const,
+    };
+    await expect(review.decide(undefined, cmd)).rejects.toMatchObject({ code: 'BLOCKED' });
+    await expect(
+      review.decide({ ...maker, assuranceLevel: 'PASSWORD' }, cmd),
+    ).rejects.toMatchObject({ code: 'BLOCKED' });
+    expect(await review.decide(maker, cmd)).toEqual({ status: 'REVIEW', replay: false });
+    expect(await review.decide(maker, cmd)).toEqual({ status: 'REVIEW', replay: true });
+    await expect(
+      review.decide(maker, { ...cmd, reason: 'MANUAL_INVESTIGATION' }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    const close = { ...cmd, requestId: randomUUID(), action: 'TERMINAL' as const };
+    await expect(review.decide(maker, close)).rejects.toMatchObject({ code: 'BLOCKED' });
+    const approvals = await Promise.all([
+      review.decide(checker, close),
+      review.decide(checker, close),
+    ]);
+    expect(approvals.map((a) => a.replay).sort()).toEqual([false, true]);
+    const verify = jest.fn<ReturnType<KycProvider['verify']>, Parameters<KycProvider['verify']>>();
+    const anotherConsent = await makeConsent(customerId);
+    const orchestrator = new KycOrchestrator(
+      store,
+      makeProvider(verify),
+      policy,
+      key,
+      'test-key-v1',
+      ownerKey,
+      'owner-v1',
+    );
+    await expect(
+      orchestrator.verify({
+        customerId,
+        consentId: anotherConsent,
+        requestId: randomUUID(),
+        sessionToken: tokenFor(customerId),
+        input: inputFor(customerId),
+      }),
+    ).rejects.toMatchObject({ code: 'BLOCKED' });
+    expect(verify).not.toHaveBeenCalled();
+    expect(
+      await db.query<Array<{ outcome: string }>>(
+        'SELECT outcome FROM kyc_verification_attempts WHERE customer_id=$1',
+        [customerId],
+      ),
+    ).toEqual([{ outcome: 'UNKNOWN' }]);
+    expect(
+      await db.query<Array<{ status: string }>>(
+        'SELECT status FROM kyc_identity_claims WHERE customer_id=$1',
+        [customerId],
+      ),
+    ).toEqual([{ status: 'UNKNOWN' }]);
   });
   it('withdrawal during dispatch prevents a match from becoming eligible', async () => {
     const customerId = customers[2]!;
@@ -497,6 +574,80 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
       ),
     ).toEqual([{ reason: 'INTERRUPTED', status: 'NO_ACTION' }]);
   });
+  it('quarantines interrupted attempts without replaying or accepting late matches', async () => {
+    const customerId = customers[13]!;
+    const input = inputFor(customerId);
+    const consentId = await makeConsent(customerId);
+    const reserved = await store.reserve({
+      customerId,
+      consentId,
+      requestId: randomUUID(),
+      kind: 'BVN',
+      provider: 'SYNTHETIC',
+      sessionToken: tokenFor(customerId),
+      identifierMac: createHmac('sha256', ownerKey)
+        .update('kyc-identifier-v1\0')
+        .update('BVN')
+        .update('\0')
+        .update(input.identifier)
+        .digest('hex'),
+      ownershipKeyProof: createHmac('sha256', ownerKey)
+        .update('kyc-ownership-key-proof-v1')
+        .digest('hex'),
+      ownershipKeyVersion: 'owner-v1',
+      requestMac: 'a'.repeat(64),
+      identityMac: 'b'.repeat(64),
+      macKeyVersion: 'test-key-v1',
+      policy,
+    });
+    await expect(store.quarantineInterrupted(reserved.attempt.id, 60)).rejects.toMatchObject({
+      code: 'BLOCKED',
+    });
+    await db.query(
+      "UPDATE kyc_verification_attempts SET created_at=clock_timestamp()-interval '120 seconds' WHERE id=$1",
+      [reserved.attempt.id],
+    );
+    expect(await store.queueInterrupted(60)).toBe(1);
+    await Promise.all([
+      store.quarantineInterrupted(reserved.attempt.id, 60),
+      store.quarantineInterrupted(reserved.attempt.id, 60),
+    ]);
+    await expect(store.finish(reserved.attempt, 'MATCH', 3600, null)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+    expect(
+      await db.query<Array<{ outcome: string }>>(
+        'SELECT outcome FROM kyc_verification_attempts WHERE id=$1',
+        [reserved.attempt.id],
+      ),
+    ).toEqual([{ outcome: 'UNKNOWN' }]);
+    expect(
+      await db.query<Array<{ status: string }>>(
+        'SELECT status FROM kyc_identity_claims WHERE attempt_id=$1',
+        [reserved.attempt.id],
+      ),
+    ).toEqual([{ status: 'UNKNOWN' }]);
+    const verify = jest.fn<ReturnType<KycProvider['verify']>, Parameters<KycProvider['verify']>>();
+    const orchestrator = new KycOrchestrator(
+      store,
+      makeProvider(verify),
+      policy,
+      key,
+      'test-key-v1',
+      ownerKey,
+      'owner-v1',
+    );
+    await expect(
+      orchestrator.verify({
+        customerId,
+        consentId,
+        requestId: randomUUID(),
+        sessionToken: tokenFor(customerId),
+        input,
+      }),
+    ).rejects.toMatchObject({ code: 'BLOCKED' });
+    expect(verify).not.toHaveBeenCalled();
+  });
   it('rolls back attempt reservation if its private audit write fails', async () => {
     const customerId = customers[8]!;
     const input = inputFor(customerId);
@@ -712,6 +863,9 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
     const runner = db.createQueryRunner();
     await expect(new CreateKycFoundation1785753600104().down(runner)).rejects.toThrow(
       'Refusing to remove KYC history',
+    );
+    await expect(new KycReconciliationReview1785753600106().down(runner)).rejects.toThrow(
+      'Refusing to remove reconciliation history',
     );
     await runner.release();
   });

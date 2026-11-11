@@ -143,6 +143,42 @@ export class PostgresKycStore implements KycStore {
     return count;
   }
 
+  /** Quarantine a sufficiently old interrupted attempt; late results can never overwrite UNKNOWN. */
+  async quarantineInterrupted(attemptId: string, minimumAgeSeconds: number): Promise<void> {
+    if (
+      !UUID.test(attemptId) ||
+      !Number.isInteger(minimumAgeSeconds) ||
+      minimumAgeSeconds < 60 ||
+      minimumAgeSeconds > 2592000
+    )
+      throw new KycFoundationError('INVALID');
+    const lookup = await this.db.query<Array<{ customer_id: string }>>(
+      'SELECT customer_id FROM kyc_verification_attempts WHERE id=$1',
+      [attemptId],
+    );
+    if (!lookup[0]) throw new KycFoundationError('NOT_FOUND');
+    const customerId = lookup[0].customer_id;
+    await this.db.transaction(async (m) => {
+      await this.lockCustomer(m, customerId);
+      const rows = await m.query<Array<{ outcome: string }>>(
+        `SELECT outcome FROM kyc_verification_attempts WHERE id=$1 AND customer_id=$2 FOR UPDATE`,
+        [attemptId, customerId],
+      );
+      if (rows[0]?.outcome === 'UNKNOWN') return;
+      if (rows[0]?.outcome !== 'DISPATCHING') throw new KycFoundationError('CONFLICT');
+      const updated = await m.query<Array<{ id: string }>>(
+        `WITH updated AS (UPDATE kyc_verification_attempts a SET outcome='UNKNOWN',completed_at=clock_timestamp()
+        WHERE a.id=$1 AND a.created_at < clock_timestamp()-($2 * interval '1 second') AND EXISTS (SELECT 1 FROM kyc_reconciliation_cases c WHERE c.attempt_id=a.id AND c.status IN ('OPEN','REVIEW')) RETURNING a.id) SELECT id FROM updated`,
+        [attemptId, minimumAgeSeconds],
+      );
+      if (!updated.length) throw new KycFoundationError('BLOCKED');
+      await m.query("UPDATE kyc_identity_claims SET status='UNKNOWN' WHERE attempt_id=$1", [
+        attemptId,
+      ]);
+      await this.requestRefresh(m, customerId);
+      await this.audit(m, customerId, attemptId, 'ATTEMPT_FINISHED', null, 'UNKNOWN');
+    });
+  }
   async grantConsent(command: {
     customerId: string;
     sessionToken: string;
@@ -453,7 +489,7 @@ export class PostgresKycStore implements KycStore {
       else {
         const closed = await m.query<Array<{ id: string }>>(
           `WITH closed AS (UPDATE kyc_reconciliation_cases SET status='NO_ACTION', closed_at=clock_timestamp()
-          WHERE attempt_id=$1 AND status='OPEN' AND reason='INTERRUPTED' RETURNING id) SELECT id FROM closed`,
+          WHERE attempt_id=$1 AND status IN ('OPEN','REVIEW') AND reason='INTERRUPTED' RETURNING id) SELECT id FROM closed`,
           [attempt.id],
         );
         if (closed[0])
