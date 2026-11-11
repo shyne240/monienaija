@@ -15,6 +15,7 @@ import { CustomerEligibilityStatus } from '../customer-eligibility/customer-elig
 import { CustomerEligibility } from '../customer-eligibility/customer-eligibility.entity';
 import { CustomerOnboardingStatus } from '../customer-onboarding/customer-onboarding.enums';
 import { CustomerOnboarding } from '../customer-onboarding/customer-onboarding.entity';
+import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { AuditService } from '../operations/audit.service';
 import { CustomerWallet } from './customer-wallet.entity';
 import {
@@ -51,6 +52,7 @@ export class CustomerWalletService {
     private readonly eligibilityRepository: Repository<CustomerEligibility>,
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
+    private readonly financialEligibility: CustomerFinancialEligibilityService,
   ) {}
 
   async createWallet(
@@ -306,6 +308,7 @@ export class CustomerWalletService {
     manager: EntityManager,
     customerId: string,
   ): Promise<void> {
+    await this.financialEligibility.require(manager, customerId);
     const onboarding = await manager.getRepository(CustomerOnboarding).find({
       where: { customerId, status: CustomerOnboardingStatus.COMPLETED },
     });

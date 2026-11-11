@@ -10,6 +10,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, IsNull, Not, QueryFailedError, Repository } from 'typeorm';
 
+import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { AuditService } from '../operations/audit.service';
 import { REGISTRATION_VERIFICATION_TOKEN_TTL_SECONDS } from '../customer-registration/customer-registration.constants';
 import { CustomerRegistrationPhoneChallenge } from '../customer-registration/customer-registration-phone-challenge.entity';
@@ -74,6 +75,7 @@ export class CustomerService {
     private readonly kycRepository: Repository<CustomerKycAssessment>,
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
+    private readonly financialEligibility: CustomerFinancialEligibilityService,
   ) {}
 
   async create(command: CreateCustomerCommand): Promise<Customer> {
@@ -163,6 +165,7 @@ export class CustomerService {
         if (customer.isSynthetic)
           throw new ConflictException('Synthetic customers cannot be activated');
         await this.assertVerifiedPrimaryPhone(manager, id);
+        await this.financialEligibility.require(manager, id, false);
       }
       const previous = this.auditCustomer(customer);
       customer.status = command.status;

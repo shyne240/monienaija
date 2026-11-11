@@ -9,6 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 
+import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { normalizeCurrency } from '../common/money';
 import { LedgerAccount } from '../ledger/ledger-account.entity';
 import { LedgerAccountType, LedgerNormalBalance } from '../ledger/ledger.enums';
@@ -26,6 +27,7 @@ export class WalletService {
     private readonly walletRepository: Repository<WalletAccount>,
     private readonly dataSource: DataSource,
     private readonly ledgerService: LedgerService,
+    private readonly financialEligibility: CustomerFinancialEligibilityService,
   ) {}
 
   async createWallet(command: CreateWalletCommand): Promise<WalletView> {
@@ -88,6 +90,16 @@ export class WalletService {
       throw new BadRequestException(
         'idempotencyKey is required and must be at most 255 characters',
       );
+    }
+
+    // This ledger also hosts agent/system owners. Gate IDs that actually belong to a
+    // customer; do not reinterpret agent IDs as customer identities.
+    if (UUID_PATTERN.test(customerId)) {
+      const customer = await manager.query<Array<{ id: string }>>(
+        'SELECT id FROM customers WHERE id=$1 FOR UPDATE',
+        [customerId],
+      );
+      if (customer.length) await this.financialEligibility.require(manager, customerId);
     }
 
     const repository = manager.getRepository(WalletAccount);

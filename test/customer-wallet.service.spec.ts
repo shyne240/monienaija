@@ -1,3 +1,4 @@
+import type { CustomerFinancialEligibilityService } from '../src/kyc-verification/customer-financial-eligibility.service';
 import { ConflictException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
@@ -142,6 +143,9 @@ describe('CustomerWalletService', () => {
       eligibilityRepository as unknown as Repository<CustomerEligibility>,
       dataSource as unknown as DataSource,
       audit as unknown as AuditService,
+      {
+        require: jest.fn().mockResolvedValue(undefined),
+      } as unknown as CustomerFinancialEligibilityService,
     );
     return {
       service,

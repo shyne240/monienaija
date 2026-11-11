@@ -1,3 +1,4 @@
+import { KycTierModule } from '../kyc-verification/kyc-tier.module';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -16,6 +17,7 @@ import { WalletProvisioningHistory } from './wallet-provisioning-history.entity'
 @Module({
   imports: [
     OperationsModule,
+    KycTierModule,
     AuthorizationModule,
     TypeOrmModule.forFeature([
       Customer,

@@ -1,3 +1,4 @@
+import { KycTierModule } from '../kyc-verification/kyc-tier.module';
 import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -19,6 +20,7 @@ import { WalletService } from './wallet.service';
 
 @Module({
   imports: [
+    forwardRef(() => KycTierModule),
     forwardRef(() => AuthorizationModule),
     forwardRef(() => LedgerModule),
     forwardRef(() => ReconciliationModule),

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { AuthorizationService } from '../authorization/authorization.service';
@@ -9,11 +9,13 @@ import { KycTierPolicyController } from './kyc-tier-policy.controller';
 import { KycTierEvidenceReader } from './kyc-tier-evidence.reader';
 import { KycTierTransitionService } from './kyc-tier-transition.service';
 import { KycTierReviewController } from './kyc-tier-review.controller';
+import { CustomerFinancialEligibilityService } from './customer-financial-eligibility.service';
 import { KycTierWorker } from './kyc-tier-worker.service';
 @Module({
-  imports: [AuthorizationModule, OperationsModule],
+  imports: [forwardRef(() => AuthorizationModule), forwardRef(() => OperationsModule)],
   controllers: [KycTierPolicyController, KycTierReviewController],
   providers: [
+    CustomerFinancialEligibilityService,
     {
       provide: KycTierPolicyService,
       inject: [DataSource, AuthorizationService],
@@ -48,6 +50,6 @@ import { KycTierWorker } from './kyc-tier-worker.service';
       ) => new KycTierWorker(db, transitions, policies),
     },
   ],
-  exports: [KycTierTransitionService],
+  exports: [KycTierTransitionService, CustomerFinancialEligibilityService],
 })
 export class KycTierModule {}

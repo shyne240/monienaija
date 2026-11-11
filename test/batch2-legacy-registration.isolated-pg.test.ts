@@ -960,3 +960,34 @@ test.each(['BVN', 'NIN'] as const)(
     }
   },
 );
+
+test('unavailable production evidence blocks activation and direct customer wallet provisioning', async () => {
+  const { CustomerService } = await import('../src/customer/customer.service');
+  const { CustomerStatus } = await import('../src/customer/customer.enums');
+  const { WalletService } = await import('../src/wallet/wallet.service');
+  const id = randomUUID();
+  await db.query(
+    `INSERT INTO customers(id,reference,customer_type,status,kyc_level,kyc_status) VALUES($1,$2,'INDIVIDUAL','DRAFT','LEVEL_1','APPROVED')`,
+    [id, id],
+  );
+  await db.query(
+    `INSERT INTO customer_contact_methods(customer_id,type,value,normalized_value,is_primary,verified_at) VALUES($1,'PHONE','+2348099988771','8099988771',true,clock_timestamp())`,
+    [id],
+  );
+  await db.query(
+    `INSERT INTO customer_kyc_assessments(customer_id,kyc_level,kyc_status,assessed_by,expires_at) VALUES($1,'LEVEL_1','APPROVED','fixture',clock_timestamp()+interval '1 hour')`,
+    [id],
+  );
+  await expect(
+    app.get(CustomerService).updateStatus(id, { status: CustomerStatus.ACTIVE, actor: 'fixture' }),
+  ).rejects.toThrow();
+  await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [id]);
+  await expect(
+    app
+      .get(WalletService)
+      .createWallet({ customerId: id, currency: 'NGN', idempotencyKey: `denied-${id}` }),
+  ).rejects.toThrow();
+  expect(
+    await db.query('SELECT count(*)::int AS n FROM wallet_accounts WHERE customer_id=$1', [id]),
+  ).toEqual([{ n: 0 }]);
+});

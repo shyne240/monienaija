@@ -1,3 +1,4 @@
+import type { CustomerFinancialEligibilityService } from '../src/kyc-verification/customer-financial-eligibility.service';
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import type {
   DataSource,
@@ -185,6 +186,9 @@ describe('CustomerService', () => {
       kycRepository as unknown as Repository<CustomerKycAssessment>,
       new MemoryDataSource(manager) as unknown as DataSource,
       audit as unknown as AuditService,
+      {
+        require: jest.fn().mockResolvedValue(undefined),
+      } as unknown as CustomerFinancialEligibilityService,
     );
     return { service, audit, repositories };
   }
