@@ -2,9 +2,10 @@ import { createHash, randomBytes } from 'node:crypto';
 
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, MoreThan, Repository } from 'typeorm';
 
 import type { AuthenticationExecutionResult } from './authentication-execution.service';
+import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { AuditService } from '../operations/audit.service';
 import { Customer } from '../customer/customer.entity';
 import { CustomerStatus } from '../customer/customer.enums';
@@ -40,6 +41,7 @@ export class AuthenticationSessionService {
     private readonly auditService: AuditService,
     @InjectRepository(Customer)
     private readonly customerRepository: Repository<Customer>,
+    private readonly financialEligibility: CustomerFinancialEligibilityService,
   ) {}
 
   async issue(command: IssueAuthenticationSessionCommand): Promise<AuthenticationSessionToken> {
@@ -53,6 +55,7 @@ export class AuthenticationSessionService {
     const tokenHash = this.hashToken(accessToken);
 
     const session = await this.dataSource.transaction(async (manager) => {
+      await this.financialEligibility.require(manager, command.authentication.customerId);
       const repository = manager.getRepository(AuthenticationSession);
       const saved = await repository.save(
         repository.create({
@@ -85,6 +88,13 @@ export class AuthenticationSessionService {
 
   async validate(
     command: ValidateAuthenticationSessionCommand,
+  ): Promise<AuthenticationSessionValidation> {
+    return this.validateToken(command, true);
+  }
+
+  private async validateToken(
+    command: ValidateAuthenticationSessionCommand,
+    requireEligibility: boolean,
   ): Promise<AuthenticationSessionValidation> {
     const token = this.normalizeToken(command.token);
     if (!token) {
@@ -123,25 +133,44 @@ export class AuthenticationSessionService {
     // lifecycle status is authoritative at request time. A cryptographically valid session
     // is not sufficient when the customer is no longer ACTIVE (DRAFT/SUSPENDED/CLOSED).
     // CLOSED customers are soft-deleted (deletedAt) and therefore not found.
-    const customer = await this.customerRepository.findOne({
-      where: { id: session.customerId },
-    });
-    if (!customer || customer.status !== CustomerStatus.ACTIVE) {
-      return { valid: false, reason: 'CUSTOMER_STATUS_INELIGIBLE' };
+    if (requireEligibility) {
+      const customer = await this.customerRepository.findOne({
+        where: { id: session.customerId },
+      });
+      if (!customer || customer.status !== CustomerStatus.ACTIVE) {
+        return { valid: false, reason: 'CUSTOMER_STATUS_INELIGIBLE' };
+      }
+
+      try {
+        await this.dataSource.transaction(async (manager) => {
+          await this.financialEligibility.require(manager, session.customerId);
+          await this.requireBoundCredential(manager, session);
+        });
+      } catch (error) {
+        if (error instanceof ConflictException)
+          return { valid: false, reason: 'CUSTOMER_STATUS_INELIGIBLE' };
+        throw error;
+      }
     }
 
-    session.lastSeenAt = now;
-    await this.sessionRepository.save(session);
+    const updated = await this.sessionRepository.update(
+      { id: session.id, status: AuthenticationSessionStatus.ACTIVE, expiresAt: MoreThan(now) },
+      { lastSeenAt: now },
+    );
+    if (updated.affected !== 1) return { valid: false, reason: 'REVOKED' };
     return { valid: true, principal: this.toPrincipal(session) };
   }
 
   async revoke(
     command: RevokeAuthenticationSessionCommand,
   ): Promise<AuthenticationSessionValidation> {
-    const validation = await this.validate({
-      token: command.token,
-      audience: DEFAULT_SESSION_AUDIENCE,
-    });
+    const validation = await this.validateToken(
+      {
+        token: command.token,
+        audience: DEFAULT_SESSION_AUDIENCE,
+      },
+      false,
+    );
     if (!validation.valid || !validation.principal) {
       return validation;
     }
@@ -201,11 +230,20 @@ export class AuthenticationSessionService {
     const accessToken = randomBytes(TOKEN_BYTES).toString('base64url');
     const replacementHash = this.hashToken(accessToken);
     const replacement = await this.dataSource.transaction(async (manager) => {
+      await this.financialEligibility.require(manager, existing.customerId);
+      await this.requireBoundCredential(manager, existing);
       const repository = manager.getRepository(AuthenticationSession);
-      existing.status = AuthenticationSessionStatus.REVOKED;
-      existing.revokedAt = now;
-      existing.revokeReason = reason;
-      const revoked = await repository.save(existing);
+      const changed = await repository.update(
+        { id: existing.id, status: AuthenticationSessionStatus.ACTIVE, expiresAt: MoreThan(now) },
+        { status: AuthenticationSessionStatus.REVOKED, revokedAt: now, revokeReason: reason },
+      );
+      if (changed.affected !== 1) return null;
+      const revoked = {
+        ...existing,
+        status: AuthenticationSessionStatus.REVOKED,
+        revokedAt: now,
+        revokeReason: reason,
+      };
       await this.audit(manager, revoked, 'SESSION_ROTATED', actor, {
         customerId: revoked.customerId,
         audience: revoked.audience,
@@ -219,6 +257,7 @@ export class AuthenticationSessionService {
           credentialId: revoked.credentialId,
           tokenHash: replacementHash,
           audience,
+          onboardingPasswordVersion: revoked.onboardingPasswordVersion ?? null,
           status: AuthenticationSessionStatus.ACTIVE,
           issuedAt: now,
           expiresAt: new Date(now.getTime() + ttlSeconds * 1000),
@@ -239,7 +278,19 @@ export class AuthenticationSessionService {
       return saved;
     });
 
-    return this.toToken(accessToken, replacement);
+    return replacement ? this.toToken(accessToken, replacement) : null;
+  }
+
+  private async requireBoundCredential(
+    manager: EntityManager,
+    session: AuthenticationSession,
+  ): Promise<void> {
+    if (session.onboardingPasswordVersion == null) return;
+    const rows = await manager.query<Array<{ id: string }>>(
+      `SELECT id FROM customer_authentication_credentials WHERE id=$1 AND customer_id=$2 AND deleted_at IS NULL AND status='ACTIVE' AND NOT account_locked AND NOT rotation_required AND password_version=$3 AND (password_expires_at IS NULL OR password_expires_at>clock_timestamp()) FOR SHARE`,
+      [session.credentialId, session.customerId, session.onboardingPasswordVersion],
+    );
+    if (!rows.length) throw new ConflictException('Credential is no longer eligible');
   }
 
   async revokeAllForCredential(

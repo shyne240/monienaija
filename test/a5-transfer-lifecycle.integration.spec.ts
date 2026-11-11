@@ -1,3 +1,4 @@
+import { testWalletFinancialBoundary } from './support/test-wallet-financial-boundary';
 import { randomUUID } from 'node:crypto';
 import { ConflictException } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
@@ -66,6 +67,7 @@ describe('A5 transfer lifecycle (real PostgreSQL)', () => {
       dataSource.getRepository(LedgerJournal),
       dataSource.getRepository(LedgerLine),
       dataSource,
+      testWalletFinancialBoundary,
     );
     service = new TransferLifecycleService(
       dataSource.getRepository(Transfer),

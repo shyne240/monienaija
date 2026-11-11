@@ -1,3 +1,4 @@
+import { testWalletFinancialBoundary } from './support/test-wallet-financial-boundary';
 import { ConfigService } from '@nestjs/config';
 
 import { ExternalOperation } from '../src/partner/external-operation.entity';
@@ -247,6 +248,7 @@ function makeService() {
     auditService as never,
     circuitBreaker,
     new UnavailableExternalOperationStatusVerifier(),
+    testWalletFinancialBoundary,
   );
   return { service, operation, operations, idempotency, circuitBreaker, operationService };
 }

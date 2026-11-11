@@ -3,6 +3,7 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { RegistrationScreen } from '../src/screens/unauthenticated/RegistrationScreen';
 import { ApiClient } from '../src/services/api-client';
 import { SecureStorage } from '../src/services/secure-storage';
+import { useAuthStore } from '../src/store/auth-store';
 
 jest.mock('../src/services/api-client', () => ({
   ApiClient: { post: jest.fn() },
@@ -333,4 +334,39 @@ test('resumes a previously matched claim from the server', async () => {
     ),
   ).toBeTruthy();
   expect(post.mock.calls.some(([path]: [string]) => path.endsWith('/claim-match'))).toBe(false);
+});
+
+test('accepts an eligible financial-scoped session without storing the passcode', async () => {
+  useAuthStore.setState({ isAuthenticated: false, session: null, customerId: null });
+  (SecureStorage.get as jest.Mock).mockImplementation(async (key: string) =>
+    key === 'synthetic_registration_session_v1'
+      ? JSON.stringify({
+          id: 'session-id',
+          token: 'verified-token',
+          expiresAt: future,
+          phase: 'VERIFIED',
+        })
+      : null,
+  );
+  post.mockImplementation(async (path: string) => {
+    if (path.endsWith('/simulation-availability')) return { available: false };
+    if (path.endsWith('/onboarding-route')) return { next: 'LOGIN' };
+    if (path.endsWith('/onboarding-login'))
+      return {
+        accessToken: 'financial-token',
+        audience: 'customer-api',
+        customerId: 'customer-id',
+        sessionId: 'financial-session',
+        expiresAt: future,
+      };
+    return { status: 'VERIFIED', expiresAt: future };
+  });
+  const v = render(<RegistrationScreen />);
+  fireEvent.changeText(await v.findByTestId('onboarding-passcode'), '112233');
+  fireEvent.press(v.getByText('Sign in to onboarding'));
+  await waitFor(() => expect(useAuthStore.getState().isAuthenticated).toBe(true));
+  expect(useAuthStore.getState().session?.audience).toBe('customer-api');
+  expect(SecureStorage.set).toHaveBeenCalledWith('auth_session_token', 'financial-token');
+  expect(JSON.stringify((SecureStorage.set as jest.Mock).mock.calls)).not.toContain('112233');
+  useAuthStore.setState({ isAuthenticated: false, session: null, customerId: null });
 });

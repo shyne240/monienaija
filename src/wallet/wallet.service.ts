@@ -92,15 +92,14 @@ export class WalletService {
       );
     }
 
-    // This ledger also hosts agent/system owners. Gate IDs that actually belong to a
-    // customer; do not reinterpret agent IDs as customer identities.
-    if (UUID_PATTERN.test(customerId)) {
-      const customer = await manager.query<Array<{ id: string }>>(
-        'SELECT id FROM customers WHERE id=$1 FOR UPDATE',
-        [customerId],
-      );
-      if (customer.length) await this.financialEligibility.require(manager, customerId);
-    }
+    const classification = await manager.query<Array<{ owner_class: string }>>(
+      'SELECT wallet_owner_class($1) AS owner_class',
+      [customerId],
+    );
+    if (classification[0]?.owner_class === 'CUSTOMER')
+      await this.financialEligibility.require(manager, customerId.toLowerCase());
+    else if (classification[0]?.owner_class !== 'AGENT')
+      throw new ConflictException('Wallet owner requires review');
 
     const repository = manager.getRepository(WalletAccount);
     const existingByKey = await repository.findOne({

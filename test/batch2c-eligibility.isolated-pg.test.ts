@@ -230,3 +230,255 @@ test('unavailable, synthetic, conflicting and expired evidence or holds fail clo
   );
   await expect(check()).rejects.toThrow();
 });
+
+test.each([
+  ['LEVEL_1', ['BVN']],
+  ['LEVEL_2', ['BVN', 'NIN']],
+] as const)(
+  'mobile %s scoped session is restricted immediately on KYC withdrawal',
+  async (level, types) => {
+    const { pbkdf2Sync, createHash, randomBytes } = await import('node:crypto');
+    const { MobileOnboardingAuthService } = await import(
+      '../src/customer-registration/mobile-onboarding-auth.service'
+    );
+    const { AuthenticationSessionService } = await import(
+      '../src/customer-authentication/authentication-session.service'
+    );
+    const id = await subject(level, [...types]);
+    await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [id]);
+    const phones = await db.query<Array<{ normalized_value: string }>>(
+      `SELECT normalized_value FROM customer_contact_methods WHERE customer_id=$1`,
+      [id],
+    );
+    const phone = phones[0]!.normalized_value;
+    const salt = randomBytes(16);
+    const hash = `PBKDF2$sha256$10000$${salt.toString('base64url')}$${pbkdf2Sync('112233', salt, 10000, 32, 'sha256').toString('base64url')}`;
+    const credential = randomUUID();
+    await db.query(
+      `INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status,mobile_otp_required) VALUES($1,$2,$3,'PBKDF2',1,'ACTIVE',true)`,
+      [credential, id, hash],
+    );
+    const token = randomBytes(32).toString('base64url');
+    const registration = randomUUID();
+    await db.query(
+      `INSERT INTO kyc_registration_sessions(id,phone,authorization_hash,status,verified_at,expires_at) VALUES($1,$2,$3,'VERIFIED',clock_timestamp(),clock_timestamp()+interval '10 minutes')`,
+      [registration, phone, createHash('sha256').update(token).digest('hex')],
+    );
+    const session = await app.get(MobileOnboardingAuthService).login(registration, token, '112233');
+    expect(session.audience).toBe('customer-api');
+    const sessionService = app.get(AuthenticationSessionService);
+    expect((await sessionService.validate({ token: session.accessToken })).valid).toBe(true);
+    snapshots.get(id)!.evidence[0]!.status = 'REVOKED';
+    expect((await sessionService.validate({ token: session.accessToken })).valid).toBe(false);
+    snapshots.get(id)!.evidence[0]!.status = 'VERIFIED';
+    await db.query(
+      `UPDATE customer_authentication_credentials SET password_version=2 WHERE id=$1`,
+      [credential],
+    );
+    expect((await sessionService.validate({ token: session.accessToken })).valid).toBe(false);
+    const secondToken = randomBytes(32).toString('base64url');
+    const secondRegistration = randomUUID();
+    await db.query(
+      `INSERT INTO kyc_registration_sessions(id,phone,authorization_hash,status,verified_at,expires_at) VALUES($1,$2,$3,'VERIFIED',clock_timestamp(),clock_timestamp()+interval '10 minutes')`,
+      [secondRegistration, phone, createHash('sha256').update(secondToken).digest('hex')],
+    );
+    snapshots.get(id)!.evidence.forEach((e) => {
+      e.provenance = 'SYNTHETIC';
+    });
+    const restricted = await app
+      .get(MobileOnboardingAuthService)
+      .login(secondRegistration, secondToken, '112233');
+    expect(restricted.audience).toBe('customer-onboarding');
+    expect((await sessionService.validate({ token: restricted.accessToken })).valid).toBe(false);
+  },
+);
+
+test('ledger posting gates existing customer wallets and separates agent and review owners', async () => {
+  const { LedgerService } = await import('../src/ledger/ledger.service');
+  const { LedgerAccountType, LedgerEntryDirection } = await import('../src/ledger/ledger.enums');
+  const customer = await subject('LEVEL_1', ['BVN']);
+  await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [customer]);
+  const wallet = await app
+    .get(WalletService)
+    .createWallet({ customerId: customer, currency: 'NGN', idempotencyKey: randomUUID() });
+  const agent = randomUUID();
+  await db.query(`INSERT INTO agents(id,reference,status) VALUES($1,$2,'ACTIVE')`, [
+    agent,
+    `agent-${agent}`,
+  ]);
+  const agentWallet = await app
+    .get(WalletService)
+    .createWallet({ customerId: agent, currency: 'NGN', idempotencyKey: randomUUID() });
+  expect(
+    await db.query(`SELECT owner_class FROM wallet_accounts WHERE id=$1`, [wallet.id]),
+  ).toEqual([{ owner_class: 'CUSTOMER' }]);
+  expect(
+    await db.query(`SELECT owner_class FROM wallet_accounts WHERE id=$1`, [agentWallet.id]),
+  ).toEqual([{ owner_class: 'AGENT' }]);
+  await expect(
+    db.query(`UPDATE wallet_accounts SET owner_class='AGENT' WHERE id=$1`, [wallet.id]),
+  ).rejects.toThrow();
+  await expect(
+    app
+      .get(WalletService)
+      .createWallet({ customerId: randomUUID(), currency: 'NGN', idempotencyKey: randomUUID() }),
+  ).rejects.toThrow();
+  const ledger = app.get(LedgerService);
+  const system = await ledger.createAccount({
+    code: `system-${randomUUID()}`,
+    name: 'isolated operational',
+    currency: 'NGN',
+    accountType: LedgerAccountType.ASSET,
+    allowNegativeBalance: true,
+  });
+  const tryPosting = async (accountId: string) => {
+    const runner = db.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    try {
+      return await ledger.postJournalInTransaction(runner.manager, {
+        idempotencyKey: randomUUID(),
+        currency: 'NGN',
+        lines: [
+          { accountId: system.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '1' },
+          { accountId, direction: LedgerEntryDirection.CREDIT, amountMinor: '1' },
+        ],
+      });
+    } finally {
+      await runner.rollbackTransaction();
+      await runner.release();
+    }
+  };
+  await expect(tryPosting(wallet.ledgerAccountId)).resolves.toBeDefined();
+  await expect(tryPosting(agentWallet.ledgerAccountId)).resolves.toBeDefined();
+  const { ExternalOperationService } = await import('../src/partner/external-operation.service');
+  const { ExternalOperationResourceType } = await import('../src/partner/external-operation.enums');
+  const operationCommand = {
+    partnerKey: 'NIBSS_NIP' as const,
+    capabilityKey: 'external.wallet.withdrawal.settlement' as const,
+    operationType: 'OUTBOUND_BANK_SETTLEMENT' as const,
+    resourceType: ExternalOperationResourceType.WITHDRAWAL,
+    resourceId: randomUUID(),
+    internalCommandId: randomUUID(),
+    customerId: customer,
+    walletAccountId: agentWallet.id,
+    ledgerAccountId: agentWallet.ledgerAccountId,
+    targetMappingReference: `a6-target:${'a'.repeat(64)}`,
+    amountMinor: '1',
+    currency: 'NGN',
+    accountingUnit: 'CUSTOMER_FUNDS' as const,
+    idempotencyKey: randomUUID(),
+    requestContext: { requestId: 'request', correlationId: 'correlation', traceId: 'trace' },
+  };
+  await expect(app.get(ExternalOperationService).create(operationCommand)).rejects.toThrow(
+    'Customer wallet ownership requires review',
+  );
+  const withdrawal = randomUUID();
+  await db.query(
+    `INSERT INTO withdrawals(id,wallet_id,payment_reference,amount_minor,currency,status,idempotency_key,request_hash) VALUES($1,$2,$3,1,'NGN','PENDING',$4,$5)`,
+    [
+      withdrawal,
+      wallet.id,
+      `MN${Math.floor(1000000000 + Math.random() * 8000000000)}`,
+      randomUUID(),
+      'a'.repeat(64),
+    ],
+  );
+  const operation = await app
+    .get(ExternalOperationService)
+    .create({
+      ...operationCommand,
+      resourceId: withdrawal,
+      walletAccountId: wallet.id,
+      ledgerAccountId: wallet.ledgerAccountId,
+    });
+  const { ExternalOperationLifecycleService } = await import(
+    '../src/partner/external-operation-lifecycle.service'
+  );
+  snapshots.get(customer)!.evidence[0]!.status = 'REVOKED';
+  await expect(
+    app
+      .get(ExternalOperationLifecycleService)
+      .beginAttempt(operation.externalOperationId, randomUUID(), operationCommand.requestContext),
+  ).rejects.toThrow();
+  expect(
+    await db.query(`SELECT lifecycle_state FROM external_operations WHERE id=$1`, [
+      operation.externalOperationId,
+    ]),
+  ).toEqual([{ lifecycle_state: 'CREATED' }]);
+  await expect(
+    app.get(ExternalOperationService).create({
+      ...operationCommand,
+      walletAccountId: wallet.id,
+      ledgerAccountId: wallet.ledgerAccountId,
+    }),
+  ).rejects.toThrow();
+  await expect(tryPosting(wallet.ledgerAccountId)).rejects.toThrow();
+  await expect(tryPosting(agentWallet.ledgerAccountId)).resolves.toBeDefined();
+  expect(
+    await db.query(`SELECT count(*)::int AS n FROM ledger_lines WHERE ledger_account_id=$1`, [
+      wallet.ledgerAccountId,
+    ]),
+  ).toEqual([{ n: 0 }]);
+});
+
+test('legacy classification preserves rows and leaves unknown or colliding references in review', async () => {
+  const { WalletOwnerClassification1785753600116 } = await import(
+    '../src/migrations/1785753600116-WalletOwnerClassification'
+  );
+  const runner = db.createQueryRunner();
+  const schema = `ownership_${randomUUID().replace(/-/g, '')}`;
+  await runner.connect();
+  try {
+    await runner.query(`CREATE SCHEMA ${schema}`);
+    await runner.query(`SET search_path TO ${schema}`);
+    await runner.query(
+      `CREATE TABLE customers(id uuid PRIMARY KEY,reference text NOT NULL); CREATE TABLE agents(id uuid PRIMARY KEY,reference text NOT NULL); CREATE TABLE wallet_accounts(id uuid PRIMARY KEY, customer_id text NOT NULL,ledger_account_id uuid NOT NULL); CREATE TABLE historical_journals(id uuid PRIMARY KEY, amount bigint NOT NULL)`,
+    );
+    const customer = randomUUID(),
+      agent = randomUUID(),
+      unknown = randomUUID(),
+      collision = randomUUID();
+    await runner.query(
+      `INSERT INTO customers VALUES($1,'customer-ref'),($2,'collision-customer')`,
+      [customer, collision],
+    );
+    await runner.query(`INSERT INTO agents VALUES($1,'agent-ref'),($2,'collision-agent')`, [
+      agent,
+      collision,
+    ]);
+    for (const owner of [customer, agent, unknown, collision])
+      await runner.query(`INSERT INTO wallet_accounts VALUES($1,$2,$3)`, [
+        randomUUID(),
+        owner,
+        randomUUID(),
+      ]);
+    const journal = randomUUID();
+    await runner.query(`INSERT INTO historical_journals VALUES($1,123)`, [journal]);
+    await new WalletOwnerClassification1785753600116().up(runner);
+    expect(
+      await runner.query(
+        `SELECT customer_id,owner_class FROM wallet_accounts ORDER BY customer_id`,
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        { customer_id: customer, owner_class: 'CUSTOMER' },
+        { customer_id: agent, owner_class: 'AGENT' },
+        { customer_id: unknown, owner_class: 'REVIEW' },
+        { customer_id: collision, owner_class: 'REVIEW' },
+      ]),
+    );
+    expect(await runner.query(`SELECT id,amount::int AS amount FROM historical_journals`)).toEqual([
+      { id: journal, amount: 123 },
+    ]);
+    await expect(
+      runner.query(`UPDATE wallet_accounts SET owner_class='AGENT' WHERE customer_id=$1`, [
+        customer,
+      ]),
+    ).rejects.toThrow();
+  } finally {
+    await runner.query('SET search_path TO public');
+    await runner.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    await runner.release();
+  }
+});

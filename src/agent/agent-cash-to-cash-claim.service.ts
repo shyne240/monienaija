@@ -1,3 +1,4 @@
+import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars */
 import { setTimeout as delay } from 'node:timers/promises';
 import { createHash, pbkdf2Sync, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -85,6 +86,7 @@ export class AgentCashToCashClaimService {
     private readonly auditService: AuditService,
     private readonly agentAuthorizationService: AgentTransactionAuthorizationService,
     private readonly mfaExecutionService: MfaExecutionService,
+    private readonly financialEligibility: CustomerFinancialEligibilityService,
     @Optional()
     private readonly limitEnforcementService?: LimitEnforcementService,
     // V1-COMMERCIAL-DECISION-03C — CASH_TO_CASH CLAIM commercial snapshot wiring.
@@ -713,17 +715,14 @@ export class AgentCashToCashClaimService {
             throw new BadRequestException('Beneficiary phone does not match transfer');
           }
 
+          // Cash payout has no customer wallet ledger line, so it must also gate the
+          // claimant directly inside the settlement transaction.
+          await this.financialEligibility.require(manager, customerId);
+
           // V1-SYSTEM-01: re-check inside the SERIALIZABLE transaction in case the claimant's
           // own contact methods changed between the pre-check and the lock (mirrors how every
           // other pre-check in this flow is duplicated here).
           await this.assertClaimantOwnsBeneficiaryPhone(manager, customerId, canonicalPhone);
-
-          // Freeze customer and current assessment evidence through financial commit.
-          await manager.query(`SELECT id FROM customers WHERE id=$1 FOR SHARE`, [customerId]);
-          await manager.query(
-            `SELECT id FROM customer_kyc_assessments WHERE customer_id=$1 AND is_current=TRUE FOR SHARE`,
-            [customerId],
-          );
 
           // Identity already verified outside, but re-check inside for consistency (in case customer changed)
           const custRows2: Array<{

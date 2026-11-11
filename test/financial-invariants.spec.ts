@@ -1,3 +1,4 @@
+import { testWalletFinancialBoundary } from './support/test-wallet-financial-boundary';
 import { BadRequestException } from '@nestjs/common';
 import type { DataSource, Repository } from 'typeorm';
 
@@ -208,6 +209,7 @@ describe('financial invariants', () => {
       {} as Repository<LedgerJournal>,
       {} as Repository<LedgerLine>,
       { transaction } as unknown as DataSource,
+      testWalletFinancialBoundary,
     );
 
     await expect(

@@ -1,3 +1,5 @@
+import { KycTierModule } from '../kyc-verification/kyc-tier.module';
+import { WalletFinancialBoundaryService } from '../wallet/wallet-financial-boundary.service';
 import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -14,6 +16,7 @@ import { LedgerReversalGovernanceService } from './ledger-reversal-governance.se
 
 @Module({
   imports: [
+    forwardRef(() => KycTierModule),
     forwardRef(() => OperationsModule),
     forwardRef(() => AuthorizationModule),
     forwardRef(() => B2FFinanceControlModule),
@@ -21,10 +24,16 @@ import { LedgerReversalGovernanceService } from './ledger-reversal-governance.se
   ],
   controllers: [LedgerController],
   providers: [
+    WalletFinancialBoundaryService,
     LedgerService,
     LedgerReversalGovernanceService,
     A5ArControlAccountProvisioningService,
   ],
-  exports: [LedgerService, A5ArControlAccountProvisioningService, TypeOrmModule],
+  exports: [
+    LedgerService,
+    WalletFinancialBoundaryService,
+    A5ArControlAccountProvisioningService,
+    TypeOrmModule,
+  ],
 })
 export class LedgerModule {}

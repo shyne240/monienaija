@@ -1,3 +1,4 @@
+import { testWalletFinancialBoundary } from './support/test-wallet-financial-boundary';
 import { randomUUID } from 'node:crypto';
 import { ConflictException } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
@@ -27,6 +28,7 @@ describe('Metrics transaction safety (real PostgreSQL)', () => {
       dataSource.getRepository(LedgerJournal),
       dataSource.getRepository(LedgerLine),
       dataSource,
+      testWalletFinancialBoundary,
       metrics,
     );
     await dataSource.query('CREATE TABLE metrics_test_marker (id integer PRIMARY KEY)');

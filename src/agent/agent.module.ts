@@ -1,3 +1,4 @@
+import { KycTierModule } from '../kyc-verification/kyc-tier.module';
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -58,6 +59,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
 
 @Module({
   imports: [
+    forwardRef(() => KycTierModule),
     OperationsModule,
     // V1-ADMIN-AUTHORIZATION-HARDENING-01: AgentLifecycleController now calls
     // AuthorizationService.requireFunction() for catalogue-backed function checks.

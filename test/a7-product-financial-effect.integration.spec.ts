@@ -1,3 +1,4 @@
+import { testWalletFinancialBoundary } from './support/test-wallet-financial-boundary';
 /* eslint-disable */
 import { createHash, randomUUID } from 'node:crypto';
 import { ConflictException } from '@nestjs/common';
@@ -118,6 +119,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       dataSource.getRepository(LedgerJournal),
       dataSource.getRepository(LedgerLine),
       dataSource,
+      testWalletFinancialBoundary,
     );
     idempotency = new IdempotencyService(
       dataSource.getRepository(IdempotencyRecord),
@@ -140,6 +142,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       idempotency,
       audit,
       connection,
+      testWalletFinancialBoundary,
     );
 
     externalSettlement = new ExternalSettlementService(

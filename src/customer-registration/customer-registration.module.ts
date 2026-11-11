@@ -1,3 +1,5 @@
+import { KycTierModule } from '../kyc-verification/kyc-tier.module';
+import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { MobileAccountClaimService } from './mobile-account-claim.service';
 import { MobileOnboardingAuthController } from './mobile-onboarding-auth.controller';
 import { MobileOnboardingAuthService } from './mobile-onboarding-auth.service';
@@ -54,6 +56,7 @@ import type { KycProvider } from '../kyc-verification/kyc.types';
       WalletAccount,
       LedgerAccount,
     ]),
+    forwardRef(() => KycTierModule),
     AuthorizationModule,
     NotificationModule,
     OperationsModule,
@@ -100,12 +103,18 @@ import type { KycProvider } from '../kyc-verification/kyc.types';
     },
     {
       provide: MobileOnboardingAuthService,
-      inject: [DataSource, AuditService, KycRegistrationCompletionService],
+      inject: [
+        DataSource,
+        AuditService,
+        KycRegistrationCompletionService,
+        CustomerFinancialEligibilityService,
+      ],
       useFactory: (
         db: DataSource,
         audit: AuditService,
         completion: KycRegistrationCompletionService,
-      ) => new MobileOnboardingAuthService(db, audit, completion),
+        eligibility: CustomerFinancialEligibilityService,
+      ) => new MobileOnboardingAuthService(db, audit, completion, eligibility),
     },
     { provide: REGISTRATION_SYNTHETIC_PROVIDER, useClass: RegistrationSyntheticProvider },
     {

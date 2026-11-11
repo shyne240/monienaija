@@ -19,6 +19,7 @@ import {
   parsePositiveMinorUnits,
 } from '../common/money';
 import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
+import { WalletFinancialBoundaryService } from '../wallet/wallet-financial-boundary.service';
 import { MetricsService } from '../operations/metrics.service';
 import { LedgerAccount } from './ledger-account.entity';
 import {
@@ -71,6 +72,7 @@ export class LedgerService {
     @InjectRepository(LedgerLine)
     private readonly lineRepository: Repository<LedgerLine>,
     private readonly dataSource: DataSource,
+    private readonly walletFinancialBoundary: WalletFinancialBoundaryService,
     @Optional() private readonly metricsService?: MetricsService,
   ) {}
 
@@ -307,6 +309,7 @@ export class LedgerService {
 
     const accountIds = [...new Set(command.lines.map((line) => line.accountId))].sort();
     const accounts = await this.lockAccounts(manager, accountIds);
+    await this.walletFinancialBoundary.requireAccounts(manager, accountIds);
     const accountsById = new Map(accounts.map((account) => [account.id, account]));
 
     for (const accountId of accountIds) {

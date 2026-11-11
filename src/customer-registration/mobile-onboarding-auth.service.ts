@@ -1,3 +1,5 @@
+import { ConflictException } from '@nestjs/common';
+import type { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { DataSource } from 'typeorm';
 import type { AuditService } from '../operations/audit.service';
@@ -10,13 +12,14 @@ import type { KycRegistrationCompletionService } from '../kyc-verification/kyc-r
 const AUDIENCE = 'customer-onboarding';
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 const digest = (token: string) => createHash('sha256').update(token).digest('hex');
-/** Only an explicitly scoped onboarding session; never a customer-api session. */
+/** Phone-verified passcode exchange; financial scope requires current eligibility. */
 export class MobileOnboardingAuthService {
   private readonly verifier = new PasswordHashVerificationService();
   constructor(
     private readonly db: DataSource,
     private readonly audit: AuditService,
     private readonly completion: KycRegistrationCompletionService,
+    private readonly financialEligibility: CustomerFinancialEligibilityService,
   ) {}
   async route(
     sessionId: string,
@@ -150,24 +153,31 @@ export class MobileOnboardingAuthService {
         'UPDATE customer_authentication_credentials SET failed_authentication_count=0,version=version+1,updated_at=clock_timestamp() WHERE id=$1',
         [r.credential_id],
       );
+      let audience = AUDIENCE;
+      try {
+        await this.financialEligibility.require(m, r.customer_id);
+        audience = 'customer-api';
+      } catch (error) {
+        if (!(error instanceof ConflictException)) throw error;
+      }
       const token = randomBytes(32).toString('base64url'),
         id = randomUUID();
       const issued = await m.query<Array<{ expires_at: Date }>>(
         `INSERT INTO authentication_sessions(id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at,onboarding_password_version) VALUES($1,$2,$3,$4,$5,'ACTIVE',clock_timestamp(),clock_timestamp()+interval '15 minutes',clock_timestamp(),$6) RETURNING expires_at`,
-        [id, r.customer_id, r.credential_id, digest(token), AUDIENCE, r.password_version],
+        [id, r.customer_id, r.credential_id, digest(token), audience, r.password_version],
       );
       await this.audit.record(m, {
         entityType: 'AUTHENTICATION_SESSION',
         entityId: id,
         action: 'SESSION_ISSUED',
         actor: 'MOBILE_ONBOARDING',
-        newValues: { customerId: r.customer_id, audience: AUDIENCE },
+        newValues: { customerId: r.customer_id, audience },
       });
       return {
         accessToken: token,
         sessionId: id,
         customerId: r.customer_id,
-        audience: AUDIENCE,
+        audience,
         expiresAt: issued[0]!.expires_at,
       };
     });

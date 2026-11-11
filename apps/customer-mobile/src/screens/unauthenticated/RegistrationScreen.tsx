@@ -9,6 +9,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { ApiClient, ApiError } from '../../services/api-client';
 import { SecureStorage } from '../../services/secure-storage';
 import { theme } from '../../theme';
+import { useAuthStore } from '../../store/auth-store';
 
 type Step =
   | 'LOADING'
@@ -381,11 +382,39 @@ export const RegistrationScreen: React.FC = () => {
     withError(async () => {
       if (!session || !/^\d{6}$/.test(passcode)) throw new Error('passcode');
       try {
-        const login = await post<{ accessToken: string; audience: string }>(
-          'onboarding-login',
-          { sessionId: session.id, passcode },
-          session.token,
-        );
+        const login = await post<{
+          accessToken: string;
+          audience: string;
+          customerId?: string;
+          sessionId?: string;
+          expiresAt?: string;
+        }>('onboarding-login', { sessionId: session.id, passcode }, session.token);
+        if (login.audience === 'customer-api') {
+          if (!login.customerId || !login.sessionId || !login.expiresAt)
+            throw new Error('missing session data');
+          const financialSession = {
+            accessToken: login.accessToken,
+            customerId: login.customerId,
+            sessionId: login.sessionId,
+            expiresAt: login.expiresAt,
+            audience: login.audience,
+          };
+          await SecureStorage.set('auth_session_token', financialSession.accessToken);
+          await SecureStorage.set('auth_customer_id', financialSession.customerId);
+          await SecureStorage.set('auth_session_data', JSON.stringify(financialSession));
+          await SecureStorage.remove(ONBOARDING_TOKEN_KEY);
+          await SecureStorage.remove(STORAGE_KEY);
+          useAuthStore.setState({
+            isAuthenticated: true,
+            isLoading: false,
+            session: financialSession,
+            customerId: financialSession.customerId,
+            error: null,
+            rotationRequired: false,
+          });
+          setSession(null);
+          return;
+        }
         if (login.audience !== 'customer-onboarding') throw new Error('unexpected scope');
         await SecureStorage.set(ONBOARDING_TOKEN_KEY, login.accessToken);
         await SecureStorage.remove(STORAGE_KEY);

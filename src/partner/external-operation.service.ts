@@ -1,3 +1,4 @@
+import { WalletFinancialBoundaryService } from '../wallet/wallet-financial-boundary.service';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
@@ -99,6 +100,7 @@ export class ExternalOperationService {
     private readonly idempotencyService: IdempotencyService,
     private readonly auditService: AuditService,
     private readonly partnerConnectionService: PartnerConnectionService,
+    private readonly walletBoundary: WalletFinancialBoundaryService,
   ) {}
 
   async create(command: CreateExternalOperationCommand): Promise<ExternalOperationView> {
@@ -159,6 +161,12 @@ export class ExternalOperationService {
     manager: EntityManager,
     command: NormalizedCreateExternalOperationCommand,
   ): Promise<ExternalOperationView> {
+    await this.walletBoundary.requireCustomerWallet(
+      manager,
+      command.customerId,
+      command.walletAccountId,
+      command.ledgerAccountId,
+    );
     const reservation = await this.idempotencyService.reserve(manager, {
       scope: EXTERNAL_OPERATION_IDEMPOTENCY_SCOPE,
       key: command.idempotencyKey,

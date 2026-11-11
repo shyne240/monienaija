@@ -1,3 +1,4 @@
+import type { CustomerFinancialEligibilityService } from '../src/kyc-verification/customer-financial-eligibility.service';
 import type { DataSource, DeepPartial, EntityManager, ObjectLiteral, Repository } from 'typeorm';
 
 import type { AuthenticationExecutionResult } from '../src/customer-authentication/authentication-execution.service';
@@ -23,6 +24,17 @@ class MemoryRepository<T extends ObjectLiteral> {
     }
     this.records.set(String(record.id), entity);
     return Promise.resolve(entity);
+  }
+
+  async update(
+    criteria: { id: string; status: string },
+    partial: Partial<T>,
+  ): Promise<{ affected: number }> {
+    const entity = this.records.get(criteria.id);
+    if (!entity || (entity as Record<string, unknown>).status !== criteria.status)
+      return Promise.resolve({ affected: 0 });
+    Object.assign(entity, partial);
+    return Promise.resolve({ affected: 1 });
   }
 
   findOne(options: { where?: Partial<T> }): Promise<T | null> {
@@ -89,6 +101,9 @@ function fixture(options?: { customerStatus?: string; customerMissing?: boolean 
     new MemoryDataSource(new MemoryManager(repository)) as unknown as DataSource,
     auditService as unknown as AuditService,
     customerRepository as unknown as Repository<Customer>,
+    {
+      require: jest.fn().mockResolvedValue(undefined),
+    } as unknown as CustomerFinancialEligibilityService,
   );
   return { service, repository, auditService, customerRepository };
 }

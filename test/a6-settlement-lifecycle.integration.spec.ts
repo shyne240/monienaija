@@ -1,3 +1,4 @@
+import { testWalletFinancialBoundary } from './support/test-wallet-financial-boundary';
 import { createHash, randomUUID } from 'node:crypto';
 import type { ConfigService } from '@nestjs/config';
 import type { DataSource } from 'typeorm';
@@ -107,6 +108,7 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
       dataSource.getRepository(LedgerJournal),
       dataSource.getRepository(LedgerLine),
       dataSource,
+      testWalletFinancialBoundary,
     );
     const audit = new AuditService(dataSource.getRepository(AuditEvent));
     const idempotency = new IdempotencyService(dataSource.getRepository(IdempotencyRecord));
@@ -125,6 +127,7 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
       idempotency,
       audit,
       connection,
+      testWalletFinancialBoundary,
     );
 
     service = new ExternalSettlementService(
