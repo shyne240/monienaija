@@ -519,8 +519,8 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
     // identity-bound evidence. These two fixtures exist to prove masking/scoping, not KYC, so
     // complete them with the shared eligibility fixture (per customer, explicitly — the raw
     // `seedCustomer` helper above stays arbitrary so KYC-rejection suites can still use it).
-    await makeCustomerFinanciallyEligible(dataSource, customers.alpha.id, kycEvidence);
-    await makeCustomerFinanciallyEligible(dataSource, otherCustomer.id, kycEvidence);
+    await makeCustomerFinanciallyEligible(dataSource, String(customers.alpha.id), kycEvidence);
+    await makeCustomerFinanciallyEligible(dataSource, String(otherCustomer.id), kycEvidence);
     const wallet = await walletService.createWallet({
       customerId: customers.alpha.id,
       currency: 'NGN',
@@ -660,7 +660,9 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
     // Activation additionally runs the governed financial-eligibility gate: the verified primary
     // phone asserted above is necessary but no longer sufficient, so complete the identity
     // binding and MAC-bound evidence the trusted reader needs before the success assertion.
-    await makeCustomerFinanciallyEligible(dataSource, draft.id, kycEvidence, { allowDraft: true });
+    await makeCustomerFinanciallyEligible(dataSource, String(draft.id), kycEvidence, {
+      allowDraft: true,
+    });
     await request(app.getHttpServer())
       .patch(`/api/v1/customers/${draft.id}`)
       .set(auth(superAdmin.token))
