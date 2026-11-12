@@ -25,6 +25,9 @@ import {
 } from '../src/ledger/ledger.enums';
 import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 /**
  * V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-AUDIT-01.
@@ -49,6 +52,8 @@ import { createIntegrationDataSource, destroyIntegrationDataSource } from './sup
  *
  * All three scenarios run against real PostgreSQL — no mocks on the financial path.
  */
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+
 describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
@@ -76,6 +81,8 @@ describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -188,6 +195,9 @@ describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
       `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$2,true,NOW())`,
       [customerId, phoneCanonical],
     );
+    // The wallet path is gated on financial eligibility; this helper builds its customer with
+    // raw SQL, so complete the governed customer before provisioning the wallet.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',

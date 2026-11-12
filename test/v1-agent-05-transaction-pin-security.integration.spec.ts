@@ -30,6 +30,9 @@ import {
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 function encodePbkdf2(secret: string): string {
   const salt = randomBytes(16);
@@ -59,6 +62,8 @@ function encodePbkdf2(secret: string): string {
  *  - Locked PIN cannot be changed (no in-app recovery bypass — V1 has no
  *    secure out-of-band recovery channel; Agent must contact support)
  */
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+
 describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
@@ -77,6 +82,8 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -192,6 +199,9 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
       pinVersion: 1,
       actor: customerId,
     });
+    // The wallet path is gated on financial eligibility; this helper builds its customer with
+    // raw SQL, so complete the governed customer before provisioning the wallet.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',

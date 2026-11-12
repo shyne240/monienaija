@@ -54,6 +54,9 @@ import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
 import { LedgerEntryDirection } from '../src/ledger/ledger.enums';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 function hashPin(pin: string): string {
   const salt = randomBytes(16);
@@ -97,6 +100,8 @@ function errorCodeOf(e: any): string {
   const resp = e?.getResponse?.();
   return (resp && (resp.error || resp.code)) || e?.code || e?.message || 'UNKNOWN';
 }
+
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
 describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
   let dataSource: DataSource;
@@ -152,6 +157,8 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -276,6 +283,9 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
         actor: customerId,
       });
     }
+    // The wallet path is gated on financial eligibility; this helper builds its customer with
+    // raw SQL, so complete the governed customer before provisioning the wallet.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',

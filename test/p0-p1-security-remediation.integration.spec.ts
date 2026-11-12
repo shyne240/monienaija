@@ -132,6 +132,7 @@ function freshCode(prefix: string): string {
 
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 // Test-only trusted-evidence override. Opt-in per suite; the production reader stays
 // fail-closed because nothing in AppModule references this module.
@@ -290,11 +291,17 @@ describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
       );
       customerIds.push(rows[0].id);
     }
+    // The wallet path is gated on financial eligibility; this helper builds its customer with
+    // raw SQL, so complete the governed customer before provisioning the wallet.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const source = await walletService.createWallet({
       customerId: customerIds[0],
       currency: 'NGN',
       idempotencyKey: `p0a-source-${randomUUID()}`,
     });
+    // The wallet path is gated on financial eligibility; this helper builds its customer with
+    // raw SQL, so complete the governed customer before provisioning the wallet.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const destination = await walletService.createWallet({
       customerId: customerIds[1],
       currency: 'NGN',

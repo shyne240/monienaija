@@ -49,12 +49,17 @@ import { A2WorkforceSessionService } from '../src/authorization/workforce-sessio
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 function hashPin(pin: string): string {
   const salt = randomBytes(16);
   const derived = pbkdf2Sync(pin, salt, 10000, 32, 'sha256');
   return `PBKDF2$sha256$10000$${salt.toString('base64url')}$${derived.toString('base64url')}`;
 }
+
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
 describe('V1-COMMERCIAL-DECISION-03A CASH_TO_WALLET snapshot wiring (real PG)', () => {
   let dataSource: DataSource;
@@ -119,6 +124,8 @@ describe('V1-COMMERCIAL-DECISION-03A CASH_TO_WALLET snapshot wiring (real PG)', 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .overrideProvider(A2WorkforceSessionService)
       .useValue(mockWorkforceSessions)
       .overrideProvider(A2_WORKFORCE_CONFIG)
@@ -233,6 +240,9 @@ describe('V1-COMMERCIAL-DECISION-03A CASH_TO_WALLET snapshot wiring (real PG)', 
       `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`,
       [customerId, phoneCanonical],
     );
+    // The wallet path is gated on financial eligibility; this helper builds its customer with
+    // raw SQL, so complete the governed customer before provisioning the wallet.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',

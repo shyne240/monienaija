@@ -29,6 +29,11 @@ import { A2WorkforceSessionService } from '../src/authorization/workforce-sessio
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
 describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)', () => {
   let dataSource: DataSource;
@@ -115,6 +120,8 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .overrideProvider(A2WorkforceSessionService)
       .useValue(mockWorkforceSessions)
       .overrideProvider(A2_WORKFORCE_CONFIG)
@@ -169,6 +176,9 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
       `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,'Customer 03D',true)`,
       [customerId],
     );
+    // The wallet path is gated on financial eligibility; this helper builds its customer with
+    // raw SQL, so complete the governed customer before provisioning the wallet.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',

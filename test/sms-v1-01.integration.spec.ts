@@ -41,7 +41,10 @@ import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 // fail-closed because nothing in AppModule references this module.
 const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
-import { restoreKycSingletons } from './support/kyc-test-fixtures';
+import {
+  makeCustomerFinanciallyEligible,
+  restoreKycSingletons,
+} from './support/kyc-test-fixtures';
 
 describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
   let dataSource: DataSource;
@@ -195,6 +198,9 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
       [randomUUID(), customerId, phone],
     );
     try {
+      // The wallet path is gated on financial eligibility; this helper builds its customer with
+      // raw SQL, so complete the governed customer before provisioning the wallet.
+      await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
       await walletService.createWallet({
         customerId,
         currency: 'NGN',
