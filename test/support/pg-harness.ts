@@ -13,6 +13,7 @@ import {
   ROLE_DASHBOARD_ASSIGNMENT_SEED,
 } from '../../src/dashboard/dashboard-templates.seed';
 import { assertOwnRunDatabaseName, resolveRunIdentifier } from './pg-run-namespace';
+import { restoreKycSingletons } from './kyc-test-fixtures';
 import { assertDisposablePgTestEnvironment } from './pg-test-safety';
 
 /**
@@ -288,6 +289,12 @@ export async function truncateAllTables(dataSource: DataSource): Promise<void> {
     );
     if (v2[0]?.applied) await seedNotificationDefaultsV2(dataSource.manager);
   }
+  // Batch 2C: `kyc_tier_policy_head`, `kyc_provider_configuration` and
+  // `kyc_registration_synthetic_provider_lock` are migration-seeded singletons too. A wholesale
+  // TRUNCATE empties them, after which `KycTierPolicyService.effective()` reports
+  // "KYC foundation: DISABLED" and provider governance looks unconfigured — so restore them for
+  // exactly the same reason as the catalogues above. Idempotent and insert-only.
+  await restoreKycSingletons(dataSource);
 }
 
 /**
