@@ -3,6 +3,8 @@ import { pbkdf2Sync, randomUUID } from 'node:crypto';
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { bearer, createMission15aFixture } from './support/mission15a-fixture';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 describe('Mission 16A Agent-read authorization contract (real HTTP + PostgreSQL)', () => {
   let f: Awaited<ReturnType<typeof createMission15aFixture>>;
@@ -14,7 +16,12 @@ describe('Mission 16A Agent-read authorization contract (real HTTP + PostgreSQL)
   let supportToken: string;
 
   beforeAll(async () => {
-    f = await createMission15aFixture('m16aagentread');
+    // This suite needs a real customer *session* (the agent-read contract is asserted with a
+    // CUSTOMER bearer), and session issuance goes through the financial-eligibility gate. The
+    // shared test-only reader is installed explicitly and the seeded customer is made genuinely
+    // eligible (assessment + MAC-bound evidence), rather than weakening the gate.
+    const evidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+    f = await createMission15aFixture('m16aagentread', { trustedEvidence: evidence });
     manager = await f.workforce('AGENT_NETWORK_MANAGER');
     operations = await f.workforce('OPERATIONS');
     const superAdmin = await f.workforce('SUPER_ADMIN');
@@ -51,6 +58,7 @@ describe('Mission 16A Agent-read authorization contract (real HTTP + PostgreSQL)
       `INSERT INTO customer_profiles (customer_id,display_name,is_active) VALUES ($1,'Mission 16A Customer',true)`,
       [customerId],
     );
+    await makeCustomerFinanciallyEligible(f.dataSource, customerId, evidence);
     const password = `Test-${randomUUID()}`;
     const salt = Buffer.from('mission-16a-customer-test-salt');
     const hash = pbkdf2Sync(password, salt, 10_000, 32, 'sha256').toString('base64url');

@@ -47,7 +47,12 @@ import {
 } from './support/pg-harness';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
-import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+import {
+  DEFAULT_GOVERNED_TIER_POLICY,
+  makeCustomerFinanciallyEligible,
+  seedGovernedTierPolicy,
+  seedIdentityEvidence,
+} from './support/kyc-test-fixtures';
 
 const LOGIN_PATH = '/api/v1/internal/a2/workforce/local-admin-sessions';
 
@@ -240,6 +245,83 @@ describe('V1-ADMIN-AUTHORIZATION-KYC-01 — KYC function authorization proof (re
     return { Authorization: `Bearer ${token}` };
   }
 
+/**
+ * The assessment contract (`KycTierTransitionService.administrativeAssessment`) derives the
+ * required function from `status`:
+ *
+ *   - `APPROVED` needs `kyc.approve` and is evaluated from locked authoritative evidence, so
+ *     it carries the tier being requested;
+ *   - `PENDING` / `REJECTED` are *manual holds*: they must carry the non-privileged `NONE`
+ *     tier plus one of the governed reasons (`EVIDENCE_REVOKED`, `IDENTITY_CONFLICT`,
+ *     `MANUAL_REVIEW`). Any other shape is rejected with 409 before the authorization
+ *     decision this suite tests is even reached.
+ */
+function reviewBody(status: string, level: 'LEVEL_1' | 'LEVEL_2' = 'LEVEL_1') {
+  if (status === 'APPROVED') {
+    return { level, status, assessedBy: 'kyc-01-test-harness' };
+  }
+  return {
+    level: 'NONE',
+    status,
+    reason: 'MANUAL_REVIEW',
+    assessedBy: 'kyc-01-test-harness',
+  };
+}
+
+/**
+ * A customer that can actually complete the approval leg of the review workflow.
+ *
+ * Approving is no longer a body-only operation: the service re-evaluates locked evidence, so
+ * the shared fixtures seed a governed tier policy plus MAC-bound identity evidence for the
+ * real trusted reader this suite installs. Nothing here bypasses authorization — every
+ * assertion in this file is still made through the real guard and the real service.
+ */
+async function createReviewableCustomer(
+  level: 'LEVEL_1' | 'LEVEL_2' = 'LEVEL_1',
+): Promise<string> {
+  const customerId = await createActiveCustomer();
+  const phone = `+2348${String(Math.floor(10_000_000 + Math.random() * 89_999_999))}`;
+  if (level === 'LEVEL_2') {
+    // Tier 2 requires BVN *and* NIN, and the default fixture policy additionally requires
+    // `PHONE` evidence — a type the trusted read path cannot produce from
+    // `kyc_verification_attempts`. Install the same governed policy without that rule so a
+    // tier-2 approval is reachable; the maker/checker approval path itself is unchanged.
+    await seedGovernedTierPolicy(dataSource, {
+      definition: {
+        ...DEFAULT_GOVERNED_TIER_POLICY,
+        regulatory: {
+          ...DEFAULT_GOVERNED_TIER_POLICY.regulatory,
+          LEVEL_2: { all: [], any: [] },
+        },
+      },
+    });
+  }
+  await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence, {
+    level,
+    phone,
+  });
+  if (level === 'LEVEL_2') {
+    // Second identity document, bound to the same identity MAC the reader recomputes.
+    const identity = {
+      firstName: 'Ada',
+      lastName: 'Okafor',
+      dateOfBirth: '1990-04-12',
+      phone,
+    };
+    const [bvn] = await dataSource.query<Array<{ identity_mac: string }>>(
+      `SELECT identity_mac FROM kyc_verification_attempts WHERE customer_id=$1 ORDER BY created_at LIMIT 1`,
+      [customerId],
+    );
+    await seedIdentityEvidence(dataSource, customerId, {
+      kind: 'NIN',
+      identityMac: bvn?.identity_mac ?? kycEvidence.identityMacFor(customerId, identity),
+      macKeyVersion: kycEvidence.keyVersion,
+    });
+  }
+  return customerId;
+}
+
+
   const NON_KYC_ROLES = [
     'FINANCE_PREPARER',
     'FINANCE_CONTROLLER',
@@ -313,21 +395,13 @@ describe('V1-ADMIN-AUTHORIZATION-KYC-01 — KYC function authorization proof (re
   // =====================================================================================
 
   describe('B. POST /customers/:id/kyc-assessment requires the status-derived function', () => {
-    function reviewBody(status: string) {
-      return {
-        level: 'LEVEL_1',
-        status,
-        assessedBy: 'kyc-01-test-harness',
-      };
-    }
-
     // CustomerService.assertKycTransition (pure business logic, untouched by this task) only
     // allows NOT_STARTED->PENDING, PENDING->APPROVED|REJECTED, and APPROVED|REJECTED->PENDING
     // (a decision can always be revisited via a fresh review, but APPROVED cannot go directly
     // to REJECTED or vice versa). These sequences respect that state machine throughout.
     it('B1. SUPER_ADMIN can review, approve, and reject (holds all three)', async () => {
       const token = await loginSuperAdmin();
-      const customerId = await createActiveCustomer();
+      const customerId = await createReviewableCustomer();
       await request(app.getHttpServer())
         .post(`/api/v1/customers/${customerId}/kyc-assessment`)
         .set(auth(token))
@@ -352,7 +426,7 @@ describe('V1-ADMIN-AUTHORIZATION-KYC-01 — KYC function authorization proof (re
 
     it('B2. COMPLIANCE can review, approve, and reject (holds all three)', async () => {
       const token = await tokenForRole('COMPLIANCE');
-      const customerId = await createActiveCustomer();
+      const customerId = await createReviewableCustomer();
       await request(app.getHttpServer())
         .post(`/api/v1/customers/${customerId}/kyc-assessment`)
         .set(auth(token))
@@ -499,54 +573,54 @@ describe('V1-ADMIN-AUTHORIZATION-KYC-01 — KYC function authorization proof (re
     it('C1. a principal holding ONLY kyc.approve can approve but is denied reject', async () => {
       const superAdminToken = await loginSuperAdmin();
       const token = await tokenWithOnlyFunction('kyc.approve');
-      const customerId = await createActiveCustomer();
+      const customerId = await createReviewableCustomer();
       await request(app.getHttpServer())
         .post(`/api/v1/customers/${customerId}/kyc-assessment`)
         .set(auth(superAdminToken))
-        .send({ level: 'LEVEL_1', status: 'PENDING', assessedBy: 'kyc-01-test-harness' })
+        .send(reviewBody('PENDING'))
         .expect(201);
       await request(app.getHttpServer())
         .post(`/api/v1/customers/${customerId}/kyc-assessment`)
         .set(auth(token))
-        .send({ level: 'LEVEL_1', status: 'APPROVED', assessedBy: 'kyc-01-test-harness' })
+        .send(reviewBody('APPROVED'))
         .expect(201);
       // Reset to PENDING (a business-valid transition from APPROVED) so the next attempt is
       // denied by AUTHORIZATION, never by the unrelated business-rule conflict.
       await request(app.getHttpServer())
         .post(`/api/v1/customers/${customerId}/kyc-assessment`)
         .set(auth(superAdminToken))
-        .send({ level: 'LEVEL_1', status: 'PENDING', assessedBy: 'kyc-01-test-harness' })
+        .send(reviewBody('PENDING'))
         .expect(201);
       const reject = await request(app.getHttpServer())
         .post(`/api/v1/customers/${customerId}/kyc-assessment`)
         .set(auth(token))
-        .send({ level: 'LEVEL_1', status: 'REJECTED', assessedBy: 'kyc-01-test-harness' });
+        .send(reviewBody('REJECTED'));
       expect(reject.status).toBe(403);
     });
 
     it('C2. a principal holding ONLY kyc.reject can reject but is denied approve', async () => {
       const superAdminToken = await loginSuperAdmin();
       const token = await tokenWithOnlyFunction('kyc.reject');
-      const customerId = await createActiveCustomer();
+      const customerId = await createReviewableCustomer();
       await request(app.getHttpServer())
         .post(`/api/v1/customers/${customerId}/kyc-assessment`)
         .set(auth(superAdminToken))
-        .send({ level: 'LEVEL_1', status: 'PENDING', assessedBy: 'kyc-01-test-harness' })
+        .send(reviewBody('PENDING'))
         .expect(201);
       await request(app.getHttpServer())
         .post(`/api/v1/customers/${customerId}/kyc-assessment`)
         .set(auth(token))
-        .send({ level: 'LEVEL_1', status: 'REJECTED', assessedBy: 'kyc-01-test-harness' })
+        .send(reviewBody('REJECTED'))
         .expect(201);
       await request(app.getHttpServer())
         .post(`/api/v1/customers/${customerId}/kyc-assessment`)
         .set(auth(superAdminToken))
-        .send({ level: 'LEVEL_1', status: 'PENDING', assessedBy: 'kyc-01-test-harness' })
+        .send(reviewBody('PENDING'))
         .expect(201);
       const approve = await request(app.getHttpServer())
         .post(`/api/v1/customers/${customerId}/kyc-assessment`)
         .set(auth(token))
-        .send({ level: 'LEVEL_1', status: 'APPROVED', assessedBy: 'kyc-01-test-harness' });
+        .send(reviewBody('APPROVED'));
       expect(approve.status).toBe(403);
     });
   });
@@ -578,14 +652,17 @@ describe('V1-ADMIN-AUTHORIZATION-KYC-01 — KYC function authorization proof (re
   // =====================================================================================
 
   describe('F. CUSTOMER self-access is unaffected by the new function checks', () => {
-    it('F1. a real CUSTOMER session reading its own /kyc reaches the service layer (404, not 401/403)', async () => {
+    it('F1. a real CUSTOMER session reading its own /kyc reaches the service layer (200, not 401/403)', async () => {
       const { customerId, token } = await createCustomerWithLogin();
       const res = await request(app.getHttpServer())
         .get(`/api/v1/customers/${customerId}/kyc`)
         .set(auth(token));
-      // No assessment yet — proves the CUSTOMER request reached the (unchanged) service layer
-      // rather than being blocked by the new function check (which would be 403).
-      expect(res.status).toBe(404);
+      // Session issuance now passes the financial-eligibility gate, which requires a current
+      // APPROVED assessment — so this customer legitimately has one and the read returns 200
+      // instead of the historic 404. The property under test is unchanged: the CUSTOMER request
+      // reached the service layer instead of being blocked by the function check (403).
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('APPROVED');
     });
 
     it("F2. a real CUSTOMER session reading a DIFFERENT customer's /kyc is still denied (pre-existing SELF policy, unaffected)", async () => {
@@ -605,16 +682,16 @@ describe('V1-ADMIN-AUTHORIZATION-KYC-01 — KYC function authorization proof (re
   describe('G. business behavior unchanged — assessment persists and is readable', () => {
     it('G1. SUPER_ADMIN creates a PENDING assessment, then an APPROVED one, and GET /kyc reflects the latest', async () => {
       const token = await loginSuperAdmin();
-      const customerId = await createActiveCustomer();
+      const customerId = await createReviewableCustomer('LEVEL_2');
       await request(app.getHttpServer())
         .post(`/api/v1/customers/${customerId}/kyc-assessment`)
         .set(auth(token))
-        .send({ level: 'LEVEL_1', status: 'PENDING', assessedBy: 'kyc-01-test-harness' })
+        .send(reviewBody('PENDING'))
         .expect(201);
       await request(app.getHttpServer())
         .post(`/api/v1/customers/${customerId}/kyc-assessment`)
         .set(auth(token))
-        .send({ level: 'LEVEL_2', status: 'APPROVED', assessedBy: 'kyc-01-test-harness' })
+        .send(reviewBody('APPROVED', 'LEVEL_2'))
         .expect(201);
       const current = await request(app.getHttpServer())
         .get(`/api/v1/customers/${customerId}/kyc`)

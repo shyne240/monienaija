@@ -10,9 +10,26 @@ import type { A2WorkforceConfigurationV1 } from '../../src/authorization/workfor
 import { A2_WORKFORCE_CONFIG } from '../../src/authorization/workforce-oidc.service';
 import { A2WorkforceSessionService } from '../../src/authorization/workforce-session.service';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './pg-harness';
+import {
+  overrideTrustedEvidenceReader,
+  type TestEvidenceReaderHandle,
+} from './kyc-test-evidence-reader';
+
+export interface Mission15aFixtureOptions {
+  /**
+   * Opt-in installation of the shared **test-only** trusted-evidence reader. Suites that need a
+   * financially eligible customer must pass `createTestEvidenceReader({ mode: 'ELIGIBLE' })`
+   * here and seed matching evidence; suites that exercise rejection must leave it undefined so
+   * the fail-closed production reader stays in force.
+   */
+  trustedEvidence?: TestEvidenceReaderHandle;
+}
 
 /** Isolated real PostgreSQL, real Nest guard, catalogue-backed workforce sessions and HTTP. */
-export async function createMission15aFixture(label: string) {
+export async function createMission15aFixture(
+  label: string,
+  options: Mission15aFixtureOptions = {},
+) {
   const dataSource = await createIntegrationDataSource(label);
   const config = {
     enabled: true,
@@ -41,12 +58,15 @@ export async function createMission15aFixture(label: string) {
     ],
     trustedProxyAddresses: [],
   } as unknown as A2WorkforceConfigurationV1;
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+  const builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(DataSource)
     .useValue(dataSource)
     .overrideProvider(A2_WORKFORCE_CONFIG)
-    .useValue(config)
-    .compile();
+    .useValue(config);
+  if (options.trustedEvidence) {
+    overrideTrustedEvidenceReader(builder, options.trustedEvidence);
+  }
+  const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
   app.setGlobalPrefix('api/v1');
   app.useGlobalPipes(
