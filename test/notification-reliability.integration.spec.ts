@@ -48,7 +48,6 @@ class RecordingProvider implements NotificationProvider {
 }
 
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
-import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 
 // Test-only trusted-evidence override. Opt-in per suite; the production reader stays

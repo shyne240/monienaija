@@ -42,7 +42,6 @@ import { seedNotificationDefaultsV2 } from '../src/notification/notification-def
  * provider tokens; Fastify; api/v1 prefix; supertest).
  */
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
-import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 
 // Test-only trusted-evidence override. Opt-in per suite; the production reader stays

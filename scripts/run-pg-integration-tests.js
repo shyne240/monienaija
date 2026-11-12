@@ -114,6 +114,70 @@ const TIMEOUT_PATTERNS = [
   /Test suite failed to run[\s\S]{0,400}timeout/i,
 ];
 
+/**
+ * Categories used when reporting why a suite failed. They name the *observed* symptom, not a
+ * diagnosis of ownership: a category says what the run saw, so a reader can tell an
+ * infrastructure gap (`FIXTURE_*`, `MEMORY`) from a suite whose expectations disagree with
+ * current application behaviour (`ASSERTION`, `HTTP_STATUS`). Ordered: first match wins.
+ */
+const FAILURE_CATEGORIES = [
+  ['MEMORY', [/JavaScript heap out of memory/i, /Reached heap limit/i, /FATAL ERROR: .*heap/i]],
+  ['TIMEOUT', [/Exceeded timeout of \d+ ms/i, /did not exit in a timely manner/i]],
+  ['FIXTURE_KYC_POLICY', [/Customer financial policy is unavailable/i, /KycFoundationError/i]],
+  [
+    'FIXTURE_KYC_EVIDENCE',
+    [/Customer is not eligible for financial access/i, /Trusted KYC evidence is unavailable/i],
+  ],
+  ['MIGRATION_CATALOGUE', [/typeorm_migrations/i, /migration chain/i]],
+  ['DUPLICATE_KEY', [/duplicate key value violates unique constraint/i]],
+  ['AUTHORIZATION', [/(expected|got) 40[13]\b/i, /Forbidden resource/i]],
+  ['HTTP_STATUS', [/expected \d{3} .*got \d{3}/i]],
+  ['TEST_SETUP', [/Test suite failed to run/i, /Cannot find (name|module)/i]],
+  ['ASSERTION', [/expect\(received\)/i]],
+];
+
+function classify(text) {
+  for (const [label, patterns] of FAILURE_CATEGORIES) {
+    if (patterns.some((pattern) => pattern.test(text))) return label;
+  }
+  return 'UNCLASSIFIED';
+}
+
+/** Reduce a Jest failure block to its first meaningful line (drop ANSI and code frames). */
+function firstMeaningfulLine(block) {
+  const lines = block
+    .replace(/\u001b\[[0-9;]*m/g, '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('at ') && !/^\d+ \|/.test(line));
+  return lines.slice(0, 3).join(' / ').slice(0, 300);
+}
+
+/**
+ * Parse one batch's echoed Jest output into per-suite outcomes. Jest prints `PASS <path>` /
+ * `FAIL <path>` per file and one `Tests:` tally per batch.
+ */
+function summarizeOutput(chunks) {
+  const clean = chunks.join('').replace(/\u001b\[[0-9;]*m/g, '');
+  const suites = [];
+  for (const line of clean.split('\n')) {
+    const match = /^(PASS|FAIL) (.+?)(?: \(([\d.]+) s\))?$/.exec(line.trim());
+    if (!match) continue;
+    suites.push({
+      status: match[1],
+      file: match[2].replace(`${ROOT}/`, ''),
+      durationSeconds: match[3] ? Number(match[3]) : null,
+    });
+  }
+  const tally = /^Tests:\s+(.*)$/m.exec(clean);
+  const failures = clean.split(/\n\s*● /).slice(1).map((block) => ({
+    title: block.split('\n')[0].trim().slice(0, 200),
+    category: classify(block),
+    detail: firstMeaningfulLine(block),
+  }));
+  return { suites, testLine: tally ? tally[1] : null, failures };
+}
+
 /** Collected batch outcomes for the machine-readable run summary. */
 const batchResults = [];
 
@@ -185,33 +249,41 @@ function runBatch(files, index, total) {
       ],
       {
         cwd: ROOT,
-        // Piped (not 'inherit') so the batch tail can be inspected for heap-exhaustion and
-        // timeout signatures; the runner echoes every chunk verbatim and in order.
+        // Piped (not 'inherit') so the batch transcript can be inspected for heap-exhaustion and
+        // timeout signatures and parsed for per-suite results; the runner echoes every chunk
+        // verbatim and in order.
         stdio: ['ignore', 'pipe', 'pipe'],
         // Every batch process shares this run's namespace: the harness embeds
         // PG_TEST_RUN_ID in every generated database name (see test/support/pg-run-namespace.ts).
         env: { ...process.env, PG_TEST_RUN_ID: RUN_IDENTIFIER },
       },
     );
-    // Output is inherited by the terminal, but also mirrored through a small tail buffer so a
-    // batch can be classified (heap exhaustion vs. ordinary test failure) without re-reading
-    // the whole log. Batches run one at a time per worker, so the buffer is per-spawn.
-    const tail = [];
-    const record = (chunk) => {
+    // The whole batch transcript is retained so per-suite results and failure categories can be
+    // parsed exactly once at exit (Jest's `PASS`/`FAIL`/`Tests:`/`● ` markers can straddle chunk
+    // boundaries, so incremental parsing would silently drop results). A batch is at most
+    // PG_TEST_BATCH_SIZE files, whose transcript is well under a few MB.
+    const transcript = [];
+    child.stdout.on('data', (chunk) => {
       process.stdout.write(chunk);
-      tail.push(chunk.toString());
-      while (tail.length > 400) tail.shift();
-    };
-    child.stdout.on('data', record);
+      transcript.push(chunk.toString());
+    });
     child.stderr.on('data', (chunk) => {
       process.stderr.write(chunk);
-      tail.push(chunk.toString());
-      while (tail.length > 400) tail.shift();
+      transcript.push(chunk.toString());
     });
     child.once('error', (error) => {
       process.stderr.write(`PG batch ${index + 1} failed to start: ${error.message}\n`);
       process.stderr.write(`Unexecuted files: ${files.join(', ')}\n`);
-      resolve({ ok: false, files, memoryFailure: false, timeout: false, crash: true });
+      resolve({
+        ok: false,
+        files,
+        memoryFailure: false,
+        timeout: false,
+        crash: true,
+        suites: [],
+        testLine: null,
+        failures: [],
+      });
     });
     child.once('exit', (code, signal) => {
       process.stdout.write(
@@ -220,13 +292,15 @@ function runBatch(files, index, total) {
       if (signal) {
         process.stderr.write(`Batch interrupted; suite results may be incomplete: ${files.join(', ')}\n`);
       }
-      const joined = tail.join('\n');
+      const joined = transcript.join('');
+      const parsed = summarizeOutput(transcript);
       resolve({
         ok: code === 0 && !signal,
         files,
         memoryFailure: MEMORY_FAILURE_PATTERNS.some((pattern) => pattern.test(joined)),
         timeout: TIMEOUT_PATTERNS.some((pattern) => pattern.test(joined)),
         crash: Boolean(signal) && !MEMORY_FAILURE_PATTERNS.some((pattern) => pattern.test(joined)),
+        ...parsed,
       });
     });
   });
@@ -277,6 +351,12 @@ async function main() {
     .filter((result) => !result.ok)
     .flatMap((result) => result.files)
     .map((file) => file.replace(`${ROOT}/`, ''));
+  const allSuites = results.flatMap((result) => result.suites ?? []);
+  const allFailures = results.flatMap((result) => result.failures ?? []);
+  const categoryCounts = {};
+  for (const failure of allFailures) {
+    categoryCounts[failure.category] = (categoryCounts[failure.category] ?? 0) + 1;
+  }
   const summary = {
     runId: RUN_IDENTIFIER,
     nodeEnv: process.env.NODE_ENV,
@@ -294,7 +374,31 @@ async function main() {
     timeouts: results.filter((result) => result.timeout).length,
     unexplainedCrashes: results.filter((result) => result.crash).length,
     failingFiles,
+    // Per-suite outcomes parsed from Jest's own PASS/FAIL lines, so the report can state how many
+    // suites actually passed instead of inferring it (a crashed batch leaves files neither
+    // passing nor failing, and that difference matters).
+    suitesReported: allSuites.length,
+    suitesPassed: allSuites.filter((suite) => suite.status === 'PASS').length,
+    suitesFailed: allSuites.filter((suite) => suite.status === 'FAIL').length,
+    filesWithoutResult: files
+      .map((file) => file.replace(`${ROOT}/`, ''))
+      .filter((file) => !allSuites.some((suite) => suite.file === file)),
+    // Jest's own per-batch `Tests:` line, e.g. "31 passed, 31 total".
+    testTallies: results.map((result) => result.testLine).filter(Boolean),
+    failureCategories: categoryCounts,
+    failures: allFailures,
   };
+  process.stdout.write(
+    `\n=== PG integration suites: ${summary.suitesPassed} passed, ${summary.suitesFailed} failed, ` +
+      `${summary.filesWithoutResult.length} without a result of ${files.length} discovered ===\n`,
+  );
+  if (Object.keys(categoryCounts).length > 0) {
+    process.stdout.write(
+      `=== Failure categories: ${Object.entries(categoryCounts)
+        .map(([label, count]) => `${label}=${count}`)
+        .join(', ')} ===\n`,
+    );
+  }
   process.stdout.write(`\nPG_TEST_SUMMARY ${JSON.stringify(summary)}\n`);
   const summaryPath = process.env.PG_TEST_SUMMARY_PATH;
   if (summaryPath) {

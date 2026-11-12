@@ -96,6 +96,8 @@ import {
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 
 function hashPin(pin: string): string {
   const salt = randomBytes(16);
@@ -112,6 +114,8 @@ const COMMISSION_POSTING_BLOCKED = {
   journalLegsPosted: false,
   reason: 'COMMISSION_ACCOUNTING_FAMILY_NOT_PROVISIONED',
 };
+
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
 describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', () => {
   let dataSource: DataSource;
@@ -219,6 +223,8 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .overrideProvider(A2WorkforceSessionService)
       .useValue(mockWorkforceSessions)
       .overrideProvider(A2_WORKFORCE_CONFIG)
@@ -367,6 +373,19 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
       'test',
     );
     return rule.id;
+  }
+
+  /**
+   * A financially eligible customer for a wallet that the test only needs as an endpoint.
+   *
+   * These suites used a bare `randomUUID()` as the wallet owner. Once wallet owner classification
+   * landed, `wallet_owner_class()` returns `REVIEW` for an id that is not a customer or agent and
+   * `WalletService.createWallet` correctly refuses to provision such a wallet. A real, governed
+   * customer leaves the assertion under test (fee/commission/accounting behaviour) unchanged.
+   */
+  async function eligibleCustomerId(): Promise<string> {
+    const { customerId } = await createEligibleCustomer(dataSource, kycEvidence);
+    return customerId;
   }
 
   async function createWallet(
@@ -591,6 +610,9 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
       pinVersion: 1,
       actor: base.customerId,
     });
+    // This helper creates the customer with raw SQL only, so the governed
+    // financial-eligibility gate would reject its wallet; complete it here.
+    await makeCustomerFinanciallyEligible(dataSource, base, kycEvidence);
     return base;
   }
 
@@ -640,6 +662,9 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
       `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,'Customer C02',true)`,
       [customerId],
     );
+    // This helper creates the customer with raw SQL only, so the governed
+    // financial-eligibility gate would reject its wallet; complete it here.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     return customerId;
   }
 
@@ -829,9 +854,9 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
   // ══════════════════════════════════════════════════════════════════
 
   it('01. WALLET_TRANSFER, EMPTY registry → byte-identical NONE commission snapshot', async () => {
-    const customerA = randomUUID();
+    const customerA = await eligibleCustomerId();
     const wA = await createWallet(customerA);
-    const wB = await createWallet(randomUUID());
+    const wB = await createWallet(await eligibleCustomerId());
     await fundWallet(wA.ledgerAccountId, '100000');
     const res = await tryTransfer(wA.id, wB.id, '21000', `c02-01-${randomUUID()}`);
     expect(res.success).toBe(true);
@@ -1122,8 +1147,8 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
       await seedFeeRule({ productCode, flatFeeMinor: '250' });
     }
     // WALLET_TRANSFER: no commission rule exists for it → engine answer is empty → NONE
-    const wA = await createWallet(randomUUID());
-    const wB = await createWallet(randomUUID());
+    const wA = await createWallet(await eligibleCustomerId());
+    const wB = await createWallet(await eligibleCustomerId());
     await fundWallet(wA.ledgerAccountId, '100000');
     const tx = await tryTransfer(wA.id, wB.id, '21000', `c02-13t-${randomUUID()}`);
     expect(tx.success).toBe(true);

@@ -77,6 +77,8 @@ import {
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 
 function hashPin(pin: string): string {
   const salt = randomBytes(16);
@@ -90,6 +92,8 @@ const ACCOUNT_LEGEND = {
   COMMISSION_EXPENSE: 'FINANCE-COMMISSION_EXPENSE-NGN',
   COMMISSION_PAYABLE: 'FINANCE-COMMISSION_PAYABLE-NGN',
 } as const;
+
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
 describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
   const expectLine = (lines: Array<any>, expected: Record<string, unknown>): void => {
@@ -188,6 +192,8 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .overrideProvider(A2WorkforceSessionService)
       .useValue(mockWorkforceSessions)
       .overrideProvider(A2_WORKFORCE_CONFIG)
@@ -352,6 +358,19 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       'test',
     );
     return rule.id;
+  }
+
+  /**
+   * A financially eligible customer for a wallet that the test only needs as an endpoint.
+   *
+   * These suites used a bare `randomUUID()` as the wallet owner. Once wallet owner classification
+   * landed, `wallet_owner_class()` returns `REVIEW` for an id that is not a customer or agent and
+   * `WalletService.createWallet` correctly refuses to provision such a wallet. A real, governed
+   * customer leaves the assertion under test (fee/commission/accounting behaviour) unchanged.
+   */
+  async function eligibleCustomerId(): Promise<string> {
+    const { customerId } = await createEligibleCustomer(dataSource, kycEvidence);
+    return customerId;
   }
 
   async function createWallet(
@@ -693,8 +712,8 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     expectedFeeMinor: string,
     expected: { minimumApplied?: boolean; maximumApplied?: boolean } = {},
   ) {
-    const a = await createWallet(randomUUID());
-    const b = await createWallet(randomUUID());
+    const a = await createWallet(await eligibleCustomerId());
+    const b = await createWallet(await eligibleCustomerId());
     await fundWallet(a.ledgerAccountId, '500000');
     await doTransfer(a.id, b.id, amountMinor, `csm01-${label}-${randomUUID()}`);
     const journals = await accountingJournals();
@@ -729,8 +748,8 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
 
   it('F01. ZERO / free: zero-parameter rule → status ZERO, no journal, principal-only balance delta', async () => {
     await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '0', vatBps: 0 });
-    const a = await createWallet(randomUUID());
-    const b = await createWallet(randomUUID());
+    const a = await createWallet(await eligibleCustomerId());
+    const b = await createWallet(await eligibleCustomerId());
     await fundWallet(a.ledgerAccountId, '500000');
     const view = await doTransfer(a.id, b.id, '40000', `csm01-f01-${randomUUID()}`);
     expect(view.status).toBe('COMPLETED');
@@ -847,8 +866,8 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
 
   it('V01. EXCLUSIVE low rate (100bps): fee 1000 → VAT 10 extra; payer debited 1010; 3 legs', async () => {
     await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1000', vatBps: 100 });
-    const a = await createWallet(randomUUID());
-    const b = await createWallet(randomUUID());
+    const a = await createWallet(await eligibleCustomerId());
+    const b = await createWallet(await eligibleCustomerId());
     await fundWallet(a.ledgerAccountId, '500000');
     await doTransfer(a.id, b.id, '50000', `csm01-v01-${randomUUID()}`);
     const lines = await linesForJournal((await accountingJournals())[0].id);
@@ -874,8 +893,8 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
 
   it('V02. EXCLUSIVE odd rate (999bps): fee 1234 → VAT = floor(1234*999/10000) = 123', async () => {
     await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1234', vatBps: 999 });
-    const a = await createWallet(randomUUID());
-    const b = await createWallet(randomUUID());
+    const a = await createWallet(await eligibleCustomerId());
+    const b = await createWallet(await eligibleCustomerId());
     await fundWallet(a.ledgerAccountId, '500000');
     await doTransfer(a.id, b.id, '50000', `csm01-v02-${randomUUID()}`);
     const lines = await linesForJournal((await accountingJournals())[0].id);
@@ -894,8 +913,8 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
   it('V03. INCLUSIVE (750bps): fee 1000 → VAT 69 inside; revenue 931; payer debited fee only', async () => {
     configureAccounting({ COMMERCIAL_ACCOUNTING_VAT_TREATMENT: 'INCLUSIVE_IN_FEE' });
     await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1000', vatBps: 750 });
-    const a = await createWallet(randomUUID());
-    const b = await createWallet(randomUUID());
+    const a = await createWallet(await eligibleCustomerId());
+    const b = await createWallet(await eligibleCustomerId());
     await fundWallet(a.ledgerAccountId, '500000');
     await doTransfer(a.id, b.id, '50000', `csm01-v03-${randomUUID()}`);
     const lines = await linesForJournal((await accountingJournals())[0].id);
@@ -920,8 +939,8 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
   it('V04. INCLUSIVE odd rate (200bps): fee 1001 → VAT = floor(1001*200/10200) = 19; revenue 982', async () => {
     configureAccounting({ COMMERCIAL_ACCOUNTING_VAT_TREATMENT: 'INCLUSIVE_IN_FEE' });
     await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1001', vatBps: 200 });
-    const a = await createWallet(randomUUID());
-    const b = await createWallet(randomUUID());
+    const a = await createWallet(await eligibleCustomerId());
+    const b = await createWallet(await eligibleCustomerId());
     await fundWallet(a.ledgerAccountId, '500000');
     await doTransfer(a.id, b.id, '50000', `csm01-v04-${randomUUID()}`);
     const lines = await linesForJournal((await accountingJournals())[0].id);
@@ -1121,8 +1140,8 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       percentageBps: 1000,
       calculationBasis: 'FEE',
     });
-    const a = await createWallet(randomUUID());
-    const b = await createWallet(randomUUID());
+    const a = await createWallet(await eligibleCustomerId());
+    const b = await createWallet(await eligibleCustomerId());
     await fundWallet(a.ledgerAccountId, '500000');
     await doTransfer(a.id, b.id, '50000', `csm01-c04-${randomUUID()}`);
     const lines = await linesForJournal((await accountingJournals())[0].id);
@@ -1178,7 +1197,7 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
   it('Y02. two independent accounting blockers → no journals, no snapshots, balances unchanged', async () => {
     // (a) VAT rate unset (rule vat_bps NULL) with fee>0 → COMMERCIAL_VAT_RATE_NOT_CONFIGURED.
     await seedFeeRule({ productCode: 'WALLET_TO_CASH', flatFeeMinor: '1000', vatBps: null });
-    const w1 = await createWallet(randomUUID());
+    const w1 = await createWallet(await eligibleCustomerId());
     await fundWallet(w1.ledgerAccountId, '500000');
     const bundle = await createActiveAgentWithPin([AgentService.CASH_OUT], '1234');
     const phone = newPhone();
@@ -1217,8 +1236,8 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       `DELETE FROM commercial_accounting_registry WHERE family_code='FEE_REVENUE'`,
     );
     await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1000', vatBps: 0 });
-    const a = await createWallet(randomUUID());
-    const b = await createWallet(randomUUID());
+    const a = await createWallet(await eligibleCustomerId());
+    const b = await createWallet(await eligibleCustomerId());
     await fundWallet(a.ledgerAccountId, '500000');
     try {
       await doTransfer(a.id, b.id, '50000', `csm01-y02b-${randomUUID()}`);

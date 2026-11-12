@@ -468,3 +468,47 @@ export async function makeCustomerFinanciallyEligible(
 
   return { identityRevision };
 }
+
+export interface CreateEligibleCustomerOptions extends EligibleCustomerOptions {
+  /** Customer `reference`; defaults to a unique `cust-fixture-<uuid>` value. */
+  reference?: string;
+  /** `customer_type`; defaults to INDIVIDUAL. */
+  customerType?: string;
+}
+
+/**
+ * Creates a customer row *and* makes it financially eligible in one call.
+ *
+ * For suites that only need "some customer with a wallet" — accounting, fee, commission,
+ * transfer and limit suites — this replaces the old `randomUUID()` placeholder, which stopped
+ * being a valid wallet owner when wallet owner classification landed
+ * (`wallet_owner_class()` returns `REVIEW` for an id that is not a customer or agent, and
+ * `WalletService.createWallet` then correctly refuses it).
+ *
+ * Unlike a bare `makeCustomerFinanciallyEligible` call, nothing else has to exist first: the
+ * customer, its profile, its single verified primary phone, the governed tier policy, the
+ * current APPROVED assessment and the MAC-bound identity evidence are all created here.
+ */
+export async function createEligibleCustomer(
+  dataSource: DataSource,
+  source: EligibleEvidenceSource,
+  options: CreateEligibleCustomerOptions = {},
+): Promise<{ customerId: string; identityRevision: string }> {
+  const rows: Array<{ id: string }> = await dataSource.query(
+    `INSERT INTO customers (reference, customer_type, status, kyc_level, kyc_status)
+     VALUES ($1,$2,'ACTIVE',$3,'APPROVED') RETURNING id`,
+    [
+      options.reference ?? `cust-fixture-${randomUUID()}`,
+      options.customerType ?? 'INDIVIDUAL',
+      options.level ?? 'LEVEL_1',
+    ],
+  );
+  const customerId = rows[0]!.id;
+  const { identityRevision } = await makeCustomerFinanciallyEligible(
+    dataSource,
+    customerId,
+    source,
+    options,
+  );
+  return { customerId, identityRevision };
+}
