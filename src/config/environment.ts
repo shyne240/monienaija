@@ -151,6 +151,18 @@ export const environmentSchema = z
     A2_RECOVERY_JWKS_JSON: optionalEnvironmentJson,
     A2_WORKFORCE_RATE_LIMITS_JSON: optionalEnvironmentJson,
     A2_TRUSTED_PROXY_ADDRESSES_JSON: optionalEnvironmentJson,
+    // KYC tier reevaluation worker (Batch 2C). It polls, so tests must be able to switch it off:
+    // an always-on background tick inside every suite's AppModule both races fixture setup and
+    // keeps opening database transactions while the suite tears down. Defaults to ON outside
+    // tests (unchanged production behaviour) and OFF under NODE_ENV=test; the explicit variable
+    // always wins, so a test that exercises the worker can turn it back on deliberately.
+    KYC_TIER_WORKER_ENABLED: booleanFromEnvironment.optional(),
+    KYC_TIER_WORKER_POLL_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(250)
+      .max(3_600_000)
+      .default(30000),
     A5_PILOT_EMERGENCY_STOP: booleanFromEnvironment.default(false),
     A6_PARTNER_ENABLED: booleanFromEnvironment.default(false),
     A6_PARTNER_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),

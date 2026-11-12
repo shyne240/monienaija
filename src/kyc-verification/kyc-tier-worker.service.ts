@@ -4,20 +4,36 @@ import type { KycTierTransitionService } from './kyc-tier-transition.service';
 import type { KycTierPolicyService } from './kyc-tier-policy.service';
 
 /** Bounded, persistent work; customer locks and queue revisions serialize concurrent workers. */
+export interface KycTierWorkerOptions {
+  /** Defaults to `KYC_TIER_WORKER_ENABLED`, then to "on unless NODE_ENV=test". */
+  enabled?: boolean;
+  /** Defaults to `KYC_TIER_WORKER_POLL_INTERVAL_MS`, then to 30000 ms. */
+  pollIntervalMs?: number;
+}
+
 @Injectable()
 export class KycTierWorker implements OnModuleInit, OnModuleDestroy {
   private timer: NodeJS.Timeout | null = null;
   private active: Promise<void> | null = null;
   private readonly logger = new Logger(KycTierWorker.name);
+  private readonly enabled: boolean;
+  private readonly pollIntervalMs: number;
   constructor(
     private readonly db: DataSource,
     private readonly transitions: KycTierTransitionService,
     private readonly policies: KycTierPolicyService,
-  ) {}
+    options: KycTierWorkerOptions = {},
+  ) {
+    this.enabled = options.enabled ?? process.env.NODE_ENV !== 'test';
+    this.pollIntervalMs = options.pollIntervalMs ?? 30000;
+  }
   onModuleInit() {
+    // Disabled means "no timer and no immediate tick". Tests default to disabled so a suite
+    // controls when reevaluation runs; production is unchanged because the default is on.
+    if (!this.enabled) return;
     this.timer = setInterval(() => {
       void this.tick();
-    }, 30000);
+    }, this.pollIntervalMs);
     this.timer.unref();
     void this.tick();
   }

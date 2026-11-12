@@ -1,5 +1,7 @@
 import { forwardRef, Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
+import type { Environment } from '../config/environment';
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { AuthorizationService } from '../authorization/authorization.service';
 import { OperationsModule } from '../operations/operations.module';
@@ -42,12 +44,17 @@ import { KycTierWorker } from './kyc-tier-worker.service';
     },
     {
       provide: KycTierWorker,
-      inject: [DataSource, KycTierTransitionService, KycTierPolicyService],
+      inject: [DataSource, KycTierTransitionService, KycTierPolicyService, ConfigService],
       useFactory: (
         db: DataSource,
         transitions: KycTierTransitionService,
         policies: KycTierPolicyService,
-      ) => new KycTierWorker(db, transitions, policies),
+        config: ConfigService<Environment, true>,
+      ) =>
+        new KycTierWorker(db, transitions, policies, {
+          enabled: config.get('KYC_TIER_WORKER_ENABLED', { infer: true }),
+          pollIntervalMs: config.get('KYC_TIER_WORKER_POLL_INTERVAL_MS', { infer: true }),
+        }),
     },
   ],
   exports: [KycTierTransitionService, CustomerFinancialEligibilityService],
