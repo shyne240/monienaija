@@ -160,6 +160,13 @@ describe('S-FIX-01 customer lifecycle authorization + session/status binding (re
     if (custStatus === 'CLOSED') {
       await dataSource.query(`UPDATE customers SET deleted_at = now() WHERE id = $1`, [customerId]);
     }
+    // Activation into ACTIVE is gated on the governed financial-eligibility invariants (verified
+    // primary phone, current APPROVED assessment, trusted evidence). The lifecycle *authorization*
+    // assertions are unchanged; the customer simply satisfies the same invariants production does.
+    // A non-ACTIVE customer keeps its status, so the lifecycle transitions under test still apply.
+    if (custStatus !== 'CLOSED') {
+      await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
+    }
     const hash = encodePbkdf2(password);
     await dataSource.query(
       `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
