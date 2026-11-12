@@ -54,7 +54,10 @@ import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 // fail-closed because nothing in AppModule references this module.
 const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
-import { restoreKycSingletons } from './support/kyc-test-fixtures';
+import {
+  makeCustomerFinanciallyEligible,
+  restoreKycSingletons,
+} from './support/kyc-test-fixtures';
 
 describe('notification reliability (real HTTP and PostgreSQL, synthetic providers only)', () => {
   let ds: DataSource;
@@ -203,6 +206,10 @@ describe('notification reliability (real HTTP and PostgreSQL, synthetic provider
        security_biometric_allowed,version) VALUES ($1,$2,'EN','SYSTEM',true,$3,true,true,true,true,true,false,1)`,
         [randomUUID(), id, options.preference ?? true],
       );
+    // This helper creates the customer with raw SQL only (no identity parts, no evidence), so the
+    // governed financial-eligibility gate would reject its wallet and funding flows. Suites that
+    // deliberately assert ineligibility pass { verified: false } and keep the unverifiable phone.
+    if (options.verified !== false) await makeCustomerFinanciallyEligible(ds, id, kycEvidence);
     return id;
   }
 
