@@ -64,8 +64,13 @@ export class WalletFinancialBoundaryService {
         throw new ConflictException('Wallet ownership requires review');
       if (row.owner_class === 'CUSTOMER')
         await this.eligibility.require(manager, row.customer_id.toLowerCase());
-      else if (row.owner_class !== 'AGENT')
-        throw new ConflictException('Wallet ownership requires review');
+      else if (row.owner_class === 'AGENT') {
+        const active = await manager.query<Array<{ id: string }>>(
+          "SELECT id FROM agents WHERE id=$1::uuid AND status='ACTIVE' AND deleted_at IS NULL FOR SHARE",
+          [row.customer_id],
+        );
+        if (active.length !== 1) throw new ConflictException('Agent wallet owner is not active');
+      } else throw new ConflictException('Wallet ownership requires review');
     }
   }
 }

@@ -31,7 +31,7 @@ export class WalletService {
   ) {}
 
   async createWallet(command: CreateWalletCommand): Promise<WalletView> {
-    const customerId = command.customerId.trim();
+    const customerId = command.customerId.trim().toLowerCase();
     const currency = normalizeCurrency(command.currency);
     const idempotencyKey = command.idempotencyKey?.trim();
 
@@ -79,7 +79,7 @@ export class WalletService {
     manager: EntityManager,
     command: CreateWalletCommand,
   ): Promise<WalletAccount> {
-    const customerId = command.customerId.trim();
+    const customerId = command.customerId.trim().toLowerCase();
     const currency = normalizeCurrency(command.currency);
     const idempotencyKey = command.idempotencyKey?.trim();
 
@@ -92,15 +92,11 @@ export class WalletService {
       );
     }
 
-    const classification = await manager.query<Array<{ owner_class: string }>>(
-      'SELECT wallet_owner_class($1) AS owner_class',
-      [customerId],
-    );
-    if (classification[0]?.owner_class === 'CUSTOMER')
-      await this.financialEligibility.require(manager, customerId.toLowerCase());
-    else if (classification[0]?.owner_class !== 'AGENT')
-      throw new ConflictException('Wallet owner requires review');
-
+    // Serialize provisioning by canonical owner and currency before checking historical
+    // rows, including legacy rows whose UUID was stored with different casing.
+    await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+      `wallet-owner:${customerId}:${currency}`,
+    ]);
     const repository = manager.getRepository(WalletAccount);
     const existingByKey = await repository.findOne({
       where: { creationIdempotencyKey: idempotencyKey },
@@ -110,8 +106,27 @@ export class WalletService {
       return existingByKey;
     }
 
-    const existingWallet = await repository.findOne({ where: { customerId, currency } });
-    if (existingWallet) {
+    const classification = await manager.query<Array<{ owner_class: string }>>(
+      'SELECT wallet_owner_class($1) AS owner_class',
+      [customerId],
+    );
+    if (classification[0]?.owner_class === 'CUSTOMER') {
+      await this.financialEligibility.require(manager, customerId);
+    } else if (classification[0]?.owner_class === 'AGENT') {
+      const active = await manager.query<Array<{ id: string }>>(
+        "SELECT id FROM agents WHERE id=$1::uuid AND status='ACTIVE' AND deleted_at IS NULL FOR SHARE",
+        [customerId],
+      );
+      if (active.length !== 1) throw new ConflictException('Agent wallet owner is not active');
+    } else {
+      throw new ConflictException('Wallet owner requires review');
+    }
+
+    const existingWallets = await manager.query<Array<{ id: string }>>(
+      'SELECT id FROM wallet_accounts WHERE lower(customer_id)=$1 AND currency=$2 LIMIT 1',
+      [customerId, currency],
+    );
+    if (existingWallets.length !== 0) {
       throw new ConflictException('A wallet already exists for this customer and currency');
     }
 
@@ -229,7 +244,7 @@ export class WalletService {
     customerId: string,
     currency: string,
   ): void {
-    if (wallet.customerId !== customerId || wallet.currency !== currency) {
+    if (wallet.customerId.toLowerCase() !== customerId || wallet.currency !== currency) {
       throw new ConflictException('The idempotency key was already used for another wallet');
     }
   }

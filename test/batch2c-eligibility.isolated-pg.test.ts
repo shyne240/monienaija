@@ -354,6 +354,48 @@ test('ledger posting gates existing customer wallets and separates agent and rev
     accountType: LedgerAccountType.ASSET,
     allowNegativeBalance: true,
   });
+  const legacyAgent = randomUUID();
+  await db.query(`INSERT INTO agents(id,reference,status) VALUES($1,$2,'ACTIVE')`, [
+    legacyAgent,
+    `agent-${legacyAgent}`,
+  ]);
+  const legacyLedger = await ledger.createAccount({
+    code: `legacy-${randomUUID()}`,
+    name: 'legacy agent wallet',
+    currency: 'NGN',
+    accountType: LedgerAccountType.LIABILITY,
+  });
+  await db.query(
+    `INSERT INTO wallet_accounts(id,customer_id,currency,status,ledger_account_id) VALUES($1,$2,'NGN','ACTIVE',$3)`,
+    [randomUUID(), legacyAgent.toUpperCase(), legacyLedger.id],
+  );
+  await expect(
+    app.get(WalletService).createWallet({
+      customerId: legacyAgent,
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    }),
+  ).rejects.toThrow('A wallet already exists');
+  const raceAgent = randomUUID();
+  await db.query(`INSERT INTO agents(id,reference,status) VALUES($1,$2,'ACTIVE')`, [
+    raceAgent,
+    `agent-${raceAgent}`,
+  ]);
+  const provisioningRace = await Promise.allSettled(
+    [raceAgent, raceAgent.toUpperCase()].map((customerId) =>
+      app
+        .get(WalletService)
+        .createWallet({ customerId, currency: 'NGN', idempotencyKey: randomUUID() }),
+    ),
+  );
+  expect(provisioningRace.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+  expect(provisioningRace.filter((result) => result.status === 'rejected')).toHaveLength(1);
+  expect(
+    await db.query(
+      `SELECT count(*)::int AS count FROM wallet_accounts WHERE lower(customer_id)=$1`,
+      [raceAgent],
+    ),
+  ).toEqual([{ count: 1 }]);
   const tryPosting = async (accountId: string) => {
     const runner = db.createQueryRunner();
     await runner.connect();
@@ -374,6 +416,34 @@ test('ledger posting gates existing customer wallets and separates agent and rev
   };
   await expect(tryPosting(wallet.ledgerAccountId)).resolves.toBeDefined();
   await expect(tryPosting(agentWallet.ledgerAccountId)).resolves.toBeDefined();
+  await expect(
+    app.get(WalletService).createWallet({
+      customerId: customer.toUpperCase(),
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    }),
+  ).rejects.toThrow('A wallet already exists');
+  await db.query(`UPDATE agents SET status='SUSPENDED' WHERE id=$1`, [agent]);
+  await expect(tryPosting(agentWallet.ledgerAccountId)).rejects.toThrow(
+    'Agent wallet owner is not active',
+  );
+  await db.query(`UPDATE agents SET status='ACTIVE', deleted_at=now() WHERE id=$1`, [agent]);
+  await expect(tryPosting(agentWallet.ledgerAccountId)).rejects.toThrow(
+    'Agent wallet owner is not active',
+  );
+  await db.query(`UPDATE agents SET deleted_at=NULL WHERE id=$1`, [agent]);
+  const inactiveAgent = randomUUID();
+  await db.query(`INSERT INTO agents(id,reference,status) VALUES($1,$2,'PENDING')`, [
+    inactiveAgent,
+    `agent-${inactiveAgent}`,
+  ]);
+  await expect(
+    app.get(WalletService).createWallet({
+      customerId: inactiveAgent,
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    }),
+  ).rejects.toThrow('Agent wallet owner is not active');
   const { ExternalOperationService } = await import('../src/partner/external-operation.service');
   const { ExternalOperationResourceType } = await import('../src/partner/external-operation.enums');
   const operationCommand = {
