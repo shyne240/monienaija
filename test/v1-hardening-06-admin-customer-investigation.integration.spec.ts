@@ -21,12 +21,18 @@ import {
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 function encodePbkdf2(password: string, saltStr = 'hard06-salt'): string {
   const salt = Buffer.from(saltStr);
   const digest = pbkdf2Sync(password, salt, 10_000, 32, 'sha256');
   return `PBKDF2$sha256$10000$${salt.toString('base64url')}$${digest.toString('base64url')}`;
 }
+
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+const customerEligibilityApplied = new Set<string>();
 
 describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () => {
   let dataSource: DataSource;
@@ -95,6 +101,8 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .overrideProvider(A2WorkforceSessionService)
       .useValue(mockWorkforceSessions)
       .overrideProvider(A2_WORKFORCE_CONFIG)
@@ -153,6 +161,12 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
       `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
       [customerId, hash],
     );
+    // Complete the governed customer: the wallet path and admin investigation surfaces are gated on
+    // financial eligibility, and this helper creates the customer with raw SQL only.
+    if (!customerEligibilityApplied.has(customerId)) {
+      await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
+      customerEligibilityApplied.add(customerId);
+    }
     return { customerId, phone, reference };
   }
 

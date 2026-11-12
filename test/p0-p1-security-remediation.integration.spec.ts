@@ -291,17 +291,15 @@ describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
       );
       customerIds.push(rows[0].id);
     }
-    // The wallet path is gated on financial eligibility; this helper builds its customer with
-    // raw SQL, so complete the governed customer before provisioning the wallet.
-    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
+    // The wallet path is gated on financial eligibility; this helper builds its customers with raw
+    // SQL, so complete each governed customer before provisioning its wallet.
+    await makeCustomerFinanciallyEligible(dataSource, customerIds[0], kycEvidence);
     const source = await walletService.createWallet({
       customerId: customerIds[0],
       currency: 'NGN',
       idempotencyKey: `p0a-source-${randomUUID()}`,
     });
-    // The wallet path is gated on financial eligibility; this helper builds its customer with
-    // raw SQL, so complete the governed customer before provisioning the wallet.
-    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
+    await makeCustomerFinanciallyEligible(dataSource, customerIds[1], kycEvidence);
     const destination = await walletService.createWallet({
       customerId: customerIds[1],
       currency: 'NGN',
