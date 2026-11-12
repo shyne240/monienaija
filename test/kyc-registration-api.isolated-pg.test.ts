@@ -34,15 +34,18 @@ import type {
 import { KycRegistrationSessions1785753600107 } from '../src/migrations/1785753600107-KycRegistrationSessions';
 import { KycRegistrationAttempts1785753600108 } from '../src/migrations/1785753600108-KycRegistrationAttempts';
 import { CUSTOMER_REGISTRATION_RATE_LIMITS } from '../src/customer-registration/customer-registration.constants';
+import { assertIsolatedKycCluster, isolatedKycCluster } from './support/kyc-isolated-cluster';
 
-const socket = process.env.KYC_ISOLATED_TEST_SOCKET ?? '';
-if (!/^\/home\/user\/m25c-isolated-pgsocket\/kyc-batch1-[A-Za-z0-9]+$/.test(socket))
-  throw new Error('Disposable KYC socket required');
+// Portable provenance: see test/support/kyc-isolated-cluster.ts. No absolute path from any one
+// developer's machine is embedded here; the runner (scripts/run-isolated-kyc-tests.js) creates
+// the disposable cluster and exports KYC_ISOLATED_TEST_SOCKET.
+const cluster = isolatedKycCluster();
+const socket = cluster.socketDirectory;
 const schema = `kyc_api_test_${randomUUID().replace(/-/g, '')}`;
 const db = new DataSource({
   type: 'postgres',
   host: socket,
-  port: 55461,
+  port: cluster.port,
   username: 'kyc_synthetic',
   database: 'postgres',
   synchronize: false,
@@ -106,15 +109,10 @@ const verification = (
 ) => ({ sessionId, consentId, requestId, kind, identifier: '00000000000' });
 beforeAll(async () => {
   await db.initialize();
-  const loc = await db.query<Array<{ data_directory: string }>>('SHOW data_directory');
-  const listen = await db.query<Array<{ listen_addresses: string }>>('SHOW listen_addresses');
-  const version = await db.query<Array<{ server_version: string }>>('SHOW server_version');
-  if (
-    !/^\/home\/user\/kyc-batch1-pg-[A-Za-z0-9]+$/.test(loc[0]?.data_directory ?? '') ||
-    listen[0]?.listen_addresses !== '' ||
-    !version[0]?.server_version.startsWith('16.')
-  )
-    throw new Error('Not isolated PostgreSQL 16');
+  await assertIsolatedKycCluster(db, cluster);
+  // Cluster provenance is asserted by the shared helper (marker + manifest + socket-only +
+  // minimum server version). It used to be re-implemented here against a hardcoded path.
+  await assertIsolatedKycCluster(db, cluster);
   await db.query(`CREATE SCHEMA ${schema}`);
   created = true;
   await db.query(
@@ -378,7 +376,7 @@ describe('registration session Nest/Fastify API on synthetic PostgreSQL', () => 
       {
         cwd: process.cwd(),
         env: { PATH: process.env.PATH ?? '', TS_NODE_PROJECT: 'tsconfig.json' },
-        input: JSON.stringify({ socket, schema, id: s.id, token: s.authorization }),
+        input: JSON.stringify({ socket, port: cluster.port, schema, id: s.id, token: s.authorization }),
         encoding: 'utf8',
         timeout: 20000,
       },

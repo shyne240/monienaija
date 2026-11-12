@@ -4,15 +4,46 @@
 // SSO, DNS and other outbound network calls fail immediately.
 const net = require('node:net');
 const dns = require('node:dns');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const loopback = (host) => host === undefined || host === null || host === '' ||
   host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '::ffff:127.0.0.1';
+// Unix-socket database connections are local by definition, but the previous allowlist named one
+// developer's absolute directory. Accept instead: the directory the isolated-KYC runner exported
+// for this run, any run directory carrying the runner's disposable marker, and PostgreSQL's
+// conventional /tmp socket. Nothing outside this machine can be named by a filesystem path.
+const ISOLATED_MARKER = '.kyc-isolated-disposable-cluster';
+const hasMarker = (directory) =>
+  fs.existsSync(path.join(directory, ISOLATED_MARKER)) ||
+  fs.existsSync(path.join(path.dirname(directory), ISOLATED_MARKER));
+const allowedSocketPath = (candidate) => {
+  if (typeof candidate !== 'string' || candidate === '') return true;
+  const resolved = path.resolve(candidate);
+  const exported = process.env.KYC_ISOLATED_TEST_SOCKET;
+  if (exported && resolved.startsWith(path.resolve(exported))) return true;
+  // The candidate may be the run's socket directory (pg passes the directory as `host`) or the
+  // socket file itself (`<dir>/.s.PGSQL.<port>`, passed as `path`). Both are accepted only when
+  // the runner's marker is present for that directory or its direct parent.
+  if (hasMarker(resolved)) return true;
+  const parent = path.dirname(resolved);
+  if (hasMarker(parent)) return true;
+  // PostgreSQL's conventional default socket location, when that is all we were given.
+  return (
+    parent === os.tmpdir() && /^\.s\.PGSQL\.\d+$/.test(path.basename(resolved))
+  );
+};
 const originalConnect = net.Socket.prototype.connect;
 net.Socket.prototype.connect = function (...args) {
   const a = args[0];
   const options = Array.isArray(a) ? a[0] : a;
   const host = options && typeof options === 'object' ? options.host : typeof args[1] === 'string' ? args[1] : undefined;
-  const path = options && typeof options === 'object' ? options.path : (typeof options === 'string' ? options : undefined);
-  if (!loopback(host) || (path && !String(path).startsWith('/home/user/m25c-isolated-pgsocket/'))) {
+  const socketPath = options && typeof options === 'object' ? options.path : (typeof options === 'string' ? options : undefined);
+  // A unix-socket PostgreSQL connection presents the socket *directory* as `host` (and, for some
+  // clients, the socket file as `path`). Both are allowed only when the disposable-cluster
+  // evidence above holds; anything else that is not loopback stays blocked.
+  const hostIsDisposableSocket = typeof host === 'string' && allowedSocketPath(host);
+  if ((!loopback(host) && !hostIsDisposableSocket) || !allowedSocketPath(socketPath)) {
     throw new Error('M25C_TEST_OUTBOUND_NETWORK_BLOCKED');
   }
   return originalConnect.apply(this, args);

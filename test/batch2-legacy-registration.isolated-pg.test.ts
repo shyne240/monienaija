@@ -6,17 +6,20 @@ import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
+import { assertIsolatedKycCluster, isolatedKycCluster } from './support/kyc-isolated-cluster';
 import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
 
-const socket = process.env.KYC_ISOLATED_TEST_SOCKET ?? '';
-if (!/^\/home\/user\/m25c-isolated-pgsocket\/kyc-batch1-[A-Za-z0-9]+$/.test(socket))
-  throw new Error('Disposable KYC socket required');
+// Portable provenance: see test/support/kyc-isolated-cluster.ts. No absolute path from any one
+// developer's machine is embedded here; the runner (scripts/run-isolated-kyc-tests.js) creates
+// the disposable cluster and exports KYC_ISOLATED_TEST_SOCKET.
+const cluster = isolatedKycCluster();
+const socket = cluster.socketDirectory;
 const name = `kyc_batch2_${randomUUID().replace(/-/g, '')}`;
 const admin = new DataSource({
   type: 'postgres',
   host: socket,
-  port: 55461,
+  port: cluster.port,
   username: 'kyc_synthetic',
   database: 'postgres',
   synchronize: false,
@@ -31,21 +34,15 @@ const sms = new TestNotificationProvider();
 
 beforeAll(async () => {
   await admin.initialize();
-  const [location] = await admin.query<Array<{ data_directory: string }>>('SHOW data_directory');
-  const [listen] = await admin.query<Array<{ listen_addresses: string }>>('SHOW listen_addresses');
-  const [version] = await admin.query<Array<{ server_version: string }>>('SHOW server_version');
-  if (
-    !/^\/home\/user\/kyc-batch1-pg-[A-Za-z0-9]+$/.test(location?.data_directory ?? '') ||
-    listen?.listen_addresses !== '' ||
-    !version?.server_version.startsWith('16.')
-  )
-    throw new Error('Not an independently isolated PostgreSQL 16 cluster');
+  // Cluster provenance is asserted by the shared helper (marker + manifest + socket-only +
+  // minimum server version). It used to be re-implemented here against a hardcoded path.
+  await assertIsolatedKycCluster(admin, cluster);
   await admin.query(`CREATE DATABASE "${name}"`);
   created = true;
   db = new DataSource({
     type: 'postgres',
     host: socket,
-    port: 55461,
+    port: cluster.port,
     username: 'kyc_synthetic',
     database: name,
     synchronize: false,
@@ -55,6 +52,7 @@ beforeAll(async () => {
     migrations: [`${__dirname}/../src/migrations/*.ts`],
   });
   await db.initialize();
+  await assertIsolatedKycCluster(db, cluster);
   await db.runMigrations({ transaction: 'all' });
   const { AppModule } = await import('../src/app.module');
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })

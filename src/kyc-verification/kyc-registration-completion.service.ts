@@ -1,4 +1,6 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { DataSource, EntityManager } from 'typeorm';
 import { QueryFailedError } from 'typeorm';
 import type { AuditService } from '../operations/audit.service';
@@ -23,6 +25,40 @@ import { constantTimeMacEqual, identityBindingMac, UUID } from './kyc-orchestrat
 import { KycFoundationError } from './kyc.types';
 
 type View = { customerId: string; status: 'DRAFT'; kind: 'BVN' | 'NIN'; simulated: true };
+
+/**
+ * Provenance contract for the disposable, socket-only cluster the synthetic registration
+ * completion path may run against. Written by `scripts/run-isolated-kyc-tests.js`.
+ *
+ * This deliberately checks *evidence* rather than any one machine's spelling: the previous
+ * version of this guard hardcoded `/home/user/m25c-isolated-pgsocket/...` and required
+ * PostgreSQL 16, so it was unreachable anywhere else while looking like a security control.
+ * The requirements are unchanged in force, and stricter in kind:
+ *
+ *   1. the connection is a unix socket at an absolute path whose directory basename starts with
+ *      `socket`;
+ *   2. that directory's parent carries the runner's disposable marker;
+ *   3. `cluster.json` there describes a cluster whose `socketDirectory` is this socket and whose
+ *      `dataDirectory` is the `data_directory` the server actually reports;
+ *   4. the server version is at least `minimumServerVersion` (default 16) rather than 16 exactly.
+ */
+const DISPOSABLE_MARKER = '.kyc-isolated-disposable-cluster';
+const DISPOSABLE_MANIFEST = 'cluster.json';
+
+function disposableClusterManifest(host: unknown): Record<string, unknown> | null {
+  if (typeof host !== 'string' || !isAbsolute(host)) return null;
+  const socketDirectory = resolve(host);
+  const runDirectory = dirname(socketDirectory);
+  if (!existsSync(join(runDirectory, DISPOSABLE_MARKER))) return null;
+  const manifestPath = join(runDirectory, DISPOSABLE_MANIFEST);
+  if (!existsSync(manifestPath)) return null;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
 /** Only synthetic fixture attempts, only in an independently isolated socket-only test DB. */
 export class KycRegistrationCompletionService {
   constructor(
@@ -32,14 +68,19 @@ export class KycRegistrationCompletionService {
   ) {}
   async assertDisposable(m: EntityManager): Promise<void> {
     const options = this.db.options;
+    const host = options.type === 'postgres' ? options.host : undefined;
+    const manifest = disposableClusterManifest(host);
+    const manifestSocket = manifest?.socketDirectory;
     if (
       !this.sessions.simulationAvailable() ||
       options.type !== 'postgres' ||
-      typeof options.host !== 'string' ||
-      !/^\/home\/user\/m25c-isolated-pgsocket\/kyc-batch1-[A-Za-z0-9]+$/.test(options.host) ||
       options.username !== 'kyc_synthetic' ||
       typeof options.database !== 'string' ||
-      !/^kyc_batch2_[a-f0-9]{32}$/.test(options.database)
+      !/^kyc_batch2_[a-f0-9]{32}$/.test(options.database) ||
+      !manifest ||
+      typeof manifestSocket !== 'string' ||
+      !isAbsolute(manifestSocket) ||
+      resolve(manifestSocket) !== resolve(host ?? '')
     )
       throw new KycFoundationError('DISABLED');
     const rows = await m.query<
@@ -55,14 +96,18 @@ export class KycRegistrationCompletionService {
       `SELECT current_database() AS db,current_user AS username,inet_server_addr()::text AS address,current_setting('listen_addresses') AS listen,current_setting('data_directory') AS directory,current_setting('server_version') AS version`,
     );
     const r = rows[0];
+    const minimumServerVersion =
+      typeof manifest.minimumServerVersion === 'number' ? manifest.minimumServerVersion : 16;
     if (
       !r ||
       r.db !== options.database ||
       r.username !== 'kyc_synthetic' ||
       r.address !== null ||
       r.listen !== '' ||
-      !/^\/home\/user\/kyc-batch1-pg-[A-Za-z0-9]+$/.test(r.directory) ||
-      !r.version.startsWith('16.')
+      typeof manifest.dataDirectory !== 'string' ||
+      !isAbsolute(manifest.dataDirectory) ||
+      resolve(r.directory) !== resolve(manifest.dataDirectory) ||
+      Number.parseInt(r.version, 10) < minimumServerVersion
     )
       throw new KycFoundationError('DISABLED');
   }

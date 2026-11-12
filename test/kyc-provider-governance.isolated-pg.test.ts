@@ -7,6 +7,7 @@ import { RuntimeAccessGuard } from '../src/authorization/runtime-access.guard';
 import { RoutePolicyRegistry } from '../src/authorization/route-policy-registry';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
+import { assertIsolatedKycCluster, isolatedKycCluster } from './support/kyc-isolated-cluster';
 import { KycProviderGovernance1785753600109 } from '../src/migrations/1785753600109-KycProviderGovernance';
 import {
   KycProviderGovernanceService,
@@ -14,14 +15,16 @@ import {
 } from '../src/kyc-verification/kyc-provider-governance.service';
 import { AuthorizationService } from '../src/authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
-const socket = process.env.KYC_ISOLATED_TEST_SOCKET ?? '';
-if (!/^\/home\/user\/m25c-isolated-pgsocket\/kyc-batch1-[A-Za-z0-9]+$/.test(socket))
-  throw new Error('Disposable KYC socket required');
+// Portable provenance: see test/support/kyc-isolated-cluster.ts. No absolute path from any one
+// developer's machine is embedded here; the runner (scripts/run-isolated-kyc-tests.js) creates
+// the disposable cluster and exports KYC_ISOLATED_TEST_SOCKET.
+const cluster = isolatedKycCluster();
+const socket = cluster.socketDirectory;
 const schema = `kyc_gov_${randomUUID().replace(/-/g, '')}`;
 const db = new DataSource({
   type: 'postgres',
   host: socket,
-  port: 55461,
+  port: cluster.port,
   username: 'kyc_synthetic',
   database: 'postgres',
   synchronize: false,
@@ -53,15 +56,10 @@ let svc: KycProviderGovernanceService;
 let created = false;
 beforeAll(async () => {
   await db.initialize();
-  const loc = await db.query<Array<{ data_directory: string }>>('SHOW data_directory');
-  const listen = await db.query<Array<{ listen_addresses: string }>>('SHOW listen_addresses');
-  const ver = await db.query<Array<{ server_version: string }>>('SHOW server_version');
-  if (
-    !/^\/home\/user\/kyc-batch1-pg-[A-Za-z0-9]+$/.test(loc[0]?.data_directory ?? '') ||
-    listen[0]?.listen_addresses !== '' ||
-    !ver[0]?.server_version.startsWith('16.')
-  )
-    throw new Error('Not isolated PostgreSQL 16');
+  await assertIsolatedKycCluster(db, cluster);
+  // Cluster provenance is asserted by the shared helper (marker + manifest + socket-only +
+  // minimum server version). It used to be re-implemented here against a hardcoded path.
+  await assertIsolatedKycCluster(db, cluster);
   await db.query(`CREATE SCHEMA ${schema}`);
   created = true;
   const runner = db.createQueryRunner();
@@ -267,7 +265,7 @@ test('migration backfills dedicated grants in an already-seeded catalogue', asyn
   const isolated = new DataSource({
     type: 'postgres',
     host: socket,
-    port: 55461,
+    port: cluster.port,
     username: 'kyc_synthetic',
     database: 'postgres',
     synchronize: false,

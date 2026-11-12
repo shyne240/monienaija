@@ -96,6 +96,28 @@ const MAX_OLD_SPACE_MB = positiveInteger('PG_TEST_MAX_OLD_SPACE_MB', 1536, 16384
 const CONCURRENCY = positiveInteger('PG_TEST_CONCURRENCY', 1, 16);
 
 /**
+ * Failure classification. A run that "fails" because the heap ran out is an infrastructure
+ * defect in this mission's scope; a run that fails because a suite's expectations no longer
+ * match application behaviour is not. They must never be reported as the same thing.
+ */
+const MEMORY_FAILURE_PATTERNS = [
+  /JavaScript heap out of memory/i,
+  /Reached heap limit Allocation failed/i,
+  /FATAL ERROR: .*heap/i,
+  /Allocation failed - JavaScript heap/i,
+  /ENOMEM/i,
+  /Cannot allocate memory/i,
+];
+const TIMEOUT_PATTERNS = [
+  /Exceeded timeout of \d+ ms/i,
+  /A worker process has failed to exit gracefully/i,
+  /Test suite failed to run[\s\S]{0,400}timeout/i,
+];
+
+/** Collected batch outcomes for the machine-readable run summary. */
+const batchResults = [];
+
+/**
  * Run namespace for generated integration-test databases (see test/support/pg-run-namespace.ts
  * — keep this pattern in sync with RUN_IDENTIFIER_PATTERN there). The runner accepts a
  * caller-provided PG_TEST_RUN_ID and validates it; an invalid value fails fast rather than
@@ -163,16 +185,33 @@ function runBatch(files, index, total) {
       ],
       {
         cwd: ROOT,
-        stdio: 'inherit',
+        // Piped (not 'inherit') so the batch tail can be inspected for heap-exhaustion and
+        // timeout signatures; the runner echoes every chunk verbatim and in order.
+        stdio: ['ignore', 'pipe', 'pipe'],
         // Every batch process shares this run's namespace: the harness embeds
         // PG_TEST_RUN_ID in every generated database name (see test/support/pg-run-namespace.ts).
         env: { ...process.env, PG_TEST_RUN_ID: RUN_IDENTIFIER },
       },
     );
+    // Output is inherited by the terminal, but also mirrored through a small tail buffer so a
+    // batch can be classified (heap exhaustion vs. ordinary test failure) without re-reading
+    // the whole log. Batches run one at a time per worker, so the buffer is per-spawn.
+    const tail = [];
+    const record = (chunk) => {
+      process.stdout.write(chunk);
+      tail.push(chunk.toString());
+      while (tail.length > 400) tail.shift();
+    };
+    child.stdout.on('data', record);
+    child.stderr.on('data', (chunk) => {
+      process.stderr.write(chunk);
+      tail.push(chunk.toString());
+      while (tail.length > 400) tail.shift();
+    });
     child.once('error', (error) => {
       process.stderr.write(`PG batch ${index + 1} failed to start: ${error.message}\n`);
       process.stderr.write(`Unexecuted files: ${files.join(', ')}\n`);
-      resolve(false);
+      resolve({ ok: false, files, memoryFailure: false, timeout: false, crash: true });
     });
     child.once('exit', (code, signal) => {
       process.stdout.write(
@@ -181,7 +220,14 @@ function runBatch(files, index, total) {
       if (signal) {
         process.stderr.write(`Batch interrupted; suite results may be incomplete: ${files.join(', ')}\n`);
       }
-      resolve(code === 0 && !signal);
+      const joined = tail.join('\n');
+      resolve({
+        ok: code === 0 && !signal,
+        files,
+        memoryFailure: MEMORY_FAILURE_PATTERNS.some((pattern) => pattern.test(joined)),
+        timeout: TIMEOUT_PATTERNS.some((pattern) => pattern.test(joined)),
+        crash: Boolean(signal) && !MEMORY_FAILURE_PATTERNS.some((pattern) => pattern.test(joined)),
+      });
     });
   });
 }
@@ -223,8 +269,37 @@ async function main() {
     throw new Error('No integration test files were discovered — the glob may be broken.');
   }
   const batches = chunk(files, BATCH_SIZE);
+  const startedAt = Date.now();
   const results = await runWithConcurrency(batches, CONCURRENCY);
-  const anyFailed = results.some((ok) => !ok);
+  batchResults.push(...results);
+  const anyFailed = results.some((result) => !result.ok);
+  const failingFiles = results
+    .filter((result) => !result.ok)
+    .flatMap((result) => result.files)
+    .map((file) => file.replace(`${ROOT}/`, ''));
+  const summary = {
+    runId: RUN_IDENTIFIER,
+    nodeEnv: process.env.NODE_ENV,
+    filesDiscovered: files.length,
+    batches: batches.length,
+    batchSize: BATCH_SIZE,
+    concurrency: CONCURRENCY,
+    maxOldSpaceMb: MAX_OLD_SPACE_MB,
+    durationMs: Date.now() - startedAt,
+    passingBatches: results.filter((result) => result.ok).length,
+    failingBatches: results.filter((result) => !result.ok).length,
+    // `undefined` entries (files never reached because a batch crashed) are not counted as
+    // failures -- they are reported through `failingFiles` and `unexplainedCrashes`.
+    memoryFailures: results.filter((result) => result.memoryFailure).length,
+    timeouts: results.filter((result) => result.timeout).length,
+    unexplainedCrashes: results.filter((result) => result.crash).length,
+    failingFiles,
+  };
+  process.stdout.write(`\nPG_TEST_SUMMARY ${JSON.stringify(summary)}\n`);
+  const summaryPath = process.env.PG_TEST_SUMMARY_PATH;
+  if (summaryPath) {
+    require('fs').writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
+  }
   process.stdout.write(
     `\n=== PG integration suite: ${batches.length} batch(es), ${files.length} files, concurrency=${CONCURRENCY} — ${
       anyFailed ? 'FAILED' : 'all passed'

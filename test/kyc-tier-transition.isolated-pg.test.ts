@@ -21,14 +21,17 @@ import { KycTierTransitionService } from '../src/kyc-verification/kyc-tier-trans
 import { KycTierWorker } from '../src/kyc-verification/kyc-tier-worker.service';
 import { identityBindingMac } from '../src/kyc-verification/kyc-orchestrator';
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
-const socket = process.env.KYC_ISOLATED_TEST_SOCKET ?? '';
-if (!/^\/home\/user\/m25c-isolated-pgsocket\/kyc-batch1-[A-Za-z0-9]+$/.test(socket))
-  throw new Error('Disposable KYC socket required');
+import { assertIsolatedKycCluster, isolatedKycCluster } from './support/kyc-isolated-cluster';
+// Portable provenance: see test/support/kyc-isolated-cluster.ts. No absolute path from any one
+// developer's machine is embedded here; the runner (scripts/run-isolated-kyc-tests.js) creates
+// the disposable cluster and exports KYC_ISOLATED_TEST_SOCKET.
+const cluster = isolatedKycCluster();
+const socket = cluster.socketDirectory;
 const schema = `kyc_tier_${randomUUID().replace(/-/g, '')}`;
 const db = new DataSource({
   type: 'postgres',
   host: socket,
-  port: 55461,
+  port: cluster.port,
   username: 'kyc_synthetic',
   database: 'postgres',
   synchronize: false,
@@ -107,15 +110,7 @@ async function state(id: string) {
 }
 beforeAll(async () => {
   await db.initialize();
-  const loc = await db.query<Array<{ data_directory: string }>>('SHOW data_directory'),
-    listen = await db.query<Array<{ listen_addresses: string }>>('SHOW listen_addresses'),
-    ver = await db.query<Array<{ server_version: string }>>('SHOW server_version');
-  if (
-    !/^\/home\/user\/kyc-batch1-pg-[A-Za-z0-9]+$/.test(loc[0]?.data_directory ?? '') ||
-    listen[0]?.listen_addresses !== '' ||
-    !ver[0]?.server_version.startsWith('16.')
-  )
-    throw new Error('Not isolated PostgreSQL 16');
+  await assertIsolatedKycCluster(db, cluster);
   await db.query(`CREATE SCHEMA ${schema}`);
   created = true;
   await db.query(

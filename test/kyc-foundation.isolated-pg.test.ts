@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest assertions inspect mock functions without invoking them. */
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
+import { assertIsolatedKycCluster, isolatedKycCluster } from './support/kyc-isolated-cluster';
 import { AuthorizationService } from '../src/authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 import type { AuditService } from '../src/operations/audit.service';
@@ -19,14 +20,16 @@ import type {
 } from '../src/kyc-verification/kyc.types';
 
 // This test refuses all TCP, normal app databases, and non-disposable socket paths.
-const socket = process.env.KYC_ISOLATED_TEST_SOCKET ?? '';
-if (!/^\/home\/user\/m25c-isolated-pgsocket\/kyc-batch1-[A-Za-z0-9]+$/.test(socket))
-  throw new Error('Disposable KYC socket required');
+// Portable provenance: see test/support/kyc-isolated-cluster.ts. No absolute path from any one
+// developer's machine is embedded here; the runner (scripts/run-isolated-kyc-tests.js) creates
+// the disposable cluster and exports KYC_ISOLATED_TEST_SOCKET.
+const cluster = isolatedKycCluster();
+const socket = cluster.socketDirectory;
 const schema = `kyc_test_${randomUUID().replace(/-/g, '')}`;
 const db = new DataSource({
   type: 'postgres',
   host: socket,
-  port: 55461,
+  port: cluster.port,
   username: 'kyc_synthetic',
   database: 'postgres',
   synchronize: false,
@@ -83,13 +86,10 @@ const makeProvider = (verify: KycProvider['verify'], code = 'SYNTHETIC'): KycPro
 
 beforeAll(async () => {
   await db.initialize();
-  const location = await db.query<Array<{ data_directory: string }>>('SHOW data_directory');
-  const listen = await db.query<Array<{ listen_addresses: string }>>('SHOW listen_addresses');
-  if (
-    !/^\/home\/user\/kyc-batch1-pg-[A-Za-z0-9]+$/.test(location[0]?.data_directory ?? '') ||
-    listen[0]?.listen_addresses !== ''
-  )
-    throw new Error('Not a disposable socket-only test cluster');
+  await assertIsolatedKycCluster(db, cluster);
+  // Cluster provenance is asserted by the shared helper (marker + manifest + socket-only +
+  // minimum server version). It used to be re-implemented here against a hardcoded path.
+  await assertIsolatedKycCluster(db, cluster);
   await db.query(`CREATE SCHEMA ${schema}`);
   schemaCreated = true;
   await db.query(
