@@ -15,6 +15,19 @@ const EXPECTED_MIGRATION_NAME = 'WalletOwnerClassification1785753600116';
 
 type Row = Record<string, unknown>;
 
+// No production evidence adapter is configured, and no end-to-end health probes yet
+// establish the remaining governance dependencies. Do not turn environment flags or
+// test evidence into a readiness override. Replace these blockers only alongside real,
+// independently verified integrations and their readiness checks.
+const FINANCIAL_DEPENDENCY_BLOCKERS: readonly string[] = [
+  'trusted_kyc_evidence_reader_unavailable',
+  'identity_key_versions_unverified',
+  'effective_kyc_policy_unverified',
+  'provider_governance_and_routing_unverified',
+  'wallet_ownership_governance_unverified',
+  'financial_authorization_dependencies_unverified',
+];
+
 @Injectable()
 export class ProductionReadinessService {
   constructor(
@@ -54,7 +67,8 @@ export class ProductionReadinessService {
       database.status === 'ok' &&
       migrations.compatible &&
       reconciliation !== 'ERROR' &&
-      pendingOutbox >= 0
+      pendingOutbox >= 0 &&
+      FINANCIAL_DEPENDENCY_BLOCKERS.length === 0
         ? 'ok'
         : 'error';
     const reason =
@@ -66,7 +80,9 @@ export class ProductionReadinessService {
             ? 'schema_incompatible'
             : reconciliation === 'ERROR'
               ? 'reconciliation_not_ready'
-              : 'outbox_unavailable';
+              : pendingOutbox < 0
+                ? 'outbox_unavailable'
+                : 'financial_dependencies_not_ready';
     return {
       status,
       reason,
@@ -75,6 +91,10 @@ export class ProductionReadinessService {
       database,
       migrations,
       reconciliation: { status: reconciliation },
+      financialDependencies: {
+        status: 'error' as const,
+        blockers: [...FINANCIAL_DEPENDENCY_BLOCKERS],
+      },
       pendingOutbox,
       checkedAt: new Date().toISOString(),
     };

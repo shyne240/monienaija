@@ -666,3 +666,16 @@ test('legacy classification preserves rows and leaves unknown or colliding refer
     await runner.release();
   }
 });
+
+test('fully migrated AppModule does not claim financial readiness without production dependencies', async () => {
+  const { ProductionReadinessService } = await import(
+    '../src/production/production-readiness.service'
+  );
+  const readiness = await app.get(ProductionReadinessService).getReadiness();
+  expect(readiness.migrations.compatible).toBe(true);
+  expect(readiness.status).toBe('error');
+  expect(readiness.financialDependencies.blockers).toContain(
+    'trusted_kyc_evidence_reader_unavailable',
+  );
+  await expect(app.get(ProductionReadinessService).verifyStartup()).rejects.toThrow();
+});

@@ -97,19 +97,31 @@ describe('M8 production readiness', () => {
       new ReadinessDataSource() as unknown as DataSource,
       new ReconciliationStub() as never,
     );
-    await expect(compatible.verifyStartup()).resolves.toBeUndefined();
+    await expect(compatible.verifyStartup()).rejects.toThrow('financial_dependencies_not_ready');
     await expect(compatible.getReadiness()).resolves.toMatchObject({
-      status: 'ok',
+      status: 'error',
+      reason: 'financial_dependencies_not_ready',
       migrations: { compatible: true },
+      financialDependencies: {
+        status: 'error',
+        blockers: [
+          'trusted_kyc_evidence_reader_unavailable',
+          'identity_key_versions_unverified',
+          'effective_kyc_policy_unverified',
+          'provider_governance_and_routing_unverified',
+          'wallet_ownership_governance_unverified',
+          'financial_authorization_dependencies_unverified',
+        ],
+      },
     });
 
     const warning = new ProductionReadinessService(
       new ReadinessDataSource() as unknown as DataSource,
       new ReconciliationStub('WARNING') as never,
     );
-    await expect(warning.verifyStartup()).resolves.toBeUndefined();
+    await expect(warning.verifyStartup()).rejects.toThrow('financial_dependencies_not_ready');
     await expect(warning.getReadiness()).resolves.toMatchObject({
-      status: 'ok',
+      status: 'error',
       reconciliation: { status: 'WARNING' },
     });
 
