@@ -68,6 +68,11 @@ class RecordingSmsProvider implements NotificationProvider {
 }
 
 import { restoreKycSingletons } from './support/kyc-test-fixtures';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
 describe('transfer notification producer contract v1 (real PostgreSQL, synthetic providers only)', () => {
   let ds: DataSource;
@@ -117,6 +122,8 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(ds)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .overrideProvider(A2WorkforceSessionService)
       .useValue(workforceSessions)
       .overrideProvider(A2_WORKFORCE_CONFIG)
@@ -208,6 +215,9 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
          VALUES ($1, $2, 'EN', 'SYSTEM', false, true, false, true, true, true, true, false, 1)`,
         [randomUUID(), participant.customerId],
       );
+      // The financial path is gated on eligibility; complete the seeded participant now that its
+      // verified contact row and preferences exist (completing it earlier would leave two primaries).
+      await makeCustomerFinanciallyEligible(ds, participant.customerId, kycEvidence);
       await ledger.postJournal({
         idempotencyKey: `fund:${account.id}:${randomUUID()}`,
         currency: 'NGN',
