@@ -6,10 +6,12 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, IsNull, Not, QueryFailedError, Repository } from 'typeorm';
 
+import { AuthenticationSessionService } from '../customer-authentication/authentication-session.service';
 import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { AuditService } from '../operations/audit.service';
 import { REGISTRATION_VERIFICATION_TOKEN_TTL_SECONDS } from '../customer-registration/customer-registration.constants';
@@ -76,6 +78,8 @@ export class CustomerService {
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
     private readonly financialEligibility: CustomerFinancialEligibilityService,
+    @Optional()
+    private readonly sessionService?: AuthenticationSessionService,
   ) {}
 
   async create(command: CreateCustomerCommand): Promise<Customer> {
@@ -185,6 +189,19 @@ export class CustomerService {
           ? { ...this.auditCustomer(saved), activationGate: gateOutcome }
           : this.auditCustomer(saved),
       );
+      if (
+        command.status === CustomerStatus.SUSPENDED ||
+        command.status === CustomerStatus.CLOSED ||
+        previous.status === CustomerStatus.SUSPENDED
+      ) {
+        await this.sessionService?.revokeAllForCustomerInManager(
+          manager,
+          saved.id,
+          actor,
+          `Customer status changed from ${String(previous.status)} to ${command.status}`,
+          { preserveSelfLogout: command.status !== CustomerStatus.ACTIVE },
+        );
+      }
       return saved;
     });
   }

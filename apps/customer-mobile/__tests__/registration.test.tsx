@@ -367,6 +367,43 @@ test('accepts an eligible financial-scoped session without storing the passcode'
   await waitFor(() => expect(useAuthStore.getState().isAuthenticated).toBe(true));
   expect(useAuthStore.getState().session?.audience).toBe('customer-api');
   expect(SecureStorage.set).toHaveBeenCalledWith('auth_session_token', 'financial-token');
+  expect(SecureStorage.remove).toHaveBeenCalledWith('synthetic_onboarding_token_v1');
   expect(JSON.stringify((SecureStorage.set as jest.Mock).mock.calls)).not.toContain('112233');
   useAuthStore.setState({ isAuthenticated: false, session: null, customerId: null });
+});
+
+it('retires a restricted onboarding token and prompts full sign-in once the customer becomes financially eligible', async () => {
+  const future = new Date(Date.now() + 600_000).toISOString();
+  (SecureStorage.get as jest.Mock).mockImplementation(async (key: string) =>
+    key === 'synthetic_onboarding_token_v1' ? 'prior-onboarding-token' : null,
+  );
+  post.mockImplementation(async (path: string) => {
+    if (path.endsWith('/simulation-availability')) return { available: false };
+    if (path.endsWith('/onboarding-session')) {
+      return {
+        customerId: 'customer-id',
+        sessionId: 'onboarding-session-id',
+        audience: 'customer-onboarding',
+        expiresAt: future,
+        status: 'ACTIVE',
+        financialEligible: true,
+      };
+    }
+    if (path.endsWith('/onboarding-logout')) return { status: 'REVOKED' };
+    return {};
+  });
+
+  const v = render(<RegistrationScreen />);
+  expect(
+    await v.findByText(
+      'Your account is now verified for full access. Verify your phone and passcode to sign in.',
+    ),
+  ).toBeTruthy();
+  expect(post).toHaveBeenCalledWith(
+    expect.stringContaining('/onboarding-logout'),
+    {},
+    { registrationBearer: 'prior-onboarding-token' },
+  );
+  expect(SecureStorage.remove).toHaveBeenCalledWith('synthetic_onboarding_token_v1');
+  expect(useAuthStore.getState().isAuthenticated).toBe(false);
 });

@@ -1,13 +1,18 @@
 import { ConflictException } from '@nestjs/common';
-import type { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { DataSource } from 'typeorm';
-import type { AuditService } from '../operations/audit.service';
-import { PasswordHashVerificationService } from '../customer-authentication/password-hash-verification.service';
+import {
+  DEFAULT_SESSION_AUDIENCE,
+  DEFAULT_SESSION_TTL_SECONDS,
+  type AuthenticationSessionService,
+} from '../customer-authentication/authentication-session.service';
 import type { PasswordHashAlgorithm } from '../customer-authentication/customer-authentication.enums';
-import { KycFoundationError } from '../kyc-verification/kyc.types';
+import { PasswordHashVerificationService } from '../customer-authentication/password-hash-verification.service';
+import type { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { UUID } from '../kyc-verification/kyc-orchestrator';
 import type { KycRegistrationCompletionService } from '../kyc-verification/kyc-registration-completion.service';
+import { KycFoundationError } from '../kyc-verification/kyc.types';
+import type { AuditService } from '../operations/audit.service';
 
 const AUDIENCE = 'customer-onboarding';
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
@@ -20,6 +25,7 @@ export class MobileOnboardingAuthService {
     private readonly audit: AuditService,
     private readonly completion: KycRegistrationCompletionService,
     private readonly financialEligibility: CustomerFinancialEligibilityService,
+    private readonly sessionService?: AuthenticationSessionService,
   ) {}
   async route(
     sessionId: string,
@@ -156,15 +162,59 @@ export class MobileOnboardingAuthService {
       let audience = AUDIENCE;
       try {
         await this.financialEligibility.require(m, r.customer_id);
-        audience = 'customer-api';
+        audience = DEFAULT_SESSION_AUDIENCE;
       } catch (error) {
         if (!(error instanceof ConflictException)) throw error;
       }
+
+      if (audience === DEFAULT_SESSION_AUDIENCE) {
+        if (this.sessionService) {
+          await this.sessionService.revokeAllForCustomerInManager(
+            m,
+            r.customer_id,
+            'MOBILE_ONBOARDING',
+            'Upgraded to ordinary customer session',
+            { audiences: [AUDIENCE], preserveSelfLogout: false },
+          );
+          const issued = await this.sessionService.issueInManager(m, {
+            authentication: {
+              authenticated: true,
+              customerId: r.customer_id,
+              credentialId: r.credential_id,
+              passwordVersion: r.password_version,
+            },
+            actor: 'MOBILE_ONBOARDING',
+            audience: DEFAULT_SESSION_AUDIENCE,
+          });
+          return {
+            accessToken: issued.accessToken,
+            sessionId: issued.sessionId,
+            customerId: r.customer_id,
+            audience: issued.audience,
+            expiresAt: issued.expiresAt,
+          };
+        }
+        await m.query(
+          `UPDATE authentication_sessions SET status='REVOKED',revoked_at=clock_timestamp(),revoke_reason='Upgraded to ordinary customer session',version=version+1,updated_at=clock_timestamp() WHERE customer_id=$1 AND audience=$2 AND status='ACTIVE'`,
+          [r.customer_id, AUDIENCE],
+        );
+      }
+
       const token = randomBytes(32).toString('base64url'),
         id = randomUUID();
+      const ttlSeconds =
+        audience === DEFAULT_SESSION_AUDIENCE ? DEFAULT_SESSION_TTL_SECONDS : 15 * 60;
       const issued = await m.query<Array<{ expires_at: Date }>>(
-        `INSERT INTO authentication_sessions(id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at,onboarding_password_version) VALUES($1,$2,$3,$4,$5,'ACTIVE',clock_timestamp(),clock_timestamp()+interval '15 minutes',clock_timestamp(),$6) RETURNING expires_at`,
-        [id, r.customer_id, r.credential_id, digest(token), audience, r.password_version],
+        `INSERT INTO authentication_sessions(id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at,onboarding_password_version) VALUES($1,$2,$3,$4,$5,'ACTIVE',clock_timestamp(),clock_timestamp()+make_interval(secs => $7),clock_timestamp(),$6) RETURNING expires_at`,
+        [
+          id,
+          r.customer_id,
+          r.credential_id,
+          digest(token),
+          audience,
+          r.password_version,
+          ttlSeconds,
+        ],
       );
       await this.audit.record(m, {
         entityType: 'AUTHENTICATION_SESSION',
@@ -193,9 +243,78 @@ export class MobileOnboardingAuthService {
     audience: string;
     expiresAt: Date;
     status: string;
+    financialEligible?: boolean;
   }> {
     if (!TOKEN.test(token)) throw new KycFoundationError('BLOCKED');
+    if (this.sessionService && revoke) {
+      const candidate = await this.db.query<
+        Array<{ id: string; customer_id: string; audience: string; expires_at: Date }>
+      >(
+        `SELECT id, customer_id, audience, expires_at FROM authentication_sessions WHERE token_hash = $1 LIMIT 1`,
+        [digest(token)],
+      );
+      if (candidate[0]?.audience === DEFAULT_SESSION_AUDIENCE) {
+        const revoked = await this.sessionService.revoke({
+          token,
+          actor: 'MOBILE_ONBOARDING',
+          reason: 'Customer logout',
+        });
+        if (!revoked.principal) {
+          throw new KycFoundationError('BLOCKED');
+        }
+        return {
+          customerId: revoked.principal.customerId,
+          sessionId: revoked.principal.sessionId,
+          audience: DEFAULT_SESSION_AUDIENCE,
+          expiresAt: revoked.principal.expiresAt,
+          status: 'REVOKED',
+          financialEligible: false,
+        };
+      }
+    }
+
     return this.db.transaction(async (m) => {
+      const lookup = await m.query<Array<{ audience: string }>>(
+        `SELECT audience FROM authentication_sessions WHERE token_hash = $1 LIMIT 1`,
+        [digest(token)],
+      );
+      if (lookup[0]?.audience === DEFAULT_SESSION_AUDIENCE) {
+        if (this.sessionService) {
+          const validation = await this.sessionService.validateInManager(m, {
+            token,
+            audience: DEFAULT_SESSION_AUDIENCE,
+            mode: 'READ',
+          });
+          if (!validation.valid || !validation.principal) {
+            throw new KycFoundationError('BLOCKED');
+          }
+          if (revoke) {
+            await m.query(
+              `UPDATE authentication_sessions SET status='REVOKED',revoked_at=clock_timestamp(),revoke_reason='Customer logout',version=version+1,updated_at=clock_timestamp() WHERE id=$1`,
+              [validation.principal.sessionId],
+            );
+            await this.audit.record(m, {
+              entityType: 'AUTHENTICATION_SESSION',
+              entityId: validation.principal.sessionId,
+              action: 'SESSION_REVOKED',
+              actor: 'MOBILE_ONBOARDING',
+              newValues: {
+                customerId: validation.principal.customerId,
+                audience: DEFAULT_SESSION_AUDIENCE,
+              },
+            });
+          }
+          return {
+            customerId: validation.principal.customerId,
+            sessionId: validation.principal.sessionId,
+            audience: DEFAULT_SESSION_AUDIENCE,
+            expiresAt: validation.principal.expiresAt,
+            status: revoke ? 'REVOKED' : 'ACTIVE',
+            financialEligible: !revoke,
+          };
+        }
+      }
+
       const rows = await m.query<
         Array<{ id: string; customer_id: string; expires_at: Date; is_synthetic: boolean }>
       >(
@@ -217,13 +336,29 @@ export class MobileOnboardingAuthService {
           actor: 'MOBILE_ONBOARDING',
           newValues: { customerId: r.customer_id, audience: AUDIENCE },
         });
+        return {
+          customerId: r.customer_id,
+          sessionId: r.id,
+          audience: AUDIENCE,
+          expiresAt: r.expires_at,
+          status: 'REVOKED',
+          financialEligible: false,
+        };
+      }
+      let financialEligible = false;
+      try {
+        await this.financialEligibility.require(m, r.customer_id, { lockMode: 'SHARE' });
+        financialEligible = true;
+      } catch (error) {
+        if (!(error instanceof ConflictException)) throw error;
       }
       return {
         customerId: r.customer_id,
         sessionId: r.id,
         audience: AUDIENCE,
         expiresAt: r.expires_at,
-        status: revoke ? 'REVOKED' : 'ACTIVE',
+        status: 'ACTIVE',
+        financialEligible,
       };
     });
   }
