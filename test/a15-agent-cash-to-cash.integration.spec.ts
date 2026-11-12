@@ -6,6 +6,8 @@ import { DataSource } from 'typeorm';
 import { randomUUID, pbkdf2Sync, randomBytes } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { TrustedTierFixture } from './support/trusted-tier-fixture';
 import { AgentService } from '../src/agent/agent-service.enum';
 import { AgentCashToCashService } from '../src/agent/agent-cash-to-cash.service';
 import { AgentCashInService } from '../src/agent/agent-cash-in.service';
@@ -34,6 +36,7 @@ function hashPin(pin: string): string {
 
 describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
   let dataSource: DataSource;
+  const evidence = new TrustedTierFixture();
   let app: NestFastifyApplication;
   let cashToCashService: AgentCashToCashService;
   let cashInService: AgentCashInService;
@@ -50,9 +53,12 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a15cashtocash');
+    await evidence.seedPolicy(dataSource);
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(evidence)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -181,9 +187,10 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
       [customerId, `Customer A15 ${randomUUID().slice(0, 4)}`],
     );
     await dataSource.query(
-      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`,
+      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$2,true,clock_timestamp())`,
       [customerId, phoneCanonical],
     );
+    await evidence.approveLevelOne(dataSource, customerId);
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',

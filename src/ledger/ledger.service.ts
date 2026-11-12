@@ -183,14 +183,34 @@ export class LedgerService {
     return this.postWithinTransaction(manager, normalized);
   }
 
+  /** For an already-authorized settlement compensation, in its owning transaction.
+   * Callers must enforce their own approval and settlement controls; exact inversion is
+   * independently verified against the immutable original journal below. */
+  async postReversalInTransaction(
+    manager: EntityManager,
+    command: PostJournalCommand,
+  ): Promise<string> {
+    const normalized = this.normalizeJournal(command);
+    if (!normalized.reversalOfJournalId)
+      throw new BadRequestException('A reversal must identify its original journal');
+    return this.postWithinTransaction(manager, normalized, true);
+  }
+
   async postJournal(command: PostJournalCommand): Promise<LedgerJournalView> {
+    return this.postJournalWithRecoveryAuthority(command, false);
+  }
+
+  private async postJournalWithRecoveryAuthority(
+    command: PostJournalCommand,
+    recoveryAuthority: boolean,
+  ): Promise<LedgerJournalView> {
     const normalized = this.normalizeJournal(command);
     let journalId: string | undefined;
 
     for (let attempt = 0; attempt < 3 && journalId === undefined; attempt += 1) {
       try {
         journalId = await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-          return this.postWithinTransaction(manager, normalized);
+          return this.postWithinTransaction(manager, normalized, recoveryAuthority);
         });
       } catch (error) {
         if (this.isRetryableTransactionError(error)) {
@@ -262,28 +282,31 @@ export class LedgerService {
       throw new ConflictException('This journal has already been reversed');
     }
 
-    return this.postJournal({
-      idempotencyKey: normalizedIdempotencyKey,
-      currency: original.journal.currency,
-      accountingUnit: original.journal.accountingUnit,
-      reference: original.journal.reference ?? undefined,
-      description: reason?.trim() || `Reversal of journal ${journalId}`,
-      correlationId: original.journal.correlationId ?? undefined,
-      metadata: {
-        ...original.journal.metadata,
+    return this.postJournalWithRecoveryAuthority(
+      {
+        idempotencyKey: normalizedIdempotencyKey,
+        currency: original.journal.currency,
+        accountingUnit: original.journal.accountingUnit,
+        reference: original.journal.reference ?? undefined,
+        description: reason?.trim() || `Reversal of journal ${journalId}`,
+        correlationId: original.journal.correlationId ?? undefined,
+        metadata: {
+          ...original.journal.metadata,
+          reversalOfJournalId: journalId,
+          reversalReason: reason?.trim() || undefined,
+        },
         reversalOfJournalId: journalId,
-        reversalReason: reason?.trim() || undefined,
+        lines: original.lines.map((line) => ({
+          accountId: line.ledgerAccountId,
+          direction:
+            line.direction === LedgerEntryDirection.DEBIT
+              ? LedgerEntryDirection.CREDIT
+              : LedgerEntryDirection.DEBIT,
+          amountMinor: line.amountMinor,
+        })),
       },
-      reversalOfJournalId: journalId,
-      lines: original.lines.map((line) => ({
-        accountId: line.ledgerAccountId,
-        direction:
-          line.direction === LedgerEntryDirection.DEBIT
-            ? LedgerEntryDirection.CREDIT
-            : LedgerEntryDirection.DEBIT,
-        amountMinor: line.amountMinor,
-      })),
-    });
+      true,
+    );
   }
 
   async getJournal(journalId: string): Promise<LedgerJournalView> {
@@ -294,6 +317,7 @@ export class LedgerService {
   private async postWithinTransaction(
     manager: EntityManager,
     command: NormalizedJournal,
+    recoveryAuthority = false,
   ): Promise<string> {
     const journalRepository = manager.getRepository(LedgerJournal);
     const existing = await journalRepository.findOne({
@@ -309,7 +333,15 @@ export class LedgerService {
 
     const accountIds = [...new Set(command.lines.map((line) => line.accountId))].sort();
     const accounts = await this.lockAccounts(manager, accountIds);
-    await this.walletFinancialBoundary.requireAccounts(manager, accountIds);
+    // A reversal is exempt from current eligibility only after proving that every
+    // immutable original line is exactly inverted. Merely supplying metadata or a
+    // reversal id must never make an arbitrary new spending journal eligible.
+    if (command.reversalOfJournalId) {
+      await this.assertExactReversal(manager, command);
+    }
+    // Generic callers cannot acquire recovery authority by supplying a reversal id.
+    if (!command.reversalOfJournalId || !recoveryAuthority)
+      await this.walletFinancialBoundary.requireAccounts(manager, accountIds);
     const accountsById = new Map(accounts.map((account) => [account.id, account]));
 
     for (const accountId of accountIds) {
@@ -357,18 +389,6 @@ export class LedgerService {
       }
     }
 
-    if (command.reversalOfJournalId) {
-      const original = await journalRepository.findOne({
-        where: { id: command.reversalOfJournalId },
-      });
-      if (!original) {
-        throw new NotFoundException(`Journal ${command.reversalOfJournalId} was not found`);
-      }
-      if (original.reversalOfJournalId) {
-        throw new ConflictException('A reversal cannot itself be reversed');
-      }
-    }
-
     const journal = journalRepository.create({
       id: randomUUID(),
       idempotencyKey: command.idempotencyKey,
@@ -403,6 +423,34 @@ export class LedgerService {
     await this.metricsService?.increment(manager, 'journals.posted');
 
     return journal.id;
+  }
+
+  private async assertExactReversal(
+    manager: EntityManager,
+    command: NormalizedJournal,
+  ): Promise<void> {
+    const id = command.reversalOfJournalId!;
+    const original = await manager.getRepository(LedgerJournal).findOne({ where: { id } });
+    if (!original) throw new NotFoundException(`Journal ${id} was not found`);
+    if (original.reversalOfJournalId)
+      throw new ConflictException('A reversal cannot itself be reversed');
+    if (
+      original.currency !== command.currency ||
+      original.accountingUnit !== command.accountingUnit
+    )
+      throw new ConflictException('Reversal must exactly invert the original journal');
+    const lines = await manager.getRepository(LedgerLine).find({ where: { journalId: id } });
+    const expected = lines
+      .map(
+        (line) =>
+          `${line.ledgerAccountId.toLowerCase()}:${line.direction === LedgerEntryDirection.DEBIT ? LedgerEntryDirection.CREDIT : LedgerEntryDirection.DEBIT}:${BigInt(line.amountMinor)}`,
+      )
+      .sort();
+    const actual = command.lines
+      .map((line) => `${line.accountId.toLowerCase()}:${line.direction}:${line.amountMinor}`)
+      .sort();
+    if (expected.length !== actual.length || expected.some((line, i) => line !== actual[i]))
+      throw new ConflictException('Reversal must exactly invert the original journal');
   }
 
   private async lockAccounts(

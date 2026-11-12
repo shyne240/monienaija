@@ -630,6 +630,28 @@ export class ExternalSettlementService {
         'The suspense entry for the compensating reversal was not found',
       );
     }
+    // Compensation is recovery for this operation, not an authority to pair an
+    // unrelated settlement and suspense record and reverse another customer's journal.
+    if (
+      settlement.externalOperationId !== operation.id ||
+      suspense.externalOperationId !== operation.id ||
+      settlement.customerId !== operation.customerId ||
+      suspense.customerId !== operation.customerId ||
+      settlement.walletAccountId !== operation.walletAccountId ||
+      settlement.customerLedgerAccountId !== operation.ledgerAccountId ||
+      BigInt(settlement.amountMinor) !== BigInt(operation.amountMinor) ||
+      BigInt(suspense.amountMinor) !== BigInt(operation.amountMinor) ||
+      settlement.currency !== operation.currency ||
+      suspense.currency !== operation.currency ||
+      settlement.accountingUnit !== operation.accountingUnit ||
+      suspense.accountingUnit !== operation.accountingUnit ||
+      (suspense.settlementId !== null && suspense.settlementId !== settlement.id)
+    ) {
+      throw new ExternalSettlementException(
+        'COMPENSATING_NOT_PERMITTED',
+        'Compensation records do not belong to the same operation',
+      );
+    }
     if (
       suspense.status !== ExternalSuspenseStatus.OPEN &&
       suspense.status !== ExternalSuspenseStatus.HELD
@@ -657,7 +679,7 @@ export class ExternalSettlementService {
           : LedgerEntryDirection.DEBIT,
       amountMinor: line.amountMinor,
     }));
-    const reversalJournalId = await this.ledgerService.postJournalInTransaction(manager, {
+    const reversalJournalId = await this.ledgerService.postReversalInTransaction(manager, {
       idempotencyKey: command.compensatingKey,
       currency: originalJournal.currency,
       accountingUnit: originalJournal.accountingUnit,

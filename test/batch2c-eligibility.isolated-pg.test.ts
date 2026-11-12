@@ -290,6 +290,29 @@ test.each([
       .login(secondRegistration, secondToken, '112233');
     expect(restricted.audience).toBe('customer-onboarding');
     expect((await sessionService.validate({ token: restricted.accessToken })).valid).toBe(false);
+    snapshots.get(id)!.evidence.forEach((e) => {
+      e.provenance = 'VERIFIED_PROVIDER';
+    });
+    const thirdToken = randomBytes(32).toString('base64url');
+    const thirdRegistration = randomUUID();
+    await db.query(
+      `INSERT INTO kyc_registration_sessions(id,phone,authorization_hash,status,verified_at,expires_at) VALUES($1,$2,$3,'VERIFIED',clock_timestamp(),clock_timestamp()+interval '10 minutes')`,
+      [thirdRegistration, phone, createHash('sha256').update(thirdToken).digest('hex')],
+    );
+    const head = await db.query<Array<{ version: number }>>(
+      'WITH deleted AS (DELETE FROM kyc_tier_policy_head WHERE singleton=true RETURNING version) SELECT version FROM deleted',
+    );
+    try {
+      const noPolicy = await app
+        .get(MobileOnboardingAuthService)
+        .login(thirdRegistration, thirdToken, '112233');
+      expect(noPolicy.audience).toBe('customer-onboarding');
+      expect((await sessionService.validate({ token: noPolicy.accessToken })).valid).toBe(false);
+    } finally {
+      await db.query('INSERT INTO kyc_tier_policy_head(singleton,version) VALUES(true,$1)', [
+        head[0]!.version,
+      ]);
+    }
   },
 );
 
@@ -384,14 +407,12 @@ test('ledger posting gates existing customer wallets and separates agent and rev
       'a'.repeat(64),
     ],
   );
-  const operation = await app
-    .get(ExternalOperationService)
-    .create({
-      ...operationCommand,
-      resourceId: withdrawal,
-      walletAccountId: wallet.id,
-      ledgerAccountId: wallet.ledgerAccountId,
-    });
+  const operation = await app.get(ExternalOperationService).create({
+    ...operationCommand,
+    resourceId: withdrawal,
+    walletAccountId: wallet.id,
+    ledgerAccountId: wallet.ledgerAccountId,
+  });
   const { ExternalOperationLifecycleService } = await import(
     '../src/partner/external-operation-lifecycle.service'
   );
@@ -420,6 +441,114 @@ test('ledger posting gates existing customer wallets and separates agent and rev
       wallet.ledgerAccountId,
     ]),
   ).toEqual([{ n: 0 }]);
+});
+
+test('committed replay and exact reversal survive suspension; altered reversal and new spending fail', async () => {
+  const { LedgerService } = await import('../src/ledger/ledger.service');
+  const { LedgerAccountType, LedgerEntryDirection } = await import('../src/ledger/ledger.enums');
+  const customer = await subject('LEVEL_1', ['BVN']);
+  await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [customer]);
+  const wallet = await app
+    .get(WalletService)
+    .createWallet({ customerId: customer, currency: 'NGN', idempotencyKey: randomUUID() });
+  const ledger = app.get(LedgerService);
+  const control = await ledger.createAccount({
+    code: `reversal-control-${randomUUID()}`,
+    name: 'Test funding',
+    currency: 'NGN',
+    accountType: LedgerAccountType.ASSET,
+    allowNegativeBalance: true,
+  });
+  const original = {
+    idempotencyKey: randomUUID(),
+    currency: 'NGN',
+    lines: [
+      { accountId: control.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '100' },
+      {
+        accountId: wallet.ledgerAccountId,
+        direction: LedgerEntryDirection.CREDIT,
+        amountMinor: '100',
+      },
+    ],
+  };
+  const journal = await ledger.postJournal(original);
+  expect((await ledger.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('100');
+  const payment = await ledger.postJournal({
+    idempotencyKey: randomUUID(),
+    currency: 'NGN',
+    lines: [
+      {
+        accountId: wallet.ledgerAccountId,
+        direction: LedgerEntryDirection.DEBIT,
+        amountMinor: '40',
+      },
+      { accountId: control.id, direction: LedgerEntryDirection.CREDIT, amountMinor: '40' },
+    ],
+  });
+  expect((await ledger.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('60');
+  await db.query(`UPDATE customers SET status='SUSPENDED' WHERE id=$1`, [customer]);
+  expect((await ledger.postJournal(original)).id).toBe(journal.id);
+  await expect(ledger.postJournal({ ...original, idempotencyKey: randomUUID() })).rejects.toThrow();
+  await expect(
+    ledger.postJournal({
+      idempotencyKey: randomUUID(),
+      currency: 'NGN',
+      reversalOfJournalId: journal.id,
+      lines: [
+        {
+          accountId: wallet.ledgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: '50',
+        },
+        { accountId: control.id, direction: LedgerEntryDirection.CREDIT, amountMinor: '50' },
+      ],
+    }),
+  ).rejects.toThrow('Reversal must exactly invert the original journal');
+  await expect(
+    db.transaction((manager) =>
+      ledger.postReversalInTransaction(manager, {
+        idempotencyKey: randomUUID(),
+        currency: 'NGN',
+        reversalOfJournalId: journal.id,
+        lines: [
+          {
+            accountId: wallet.ledgerAccountId,
+            direction: LedgerEntryDirection.DEBIT,
+            amountMinor: '50',
+          },
+          { accountId: control.id, direction: LedgerEntryDirection.CREDIT, amountMinor: '50' },
+        ],
+      }),
+    ),
+  ).rejects.toThrow('Reversal must exactly invert the original journal');
+  // Supplying an exact reversal payload to ordinary posting does not itself grant
+  // the recovery authority used by governed reversals and settlement compensation.
+  await expect(
+    ledger.postJournal({
+      idempotencyKey: randomUUID(),
+      currency: 'NGN',
+      reversalOfJournalId: journal.id,
+      lines: [
+        {
+          accountId: wallet.ledgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: '100',
+        },
+        { accountId: control.id, direction: LedgerEntryDirection.CREDIT, amountMinor: '100' },
+      ],
+    }),
+  ).rejects.toThrow('Customer is not eligible for financial access');
+  const refund = await ledger.reverseJournal(payment.id, randomUUID(), 'Controlled refund');
+  expect(refund.reversalOfJournalId).toBe(payment.id);
+  expect((await ledger.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('100');
+  const key = randomUUID();
+  const reversed = await ledger.reverseJournal(journal.id, key, 'Controlled test correction');
+  expect(reversed.reversalOfJournalId).toBe(journal.id);
+  expect((await ledger.reverseJournal(journal.id, key, 'Controlled test correction')).id).toBe(
+    reversed.id,
+  );
+  expect((await ledger.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('0');
+  await expect(ledger.reverseJournal(journal.id, randomUUID(), 'duplicate')).rejects.toThrow();
 });
 
 test('legacy classification preserves rows and leaves unknown or colliding references in review', async () => {

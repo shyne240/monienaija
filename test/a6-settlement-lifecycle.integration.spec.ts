@@ -443,6 +443,34 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
     expect(BigInt(firstRow(rows, 'net customer balance').balance)).toBe(100000n);
   });
 
+  it('rejects compensation when the suspense belongs to another operation', async () => {
+    const operation = await seedOperation();
+    const settled = await service.settleVerifiedOutcome(settleCommand(operation));
+    const suspense = await service.recordSuspense(suspenseCommand(operation));
+    await dataSource.query(
+      'UPDATE external_suspense_entries SET external_operation_id=$1 WHERE id=$2',
+      [randomUUID(), suspense.suspenseId],
+    );
+    const before = await ledger.getAccountBalance(customerLedgerAccountId);
+    await expect(
+      service.recordCompensatingEntry({
+        externalOperationId: operation.id,
+        settlementId: settled.settlement.settlementId,
+        suspenseEntryId: suspense.suspenseId,
+        expectedVersion: settled.settlement.settlementVersion,
+        requestContext,
+      }),
+    ).rejects.toMatchObject({ code: 'COMPENSATING_NOT_PERMITTED' });
+    expect((await ledger.getAccountBalance(customerLedgerAccountId)).balanceMinor).toBe(
+      before.balanceMinor,
+    );
+    const rows: Array<{ reversal_journal_id: string | null }> = await dataSource.query(
+      'SELECT reversal_journal_id FROM external_settlements WHERE id=$1',
+      [settled.settlement.settlementId],
+    );
+    expect(rows[0]!.reversal_journal_id).toBeNull();
+  });
+
   it('prevents a duplicate compensation for the same settlement', async () => {
     const operation = await seedOperation();
     const settled = await service.settleVerifiedOutcome(settleCommand(operation));

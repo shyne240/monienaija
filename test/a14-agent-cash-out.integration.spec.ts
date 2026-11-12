@@ -6,6 +6,8 @@ import { DataSource } from 'typeorm';
 import { randomUUID, pbkdf2Sync, randomBytes } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { TrustedTierFixture } from './support/trusted-tier-fixture';
 import { AgentService } from '../src/agent/agent-service.enum';
 import { AgentCashOutService } from '../src/agent/agent-cash-out.service';
 import { AgentCashInService } from '../src/agent/agent-cash-in.service';
@@ -37,6 +39,7 @@ function hashPin(pin: string): string {
 
 describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
   let dataSource: DataSource;
+  const evidence = new TrustedTierFixture();
   let app: NestFastifyApplication;
   let cashOutService: AgentCashOutService;
   let cashInService: AgentCashInService;
@@ -56,9 +59,12 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a14cashout');
+    await evidence.seedPolicy(dataSource);
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(evidence)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -190,7 +196,7 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       [customerId, displayName],
     );
     await dataSource.query(
-      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`,
+      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$2,true,clock_timestamp())`,
       [customerId, phoneCanonical],
     );
     await customerPinService.setTransactionPin(customerId, {
@@ -199,6 +205,7 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       pinVersion: 1,
       actor: customerId,
     });
+    await evidence.approveLevelOne(dataSource, customerId);
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',
@@ -309,6 +316,38 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       ],
     });
   }
+
+  it('rejects cash-out from an existing wallet after evidence withdrawal', async () => {
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
+    const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
+    const { customerId, wallet } = await createCustomerWithPhoneAndPin(phone, '1234');
+    await fundCustomer(wallet.ledgerAccountId, '10000');
+    const { challengeId } = await createMfaChallenge(customerId, 'withdrawn');
+    evidence.withdraw(customerId);
+    await expect(
+      cashOutService.execute({
+        agentId: agent.id,
+        agentPrincipal: agentPrincipal(agent.id) as any,
+        agentPin: '1234',
+        customerId,
+        customerPin: '1234',
+        mfaChallengeId: challengeId,
+        otp: 'withdrawn',
+        amountMinor: '1000',
+        currency: 'NGN',
+        idempotencyKey: randomUUID(),
+      }),
+    ).rejects.toThrow();
+    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe(
+      '10000',
+    );
+    expect((await ledgerService.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe(
+      '0',
+    );
+  });
 
   // A. successful Wallet→Cash
   it('A. successful Wallet→Cash', async () => {
@@ -1294,6 +1333,14 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,'AC2',true)`,
       [custId2],
     );
+    for (const id of [custId1, custId2]) {
+      const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
+      await dataSource.query(
+        `INSERT INTO customer_contact_methods(customer_id,type,value,normalized_value,is_primary,verified_at) VALUES($1,'PHONE',$2,$2,true,clock_timestamp())`,
+        [id, phone],
+      );
+      await evidence.approveLevelOne(dataSource, id);
+    }
     const wallet1 = await walletService.createWallet({
       customerId: custId1,
       currency: 'NGN',

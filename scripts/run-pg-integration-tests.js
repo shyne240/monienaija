@@ -31,8 +31,7 @@
  * all-failures-reported-together behaviour of a single `jest` invocation. The process exits
  * non-zero if any batch failed.
  *
- * Concurrency (PG_TEST_CONCURRENCY, default 2 — see measurements below; set to 1 to fall back
- * to the original fully-sequential behaviour):
+ * Concurrency (PG_TEST_CONCURRENCY, default 1 for bounded memory):
  * Each batch is a fully independent Jest process with its own pid-scoped migration template
  * (see migrationTemplateDatabaseName() in test/support/pg-harness.ts) and every suite already
  * gets its own dedicated, uniquely-named database — so running more than one batch's process
@@ -48,7 +47,7 @@
  * more cores (a typical CI runner), the same isolation would be expected to scale better,
  * since the bottleneck here is core count, not a correctness constraint.
  *
- * Default is 2 (V1-TEST-PERFORMANCE-01, this repo's 2-vCPU sandbox). Measured directly,
+ * Historically tested with 2 (V1-TEST-PERFORMANCE-01, this repo's 2-vCPU sandbox). Measured directly,
  * repeated twice for determinism: full 92-file suite at concurrency=1 took 902s (15.03min,
  * 1690/1690 tests passing); at concurrency=2 it took 513s and 477s on two separate runs
  * (8.55min and 7.95min, both 1690/1690 passing, zero flakiness, zero orphaned databases) — a
@@ -65,9 +64,7 @@
  * headroom, a higher value may be safe but has not been validated here and must be
  * independently re-measured, not assumed.
  *
- * PG_TEST_MAX_OLD_SPACE_MB is left unchanged (3072, same as the prior concurrency=1 default)
- * when raising PG_TEST_CONCURRENCY — both concurrency=2 validation runs above used exactly this
- * ceiling and passed cleanly. The resident-memory pressure seen in the concurrency=4 experiment
+ * The historical concurrency=2 validation runs used a 3072MB heap ceiling. The resident-memory pressure seen in the concurrency=4 experiment
  * was real OS-level memory exhaustion, not a configured per-process heap ceiling being hit, so
  * lowering this value would not have prevented it and is not a substitute for choosing a safe
  * PG_TEST_CONCURRENCY.
@@ -82,12 +79,21 @@ const ROOT = path.resolve(__dirname, '..');
 const JEST_BIN = path.join(ROOT, 'node_modules', 'jest', 'bin', 'jest.js');
 const CONFIG = path.join(ROOT, 'jest.integration.config.js');
 const NETWORK_GUARD = path.join(ROOT, 'test/support/mission-25c-network-guard.cjs');
-const BATCH_SIZE = Number(process.env.PG_TEST_BATCH_SIZE ?? 15);
-// Unchanged from the prior (concurrency=1) default: this exact 3072MB ceiling is what both
-// concurrency=2 validation runs actually used, so it is not re-tuned alongside the concurrency
-// change below without first re-measuring (see module doc above).
-const MAX_OLD_SPACE_MB = Number(process.env.PG_TEST_MAX_OLD_SPACE_MB ?? 3072);
-const CONCURRENCY = Math.max(1, Number(process.env.PG_TEST_CONCURRENCY ?? 2));
+// Nest/ts-jest retains substantial heap between suites. Keep default peak memory bounded;
+// overrides are explicit and validated so a zero batch size cannot hang the runner.
+function positiveInteger(name, fallback, maximum) {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  if (!/^[1-9][0-9]*$/.test(raw)) throw new Error(`${name} must be a positive integer`);
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value > maximum) {
+    throw new Error(`${name} must be at most ${maximum}`);
+  }
+  return value;
+}
+const BATCH_SIZE = positiveInteger('PG_TEST_BATCH_SIZE', 1, 100);
+const MAX_OLD_SPACE_MB = positiveInteger('PG_TEST_MAX_OLD_SPACE_MB', 1536, 16384);
+const CONCURRENCY = positiveInteger('PG_TEST_CONCURRENCY', 1, 16);
 
 /**
  * Run namespace for generated integration-test databases (see test/support/pg-run-namespace.ts
@@ -163,11 +169,19 @@ function runBatch(files, index, total) {
         env: { ...process.env, PG_TEST_RUN_ID: RUN_IDENTIFIER },
       },
     );
-    child.on('exit', (code) => {
+    child.once('error', (error) => {
+      process.stderr.write(`PG batch ${index + 1} failed to start: ${error.message}\n`);
+      process.stderr.write(`Unexecuted files: ${files.join(', ')}\n`);
+      resolve(false);
+    });
+    child.once('exit', (code, signal) => {
       process.stdout.write(
-        `\n=== PG integration batch ${index + 1}/${total} finished (exit ${code}) ===\n`,
+        `\n=== PG integration batch ${index + 1}/${total} finished (exit ${code}, signal ${signal ?? 'none'}) ===\n`,
       );
-      resolve(code === 0);
+      if (signal) {
+        process.stderr.write(`Batch interrupted; suite results may be incomplete: ${files.join(', ')}\n`);
+      }
+      resolve(code === 0 && !signal);
     });
   });
 }

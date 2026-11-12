@@ -8,6 +8,8 @@ import { randomUUID, pbkdf2Sync, randomBytes } from 'node:crypto';
 import { CreateCashToCashLocators1785753600096 } from '../src/migrations/1785753600096-CreateCashToCashLocators';
 import { LimitEnforcementService } from '../src/limit-catalog/limit-enforcement.service';
 import { AppModule } from '../src/app.module';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { TrustedTierFixture } from './support/trusted-tier-fixture';
 import { AgentService } from '../src/agent/agent-service.enum';
 import { AgentCashToCashService } from '../src/agent/agent-cash-to-cash.service';
 import { AgentCashToCashClaimService } from '../src/agent/agent-cash-to-cash-claim.service';
@@ -38,6 +40,7 @@ function hashPin(pin: string): string {
 
 describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   let dataSource: DataSource;
+  const evidence = new TrustedTierFixture();
   let app: NestFastifyApplication;
   let cashToCashService: AgentCashToCashService;
   let claimService: AgentCashToCashClaimService;
@@ -59,9 +62,12 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a16claim');
+    await evidence.seedPolicy(dataSource);
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(evidence)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -201,11 +207,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   ) {
     const custRows: Array<{ id: string }> = await dataSource.query(
       `INSERT INTO customers (reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,'INDIVIDUAL','ACTIVE',$2,$3) RETURNING id`,
-      [
-        `cust-a16-${randomUUID().slice(0, 8)}`,
-        withKyc ? 'LEVEL_1' : 'NONE',
-        withKyc ? 'APPROVED' : 'NOT_STARTED',
-      ],
+      [`cust-a16-${randomUUID().slice(0, 8)}`, 'LEVEL_1', 'APPROVED'],
     );
     const customerId = custRows[0]!.id;
     await dataSource.query(
@@ -231,11 +233,22 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         actor: customerId,
       } as any);
     }
+    await evidence.approveLevelOne(dataSource, customerId);
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',
       idempotencyKey: `cust-wallet-${customerId}-${randomUUID()}`,
     });
+    if (!withKyc) {
+      await dataSource.query(
+        `UPDATE customer_kyc_assessments SET is_current=false WHERE customer_id=$1`,
+        [customerId],
+      );
+      await dataSource.query(
+        `UPDATE customers SET kyc_level='NONE',kyc_status='NOT_STARTED' WHERE id=$1`,
+        [customerId],
+      );
+    }
     return { customerId, wallet };
   }
 
@@ -244,17 +257,21 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     expiresAt?: string,
     assessedBy = 'test-kyc-approver',
   ) {
-    await customerService.createKycAssessment(customerId, {
-      level: 'LEVEL_1' as any,
-      status: 'PENDING' as any,
-      assessedBy: 'test-kyc-reviewer',
-    } as any);
-    return customerService.createKycAssessment(customerId, {
-      level: 'LEVEL_1' as any,
-      status: 'APPROVED' as any,
-      assessedBy,
-      ...(expiresAt ? { expiresAt } : {}),
-    } as any);
+    // Test-only controlled assessment fixture, not a production approval shortcut.
+    await dataSource.query(
+      `UPDATE customer_kyc_assessments SET is_current=false WHERE customer_id=$1`,
+      [customerId],
+    );
+    const id = randomUUID();
+    await dataSource.query(
+      `INSERT INTO customer_kyc_assessments(id,customer_id,kyc_level,kyc_status,assessed_by,expires_at) VALUES($1,$2,'LEVEL_1','APPROVED',$3,COALESCE($4::timestamptz,clock_timestamp()+interval '1 hour'))`,
+      [id, customerId, assessedBy, expiresAt ?? null],
+    );
+    await dataSource.query(
+      `UPDATE customers SET kyc_level='LEVEL_1', kyc_status='APPROVED' WHERE id=$1`,
+      [customerId],
+    );
+    return { id };
   }
 
   async function createMfaChallenge(customerId: string, otp: string, ttlSeconds = 300) {
@@ -383,6 +400,34 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       amount,
     };
   }
+
+  it('rejects a claimant whose controlled trusted evidence was withdrawn', async () => {
+    const { phone, transferId, transferCode } = await initiateTransfer('3000');
+    const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
+    const { challengeId } = await createMfaChallenge(customerId, 'withdrawn-otp');
+    const before = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    evidence.withdraw(customerId);
+    await expect(
+      claimService.execute({
+        transferId,
+        beneficiaryPhone: phone,
+        transferCode,
+        customerId,
+        mfaChallengeId: challengeId,
+        otp: 'withdrawn-otp',
+        idempotencyKey: randomUUID(),
+      }),
+    ).rejects.toThrow();
+    expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor).toBe(
+      before.balanceMinor,
+    );
+    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('0');
+    const rows: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
+    expect(rows[0]!.status).toBe('UNCLAIMED');
+  });
 
   // 1. valid claim succeeds
   it('1. valid claim succeeds', async () => {
@@ -1310,6 +1355,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$2,true,NOW())`,
       [customerId, phone],
     );
+    await evidence.approveLevelOne(dataSource, customerId);
     // No wallet yet
     const beforeWallets: Array<{ cnt: string }> = await dataSource.query(
       `SELECT count(*)::text as cnt FROM wallet_accounts WHERE customer_id=$1`,
@@ -1970,7 +2016,9 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
           redemptionMethod: 'AGENT_CASH',
           agentPin: '1234',
         }),
-      ).rejects.toThrow(/current approved Customer KYC assessment/i);
+      ).rejects.toThrow(
+        /current approved Customer KYC assessment|not eligible for financial access/i,
+      );
     } finally {
       verifySpy2.mockRestore();
     }
@@ -2538,7 +2586,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
             claimantPrincipal: agentPrincipal(claimant.agent.id),
             agentPin: redemptionMethod === 'AGENT_CASH' ? '1234' : undefined,
           }),
-        ).rejects.toThrow(/KYC assessment/i);
+        ).rejects.toThrow(/KYC assessment|not eligible for financial access/i);
       } finally {
         spy.mockRestore();
       }

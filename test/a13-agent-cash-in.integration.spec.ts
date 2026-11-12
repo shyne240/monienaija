@@ -6,6 +6,8 @@ import { DataSource } from 'typeorm';
 import { randomUUID, pbkdf2Sync, randomBytes } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { TrustedTierFixture } from './support/trusted-tier-fixture';
 import { AgentService } from '../src/agent/agent-service.enum';
 import { AgentCashInService } from '../src/agent/agent-cash-in.service';
 import { AgentFinancialExecutionService } from '../src/agent/agent-financial-execution.service';
@@ -34,6 +36,7 @@ function hashPin(pin: string): string {
 
 describe('A13 Agent Cash→Wallet (real PostgreSQL)', () => {
   let dataSource: DataSource;
+  const evidence = new TrustedTierFixture();
   let app: NestFastifyApplication;
   let cashInService: AgentCashInService;
   let financialService: AgentFinancialExecutionService;
@@ -50,9 +53,12 @@ describe('A13 Agent Cash→Wallet (real PostgreSQL)', () => {
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a13cashin');
+    await evidence.seedPolicy(dataSource);
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(evidence)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -182,9 +188,10 @@ describe('A13 Agent Cash→Wallet (real PostgreSQL)', () => {
       [customerId, displayName],
     );
     await dataSource.query(
-      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`,
+      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$2,true,clock_timestamp())`,
       [customerId, phoneCanonical],
     );
+    await evidence.approveLevelOne(dataSource, customerId);
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',
@@ -210,6 +217,32 @@ describe('A13 Agent Cash→Wallet (real PostgreSQL)', () => {
       ],
     });
   }
+
+  it('rejects an existing-wallet cash-in after trusted evidence withdrawal', async () => {
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_IN],
+      '1234',
+    );
+    await fundAgent(agent.id, agentWallet.ledgerAccountId, '10000');
+    const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
+    const { customerId, wallet } = await createCustomerWithPhone(phone);
+    evidence.withdraw(customerId);
+    await expect(
+      cashInService.execute({
+        agentId: agent.id,
+        principal: agentPrincipal(agent.id) as any,
+        pin: '1234',
+        recipientIdentifier: phone,
+        amountMinor: '1000',
+        currency: 'NGN',
+        idempotencyKey: randomUUID(),
+      }),
+    ).rejects.toThrow();
+    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('0');
+    expect((await ledgerService.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe(
+      '10000',
+    );
+  });
 
   // A. successful Cash→Wallet
   it('A. successful Cash→Wallet Agent decreases, Customer increases, equal principal', async () => {
@@ -1235,6 +1268,14 @@ describe('A13 Agent Cash→Wallet (real PostgreSQL)', () => {
       `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,'AB2',true)`,
       [custId2],
     );
+    for (const id of [custId1, custId2]) {
+      const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
+      await dataSource.query(
+        `INSERT INTO customer_contact_methods(customer_id,type,value,normalized_value,is_primary,verified_at) VALUES($1,'PHONE',$2,$2,true,clock_timestamp())`,
+        [id, phone],
+      );
+      await evidence.approveLevelOne(dataSource, id);
+    }
     const wallet1 = await walletService.createWallet({
       customerId: custId1,
       currency: 'NGN',

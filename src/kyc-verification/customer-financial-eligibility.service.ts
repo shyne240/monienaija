@@ -3,6 +3,7 @@ import { EntityManager } from 'typeorm';
 import { decideTier } from './kyc-tier-decision';
 import { KycTierEvidenceReader } from './kyc-tier-evidence.reader';
 import { KycTierPolicyService } from './kyc-tier-policy.service';
+import { KycFoundationError } from './kyc.types';
 
 /** Transactional gate for an identified customer. The trusted reader is intentionally
  * unavailable in production until provider provenance has been reviewed. */
@@ -39,7 +40,16 @@ export class CustomerFinancialEligibilityService {
       throw new ConflictException('Customer is not eligible for financial access');
     const now = (await manager.query<Array<{ now: Date }>>('SELECT clock_timestamp() AS now'))[0]!
       .now;
-    const policy = await this.policies.effective(manager, now);
+    let policy;
+    try {
+      policy = await this.policies.effective(manager, now);
+    } catch (error) {
+      // A missing or invalid governed policy denies financial scope; it must not
+      // turn a verified onboarding sign-in into an unhandled server error.
+      if (error instanceof KycFoundationError && ['DISABLED', 'INVALID'].includes(error.code))
+        throw new ConflictException('Customer financial policy is unavailable');
+      throw error;
+    }
     const holds = await manager.query<Array<{ customer_id: string }>>(
       'SELECT customer_id FROM kyc_tier_manual_holds WHERE customer_id=$1 FOR UPDATE',
       [customerId],
