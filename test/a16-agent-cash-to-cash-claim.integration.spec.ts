@@ -38,6 +38,13 @@ function hashPin(pin: string): string {
   return `PBKDF2$sha256$10000$${salt.toString('base64url')}$${derived.toString('base64url')}`;
 }
 
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+
+// Test-only trusted-evidence override. Opt-in per suite; the production reader stays
+// fail-closed because nothing in AppModule references this module.
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+
 describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   let dataSource: DataSource;
   const evidence = new TrustedTierFixture();
@@ -66,6 +73,8 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .overrideProvider(KycTierEvidenceReader)
       .useValue(evidence)
       .compile();
@@ -234,6 +243,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       } as any);
     }
     await evidence.approveLevelOne(dataSource, customerId);
+    // Batch 2C: this fixture created the customer with raw SQL only, which the governed
+    // financial-eligibility gate (correctly) rejects. Applied after the suite's own
+    // profile/phone rows exist and immediately before the wallet that needs the gate.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',
