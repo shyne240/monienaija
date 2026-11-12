@@ -286,6 +286,14 @@ export interface EligibleCustomerOptions {
   phone?: string;
   /** `assessed_by` recorded on the seeded APPROVED assessment (e.g. `SERVICE`). */
   assessedBy?: string;
+  /**
+   * Also complete a `DRAFT` customer. Default `false`: non-`ACTIVE` customers are deliberately
+   * left untouched so suites that assert a suspended customer is rejected keep their
+   * precondition. Activation (`PATCH /customers/:id` with `status: ACTIVE`) runs the gate with
+   * `requireActive = false`, so a suite proving that DRAFT -> ACTIVE *succeeds* must opt in here
+   * and make the draft eligible before activating it.
+   */
+  allowDraft?: boolean;
   kind?: 'BVN' | 'NIN';
 }
 
@@ -321,7 +329,8 @@ export type EligibleEvidenceSource = FixtureEvidenceReader | { reader: FixtureEv
  *
  * Idempotent: calling it twice leaves one current assessment and one evidence set, so a customer
  * helper and a KYC helper can both call it safely. A customer whose status is not ACTIVE is left
- * untouched, so suites that assert rejection for a suspended customer keep their precondition.
+ * untouched (unless `allowDraft` is set), so suites that assert rejection for a suspended
+ * customer keep their precondition.
  */
 export async function makeCustomerFinanciallyEligible(
   dataSource: DataSource,
@@ -344,8 +353,9 @@ export async function makeCustomerFinanciallyEligible(
   // a suite that created a suspended/inactive customer to assert the gate's rejection must keep
   // that status, and the gate itself still requires ACTIVE.
   await dataSource.query(
-    `UPDATE customers SET kyc_status='APPROVED', kyc_level=$2 WHERE id=$1 AND status='ACTIVE'`,
-    [customerId, level],
+    `UPDATE customers SET kyc_status='APPROVED', kyc_level=$2
+      WHERE id=$1 AND status = ANY($3::text[])`,
+    [customerId, level, options.allowDraft ? ['ACTIVE', 'DRAFT'] : ['ACTIVE']],
   );
 
   // Profile: fill the identity parts the reader binds to, creating the profile if absent.
@@ -423,7 +433,37 @@ export async function makeCustomerFinanciallyEligible(
     }
   }
 
-  const identity = { firstName, lastName, dateOfBirth, phone };
+  // Compute the MAC from the identity the row **actually** holds after the updates above, not
+  // from the requested defaults: `COALESCE` keeps any value a suite already set (a suite that
+  // pinned its own date of birth, for instance), and the trusted reader binds to the stored
+  // values. Using the requested defaults here produced `IDENTITY_MISMATCH` for exactly those
+  // customers.
+  const effective: Array<{
+    first_name: string;
+    last_name: string;
+    date_of_birth: string;
+  }> = await dataSource.query(
+    `SELECT first_name, last_name, date_of_birth::text AS date_of_birth
+       FROM customer_profiles
+      WHERE customer_id=$1 AND is_active=true AND deleted_at IS NULL
+      ORDER BY created_at, id
+      LIMIT 1`,
+    [customerId],
+  );
+  const effectivePrimary: Array<{ normalized_value: string }> = await dataSource.query(
+    `SELECT normalized_value FROM customer_contact_methods
+      WHERE customer_id=$1 AND type='PHONE' AND is_primary=true
+        AND verified_at IS NOT NULL AND deleted_at IS NULL
+      ORDER BY created_at, id
+      LIMIT 1`,
+    [customerId],
+  );
+  const identity = {
+    firstName: effective[0]?.first_name ?? firstName,
+    lastName: effective[0]?.last_name ?? lastName,
+    dateOfBirth: effective[0]?.date_of_birth ?? dateOfBirth,
+    phone: effectivePrimary[0]?.normalized_value ?? phone,
+  };
   const identityRevision = reader.identityMacFor(customerId, identity);
 
   // Governed policy in force.

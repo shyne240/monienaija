@@ -66,6 +66,7 @@ const syntheticPhone = (suffix: string) => `+234811000${suffix}`;
 
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 // Test-only trusted-evidence override. Opt-in per suite; the production reader stays
 // fail-closed because nothing in AppModule references this module.
@@ -514,6 +515,12 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
       phonePrimary: true,
       phoneVerified: false,
     });
+    // Wallet creation now passes the governed financial-eligibility gate, which needs trusted,
+    // identity-bound evidence. These two fixtures exist to prove masking/scoping, not KYC, so
+    // complete them with the shared eligibility fixture (per customer, explicitly — the raw
+    // `seedCustomer` helper above stays arbitrary so KYC-rejection suites can still use it).
+    await makeCustomerFinanciallyEligible(dataSource, customers.alpha.id, kycEvidence);
+    await makeCustomerFinanciallyEligible(dataSource, otherCustomer.id, kycEvidence);
     const wallet = await walletService.createWallet({
       customerId: customers.alpha.id,
       currency: 'NGN',
@@ -650,6 +657,10 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
        WHERE customer_id = $1 AND type = 'PHONE' AND is_primary = TRUE AND deleted_at IS NULL`,
       [draft.id],
     );
+    // Activation additionally runs the governed financial-eligibility gate: the verified primary
+    // phone asserted above is necessary but no longer sufficient, so complete the identity
+    // binding and MAC-bound evidence the trusted reader needs before the success assertion.
+    await makeCustomerFinanciallyEligible(dataSource, draft.id, kycEvidence, { allowDraft: true });
     await request(app.getHttpServer())
       .patch(`/api/v1/customers/${draft.id}`)
       .set(auth(superAdmin.token))
