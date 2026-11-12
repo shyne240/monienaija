@@ -36,7 +36,12 @@ export class WalletController {
     @Headers('idempotency-key') headerIdempotencyKey?: string,
     @Req() req?: AuthenticatedRequest,
   ) {
-    if (this.isWorkforce(req)) await this.requireFunction(req!, 'customer.view_wallets');
+    await this.auth.requireFunction(
+      req?.authorizationPrincipal,
+      'customer.create_wallet',
+      'wallets',
+      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
     return this.walletService.createWallet({
       customerId: dto.customerId,
       currency: dto.currency,
