@@ -21,6 +21,36 @@ export class WalletFinancialBoundaryService {
     await this.eligibility.require(manager, customerId);
   }
 
+  /** Lock the underlying obligation and bind every financial field before create or submission. */
+  async requireWithdrawalOperation(
+    manager: EntityManager,
+    operation: {
+      resourceId: string;
+      walletAccountId: string;
+      amountMinor: string;
+      currency: string;
+      id?: string;
+    },
+  ): Promise<void> {
+    const withdrawals = await manager.query<Array<{ id: string }>>(
+      `SELECT id FROM withdrawals
+       WHERE id=$1 AND wallet_id=$2 AND amount_minor=$3 AND currency=$4
+         AND status IN ('PENDING', 'PROCESSING') FOR UPDATE`,
+      [operation.resourceId, operation.walletAccountId, operation.amountMinor, operation.currency],
+    );
+    if (withdrawals.length !== 1) {
+      throw new ConflictException('Withdrawal obligation does not match external operation');
+    }
+    const others = await manager.query<Array<{ id: string }>>(
+      `SELECT id FROM external_operations WHERE resource_type='WITHDRAWAL' AND resource_id=$1
+       AND ($2::uuid IS NULL OR id <> $2::uuid) LIMIT 1`,
+      [operation.resourceId, operation.id ?? null],
+    );
+    if (others.length !== 0) {
+      throw new ConflictException('Withdrawal already has an external operation');
+    }
+  }
+
   async requireAccounts(manager: EntityManager, accountIds: string[]): Promise<void> {
     const rows = await manager.query<
       Array<{ customer_id: string; owner_class: string; current_class: string }>

@@ -407,16 +407,71 @@ test('ledger posting gates existing customer wallets and separates agent and rev
       'a'.repeat(64),
     ],
   );
-  const operation = await app.get(ExternalOperationService).create({
+  const validCommand = {
     ...operationCommand,
     resourceId: withdrawal,
     walletAccountId: wallet.id,
     ledgerAccountId: wallet.ledgerAccountId,
-  });
+  };
+  await expect(
+    app.get(ExternalOperationService).create({ ...validCommand, amountMinor: '2' }),
+  ).rejects.toThrow('Withdrawal obligation does not match external operation');
+  await expect(
+    app.get(ExternalOperationService).create({ ...validCommand, resourceId: randomUUID() }),
+  ).rejects.toThrow('Withdrawal obligation does not match external operation');
+  const raceWithdrawal = randomUUID();
+  await db.query(
+    `INSERT INTO withdrawals(id,wallet_id,payment_reference,amount_minor,currency,status,idempotency_key,request_hash) VALUES($1,$2,$3,1,'NGN','PENDING',$4,$5)`,
+    [raceWithdrawal, wallet.id, `R${randomUUID().replace(/-/g, '')}`, randomUUID(), 'b'.repeat(64)],
+  );
+  const race = await Promise.allSettled(
+    [0, 1].map(() =>
+      app.get(ExternalOperationService).create({
+        ...validCommand,
+        resourceId: raceWithdrawal,
+        internalCommandId: randomUUID(),
+        idempotencyKey: randomUUID(),
+      }),
+    ),
+  );
+  expect(race.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+  expect(race.filter((result) => result.status === 'rejected')).toHaveLength(1);
+  expect(
+    await db.query(`SELECT count(*)::int AS count FROM external_operations WHERE resource_id=$1`, [
+      raceWithdrawal,
+    ]),
+  ).toEqual([{ count: 1 }]);
+  const operation = await app.get(ExternalOperationService).create(validCommand);
+  await expect(
+    app.get(ExternalOperationService).create({
+      ...validCommand,
+      idempotencyKey: randomUUID(),
+      internalCommandId: randomUUID(),
+    }),
+  ).rejects.toThrow('Withdrawal already has an external operation');
   const { ExternalOperationLifecycleService } = await import(
     '../src/partner/external-operation-lifecycle.service'
   );
+  await db.query(`UPDATE withdrawals SET amount_minor=2 WHERE id=$1`, [withdrawal]);
+  await expect(
+    app
+      .get(ExternalOperationLifecycleService)
+      .beginAttempt(operation.externalOperationId, randomUUID(), operationCommand.requestContext),
+  ).rejects.toThrow('Withdrawal obligation does not match external operation');
+  await db.query(`UPDATE withdrawals SET amount_minor=1, status='CANCELLED' WHERE id=$1`, [
+    withdrawal,
+  ]);
+  await expect(
+    app
+      .get(ExternalOperationLifecycleService)
+      .beginAttempt(operation.externalOperationId, randomUUID(), operationCommand.requestContext),
+  ).rejects.toThrow('Withdrawal obligation does not match external operation');
+  await db.query(`UPDATE withdrawals SET status='PENDING' WHERE id=$1`, [withdrawal]);
   snapshots.get(customer)!.evidence[0]!.status = 'REVOKED';
+  await expect(app.get(ExternalOperationService).create(validCommand)).resolves.toMatchObject({
+    externalOperationId: operation.externalOperationId,
+    replayed: true,
+  });
   await expect(
     app
       .get(ExternalOperationLifecycleService)

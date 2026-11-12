@@ -249,6 +249,7 @@ export class ExternalOperationLifecycleService {
         operation.walletAccountId,
         operation.ledgerAccountId,
       );
+      await this.walletBoundary.requireWithdrawalOperation(manager, operation);
     }
 
     const previousState = operation.lifecycleState;

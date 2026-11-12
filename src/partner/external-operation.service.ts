@@ -161,12 +161,6 @@ export class ExternalOperationService {
     manager: EntityManager,
     command: NormalizedCreateExternalOperationCommand,
   ): Promise<ExternalOperationView> {
-    await this.walletBoundary.requireCustomerWallet(
-      manager,
-      command.customerId,
-      command.walletAccountId,
-      command.ledgerAccountId,
-    );
     const reservation = await this.idempotencyService.reserve(manager, {
       scope: EXTERNAL_OPERATION_IDEMPOTENCY_SCOPE,
       key: command.idempotencyKey,
@@ -219,6 +213,14 @@ export class ExternalOperationService {
       });
       return replayed;
     }
+
+    await this.walletBoundary.requireCustomerWallet(
+      manager,
+      command.customerId,
+      command.walletAccountId,
+      command.ledgerAccountId,
+    );
+    await this.walletBoundary.requireWithdrawalOperation(manager, command);
 
     const profile = this.partnerConnectionService.getProfile();
     if (
