@@ -20,8 +20,13 @@ import { TransferService } from '../src/transfer/transfer.service';
 import { LedgerService } from '../src/ledger/ledger.service';
 import { LedgerEntryDirection } from '../src/ledger/ledger.enums';
 import { LimitUsageService } from '../src/limit-catalog/limit-usage.service';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { createEligibleCustomer } from './support/kyc-test-fixtures';
 
 // Helper to create a customer row directly
+
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
 describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   let dataSource: DataSource;
@@ -79,6 +84,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .overrideProvider(A2WorkforceSessionService)
       .useValue(mockWorkforceSessions)
       .overrideProvider(A2_WORKFORCE_CONFIG)
@@ -172,6 +179,17 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
     return id;
   }
 
+  /**
+   * A real, governed customer for a wallet the test only needs as an endpoint.
+   *
+   * A bare `randomUUID()` is not a valid wallet owner: `wallet_owner_class()` classifies it REVIEW
+   * and `WalletService.createWallet` correctly refuses it.
+   */
+  async function eligibleCustomerId(): Promise<string> {
+    const { customerId } = await createEligibleCustomer(dataSource, kycEvidence);
+    return customerId;
+  }
+
   async function createWallet(
     customerId: string,
   ): Promise<{ id: string; ledgerAccountId: string }> {
@@ -249,8 +267,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   }
 
   it('01 WALLET_TRANSFER within limits succeeds and increments usage', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_01';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -298,8 +316,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('02 WALLET_TRANSFER MIN_AMOUNT_NOT_MET', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_02';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -318,8 +336,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('03 WALLET_TRANSFER MAX_AMOUNT_EXCEEDED', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_03';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -338,8 +356,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('04 WALLET_TRANSFER DAILY_AMOUNT_EXCEEDED', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_04';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -360,8 +378,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('05 WALLET_TRANSFER DAILY_COUNT_EXCEEDED', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_05';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -384,8 +402,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('06 WALLET_TRANSFER WEEKLY_AMOUNT_EXCEEDED', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_06';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -406,8 +424,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('07 WALLET_TRANSFER MONTHLY_AMOUNT_EXCEEDED', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_07';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -428,8 +446,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('08 WALLET_TRANSFER YEARLY_AMOUNT_EXCEEDED', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_08';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -450,8 +468,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('09 WALLET_TRANSFER WEEKLY_COUNT_EXCEEDED', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_09';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -472,8 +490,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('10 WALLET_TRANSFER MONTHLY_COUNT_EXCEEDED', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_10';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -494,8 +512,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('11 WALLET_TRANSFER YEARLY_COUNT_EXCEEDED', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_11';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -516,8 +534,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('12 WALLET_TRANSFER multiple dimensions simultaneously (MIN+MAX+DAILY)', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_12';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -556,8 +574,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('13 WALLET_TRANSFER WALLET_BALANCE_MAX exceeded (credit to dest? Actually source outgoing not checked, so we test incoming via customer funding? For W->W, source balance max not triggered, so we test via separate incoming flow simulation: create wallet with balance near max and try to fund it via transfer to that wallet? But W->W dest max not enforced for source principal, so this should allow. Instead we test that WALLET_BALANCE_MAX for source does not block outgoing.', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_13';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -576,8 +594,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('14 WALLET_TRANSFER no applicable limit (no assignment) allows', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const wA = await createWallet(customerA);
     const wB = await createWallet(customerB);
     await fundWallet(wA.ledgerAccountId, '5000000');
@@ -586,8 +604,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('15 WALLET_TRANSFER assignment precedence (higher precedence wins)', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profileLow = 'TEST_PROFILE_15L';
     const profileHigh = 'TEST_PROFILE_15H';
     await seedProfile(profileLow);
@@ -624,8 +642,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('16 WALLET_TRANSFER expired assignment ignored', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_16';
     await seedProfile(profile);
     await seedAssignment({
@@ -649,8 +667,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('17 WALLET_TRANSFER rule disabled ignored', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_17';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -669,8 +687,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('18 WALLET_TRANSFER effective future rule ignored', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_18';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -689,8 +707,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('19 WALLET_TRANSFER profile disabled allows', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_19';
     await dataSource.query(
       `INSERT INTO limit_profiles (code, name, kind, status, enabled, configuration_status, created_by) VALUES ($1,$2,'CUSTOMER','DISABLED',false,'DISABLED','test')`,
@@ -710,8 +728,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('20 WALLET_TRANSFER failed financial does not consume (insufficient funds -> no usage increment)', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_20';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -738,8 +756,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('21 WALLET_TRANSFER idempotency replay does not double reserve', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_21';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -766,8 +784,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('22 WALLET_TRANSFER concurrent duplicates only one succeeds per limit boundary (SERIALIZABLE)', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_22';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -795,8 +813,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('23 WALLET_TRANSFER concurrent identical idempotencyKey only one journal created', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_23';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -825,8 +843,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('24 WALLET_TRANSFER ledger remains balanced after limit rejects (no journal)', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_24';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -853,8 +871,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
 
   // The remaining 4 tests cover product/channel/direction mismatches and GLOBAL fallback
   it('25 WALLET_TRANSFER product mismatch does not apply limit', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_25';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -872,8 +890,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('26 WALLET_TRANSFER direction mismatch does not apply', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_26';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
@@ -893,8 +911,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('27 WALLET_TRANSFER GLOBAL fallback when no customer assignment', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_27';
     await seedProfile(profile);
     await seedAssignment({ profileCode: profile, subjectType: 'GLOBAL', precedence: 0 });
@@ -913,8 +931,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   });
 
   it('28 WALLET_TRANSFER AGENT_CLASS assignment not applied to customer', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'TEST_PROFILE_28';
     await seedProfile(profile, 'AGENT');
     const agentClassId = randomUUID();

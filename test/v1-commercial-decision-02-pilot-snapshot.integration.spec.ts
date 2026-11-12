@@ -40,6 +40,11 @@ import {
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { createEligibleCustomer } from './support/kyc-test-fixtures';
+
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
 describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (real PG)', () => {
   let dataSource: DataSource;
@@ -118,6 +123,8 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .overrideProvider(A2WorkforceSessionService)
       .useValue(mockWorkforceSessions)
       .overrideProvider(A2_WORKFORCE_CONFIG)
@@ -196,6 +203,17 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
       ],
     );
     return id;
+  }
+
+  /**
+   * A real, governed customer for a wallet the test only needs as an endpoint.
+   *
+   * A bare `randomUUID()` is not a valid wallet owner: `wallet_owner_class()` classifies it REVIEW
+   * and `WalletService.createWallet` correctly refuses it.
+   */
+  async function eligibleCustomerId(): Promise<string> {
+    const { customerId } = await createEligibleCustomer(dataSource, kycEvidence);
+    return customerId;
   }
 
   async function createWallet(
@@ -291,8 +309,8 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
   // ── 1. success atomicity + snapshot content ──
 
   it('01. successful W→W creates exactly one FINAL snapshot referencing WALLET_TRANSFER + the exact transaction', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'PILOT_PROFILE_01';
     await seedProfile(profile);
     await seedAssignment(profile, 'CUSTOMER', customerA);
@@ -372,8 +390,8 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
   // ── 2. zero-fee financial proof ──
 
   it('02. zero fee financially: exactly two journal lines, both exactly the principal; no fee account/line', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const wA = await createWallet(customerA);
     const wB = await createWallet(customerB);
     await fundWallet(wA.ledgerAccountId, '2000000');
@@ -407,8 +425,8 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
   // ── 3. idempotency ──
 
   it('03. replay converges: same transfer id, exactly ONE snapshot, usage not double-counted', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'PILOT_PROFILE_03';
     await seedProfile(profile);
     await seedAssignment(profile, 'CUSTOMER', customerA);
@@ -435,8 +453,8 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
   });
 
   it('04. same idempotency key with a different payload remains rejected (409)', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const wA = await createWallet(customerA);
     const wB = await createWallet(customerB);
     await fundWallet(wA.ledgerAccountId, '2000000');
@@ -454,8 +472,8 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
   // ── 4. rollback atomicity ──
 
   it('05. downstream failure before commit rolls back snapshot + reservations + journal + wallet state', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'PILOT_PROFILE_05';
     await seedProfile(profile);
     await seedAssignment(profile, 'CUSTOMER', customerA);
@@ -506,8 +524,8 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
       'test',
     );
 
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const wA = await createWallet(customerA);
     const wB = await createWallet(customerB);
     await fundWallet(wA.ledgerAccountId, '2000000');
@@ -558,8 +576,8 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
   // ── 6. immutability, no-profile limit path, and unchanged behavior ──
 
   it('07. snapshot remains immutable (UPDATE/DELETE blocked by trigger)', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const wA = await createWallet(customerA);
     const wB = await createWallet(customerB);
     await fundWallet(wA.ledgerAccountId, '2000000');
@@ -582,8 +600,8 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
   });
 
   it('08. W→W without any limit configuration still records a snapshot (limits evaluated, none applicable)', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const wA = await createWallet(customerA);
     const wB = await createWallet(customerB);
     await fundWallet(wA.ledgerAccountId, '2000000');
@@ -608,8 +626,8 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
   });
 
   it('09. a limit-rejected W→W leaves NO snapshot (failed transfers never record one) and existing failure semantics intact', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const profile = 'PILOT_PROFILE_09';
     await seedProfile(profile);
     await seedAssignment(profile, 'CUSTOMER', customerA);
@@ -638,8 +656,8 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
   });
 
   it('10. workforce diagnostic read API verifies the pilot snapshot (no duplicate read APIs created)', async () => {
-    const customerA = randomUUID();
-    const customerB = randomUUID();
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
     const wA = await createWallet(customerA);
     const wB = await createWallet(customerB);
     await fundWallet(wA.ledgerAccountId, '2000000');

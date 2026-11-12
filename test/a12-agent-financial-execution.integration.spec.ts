@@ -23,12 +23,17 @@ import {
   LedgerNormalBalance,
 } from '../src/ledger/ledger.enums';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { createEligibleCustomer } from './support/kyc-test-fixtures';
 
 function hashPin(pin: string): string {
   const salt = randomBytes(16);
   const derived = pbkdf2Sync(pin, salt, 10000, 32, 'sha256');
   return `PBKDF2$sha256$10000$${salt.toString('base64url')}$${derived.toString('base64url')}`;
 }
+
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
 describe('A12 Agent financial execution foundation (real PostgreSQL)', () => {
   let dataSource: DataSource;
@@ -50,6 +55,8 @@ describe('A12 Agent financial execution foundation (real PostgreSQL)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -157,6 +164,16 @@ describe('A12 Agent financial execution foundation (real PostgreSQL)', () => {
   }
 
   // A. successful atomic financial execution through reusable boundary
+  /**
+   * A real, governed customer for a wallet the test only needs as an endpoint. A bare
+   * `randomUUID()` is not a valid wallet owner: `wallet_owner_class()` classifies it REVIEW and
+   * `WalletService.createWallet` correctly refuses it.
+   */
+  async function eligibleCustomerId(): Promise<string> {
+    const { customerId } = await createEligibleCustomer(dataSource, kycEvidence);
+    return customerId;
+  }
+
   it('A. successful atomic financial execution through reusable boundary', async () => {
     const { agent, wallet } = await createActiveAgentWithPin([AgentService.AGENT_FUNDING], '1234');
     const ctx = await authorizeAgent(agent.id, AgentService.AGENT_FUNDING, '1234');
@@ -554,7 +571,7 @@ describe('A12 Agent financial execution foundation (real PostgreSQL)', () => {
     expect(wnames).not.toContain('balance');
     // WalletService balance is derived
     const wallet = await walletService.createWallet({
-      customerId: `j-wallet-${randomUUID()}`,
+      customerId: await eligibleCustomerId(),
       currency: 'NGN',
       idempotencyKey: `j-${randomUUID()}`,
     });
@@ -875,7 +892,7 @@ describe('A12 Agent financial execution foundation (real PostgreSQL)', () => {
   // R. existing customer financial flows are unaffected
   it('R. existing customer financial flows are unaffected', async () => {
     // Create a customer wallet and do a transfer via WalletService/LedgerService directly (customer flow)
-    const custId = `cust-r-${randomUUID()}`;
+    const custId = await eligibleCustomerId();
     const wallet = await walletService.createWallet({
       customerId: custId,
       currency: 'NGN',
