@@ -58,8 +58,17 @@ import {
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 const LOGIN_PATH = '/api/v1/internal/a2/workforce/local-admin-sessions';
+
+/**
+ * Test-only trusted-evidence reader. Opt-in and inert unless a suite seeds matching evidence, so
+ * every denial assertion in this file still runs against the fail-closed production reader.
+ */
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
 describe('V1-ADMIN-AUTHORIZATION-HARDENING-01 — function-based authorization proof (real PostgreSQL + real HTTP)', () => {
   let dataSource: DataSource;
@@ -78,6 +87,8 @@ describe('V1-ADMIN-AUTHORIZATION-HARDENING-01 — function-based authorization p
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .compile();
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
@@ -232,6 +243,18 @@ describe('V1-ADMIN-AUTHORIZATION-HARDENING-01 — function-based authorization p
     return customerId;
   }
 
+  /**
+   * Activating a customer (`SUSPENDED` -> `ACTIVE`) runs the governed financial-eligibility
+   * gate, so lifecycle *success* paths need a customer that genuinely satisfies it: a governed
+   * tier policy plus MAC-bound identity evidence. Denial assertions keep using the plain
+   * `createActiveCustomer()` above, which never becomes eligible.
+   */
+  async function createEligibleActiveCustomer(): Promise<string> {
+    const customerId = await createActiveCustomer();
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
+    return customerId;
+  }
+
   function auth(token: string) {
     return { Authorization: `Bearer ${token}` };
   }
@@ -294,7 +317,7 @@ describe('V1-ADMIN-AUTHORIZATION-HARDENING-01 — function-based authorization p
 
     it('A4. can suspend/activate/close a customer (customer.suspend/.activate/.close, Decision 4)', async () => {
       const token = await loginSuperAdmin();
-      const customerId = await createActiveCustomer();
+      const customerId = await createEligibleActiveCustomer();
 
       const suspend = await request(app.getHttpServer())
         .patch(`/api/v1/customers/${customerId}`)
@@ -482,7 +505,7 @@ describe('V1-ADMIN-AUTHORIZATION-HARDENING-01 — function-based authorization p
   describe('D. OPERATIONS', () => {
     it('D1. can suspend/activate a customer (customer.suspend/.activate EXECUTE)', async () => {
       const token = await tokenForRole('OPERATIONS');
-      const customerId = await createActiveCustomer();
+      const customerId = await createEligibleActiveCustomer();
       const suspend = await request(app.getHttpServer())
         .patch(`/api/v1/customers/${customerId}`)
         .set(auth(token))
