@@ -17,8 +17,13 @@ import {
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 /** Real HTTP, global/class guards, workforce session validation, active DB grants and PG transactions. */
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+
 describe('Customer compliance authorization (real PostgreSQL + real HTTP)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
@@ -31,6 +36,8 @@ describe('Customer compliance authorization (real PostgreSQL + real HTTP)', () =
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .compile();
     app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -134,6 +141,9 @@ describe('Customer compliance authorization (real PostgreSQL + real HTTP)', () =
        VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
       [customerId, passwordHash(password)],
     );
+    // The governed gate now runs when a session is issued; this helper's customer is
+    // built with raw SQL only, so complete it first (a non-ACTIVE customer is left alone).
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const response = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId, password })

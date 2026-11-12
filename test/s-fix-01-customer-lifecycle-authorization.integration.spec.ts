@@ -16,6 +16,9 @@ import {
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 function encodePbkdf2(password: string, saltStr = 'sfix01-test-salt'): string {
   const salt = Buffer.from(saltStr);
@@ -31,6 +34,8 @@ function encodePbkdf2(password: string, saltStr = 'sfix01-test-salt'): string {
  *  - audit C-4: customer sessions and login are bound to the CURRENT customers.status;
  *    a cryptographically valid session is not sufficient for DRAFT/SUSPENDED/CLOSED.
  */
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+
 describe('S-FIX-01 customer lifecycle authorization + session/status binding (real PG + HTTP)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
@@ -102,6 +107,8 @@ describe('S-FIX-01 customer lifecycle authorization + session/status binding (re
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .overrideProvider(A2WorkforceSessionService)
       .useValue(mockWorkforceSessions)
       .overrideProvider(A2_WORKFORCE_CONFIG)
@@ -162,6 +169,9 @@ describe('S-FIX-01 customer lifecycle authorization + session/status binding (re
   }
 
   async function login(customerId: string, password: string): Promise<string> {
+    // The governed gate now runs when a session is issued; this helper's customer is
+    // built with raw SQL only, so complete it first (a non-ACTIVE customer is left alone).
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const res = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId, password })

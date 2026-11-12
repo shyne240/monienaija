@@ -30,6 +30,9 @@ import {
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 const ROLES = [
   'SUPER_ADMIN',
@@ -71,6 +74,8 @@ function path(id: string): string {
   return `/api/v1/customers/${id}/preferences`;
 }
 
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+
 describe('Mission 25G preference authorization and attribution (real guard + PostgreSQL)', () => {
   let ds: DataSource;
   let app: NestFastifyApplication;
@@ -89,6 +94,8 @@ describe('Mission 25G preference authorization and attribution (real guard + Pos
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(ds)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       // This is the transport, not an authentication/authorization dependency.
       .overrideProvider(NOTIFICATION_PROVIDER_TOKEN)
       .useValue(provider)
@@ -144,6 +151,9 @@ describe('Mission 25G preference authorization and attribution (real guard + Pos
        VALUES ($1,$2,'PBKDF2',1,NOW(),'ACTIVE',false,0,1)`,
       [id, passwordHash()],
     );
+    // The governed gate now runs when a session is issued; this helper's customer is
+    // built with raw SQL only, so complete it first (a non-ACTIVE customer is left alone).
+    await makeCustomerFinanciallyEligible(ds, id, kycEvidence);
     const login = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId: id, password: CUSTOMER_PASSWORD })

@@ -320,7 +320,8 @@ export type EligibleEvidenceSource = FixtureEvidenceReader | { reader: FixtureEv
  *   - adds identity evidence whose MAC matches the supplied reader's trust anchor.
  *
  * Idempotent: calling it twice leaves one current assessment and one evidence set, so a customer
- * helper and a KYC helper can both call it safely.
+ * helper and a KYC helper can both call it safely. A customer whose status is not ACTIVE is left
+ * untouched, so suites that assert rejection for a suspended customer keep their precondition.
  */
 export async function makeCustomerFinanciallyEligible(
   dataSource: DataSource,
@@ -339,9 +340,11 @@ export async function makeCustomerFinanciallyEligible(
   const validForSeconds = options.assessmentValidForSeconds ?? 3600;
   const assessedBy = options.assessedBy ?? 'integration-harness';
 
-  // Customer row must be ACTIVE / APPROVED at an allowed level.
+  // Customer row must be APPROVED at an allowed level. The status is deliberately *not* changed:
+  // a suite that created a suspended/inactive customer to assert the gate's rejection must keep
+  // that status, and the gate itself still requires ACTIVE.
   await dataSource.query(
-    `UPDATE customers SET status='ACTIVE', kyc_status='APPROVED', kyc_level=$2 WHERE id=$1`,
+    `UPDATE customers SET kyc_status='APPROVED', kyc_level=$2 WHERE id=$1 AND status='ACTIVE'`,
     [customerId, level],
   );
 

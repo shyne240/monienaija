@@ -45,6 +45,9 @@ import {
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 const LOGIN_PATH = '/api/v1/internal/a2/workforce/local-admin-sessions';
 
@@ -53,6 +56,8 @@ function encodePbkdf2(password: string, saltStr = 'kyc-01-salt'): string {
   const digest = pbkdf2Sync(password, salt, 10_000, 32, 'sha256');
   return `PBKDF2$sha256$10000$${salt.toString('base64url')}$${digest.toString('base64url')}`;
 }
+
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
 describe('V1-ADMIN-AUTHORIZATION-KYC-01 — KYC function authorization proof (real PostgreSQL + real HTTP)', () => {
   let dataSource: DataSource;
@@ -68,6 +73,8 @@ describe('V1-ADMIN-AUTHORIZATION-KYC-01 — KYC function authorization proof (re
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .compile();
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
@@ -218,6 +225,9 @@ describe('V1-ADMIN-AUTHORIZATION-KYC-01 — KYC function authorization proof (re
       `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
       [customerId, hash],
     );
+    // The governed gate now runs when a session is issued; this helper's customer is
+    // built with raw SQL only, so complete it first (a non-ACTIVE customer is left alone).
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const res = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId, password })

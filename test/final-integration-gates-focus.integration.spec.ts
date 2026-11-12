@@ -35,12 +35,17 @@ import {
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 function encodePbkdf2(password: string, saltStr = 'final-gates-salt'): string {
   const salt = Buffer.from(saltStr);
   const digest = pbkdf2Sync(password, salt, 10_000, 32, 'sha256');
   return `PBKDF2$sha256$10000$${salt.toString('base64url')}$${digest.toString('base64url')}`;
 }
+
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
 describe('Final integration gates — focused real-HTTP checks (real PostgreSQL)', () => {
   let dataSource: DataSource;
@@ -51,6 +56,8 @@ describe('Final integration gates — focused real-HTTP checks (real PostgreSQL)
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -100,6 +107,9 @@ describe('Final integration gates — focused real-HTTP checks (real PostgreSQL)
        VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
       [customerId, encodePbkdf2(password)],
     );
+      // The governed gate now runs when a session is issued, and this helper builds the
+      // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
+      await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const login = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId, password })

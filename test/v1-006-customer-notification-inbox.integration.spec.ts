@@ -19,12 +19,19 @@ import { NotificationDispatcherService } from '../src/notification/notification-
 import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible,
+  restoreKycSingletons,
+} from './support/kyc-test-fixtures';
 
 function encodePbkdf2(password: string, saltStr = 'a6-test-salt'): string {
   const salt = Buffer.from(saltStr);
   const digest = pbkdf2Sync(password, salt, 10_000, 32, 'sha256');
   return `PBKDF2$sha256$10000$${salt.toString('base64url')}$${digest.toString('base64url')}`;
 }
+
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
 describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
   let dataSource: DataSource;
@@ -103,6 +110,8 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .overrideProvider(A2WorkforceSessionService)
       .useValue(mockWorkforceSessions)
       .overrideProvider(A2_WORKFORCE_CONFIG)
@@ -146,6 +155,9 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     if (rows.length) {
       const list = rows.map((r) => `"${r.tablename}"`).join(', ');
       await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
+    // Batch 2C: a wholesale TRUNCATE also empties the migration-seeded KYC singletons
+    // (tier policy head, provider configuration, synthetic provider lock).
+    await restoreKycSingletons(dataSource);
     }
     await seedNotificationDefaultsV1(dataSource.manager);
     await seedNotificationDefaultsV2(dataSource.manager);
@@ -188,6 +200,9 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
       [randomUUID(), customerId, phone10],
     );
     try {
+      // Complete the customer before its wallet: the wallet path is gated on eligibility, and a
+      // wallet that silently fails here makes later approvals fail with 'Wallet ... was not found'.
+      await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
       await walletService.createWallet({
         customerId,
         currency: 'NGN',
@@ -214,6 +229,9 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
       `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
       [customerId, hash],
     );
+    // The governed gate now runs when a session is issued; this helper's customer is
+    // built with raw SQL only, so complete it first (a non-ACTIVE customer is left alone).
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const login = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId, password: pwd })

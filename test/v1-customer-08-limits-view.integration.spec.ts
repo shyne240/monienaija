@@ -17,6 +17,9 @@ import {
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 function encodePbkdf2(password: string, saltStr = 'v1c08-test-salt'): string {
   const salt = Buffer.from(saltStr);
@@ -34,6 +37,8 @@ function encodePbkdf2(password: string, saltStr = 'v1c08-test-salt'): string {
  * parallel/mocked calculation — so a passing test is direct evidence that the
  * customer-facing projection matches backend-authoritative state.
  */
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+
 describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
@@ -43,6 +48,8 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -94,6 +101,9 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       // customer logs in first, then flips status afterwards (see suspension test below).
       return { customerId, token: '' };
     }
+      // The governed gate now runs when a session is issued, and this helper builds the
+      // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
+      await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const login = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId, password })
@@ -442,6 +452,9 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
       [customerId, hash],
     );
+      // The governed gate now runs when a session is issued, and this helper builds the
+      // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
+      await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const res = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId, password })

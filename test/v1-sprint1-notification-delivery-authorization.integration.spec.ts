@@ -18,6 +18,9 @@ import {
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 const LOCAL_ADMIN_LOGIN_PATH = '/api/v1/internal/a2/workforce/local-admin-sessions';
 
@@ -38,6 +41,8 @@ function encodePbkdf2(password: string, saltStr = 'sprint1-notif-salt'): string 
  *   - Real `RuntimeAccessGuard` + `RoutePolicyRegistry` + `AuthorizationService.requireFunction()`
  *   - Real `AuditService` (`audit_events` rows)
  */
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+
 describe('SPRINT-1 Notification Delivery Authorization Hardening — F-02 / P0-02 (real PostgreSQL + HTTP)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
@@ -56,6 +61,8 @@ describe('SPRINT-1 Notification Delivery Authorization Hardening — F-02 / P0-0
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .compile();
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
@@ -177,6 +184,9 @@ describe('SPRINT-1 Notification Delivery Authorization Hardening — F-02 / P0-0
        VALUES ($1, $2, 'PBKDF2', 1, now(), 'ACTIVE', false, 0, 1)`,
       [customerId, encodePbkdf2(password)],
     );
+      // The governed gate now runs when a session is issued, and this helper builds the
+      // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
+      await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const loginRes = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId, password })

@@ -29,12 +29,17 @@ import {
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 function encodePbkdf2(password: string, saltStr = 'test-salt-v1-ops-01'): string {
   const salt = Buffer.from(saltStr);
   const digest = pbkdf2Sync(password, salt, 10_000, 32, 'sha256');
   return `PBKDF2$sha256$10000$${salt.toString('base64url')}$${digest.toString('base64url')}`;
 }
+
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
 describe('V1-OPS-01 Support Workforce Operational Workflow (real PostgreSQL + real HTTP)', () => {
   let dataSource: DataSource;
@@ -103,6 +108,8 @@ describe('V1-OPS-01 Support Workforce Operational Workflow (real PostgreSQL + re
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .overrideProvider(A2WorkforceSessionService)
       .useValue(mockWorkforceSessions)
       .overrideProvider(A2_WORKFORCE_CONFIG)
@@ -154,6 +161,9 @@ describe('V1-OPS-01 Support Workforce Operational Workflow (real PostgreSQL + re
       currency: 'NGN',
       idempotencyKey: `ops01-wallet-${customerId}`,
     });
+      // The governed gate now runs when a session is issued, and this helper builds the
+      // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
+      await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const login = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId, password })
