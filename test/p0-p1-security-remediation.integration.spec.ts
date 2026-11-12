@@ -130,6 +130,14 @@ function freshCode(prefix: string): string {
   return `${prefix}_${randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`;
 }
 
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+
+// Test-only trusted-evidence override. Opt-in per suite; the production reader stays
+// fail-closed because nothing in AppModule references this module.
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+
 describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
@@ -149,6 +157,8 @@ describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .overrideProvider(A2WorkforceSessionService)
       .useValue(mockWorkforceSessions)
       .overrideProvider(A2_WORKFORCE_CONFIG)

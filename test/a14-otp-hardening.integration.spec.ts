@@ -31,6 +31,14 @@ function hashPin(pin: string): string {
   return `PBKDF2$sha256$10000$${salt.toString('base64url')}$${derived.toString('base64url')}`;
 }
 
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+
+// Test-only trusted-evidence override. Opt-in per suite; the production reader stays
+// fail-closed because nothing in AppModule references this module.
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+
 describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
@@ -50,6 +58,8 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -163,6 +173,10 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
       pinVersion: 1,
       actor: customerId,
     });
+    // Batch 2C: this fixture created the customer with raw SQL only, which the governed
+    // financial-eligibility gate (correctly) rejects. Applied after the suite's own
+    // profile/phone rows exist and immediately before the wallet that needs the gate.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',

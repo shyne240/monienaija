@@ -30,6 +30,16 @@ interface NotificationDiagnosticFixture {
   eventKey: string;
 }
 
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+
+// Test-only trusted-evidence override. Opt-in per suite; the production reader stays
+// fail-closed because nothing in AppModule references this module.
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+
+import { restoreKycSingletons } from './support/kyc-test-fixtures';
+
 describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /internal/notifications/deliveries (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
@@ -99,6 +109,8 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .overrideProvider(A2WorkforceSessionService)
       .useValue(mockWorkforceSessions)
       .overrideProvider(A2_WORKFORCE_CONFIG)
@@ -140,6 +152,9 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     if (rows.length) {
       const list = rows.map((r) => `"${r.tablename}"`).join(', ');
       await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
+      // Batch 2C: a wholesale TRUNCATE also empties the migration-seeded KYC singletons
+      // (tier policy head, provider configuration, synthetic provider lock).
+      await restoreKycSingletons(dataSource);
     }
     await seedNotificationDefaultsV1(dataSource.manager);
     await seedNotificationDefaultsV2(dataSource.manager);

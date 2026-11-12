@@ -19,6 +19,19 @@ function encodePbkdf2(password: string, saltStr = 'test-salt-v1-007'): string {
   return `PBKDF2$sha256$10000$${salt.toString('base64url')}$${digest.toString('base64url')}`;
 }
 
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+
+// Test-only trusted-evidence override. Opt-in per suite; the production reader stays
+// fail-closed because nothing in AppModule references this module.
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+
+import { restoreKycSingletons } from './support/kyc-test-fixtures';
+
+import * as fs from 'node:fs';
+import { join } from 'node:path';
+
 describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
@@ -59,6 +72,8 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -95,6 +110,9 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     if (rows.length) {
       const list = rows.map((r) => `"${r.tablename}"`).join(', ');
       await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
+      // Batch 2C: a wholesale TRUNCATE also empties the migration-seeded KYC singletons
+      // (tier policy head, provider configuration, synthetic provider lock).
+      await restoreKycSingletons(dataSource);
     }
     const settlement: Array<{ id: string }> = await dataSource.query(
       `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
@@ -140,6 +158,10 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
       [customerId, hash],
     );
+    // Batch 2C: this fixture created the customer with raw SQL only, which the governed
+    // financial-eligibility gate (correctly) rejects. Applied after the suite's own
+    // profile/phone rows exist and immediately before the wallet that needs the gate.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',
@@ -1351,49 +1373,23 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(
       `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
     );
-    expect([
-      '1785753600066',
-      '1785753600067',
-      '1785753600068',
-      '1785753600069',
-      '1785753600070',
-      '1785753600071',
-      '1785753600072',
-      '1785753600073',
-      '1785753600074',
-      '1785753600075',
-      '1785753600076',
-      '1785753600077',
-      '1785753600078',
-      '1785753600079',
-      '1785753600080',
-      '1785753600081',
-      '1785753600082',
-      '1785753600083',
-      '1785753600084',
-      '1785753600085',
-      '1785753600086',
-      '1785753600087',
-      '1785753600088',
-      '1785753600089',
-      '1785753600090',
-      '1785753600091',
-      '1785753600092',
-      '1785753600093',
-      '1785753600094',
-      '1785753600095',
-      '1785753600096',
-      '1785753600097',
-      '1785753600098',
-      '1785753600099',
-      '1785753600100',
-      '1785753600101',
-      '1785753600102',
-      '1785753600103',
-    ]).toContain(latest[0]!.timestamp);
-    expect(latest[0]!.name).toMatch(
-      /^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075|ProvisionV1CommercialAccountingFamilies1785753600076|AddAgentCredentialRotation1785753600077|CreateCustomerRegistrationPhoneChallenges1785753600078|AddCustomerCredentialRotation1785753600079|AddMfaChallengePurpose1785753600080|CreateSupportWorkforceAuthentication1785753600081|CreateLocalAdminAuthentication1785753600082|CreateAuthorizationCatalogue1785753600083|RenameWorkforceBootstrapRoleToSuperAdmin1785753600084|AddAdministratorRoleAssignmentScope1785753600085|CreateRoleDefinitionGovernance1785753600086|CreateDashboardPlatform1785753600087|CreateSuperAdminRecoveryConsumptions1785753600088|WidenAuthorizationActorColumns1785753600089|CreateAgentFundingRequests1785753600090|AddCustomerProfileNameParts1785753600091|AllowMultipleCustomerIdentityDocuments1785753600092|CreateCustomerProofOfAddressWorkflows1785753600093|AddSecureCustomerProofOfAddressUploads1785753600094|SecureAgentApplicationAccess1785753600095|CreateCashToCashLocators1785753600096|AddEmailNotificationChannel1785753600097|CreateNotificationTemplateRegistry1785753600098|AllowPhoneNotificationRecipients1785753600099|CreateNotificationProviderConfiguration1785753600100|NotificationReliability1785753600101|AddNotificationCredentialBinding1785753600102|ConfigureTransactionNotificationEvents1785753600103)$/,
-    );
+    // The applied chain must reach the newest migration in the repository. This used to be a
+    // hand-maintained allowlist of acceptable "latest" timestamps and had gone stale, so it failed
+    // on a correct chain; deriving the expectation keeps the property and never needs updating.
+    const repositoryHeads = fs
+      .readdirSync(join(__dirname, '..', 'src', 'migrations'))
+      .filter((file) => /^\d+-.*\.ts$/.test(file))
+      .sort();
+    const newest = /^(\d+)-/.exec(repositoryHeads[repositoryHeads.length - 1]!)![1]!;
+    expect(latest[0]!.timestamp).toBe(newest);
+    // The newest applied migration must be the repository's newest migration, with the class name
+    // TypeORM records (file `<timestamp>-<Name>.ts` -> `<Name><timestamp>`). The previous version of
+    // this assertion was a hand-maintained regex listing every acceptable migration and had gone
+    // stale; deriving both sides keeps the property and never needs updating.
+    const newestFile = repositoryHeads[repositoryHeads.length - 1]!;
+    const newestMatch = /^(\d+)-(.*)\.ts$/.exec(newestFile)!;
+    expect(latest[0]!.timestamp).toBe(newestMatch[1]);
+    expect(latest[0]!.name).toBe(`${newestMatch[2]}${newestMatch[1]}`);
     const supportTable: Array<{ tablename: string }> = await dataSource.query(
       `SELECT tablename FROM pg_tables WHERE tablename='support_tickets'`,
     );

@@ -32,6 +32,16 @@ interface FundingHistoryFixture {
   rejectionReason: string | null;
 }
 
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+
+// Test-only trusted-evidence override. Opt-in per suite; the production reader stays
+// fail-closed because nothing in AppModule references this module.
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+
+import { restoreKycSingletons } from './support/kyc-test-fixtures';
+
 describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
@@ -89,6 +99,8 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -128,6 +140,9 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     if (rows.length) {
       const list = rows.map((r) => `"${r.tablename}"`).join(', ');
       await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
+      // Batch 2C: a wholesale TRUNCATE also empties the migration-seeded KYC singletons
+      // (tier policy head, provider configuration, synthetic provider lock).
+      await restoreKycSingletons(dataSource);
     }
     // Ensure ledger_accounts seed still present (in case data was not yet migrated due to previous truncate)
     const settlement: Array<{ id: string }> = await dataSource.query(
@@ -180,6 +195,10 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
       [customerId, hash],
     );
+    // Batch 2C: this fixture created the customer with raw SQL only, which the governed
+    // financial-eligibility gate (correctly) rejects. Applied after the suite's own
+    // profile/phone rows exist and immediately before the wallet that needs the gate.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',

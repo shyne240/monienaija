@@ -18,6 +18,8 @@ import type {
 import { CAPABILITY_SEED } from '../src/capability-registry/capability.seed';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 
+import { restoreKycSingletons } from './support/kyc-test-fixtures';
+
 describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
@@ -122,6 +124,9 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
     if (rows.length) {
       const list = rows.map((r) => `"${r.tablename}"`).join(', ');
       await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
+      // Batch 2C: a wholesale TRUNCATE also empties the migration-seeded KYC singletons
+      // (tier policy head, provider configuration, synthetic provider lock).
+      await restoreKycSingletons(dataSource);
     }
     const settlement: Array<{ id: string }> = await dataSource.query(
       `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,

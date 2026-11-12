@@ -34,6 +34,16 @@ import { createIntegrationDataSource, destroyIntegrationDataSource } from './sup
  * inbox isolation, delivery/provider-ref persistence, financial integrity under SMS
  * failure, secret hygiene, provider-neutral defaults.
  */
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+
+// Test-only trusted-evidence override. Opt-in per suite; the production reader stays
+// fail-closed because nothing in AppModule references this module.
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+
+import { restoreKycSingletons } from './support/kyc-test-fixtures';
+
 describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
@@ -96,6 +106,8 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .overrideProvider(A2WorkforceSessionService)
       .useValue(mockWorkforceSessions)
       .overrideProvider(A2_WORKFORCE_CONFIG)
@@ -142,6 +154,9 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
     if (rows.length) {
       const list = rows.map((r) => `"${r.tablename}"`).join(', ');
       await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
+      // Batch 2C: a wholesale TRUNCATE also empties the migration-seeded KYC singletons
+      // (tier policy head, provider configuration, synthetic provider lock).
+      await restoreKycSingletons(dataSource);
     }
     await seedNotificationDefaultsV1(dataSource.manager);
     await seedNotificationDefaultsV2(dataSource.manager);

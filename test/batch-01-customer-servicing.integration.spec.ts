@@ -64,6 +64,14 @@ const workforceConfig: A2WorkforceConfigurationV1 = {
 // below were updated consistently (canonical national number = '811000' + suffix).
 const syntheticPhone = (suffix: string) => `+234811000${suffix}`;
 
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+
+// Test-only trusted-evidence override. Opt-in per suite; the production reader stays
+// fail-closed because nothing in AppModule references this module.
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+
 describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
@@ -82,6 +90,8 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .overrideProvider(A2_WORKFORCE_CONFIG)
       .useValue(workforceConfig)
       .compile();
