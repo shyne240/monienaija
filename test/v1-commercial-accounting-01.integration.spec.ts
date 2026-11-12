@@ -90,6 +90,10 @@ import {
 } from './support/pg-harness';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import {
+  createEligibleCustomer,
+  makeCustomerFinanciallyEligible,
+} from './support/kyc-test-fixtures';
 
 function hashPin(pin: string): string {
   const salt = randomBytes(16);
@@ -633,6 +637,9 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$2,true,NOW())`,
       [customerId, phoneCanonical],
     );
+    // This helper creates the customer with raw SQL only, so the governed financial-eligibility
+    // gate would reject its wallet; complete the customer now that its profile and phone exist.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',
@@ -653,9 +660,6 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       pinVersion: 1,
       actor: base.customerId,
     });
-    // This helper creates the customer with raw SQL only, so the governed
-    // financial-eligibility gate would reject its wallet; complete it here.
-    await makeCustomerFinanciallyEligible(dataSource, base, kycEvidence);
     return base;
   }
 
