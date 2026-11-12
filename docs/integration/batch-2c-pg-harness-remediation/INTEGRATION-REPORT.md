@@ -116,8 +116,10 @@ spot-run before it was committed.
 | `tsc --noEmit` | exit 0 |
 | `eslint "{src,test}/**/*.ts"` | exit 0 |
 | Isolated KYC (`KYC_ISOLATED_CONFIRM_DISPOSABLE=yes node scripts/run-isolated-kyc-tests.js`) | **8/8 suites, 88/88 tests, exit 0** |
-| Full bounded PG inventory (before this session's fixes) | 139 discovered, **87 passed / 52 failed**, 0 memory failures, 0 timeouts, 0 crashed batches, 41.7 min |
-| Full bounded PG inventory (final) | see §6 |
+| Full bounded PG inventory, baseline (before this session's fixes) | 139 discovered, **87 passed / 52 failed**, 0 memory failures, 0 timeouts, 0 crashed batches, 41.7 min, 1 992/2 517 tests |
+| Full bounded PG inventory, after the fixture work | 139 discovered, **124 passed / 15 failed**, 0 memory failures, 0 timeouts, 0 crashed batches, 52.6 min, **2 447/2 516 tests** |
+| Suites re-verified individually after that inventory | +6 green (`p0-p1` 41/41, `v1-hardening-06` 15/15, `transfer-notification-producer-01` 4/4, `v1-agent-mfa-api-01` 13/13, `v1-admin-authorization-customer-read-01` 54/54, `s-fix-01` 7/7) |
+| **Current standing** | **130 / 139 suites** (see the caveat in §6) |
 
 Individual suites verified green after remediation (real PostgreSQL):
 
@@ -136,8 +138,28 @@ Arena-1 item, §6) · `hardening-04` 26/26 · `v1-003` 21/21 · `v1-005` 23/23 �
 
 ## 6. Remaining failures and their causes
 
-_Final inventory numbers are filled in from the run recorded in `pg-final3.log` /
-`pg-final3.json`; each remaining suite is classified by observed cause below._
+**Caveat, stated plainly:** the 130/139 figure is composed of the last complete inventory (124) plus the
+six suites that were re-verified individually after it. It is **not** a single consolidated run of the
+finished tree; re-running the whole inventory would take ~55 minutes and was not done again in this
+session. 124/139 is the number from one real, complete, bounded run.
+
+Remaining 9 suites and their observed causes:
+
+| Suite | Observed symptom | Cause classification |
+|---|---|---|
+| `v1-customer-onboarding-01` | 8× `201 → 503` | **Arena 1 behaviour**: `CustomerRegistrationService.completeRegistration` always fails closed (commit `05a38f4`, "Fail closed legacy onboarding pending trusted KYC"). The suite exercises the legacy route. |
+| `v1-customer-onboarding-02` | 8× `201 → 503` | same |
+| `v1-customer-credentials-01` | 13× `201 → 503` | same |
+| `v1-admin-authorization-kyc-01` | 5× `201 → 409` | KYC-assessment write for a raw-SQL customer; the assessment/eligibility invariants are not yet satisfied by that suite's own fixture |
+| `v1-admin-authorization-hardening-01` | 2 assertions `Expected: 200` | customer session issuance now gated; that suite builds its customer outside the shared helper |
+| `mission-16a-agent-read-authorization` | 4× `Expected 200 / Received 409` | customer-token flow gated on eligibility; suite mints tokens directly |
+| `batch-01-customer-servicing` | 1× `Trusted KYC evidence is unavailable`, 1× `200 → 409` | its seed helper inserts customers with an arbitrary status passed in by the caller, so it was deliberately **not** blanket-completed (that would break its own rejection cases) |
+| `v1-limit-02-limit-assignment` | 1× `Expected 201 / Received 404` on `POST /internal/limit-assignments` | the subject is a raw-SQL customer; the assignment write now reports the subject as not found |
+| `local-dev-11-roles` | 5 deep-equality assertions on a seed subprocess result | role-seed fixture drift, unrelated to KYC eligibility |
+
+None of these was made green by deleting, skipping or weakening a test, and none involved a
+production-code change. They are left visible for the follow-up that owns them (Arena 1 for the
+registration behaviour; a further fixture pass for the last four).
 
 - **Arena-1-attributable behaviour change (not a fixture defect, deliberately not worked around):**
   the legacy customer-registration path is hard-disabled in production code
