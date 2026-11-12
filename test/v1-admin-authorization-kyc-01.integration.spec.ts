@@ -245,82 +245,81 @@ describe('V1-ADMIN-AUTHORIZATION-KYC-01 — KYC function authorization proof (re
     return { Authorization: `Bearer ${token}` };
   }
 
-/**
- * The assessment contract (`KycTierTransitionService.administrativeAssessment`) derives the
- * required function from `status`:
- *
- *   - `APPROVED` needs `kyc.approve` and is evaluated from locked authoritative evidence, so
- *     it carries the tier being requested;
- *   - `PENDING` / `REJECTED` are *manual holds*: they must carry the non-privileged `NONE`
- *     tier plus one of the governed reasons (`EVIDENCE_REVOKED`, `IDENTITY_CONFLICT`,
- *     `MANUAL_REVIEW`). Any other shape is rejected with 409 before the authorization
- *     decision this suite tests is even reached.
- */
-function reviewBody(status: string, level: 'LEVEL_1' | 'LEVEL_2' = 'LEVEL_1') {
-  if (status === 'APPROVED') {
-    return { level, status, assessedBy: 'kyc-01-test-harness' };
-  }
-  return {
-    level: 'NONE',
-    status,
-    reason: 'MANUAL_REVIEW',
-    assessedBy: 'kyc-01-test-harness',
-  };
-}
-
-/**
- * A customer that can actually complete the approval leg of the review workflow.
- *
- * Approving is no longer a body-only operation: the service re-evaluates locked evidence, so
- * the shared fixtures seed a governed tier policy plus MAC-bound identity evidence for the
- * real trusted reader this suite installs. Nothing here bypasses authorization — every
- * assertion in this file is still made through the real guard and the real service.
- */
-async function createReviewableCustomer(
-  level: 'LEVEL_1' | 'LEVEL_2' = 'LEVEL_1',
-): Promise<string> {
-  const customerId = await createActiveCustomer();
-  const phone = `+2348${String(Math.floor(10_000_000 + Math.random() * 89_999_999))}`;
-  if (level === 'LEVEL_2') {
-    // Tier 2 requires BVN *and* NIN, and the default fixture policy additionally requires
-    // `PHONE` evidence — a type the trusted read path cannot produce from
-    // `kyc_verification_attempts`. Install the same governed policy without that rule so a
-    // tier-2 approval is reachable; the maker/checker approval path itself is unchanged.
-    await seedGovernedTierPolicy(dataSource, {
-      definition: {
-        ...DEFAULT_GOVERNED_TIER_POLICY,
-        regulatory: {
-          ...DEFAULT_GOVERNED_TIER_POLICY.regulatory,
-          LEVEL_2: { all: [], any: [] },
-        },
-      },
-    });
-  }
-  await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence, {
-    level,
-    phone,
-  });
-  if (level === 'LEVEL_2') {
-    // Second identity document, bound to the same identity MAC the reader recomputes.
-    const identity = {
-      firstName: 'Ada',
-      lastName: 'Okafor',
-      dateOfBirth: '1990-04-12',
-      phone,
+  /**
+   * The assessment contract (`KycTierTransitionService.administrativeAssessment`) derives the
+   * required function from `status`:
+   *
+   *   - `APPROVED` needs `kyc.approve` and is evaluated from locked authoritative evidence, so
+   *     it carries the tier being requested;
+   *   - `PENDING` / `REJECTED` are *manual holds*: they must carry the non-privileged `NONE`
+   *     tier plus one of the governed reasons (`EVIDENCE_REVOKED`, `IDENTITY_CONFLICT`,
+   *     `MANUAL_REVIEW`). Any other shape is rejected with 409 before the authorization
+   *     decision this suite tests is even reached.
+   */
+  function reviewBody(status: string, level: 'LEVEL_1' | 'LEVEL_2' = 'LEVEL_1') {
+    if (status === 'APPROVED') {
+      return { level, status, assessedBy: 'kyc-01-test-harness' };
+    }
+    return {
+      level: 'NONE',
+      status,
+      reason: 'MANUAL_REVIEW',
+      assessedBy: 'kyc-01-test-harness',
     };
-    const [bvn] = await dataSource.query<Array<{ identity_mac: string }>>(
-      `SELECT identity_mac FROM kyc_verification_attempts WHERE customer_id=$1 ORDER BY created_at LIMIT 1`,
-      [customerId],
-    );
-    await seedIdentityEvidence(dataSource, customerId, {
-      kind: 'NIN',
-      identityMac: bvn?.identity_mac ?? kycEvidence.identityMacFor(customerId, identity),
-      macKeyVersion: kycEvidence.keyVersion,
-    });
   }
-  return customerId;
-}
 
+  /**
+   * A customer that can actually complete the approval leg of the review workflow.
+   *
+   * Approving is no longer a body-only operation: the service re-evaluates locked evidence, so
+   * the shared fixtures seed a governed tier policy plus MAC-bound identity evidence for the
+   * real trusted reader this suite installs. Nothing here bypasses authorization — every
+   * assertion in this file is still made through the real guard and the real service.
+   */
+  async function createReviewableCustomer(
+    level: 'LEVEL_1' | 'LEVEL_2' = 'LEVEL_1',
+  ): Promise<string> {
+    const customerId = await createActiveCustomer();
+    const phone = `+2348${String(Math.floor(10_000_000 + Math.random() * 89_999_999))}`;
+    if (level === 'LEVEL_2') {
+      // Tier 2 requires BVN *and* NIN, and the default fixture policy additionally requires
+      // `PHONE` evidence — a type the trusted read path cannot produce from
+      // `kyc_verification_attempts`. Install the same governed policy without that rule so a
+      // tier-2 approval is reachable; the maker/checker approval path itself is unchanged.
+      await seedGovernedTierPolicy(dataSource, {
+        definition: {
+          ...DEFAULT_GOVERNED_TIER_POLICY,
+          regulatory: {
+            ...DEFAULT_GOVERNED_TIER_POLICY.regulatory,
+            LEVEL_2: { all: [], any: [] },
+          },
+        },
+      });
+    }
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence, {
+      level,
+      phone,
+    });
+    if (level === 'LEVEL_2') {
+      // Second identity document, bound to the same identity MAC the reader recomputes.
+      const identity = {
+        firstName: 'Ada',
+        lastName: 'Okafor',
+        dateOfBirth: '1990-04-12',
+        phone,
+      };
+      const [bvn] = await dataSource.query<Array<{ identity_mac: string }>>(
+        `SELECT identity_mac FROM kyc_verification_attempts WHERE customer_id=$1 ORDER BY created_at LIMIT 1`,
+        [customerId],
+      );
+      await seedIdentityEvidence(dataSource, customerId, {
+        kind: 'NIN',
+        identityMac: bvn?.identity_mac ?? kycEvidence.identityMacFor(customerId, identity),
+        macKeyVersion: kycEvidence.keyVersion,
+      });
+    }
+    return customerId;
+  }
 
   const NON_KYC_ROLES = [
     'FINANCE_PREPARER',

@@ -26,6 +26,30 @@ const OPERATIONAL = new Set([
 ]);
 const emailFor = (role) => `${role.toLowerCase().replace(/_/g, '-')}@monienaija.local`;
 const passwordFor = (role) => `MonieNaija_${role}_123!`;
+const fs = require('node:fs');
+const path = require('node:path');
+
+/**
+ * Loads an application module from the compiled build when one exists (`npm run build`), and
+ * otherwise from the TypeScript sources through ts-node.
+ *
+ * Requiring `../dist/...` unconditionally made this fixture unusable from a plain source
+ * checkout: every invocation died with `MODULE_NOT_FOUND` before it could seed anything, which is
+ * what the integration suite observes as a role-fixture failure. Nothing about the seeding logic
+ * changes, and a built checkout still executes the compiled output exactly as before.
+ */
+function loadApplicationModule(relativePath) {
+  const compiled = path.join(__dirname, '..', 'dist', `${relativePath}.js`);
+  if (fs.existsSync(compiled)) return require(compiled);
+  if (!require.extensions['.ts']) {
+    require('ts-node').register({
+      transpileOnly: true,
+      compilerOptions: { module: 'commonjs', target: 'ES2023' },
+    });
+  }
+  return require(path.join(__dirname, '..', 'src', relativePath));
+}
+
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 const principalFor = (email, config) =>
   `${config.oidcIssuer || 'https://identity.issuer.invalid'}:local-admin-credential:${sha256(email).slice(0, 32)}`;
@@ -151,9 +175,9 @@ async function seedLocalRoles(ds, config, audit) {
       }
       if (!active.length) {
         const id = randomUUID();
-        const {
-          financeRoleAssignmentReference,
-        } = require('../dist/authorization/finance-role-administration.service');
+        const { financeRoleAssignmentReference } = loadApplicationModule(
+          'authorization/finance-role-administration.service',
+        );
         const ref = financeRoleAssignmentReference(principal, role, config.environment);
         const legacy = config.roles.find((r) => r.roleKey === role && r.enabled);
         const functionRows = legacy
@@ -212,8 +236,8 @@ async function main() {
   );
   const { NestFactory } = require('@nestjs/core');
   const { DataSource } = require('typeorm');
-  const { AppModule } = require('../dist/app.module');
-  const { AuditService } = require('../dist/operations/audit.service');
+  const { AppModule } = loadApplicationModule('app.module');
+  const { AuditService } = loadApplicationModule('operations/audit.service');
   const app = await NestFactory.createApplicationContext(AppModule, { logger: false });
   try {
     const results = await seedLocalRoles(
