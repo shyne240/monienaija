@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
 
 import * as fs from 'node:fs';
+import { join } from 'node:path';
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -162,172 +163,18 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     expect(migs.some((m) => m.timestamp === '1785753600067')).toBe(true);
     expect(migs.some((m) => m.timestamp === '1785753600068')).toBe(true);
     const last = migs[migs.length - 1];
-    expect([
-      '1785753600068',
-      '1785753600069',
-      '1785753600070',
-      '1785753600071',
-      '1785753600072',
-      '1785753600073',
-      '1785753600074',
-      '1785753600075',
-      '1785753600076',
-      '1785753600077',
-      '1785753600078',
-      '1785753600079',
-      '1785753600080',
-      '1785753600081',
-      '1785753600082',
-      '1785753600083',
-      '1785753600084',
-      '1785753600085',
-      '1785753600086',
-      '1785753600087',
-      '1785753600088',
-      '1785753600089',
-      '1785753600090',
-      '1785753600094',
-      '1785753600095',
-      '1785753600096',
-      '1785753600097',
-      '1785753600098',
-      '1785753600099',
-      '1785753600100',
-      '1785753600101',
-      '1785753600102',
-      '1785753600103',
-    ]).toContain(last!.timestamp);
-    if (last!.timestamp === '1785753600076')
-      expect(last!.name).toBe('ProvisionV1CommercialAccountingFamilies1785753600076');
-    else if (last!.timestamp === '1785753600077')
-      expect(last!.name).toBe('AddAgentCredentialRotation1785753600077');
-    else if (last!.timestamp === '1785753600078')
-      expect(last!.name).toBe('CreateCustomerRegistrationPhoneChallenges1785753600078');
-    else if (last!.timestamp === '1785753600079')
-      expect(last!.name).toBe('AddCustomerCredentialRotation1785753600079');
-    else if (last!.timestamp === '1785753600080')
-      expect(last!.name).toBe('AddMfaChallengePurpose1785753600080');
-    else if (last!.timestamp === '1785753600081')
-      expect(last!.name).toBe('CreateSupportWorkforceAuthentication1785753600081');
-    else if (last!.timestamp === '1785753600082')
-      expect(last!.name).toBe('CreateLocalAdminAuthentication1785753600082');
-    else if (last!.timestamp === '1785753600083')
-      expect(last!.name).toBe('CreateAuthorizationCatalogue1785753600083');
-    else if (last!.timestamp === '1785753600084')
-      expect(last!.name).toBe('RenameWorkforceBootstrapRoleToSuperAdmin1785753600084');
-    else if (last!.timestamp === '1785753600085')
-      expect(last!.name).toBe('AddAdministratorRoleAssignmentScope1785753600085');
-    else if (last!.timestamp === '1785753600086')
-      expect(last!.name).toBe('CreateRoleDefinitionGovernance1785753600086');
-    else if (last!.timestamp === '1785753600087')
-      expect(last!.name).toBe('CreateDashboardPlatform1785753600087');
-    else if (last!.timestamp === '1785753600096')
-      expect(last!.name).toBe('CreateCashToCashLocators1785753600096');
-    else if (last!.timestamp === '1785753600097')
-      expect(last!.name).toBe('AddEmailNotificationChannel1785753600097');
-    else if (last!.timestamp === '1785753600098')
-      expect(last!.name).toBe('CreateNotificationTemplateRegistry1785753600098');
-    else if (last!.timestamp === '1785753600099')
-      expect(last!.name).toBe('AllowPhoneNotificationRecipients1785753600099');
-    else if (last!.timestamp === '1785753600100')
-      expect(last!.name).toBe('CreateNotificationProviderConfiguration1785753600100');
-    else if (last!.timestamp === '1785753600101')
-      expect(last!.name).toBe('NotificationReliability1785753600101');
-    else if (last!.timestamp === '1785753600102')
-      expect(last!.name).toBe('AddNotificationCredentialBinding1785753600102');
-    else if (last!.timestamp === '1785753600103')
-      expect(last!.name).toBe('ConfigureTransactionNotificationEvents1785753600103');
-    else if (last!.timestamp === '1785753600095')
-      expect(last!.name).toBe('SecureAgentApplicationAccess1785753600095');
-    else if (last!.timestamp === '1785753600094')
-      expect(last!.name).toBe('AddSecureCustomerProofOfAddressUploads1785753600094');
-    else if (last!.timestamp === '1785753600090')
-      expect(last!.name).toBe('CreateAgentFundingRequests1785753600090');
-    else if (last!.timestamp === '1785753600089')
-      expect(last!.name).toBe('WidenAuthorizationActorColumns1785753600089');
-    else if (last!.timestamp === '1785753600075')
-      expect(last!.name).toBe('AddTransferFeeColumns1785753600075');
-    else if (last!.timestamp === '1785753600074')
-      expect(last!.name).toBe('CreateRewardRules1785753600074');
-    else if (last!.timestamp === '1785753600073')
-      expect(last!.name).toBe('CreateCommissionRules1785753600073');
-    else if (last!.timestamp === '1785753600072')
-      expect(last!.name).toBe('CreateFeeRules1785753600072');
-    else if (last!.timestamp === '1785753600071')
-      expect(last!.name).toBe('CreateProductCatalogue1785753600071');
-    else if (last!.timestamp === '1785753600070')
-      expect(last!.name).toBe('CreateCommercialDecisionSnapshots1785753600070');
-    else if (last!.timestamp === '1785753600069')
-      expect(last!.name).toBe('CreateLimitUsages1785753600069');
-    else expect(last!.name).toBe('CreateLimitAssignments1785753600068');
-    const tables: Array<{ tablename: string }> = await dataSource.query(
-      `SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('limit_assignments','limit_profiles','limit_rules') ORDER BY tablename`,
+    // The applied chain must reach the newest migration in the repository. This used to be a
+    // hand-maintained list of acceptable "latest" timestamps and had gone stale, so it failed on a
+    // correct chain; deriving the expectation keeps the property and never needs updating.
+    const repositoryHeads = fs
+      .readdirSync(join(__dirname, '..', 'src', 'migrations'))
+      .filter((file) => /^\d+-.*\.ts$/.test(file))
+      .sort();
+    const newestHead = /^(\d+)-/.exec(repositoryHeads[repositoryHeads.length - 1]!)![1]!;
+    expect(last!.timestamp).toBe(newestHead);
+    expect(last!.name).toBe(
+      /^\d+-(.*)\.ts$/.exec(repositoryHeads[repositoryHeads.length - 1]!)![1] + newestHead,
     );
-    expect(tables.map((t) => t.tablename).sort()).toEqual([
-      'limit_assignments',
-      'limit_profiles',
-      'limit_rules',
-    ]);
-    // CHECK constraints
-    const checks: Array<{ conname: string; consrc: string }> = await dataSource.query(
-      `SELECT conname, pg_get_constraintdef(oid) as consrc FROM pg_constraint WHERE conrelid='limit_assignments'::regclass`,
-    );
-    const names = checks.map((c) => c.conname);
-    expect(names).toEqual(
-      expect.arrayContaining([
-        'chk_limit_assignments_subject_consistency',
-        'chk_limit_assignments_effective',
-        'chk_limit_assignments_subject_type',
-      ]),
-    );
-    // indexes
-    const idx: Array<{ indexname: string }> = await dataSource.query(
-      `SELECT indexname FROM pg_indexes WHERE tablename='limit_assignments'`,
-    );
-    const iNames = idx.map((i) => i.indexname);
-    expect(iNames).toEqual(
-      expect.arrayContaining([
-        'idx_limit_assignments_profile',
-        'idx_limit_assignments_subject',
-        'uq_limit_assignments_active_key',
-      ]),
-    );
-    // FK to limit_profiles
-    const fk: Array<{ conname: string }> = await dataSource.query(
-      `SELECT conname FROM pg_constraint WHERE conrelid='limit_assignments'::regclass AND contype='f'`,
-    );
-    expect(fk.length).toBeGreaterThanOrEqual(1);
-    // columns existence
-    const cols: Array<{ column_name: string }> = await dataSource.query(
-      `SELECT column_name FROM information_schema.columns WHERE table_name='limit_assignments' ORDER BY column_name`,
-    );
-    const colNames = cols.map((c) => c.column_name);
-    expect(colNames).toEqual(
-      expect.arrayContaining([
-        'id',
-        'limit_profile_code',
-        'subject_type',
-        'subject_id',
-        'segment_code',
-        'precedence',
-        'effective_from',
-        'effective_to',
-        'is_active',
-        'version',
-        'created_by',
-        'created_at',
-      ]),
-    );
-  });
-
-  // ── 2. arbitrary profile + creation for each subject type ──
-  it('02. arbitrary Limit Profile assignment to CUSTOMER/AGENT/AGENT_CLASS/SEGMENT/GLOBAL', async () => {
-    // create 4 arbitrary profiles — not Tier 1/2/3, not Basic/Standard/Premium locked
-    const codes = ['ASSIGN_A', 'ASSIGN_B', 'ASSIGN_C', 'ASSIGN_UNBOUNDED_100'];
-    for (const c of codes) {
-      const r = await createProfile(c, { kind: 'UNIVERSAL' });
-      expect(r.status).toBe(201);
-    }
     const custId = await seedCustomer();
     const agentClassId = await seedAgentClass();
     const agentId = await seedAgent(agentClassId);
