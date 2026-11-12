@@ -72,10 +72,10 @@ describe('V1-RELEASE-01 production readiness vs. real migration chain', () => {
     // reason 'schema_incompatible' — reproducing, in CI, the exact startup failure a real
     // production deployment would hit on a freshly-migrated database.
     expect(readiness.migrations.compatible).toBe(true);
-    expect(readiness.status).not.toBe('error');
-    if (readiness.status === 'error') {
-      expect(readiness.reason).not.toBe('schema_incompatible');
-    }
+    expect(readiness.reason).not.toBe('schema_incompatible');
+    expect(readiness.financialDependencies.blockers).toContain(
+      'trusted_kyc_evidence_reader_unavailable',
+    );
   });
 
   it('fails production startup even with a fully migrated database until checker authority is available', async () => {
@@ -142,8 +142,10 @@ describe('V1-RELEASE-01 production readiness vs. real migration chain', () => {
     }
   });
 
-  it('verifyStartup() does not throw against the real, fully-migrated schema', async () => {
-    await expect(readinessService.verifyStartup()).resolves.toBeUndefined();
+  it('refuses startup despite a current schema while financial dependencies are unavailable', async () => {
+    await expect(readinessService.verifyStartup()).rejects.toThrow(
+      'financial_dependencies_not_ready',
+    );
   });
 
   it('fails closed when an earlier shipped migration is missing from the applied inventory', async () => {
@@ -173,6 +175,12 @@ describe('V1-RELEASE-01 production readiness vs. real migration chain', () => {
         [target!.name],
       );
     }
-    await expect(readinessService.verifyStartup()).resolves.toBeUndefined();
+    // With the inventory restored the schema is compatible again, and startup still refuses for
+    // the (unverified) financial dependencies rather than reporting readiness.
+    const restored = await readinessService.getReadiness();
+    expect(restored.migrations.compatible).toBe(true);
+    await expect(readinessService.verifyStartup()).rejects.toThrow(
+      'financial_dependencies_not_ready',
+    );
   });
 });
