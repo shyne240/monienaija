@@ -576,8 +576,11 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
       .expect(409);
     // Seed a historical pending assessment solely to exercise the read route; the
     // public mutation above must remain closed to bypassing the governed evaluator.
+    // Inserted as a *historical* row (is_current=false): the schema allows exactly one current
+    // assessment per customer, the governed fixture already seeded that current row, and replacing
+    // it would revoke this customer's own eligibility mid-test.
     await dataSource.query(
-      "INSERT INTO customer_kyc_assessments(customer_id,kyc_level,kyc_status,assessed_by,is_current) VALUES($1,'LEVEL_1','PENDING','historical-test-fixture',true)",
+      "INSERT INTO customer_kyc_assessments(customer_id,kyc_level,kyc_status,assessed_by,is_current) VALUES($1,'LEVEL_1','PENDING','historical-test-fixture',false)",
       [self.customerId],
     );
 

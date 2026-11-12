@@ -642,9 +642,14 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     const beneficiaryPhone = '+2348000000013';
     const { customerId, wallet: customerWallet } = await createCustomer(beneficiaryPhone);
     await dataSource.query(
+      // Idempotent: the governed fixture may already have seeded the current assessment for this
+      // customer, and the schema allows exactly one current row per customer.
       `INSERT INTO customer_kyc_assessments
          (customer_id, kyc_level, kyc_status, assessed_by, is_current)
-       VALUES ($1, 'LEVEL_1', 'APPROVED', $2, TRUE)`,
+       SELECT $1, 'LEVEL_1', 'APPROVED', $2, TRUE
+        WHERE NOT EXISTS (
+          SELECT 1 FROM customer_kyc_assessments WHERE customer_id = $1 AND is_current
+        )`,
       [customerId, 'kyc-approver-api-test'],
     );
     const initiated = await request(app.getHttpServer())
