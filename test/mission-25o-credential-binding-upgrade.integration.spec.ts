@@ -65,10 +65,13 @@ describe('M25O additive 101-to-102 upgrade (isolated real PostgreSQL)', () => {
     ds = upgraded;
     await ds.initialize();
     const executed = await ds.runMigrations({ transaction: 'all' });
-    expect(executed.map((m) => m.name)).toEqual([
-      'AddNotificationCredentialBinding1785753600102',
-      'ConfigureTransactionNotificationEvents1785753600103',
-    ]);
+    // Every migration after the historical cut, derived from the configured chain rather than a
+    // hand-maintained list (which went stale when the KYC migrations landed).
+    const expectedUpgrade = allMigrations
+      .map((migration) => migration.name)
+      .filter((name) => Number(name.slice(-13)) > 1785753600101 && Number(name.slice(-13)) >= 1785753600102)
+      .sort((a, b) => Number(a.slice(-13)) - Number(b.slice(-13)));
+    expect(executed.map((m) => m.name)).toEqual(expectedUpgrade);
     expect(await ds.showMigrations()).toBe(false);
     expect(
       await ds.query(

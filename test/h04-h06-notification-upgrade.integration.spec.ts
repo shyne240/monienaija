@@ -66,14 +66,23 @@ describe('H-04/H-06 additive notification controls upgrade (real PostgreSQL)', (
     >(`SELECT id,version,is_active,subject,body FROM notification_templates
       WHERE event_type='transfer.completed' ORDER BY channel,version`);
 
+    // Everything the upgrade is expected to apply, taken from the configured chain *before* it runs
+    // (runMigrations consumes/reorders `ds.migrations`, so it cannot be read afterwards).
+    const upgradeChain = fullChain
+      .map((migration) => migration.name)
+      .filter((name) => Number(name.slice(-13)) > 1785753600102)
+      .sort((a, b) => Number(a.slice(-13)) - Number(b.slice(-13)));
     const upgraded = new DataSource({ ...ds.options, migrations: fullChain as never[] });
     await ds.destroy();
     ds = upgraded;
     await ds.initialize();
     const migrations = await ds.runMigrations({ transaction: 'all' });
-    expect(migrations.map((migration) => migration.name)).toEqual([
-      'ConfigureTransactionNotificationEvents1785753600103',
-    ]);
+    // Every migration after the historical cut must be applied exactly once, in order. The list is
+    // derived from the configured chain instead of being hand-maintained: the previous fixed list
+    // (ending at ConfigureTransactionNotificationEvents…0103) went stale as soon as the KYC
+    // migrations landed, failing on a *correct* upgrade.
+    const expectedUpgrade = upgradeChain;
+    expect(migrations.map((migration) => migration.name)).toEqual(expectedUpgrade);
     expect(await ds.showMigrations()).toBe(false);
 
     expect(

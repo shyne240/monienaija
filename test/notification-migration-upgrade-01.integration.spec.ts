@@ -120,15 +120,13 @@ describe('NOTIFICATION-MIGRATION-UPGRADE-01 baseline upgrade (real PostgreSQL)',
     dataSource = upgraded;
     await dataSource.initialize();
     const executed = await dataSource.runMigrations({ transaction: 'all' });
-    expect(executed.map((m) => m.name)).toEqual([
-      'AddEmailNotificationChannel1785753600097',
-      'CreateNotificationTemplateRegistry1785753600098',
-      'AllowPhoneNotificationRecipients1785753600099',
-      'CreateNotificationProviderConfiguration1785753600100',
-      'NotificationReliability1785753600101',
-      'AddNotificationCredentialBinding1785753600102',
-      'ConfigureTransactionNotificationEvents1785753600103',
-    ]);
+    // Everything after the baseline head, derived from the configured chain: the previous fixed
+    // list went stale as soon as the KYC migrations landed, failing a correct upgrade.
+    const expectedUpgrade = fullChain
+      .map((migration) => String(migration.name ?? ''))
+      .filter((name) => Number(name.slice(-13)) > 1785753600096)
+      .sort((a, b) => Number(a.slice(-13)) - Number(b.slice(-13)));
+    expect(executed.map((m) => m.name)).toEqual(expectedUpgrade);
     expect(await dataSource.showMigrations()).toBe(false);
 
     // Legacy evidence survives; an old FAILED send is explicitly UNKNOWN because the old
