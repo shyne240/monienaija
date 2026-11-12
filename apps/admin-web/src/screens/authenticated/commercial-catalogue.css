@@ -1,0 +1,46 @@
+.commercial-workspace{padding:clamp(16px,3vw,32px);max-width:1440px;min-width:0}
+.commercial-boundary{display:flex;gap:8px 16px;flex-wrap:wrap;align-items:baseline;background:#f0f7f3;border:1px solid #c8dfd1;border-left:4px solid #39795a;border-radius:8px;color:#244e3a;padding:13px 16px;margin:20px 0;font-size:13px;line-height:1.5}
+.commercial-boundary strong{color:#153e2d}
+.commercial-tabs{display:flex;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--mn-border-subtle,#dde7e2);margin:0 0 20px}
+.commercial-tabs button{appearance:none;background:transparent;border:0;border-bottom:3px solid transparent;padding:12px 15px;color:#52655f;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.commercial-tabs button[aria-selected=true]{border-bottom-color:#23734d;color:#123f2b}
+.commercial-tabs button:focus-visible{outline:3px solid #2179bf;outline-offset:-3px}
+.commercial-panel,.commercial-sections{min-width:0}
+.commercial-sections{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+.commercial-registry{min-width:0;background:#fff;border:1px solid var(--mn-border-subtle,#dde7e2);border-radius:12px;padding:clamp(16px,2vw,24px);box-shadow:0 2px 12px rgba(19,43,37,.04)}
+.commercial-registry__heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.commercial-registry__heading h2{font-size:20px;line-height:1.3;margin:4px 0;color:#132b25}
+.commercial-registry__heading p:not(.commercial-kicker){font-size:13px;color:#52655f;line-height:1.5;margin:0}
+.commercial-kicker{font-size:11px;letter-spacing:.08em;font-weight:700;color:#4a6b5a;margin:0}
+.commercial-registry__toolbar{display:flex;flex-wrap:wrap;align-items:end;gap:8px 20px;margin:20px 0 12px}
+.commercial-search{display:grid;gap:6px;font-size:12px;font-weight:700;color:#344f43;flex:1 1 240px;max-width:380px}
+.commercial-search input{width:100%;min-width:0;box-sizing:border-box;min-height:40px;border:1px solid #7d9288;border-radius:7px;padding:8px 11px;font:inherit;font-weight:400;color:#132b25;background:#fff}
+.commercial-search input:focus-visible{outline:3px solid #2179bf;outline-offset:2px}
+.commercial-registry__toolbar p{font-size:12px;line-height:1.4;color:#52655f;margin:0 0 8px}
+.commercial-registry__summary{font-size:13px;font-weight:600;color:#344f43;margin:16px 0 12px}
+.commercial-registry__pager{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;color:#52655f;font-size:12px;margin-top:16px}
+.commercial-registry__pager div{display:flex;gap:8px}
+.commercial-state{border:1px dashed #c7d9cf;border-radius:8px;background:#f6faf7;color:#52655f;padding:20px;margin-top:16px;font-size:13px}
+.commercial-state--error{background:#fff5f4;border:1px solid #e5aaa2;color:#7d241d}
+.commercial-footnote{font-size:12px;line-height:1.5;color:#52655f;margin:16px 2px}
+@media(max-width:480px){.commercial-tabs button{padding:10px}.commercial-registry__heading{align-items:stretch}.commercial-registry__toolbar p{margin-bottom:0}.commercial-registry__pager{align-items:flex-start}}
+/* Directory-aligned catalogue: the table is the primary workspace; details open in context. */
+.commercial-boundary{background:#f2f7f2;border-color:#dce8dc;border-left:3px solid #12804e;box-shadow:none}
+.commercial-tabs{gap:24px;margin:24px 0 20px}
+.commercial-tabs button{padding:11px 0;font-size:13px}
+.commercial-registry{padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+.commercial-registry__heading{padding:0 0 4px}
+.commercial-registry__toolbar{margin:24px 0 20px}
+.commercial-registry__summary{color:#203d30}
+.commercial-detail-trigger{appearance:none;white-space:nowrap;border:1px solid #78978a;border-radius:7px;padding:9px 12px;background:white;color:#006444;font:inherit;font-weight:700;cursor:pointer}
+.commercial-detail-trigger:hover{background:#edf7f0}
+.commercial-detail-trigger:focus-visible{outline:3px solid #2179bf;outline-offset:2px}
+.commercial-detail__header{position:sticky;top:0;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:24px;background:#fff;border-bottom:1px solid #dfe9e1;z-index:1}
+.commercial-detail__header h2{font-size:20px;color:#123c2b;margin:6px 0 0}
+.commercial-detail__body{padding:24px;overflow-wrap:anywhere}
+.commercial-detail__body>p{font-size:13px;color:#52655f;margin:0 0 20px}
+.commercial-detail__body dl{padding:16px;border:1px solid #dfe9e1;border-radius:8px;line-height:1.6}
+@media(max-width:480px){.commercial-tabs{gap:8px 20px}.commercial-tabs button{padding:10px 0}.commercial-detail__header,.commercial-detail__body{padding:20px}}
+/* Keep the record action discoverable while wide, read-only columns scroll. */
+.commercial-registry .mn-data-table th:last-child,.commercial-registry .mn-data-table td:last-child{position:sticky;right:0;z-index:1;box-shadow:-3px 0 6px #18382b0d}
+.commercial-registry .mn-data-table td:last-child{background:#fff}

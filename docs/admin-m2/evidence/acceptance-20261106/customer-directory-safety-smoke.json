@@ -1,0 +1,258 @@
+[
+  {
+    "width": 320,
+    "workspace": "directory",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "overview",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "personal",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "proof",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "workspace": "directory",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "overview",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "personal",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "proof",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "workspace": "directory",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "overview",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "personal",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "proof",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "workspace": "directory",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "overview",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "personal",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "proof",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "workspace": "directory",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "overview",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "personal",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "proof",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "workspace": "directory",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "overview",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "personal",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "proof",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "workspace": "directory",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "overview",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "personal",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "proof",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "workspace": "directory",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "overview",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "personal",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "proof",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 1440,
+    "view": 1440
+  }
+]

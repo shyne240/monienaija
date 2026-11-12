@@ -9,6 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 
+import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { normalizeCurrency } from '../common/money';
 import { LedgerAccount } from '../ledger/ledger-account.entity';
 import { LedgerAccountType, LedgerNormalBalance } from '../ledger/ledger.enums';
@@ -26,6 +27,7 @@ export class WalletService {
     private readonly walletRepository: Repository<WalletAccount>,
     private readonly dataSource: DataSource,
     private readonly ledgerService: LedgerService,
+    private readonly financialEligibility: CustomerFinancialEligibilityService,
   ) {}
 
   async createWallet(command: CreateWalletCommand): Promise<WalletView> {
@@ -89,6 +91,15 @@ export class WalletService {
         'idempotencyKey is required and must be at most 255 characters',
       );
     }
+
+    const classification = await manager.query<Array<{ owner_class: string }>>(
+      'SELECT wallet_owner_class($1) AS owner_class',
+      [customerId],
+    );
+    if (classification[0]?.owner_class === 'CUSTOMER')
+      await this.financialEligibility.require(manager, customerId.toLowerCase());
+    else if (classification[0]?.owner_class !== 'AGENT')
+      throw new ConflictException('Wallet owner requires review');
 
     const repository = manager.getRepository(WalletAccount);
     const existingByKey = await repository.findOne({

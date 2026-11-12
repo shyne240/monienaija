@@ -34,10 +34,10 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     gap: 4,
     padding: '14px 16px',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.pageBg,
     borderRadius: 8,
     border: `1px solid ${colors.border}`,
-    minWidth: 150,
+    minWidth: 0,
     flex: '1 1 150px',
   },
   label: {
@@ -49,6 +49,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   value: {
     fontSize: 20,
+    fontVariantNumeric: 'tabular-nums',
+    overflowWrap: 'anywhere',
     fontWeight: 'bold',
     color: colors.textPrimary,
   },

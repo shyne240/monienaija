@@ -34,8 +34,12 @@ export class CreateAgentOutletsAndTerminals1785753600062 implements MigrationInt
       )
     `);
 
-    await queryRunner.query(`CREATE UNIQUE INDEX uq_agent_outlets_reference ON agent_outlets (reference) WHERE deleted_at IS NULL`);
-    await queryRunner.query(`CREATE UNIQUE INDEX uq_agent_outlets_code ON agent_outlets (code) WHERE deleted_at IS NULL AND code IS NOT NULL`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX uq_agent_outlets_reference ON agent_outlets (reference) WHERE deleted_at IS NULL`,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX uq_agent_outlets_code ON agent_outlets (code) WHERE deleted_at IS NULL AND code IS NOT NULL`,
+    );
     await queryRunner.query(`CREATE INDEX idx_agent_outlets_agent ON agent_outlets (agent_id)`);
     await queryRunner.query(`CREATE INDEX idx_agent_outlets_status ON agent_outlets (status)`);
 
@@ -66,10 +70,16 @@ export class CreateAgentOutletsAndTerminals1785753600062 implements MigrationInt
       )
     `);
 
-    await queryRunner.query(`CREATE UNIQUE INDEX uq_agent_terminals_reference ON agent_terminals (reference) WHERE deleted_at IS NULL`);
-    await queryRunner.query(`CREATE UNIQUE INDEX uq_agent_terminals_code ON agent_terminals (code) WHERE deleted_at IS NULL AND code IS NOT NULL`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX uq_agent_terminals_reference ON agent_terminals (reference) WHERE deleted_at IS NULL`,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX uq_agent_terminals_code ON agent_terminals (code) WHERE deleted_at IS NULL AND code IS NOT NULL`,
+    );
     await queryRunner.query(`CREATE INDEX idx_agent_terminals_agent ON agent_terminals (agent_id)`);
-    await queryRunner.query(`CREATE INDEX idx_agent_terminals_outlet ON agent_terminals (outlet_id)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_agent_terminals_outlet ON agent_terminals (outlet_id)`,
+    );
     await queryRunner.query(`CREATE INDEX idx_agent_terminals_status ON agent_terminals (status)`);
   }
 

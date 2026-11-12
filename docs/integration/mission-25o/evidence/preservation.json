@@ -1,0 +1,30 @@
+{
+  "branch": "arena/92fd33dd-monienaija",
+  "restoredHeadBeforeReconciliation": "3d05aaec1d569dc8a5200ebb3b350e2cc1f78510",
+  "remoteTipBeforePreservation": "0d6d567c8b6aba861f4350fcb07e0bbc96e3fc2b",
+  "authorizedCandidate": "587c3763944368b9260c9299d18bce1189ca5919",
+  "authorizedCandidateTree": "31af77010292edcd386c08820ec34581ba5a6e31",
+  "implementationCommit": "3a0f87eafe86b455e1906d7779f83ca3152b9d00",
+  "implementationParent": "587c3763944368b9260c9299d18bce1189ca5919",
+  "implementationTree": "9f048856dd72617a17e013a893e03ffc9a6462b1",
+  "implementationRemoteVerifiedAfterNonForcePush": true,
+  "independentComparison": {
+    "candidateBlobs": 2841,
+    "modified": 19,
+    "added": 8,
+    "missing": 0,
+    "unrelatedNonignoredDifferences": 0,
+    "stagedBlobsMatchedWorkingFiles": true
+  },
+  "backup": {
+    "path": "/home/user/m25o-preservation-vR0AmWPr/mission25o-worktree.tar",
+    "sha256": "90626889190fbc4565b84787f779273017b96a22382a6317b99fa392b89498af",
+    "verifiedMembers": 27,
+    "verificationFailures": 0
+  },
+  "notes": [
+    "The saved index, initial status, SHA256SUMS, candidate tree and independent comparison are in the external backup directory.",
+    "The final documentation/evidence-only child and remote tip are reported in the direct handoff; a commit cannot include its own SHA.",
+    "No reset, clean, force push, rebase, branch switch, unrelated work discard or main merge was performed."
+  ]
+}

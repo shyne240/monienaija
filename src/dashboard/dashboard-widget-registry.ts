@@ -50,7 +50,8 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
   {
     widgetKey: 'identity-session',
     displayName: 'Session Identity',
-    description: 'Your own signed-in principal, session and assurance level. No function grant required — this is always your own data.',
+    description:
+      'Your own signed-in principal, session and assurance level. No function grant required — this is always your own data.',
     requiredFunctions: [],
     fetchMode: 'direct',
     kind: 'identity',
@@ -58,7 +59,8 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
   {
     widgetKey: 'entitlements-scopes',
     displayName: 'Entitlements',
-    description: 'Your own effective roles and catalogue function grants. No function grant required — this is always your own data.',
+    description:
+      'Your own effective roles and catalogue function grants. No function grant required — this is always your own data.',
     requiredFunctions: [],
     fetchMode: 'direct',
     kind: 'entitlements',
@@ -66,7 +68,8 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
   {
     widgetKey: 'transaction-summary',
     displayName: 'Transaction Summary',
-    description: 'Completed transaction value/count, success rate, and breakdown by W2W/W2C/C2W/C2C for the selected period, sourced from the authoritative transfers/deposits/withdrawals/cash-to-cash tables.',
+    description:
+      'Completed transaction value/count, success rate, and breakdown by W2W/W2C/C2W/C2C for the selected period, sourced from the authoritative transfers/deposits/withdrawals/cash-to-cash tables.',
     requiredFunctions: ['reporting.transaction_summary.view'],
     fetchMode: 'proxy',
     supportsPeriodFilter: true,
@@ -75,7 +78,8 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
   {
     widgetKey: 'transaction-trend',
     displayName: 'Transaction Volume Trend',
-    description: 'V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02: daily completed-transaction count and value across all four V1 transaction types for the selected period (maximum 92 days), zero-filled for days with no activity, sourced from the same authoritative tables as Transaction Summary.',
+    description:
+      'V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02: daily completed-transaction count and value across all four V1 transaction types for the selected period (maximum 92 days), zero-filled for days with no activity, sourced from the same authoritative tables as Transaction Summary.',
     requiredFunctions: ['reporting.transaction_summary.view'],
     fetchMode: 'proxy',
     supportsPeriodFilter: true,
@@ -84,7 +88,8 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
   {
     widgetKey: 'recent-transactions',
     displayName: 'Recent Transactions',
-    description: 'The most recent completed/failed/pending transactions across all four V1 transaction types, with reference, type, amount, status and timestamp (no customer PII).',
+    description:
+      'The most recent completed/failed/pending transactions across all four V1 transaction types, with reference, type, amount, status and timestamp (no customer PII).',
     requiredFunctions: ['reporting.transaction_summary.view'],
     fetchMode: 'proxy',
     kind: 'table',
@@ -92,7 +97,8 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
   {
     widgetKey: 'ledger-summary',
     displayName: 'Ledger Summary',
-    description: 'Ledger debit/credit totals by currency, sourced from ledger_journals/ledger_lines.',
+    description:
+      'Ledger debit/credit totals by currency, sourced from ledger_journals/ledger_lines.',
     requiredFunctions: ['ledger.view'],
     fetchMode: 'proxy',
     kind: 'status-breakdown',
@@ -100,7 +106,8 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
   {
     widgetKey: 'reconciliation-status',
     displayName: 'Reconciliation Status',
-    description: 'The latest reconciliation run status, exceptions and trial balance, sourced from ReconciliationService.',
+    description:
+      'The latest reconciliation run status, exceptions and trial balance, sourced from ReconciliationService.',
     requiredFunctions: ['reconciliation.view'],
     fetchMode: 'proxy',
     kind: 'status-breakdown',
@@ -167,7 +174,8 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
   {
     widgetKey: 'compliance-case-summary',
     displayName: 'Compliance Case Summary',
-    description: 'Non-FRAUD compliance case counts by status/category (AML, KYC, SANCTIONS and related).',
+    description:
+      'Non-FRAUD compliance case counts by status/category (AML, KYC, SANCTIONS and related).',
     requiredFunctions: ['compliance.manage_case'],
     fetchMode: 'proxy',
     kind: 'status-breakdown',
@@ -175,7 +183,8 @@ export const DASHBOARD_WIDGET_REGISTRY: readonly DashboardWidgetDefinition[] = [
   {
     widgetKey: 'fraud-case-summary',
     displayName: 'Fraud Case Summary',
-    description: 'FRAUD-category compliance case counts by status only — no AML/SANCTIONS visibility, per the RISK_FRAUD scope boundary.',
+    description:
+      'FRAUD-category compliance case counts by status only — no AML/SANCTIONS visibility, per the RISK_FRAUD scope boundary.',
     requiredFunctions: ['risk_fraud.manage_fraud_case'],
     fetchMode: 'proxy',
     kind: 'status-breakdown',

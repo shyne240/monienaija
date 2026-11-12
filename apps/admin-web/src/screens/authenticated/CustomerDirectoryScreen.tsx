@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { WorkspaceDrawer } from '../../design-system/WorkspaceDrawer';
 import {
   Alert,
   Button,
@@ -12,12 +13,13 @@ import {
   type StatusShape,
   type StatusTone,
 } from '../../design-system/primitives';
-import { CustomerRegistrationWizard } from './CustomerRegistrationWizard';
+import { CustomerRegistrationWizard, type CustomerRegistrationWizardHandle } from './CustomerRegistrationWizard';
 import { maskCustomerReference } from './customer-masking';
 import { Customer360Workspace, type DirectoryCustomer } from './Customer360Workspace';
 import '../../design-system/tokens.css';
 import './customer-management.css';
 import './customer-directory-pilot.css';
+import './one-directory.css';
 
 interface CustomerDirectoryResponse {
   data: DirectoryCustomer[];
@@ -32,12 +34,28 @@ interface CustomerDirectoryResponse {
 interface CustomerDirectoryScreenProps {
   onNavigate?: (view: string, customerId: string) => void;
   selectedCustomerId?: string;
+  onCustomerGuardChange?: (guarded: boolean, busy: boolean) => void;
 }
 
 const CUSTOMER_STATUSES = ['DRAFT', 'ACTIVE', 'SUSPENDED', 'CLOSED'];
 const CUSTOMER_TYPES = ['INDIVIDUAL', 'BUSINESS'];
 const KYC_LEVELS = ['NONE', 'LEVEL_1', 'LEVEL_2', 'LEVEL_3'];
 const KYC_STATUSES = ['NOT_STARTED', 'PENDING', 'APPROVED', 'REJECTED'];
+
+function isDirectoryCustomer(value: any): value is DirectoryCustomer {
+  return value && typeof value.id === 'string' && !!value.id.trim() && typeof value.reference === 'string' &&
+    typeof value.type === 'string' && typeof value.status === 'string' && typeof value.kycLevel === 'string' &&
+    typeof value.kycStatus === 'string' && (typeof value.createdAt === 'string' || value.createdAt instanceof Date) &&
+    (value.displayName == null || typeof value.displayName === 'string') && (value.legalName == null || typeof value.legalName === 'string') &&
+    (value.primaryContact == null || (typeof value.primaryContact.type === 'string' && typeof value.primaryContact.maskedValue === 'string' && typeof value.primaryContact.isVerified === 'boolean'));
+}
+function validDirectory(value: any, page: number, limit: number): value is CustomerDirectoryResponse {
+  return value && Array.isArray(value.data) && value.data.every(isDirectoryCustomer) && new Set(value.data.map((item: DirectoryCustomer) => item.id)).size === value.data.length &&
+    Number.isSafeInteger(value.total) && value.total >= 0 && value.page === page && value.limit === limit &&
+    Number.isSafeInteger(value.totalPages) && value.totalPages === Math.ceil(value.total / limit) &&
+    value.hasNextPage === (page * limit < value.total) && value.hasPreviousPage === (page > 1) &&
+    value.data.length <= Math.min(limit, Math.max(0, value.total - (page - 1) * limit));
+}
 
 function formatDate(value: string | Date | null | undefined): string {
   if (!value) return 'Not recorded';
@@ -92,13 +110,19 @@ function kycPresentation(kycStatus: string): { tone: StatusTone; shape: StatusSh
   }
 }
 
-export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = ({
-  onNavigate,
-  selectedCustomerId,
-}) => {
+export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (props) => {
+  const { principal, sessionId } = useAuthStore();
+  const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type,
+    principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess,
+    principal?.readOnlyPrincipal]);
+  return <CustomerDirectoryWorkspace key={key} {...props} />;
+};
+
+const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ onNavigate, selectedCustomerId, onCustomerGuardChange }) => {
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
-  const canCreateCustomer = scopes.includes('customer.create');
+  const canViewCustomer = scopes.includes('customer.view');
+  const canCreateCustomer = canViewCustomer && scopes.includes('customer.create') && !principal?.readOnlyPrincipal;
 
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
@@ -109,13 +133,21 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
   const [kycLevel, setKycLevel] = useState('');
   const [kycStatus, setKycStatus] = useState('');
   const [directory, setDirectory] = useState<CustomerDirectoryResponse | null>(null);
+  const [appliedQuery, setAppliedQuery] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadVersion, setReloadVersion] = useState(0);
   const [selectedCustomer, setSelectedCustomer] = useState<DirectoryCustomer | null>(null);
+  const [previewCustomer, setPreviewCustomer] = useState<DirectoryCustomer | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const createButtonRef = useRef<HTMLButtonElement>(null);
+  const registrationRef = useRef<CustomerRegistrationWizardHandle>(null);
+  const [registrationBusy, setRegistrationBusy] = useState(false);
   const requestVersion = useRef(0);
+  const createOpenRef = useRef(createOpen);
+  createOpenRef.current = createOpen;
+  useEffect(() => () => { requestVersion.current++; }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -135,13 +167,18 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
     return params.toString();
   }, [page, pageSize, search, status, type, kycLevel, kycStatus]);
 
+  // A preview describes the current result set; do not leave it visible after filters change.
+  useEffect(() => { setPreviewCustomer(null); }, [queryString]);
+
   useEffect(() => {
+    if (!canViewCustomer) { setIsLoading(false); return; }
     let active = true;
     setIsLoading(true);
     setError(null);
     ApiClient.get<CustomerDirectoryResponse>(`/internal/customers?${queryString}`)
       .then((response) => {
-        if (active) setDirectory(response);
+        if (!validDirectory(response, page, pageSize) || response.data.some(customer => (status && customer.status !== status) || (type && customer.type !== type) || (kycLevel && customer.kycLevel !== kycLevel) || (kycStatus && customer.kycStatus !== kycStatus))) throw new Error('Invalid or mismatched customer directory response');
+        if (active) { setDirectory(response); setAppliedQuery(queryString); }
       })
       .catch((loadError: unknown) => {
         if (active) setError(safeErrorMessage(loadError));
@@ -152,19 +189,16 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
     return () => {
       active = false;
     };
-  }, [queryString, reloadVersion]);
+  }, [queryString, reloadVersion, canViewCustomer, page, pageSize]);
 
   useEffect(() => {
     const version = ++requestVersion.current;
-    if (!selectedCustomerId) {
+    if (!canViewCustomer || !selectedCustomerId) {
       setSelectionError(null);
       return;
     }
-
-    const listedCustomer = directory?.data?.find((customer) => customer.id === selectedCustomerId);
-    if (listedCustomer) {
-      setSelectedCustomer(listedCustomer);
-      setSelectionError(null);
+    if (createOpenRef.current) {
+      setSelectionError('Close registration before opening a different customer.');
       return;
     }
 
@@ -173,6 +207,7 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
     ApiClient.get<DirectoryCustomer>(`/internal/customers/${encodeURIComponent(selectedCustomerId)}`)
       .then((customer) => {
         if (active && version === requestVersion.current) {
+          if (!isDirectoryCustomer(customer) || customer.id !== selectedCustomerId) { setSelectionError('The selected customer response could not be confirmed.'); return; }
           setSelectedCustomer(customer);
         }
       })
@@ -184,7 +219,7 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
     return () => {
       active = false;
     };
-  }, [selectedCustomerId, directory]);
+  }, [selectedCustomerId, canViewCustomer]);
 
   const handleCustomerCreated = () => {
     setPage(1);
@@ -194,14 +229,18 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
   };
 
   const openRegistrationCustomer = async (customerId: string) => {
+    const version = ++requestVersion.current;
     setCreateOpen(false);
     setSelectionError(null);
     try {
       const customer = await ApiClient.get<DirectoryCustomer>(
         `/internal/customers/${encodeURIComponent(customerId)}`,
       );
+      if (version !== requestVersion.current) return;
+      if (!isDirectoryCustomer(customer) || customer.id !== customerId) throw new Error('Mismatched customer');
       setSelectedCustomer(customer);
     } catch {
+      if (version !== requestVersion.current) return;
       setSelectionError('The saved customer is not available to this workforce role.');
       setReloadVersion((value) => value + 1);
     }
@@ -217,13 +256,16 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
     setReloadVersion((value) => value + 1);
   };
 
+  if (!canViewCustomer) return <main className="customer-management"><Alert tone="danger" title="Customer directory unavailable">This session requires customer.view to access customer records.</Alert></main>;
+
   if (selectedCustomer) {
     return (
       <Customer360Workspace
         customer={selectedCustomer}
-        onBack={() => setSelectedCustomer(null)}
+        onBack={() => { requestVersion.current++; setIsLoading(true); setSelectedCustomer(null); setReloadVersion(value => value + 1); }}
         onCustomerUpdated={handleCustomerUpdated}
         onNavigate={onNavigate}
+        onCustomerGuardChange={onCustomerGuardChange}
       />
     );
   }
@@ -238,10 +280,11 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
     setPage(1);
   };
 
-  const retry = () => setReloadVersion((value) => value + 1);
+  const retry = () => { setIsLoading(true); setReloadVersion((value) => value + 1); };
 
   const activeFilterCount = [searchInput, status, type, kycLevel, kycStatus].filter(Boolean).length;
-  const previousDataVisible = Boolean(directory) && (isLoading || Boolean(error));
+  const filtersPending = searchInput.trim() !== search;
+  const previousDataVisible = Boolean(directory) && (isLoading || Boolean(error) || filtersPending || appliedQuery !== queryString);
   const hasRows = (directory?.data ?? []).length > 0;
 
   // Truthful result text: an unknown total is never presented as zero.
@@ -250,6 +293,8 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
     countLabel = directory
       ? 'Customer count unconfirmed — showing previously loaded results'
       : 'Customer count unavailable';
+  } else if (previousDataVisible && directory) {
+    countLabel = 'Customer count unconfirmed — filters or results are being updated';
   } else if (isLoading && !directory) {
     countLabel = 'Loading customers…';
   } else {
@@ -260,7 +305,7 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
   const currentPage = directory?.page ?? page;
   const currentLimit = directory?.limit ?? pageSize;
   const totalPages = Math.max(directory?.totalPages ?? 0, 1);
-  const totalKnown = !error && typeof directory?.total === 'number';
+  const totalKnown = !error && !isLoading && !previousDataVisible && typeof directory?.total === 'number';
   const total = directory?.total ?? 0;
   const rangeStart = totalKnown && total > 0 ? (currentPage - 1) * currentLimit + 1 : null;
   const rangeEnd = totalKnown && rangeStart !== null ? Math.min(currentPage * currentLimit, total) : null;
@@ -276,7 +321,9 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
           canCreateCustomer ? (
             <Button
               variant="primary"
-              onClick={() => setCreateOpen((value) => !value)}
+              ref={createButtonRef}
+              onClick={() => { if (createOpen) registrationRef.current?.requestClose(); else setCreateOpen(true); }}
+              disabled={registrationBusy}
               aria-expanded={createOpen}
               aria-controls={createOpen ? 'mn-dir-registration' : undefined}
             >
@@ -286,17 +333,29 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
         }
       />
 
+      {createOpen && <p className="mn-dir-registration-notice" role="status">Finish or close registration before opening another customer. Unconfirmed actions may still have taken effect.</p>}
       {createOpen && canCreateCustomer && (
         <div className="mn-dir-registration" id="mn-dir-registration">
           <CustomerRegistrationWizard
-            onClose={() => setCreateOpen(false)}
+            ref={registrationRef}
+            onBusyChange={setRegistrationBusy}
+            onGuardChange={onCustomerGuardChange}
+            onClose={() => { setCreateOpen(false); setRegistrationBusy(false); createButtonRef.current?.focus(); }}
             onCustomerCreated={handleCustomerCreated}
             onOpenCustomer={openRegistrationCustomer}
           />
         </div>
       )}
 
+      <div className={previewCustomer ? 'one-directory-layout one-directory-layout--detail' : 'one-directory-layout'}>
       <section className="mn-dir-panel" aria-label="Customer search and results">
+        <div className="one-directory-tabs" aria-label="Quick customer filters">
+          <button type="button" aria-pressed={!status && !kycStatus} onClick={() => {setStatus('');setKycStatus('');setPage(1);}}>All Customers</button>
+          <button type="button" aria-pressed={status === 'ACTIVE' && !kycStatus} onClick={() => {setStatus('ACTIVE');setKycStatus('');setPage(1);}}>Active</button>
+          <button type="button" aria-pressed={kycStatus === 'PENDING' && !status} onClick={() => {setStatus('');setKycStatus('PENDING');setPage(1);}}>Pending KYC</button>
+          <button type="button" aria-pressed={status === 'SUSPENDED' && !kycStatus} onClick={() => {setStatus('SUSPENDED');setKycStatus('');setPage(1);}}>Suspended</button>
+          <button type="button" aria-pressed={status === 'CLOSED' && !kycStatus} onClick={() => {setStatus('CLOSED');setKycStatus('');setPage(1);}}>Closed</button>
+        </div>
         <div className="mn-dir-toolbar">
           <div className="mn-dir-toolbar__filters">
             <Field label="Search" htmlFor="mn-dir-search" className="mn-dir-filter mn-dir-filter--search">
@@ -304,6 +363,7 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
                 id="mn-dir-search"
                 className="mn-input mn-input--search"
                 type="search"
+                maxLength={120}
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
                 placeholder="Name, reference or authorized contact"
@@ -485,16 +545,12 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
                 return (
                   <tr key={customer.id} className="mn-dir-table__row">
                     <td className="mn-dir-table__cell mn-dir-table__sticky">
-                      <span className="mn-dir-table__identity">{displayName(customer)}</span>
+                      <div className="one-customer-identity"><span className="one-customer-avatar" aria-hidden="true">{displayName(customer).slice(0, 1).toUpperCase()}</span><span><button type="button" className="one-customer-preview-link" disabled={createOpen || previousDataVisible} onClick={() => setPreviewCustomer(customer)} aria-label={`Preview ${displayName(customer)}`}>{displayName(customer)}</button></span></div>
                       {customer.legalName && customer.legalName !== customer.displayName && (
                         <span className="mn-dir-table__secondary">Legal name: {customer.legalName}</span>
                       )}
                     </td>
-                    <td className="mn-dir-table__cell">
-                      <span className="mn-dir-table__reference">
-                        {maskCustomerReference(customer.reference) || 'Reference unavailable'}
-                      </span>
-                    </td>
+                    <td className="mn-dir-table__cell"><span className="mn-dir-table__reference">{maskCustomerReference(customer.reference) || 'Reference unavailable'}</span></td>
                     <td className="mn-dir-table__cell">{customer.type}</td>
                     <td className="mn-dir-table__cell">
                       <StatusBadge tone={customerStatus.tone} shape={customerStatus.shape}>
@@ -528,7 +584,9 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
                       <Button
                         variant="secondary"
                         size="sm"
-                        onClick={() => setSelectedCustomer(customer)}
+                        onClick={() => { requestVersion.current++; setSelectedCustomer(customer); }}
+                        disabled={createOpen || previousDataVisible}
+                        title={createOpen ? 'Close registration before opening another customer.' : previousDataVisible ? 'Wait for current results before opening a customer.' : undefined}
                         aria-label={`Open Customer 360° for ${displayName(customer)}`}
                       >
                         Open Customer 360°
@@ -555,14 +613,14 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
           <span className="mn-dir-pagination__summary">
             {rangeStart !== null && rangeEnd !== null
               ? `Showing ${rangeStart}–${rangeEnd} of ${total}`
-              : hasRows
+              : error || isLoading || hasRows
                 ? 'Result range unconfirmed'
                 : 'No matching records'}
           </span>
           <div className="mn-dir-pagination__controls">
             <Button
               variant="secondary"
-              disabled={isLoading || !directory?.hasPreviousPage}
+              disabled={isLoading || previousDataVisible || !directory?.hasPreviousPage}
               onClick={() => setPage((current) => Math.max(1, current - 1))}
             >
               Previous
@@ -572,7 +630,7 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
             </span>
             <Button
               variant="secondary"
-              disabled={isLoading || !directory?.hasNextPage}
+              disabled={isLoading || previousDataVisible || !directory?.hasNextPage}
               onClick={() => setPage((current) => current + 1)}
             >
               Next
@@ -580,6 +638,27 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
           </div>
         </nav>
       </section>
+      {previewCustomer && <WorkspaceDrawer label="Customer preview" className="one-customer-detail" onDismiss={() => setPreviewCustomer(null)}>
+        <button type="button" className="one-customer-detail__close" aria-label="Close customer preview" onClick={() => setPreviewCustomer(null)}>×</button>
+        <span className="one-customer-detail__avatar" aria-hidden="true">{displayName(previewCustomer).slice(0, 1).toUpperCase()}</span>
+        <h2>{displayName(previewCustomer)}</h2><p className="one-customer-detail__reference">{maskCustomerReference(previewCustomer.reference) || 'Reference unavailable'}</p>
+        <div className="one-customer-detail__section">Overview</div>
+        <dl>
+          <div><dt>Customer type</dt><dd>{previewCustomer.type}</dd></div>
+          <div><dt>Registered</dt><dd>{formatDate(previewCustomer.createdAt)}</dd></div>
+          <div><dt>Account status</dt><dd>{previewCustomer.status}</dd></div>
+          <div><dt>KYC status</dt><dd>{previewCustomer.kycStatus}</dd></div>
+          <div><dt>Verification level</dt><dd>{previewCustomer.kycLevel}</dd></div>
+          <div><dt>Primary contact</dt><dd>{previewCustomer.primaryContact?.maskedValue || (scopes.includes('customer.view_contact_methods') ? 'Not recorded' : 'Restricted')}</dd></div>
+        </dl>
+        <h3>Quick actions</h3><p>Actions available to your workforce session.</p>
+        <div className="one-customer-detail__actions">
+          {onNavigate && scopes.includes('customer.view_transactions') && <Button variant="secondary" disabled={createOpen || previousDataVisible} onClick={() => { const id = previewCustomer.id; setPreviewCustomer(null); onNavigate('transfers', id); }}>Transaction history</Button>}
+          {onNavigate && scopes.includes('kyc.view') && <Button variant="secondary" disabled={createOpen || previousDataVisible} onClick={() => { const id = previewCustomer.id; setPreviewCustomer(null); onNavigate('kycQueue', id); }}>KYC assessment</Button>}
+        </div>
+        <Button variant="primary" disabled={createOpen || previousDataVisible} onClick={() => { requestVersion.current++; setSelectedCustomer(previewCustomer); setPreviewCustomer(null); }}>Open Customer 360°</Button>
+      </WorkspaceDrawer>}
+      </div>
     </main>
   );
 };

@@ -1,0 +1,82 @@
+[
+  {
+    "width": 320,
+    "interceptedWrites": 1,
+    "unconfirmedLocked": true,
+    "shellGuard": true,
+    "freshReview": true,
+    "axeViolations": [],
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "interceptedWrites": 1,
+    "unconfirmedLocked": true,
+    "shellGuard": true,
+    "freshReview": true,
+    "axeViolations": [],
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "interceptedWrites": 1,
+    "unconfirmedLocked": true,
+    "shellGuard": true,
+    "freshReview": true,
+    "axeViolations": [],
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "interceptedWrites": 1,
+    "unconfirmedLocked": true,
+    "shellGuard": true,
+    "freshReview": true,
+    "axeViolations": [],
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "interceptedWrites": 1,
+    "unconfirmedLocked": true,
+    "shellGuard": true,
+    "freshReview": true,
+    "axeViolations": [],
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "interceptedWrites": 1,
+    "unconfirmedLocked": true,
+    "shellGuard": true,
+    "freshReview": true,
+    "axeViolations": [],
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "interceptedWrites": 1,
+    "unconfirmedLocked": true,
+    "shellGuard": true,
+    "freshReview": true,
+    "axeViolations": [],
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "interceptedWrites": 1,
+    "unconfirmedLocked": true,
+    "shellGuard": true,
+    "freshReview": true,
+    "axeViolations": [],
+    "page": 1440,
+    "view": 1440
+  }
+]

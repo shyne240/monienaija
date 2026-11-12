@@ -100,18 +100,26 @@ export class FeeRuleRegistryService {
     const maximumFeeMinor = this.parseOptionalMinor(input.maximumFeeMinor, 'maximumFeeMinor');
     const vatBps = this.parseOptionalBps(input.vatBps, 'vatBps');
     if (flatFeeMinor === null && percentageBps === null) {
-      throw new BadRequestException('at least one pricing parameter is required (flatFeeMinor or percentageBps); use flatFeeMinor=0 for explicit ZERO/FREE rules');
+      throw new BadRequestException(
+        'at least one pricing parameter is required (flatFeeMinor or percentageBps); use flatFeeMinor=0 for explicit ZERO/FREE rules',
+      );
     }
-    if (minimumFeeMinor !== null && maximumFeeMinor !== null && BigInt(minimumFeeMinor) > BigInt(maximumFeeMinor)) {
+    if (
+      minimumFeeMinor !== null &&
+      maximumFeeMinor !== null &&
+      BigInt(minimumFeeMinor) > BigInt(maximumFeeMinor)
+    ) {
       throw new BadRequestException('minimumFeeMinor cannot exceed maximumFeeMinor');
     }
     const effectiveFrom = this.parseDate(input.effectiveFrom ?? new Date(), 'effectiveFrom');
-    const effectiveTo = input.effectiveTo === undefined ? null : this.parseDate(input.effectiveTo, 'effectiveTo');
+    const effectiveTo =
+      input.effectiveTo === undefined ? null : this.parseDate(input.effectiveTo, 'effectiveTo');
     if (effectiveTo !== null && effectiveTo.getTime() <= effectiveFrom.getTime()) {
       throw new BadRequestException('effectiveTo must be after effectiveFrom');
     }
     const priority = this.parsePriority(input.priority);
-    const isActive = input.isActive === undefined ? true : this.parseBoolean(input.isActive, 'isActive');
+    const isActive =
+      input.isActive === undefined ? true : this.parseBoolean(input.isActive, 'isActive');
 
     const entity = this.repo.create({
       productCode,
@@ -135,7 +143,9 @@ export class FeeRuleRegistryService {
       saved = (await this.repo.save(entity as never)) as unknown as FeeRuleDefinition;
     } catch (e) {
       if (this.isUniqueViolation(e)) {
-        throw new ConflictException(`A fee rule for ${productCode}/${currency} effective ${effectiveFrom.toISOString()} already exists`);
+        throw new ConflictException(
+          `A fee rule for ${productCode}/${currency} effective ${effectiveFrom.toISOString()} already exists`,
+        );
       }
       throw e;
     }
@@ -143,7 +153,11 @@ export class FeeRuleRegistryService {
     return this.toSafe(saved);
   }
 
-  async updateRule(id: string, input: FeeRuleUpdateInput, actor: string): Promise<FeeRuleSafeProjection> {
+  async updateRule(
+    id: string,
+    input: FeeRuleUpdateInput,
+    actor: string,
+  ): Promise<FeeRuleSafeProjection> {
     const ruleId = this.normalizeId(id);
 
     // V1-TEST-01: a plain `this.repo.findOne()` followed later by `this.repo.save()` does NOT
@@ -171,26 +185,38 @@ export class FeeRuleRegistryService {
       this.assertVersion(rule.version, input.version);
 
       const previousValues = this.ruleValues(rule);
-      if (input.flatFeeMinor !== undefined) rule.flatFeeMinor = this.parseOptionalMinor(input.flatFeeMinor, 'flatFeeMinor');
-      if (input.percentageBps !== undefined) rule.percentageBps = this.parseOptionalBps(input.percentageBps, 'percentageBps');
-      if (input.minimumFeeMinor !== undefined) rule.minimumFeeMinor = this.parseOptionalMinor(input.minimumFeeMinor, 'minimumFeeMinor');
-      if (input.maximumFeeMinor !== undefined) rule.maximumFeeMinor = this.parseOptionalMinor(input.maximumFeeMinor, 'maximumFeeMinor');
+      if (input.flatFeeMinor !== undefined)
+        rule.flatFeeMinor = this.parseOptionalMinor(input.flatFeeMinor, 'flatFeeMinor');
+      if (input.percentageBps !== undefined)
+        rule.percentageBps = this.parseOptionalBps(input.percentageBps, 'percentageBps');
+      if (input.minimumFeeMinor !== undefined)
+        rule.minimumFeeMinor = this.parseOptionalMinor(input.minimumFeeMinor, 'minimumFeeMinor');
+      if (input.maximumFeeMinor !== undefined)
+        rule.maximumFeeMinor = this.parseOptionalMinor(input.maximumFeeMinor, 'maximumFeeMinor');
       if (input.vatBps !== undefined) rule.vatBps = this.parseOptionalBps(input.vatBps, 'vatBps');
       if (rule.flatFeeMinor === null && rule.percentageBps === null) {
-        throw new BadRequestException('at least one pricing parameter must remain (flatFeeMinor or percentageBps)');
+        throw new BadRequestException(
+          'at least one pricing parameter must remain (flatFeeMinor or percentageBps)',
+        );
       }
-      if (rule.minimumFeeMinor !== null && rule.maximumFeeMinor !== null && BigInt(rule.minimumFeeMinor) > BigInt(rule.maximumFeeMinor)) {
+      if (
+        rule.minimumFeeMinor !== null &&
+        rule.maximumFeeMinor !== null &&
+        BigInt(rule.minimumFeeMinor) > BigInt(rule.maximumFeeMinor)
+      ) {
         throw new BadRequestException('minimumFeeMinor cannot exceed maximumFeeMinor');
       }
       if (input.effectiveTo !== undefined) {
-        const effectiveTo = input.effectiveTo === null ? null : this.parseDate(input.effectiveTo, 'effectiveTo');
+        const effectiveTo =
+          input.effectiveTo === null ? null : this.parseDate(input.effectiveTo, 'effectiveTo');
         if (effectiveTo !== null && effectiveTo.getTime() <= rule.effectiveFrom.getTime()) {
           throw new BadRequestException('effectiveTo must be after effectiveFrom');
         }
         rule.effectiveTo = effectiveTo;
       }
       if (input.priority !== undefined) rule.priority = this.parsePriority(input.priority);
-      if (input.isActive !== undefined) rule.isActive = this.parseBoolean(input.isActive, 'isActive');
+      if (input.isActive !== undefined)
+        rule.isActive = this.parseBoolean(input.isActive, 'isActive');
       rule.updatedBy = actor;
 
       try {
@@ -221,7 +247,14 @@ export class FeeRuleRegistryService {
     isActive?: boolean;
     page?: number;
     limit?: number;
-  }): Promise<{ data: FeeRuleSafeProjection[]; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean }> {
+  }): Promise<{
+    data: FeeRuleSafeProjection[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  }> {
     const page = this.normalizePage(params.page);
     const limit = this.normalizeLimit(params.limit);
     const skip = (page - 1) * limit;
@@ -248,14 +281,17 @@ export class FeeRuleRegistryService {
   // ── internals ──
 
   private normalizeId(id: unknown): string {
-    if (typeof id !== 'string' || !UUID_PATTERN.test(id.trim())) throw new BadRequestException('id must be a UUID');
+    if (typeof id !== 'string' || !UUID_PATTERN.test(id.trim()))
+      throw new BadRequestException('id must be a UUID');
     return id.trim().toLowerCase();
   }
 
   private normalizeProductCode(code: unknown): string {
-    if (typeof code !== 'string' || !code.trim()) throw new BadRequestException('productCode is required');
+    if (typeof code !== 'string' || !code.trim())
+      throw new BadRequestException('productCode is required');
     const normalized = code.trim().toUpperCase();
-    if (!/^[A-Z0-9_]{3,80}$/.test(normalized)) throw new BadRequestException('productCode must match ^[A-Z0-9_]{3,80}$');
+    if (!/^[A-Z0-9_]{3,80}$/.test(normalized))
+      throw new BadRequestException('productCode must match ^[A-Z0-9_]{3,80}$');
     return normalized;
   }
 
@@ -267,7 +303,10 @@ export class FeeRuleRegistryService {
   }
 
   private async assertProductExists(productCode: string): Promise<void> {
-    const rows: Array<{ code: string }> = await this.dataSource.query(`SELECT code FROM products WHERE code = $1 AND deleted_at IS NULL`, [productCode]);
+    const rows: Array<{ code: string }> = await this.dataSource.query(
+      `SELECT code FROM products WHERE code = $1 AND deleted_at IS NULL`,
+      [productCode],
+    );
     if (rows.length === 0) {
       throw new NotFoundException(`Product ${productCode} does not exist in the product catalogue`);
     }
@@ -277,7 +316,8 @@ export class FeeRuleRegistryService {
     if (value === undefined || value === null) return null;
     let big: bigint;
     if (typeof value === 'number') {
-      if (!Number.isSafeInteger(value)) throw new BadRequestException(`${field} must be an integer`);
+      if (!Number.isSafeInteger(value))
+        throw new BadRequestException(`${field} must be an integer`);
       big = BigInt(value);
     } else if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
       big = BigInt(value.trim());
@@ -285,7 +325,8 @@ export class FeeRuleRegistryService {
       throw new BadRequestException(`${field} must be a non-negative integer`);
     }
     if (big < 0n) throw new BadRequestException(`${field} cannot be negative`);
-    if (big > MAX_MINOR_UNITS) throw new BadRequestException(`${field} must fit in a PostgreSQL BIGINT`);
+    if (big > MAX_MINOR_UNITS)
+      throw new BadRequestException(`${field} must fit in a PostgreSQL BIGINT`);
     return big.toString();
   }
 
@@ -295,7 +336,8 @@ export class FeeRuleRegistryService {
       throw new BadRequestException(`${field} must be an integer number of basis points`);
     }
     if (value < 0) throw new BadRequestException(`${field} cannot be negative`);
-    if (value > MAX_BPS) throw new BadRequestException(`${field} cannot exceed ${MAX_BPS} basis points (100%)`);
+    if (value > MAX_BPS)
+      throw new BadRequestException(`${field} cannot exceed ${MAX_BPS} basis points (100%)`);
     return value;
   }
 
@@ -314,7 +356,8 @@ export class FeeRuleRegistryService {
 
   private parseDate(value: unknown, field: string): Date {
     const date = value instanceof Date ? value : new Date(String(value));
-    if (Number.isNaN(date.getTime())) throw new BadRequestException(`${field} must be a valid date`);
+    if (Number.isNaN(date.getTime()))
+      throw new BadRequestException(`${field} must be a valid date`);
     return date;
   }
 
@@ -324,18 +367,22 @@ export class FeeRuleRegistryService {
 
   private normalizePage(page?: number): number {
     const p = page ?? 1;
-    if (!Number.isSafeInteger(p) || p < 1) throw new BadRequestException('page must be a positive integer');
+    if (!Number.isSafeInteger(p) || p < 1)
+      throw new BadRequestException('page must be a positive integer');
     return p;
   }
 
   private normalizeLimit(limit?: number): number {
     const l = limit ?? 20;
-    if (!Number.isSafeInteger(l) || l < 1 || l > 100) throw new BadRequestException('limit must be between 1 and 100');
+    if (!Number.isSafeInteger(l) || l < 1 || l > 100)
+      throw new BadRequestException('limit must be between 1 and 100');
     return l;
   }
 
   private isUniqueViolation(error: unknown): boolean {
-    return error instanceof QueryFailedError && (error as unknown as { code?: string }).code === '23505';
+    return (
+      error instanceof QueryFailedError && (error as unknown as { code?: string }).code === '23505'
+    );
   }
 
   private isVersionConflict(error: unknown): boolean {

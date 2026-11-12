@@ -49,7 +49,9 @@ export function commissionAllocated(
   ruleRefs: NonNullable<CommissionDecisionSnapshot['ruleRefs']>,
 ): CommissionDecisionSnapshot {
   if (!Array.isArray(allocations) || allocations.length === 0) {
-    throw new Error('commissionAllocated requires at least one allocation — use commissionNone() for empty');
+    throw new Error(
+      'commissionAllocated requires at least one allocation — use commissionNone() for empty',
+    );
   }
   return { status: 'ALLOCATED', allocations, ruleRefs: ruleRefs ?? [] };
 }
@@ -65,7 +67,10 @@ export function commissionAllocated(
  */
 export function commissionFeeBasisMinor(feeDecision: Record<string, unknown>): string | null {
   const status = typeof feeDecision.status === 'string' ? feeDecision.status : null;
-  if (status === 'AMBIGUOUS' || (feeDecision as { resolutionStatus?: unknown }).resolutionStatus === 'AMBIGUOUS') {
+  if (
+    status === 'AMBIGUOUS' ||
+    (feeDecision as { resolutionStatus?: unknown }).resolutionStatus === 'AMBIGUOUS'
+  ) {
     return null;
   }
   const feeMinor = (feeDecision as { feeMinor?: unknown }).feeMinor;
@@ -102,7 +107,10 @@ export function commissionFeeCollectionStateOf(feeDecision: Record<string, unkno
  */
 export function commissionAllocatedAtAccountingBoundary(
   decision: CommissionDecisionSnapshot,
-  evidence: { feeCollectionState: string; commissionEvent: 'TRANSACTION_COMPLETION' | 'CASH_TO_CASH_INITIATION' },
+  evidence: {
+    feeCollectionState: string;
+    commissionEvent: 'TRANSACTION_COMPLETION' | 'CASH_TO_CASH_INITIATION';
+  },
 ): CommissionDecisionSnapshot {
   if (decision.status !== 'ALLOCATED') return decision;
   return {

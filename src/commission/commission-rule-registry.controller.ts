@@ -105,8 +105,10 @@ export class CommissionRuleRegistryController {
     else this.requireWorkforce(req);
     const p = page !== undefined ? Number.parseInt(page, 10) : undefined;
     const l = limit !== undefined ? Number.parseInt(limit, 10) : undefined;
-    if (page !== undefined && (Number.isNaN(p!) || !Number.isSafeInteger(p!))) throw new BadRequestException('page must be a positive integer');
-    if (limit !== undefined && (Number.isNaN(l!) || !Number.isSafeInteger(l!))) throw new BadRequestException('limit must be between 1 and 100');
+    if (page !== undefined && (Number.isNaN(p!) || !Number.isSafeInteger(p!)))
+      throw new BadRequestException('page must be a positive integer');
+    if (limit !== undefined && (Number.isNaN(l!) || !Number.isSafeInteger(l!)))
+      throw new BadRequestException('limit must be between 1 and 100');
     let isActiveBool: boolean | undefined;
     if (isActive !== undefined && isActive !== '') {
       if (isActive === 'true') isActiveBool = true;
@@ -116,7 +118,10 @@ export class CommissionRuleRegistryController {
     return this.service.listRules({
       productCode: this.clean(productCode),
       currency: this.clean(currency),
-      recipientType: recipientType === undefined || recipientType.trim() === '' ? undefined : recipientType.trim().toUpperCase(),
+      recipientType:
+        recipientType === undefined || recipientType.trim() === ''
+          ? undefined
+          : recipientType.trim().toUpperCase(),
       isActive: isActiveBool,
       page: p,
       limit: l,
@@ -213,11 +218,12 @@ export class CommissionRuleRegistryController {
   }
 
   private requireFunction(req: AuthenticatedRequest, functionCode: string): Promise<string> {
-    return this.auth.requireFunction(req.authorizationPrincipal, functionCode, 'commission_rule_registry', [
-      'OPERATOR',
-      'SERVICE',
-      'PRIVILEGED',
-    ]);
+    return this.auth.requireFunction(
+      req.authorizationPrincipal,
+      functionCode,
+      'commission_rule_registry',
+      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
   }
 
   private requireWorkforce(req: AuthenticatedRequest): void {
@@ -230,7 +236,9 @@ export class CommissionRuleRegistryController {
   }
 
   private actorOf(req: AuthenticatedRequest): string {
-    const p = req.authorizationPrincipal as unknown as { principalId?: string; type?: string } | undefined;
+    const p = req.authorizationPrincipal as unknown as
+      | { principalId?: string; type?: string }
+      | undefined;
     return p?.principalId ?? p?.type ?? 'workforce';
   }
 
@@ -267,7 +275,11 @@ export class CommissionRuleRegistryController {
   }
 
   private buildUpdateCommand(body: CommissionRuleUpdateBody) {
-    if (typeof body.version !== 'number' || !Number.isSafeInteger(body.version) || body.version < 1) {
+    if (
+      typeof body.version !== 'number' ||
+      !Number.isSafeInteger(body.version) ||
+      body.version < 1
+    ) {
       throw new BadRequestException('version is required for updates (optimistic concurrency)');
     }
     return {

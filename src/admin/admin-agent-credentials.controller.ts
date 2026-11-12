@@ -53,7 +53,12 @@ export class AdminAgentCredentialsController {
       passwordExpiresAt: new Date(Date.now() + TEMPORARY_PASSWORD_TTL_MS).toISOString(),
       actor,
     });
-    return this.issuanceView(credential.id, credential.agentId, plaintext, credential.passwordExpiresAt);
+    return this.issuanceView(
+      credential.id,
+      credential.agentId,
+      plaintext,
+      credential.passwordExpiresAt,
+    );
   }
 
   @Post(':id/credentials/reissue')
@@ -67,7 +72,12 @@ export class AdminAgentCredentialsController {
       passwordExpiresAt: new Date(Date.now() + TEMPORARY_PASSWORD_TTL_MS).toISOString(),
       actor,
     });
-    return this.issuanceView(credential.id, credential.agentId, plaintext, credential.passwordExpiresAt);
+    return this.issuanceView(
+      credential.id,
+      credential.agentId,
+      plaintext,
+      credential.passwordExpiresAt,
+    );
   }
 
   /** Revokes existing sessions only; it neither issues nor changes a credential. */

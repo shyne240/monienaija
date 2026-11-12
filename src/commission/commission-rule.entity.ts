@@ -38,8 +38,16 @@ export type CommissionCalculationModel =
   | 'FLAT_PLUS_PERCENTAGE'
   | 'TIERED';
 
-export const COMMISSION_RECIPIENT_TYPES: readonly CommissionRecipientType[] = ['AGENT', 'AGGREGATOR', 'PLATFORM'];
-export const COMMISSION_CALCULATION_BASES: readonly CommissionCalculationBasis[] = ['PRINCIPAL', 'FEE', 'NET'];
+export const COMMISSION_RECIPIENT_TYPES: readonly CommissionRecipientType[] = [
+  'AGENT',
+  'AGGREGATOR',
+  'PLATFORM',
+];
+export const COMMISSION_CALCULATION_BASES: readonly CommissionCalculationBasis[] = [
+  'PRINCIPAL',
+  'FEE',
+  'NET',
+];
 export const COMMISSION_CALCULATION_MODELS: readonly CommissionCalculationModel[] = [
   'FIXED',
   'PERCENTAGE',
@@ -77,7 +85,10 @@ const nullableBigintTransformer: ValueTransformer = {
 @Index('idx_commission_rules_effective_from', ['effectiveFrom'])
 @Check('chk_commission_rules_currency', "currency ~ '^[A-Z]{3}$'")
 @Check('chk_commission_rules_recipient', "recipient_type IN ('AGENT','AGGREGATOR','PLATFORM')")
-@Check('chk_commission_rules_min_max', 'minimum_commission_minor IS NULL OR maximum_commission_minor IS NULL OR minimum_commission_minor <= maximum_commission_minor')
+@Check(
+  'chk_commission_rules_min_max',
+  'minimum_commission_minor IS NULL OR maximum_commission_minor IS NULL OR minimum_commission_minor <= maximum_commission_minor',
+)
 @Check('chk_commission_rules_effective', 'effective_to IS NULL OR effective_to > effective_from')
 @Check('chk_commission_rules_version', 'version > 0')
 export class CommissionRuleDefinition {
@@ -99,16 +110,31 @@ export class CommissionRuleDefinition {
   @Column({ name: 'calculation_basis', type: 'varchar', length: 20 })
   calculationBasis!: CommissionCalculationBasis;
 
-  @Column({ name: 'flat_commission_minor', type: 'bigint', transformer: nullableBigintTransformer, nullable: true })
+  @Column({
+    name: 'flat_commission_minor',
+    type: 'bigint',
+    transformer: nullableBigintTransformer,
+    nullable: true,
+  })
   flatCommissionMinor!: string | null;
 
   @Column({ name: 'percentage_bps', type: 'integer', nullable: true })
   percentageBps!: number | null;
 
-  @Column({ name: 'minimum_commission_minor', type: 'bigint', transformer: nullableBigintTransformer, nullable: true })
+  @Column({
+    name: 'minimum_commission_minor',
+    type: 'bigint',
+    transformer: nullableBigintTransformer,
+    nullable: true,
+  })
   minimumCommissionMinor!: string | null;
 
-  @Column({ name: 'maximum_commission_minor', type: 'bigint', transformer: nullableBigintTransformer, nullable: true })
+  @Column({
+    name: 'maximum_commission_minor',
+    type: 'bigint',
+    transformer: nullableBigintTransformer,
+    nullable: true,
+  })
   maximumCommissionMinor!: string | null;
 
   @Column({ type: 'jsonb', nullable: true })

@@ -1,3 +1,4 @@
+import { testWalletFinancialBoundary } from './support/test-wallet-financial-boundary';
 import { randomUUID } from 'node:crypto';
 import { ConflictException, BadRequestException } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
@@ -60,6 +61,7 @@ describe('A5 Ledger Reversal and Terminal Transitions (real PostgreSQL)', () => 
       dataSource.getRepository(LedgerJournal),
       dataSource.getRepository(LedgerLine),
       dataSource,
+      testWalletFinancialBoundary,
     );
     const audit = new AuditService(dataSource.getRepository(AuditEvent));
     const outbox = new OutboxService(dataSource.getRepository(OutboxEvent));

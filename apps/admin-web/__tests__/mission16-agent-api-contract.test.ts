@@ -11,7 +11,7 @@
  * unknown revocation count and an unknown worker state. Both parsers now accept the actual
  * shapes; these assertions lock that in.
  */
-import { ApiClient } from '../src/services/api-client';
+import { ApiClient, ApiError } from '../src/services/api-client';
 import {
   fetchCashToCashExpiryStatus,
   revokeAgentActiveSessions,
@@ -84,6 +84,15 @@ describe('Mission 16 — session revocation count contract', () => {
 
     if (result.status !== 'LIVE') throw new Error('unreachable');
     expect(result.data.revokedCount).toBe(3);
+  });
+
+  test('a 404 cannot distinguish a missing endpoint from a missing Agent', async () => {
+    (ApiClient.post as jest.Mock).mockRejectedValueOnce(new ApiError('Not Found', 404));
+    const result = await revokeAgentActiveSessions(AGENT_ID);
+    expect(result.status).toBe('BLOCKED');
+    if (result.status !== 'BLOCKED') throw new Error('unreachable');
+    expect(result.message).toContain('endpoint or Agent was not found');
+    expect(result.message).toContain('Revocation was not confirmed');
   });
 
   test('does not invent a count when the backend omits it', async () => {

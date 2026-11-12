@@ -1,56 +1,155 @@
-import React, { useState } from 'react';
+import './operational-surfaces.css';
+import './super-admin-recovery.css';
+import React, { useEffect, useRef, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { DataRecord, StructuredKeyValueList } from '../../components/StructuredData';
+import { Alert, Button, PageHeader } from '../../design-system/primitives';
 
-export const SuperAdminRecoveryScreen: React.FC = () => {
-  const { principal } = useAuthStore();
-  const hasFn = (c: string) => principal?.scopes.includes(c) ?? false;
-  const canView = hasFn('workforce.super_admin.recover');
+/** A transport success without a recognizable receipt does not prove recovery occurred. */
+function isRecoveryReceipt(value: unknown): value is DataRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const receipt = value as DataRecord;
+  return receipt.operation === 'REVOKE_SUPER_ADMIN'
+    && typeof receipt.recoveryReference === 'string' && receipt.recoveryReference.trim().length > 0
+    && typeof receipt.targetPrincipalId === 'string' && receipt.targetPrincipalId.trim().length > 0
+    && typeof receipt.auditReference === 'string' && receipt.auditReference.trim().length > 0
+    && typeof receipt.revokedSessionCount === 'number' && Number.isSafeInteger(receipt.revokedSessionCount) && receipt.revokedSessionCount >= 0;
+}
+
+
+type RecoveryClaims = { targetPrincipalId: string; targetAssignmentReference: string; reason: string };
+// The payload is displayed only as unverified request context. The server alone verifies the signature.
+function decodeRecoveryClaims(compact: string): RecoveryClaims | null {
+  try {
+    const parts = compact.split('.');
+    if (parts.length !== 3 || parts.some(part => !/^[A-Za-z0-9_-]+$/.test(part))) return null;
+    const bytes = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - parts[1].length % 4) % 4));
+    const json = decodeURIComponent(Array.from(bytes, ch => `%${ch.charCodeAt(0).toString(16).padStart(2, '0')}`).join(''));
+    const payload = JSON.parse(json);
+    if (!payload || payload.operation !== 'REVOKE_SUPER_ADMIN' || typeof payload.targetPrincipalId !== 'string' || !payload.targetPrincipalId.trim() || typeof payload.targetAssignmentReference !== 'string' || !payload.targetAssignmentReference.trim() || typeof payload.reason !== 'string' || !payload.reason.trim()) return null;
+    return {targetPrincipalId: payload.targetPrincipalId.trim(), targetAssignmentReference: payload.targetAssignmentReference.trim(), reason: payload.reason.trim()};
+  } catch { return null; }
+}
+
+export const SuperAdminRecoveryScreen: React.FC<{onRecoveryGuardChange?: (guarded: boolean, busy: boolean) => void}> = ({onRecoveryGuardChange}) => {
+  const { principal, sessionId } = useAuthStore();
+  const canView = principal?.scopes.includes('workforce.super_admin.recover') ?? false;
+  const principalId = principal?.principalId ?? '';
+  const canExecute = Boolean(canView && principal?.roles.includes('ADMINISTRATOR') && principal.assuranceLevel === 'MFA' && !principal.readOnlyPrincipal);
+  return <RecoveryWorkspace key={JSON.stringify([sessionId, principalId, principal?.sessionId, principal?.type, principal?.assuranceLevel, principal?.roles, principal?.scopes, principal?.customerAccess, principal?.readOnlyPrincipal, canView])} principalId={principalId} canView={canView} canExecute={canExecute} roles={principal?.roles ?? []} onRecoveryGuardChange={onRecoveryGuardChange} />;
+};
+
+const RecoveryWorkspace: React.FC<{ principalId: string; canView: boolean; canExecute: boolean; roles: string[]; onRecoveryGuardChange?: (guarded: boolean, busy: boolean) => void }> = ({ principalId, canView, canExecute, roles, onRecoveryGuardChange }) => {
   const [statement, setStatement] = useState('');
   const [result, setResult] = useState<DataRecord | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pendingClaims, setPendingClaims] = useState<RecoveryClaims | null>(null);
+  const [uncertain, setUncertain] = useState<RecoveryClaims | null>(null);
+  const inFlight = useRef(false);
+  const dialogRef = useRef<HTMLElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const statementRef = useRef<HTMLTextAreaElement>(null);
+  const receiptRef = useRef<HTMLElement>(null);
+  const reviewRef = useRef<HTMLDivElement>(null);
+  const focusFormAfterDismiss = useRef(false);
+  useDialogFocus(dialogRef, Boolean(pendingClaims), () => { if (!inFlight.current) setPendingClaims(null); }, triggerRef);
+  useEffect(() => { if (loading) dialogRef.current?.focus(); }, [loading]);
+  // The dialog trigger is disabled while a receipt or an uncertain outcome is held.
+  // Move focus to that outcome instead of letting it fall back to the document body.
+  useEffect(() => {
+    if (pendingClaims || loading) return;
+    if (result) receiptRef.current?.focus();
+    else if (uncertain) reviewRef.current?.focus();
+    else if (focusFormAfterDismiss.current) {
+      focusFormAfterDismiss.current = false;
+      statementRef.current?.focus();
+    }
+  }, [pendingClaims, loading, result, uncertain]);
+  const guarded = loading || Boolean(statement.trim()) || Boolean(pendingClaims) || Boolean(uncertain) || Boolean(result);
+  useEffect(() => { onRecoveryGuardChange?.(guarded, loading); }, [onRecoveryGuardChange, guarded, loading]);
+  useEffect(() => () => onRecoveryGuardChange?.(false, false), [onRecoveryGuardChange]);
+  useEffect(() => {
+    if (!guarded) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+  }, [guarded]);
 
-  const handleRecover = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canView) return;
-    setError(''); setResult(null); setLoading(true);
-    try {
-      const res = await ApiClient.post<DataRecord>('/internal/a2/workforce/super-admin/recovery', { statement });
-      setResult(res);
-    } catch (err: any) {
-      setError(err?.message || 'Recovery failed — requires RS256-signed A2RecoveryStatementV1 and ADMINISTRATOR role');
-    } finally { setLoading(false); }
+  const generation = useRef(0);
+  const access = useRef({ principalId, canView });
+  access.current = { principalId, canView };
+
+  useEffect(() => {
+    setStatement(''); setResult(null); setError(''); setLoading(false);
+    return () => { generation.current += 1; };
+  }, [principalId, canView]);
+
+  const reviewRecovery = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!canExecute || loading || inFlight.current || pendingClaims || uncertain || result || !statement.trim()) return;
+    const claims = decodeRecoveryClaims(statement.trim());
+    if (!claims) { setError('The statement is not a recognizable recovery JWT. Check the approved runbook; no request was sent.'); return; }
+    setError(''); setPendingClaims(claims);
   };
 
-  if (!canView) return <div style={wrap}><div style={denied}>Requires <code>workforce.super_admin.recover</code> (ADMINISTRATOR only, RS256). Roles: {principal?.roles.join(', ')}</div></div>;
+  const handleRecover = async () => {
+    if (!canExecute || loading || inFlight.current || !pendingClaims || uncertain || result) return;
+    const claims = pendingClaims;
+    const request = ++generation.current;
+    const valid = () => request === generation.current && access.current.canView && access.current.principalId === principalId;
+    const submittedStatement = statement.trim();
+    inFlight.current = true; setStatement(''); setError(''); setResult(null); setLoading(true);
+    try {
+      const res = await ApiClient.post<unknown>('/internal/a2/workforce/super-admin/recovery', { statement: submittedStatement });
+      if (!valid()) return;
+      if (!isRecoveryReceipt(res) || res.targetPrincipalId !== claims.targetPrincipalId || res.targetAssignmentReference !== claims.targetAssignmentReference || res.reason !== claims.reason || res.consumedBy !== principalId || typeof res.consumedAt !== 'string' || !Number.isFinite(Date.parse(res.consumedAt))) {
+        setUncertain(claims); setError('The server response did not include a matching recovery receipt. The outcome is unconfirmed; check the audit trail before attempting again.');
+        return;
+      }
+      setResult({ recoveryReference: res.recoveryReference, operation: res.operation, targetPrincipalId: res.targetPrincipalId, targetAssignmentReference: res.targetAssignmentReference, reason: res.reason, revokedSessionCount: res.revokedSessionCount, consumedBy: res.consumedBy, consumedAt: res.consumedAt, auditReference: res.auditReference });
+    } catch (err: any) {
+      if (valid()) {
+        setUncertain(claims);
+        const detail = typeof err?.message === 'string' ? err.message.split(submittedStatement).join('[redacted]').replace(/[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/g, '[redacted]') : 'Recovery service unavailable.';
+        setError(`The request did not return a confirmed recovery receipt. Check the audit trail before attempting again. ${detail}`);
+      }
+    } finally { inFlight.current = false; if (valid()) { setLoading(false); setPendingClaims(null); } }
+  };
+
+  if (!canView) return <div className="mn-operational mn-recovery"><Alert tone="warning" title="Access restricted">Requires <code>workforce.super_admin.recover</code> (ADMINISTRATOR only, RS256). Roles: {roles.join(', ') || 'None'}</Alert></div>;
 
   return (
-    <div style={wrap}>
-      <h2 style={h2}>🔐 Super-Admin Recovery</h2>
-      <p style={sub}>Consume an externally-signed <code>A2RecoveryStatementV1</code> to revoke a compromised SUPER_ADMIN — ADMINISTRATOR only, RS256 via <code>A2_RECOVERY_JWKS_JSON</code>. This is the sole privileged recovery surface.</p>
-      <form onSubmit={handleRecover} style={form}>
-        <label style={label}>Recovery Statement (JWT)</label>
-        <textarea value={statement} onChange={e => setStatement(e.target.value)} placeholder="Paste RS256-signed recovery statement…" style={textarea} rows={6} />
-        <button type="submit" disabled={loading || !statement.trim()} style={btn}>{loading ? 'Executing…' : 'Execute Recovery'}</button>
-      </form>
-      {error && <div style={errBox}>{error}</div>}
-      {result && <section style={successBox} role="status"><h3 style={resultTitle}>Recovery executed</h3><StructuredKeyValueList data={result} /></section>}
-      <div style={note}>This endpoint is intentionally restricted to ADMINISTRATOR and requires a valid RS256 signature — SUPER_ADMIN itself cannot self-recover (separation of duties).</div>
-    </div>
+    <main className="mn-operational mn-recovery">
+      <PageHeader eyebrow="Workforce governance" title="Super-Admin recovery" description="Consume an externally signed recovery statement to revoke a compromised SUPER_ADMIN assignment and its sessions." />
+      <Alert tone="warning" title="Controlled recovery">
+        This action requires an ADMINISTRATOR with the recovery function and a valid RS256-signed <code>A2RecoveryStatementV1</code>. The signed statement—not the operator alone—authorizes the outcome.
+      </Alert>
+      {!canExecute && <Alert tone="warning" title="Recovery action unavailable">An ADMINISTRATOR MFA session that is not read-only is required.</Alert>}
+      {uncertain && <div ref={reviewRef} tabIndex={-1} className="mn-recovery__review"><Alert tone="warning" title="Independent recovery review required">The request for {uncertain.targetPrincipalId} may have completed. Independently inspect authorized recovery, assignment, session and audit records. A fresh read cannot exclude a late commit; this local lock is lost on confirmed exit or session change. <button type="button" onClick={() => { focusFormAfterDismiss.current = true; setUncertain(null); setError(''); }}>I reviewed recovery and audit records</button></Alert></div>}
+      <div className="mn-recovery__workspace">
+      <div className="mn-recovery__main">
+      <section className="mn-recovery__card" aria-labelledby="recovery-form-title">
+        <p className="mn-recovery__eyebrow">SENSITIVE STATEMENT</p><h2 id="recovery-form-title">Submit recovery statement</h2>
+        <p id="recovery-guidance">Paste the externally signed compact statement. Treat it as sensitive; it is cleared from this form when submitted.</p>
+        <form onSubmit={reviewRecovery} className="mn-recovery__form">
+          <label htmlFor="recovery-statement">Recovery statement (JWT)</label>
+          <textarea ref={statementRef} id="recovery-statement" value={statement} onChange={e => setStatement(e.target.value)} placeholder="Paste RS256-signed recovery statement…" rows={6} autoComplete="off" spellCheck={false} aria-describedby="recovery-guidance" disabled={!canExecute || loading || Boolean(pendingClaims) || Boolean(uncertain) || Boolean(result)} />
+          <div className="mn-recovery__form-actions"><Button ref={triggerRef} type="submit" variant="primary" disabled={!canExecute || loading || Boolean(pendingClaims) || Boolean(uncertain) || Boolean(result) || !statement.trim()}>{loading ? 'Executing…' : 'Execute Recovery'}</Button>
+          {statement && <Button type="button" variant="secondary" disabled={loading || Boolean(pendingClaims) || Boolean(uncertain) || Boolean(result)} onClick={() => { setStatement(''); setError(''); statementRef.current?.focus(); }}>Clear statement</Button>}</div>
+          {loading && <p role="status" className="mn-recovery__pending">Submitting the recovery request. Do not submit the statement again while its outcome is pending.</p>}
+        </form>
+      </section>
+      {error && <Alert tone="danger" title={uncertain ? 'Recovery outcome not confirmed' : 'Statement needs correction'}>{error}</Alert>}
+      {result && <section ref={receiptRef} tabIndex={-1} className="mn-recovery__receipt" role="status" aria-labelledby="recovery-result-title"><h2 id="recovery-result-title">Recovery executed</h2><p>Retain the recovery and audit references for verification.</p><StructuredKeyValueList data={result} /><Button type="button" variant="secondary" onClick={() => { if (window.confirm('Dismiss this recovery receipt after retaining its references?')) { focusFormAfterDismiss.current = true; setResult(null); } }}>Dismiss recovery receipt</Button></section>}
+      </div>
+      <aside className="mn-recovery__guide" aria-label="Recovery procedure guidance">
+        <p className="mn-recovery__eyebrow">CONTROLLED WORKFLOW</p><h2>Recovery procedure</h2>
+        <ol><li><strong>Prepare</strong><span>Follow the approved runbook and obtain the externally signed recovery statement.</span></li><li><strong>Review</strong><span>Inspect the unverified target, assignment and reason before requesting recovery. Only the server can verify the signature.</span></li><li><strong>Verify</strong><span>Retain any receipt and check authorized recovery and audit records. If the outcome is unconfirmed, review independently before retrying.</span></li></ol>
+        <p>SUPER_ADMIN cannot perform its own recovery. No statement is generated by this screen.</p>
+      </aside></div>
+      {pendingClaims && <div className="mn-recovery__overlay"><section ref={dialogRef} tabIndex={-1} className="mn-recovery__dialog" role="dialog" aria-modal="true" aria-labelledby="recovery-confirm-title" aria-describedby="recovery-confirm-description"><p className="mn-recovery__eyebrow">REVIEW RECOVERY REQUEST</p><h2 id="recovery-confirm-title">Confirm recovery request?</h2><p id="recovery-confirm-description">Unverified statement claims. The server must verify the signature before any recovery can be authorized.</p><dl><div><dt>Target principal</dt><dd><code>{pendingClaims.targetPrincipalId}</code></dd></div><div><dt>Assignment reference</dt><dd><code>{pendingClaims.targetAssignmentReference}</code></dd></div><div><dt>Reason</dt><dd>{pendingClaims.reason}</dd></div></dl><div className="mn-recovery__dialog-actions"><Button type="button" variant="secondary" disabled={loading} onClick={() => setPendingClaims(null)}>Keep editing</Button><Button type="button" variant="danger" disabled={loading} onClick={() => void handleRecover()}>{loading ? 'Executing…' : 'Confirm recovery'}</Button></div></section></div>}
+    </main>
   );
 };
-
-const wrap: React.CSSProperties={padding:'24px',maxWidth:900};
-const h2: React.CSSProperties={margin:'0 0 8px',color:'#032B14'};
-const sub: React.CSSProperties={color:'#64748B',fontSize:13,marginBottom:16};
-const form: React.CSSProperties={display:'flex',flexDirection:'column',gap:12,marginBottom:16};
-const label: React.CSSProperties={fontSize:12,fontWeight:600,color:'#475569'};
-const textarea: React.CSSProperties={padding:'10px',border:'1px solid #E2E8F0',borderRadius:6,fontSize:12,fontFamily:'monospace'};
-const btn: React.CSSProperties={padding:'10px 16px',background:'#032B14',color:'#fff',border:'none',borderRadius:6,cursor:'pointer',fontWeight:600,alignSelf:'flex-start'};
-const errBox: React.CSSProperties={background:'#FEF2F2',border:'1px solid #FCA5A5',color:'#991B1B',padding:10,borderRadius:6,fontSize:13};
-const successBox: React.CSSProperties={background:'#ECFDF5',border:'1px solid #6EE7B7',color:'#065F46',padding:10,borderRadius:6,fontSize:13};
-const resultTitle: React.CSSProperties={margin:'0 0 8px',fontSize:14};
-const denied: React.CSSProperties={background:'#FFF7ED',border:'1px solid #FDBA74',color:'#92400E',padding:12,borderRadius:8,fontSize:13};
-const note: React.CSSProperties={marginTop:16,fontSize:12,color:'#64748B',background:'#F8FAFC',padding:10,borderRadius:6,border:'1px solid #E2E8F0'};

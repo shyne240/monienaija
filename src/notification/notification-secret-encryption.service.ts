@@ -54,10 +54,7 @@ export function computeKeyFingerprint(secret: string): string {
 }
 
 function buildAad(channel: ManagedNotificationChannel, keyVersion: string): Buffer {
-  return Buffer.from(
-    `monienaija:notification-provider-secret:v1:${channel}:${keyVersion}`,
-    'utf8',
-  );
+  return Buffer.from(`monienaija:notification-provider-secret:v1:${channel}:${keyVersion}`, 'utf8');
 }
 
 function parseBase64Key(raw: string, version: string): Buffer {
@@ -254,8 +251,7 @@ export class NotificationSecretEncryptionService {
     );
     const singleKey = this.configService.get<string>('NOTIFICATION_PROVIDER_ENCRYPTION_KEY');
     const activeVersion =
-      this.configService.get<string>('NOTIFICATION_PROVIDER_ENCRYPTION_ACTIVE_KEY_VERSION') ??
-      'v1';
+      this.configService.get<string>('NOTIFICATION_PROVIDER_ENCRYPTION_ACTIVE_KEY_VERSION') ?? 'v1';
 
     if (!KEY_VERSION_PATTERN.test(activeVersion)) {
       throw new NotificationSecretEncryptionError(

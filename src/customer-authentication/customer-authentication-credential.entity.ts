@@ -82,6 +82,9 @@ export class CustomerAuthenticationCredential {
   @Column({ name: 'rotation_required', type: 'boolean', default: false })
   rotationRequired!: boolean;
 
+  @Column({ name: 'mobile_otp_required', type: 'boolean', default: false })
+  mobileOtpRequired!: boolean;
+
   @VersionColumn({ type: 'integer', default: 1 })
   version!: number;
 

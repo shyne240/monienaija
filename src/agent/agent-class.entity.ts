@@ -37,16 +37,16 @@ export class AgentClass {
   requirements!: Record<string, unknown> | null;
 
   @Column({ name: 'required_information', type: 'jsonb', nullable: true })
-  requiredInformation!: unknown | null;
+  requiredInformation!: unknown;
 
   @Column({ name: 'required_document_categories', type: 'jsonb', nullable: true })
-  requiredDocumentCategories!: unknown | null;
+  requiredDocumentCategories!: unknown;
 
   @Column({ name: 'applicable_services', type: 'jsonb', nullable: true })
-  applicableServices!: unknown | null;
+  applicableServices!: unknown;
 
   @Column({ name: 'applicable_limits', type: 'jsonb', nullable: true })
-  applicableLimits!: unknown | null;
+  applicableLimits!: unknown;
 
   @VersionColumn({ type: 'integer', default: 1 })
   version!: number;

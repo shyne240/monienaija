@@ -46,9 +46,11 @@ function setPrincipal(roles: string[], scopes: string[], principalId = 'operator
 
 describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
   beforeEach(() => {
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
     jest.clearAllMocks();
     localStorage.clear();
   });
+  afterEach(() => jest.restoreAllMocks());
 
   test('Finance Controller accesses live Global Funding Inbox and Maker handoff token inside ApprovalsScreen without requiring agent.view', async () => {
     setPrincipal(['FINANCE_CONTROLLER'], ['privileged:approve', 'agent.fund', 'agent.defund'], 'checker-fc-1');
@@ -98,7 +100,7 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
           approvalApprovedBy: 'checker-fc-1',
           checkerPrincipalId: 'checker-fc-1',
         } as any;
-        return Promise.resolve({ reason: 'APPROVED' });
+        return Promise.resolve({ approved:true, reason: 'APPROVED', approval:{id:pendingReq.approvalId,status:'APPROVED'} });
       }
       if (url.endsWith('/execute')) {
         currentState = {
@@ -201,7 +203,7 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
       target: { value: 'DEFUND' },
     });
     await waitFor(() => expect(view.queryByText('AG-001')).toBeNull());
-    fireEvent.click(view.getByRole('button', { name: 'Review in Checker' }));
+    fireEvent.click(await view.findByRole('button', { name: 'Review in Checker' }));
     expect(onSelect).toHaveBeenCalledWith('agent-b', 'idem-b', {
       agentId: 'agent-b',
       idempotencyKey: 'idem-b',
@@ -286,18 +288,19 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
           { id: 'cls-100', code: 'ORD_T1', name: 'Ordinary Tier 1', isActive: true },
         ]);
       }
-      if (url === '/internal/limit-assignments/agent/agent-100') {
-        return Promise.resolve([]);
+      if (url === '/internal/limit-assignments/agent/agent-100?page=1&limit=20') {
+        return Promise.resolve({data:[],page:1,limit:20,total:0,totalPages:0,hasNextPage:false});
       }
-      if (url === '/internal/limit-profiles') {
-        return Promise.resolve([{ code: 'AGENT_ORDINARY_T1', name: 'Ordinary Tier 1 Profile', isActive: true }]);
+      if (url === '/internal/limit-profiles?page=1&limit=20') {
+        return Promise.resolve({ data:[{ code: 'AGENT_ORDINARY_T1', name: 'Ordinary Tier 1 Profile', isActive: true }], page:1, limit:20, total:1, totalPages:1, hasNextPage:false });
       }
       if (url === '/internal/admin/cash-to-cash/transfers?page=1&limit=10&agentId=agent-100') {
         return Promise.resolve({
           data: [
             {
               id: 'c2c-100',
-              beneficiaryPhoneMasked: '801***5678',
+              agentId: 'agent-100',
+              beneficiaryPhoneMasked: '•••••••5678',
               principalMinor: '200000',
               currency: 'NGN',
               status: 'CLAIMED',
@@ -312,8 +315,8 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
         return Promise.resolve({
           items: [
             {
-              id: 'wtx-100',
-              direction: 'DEBIT',
+              transferId: 'wtx-100',
+              direction: 'SENT',
               amountMinor: '50000',
               currency: 'NGN',
               status: 'COMPLETED',
@@ -345,7 +348,7 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
     expect((await view.findAllByText(/Ordinary Tier 1 \(ORD_T1\)/)).length).toBeGreaterThanOrEqual(2);
 
     fireEvent.click(view.getByRole('button', { name: 'Load agent limits' }));
-    await view.findByText(/No direct limit assignments/i);
+    await view.findByText(/No limit assignments on this page/i);
     fireEvent.click(view.getByRole('button', { name: 'Load limit catalog' }));
     expect(await view.findByLabelText('Select catalog limit profile')).toBeTruthy();
 
@@ -416,7 +419,7 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
           createdAt: '2026-10-26T10:00:00.000Z',
         },
       ],
-      pagination: { page: 1, limit: 10, total: 1, totalPages: 1, hasNextPage: false },
+      pagination: { page: 1, limit: 20, total: 1, totalPages: 1, hasNextPage: false },
     });
     const historyView = render(
       <AgentUnifiedHistoryPanel
@@ -597,7 +600,7 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
       expect(ApiClient.post).toHaveBeenCalledWith('/internal/support/tickets/ticket-pin-1/messages', {
         body: 'Verified Agent outlet ID & callback.',
         isInternal: true,
-      }),
+      }, { idempotencyKey: expect.any(String) }),
     );
     view.unmount();
 

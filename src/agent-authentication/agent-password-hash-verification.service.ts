@@ -4,7 +4,10 @@ import { Injectable } from '@nestjs/common';
 
 import { AgentPasswordHashAlgorithm } from './agent-authentication.enums';
 
-export type AgentPasswordVerificationFailure = 'MALFORMED_HASH' | 'UNSUPPORTED_ALGORITHM' | 'MISMATCH';
+export type AgentPasswordVerificationFailure =
+  | 'MALFORMED_HASH'
+  | 'UNSUPPORTED_ALGORITHM'
+  | 'MISMATCH';
 
 export interface AgentPasswordVerificationResult {
   verified: boolean;

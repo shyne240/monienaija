@@ -45,9 +45,11 @@ function setWorkforceSession(
 
 describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Number Auth, & Operational Workflows', () => {
   beforeEach(() => {
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
     jest.clearAllMocks();
     localStorage.clear();
   });
+  afterEach(() => jest.restoreAllMocks());
 
   test('Priority 1: Global Funding Inbox paginates & filters server-side without requiring agent.view, inspects detail, and refreshes after approve + execute', async () => {
     // Deliberately NO agent.view scope on FINANCE_CONTROLLER
@@ -141,7 +143,7 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
           approvalApprovedBy: 'checker-fc-99',
           checkerPrincipalId: 'checker-fc-99',
         };
-        return Promise.resolve({ reason: 'APPROVED' });
+        return Promise.resolve({ approved: true, reason: 'APPROVED', approval: {id: baseRequest.approvalId, status: 'APPROVED'} });
       }
       if (url === `/internal/agents/funding-requests/${baseRequest.id}/execute`) {
         liveRow = {
@@ -152,7 +154,7 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
           checkerPrincipalId: 'checker-fc-99',
           journalId: 'jrn-executed-101',
         };
-        return Promise.resolve({ status: 'COMPLETED', journalId: 'jrn-executed-101' });
+        return Promise.resolve({ status: 'COMPLETED', journalId: 'jrn-executed-101', agentId:baseRequest.agentId, amountMinor:baseRequest.amountMinor, currency:baseRequest.currency, idempotencyKey:baseRequest.idempotencyKey, requestHash:baseRequest.requestHash });
       }
       return Promise.resolve({});
     });
@@ -509,6 +511,7 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
           data: [
             {
               id: 'c2c-surviving-1',
+              agentId: 'agent-ops-1', beneficiaryPhoneMasked: '•••••••5678', principalMinor: '25000', redemptionMethod: 'AGENT_CASH',
               reference: 'C2C-SURVIVING-01',
               status: 'CLAIMED',
               amountMinor: '25000',

@@ -23,10 +23,18 @@ export class CreateAgentReceivingNumbers1785753600055 implements MigrationInterf
         CONSTRAINT chk_agent_receiving_numbers_version CHECK (version > 0)
       )
     `);
-    await queryRunner.query(`CREATE UNIQUE INDEX uq_agent_receiving_numbers_agent_id ON agent_receiving_numbers (agent_id) WHERE deleted_at IS NULL`);
-    await queryRunner.query(`CREATE UNIQUE INDEX uq_agent_receiving_numbers_number ON agent_receiving_numbers (receiving_number) WHERE deleted_at IS NULL`);
-    await queryRunner.query(`CREATE INDEX idx_agent_receiving_numbers_agent ON agent_receiving_numbers (agent_id)`);
-    await queryRunner.query(`CREATE INDEX idx_agent_receiving_numbers_number ON agent_receiving_numbers (receiving_number)`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX uq_agent_receiving_numbers_agent_id ON agent_receiving_numbers (agent_id) WHERE deleted_at IS NULL`,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX uq_agent_receiving_numbers_number ON agent_receiving_numbers (receiving_number) WHERE deleted_at IS NULL`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_agent_receiving_numbers_agent ON agent_receiving_numbers (agent_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_agent_receiving_numbers_number ON agent_receiving_numbers (receiving_number)`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

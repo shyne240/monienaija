@@ -1,4 +1,4 @@
-import React, { type FormEvent, useMemo, useRef, useState } from 'react';
+import React, { type FormEvent, forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 
 import {
   getCustomerCalendarDate,
@@ -14,6 +14,7 @@ import {
 } from '../../../../../src/customer/customer-validation';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { maskContactValue } from './customer-masking';
 import { countryNameForCode, isNigeriaIdentityType } from './CountrySelect';
 import {
@@ -82,10 +83,14 @@ interface IdentityDraft {
   outcome: { kind: 'success' | 'error'; message: string } | null;
 }
 
+export interface CustomerRegistrationWizardHandle { requestClose: () => void; }
+
 interface CustomerRegistrationWizardProps {
   onClose: () => void;
   onCustomerCreated: (customer: CreatedCustomer) => void;
   onOpenCustomer: (customerId: string) => void;
+  onBusyChange?: (busy: boolean) => void;
+  onGuardChange?: (guarded: boolean, busy: boolean) => void;
 }
 
 const STEPS = [
@@ -118,7 +123,14 @@ function safeSaveError(error: unknown): string {
   if (status === 409)
     return 'A conflicting record already exists. Review the saved customer details before retrying.';
   if (status === 400) return 'Some details are invalid. Check the required fields and try again.';
-  return 'The information could not be saved. Your draft data is still on this screen; retry safely.';
+  return 'The request outcome could not be confirmed. Check the customer records before retrying.';
+}
+
+function matchesCustomerReceipt(value: unknown, customerId: string, recordId?: string): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return record.customerId === customerId && typeof record.id === 'string' && Boolean(record.id.trim()) &&
+    (!recordId || record.id === recordId);
 }
 
 function canonicalUiPhone(value: string, country = 'NG'): string {
@@ -138,17 +150,31 @@ function fieldErrorsFrom(error: unknown): Record<string, string> {
   );
 }
 
-export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProps> = ({
+export const CustomerRegistrationWizard = forwardRef<CustomerRegistrationWizardHandle, CustomerRegistrationWizardProps>((props, ref) => {
+  const { principal, sessionId } = useAuthStore();
+  const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type,
+    principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess,
+    principal?.readOnlyPrincipal]);
+  return <CustomerRegistrationWorkspace key={key} ref={ref} {...props} />;
+});
+
+const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandle, CustomerRegistrationWizardProps>(({
   onClose,
   onCustomerCreated,
   onOpenCustomer,
-}) => {
+  onBusyChange,
+  onGuardChange,
+}, ref) => {
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
+  const canRegister = scopes.includes('customer.create') && !principal?.readOnlyPrincipal;
   const canManageIdentity =
     scopes.includes('customer.view_identity_documents') && scopes.includes('kyc.review');
 
   const [step, setStep] = useState(0);
+  const stepHeadingRef = useRef<HTMLHeadingElement>(null);
+  const wizardRef = useRef<HTMLElement>(null);
+  useEffect(() => { stepHeadingRef.current?.focus(); }, [step]);
   const [customer, setCustomer] = useState<CreatedCustomer | null>(null);
   const [profileSaved, setProfileSaved] = useState(false);
   const [customerType, setCustomerType] = useState<CustomerType>('INDIVIDUAL');
@@ -195,13 +221,37 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
   const nextIdentityDraftId = useRef(1);
 
   const [isSaving, setIsSaving] = useState(false);
+  const [uncertainAction, setUncertainAction] = useState<string | null>(null);
+  const uncertainRef = useRef(false);
+  const markUncertain = (action: string, error: unknown, force = false) => {
+    if (force || ![400, 401, 403, 404, 413, 422].includes(requestStatus(error) ?? 0)) { uncertainRef.current = true; setUncertainAction(action); }
+  };
+  const [exitTarget, setExitTarget] = useState<'directory' | 'customer' | null>(null);
+  const [pendingIdentityDiscard, setPendingIdentityDiscard] = useState<{ id: string; nextType?: IdentityType } | null>(null);
+  const identityDiscardRef = useRef<HTMLElement>(null);
+  useDialogFocus(identityDiscardRef, Boolean(pendingIdentityDiscard), () => setPendingIdentityDiscard(null));
+  const exitPromptRef = useRef<HTMLDivElement>(null);
+  const exitOriginRef = useRef<HTMLElement | null>(null);
+  const restoreExitFocus = useRef(false);
+  const [savedProfileDraft, setSavedProfileDraft] = useState(JSON.stringify(['INDIVIDUAL', '', '', '', '', '', 'NG']));
+  const [savedAddressDraft, setSavedAddressDraft] = useState(JSON.stringify(['RESIDENTIAL', '', '', '', '', 'NG', '']));
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const savingRef = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => { onBusyChange?.(isSaving); }, [isSaving, onBusyChange]);
+  useEffect(() => {
+    if (exitTarget) exitPromptRef.current?.focus();
+    else if (restoreExitFocus.current) { restoreExitFocus.current = false; if (exitOriginRef.current?.isConnected) exitOriginRef.current.focus(); else stepHeadingRef.current?.focus(); }
+  }, [exitTarget]);
+  useEffect(() => {
+    if (Object.keys(fieldErrors).length > 0) wizardRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [fieldErrors]);
 
   const progress = useMemo(
-    () => (step >= STEPS.length ? 'Complete' : `${step + 1} of ${STEPS.length}`),
+    () => (step >= STEPS.length ? 'Summary' : `${step + 1} of ${STEPS.length}`),
     [step],
   );
   const derivedDisplayName = [firstName, middleName, lastName]
@@ -212,10 +262,33 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
     customerType === 'BUSINESS' ? normalizeCustomerText(businessName) : derivedDisplayName;
   const currentPhone = normalizePhoneNumber(phone, phoneCountry);
   const currentPhoneIsNigerian = currentPhone.valid && currentPhone.country === 'NG';
+  const profileDraft = JSON.stringify([customerType, businessName, firstName, middleName, lastName, dateOfBirth, nationality]);
+  const addressDraft = JSON.stringify([addressType, lineOne, lineTwo, city, stateOrProvince, country, postalCode]);
+  const hasUnsavedChanges = profileDraft !== savedProfileDraft || addressDraft !== savedAddressDraft ||
+    (currentPhone.e164 ?? phone.trim()) !== persistedPhone || normalizeEmailAddress(email) !== persistedEmail ||
+    Boolean(otpCode || verificationToken) || identityDocuments.some(item => !item.saved && (item.documentNumber.trim() || item.issuedAt || item.expiresAt || item.issuingCountry !== 'NG' || item.type !== (customerType === 'BUSINESS' ? 'BUSINESS_REGISTRATION' : 'NIN')));
+  const guarded = Boolean(hasUnsavedChanges || uncertainAction || isSaving);
+  useEffect(() => { onGuardChange?.(guarded, isSaving); }, [guarded, isSaving, onGuardChange]);
+  useEffect(() => () => onGuardChange?.(false, false), [onGuardChange]);
+  useEffect(() => {
+    if (!guarded) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [guarded]);
+  const requestExit = (target: 'directory' | 'customer') => {
+    if (savingRef.current || isSaving || exitTarget) return;
+    if (!hasUnsavedChanges && !uncertainAction) { if (target === 'customer' && customer) onOpenCustomer(customer.id); else onClose(); return; }
+    exitOriginRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setExitTarget(target);
+  };
+  useImperativeHandle(ref, () => ({ requestClose: () => requestExit('directory') }));
+  const keepRegistration = () => { restoreExitFocus.current = true; setExitTarget(null); };
+
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (savingRef.current) return;
+    if (!canRegister || savingRef.current || uncertainRef.current) return;
     const errors = validateProfileFields(
       {
         customerType,
@@ -247,6 +320,9 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
       let savedCustomer = customer;
       if (!savedCustomer) {
         savedCustomer = await ApiClient.post<CreatedCustomer>('/customers', { type: customerType });
+        if (!mounted.current) return;
+        if (!savedCustomer || typeof savedCustomer.id !== 'string' || !savedCustomer.id ||
+            savedCustomer.type !== customerType || savedCustomer.status !== 'DRAFT') throw new Error('Unconfirmed customer receipt');
         setCustomer(savedCustomer);
         onCustomerCreated(savedCustomer);
       }
@@ -274,37 +350,28 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
               nationality: normalizeIsoCountryCode(nationality) ?? undefined,
             };
 
-      if (profileSaved) {
-        await ApiClient.patch(
-          `/customers/${encodeURIComponent(savedCustomer.id)}/profile`,
-          profile,
-        );
-      } else {
-        try {
-          await ApiClient.post(
-            `/customers/${encodeURIComponent(savedCustomer.id)}/registration-profile`,
-            registrationProfile,
-          );
-        } catch (createError) {
-          // Recover a retry after a committed create whose response was lost.
-          if (requestStatus(createError) !== 409) throw createError;
-          await ApiClient.patch(
-            `/customers/${encodeURIComponent(savedCustomer.id)}/profile`,
-            profile,
-          );
-        }
+      const savedProfile = profileSaved
+        ? await ApiClient.patch(`/customers/${encodeURIComponent(savedCustomer.id)}/profile`, profile)
+        : await ApiClient.post(`/customers/${encodeURIComponent(savedCustomer.id)}/registration-profile`, registrationProfile);
+      if (!mounted.current) return;
+      // A 409 may reflect another operator's profile, not necessarily our retry. Never overwrite it blindly.
+      if (!matchesCustomerReceipt(savedProfile, savedCustomer.id) || typeof savedProfile.displayName !== 'string') {
+        throw new Error('Unconfirmed profile receipt');
       }
+      setSavedProfileDraft(profileDraft);
       setProfileSaved(true);
       setFieldErrors({});
       onCustomerCreated(savedCustomer);
       setNotice('Customer profile saved. The record remains DRAFT.');
       setStep(1);
     } catch (saveError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError));
+      markUncertain('customer or profile', saveError);
       setError(safeSaveError(saveError));
     } finally {
       savingRef.current = false;
-      setIsSaving(false);
+      if (mounted.current) setIsSaving(false);
     }
   };
 
@@ -340,24 +407,24 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
       isPrimary,
       ...(type === 'PHONE' ? { phoneCountry: countryCode } : {}),
     };
-    if (previous) {
-      return ApiClient.patch<ContactRecord>(
-        `/customers/${encodeURIComponent(customerId)}/contact-methods/${encodeURIComponent(previous.id)}`,
-        body,
-      );
-    }
     try {
-      return await ApiClient.post<ContactRecord>(
-        `/customers/${encodeURIComponent(customerId)}/contact-method`,
-        { type, ...body },
-      );
+      const saved = previous
+        ? await ApiClient.patch<ContactRecord>(`/customers/${encodeURIComponent(customerId)}/contact-methods/${encodeURIComponent(previous.id)}`, body)
+        : await ApiClient.post<ContactRecord>(`/customers/${encodeURIComponent(customerId)}/contact-method`, { type, ...body });
+      if (!mounted.current) throw new Error('Workspace closed');
+      if (!matchesCustomerReceipt(saved, customerId, previous?.id) || saved.type !== type || saved.isPrimary !== isPrimary) {
+        throw new Error('Unconfirmed contact receipt');
+      }
+      return saved;
     } catch (saveError) {
-      if (requestStatus(saveError) === 409) {
+      if (!mounted.current) throw saveError;
+      if (!previous && requestStatus(saveError) === 409) {
         const existing = await recoverContacts(customerId);
+        if (!mounted.current) throw saveError;
         const normalized =
           type === 'PHONE' ? canonicalUiPhone(value, countryCode) : normalizeEmailAddress(value);
         const matched = existing.find((contact) => {
-          if (contact.type !== type) return false;
+          if (!matchesCustomerReceipt(contact, customerId) || contact.type !== type || contact.isPrimary !== isPrimary) return false;
           const stored =
             type === 'PHONE'
               ? canonicalUiPhone(contact.value ?? '', countryCode)
@@ -372,7 +439,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
 
   const saveContacts = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!customer || savingRef.current) return;
+    if (!canRegister || !customer || savingRef.current || uncertainRef.current) return;
     const validationErrors = {
       ...validateContactFields('PHONE', phone, phoneCountry),
       ...(email.trim() ? validateContactFields('EMAIL', email) : {}),
@@ -406,6 +473,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
               phoneContact,
               phoneCountry,
             );
+      if (!mounted.current) return;
       setPhoneContact(savedPhone);
       setPersistedPhone(normalizedPhone.e164);
       if (email.trim()) {
@@ -413,6 +481,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
           emailContact && persistedEmail === normalizedEmail
             ? emailContact
             : await saveContact(customer.id, 'EMAIL', normalizedEmail, false, emailContact);
+        if (!mounted.current) return;
         setEmailContact(savedEmail);
         setPersistedEmail(normalizedEmail);
       }
@@ -423,17 +492,19 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
       }
       setNotice('Contact details saved. Phone verification is separate from customer activation.');
     } catch (saveError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError));
+      markUncertain('contact', saveError);
       setError(safeSaveError(saveError));
     } finally {
       savingRef.current = false;
-      setIsSaving(false);
+      if (mounted.current) setIsSaving(false);
     }
   };
 
   const requestPhoneOtp = async () => {
     const normalizedPhone = normalizePhoneNumber(phone, phoneCountry);
-    if (!customer || !phoneContact || savingRef.current) return;
+    if (!canRegister || !customer || !phoneContact || savingRef.current || uncertainRef.current) return;
     if (!normalizedPhone.valid || !normalizedPhone.e164 || normalizedPhone.country !== 'NG') {
       setError(
         'The current OTP flow supports valid Nigerian phone numbers only. Other countries can be saved unverified.',
@@ -453,23 +524,27 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
     setFieldErrors({});
     setNotice(null);
     try {
-      await ApiClient.post('/customers/registration/otp', { phone: normalizedPhone.e164 });
+      const receipt = await ApiClient.post<{ status: string }>('/customers/registration/otp', { phone: normalizedPhone.e164 });
+      if (!mounted.current) return;
+      if (!receipt || receipt.status !== 'OTP_REQUEST_ACCEPTED') throw new Error('Unconfirmed OTP request');
       setOtpRequested(true);
       setOtpCode('');
       setVerificationToken('');
-      setNotice('OTP request accepted. Enter the code sent to the saved Nigerian phone number.');
+      setNotice('OTP request accepted; delivery is not confirmed. Enter the code if received.');
     } catch (otpError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(otpError));
+      markUncertain('OTP request', otpError);
       setError(safeSaveError(otpError));
     } finally {
       savingRef.current = false;
-      setIsSaving(false);
+      if (mounted.current) setIsSaving(false);
     }
   };
 
   const verifyPhone = async () => {
     const normalizedPhone = normalizePhoneNumber(phone, phoneCountry);
-    if (!customer || !phoneContact || savingRef.current || !otpRequested) return;
+    if (!canRegister || !customer || !phoneContact || savingRef.current || uncertainRef.current || !otpRequested) return;
     if (!normalizedPhone.valid || !normalizedPhone.e164 || normalizedPhone.country !== 'NG') {
       setError('The current OTP flow supports valid Nigerian phone numbers only.');
       return;
@@ -479,16 +554,20 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
     setError(null);
     setFieldErrors({});
     setNotice(null);
+    let verificationSaveStarted = false;
     try {
       let token = verificationToken;
       if (!token) {
-        const verified = await ApiClient.post<{ verificationToken: string }>(
+        const verified = await ApiClient.post<{ status: string; verificationToken: string }>(
           '/customers/registration/otp/verify',
           { phone: normalizedPhone.e164, code: otpCode.trim() },
         );
+        if (!mounted.current) return;
+        if (!verified || verified.status !== 'PHONE_VERIFIED' || typeof verified.verificationToken !== 'string' || !verified.verificationToken.trim()) throw new Error('Unconfirmed verification proof');
         token = verified.verificationToken;
         setVerificationToken(token);
       }
+      verificationSaveStarted = true;
       const updated = await ApiClient.patch<ContactRecord>(
         `/customers/${encodeURIComponent(customer.id)}/contact-methods/${encodeURIComponent(phoneContact.id)}`,
         {
@@ -498,6 +577,9 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
           verificationToken: token,
         },
       );
+      if (!mounted.current) return;
+      if (!matchesCustomerReceipt(updated, customer.id, phoneContact.id) || updated.type !== 'PHONE' ||
+          typeof updated.verifiedAt !== 'string' || !Number.isFinite(Date.parse(updated.verifiedAt))) throw new Error('Unconfirmed phone verification receipt');
       setPhoneContact(updated);
       setPersistedPhone(normalizedPhone.e164);
       setOtpRequested(false);
@@ -505,17 +587,19 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
       setVerificationToken('');
       setNotice('Primary phone verified. The customer is still DRAFT and is not activated.');
     } catch (verifyError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(verifyError));
-      setError(safeSaveError(verifyError));
+      markUncertain('phone verification', verifyError, verificationSaveStarted);
+      setError(verificationSaveStarted ? 'The phone verification save outcome could not be confirmed. Review the contact before another action.' : safeSaveError(verifyError));
     } finally {
       savingRef.current = false;
-      setIsSaving(false);
+      if (mounted.current) setIsSaving(false);
     }
   };
 
   const saveAddress = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!customer || savingRef.current) return;
+    if (!canRegister || !customer || savingRef.current || uncertainRef.current) return;
     const anyAddressField = [lineOne, lineTwo, city, stateOrProvince, postalCode].some((value) =>
       normalizeCustomerText(value),
     );
@@ -569,16 +653,21 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
             `/customers/${encodeURIComponent(customer.id)}/address`,
             body,
           );
+      if (!mounted.current) return;
+      if (!matchesCustomerReceipt(saved, customer.id, address?.id) || saved.type !== addressType || saved.isPrimary !== true) throw new Error('Unconfirmed address receipt');
+      setSavedAddressDraft(addressDraft);
       setAddress(saved);
       setFieldErrors({});
       setNotice('Address saved.');
       setStep(3);
     } catch (saveError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError));
+      markUncertain('address', saveError);
       setError(safeSaveError(saveError));
     } finally {
       savingRef.current = false;
-      setIsSaving(false);
+      if (mounted.current) setIsSaving(false);
     }
   };
 
@@ -602,14 +691,25 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
   };
 
   const removeUnsavedIdentityDocument = (localId: string) => {
-    setIdentityDocuments((current) =>
-      current.filter((item) => item.localId !== localId || item.saved),
-    );
+    const item = identityDocuments.find(document => document.localId === localId && !document.saved);
+    if (!item) return;
+    const defaultType = customerType === 'BUSINESS' ? 'BUSINESS_REGISTRATION' : 'NIN';
+    if (item.documentNumber.trim() || item.issuedAt || item.expiresAt || item.issuingCountry !== 'NG' || item.type !== defaultType) {
+      setPendingIdentityDiscard({ id: localId });
+      return;
+    }
+    setIdentityDocuments(current => current.filter(document => document.localId !== localId || document.saved));
+  };
+  const changeIdentityType = (localId: string, type: IdentityType) => {
+    setIdentityDocuments(current => current.map(item => item.localId === localId
+      ? { ...item, type, issuingCountry: isNigeriaIdentityType(type) ? 'NG' : item.issuingCountry || 'NG',
+          issuedAt: supportsIdentityDates(type) ? item.issuedAt : '', expiresAt: supportsIdentityDates(type) ? item.expiresAt : '', errors: {}, outcome: null }
+      : item));
   };
 
   const saveIdentityDocument = async (localId: string) => {
     const document = identityDocuments.find((item) => item.localId === localId);
-    if (!customer || savingRef.current || !document || document.saved) return;
+    if (!canRegister || !customer || savingRef.current || uncertainRef.current || !document || document.saved) return;
     const documentNumber = normalizeCustomerText(document.documentNumber);
     const duplicateDraft = identityDocuments.some(
       (item) =>
@@ -713,6 +813,8 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
             : {}),
         },
       );
+      if (!mounted.current) return;
+      if (!matchesCustomerReceipt(saved, customer.id) || saved.type !== document.type || typeof saved.maskedDocumentNumber !== 'string') throw new Error('Unconfirmed identity receipt');
       setIdentityDocuments((current) =>
         current.map((item) =>
           item.localId === localId
@@ -729,6 +831,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
       setNotice('Identity document saved independently. Its number is masked in the result.');
       setFieldErrors({});
     } catch (saveError) {
+      if (!mounted.current) return;
       const serverErrors = fieldErrorsFrom(saveError);
       setIdentityDocuments((current) =>
         current.map((item) =>
@@ -744,10 +847,11 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
             : item,
         ),
       );
+      markUncertain('identity document', saveError);
       setError(safeSaveError(saveError));
     } finally {
       savingRef.current = false;
-      setIsSaving(false);
+      if (mounted.current) setIsSaving(false);
     }
   };
 
@@ -773,9 +877,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
     setStep(3);
   };
 
-  const finishLater = () => {
-    onClose();
-  };
+  const finishLater = () => { requestExit('directory'); };
 
   const stepForm = () => {
     if (step === 0) {
@@ -921,6 +1023,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
                 </label>
                 <CustomerCountrySelect
                   id="registration-nationality"
+                  disabled={isSaving || Boolean(exitTarget)}
                   label="Nationality"
                   value={nationality}
                   onChange={setNationality}
@@ -950,7 +1053,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
                 onClick={finishLater}
                 disabled={isSaving}
               >
-                Save and finish later
+                Finish later
               </button>
             )}
           </div>
@@ -971,6 +1074,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
           <div className="cm-wizard-field-grid">
             <CustomerPhoneField
               id="registration-phone"
+              disabled={isSaving || Boolean(exitTarget)}
               label="Primary phone number"
               value={phone}
               country={phoneCountry}
@@ -1092,7 +1196,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
               onClick={finishLater}
               disabled={isSaving}
             >
-              Save and finish later
+              Finish later
             </button>
           )}
         </form>
@@ -1186,6 +1290,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
             </label>
             <CustomerCountrySelect
               id="registration-address-country"
+              disabled={isSaving || Boolean(exitTarget)}
               label="Country"
               value={country}
               onChange={setCountry}
@@ -1242,7 +1347,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
                 onClick={finishLater}
                 disabled={isSaving}
               >
-                Save and finish later
+                Finish later
               </button>
             )}
           </div>
@@ -1329,23 +1434,10 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
                           }
                           onChange={(event) => {
                             const type = event.target.value as IdentityType;
-                            setIdentityDocuments((current) =>
-                              current.map((item) =>
-                                item.localId === document.localId
-                                  ? {
-                                      ...item,
-                                      type,
-                                      issuingCountry: isNigeriaIdentityType(type)
-                                        ? 'NG'
-                                        : item.issuingCountry || 'NG',
-                                      issuedAt: supportsIdentityDates(type) ? item.issuedAt : '',
-                                      expiresAt: supportsIdentityDates(type) ? item.expiresAt : '',
-                                      errors: {},
-                                      outcome: null,
-                                    }
-                                  : item,
-                              ),
-                            );
+                            if ((!supportsIdentityDates(type) && (document.issuedAt || document.expiresAt)) ||
+                                (isNigeriaIdentityType(type) && document.issuingCountry !== 'NG')) {
+                              setPendingIdentityDiscard({ id: document.localId, nextType: type });
+                            } else changeIdentityType(document.localId, type);
                           }}
                         >
                           {identityTypes.map((value) => (
@@ -1422,7 +1514,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
                           )
                         }
                         required
-                        disabled={isNigeriaIdentityType(document.type)}
+                        disabled={isNigeriaIdentityType(document.type) || isSaving || Boolean(exitTarget)}
                         error={document.errors.issuingCountry}
                       />
                       {supportsIdentityDates(document.type) && (
@@ -1566,7 +1658,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
                 onClick={finishLater}
                 disabled={isSaving}
               >
-                Save and finish later
+                Finish later
               </button>
             )}
           </div>
@@ -1607,7 +1699,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
           </div>
           <div>
             <dt>Email</dt>
-            <dd>{emailContact?.maskedValue ?? (email.trim() ? 'Saved' : 'Not recorded')}</dd>
+            <dd>{emailContact ? (emailContact.maskedValue ?? 'Saved (value unavailable)') : email.trim() ? 'Not saved' : 'Not recorded'}</dd>
           </div>
           <div>
             <dt>Address</dt>
@@ -1651,12 +1743,12 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
             <button
               className="cm-button cm-button-primary"
               type="button"
-              onClick={() => onOpenCustomer(customer.id)}
+              onClick={() => requestExit('customer')}
             >
               Open Customer 360°
             </button>
           )}
-          <button className="cm-button cm-button-secondary" type="button" onClick={onClose}>
+          <button className="cm-button cm-button-secondary" type="button" onClick={finishLater}>
             Return to directory
           </button>
         </div>
@@ -1664,15 +1756,18 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
     );
   };
 
+  if (!canRegister) return <section role="alert">Customer registration is unavailable for this session.</section>;
+
   return (
     <section
       className="cm-create-panel cm-registration-wizard"
+      ref={wizardRef}
       aria-label="New customer registration"
     >
       <div className="cm-wizard-heading">
         <div>
           <p className="cm-eyebrow">DRAFT REGISTRATION · {progress}</p>
-          <h2>{step < 4 ? STEPS[step] : 'Registration summary'}</h2>
+          <h2 ref={stepHeadingRef} tabIndex={-1}>{step < 4 ? STEPS[step] : 'Registration summary'}</h2>
           <p>
             Personal information is saved incrementally so an incomplete DRAFT can be continued in
             Customer 360°.
@@ -1681,20 +1776,26 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
         <button
           className="cm-button cm-button-secondary"
           type="button"
-          onClick={onClose}
-          disabled={isSaving}
+          onClick={finishLater}
+          disabled={isSaving || Boolean(exitTarget)}
         >
           Close
         </button>
       </div>
+      <div className="cm-registration-context" aria-label="Registration save status">
+        <div><span>RECORD</span><strong>{customer ? 'DRAFT created' : uncertainAction ? 'Creation not confirmed' : 'Not created yet'}</strong></div>
+        <div><span>PROFILE</span><strong>{profileSaved ? 'Saved' : 'Not confirmed'}</strong></div>
+        <p>Changes are saved by each step’s save action. Moving between steps does not save edited fields.</p>
+      </div>
       <ol className="cm-wizard-stepper" aria-label="Registration progress">
-        {STEPS.map((label, index) => (
+        {[...STEPS, 'Registration summary'].map((label, index) => (
           <li
             key={label}
-            className={index === step ? 'is-active' : index < step ? 'is-complete' : ''}
+            className={index === step ? 'is-active' : index < step ? 'is-visited' : ''}
+            aria-current={index === step ? 'step' : undefined}
           >
             <span>{index + 1}</span>
-            <small>{label}</small>
+            <small>{label}<span className="cm-wizard-step-state">{index === step ? 'Current' : index < step ? 'Visited' : 'Upcoming'}</span></small>
           </li>
         ))}
       </ol>
@@ -1708,7 +1809,31 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
           {notice}
         </div>
       )}
-      {stepForm()}
+      {pendingIdentityDiscard && <div className="cm-modal-backdrop" role="presentation">
+        <section ref={identityDiscardRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="registration-identity-discard-title">
+          <h2 id="registration-identity-discard-title">{pendingIdentityDiscard.nextType ? 'Change document type?' : 'Remove unsaved document?'}</h2>
+          <p>{pendingIdentityDiscard.nextType ? 'Changing this type clears incompatible issue date, expiry date or issuing country fields.' : 'This removes the unsaved document entry and its fields. Saved records are not removed.'}</p>
+          <div className="cm-actions-row"><button type="button" className="cm-button cm-button-secondary" onClick={() => setPendingIdentityDiscard(null)}>Keep entry</button>{' '}<button type="button" className="cm-button cm-button-danger" onClick={() => { const pending = pendingIdentityDiscard; if (pending.nextType) changeIdentityType(pending.id, pending.nextType); else setIdentityDocuments(current => current.filter(item => item.localId !== pending.id || item.saved)); setPendingIdentityDiscard(null); }}>Discard fields</button></div>
+        </section>
+      </div>}
+      {uncertainAction && <div className="cm-policy-notice cm-policy-notice-warning" role="status">
+        <strong>The {uncertainAction} outcome is unconfirmed or conflicted.</strong>
+        <p>Further registration actions are blocked to prevent repeating an operation that may already have happened. Leave and inspect the customer records and available audit history before starting another action. A read may not prove an OTP was delivered or rule out a late commit.</p>
+        <p>This lock and unsaved input exist only in this workspace and will be lost when leaving, changing session or reloading the browser. {customer ? 'The confirmed customer identifier can be opened for review.' : 'The customer identifier was not confirmed; search the directory and audit history rather than creating another record blindly.'}</p>
+        <div className="cm-actions-row">
+          <button type="button" className="cm-button cm-button-secondary" disabled={isSaving || Boolean(exitTarget)} onClick={() => requestExit('directory')}>Leave to review directory</button>
+          {customer && <button type="button" className="cm-button cm-button-secondary" disabled={isSaving || Boolean(exitTarget)} onClick={() => requestExit('customer')}>Open customer for review</button>}
+        </div>
+      </div>}
+      {exitTarget && (
+        <div className="cm-registration-exit" ref={exitPromptRef} tabIndex={-1} role="group" aria-label="Confirm leaving registration" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); keepRegistration(); } }}>
+          <strong>Leave with unsaved changes or an unconfirmed action?</strong>
+          <p>Unsaved fields, verification input and the local outcome lock will be discarded. An unconfirmed action may already have occurred; inspect records and audit history before a new action. This exit does not save your draft.</p>
+          {customer && <p>The customer record already created remains a DRAFT.</p>}
+          <div className="cm-actions-row"><button type="button" className="cm-button cm-button-secondary" onClick={keepRegistration}>Keep editing</button><button type="button" className="cm-button cm-button-primary" onClick={() => { if (exitTarget === 'customer' && customer) onOpenCustomer(customer.id); else onClose(); }}>Discard unsaved changes and leave</button></div>
+        </div>
+      )}
+      <fieldset className="cm-wizard-content" disabled={Boolean(exitTarget) || isSaving || Boolean(uncertainAction) || Boolean(pendingIdentityDiscard)}>{stepForm()}</fieldset>
     </section>
   );
-};
+});

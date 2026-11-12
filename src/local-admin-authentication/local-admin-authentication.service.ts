@@ -124,13 +124,15 @@ export class LocalAdminAuthenticationService {
    * credential from before this change still converges to the fixed, real assignment on the
    * next seed run).
    */
-  async seedDefaultAdmin(input: {
-    email: string;
-    password: string;
-  }): Promise<{
+  async seedDefaultAdmin(input: { email: string; password: string }): Promise<{
     created: boolean;
     email: string;
-    role: { principalId: string; roleKey: 'SUPER_ADMIN'; assignmentReference: string; status: string };
+    role: {
+      principalId: string;
+      roleKey: 'SUPER_ADMIN';
+      assignmentReference: string;
+      status: string;
+    };
   }> {
     if (!isLocalDevelopmentEnvironment()) {
       throw new Error(

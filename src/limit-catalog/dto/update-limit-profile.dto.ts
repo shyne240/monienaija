@@ -1,6 +1,19 @@
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 
-import { LimitProfileConfigurationStatus, LimitProfileKind, LimitProfileStatus } from '../limit-catalog.enums';
+import {
+  LimitProfileConfigurationStatus,
+  LimitProfileKind,
+  LimitProfileStatus,
+} from '../limit-catalog.enums';
 
 export class UpdateLimitProfileDto {
   @IsOptional()

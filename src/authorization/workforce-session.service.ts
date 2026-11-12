@@ -192,7 +192,9 @@ export class A2WorkforceSessionService {
     const rows = await this.dataSource
       .getRepository(A2FinanceRoleAssignment)
       .find({ where: { principalId, status: 'ACTIVE' } });
-    const legacyDefs = new Map(this.config.roles.filter((r) => r.enabled).map((r) => [r.roleKey, r]));
+    const legacyDefs = new Map(
+      this.config.roles.filter((r) => r.enabled).map((r) => [r.roleKey, r]),
+    );
     const active = rows.filter((a) => a.effectiveFrom <= now && a.effectiveTo > now);
     const activeRoleKeys = [...new Set(active.map((a) => a.roleKey))];
 
@@ -203,7 +205,9 @@ export class A2WorkforceSessionService {
         })
       : [];
     const explicitlyDisabledRoleKeys = new Set(
-      catalogueDefinitions.filter((definition) => !definition.isActive).map((definition) => definition.roleKey),
+      catalogueDefinitions
+        .filter((definition) => !definition.isActive)
+        .map((definition) => definition.roleKey),
     );
 
     // Legacy scopes remain a compatibility source only for catalogue roles that have not been
@@ -233,7 +237,10 @@ export class A2WorkforceSessionService {
         catalogue.allRecognizedRolesReadOnly,
     };
   }
-  private principal(s: A2WorkforceSession, resolved: ResolvedPrincipalRoles): AuthorizationPrincipal {
+  private principal(
+    s: A2WorkforceSession,
+    resolved: ResolvedPrincipalRoles,
+  ): AuthorizationPrincipal {
     return {
       // V1-ADMIN-AUTHORIZATION-RUNTIME-01: generalized from the hardcoded
       // `roles.includes('FINANCE_ADMIN')` literal to the catalogue's (or, as fallback, legacy

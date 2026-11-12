@@ -157,11 +157,11 @@ export class CommercialAccountingService {
     };
 
     // ————————————————— FEE REVENUE (+VAT) — DP-01=B / DP-02=A / DP-03=B —————————————————
-    const feeStatus = typeof input.feeDecision.status === 'string' ? input.feeDecision.status : 'NOT_CONFIGURED';
+    const feeStatus =
+      typeof input.feeDecision.status === 'string' ? input.feeDecision.status : 'NOT_CONFIGURED';
     const feeMinorRaw = (input.feeDecision as { feeMinor?: unknown }).feeMinor;
-    const feeMinor = typeof feeMinorRaw === 'string' || typeof feeMinorRaw === 'number'
-      ? BigInt(feeMinorRaw)
-      : 0n;
+    const feeMinor =
+      typeof feeMinorRaw === 'string' || typeof feeMinorRaw === 'number' ? BigInt(feeMinorRaw) : 0n;
 
     let feePosting: Record<string, unknown> = {
       journalLegsPosted: false,
@@ -246,13 +246,13 @@ export class CommercialAccountingService {
           'fee payer ledger account not found or inactive — required DR side of the fee accounting legs (DP-15=A)',
         );
       }
-      registerLeg(payerAccount, `WALLET:${input.feePayerCustomerId}`, LedgerEntryDirection.DEBIT, payerDebitMinor);
       registerLeg(
-        feeRevenue,
-        feeRevenue.code,
-        LedgerEntryDirection.CREDIT,
-        revenueMinor,
+        payerAccount,
+        `WALLET:${input.feePayerCustomerId}`,
+        LedgerEntryDirection.DEBIT,
+        payerDebitMinor,
       );
+      registerLeg(feeRevenue, feeRevenue.code, LedgerEntryDirection.CREDIT, revenueMinor);
 
       if (vatLegMinor > 0n) {
         const vatPayable = await this.registryService.resolveRequiredAccountInTransaction(
@@ -267,7 +267,10 @@ export class CommercialAccountingService {
         journalLegsPosted: true,
         vatTreatment: config.vatTreatment,
         vatRateBps,
-        vatBasis: config.vatTreatment === CommercialVatTreatment.INCLUSIVE_IN_FEE ? 'INCLUSIVE' : 'EXCLUSIVE',
+        vatBasis:
+          config.vatTreatment === CommercialVatTreatment.INCLUSIVE_IN_FEE
+            ? 'INCLUSIVE'
+            : 'EXCLUSIVE',
         revenueMinor: revenueMinor.toString(),
         vatMinorPosted: vatLegMinor.toString(),
         vatMinorFromDecision: decisionVatMinor.toString(),
@@ -277,12 +280,14 @@ export class CommercialAccountingService {
 
     // ————————————————— COMMISSION — DP-05 configurable / DP-07 timing —————————————————
     const commissionStatus =
-      typeof input.commissionDecision.status === 'string' ? input.commissionDecision.status : 'NONE';
+      typeof input.commissionDecision.status === 'string'
+        ? input.commissionDecision.status
+        : 'NONE';
     const allocations = Array.isArray(
       (input.commissionDecision as { allocations?: unknown }).allocations,
     )
-      ? ((input.commissionDecision as { allocations: CommissionAccountingAllocationInput[] })
-          .allocations)
+      ? (input.commissionDecision as { allocations: CommissionAccountingAllocationInput[] })
+          .allocations
       : [];
 
     const nonzeroAllocations = allocations.filter((a) => {
@@ -362,10 +367,7 @@ export class CommercialAccountingService {
         manager,
         CommercialAccountingFamilyRole.COMMISSION_EXPENSE,
       );
-      const total = nonzeroAllocations.reduce(
-        (sum, a) => sum + BigInt(String(a.amountMinor)),
-        0n,
-      );
+      const total = nonzeroAllocations.reduce((sum, a) => sum + BigInt(String(a.amountMinor)), 0n);
 
       if (config.commissionTreatment === CommissionAccountingTreatment.EXPENSE_PAYABLE) {
         const payable = await this.registryService.resolveRequiredAccountInTransaction(
@@ -409,7 +411,12 @@ export class CommercialAccountingService {
             );
           }
           const amount = BigInt(String(allocation.amountMinor));
-          registerLeg(walletAccount, `WALLET:${allocation.beneficiaryId}`, LedgerEntryDirection.CREDIT, amount);
+          registerLeg(
+            walletAccount,
+            `WALLET:${allocation.beneficiaryId}`,
+            LedgerEntryDirection.CREDIT,
+            amount,
+          );
           credits.push({ beneficiaryId: allocation.beneficiaryId, amountMinor: amount.toString() });
         }
         commissionPosting = {
@@ -473,7 +480,11 @@ export class CommercialAccountingService {
       accountingJournalIdempotencyKey: accountingIdempotencyKey,
       feePosting:
         feePosting.journalLegsPosted === true
-          ? { ...feePosting, accountingJournalId, accountingJournalIdempotencyKey: accountingIdempotencyKey }
+          ? {
+              ...feePosting,
+              accountingJournalId,
+              accountingJournalIdempotencyKey: accountingIdempotencyKey,
+            }
           : feePosting,
       commissionPosting:
         commissionPosting.journalLegsPosted === true

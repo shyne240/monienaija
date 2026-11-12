@@ -1,0 +1,74 @@
+[
+  {
+    "width": 320,
+    "keyboardNavigationAndUsage": true,
+    "pagingAndUnconfirmedToggle": true,
+    "mutationsIntercepted": true,
+    "visibleLabelMechanisms": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "keyboardNavigationAndUsage": true,
+    "pagingAndUnconfirmedToggle": true,
+    "mutationsIntercepted": true,
+    "visibleLabelMechanisms": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "keyboardNavigationAndUsage": true,
+    "pagingAndUnconfirmedToggle": true,
+    "mutationsIntercepted": true,
+    "visibleLabelMechanisms": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "keyboardNavigationAndUsage": true,
+    "pagingAndUnconfirmedToggle": true,
+    "mutationsIntercepted": true,
+    "visibleLabelMechanisms": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "keyboardNavigationAndUsage": true,
+    "pagingAndUnconfirmedToggle": true,
+    "mutationsIntercepted": true,
+    "visibleLabelMechanisms": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "keyboardNavigationAndUsage": true,
+    "pagingAndUnconfirmedToggle": true,
+    "mutationsIntercepted": true,
+    "visibleLabelMechanisms": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "keyboardNavigationAndUsage": true,
+    "pagingAndUnconfirmedToggle": true,
+    "mutationsIntercepted": true,
+    "visibleLabelMechanisms": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "keyboardNavigationAndUsage": true,
+    "pagingAndUnconfirmedToggle": true,
+    "mutationsIntercepted": true,
+    "visibleLabelMechanisms": true,
+    "page": 1440,
+    "view": 1440
+  }
+]

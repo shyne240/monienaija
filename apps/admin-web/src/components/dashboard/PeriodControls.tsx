@@ -38,6 +38,7 @@ export const PeriodControls: React.FC<PeriodControlsProps> = ({
         <input type="date" style={styles.dateInput} value={from} onChange={(e) => onFromChange(e.target.value)} aria-label="From date" />
         <span style={styles.toLabel}>to</span>
         <input type="date" style={styles.dateInput} value={to} onChange={(e) => onToChange(e.target.value)} aria-label="To date" />
+        <span style={styles.toLabel}>Inclusive UTC days</span>
       </>
     )}
     {showCompare && (

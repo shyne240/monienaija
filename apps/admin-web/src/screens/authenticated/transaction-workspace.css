@@ -1,0 +1,26 @@
+.mn-transactions { max-width: 1300px; }
+.mn-transactions button { min-height: 40px; }
+.mn-transactions input, .mn-transactions select { min-width: 0; }
+.mn-transactions code, .mn-transactions [role="alert"] { overflow-wrap: anywhere; }
+.mn-transactions [aria-label="Customer transaction history table"] table { min-width: 650px; }
+.mn-transactions input, .mn-transactions select { min-height: 40px; }
+.mn-transactions__panel { box-shadow:0 4px 20px #183b2810; }
+.mn-transactions__eyebrow { margin:0 0 8px; color:#386b53; font-size:11px; font-weight:800; letter-spacing:.1em; }
+/* Trace controls follow the directory pattern while keeping simulation distinct. */
+.mn-transactions { max-width:1440px; }
+.mn-transactions__panel { box-shadow:0 2px 12px #183b280a; }
+.mn-transactions__panel .one-workspace-filter-tabs { margin:16px 0; }
+.mn-transactions__description { color:#52655f; font-size:13px; line-height:1.5; margin:0 0 18px; }
+.mn-transactions__history-header { align-items:flex-end!important; }
+.mn-transactions__history table th,.mn-transactions__history table td { padding:12px; border-bottom:1px solid #e0e8e2; vertical-align:middle; white-space:nowrap; }
+.mn-transactions__history table th { background:#f2f6f2; color:#3d5b4e; }
+.mn-transactions__history table th:last-child,.mn-transactions__history table td:last-child { position:sticky; right:0; z-index:1; box-shadow:-3px 0 6px #18382b0d; }
+.mn-transactions__history table td:last-child { background:white; }
+.mn-transactions__detail-button { border:1px solid #78978a; border-radius:7px; padding:9px 12px; background:white; color:#006444; font:inherit; font-weight:700; cursor:pointer; white-space:nowrap; }
+.mn-transactions__detail-button:focus-visible { outline:3px solid #2179bf; outline-offset:2px; }
+.mn-transactions__drawer-header { position:sticky; top:0; z-index:1; display:flex; justify-content:space-between; gap:16px; padding:24px; background:#fff; border-bottom:1px solid #dfe9e1; }
+.mn-transactions__drawer-header h2 { margin:6px 0 0; font-size:20px; color:#123c2b; }
+.mn-transactions__drawer-body { padding:24px; overflow-wrap:anywhere; color:#52655f; font-size:13px; }
+.mn-transactions__drawer-body dl { display:grid; grid-template-columns:minmax(110px,1fr) minmax(0,2fr); gap:12px; padding:16px; border:1px solid #dfe9e1; border-radius:8px; line-height:1.5; }
+.mn-transactions__drawer-body dt { font-weight:600; } .mn-transactions__drawer-body dd { margin:0; color:#132b25; }
+@media(max-width:600px) { .mn-transactions__drawer-header,.mn-transactions__drawer-body { padding:20px; } }

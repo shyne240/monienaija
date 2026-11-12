@@ -57,7 +57,7 @@ function directoryResponse(
     total,
     page,
     limit: 20,
-    totalPages: hasNextPage ? 2 : 1,
+    totalPages: Math.ceil(total / 20),
     hasNextPage,
     hasPreviousPage: page > 1,
   };
@@ -404,4 +404,102 @@ describe('M1 Customer Directory — table semantics, keyboard and narrow-screen 
     });
     expect(view.queryByRole('button', { name: 'Clear filters' })).toBeNull();
   });
+  test('directory close control protects an in-progress draft and blocks row navigation', async () => {
+    (ApiClient.get as jest.Mock).mockResolvedValue(directoryResponse([customer],1,false,1));
+    const view=render(<CustomerDirectoryScreen/>);await view.findByText('Synthetic Directory Alpha');
+    fireEvent.click(view.getByRole('button',{name:'New Customer'}));fireEvent.change(view.getByLabelText(/First name/),{target:{value:'Unsaved synthetic'}});
+    const rowAction=view.getByRole('button',{name:'Open Customer 360° for Synthetic Directory Alpha'}) as HTMLButtonElement;expect(rowAction.disabled).toBe(true);
+    const close=view.getByRole('button',{name:'Close registration'});close.focus();fireEvent.click(close);
+    expect(view.getByRole('group',{name:'Confirm leaving registration'})).toBeTruthy();fireEvent.click(view.getByRole('button',{name:'Keep editing'}));expect(document.activeElement).toBe(close);
+    expect((view.getByLabelText(/First name/) as HTMLInputElement).value).toBe('Unsaved synthetic');fireEvent.click(close);fireEvent.click(view.getByRole('button',{name:'Discard unsaved changes and leave'}));expect(view.queryByRole('heading',{name:'Customer details'})).toBeNull();expect(rowAction.disabled).toBe(false);
+  });
+
+});
+
+describe('Customer directory session and response safeguards',()=>{
+  beforeEach(()=>{jest.resetAllMocks();setPrincipal(DIRECTORY_SCOPES);(ApiClient.get as jest.Mock).mockResolvedValue(directoryResponse());});
+  test('read-only session with create grant does not expose customer registration',async()=>{
+    useAuthStore.setState(state=>({principal:state.principal?{...state.principal,readOnlyPrincipal:true}:null}));const view=render(<CustomerDirectoryScreen/>);await view.findByText('Synthetic Directory Alpha');expect(view.queryByRole('button',{name:'New Customer'})).toBeNull();expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+  test('missing customer view does not request the directory or selected customer',async()=>{
+    setPrincipal(['customer.create']);const view=render(<CustomerDirectoryScreen selectedCustomerId="other"/>);expect(await view.findByText(/requires customer.view/)).toBeTruthy();expect(ApiClient.get).not.toHaveBeenCalled();
+  });
+  test('contradictory pagination is not rendered as confirmed customer data',async()=>{
+    (ApiClient.get as jest.Mock).mockResolvedValue({...directoryResponse(),total:0});const view=render(<CustomerDirectoryScreen/>);expect(await view.findByText('Customer records unavailable')).toBeTruthy();expect(view.queryByText('Synthetic Directory Alpha')).toBeNull();expect(view.getByText('Result range unconfirmed')).toBeTruthy();
+  });
+  test('a selected customer lookup cannot substitute a different customer',async()=>{
+    (ApiClient.get as jest.Mock).mockImplementation((path:string)=>Promise.resolve(path.includes('?')?directoryResponse():unverifiedCustomer));const view=render(<CustomerDirectoryScreen selectedCustomerId="cust-synthetic-1"/>);expect(await view.findByText(/selected customer response could not be confirmed/)).toBeTruthy();expect(view.queryByRole('heading',{name:'Synthetic Directory Beta'})).toBeNull();
+  });
+  test('stale results cannot be opened while a changed search is waiting for debounce',async()=>{
+    const view=render(<CustomerDirectoryScreen/>);const open=await view.findByRole('button',{name:'Open Customer 360° for Synthetic Directory Alpha'});fireEvent.change(view.getByRole('searchbox',{name:'Search customers'}),{target:{value:'other'}});expect((open as HTMLButtonElement).disabled).toBe(true);expect(view.getByText(/search is being updated|filters or results are being updated/)).toBeTruthy();
+  });
+});
+
+describe('MonieNaija One directory interactions', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setPrincipal(DIRECTORY_SCOPES);
+    (ApiClient.get as jest.Mock).mockResolvedValue(directoryResponse());
+  });
+
+  test('quick filters use the existing directory query and close a previous preview', async () => {
+    const view = render(<CustomerDirectoryScreen />);
+    fireEvent.click(await view.findByRole('button', { name: 'Preview Synthetic Directory Alpha' }));
+    expect(view.getByRole('dialog', { name: 'Customer preview' })).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(view.getByRole('button', { name: 'Active', pressed: false }));
+    await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith('/internal/customers?page=1&limit=20&status=ACTIVE'));
+    expect(view.queryByRole('dialog', { name: 'Customer preview' })).toBeNull();
+    expect(view.getByRole('button', { name: 'Active', pressed: true })).toBeTruthy();
+    expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+
+  test('preview displays only returned details and opens the existing customer workspace', async () => {
+    const view = render(<CustomerDirectoryScreen />);
+    fireEvent.click(await view.findByRole('button', { name: 'Preview Synthetic Directory Alpha' }));
+    const preview = view.getByRole('dialog', { name: 'Customer preview' });
+    expect(within(preview).getByText('LEVEL_1')).toBeTruthy();
+    expect(within(preview).getByText('+234*****4321')).toBeTruthy();
+    fireEvent.click(within(preview).getByRole('button', { name: 'Open Customer 360°' }));
+    expect(await view.findByRole('tablist', { name: 'Customer 360 sections' })).toBeTruthy();
+    expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+});
+
+test('customer drawer is modal, traps focus and restores the invoking control on Escape', async () => {
+  jest.clearAllMocks();
+  setPrincipal(DIRECTORY_SCOPES);
+  (ApiClient.get as jest.Mock).mockResolvedValue(directoryResponse());
+  const view = render(<CustomerDirectoryScreen />);
+  const trigger = await view.findByRole('button', { name: 'Preview Synthetic Directory Alpha' });
+  trigger.focus(); fireEvent.click(trigger);
+  const drawer = view.getByRole('dialog', { name: 'Customer preview' });
+  expect(drawer.getAttribute('aria-modal')).toBe('true');
+  expect(drawer.contains(document.activeElement)).toBe(true);
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(view.queryByRole('dialog', { name: 'Customer preview' })).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+});
+
+test('drawer contextual actions are scope-gated and pass the selected customer to existing navigation', async () => {
+  jest.clearAllMocks(); setPrincipal(['customer.view', 'customer.view_transactions', 'kyc.view']);
+  (ApiClient.get as jest.Mock).mockResolvedValue(directoryResponse());
+  const navigate = jest.fn();
+  const view = render(<CustomerDirectoryScreen onNavigate={navigate} />);
+  fireEvent.click(await view.findByRole('button', { name: 'Preview Synthetic Directory Alpha' }));
+  const drawer = view.getByRole('dialog', { name: 'Customer preview' });
+  expect(within(drawer).getByRole('button', { name:'KYC assessment' })).toBeTruthy();
+  fireEvent.click(within(drawer).getByRole('button', { name:'Transaction history' }));
+  expect(navigate).toHaveBeenCalledWith('transfers', 'cust-synthetic-1');
+  expect(view.queryByRole('dialog', { name:'Customer preview' })).toBeNull();
+});
+
+test('drawer does not offer contextual actions without the corresponding scopes', async () => {
+  jest.clearAllMocks(); setPrincipal(['customer.view']);
+  (ApiClient.get as jest.Mock).mockResolvedValue(directoryResponse());
+  const view = render(<CustomerDirectoryScreen onNavigate={jest.fn()} />);
+  fireEvent.click(await view.findByRole('button', { name: 'Preview Synthetic Directory Alpha' }));
+  const drawer = view.getByRole('dialog', { name:'Customer preview' });
+  expect(within(drawer).queryByRole('button', { name:'Transaction history' })).toBeNull();
+  expect(within(drawer).queryByRole('button', { name:'KYC assessment' })).toBeNull();
 });

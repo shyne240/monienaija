@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
@@ -101,7 +110,10 @@ export class CustomerWalletController {
     return this.customerWalletService.getOwnership(id, walletId);
   }
 
-  private async requireWalletCreate(req: AuthenticatedRequest, customerId: string): Promise<string> {
+  private async requireWalletCreate(
+    req: AuthenticatedRequest,
+    customerId: string,
+  ): Promise<string> {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
     if (principal.type === 'CUSTOMER') {
@@ -134,28 +146,32 @@ export class CustomerWalletController {
     ]);
   }
 
-  private async requireWalletStatusChange(
+  private requireWalletStatusChange(
     req: AuthenticatedRequest,
     customerId: string,
   ): Promise<string> {
-    const principal = req.authorizationPrincipal;
-    if (!principal) throw new UnauthorizedException('Authentication required');
-    if (principal.type === 'CUSTOMER') {
-      if (principal.customerId !== customerId) {
+    try {
+      const principal = req.authorizationPrincipal;
+      if (!principal) throw new UnauthorizedException('Authentication required');
+      if (principal.type === 'CUSTOMER') {
+        if (principal.customerId !== customerId) {
+          throw new UnauthorizedException('Privileged access required');
+        }
+        return Promise.resolve(principal.principalId);
+      }
+      // No catalogue function — preserve workforce reachability (same principal types as create/view)
+      // but still require authentication and derive actor from principal.
+      if (
+        principal.type === 'AGENT' ||
+        principal.type === 'SUPPORT' ||
+        (principal.type as string) === 'AGGREGATOR'
+      ) {
         throw new UnauthorizedException('Privileged access required');
       }
-      return principal.principalId;
+      return Promise.resolve(principal.principalId);
+    } catch (error) {
+      return Promise.reject(error as Error);
     }
-    // No catalogue function — preserve workforce reachability (same principal types as create/view)
-    // but still require authentication and derive actor from principal.
-    if (
-      principal.type === 'AGENT' ||
-      principal.type === 'SUPPORT' ||
-      (principal.type as string) === 'AGGREGATOR'
-    ) {
-      throw new UnauthorizedException('Privileged access required');
-    }
-    return principal.principalId;
   }
 
   private async requireWalletAlias(req: AuthenticatedRequest, customerId: string): Promise<string> {

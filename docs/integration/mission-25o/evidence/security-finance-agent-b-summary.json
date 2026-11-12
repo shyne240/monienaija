@@ -1,0 +1,71 @@
+{
+  "label": "security-finance-agent-b",
+  "implementationCommit": "3a0f87eafe86b455e1906d7779f83ca3152b9d00",
+  "completedAtUtc": "2026-11-02T14:38:28.093Z",
+  "exitCode": 0,
+  "suites": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "runtimeErrors": 0
+  },
+  "tests": {
+    "total": 72,
+    "passed": 72,
+    "failed": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "resultsWritten": true,
+  "results": [
+    {
+      "file": "test/mission-16a-agent-read-authorization.integration.spec.ts",
+      "status": "passed",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    {
+      "file": "test/mission-19a-workforce-logout.integration.spec.ts",
+      "status": "passed",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    {
+      "file": "test/mission-25g-customer-preference-authorization.integration.spec.ts",
+      "status": "passed",
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    {
+      "file": "test/notification-reliability.integration.spec.ts",
+      "status": "passed",
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    {
+      "file": "test/v1-agent-05-transaction-pin-security.integration.spec.ts",
+      "status": "passed",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    {
+      "file": "test/v1-ledger-reversal-governance.integration.spec.ts",
+      "status": "passed",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "todo": 0
+    }
+  ]
+}

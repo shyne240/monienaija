@@ -38,7 +38,8 @@ describe('ApiClient tests', () => {
     try {
       // Fresh module instance: the config module reads NODE_ENV when it is first loaded.
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const client = require('../src/services/api-client') as typeof import('../src/services/api-client');
+      const client =
+        require('../src/services/api-client') as typeof import('../src/services/api-client');
 
       expect(client.getBaseUrl()).toBe('');
       await expect(client.ApiClient.get('/wallets')).rejects.toBeInstanceOf(client.NetworkError);
@@ -73,6 +74,40 @@ describe('ApiClient tests', () => {
         }),
       }),
     );
+  });
+
+  test('registration bearer never sends or purges the customer session', async () => {
+    (SecureStorage.get as jest.Mock).mockResolvedValue('customer-secret');
+    globalFetchMock.mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: { get: () => 'application/json' },
+      json: async () => ({ message: 'Registration authorization invalid' }),
+    });
+    await expect(
+      ApiClient.post(
+        '/customers/registration-sessions/status',
+        { sessionId: 'fixture' },
+        { registrationBearer: 'registration-secret' },
+      ),
+    ).rejects.toBeInstanceOf(ApiError);
+    expect(SecureStorage.get).not.toHaveBeenCalled();
+    expect(SecureStorage.remove).not.toHaveBeenCalled();
+    expect(globalFetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer registration-secret' }),
+      }),
+    );
+    globalFetchMock.mockClear();
+    await expect(
+      ApiClient.post(
+        '/customers/registration-sessions/start',
+        { phone: 'fixture' },
+        { registrationBearer: null },
+      ),
+    ).rejects.toBeInstanceOf(ApiError);
+    expect(globalFetchMock.mock.calls[0][1].headers.Authorization).toBeUndefined();
   });
 
   test('should inject logical Idempotency-Key correctly on write operations', async () => {
@@ -129,9 +164,9 @@ describe('ApiClient tests', () => {
     expect(resolveCustomerApiUrl('https://api.moneynaija.ng/', '/customers/me/wallets')).toBe(
       'https://api.moneynaija.ng/api/v1/customers/me/wallets',
     );
-    expect(resolveCustomerApiUrl('https://api.moneynaija.ng/api/v1/', '/customers/me/wallets')).toBe(
-      'https://api.moneynaija.ng/api/v1/customers/me/wallets',
-    );
+    expect(
+      resolveCustomerApiUrl('https://api.moneynaija.ng/api/v1/', '/customers/me/wallets'),
+    ).toBe('https://api.moneynaija.ng/api/v1/customers/me/wallets');
     expect(resolveCustomerApiUrl('https://api.moneynaija.ng/api/v1', '/api/v1/customers/me')).toBe(
       'https://api.moneynaija.ng/api/v1/customers/me',
     );

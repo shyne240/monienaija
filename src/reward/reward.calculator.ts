@@ -1,9 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 
-import {
-  MAX_POSTGRES_BIGINT,
-  parseMinorUnits,
-} from '../common/money';
+import { MAX_POSTGRES_BIGINT, parseMinorUnits } from '../common/money';
 
 import type {
   RewardCalculationBasis,
@@ -84,17 +81,25 @@ export class RewardCalculator {
         }
         const fee = parseMinorUnits(evidence.feeMinor, 'feeMinor');
         if (fee > principalMinor) {
-          throw new BadRequestException('REWARD_BASE_INVALID: NET base would be negative (fee exceeds principal)');
+          throw new BadRequestException(
+            'REWARD_BASE_INVALID: NET base would be negative (fee exceeds principal)',
+          );
         }
         return principalMinor - fee;
       }
       default:
-        throw new BadRequestException(`Unsupported calculation basis: ${String(rule.calculationBasis)}`);
+        throw new BadRequestException(
+          `Unsupported calculation basis: ${String(rule.calculationBasis)}`,
+        );
     }
   }
 
   /** Apply the rule's calculation model to an already-resolved base. */
-  calculate(rule: RewardRuleDefinition, base: bigint, baseAmountMinor: string): RewardCalculatedAmount {
+  calculate(
+    rule: RewardRuleDefinition,
+    base: bigint,
+    baseAmountMinor: string,
+  ): RewardCalculatedAmount {
     const bps = (value: number | null | undefined): bigint =>
       value === null || value === undefined ? 0n : parseMinorUnits(value, 'percentageBps');
     const pct = (b: bigint, p: bigint): bigint => (b * p) / BASIS_POINTS;
@@ -139,7 +144,9 @@ export class RewardCalculator {
         break;
       }
       case 'FLAT_PLUS_PERCENTAGE': {
-        amount = parseMinorUnits(rule.flatRewardMinor!, 'flatRewardMinor') + pct(base, bps(rule.percentageBps));
+        amount =
+          parseMinorUnits(rule.flatRewardMinor!, 'flatRewardMinor') +
+          pct(base, bps(rule.percentageBps));
         appliedParameters['flatRewardMinor'] = rule.flatRewardMinor;
         appliedParameters['percentageBps'] = rule.percentageBps;
         break;
@@ -151,7 +158,9 @@ export class RewardCalculator {
         break;
       }
       default:
-        throw new BadRequestException(`Unsupported calculation model: ${String(rule.calculationModel)}`);
+        throw new BadRequestException(
+          `Unsupported calculation model: ${String(rule.calculationModel)}`,
+        );
     }
     if (amount > MAX_POSTGRES_BIGINT) {
       throw new BadRequestException('Reward calculation amount must fit in a PostgreSQL BIGINT');
@@ -166,23 +175,36 @@ export class RewardCalculator {
   }
 
   /** Marginal bracket traversal with strict structural validation (fail closed). */
-  calculateTiered(base: bigint, tiers: RewardTier[]): { total: bigint; brackets: Array<Record<string, unknown>> } {
+  calculateTiered(
+    base: bigint,
+    tiers: RewardTier[],
+  ): { total: bigint; brackets: Array<Record<string, unknown>> } {
     if (!Array.isArray(tiers) || tiers.length === 0) {
-      throw new BadRequestException('REWARD_RULE_INCOHERENT: TIERED rule requires a non-empty tiers array');
+      throw new BadRequestException(
+        'REWARD_RULE_INCOHERENT: TIERED rule requires a non-empty tiers array',
+      );
     }
     let total = 0n;
     let cursor = 0n; // marginal brackets ascend contiguously from 0
     const brackets: Array<Record<string, unknown>> = [];
     tiers.forEach((tier, index) => {
-      const upTo = tier.upToMinor === null ? null : parseMinorUnits(tier.upToMinor, `tiers[${index}].upToMinor`);
+      const upTo =
+        tier.upToMinor === null
+          ? null
+          : parseMinorUnits(tier.upToMinor, `tiers[${index}].upToMinor`);
       const hasFlat = tier.flatMinor !== null && tier.flatMinor !== undefined;
       const hasBps = tier.bps !== null && tier.bps !== undefined;
       if (!hasFlat && !hasBps) {
-        throw new BadRequestException(`REWARD_RULE_INCOHERENT: tiers[${index}] requires bps and/or flatMinor`);
+        throw new BadRequestException(
+          `REWARD_RULE_INCOHERENT: tiers[${index}] requires bps and/or flatMinor`,
+        );
       }
       if (hasBps) {
         const parsed = parseMinorUnits(tier.bps!, `tiers[${index}].bps`);
-        if (parsed > 10000n) throw new BadRequestException(`REWARD_RULE_INCOHERENT: tiers[${index}].bps exceeds 10000`);
+        if (parsed > 10000n)
+          throw new BadRequestException(
+            `REWARD_RULE_INCOHERENT: tiers[${index}].bps exceeds 10000`,
+          );
       }
       if (upTo !== null && upTo <= cursor) {
         throw new BadRequestException(
@@ -190,7 +212,9 @@ export class RewardCalculator {
         );
       }
       if (upTo === null && index !== tiers.length - 1) {
-        throw new BadRequestException('REWARD_RULE_INCOHERENT: only the last bracket may be open-ended (upToMinor = null)');
+        throw new BadRequestException(
+          'REWARD_RULE_INCOHERENT: only the last bracket may be open-ended (upToMinor = null)',
+        );
       }
       const flat = hasFlat ? parseMinorUnits(tier.flatMinor!, `tiers[${index}].flatMinor`) : 0n;
       const pctBps = hasBps ? parseMinorUnits(tier.bps!, `tiers[${index}].bps`) : 0n;

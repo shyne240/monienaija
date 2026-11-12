@@ -120,10 +120,11 @@ function fixture(journal?: Partial<LedgerJournal>) {
   const securityEventRepository = new MemoryRepository<SecurityEventHistory>();
   const journalRepository = new MemoryRepository<LedgerJournal>();
   if (journal) {
-    journalRepository.records.set(
-      JOURNAL_ID,
-      { id: JOURNAL_ID, reversalOfJournalId: null, ...journal } as LedgerJournal,
-    );
+    journalRepository.records.set(JOURNAL_ID, {
+      id: JOURNAL_ID,
+      reversalOfJournalId: null,
+      ...journal,
+    } as LedgerJournal);
   }
   const repositories = new Map<unknown, MemoryRepository<ObjectLiteral>>([
     [PrivilegedActionApproval, approvalRepository as unknown as MemoryRepository<ObjectLiteral>],
@@ -148,7 +149,14 @@ function fixture(journal?: Partial<LedgerJournal>) {
     ledgerService,
     approvals,
   );
-  return { governance, approvals, approvalRepository, journalRepository, reverseJournal, authorizationService };
+  return {
+    governance,
+    approvals,
+    approvalRepository,
+    journalRepository,
+    reverseJournal,
+    authorizationService,
+  };
 }
 
 describe('LedgerReversalGovernanceService (P0-B)', () => {
@@ -191,23 +199,23 @@ describe('LedgerReversalGovernanceService (P0-B)', () => {
     ).rejects.toMatchObject({ status: 404 });
 
     // A reversal cannot itself be reversed.
-    journalRepository.records.set(
-      JOURNAL_ID,
-      { id: JOURNAL_ID, reversalOfJournalId: '00000000-0000-4000-8000-0000000000e1' } as LedgerJournal,
-    );
+    journalRepository.records.set(JOURNAL_ID, {
+      id: JOURNAL_ID,
+      reversalOfJournalId: '00000000-0000-4000-8000-0000000000e1',
+    } as LedgerJournal);
     await expect(
       governance.requestReversal({ principal: maker, journalId: JOURNAL_ID, reason: 'x' }),
     ).rejects.toMatchObject({ status: 409 });
 
     // Already reversed (an existing reversal points at the journal).
-    journalRepository.records.set(
-      JOURNAL_ID,
-      { id: JOURNAL_ID, reversalOfJournalId: null } as LedgerJournal,
-    );
-    journalRepository.records.set(
-      '00000000-0000-4000-8000-0000000000e2',
-      { id: '00000000-0000-4000-8000-0000000000e2', reversalOfJournalId: JOURNAL_ID } as LedgerJournal,
-    );
+    journalRepository.records.set(JOURNAL_ID, {
+      id: JOURNAL_ID,
+      reversalOfJournalId: null,
+    } as LedgerJournal);
+    journalRepository.records.set('00000000-0000-4000-8000-0000000000e2', {
+      id: '00000000-0000-4000-8000-0000000000e2',
+      reversalOfJournalId: JOURNAL_ID,
+    } as LedgerJournal);
     await expect(
       governance.requestReversal({ principal: maker, journalId: JOURNAL_ID, reason: 'x' }),
     ).rejects.toMatchObject({ status: 409 });
@@ -346,7 +354,10 @@ describe('LedgerReversalGovernanceService (P0-B)', () => {
     const a = ledgerReversalRequestFingerprint(JOURNAL_ID, 'duplicate posting');
     const b = ledgerReversalRequestFingerprint(JOURNAL_ID, 'duplicate posting');
     const d = ledgerReversalRequestFingerprint(JOURNAL_ID, 'something else');
-    const e = ledgerReversalRequestFingerprint('00000000-0000-4000-8000-0000000000ee', 'duplicate posting');
+    const e = ledgerReversalRequestFingerprint(
+      '00000000-0000-4000-8000-0000000000ee',
+      'duplicate posting',
+    );
     expect(a).toBe(b);
     expect(a).toMatch(/^[0-9a-f]{64}$/);
     expect(d).not.toBe(a);

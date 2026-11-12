@@ -1,11 +1,11 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument, @typescript-eslint/require-await */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/require-await */
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
@@ -25,6 +25,7 @@ import { NotificationWorkerService } from '../src/notification/notification-work
 import { WalletService } from '../src/wallet/wallet.service';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 import { seedNotificationDefaultsV1 } from '../src/notification/notification-defaults-v1';
+import { seedNotificationDefaultsV2 } from '../src/notification/notification-defaults-v2';
 
 /**
  * ARENA3-NOTIFICATION-EMAIL — EMAIL delivery infrastructure integration suite (real PostgreSQL).
@@ -59,7 +60,6 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     internalAudience: 'workforce-admin',
     sessionTtlSeconds: 900,
     jwksJson: [],
-    // @ts-ignore
     financeRoles: [],
     makerCheckerRules: [],
     rateLimits: [],
@@ -76,7 +76,8 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
 
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
+      if (!token || !token.startsWith('workforce-'))
+        throw new UnauthorizedException('invalid workforce token');
       const suffix = token.replace('workforce-', '').toLowerCase();
       if (suffix === 'customer' || suffix === 'agent') {
         return {
@@ -88,7 +89,7 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
-        } as any;
+        } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
       }
       if (!(suffix in scopeMap)) throw new UnauthorizedException('invalid type');
       return {
@@ -100,7 +101,7 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-      } as any;
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
     },
   };
 
@@ -122,7 +123,9 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     walletService = moduleRef.get(WalletService);
@@ -161,11 +164,14 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     // the seed ships EMAIL event configurations DISABLED (email dark by default at the
     // registry level too); these tests exercise the configured-email posture.
     await seedNotificationDefaultsV1(dataSource.manager);
+    await seedNotificationDefaultsV2(dataSource.manager);
     await dataSource.query(
       `UPDATE notification_event_configurations SET is_enabled=true, version=version+1, updated_at=now()
         WHERE channel='EMAIL' AND delivery_class <> 'SECURITY'`,
     );
-    const settlement: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
+    const settlement: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
+    );
     if (settlement.length === 0) {
       await dataSource.query(`
         INSERT INTO ledger_accounts (id, code, name, account_type, normal_balance, currency, accounting_unit, allow_negative_balance, is_active)
@@ -184,19 +190,39 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     return `workforce-${suffix}`;
   }
 
-  async function createCustomer(opts: { phone?: string; email?: string; smsEnabled?: boolean; emailEnabled?: boolean } = {}): Promise<string> {
+  async function createCustomer(
+    opts: { phone?: string; email?: string; smsEnabled?: boolean; emailEnabled?: boolean } = {},
+  ): Promise<string> {
     const customerId = randomUUID();
-    await dataSource.query(`INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`, [customerId, `cust-${randomUUID()}`]);
-    await dataSource.query(`INSERT INTO customer_profiles (id, customer_id, display_name, is_active) VALUES ($1,$2,$3,true)`, [randomUUID(), customerId, `Cust ${customerId.slice(0, 4)}`]);
+    await dataSource.query(
+      `INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`,
+      [customerId, `cust-${randomUUID()}`],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_profiles (id, customer_id, display_name, is_active) VALUES ($1,$2,$3,true)`,
+      [randomUUID(), customerId, `Cust ${customerId.slice(0, 4)}`],
+    );
     if (opts.phone) {
-      await dataSource.query(`INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,$2,'PHONE',$3,$3,true,NOW())`, [randomUUID(), customerId, opts.phone]);
+      await dataSource.query(
+        `INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,$2,'PHONE',$3,$3,true,NOW())`,
+        [randomUUID(), customerId, opts.phone],
+      );
     }
     if (opts.email) {
-      await dataSource.query(`INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,$2,'EMAIL',$3,$4,true,NOW())`, [randomUUID(), customerId, opts.email, opts.email.toLowerCase()]);
+      await dataSource.query(
+        `INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,$2,'EMAIL',$3,$4,true,NOW())`,
+        [randomUUID(), customerId, opts.email, opts.email.toLowerCase()],
+      );
     }
     try {
-      await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `wallet-${customerId}` });
-    } catch {}
+      await walletService.createWallet({
+        customerId,
+        currency: 'NGN',
+        idempotencyKey: `wallet-${customerId}`,
+      });
+    } catch {
+      /* Preserve the existing best-effort cleanup or setup fallback. */
+    }
     await dataSource.query(
       `INSERT INTO customer_preferences (id, customer_id, language_code, theme_code, notification_email_enabled, notification_sms_enabled, notification_push_enabled, notification_in_app_enabled, security_login_alerts, security_transaction_alerts, security_device_registration_alerts, security_biometric_allowed, version)
        VALUES ($1,$2,'EN','SYSTEM',$3,$4,true,true,true,true,true,false,1) ON CONFLICT DO NOTHING`,
@@ -206,18 +232,28 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
   }
 
   async function createAgentDirect(): Promise<string> {
-    const rows: Array<{ id: string }> = await dataSource.query(`INSERT INTO agents (reference, status) VALUES ($1,'ACTIVE') RETURNING id`, [`ref-${randomUUID()}`]);
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agents (reference, status) VALUES ($1,'ACTIVE') RETURNING id`,
+      [`ref-${randomUUID()}`],
+    );
     return rows[0]!.id;
   }
 
   async function makeRetryEligible(deliveryId: string): Promise<void> {
-    await dataSource.query(`UPDATE notification_deliveries SET next_attempt_at = NOW() - INTERVAL '1 second' WHERE id=$1`, [deliveryId]);
+    await dataSource.query(
+      `UPDATE notification_deliveries SET next_attempt_at = NOW() - INTERVAL '1 second' WHERE id=$1`,
+      [deliveryId],
+    );
   }
 
   it('1. migration 097 applied — CHECK accepts EMAIL; SMS/PUSH unchanged; chain consistent', async () => {
-    const mig: Array<{ name: string }> = await dataSource.query(`SELECT name FROM typeorm_migrations WHERE name='AddEmailNotificationChannel1785753600097'`);
+    const mig: Array<{ name: string }> = await dataSource.query(
+      `SELECT name FROM typeorm_migrations WHERE name='AddEmailNotificationChannel1785753600097'`,
+    );
     expect(mig.length).toBe(1);
-    const applied: Array<{ name: string }> = await dataSource.query(`SELECT name FROM typeorm_migrations ORDER BY timestamp ASC`);
+    const applied: Array<{ name: string }> = await dataSource.query(
+      `SELECT name FROM typeorm_migrations ORDER BY timestamp ASC`,
+    );
     const configured = dataSource.migrations.map((m) => m.name!);
     expect(applied.map((m) => m.name).sort()).toEqual([...configured].sort());
     expect(await dataSource.showMigrations()).toBe(false);
@@ -232,7 +268,10 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     expect(cons[0]!.def).toContain('PUSH');
 
     // Direct inserts for all three channels succeed
-    const cid = await createCustomer({ phone: '8011000001', email: `c1-${randomUUID().slice(0, 8)}@example.com` });
+    const cid = await createCustomer({
+      phone: '8011000001',
+      email: `c1-${randomUUID().slice(0, 8)}@example.com`,
+    });
     for (const channel of ['SMS', 'PUSH', 'EMAIL']) {
       await dataSource.query(
         `INSERT INTO notification_deliveries (event_type, event_key, recipient_type, recipient_id, channel, destination, payload, message, status, attempts)
@@ -261,7 +300,10 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
       new NoneEmailProvider(),
       null,
     );
-    const cid = await createCustomer({ phone: '8011000002', email: `c2-${randomUUID().slice(0, 8)}@example.com` });
+    const cid = await createCustomer({
+      phone: '8011000002',
+      email: `c2-${randomUUID().slice(0, 8)}@example.com`,
+    });
     const key = `customer.funding.approved:${randomUUID()}`;
     const result = await darkDispatcher.dispatch({
       eventType: 'customer.funding.approved',
@@ -272,7 +314,10 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     expect(result.dispatched).toBe(1);
     expect(result.deliveries.length).toBe(1);
     expect(result.deliveries[0]!.channel).toBe('SMS');
-    const rows: Array<{ channel: string }> = await dataSource.query(`SELECT channel FROM notification_deliveries WHERE event_key=$1`, [key]);
+    const rows: Array<{ channel: string }> = await dataSource.query(
+      `SELECT channel FROM notification_deliveries WHERE event_key=$1`,
+      [key],
+    );
     expect(rows.length).toBe(1);
     expect(rows[0]!.channel).toBe('SMS');
     expect(emailProvider.sent.length).toBe(0);
@@ -283,8 +328,18 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     const email = `c3-${randomUUID().slice(0, 8)}@example.com`;
     const cid = await createCustomer({ phone: '8011000003', email });
     const key = `transfer.completed:${randomUUID()}`;
-    const payload = { sourceCustomerId: cid, destinationCustomerId: cid, transferId: 'abcdef12-3456-7890', amountMinor: '25000', reference: 'REF-E2E' };
-    const result = await dispatcher.dispatch({ eventType: 'transfer.completed', eventKey: key, payload });
+    const payload = {
+      sourceCustomerId: cid,
+      destinationCustomerId: cid,
+      transferId: 'abcdef12-3456-7890',
+      amountMinor: '25000',
+      reference: 'REF-E2E',
+    };
+    const result = await dispatcher.dispatch({
+      eventType: 'transfer.completed',
+      eventKey: key,
+      payload,
+    });
 
     expect(result.generated).toBe(2);
     expect(result.dispatched).toBe(2);
@@ -312,13 +367,21 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     expect(sentEmail.message).toBe(smsProvider.sent[0]!.message);
 
     // Delivery rows: EMAIL row persists the text body + redacted payload with _templateKey
-    const rows: Array<{ channel: string; message: string; status: string; payload: Record<string, unknown>; provider_ref: string | null }> =
-      await dataSource.query(`SELECT channel, message, status, payload, provider_ref FROM notification_deliveries WHERE event_key=$1 ORDER BY channel`, [key]);
+    const rows: Array<{
+      channel: string;
+      message: string;
+      status: string;
+      payload: Record<string, unknown>;
+      provider_ref: string | null;
+    }> = await dataSource.query(
+      `SELECT channel, message, status, payload, provider_ref FROM notification_deliveries WHERE event_key=$1 ORDER BY channel`,
+      [key],
+    );
     expect(rows.length).toBe(2);
     const emailDb = rows.find((r) => r.channel === 'EMAIL')!;
     expect(emailDb.status).toBe('SENT');
     expect(emailDb.message).toBe(sentEmail.message);
-    expect(emailDb.message!.length).toBeLessThanOrEqual(1000);
+    expect(emailDb.message.length).toBeLessThanOrEqual(1000);
     expect(emailDb.payload._templateKey).toBe('transfer.completed');
     expect(emailDb.provider_ref).toMatch(/^test-email-/);
     // Subject/html are NOT persisted (ephemeral render inputs; text body is the record)
@@ -326,11 +389,26 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
   });
 
   it('4. EMAIL opt-out — SKIPPED EMAIL_OPT_OUT while SMS still delivers; channels independent', async () => {
-    const cid = await createCustomer({ phone: '8011000004', email: `c4-${randomUUID().slice(0, 8)}@example.com`, emailEnabled: false });
+    const cid = await createCustomer({
+      phone: '8011000004',
+      email: `c4-${randomUUID().slice(0, 8)}@example.com`,
+      emailEnabled: false,
+    });
     const key = `customer.funding.approved:${randomUUID()}`;
-    await dispatcher.dispatch({ eventType: 'customer.funding.approved', eventKey: key, payload: { customerId: cid, reference: 'REF-OPT' } });
-    const rows: Array<{ channel: string; status: string; last_error: string | null; destination: string }> =
-      await dataSource.query(`SELECT channel, status, last_error, destination FROM notification_deliveries WHERE event_key=$1 ORDER BY channel`, [key]);
+    await dispatcher.dispatch({
+      eventType: 'customer.funding.approved',
+      eventKey: key,
+      payload: { customerId: cid, reference: 'REF-OPT' },
+    });
+    const rows: Array<{
+      channel: string;
+      status: string;
+      last_error: string | null;
+      destination: string;
+    }> = await dataSource.query(
+      `SELECT channel, status, last_error, destination FROM notification_deliveries WHERE event_key=$1 ORDER BY channel`,
+      [key],
+    );
     expect(rows.length).toBe(2);
     const emailDb = rows.find((r) => r.channel === 'EMAIL')!;
     const smsDb = rows.find((r) => r.channel === 'SMS')!;
@@ -341,11 +419,22 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     expect(emailProvider.sent.length).toBe(0);
 
     // Reverse: SMS opted out, EMAIL enabled → EMAIL delivers, SMS skipped
-    const cid2 = await createCustomer({ phone: '8011000044', email: `c44-${randomUUID().slice(0, 8)}@example.com`, smsEnabled: false });
+    const cid2 = await createCustomer({
+      phone: '8011000044',
+      email: `c44-${randomUUID().slice(0, 8)}@example.com`,
+      smsEnabled: false,
+    });
     const key2 = `customer.funding.approved:${randomUUID()}`;
-    await dispatcher.dispatch({ eventType: 'customer.funding.approved', eventKey: key2, payload: { customerId: cid2, reference: 'REF-OPT2' } });
+    await dispatcher.dispatch({
+      eventType: 'customer.funding.approved',
+      eventKey: key2,
+      payload: { customerId: cid2, reference: 'REF-OPT2' },
+    });
     const rows2: Array<{ channel: string; status: string; last_error: string | null }> =
-      await dataSource.query(`SELECT channel, status, last_error FROM notification_deliveries WHERE event_key=$1 ORDER BY channel`, [key2]);
+      await dataSource.query(
+        `SELECT channel, status, last_error FROM notification_deliveries WHERE event_key=$1 ORDER BY channel`,
+        [key2],
+      );
     expect(rows2.find((r) => r.channel === 'SMS')!.status).toBe('SKIPPED');
     expect(rows2.find((r) => r.channel === 'SMS')!.last_error).toBe('SMS_OPT_OUT');
     expect(rows2.find((r) => r.channel === 'EMAIL')!.status).toBe('SENT');
@@ -355,17 +444,29 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
   it('5. missing email contact — SKIPPED CUSTOMER_EMAIL_VERIFIED_MISSING; SMS unaffected', async () => {
     const cid = await createCustomer({ phone: '8011000005' }); // no EMAIL contact method
     const key = `customer.funding.rejected:${randomUUID()}`;
-    await dispatcher.dispatch({ eventType: 'customer.funding.rejected', eventKey: key, payload: { customerId: cid, reference: 'REF-NOEMAIL' } });
+    await dispatcher.dispatch({
+      eventType: 'customer.funding.rejected',
+      eventKey: key,
+      payload: { customerId: cid, reference: 'REF-NOEMAIL' },
+    });
     const rows: Array<{ channel: string; status: string; last_error: string | null }> =
-      await dataSource.query(`SELECT channel, status, last_error FROM notification_deliveries WHERE event_key=$1 ORDER BY channel`, [key]);
+      await dataSource.query(
+        `SELECT channel, status, last_error FROM notification_deliveries WHERE event_key=$1 ORDER BY channel`,
+        [key],
+      );
     expect(rows.find((r) => r.channel === 'EMAIL')!.status).toBe('SKIPPED');
-    expect(rows.find((r) => r.channel === 'EMAIL')!.last_error).toBe('CUSTOMER_EMAIL_VERIFIED_MISSING');
+    expect(rows.find((r) => r.channel === 'EMAIL')!.last_error).toBe(
+      'CUSTOMER_EMAIL_VERIFIED_MISSING',
+    );
     expect(rows.find((r) => r.channel === 'SMS')!.status).toBe('SENT');
     expect(emailProvider.sent.length).toBe(0);
   });
 
   it('6. AGENT recipients get NO EMAIL intents; support events keep agent SMS dependency skip', async () => {
-    const cid = await createCustomer({ phone: '8011000006', email: `c6-${randomUUID().slice(0, 8)}@example.com` });
+    const cid = await createCustomer({
+      phone: '8011000006',
+      email: `c6-${randomUUID().slice(0, 8)}@example.com`,
+    });
     const agentId = await createAgentDirect();
     const key = `support.ticket.assigned:${randomUUID()}`;
     await dispatcher.dispatch({
@@ -373,8 +474,15 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
       eventKey: key,
       payload: { ticketId: randomUUID(), reference: 'SUP-E6', customerId: cid, agentId },
     });
-    const rows: Array<{ recipient_type: string; channel: string; status: string; last_error: string | null }> =
-      await dataSource.query(`SELECT recipient_type, channel, status, last_error FROM notification_deliveries WHERE event_key=$1 ORDER BY recipient_type, channel`, [key]);
+    const rows: Array<{
+      recipient_type: string;
+      channel: string;
+      status: string;
+      last_error: string | null;
+    }> = await dataSource.query(
+      `SELECT recipient_type, channel, status, last_error FROM notification_deliveries WHERE event_key=$1 ORDER BY recipient_type, channel`,
+      [key],
+    );
     // CUSTOMER: SMS + EMAIL. AGENT: SMS dependency SKIPPED only — no EMAIL row (appendCustomerEmailIntents is CUSTOMER-only)
     expect(rows.filter((r) => r.recipient_type === 'AGENT').length).toBe(1);
     const agentRow = rows.find((r) => r.recipient_type === 'AGENT')!;
@@ -386,27 +494,50 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     // Agent resolver dependency reason is also directly verifiable
     const resolver = new NotificationChannelResolverService(dataSource);
     const agentEmail = await resolver.resolve('AGENT', agentId, 'EMAIL');
-    expect(agentEmail).toEqual({ channel: 'EMAIL', destination: null, reason: 'AGENT_EMAIL_DEPENDENCY_MISSING' });
+    expect(agentEmail).toEqual({
+      channel: 'EMAIL',
+      destination: null,
+      reason: 'AGENT_EMAIL_DEPENDENCY_MISSING',
+    });
   });
 
   it('7. idempotency — duplicate dispatch adds nothing, never re-sends email', async () => {
-    const cid = await createCustomer({ phone: '8011000007', email: `c7-${randomUUID().slice(0, 8)}@example.com` });
+    const cid = await createCustomer({
+      phone: '8011000007',
+      email: `c7-${randomUUID().slice(0, 8)}@example.com`,
+    });
     const key = `customer.funding.requested:${randomUUID()}`;
     const payload = { customerId: cid, fundingRequestId: 'fndreq12-3456', amountMinor: '5000' };
-    const first = await dispatcher.dispatch({ eventType: 'customer.funding.requested', eventKey: key, payload });
-    const second = await dispatcher.dispatch({ eventType: 'customer.funding.requested', eventKey: key, payload });
+    const first = await dispatcher.dispatch({
+      eventType: 'customer.funding.requested',
+      eventKey: key,
+      payload,
+    });
+    const second = await dispatcher.dispatch({
+      eventType: 'customer.funding.requested',
+      eventKey: key,
+      payload,
+    });
     expect(first.generated).toBe(2);
     expect(second.generated).toBe(0);
     expect(second.dispatched).toBe(0);
     expect(smsProvider.sent.length).toBe(1);
     expect(emailProvider.sent.length).toBe(1); // exactly one email, ever
-    const rows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM notification_deliveries WHERE event_key=$1`, [key]);
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM notification_deliveries WHERE event_key=$1`,
+      [key],
+    );
     expect(rows.length).toBe(2);
-    expect(first.deliveries.map((d) => d.id).sort()).toEqual(second.deliveries.map((d) => d.id).sort());
+    expect(first.deliveries.map((d) => d.id).sort()).toEqual(
+      second.deliveries.map((d) => d.id).sort(),
+    );
   });
 
   it('8. worker retry routes EMAIL failures to the EMAIL provider with re-rendered subject/html', async () => {
-    const cid = await createCustomer({ phone: '8011000008', email: `c8-${randomUUID().slice(0, 8)}@example.com` });
+    const cid = await createCustomer({
+      phone: '8011000008',
+      email: `c8-${randomUUID().slice(0, 8)}@example.com`,
+    });
     const key = `transfer.failed:${randomUUID()}`;
     emailProvider.shouldFail = true;
     emailProvider.failMessage = 'RESEND_HTTP_503:unknown';
@@ -444,8 +575,15 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     expect(retried.html).toContain('<!DOCTYPE html>');
     expect(retried.message).toContain('REF-RETRY');
 
-    const sentRow: Array<{ status: string; attempts: number; provider_ref: string | null; last_error: string | null }> =
-      await dataSource.query(`SELECT status, attempts, provider_ref, last_error FROM notification_deliveries WHERE id=$1`, [emailDelivery.id]);
+    const sentRow: Array<{
+      status: string;
+      attempts: number;
+      provider_ref: string | null;
+      last_error: string | null;
+    }> = await dataSource.query(
+      `SELECT status, attempts, provider_ref, last_error FROM notification_deliveries WHERE id=$1`,
+      [emailDelivery.id],
+    );
     expect(sentRow[0]!.status).toBe('SENT');
     expect(sentRow[0]!.attempts).toBe(2);
     expect(sentRow[0]!.provider_ref).toMatch(/^test-email-/);
@@ -453,12 +591,22 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
   });
 
   it('9. worker retry — bounded attempts; exhausted EMAIL row is DEAD and auditable', async () => {
-    const cid = await createCustomer({ phone: '8011000009', email: `c9-${randomUUID().slice(0, 8)}@example.com` });
+    const cid = await createCustomer({
+      phone: '8011000009',
+      email: `c9-${randomUUID().slice(0, 8)}@example.com`,
+    });
     const key = `customer.funding.approved:${randomUUID()}`;
     emailProvider.shouldFail = true;
     emailProvider.failMessage = 'Simulated email provider failure'; // clear() does not reset custom messages
-    await dispatcher.dispatch({ eventType: 'customer.funding.approved', eventKey: key, payload: { customerId: cid, reference: 'REF-EXH' } });
-    const rows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM notification_deliveries WHERE event_key=$1 AND channel='EMAIL'`, [key]);
+    await dispatcher.dispatch({
+      eventType: 'customer.funding.approved',
+      eventKey: key,
+      payload: { customerId: cid, reference: 'REF-EXH' },
+    });
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM notification_deliveries WHERE event_key=$1 AND channel='EMAIL'`,
+      [key],
+    );
     const emailId = rows[0]!.id;
     // attempts=1 after dispatch failure; two more retries exhaust SMS_RETRY_MAX_ATTEMPTS=3
     await makeRetryEligible(emailId);
@@ -466,10 +614,11 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     await makeRetryEligible(emailId);
     const tick = await worker.tick();
     expect(tick.retriesFailed).toBeGreaterThanOrEqual(1);
-    const exhausted: Array<{ status: string; attempts: number; last_error: string }> = await dataSource.query(
-      `SELECT status, attempts, last_error FROM notification_deliveries WHERE id=$1`,
-      [emailId],
-    );
+    const exhausted: Array<{ status: string; attempts: number; last_error: string }> =
+      await dataSource.query(
+        `SELECT status, attempts, last_error FROM notification_deliveries WHERE id=$1`,
+        [emailId],
+      );
     expect(exhausted[0]!.status).toBe('DEAD');
     expect(exhausted[0]!.attempts).toBe(3);
     expect(exhausted[0]!.last_error).toBe('PROVIDER_REJECTED_OR_EXHAUSTED');
@@ -483,48 +632,89 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
   });
 
   it('10. worker retry re-checks EMAIL opt-out — FAILED row becomes SKIPPED EMAIL_OPT_OUT', async () => {
-    const cid = await createCustomer({ phone: '8011000010', email: `c10-${randomUUID().slice(0, 8)}@example.com` });
+    const cid = await createCustomer({
+      phone: '8011000010',
+      email: `c10-${randomUUID().slice(0, 8)}@example.com`,
+    });
     const key = `customer.funding.approved:${randomUUID()}`;
     emailProvider.shouldFail = true;
-    await dispatcher.dispatch({ eventType: 'customer.funding.approved', eventKey: key, payload: { customerId: cid, reference: 'REF-OPTRETRY' } });
+    await dispatcher.dispatch({
+      eventType: 'customer.funding.approved',
+      eventKey: key,
+      payload: { customerId: cid, reference: 'REF-OPTRETRY' },
+    });
     emailProvider.shouldFail = false;
     emailProvider.clear();
     // Customer opts out of email AFTER the initial failure
-    await dataSource.query(`UPDATE customer_preferences SET notification_email_enabled=false WHERE customer_id=$1`, [cid]);
-    const rows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM notification_deliveries WHERE event_key=$1 AND channel='EMAIL'`, [key]);
+    await dataSource.query(
+      `UPDATE customer_preferences SET notification_email_enabled=false WHERE customer_id=$1`,
+      [cid],
+    );
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM notification_deliveries WHERE event_key=$1 AND channel='EMAIL'`,
+      [key],
+    );
     await makeRetryEligible(rows[0]!.id);
     const tick = await worker.tick();
     expect(tick.retriesOptedOut).toBe(1);
     expect(emailProvider.sent.length).toBe(0); // never sent after opt-out
-    const skipped: Array<{ status: string; last_error: string }> = await dataSource.query(`SELECT status, last_error FROM notification_deliveries WHERE id=$1`, [rows[0]!.id]);
+    const skipped: Array<{ status: string; last_error: string }> = await dataSource.query(
+      `SELECT status, last_error FROM notification_deliveries WHERE id=$1`,
+      [rows[0]!.id],
+    );
     expect(skipped[0]!.status).toBe('SKIPPED');
     expect(skipped[0]!.last_error).toBe('EMAIL_OPT_OUT');
   });
 
   it('11. worker retry — SMS path preserved: FAILED SMS row retries via the SMS provider only', async () => {
-    const cid = await createCustomer({ phone: '8011000011', email: `c11-${randomUUID().slice(0, 8)}@example.com` });
+    const cid = await createCustomer({
+      phone: '8011000011',
+      email: `c11-${randomUUID().slice(0, 8)}@example.com`,
+    });
     const key = `customer.funding.approved:${randomUUID()}`;
     smsProvider.shouldFail = true;
-    await dispatcher.dispatch({ eventType: 'customer.funding.approved', eventKey: key, payload: { customerId: cid, reference: 'REF-SMSRETRY' } });
+    await dispatcher.dispatch({
+      eventType: 'customer.funding.approved',
+      eventKey: key,
+      payload: { customerId: cid, reference: 'REF-SMSRETRY' },
+    });
     smsProvider.shouldFail = false;
     smsProvider.clear();
     emailProvider.clear();
-    const rows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM notification_deliveries WHERE event_key=$1 AND channel='SMS'`, [key]);
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM notification_deliveries WHERE event_key=$1 AND channel='SMS'`,
+      [key],
+    );
     await makeRetryEligible(rows[0]!.id);
     const tick = await worker.tick();
     expect(tick.retriesSent).toBe(1);
     expect(smsProvider.sent.length).toBe(1);
     expect(smsProvider.sent[0]!.channel).toBe('SMS');
     expect(emailProvider.sent.length).toBe(0); // EMAIL row was SENT at dispatch — not retried
-    const sentRow: Array<{ status: string; provider_ref: string }> = await dataSource.query(`SELECT status, provider_ref FROM notification_deliveries WHERE id=$1`, [rows[0]!.id]);
+    const sentRow: Array<{ status: string; provider_ref: string }> = await dataSource.query(
+      `SELECT status, provider_ref FROM notification_deliveries WHERE id=$1`,
+      [rows[0]!.id],
+    );
     expect(sentRow[0]!.status).toBe('SENT');
     expect(sentRow[0]!.provider_ref).not.toMatch(/^test-email-/);
   });
 
   it('12. inbox projection includes EMAIL SENT rows (no channel filter; SKIPPED excluded)', async () => {
-    const cid = await createCustomer({ phone: '8011000012', email: `c12-${randomUUID().slice(0, 8)}@example.com` });
+    const cid = await createCustomer({
+      phone: '8011000012',
+      email: `c12-${randomUUID().slice(0, 8)}@example.com`,
+    });
     const key = `transfer.completed:${randomUUID()}`;
-    await dispatcher.dispatch({ eventType: 'transfer.completed', eventKey: key, payload: { sourceCustomerId: cid, destinationCustomerId: cid, transferId: 'inbox123-456', amountMinor: '900' } });
+    await dispatcher.dispatch({
+      eventType: 'transfer.completed',
+      eventKey: key,
+      payload: {
+        sourceCustomerId: cid,
+        destinationCustomerId: cid,
+        transferId: 'inbox123-456',
+        amountMinor: '900',
+      },
+    });
     const inbox = await inboxService.listForCustomer(cid, 1, 20);
     // SMS + EMAIL rows both project (documented behaviour; product grouping is a follow-up)
     expect(inbox.items.length).toBe(2);
@@ -533,13 +723,19 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     // SKIPPED rows never surface
     const cid2 = await createCustomer({ phone: '8011000013' }); // no email → SKIPPED EMAIL row
     const key2 = `transfer.completed:${randomUUID()}`;
-    await dispatcher.dispatch({ eventType: 'transfer.completed', eventKey: key2, payload: { sourceCustomerId: cid2, destinationCustomerId: cid2, transferId: 'inbox124-456' } });
+    await dispatcher.dispatch({
+      eventType: 'transfer.completed',
+      eventKey: key2,
+      payload: { sourceCustomerId: cid2, destinationCustomerId: cid2, transferId: 'inbox124-456' },
+    });
     const inbox2 = await inboxService.listForCustomer(cid2, 1, 20);
     expect(inbox2.items.length).toBe(1); // SMS only; EMAIL SKIPPED excluded
   });
 
   it('13. provider-status — 401 unauthenticated / customer, 403 without function scope', async () => {
-    await request(app.getHttpServer()).get('/api/v1/internal/notifications/provider-status').expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/notifications/provider-status')
+      .expect(401);
     await request(app.getHttpServer())
       .get('/api/v1/internal/notifications/provider-status')
       .set('Authorization', `Bearer ${token('customer')}`)
@@ -593,17 +789,24 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     expect(minimalRes.body.worker).toBeUndefined();
 
     // Read-only: GET does not mutate anything
-    const before: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM notification_deliveries`);
+    const before: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM notification_deliveries`,
+    );
     await request(app.getHttpServer())
       .get('/api/v1/internal/notifications/provider-status')
       .set('Authorization', `Bearer ${token('viewer')}`)
       .expect(200);
-    const after: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM notification_deliveries`);
+    const after: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM notification_deliveries`,
+    );
     expect(after[0]!.count).toBe(before[0]!.count);
   });
 
   it('15. test-send — 401/403 gates identical to provider-status', async () => {
-    await request(app.getHttpServer()).post('/api/v1/internal/notifications/test-send').send({ channel: 'EMAIL', destination: 'ops@example.com' }).expect(401);
+    await request(app.getHttpServer())
+      .post('/api/v1/internal/notifications/test-send')
+      .send({ channel: 'EMAIL', destination: 'ops@example.com' })
+      .expect(401);
     await request(app.getHttpServer())
       .post('/api/v1/internal/notifications/test-send')
       .set('Authorization', `Bearer ${token('customer')}`)
@@ -640,7 +843,9 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     expect(emailProvider.sent.length).toBe(0);
     expect(smsProvider.sent.length).toBe(0);
     // Validation failures consume no rate-limit quota (no audit rows written)
-    const audit: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM audit_events WHERE entity_type='NOTIFICATION_TEST_SEND'`);
+    const audit: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM audit_events WHERE entity_type='NOTIFICATION_TEST_SEND'`,
+    );
     expect(Number(audit[0]!.count)).toBe(0);
   });
 
@@ -664,10 +869,13 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
       NOTIFICATION_SMS_PROVIDER: 'robase',
       ROBASE_API_KEY: 'robe_synthetic_test_only_123456789',
     };
-    const getSpy = jest.spyOn(config, 'get').mockImplementation(
-      ((key: string, ...args: unknown[]) =>
-        fakeEnvironment[key] ?? (realGet as (...params: unknown[]) => unknown)(key, ...args)) as typeof config.get,
-    );
+    const getSpy = jest
+      .spyOn(config, 'get')
+      .mockImplementation(
+        ((key: string, ...args: unknown[]) =>
+          fakeEnvironment[key] ??
+          (realGet as (...params: unknown[]) => unknown)(key, ...args)) as typeof config.get,
+      );
     try {
       for (const [channel, destination] of [
         ['EMAIL', 'ops@example.com'],
@@ -710,7 +918,9 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
       .expect(400);
     expect(incomplete.body.message).toBe('PROVIDER_NOT_CONFIGURED');
 
-    await dataSource.query('ALTER TABLE notification_provider_configurations RENAME TO m25c_provider_config_unavailable');
+    await dataSource.query(
+      'ALTER TABLE notification_provider_configurations RENAME TO m25c_provider_config_unavailable',
+    );
     try {
       await request(app.getHttpServer())
         .post('/api/v1/internal/notifications/test-send')
@@ -726,7 +936,9 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
         .send({ channel: 'EMAIL', destination: 'ops@example.com' })
         .expect(401);
     } finally {
-      await dataSource.query('ALTER TABLE m25c_provider_config_unavailable RENAME TO notification_provider_configurations');
+      await dataSource.query(
+        'ALTER TABLE m25c_provider_config_unavailable RENAME TO notification_provider_configurations',
+      );
     }
     expect(emailProvider.sent).toHaveLength(0);
     const audit: Array<{ count: string }> = await dataSource.query(
@@ -739,10 +951,12 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     const config = app.get(ConfigService);
     const realGet = config.get.bind(config);
     const invalidSecret = 'malformed-rotated-secret-SENTINEL';
-    const getSpy = jest.spyOn(config, 'get').mockImplementation(
-      ((key: string, ...args: unknown[]) => key === 'RESEND_API_KEY'
-        ? invalidSecret : (realGet as (...params: unknown[]) => unknown)(key, ...args)) as typeof config.get,
-    );
+    const getSpy = jest
+      .spyOn(config, 'get')
+      .mockImplementation(((key: string, ...args: unknown[]) =>
+        key === 'RESEND_API_KEY'
+          ? invalidSecret
+          : (realGet as (...params: unknown[]) => unknown)(key, ...args)) as typeof config.get);
     try {
       await dataSource.query(
         `INSERT INTO notification_provider_configurations
@@ -760,7 +974,9 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
         .send({ channel: 'EMAIL', destination: 'ops@example.com' })
         .expect(400);
       expect(attempt.body.message).toBe('PROVIDER_FAILURE');
-      expect(JSON.stringify({ status: status.body, attempt: attempt.body })).not.toContain(invalidSecret);
+      expect(JSON.stringify({ status: status.body, attempt: attempt.body })).not.toContain(
+        invalidSecret,
+      );
       expect(emailProvider.sent).toHaveLength(0);
       const audit: Array<{ count: string }> = await dataSource.query(
         `SELECT count(*)::text AS count FROM audit_events WHERE entity_type='NOTIFICATION_TEST_SEND_QUOTA'`,
@@ -798,9 +1014,10 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     expect(sent.html).toContain('<!DOCTYPE html>');
 
     // Audit row: masked destination, stable fields, no raw destination
-    const audit: Array<{ action: string; actor: string; new_values: Record<string, unknown> }> = await dataSource.query(
-      `SELECT action, actor, new_values FROM audit_events WHERE entity_type='NOTIFICATION_TEST_SEND'`,
-    );
+    const audit: Array<{ action: string; actor: string; new_values: Record<string, unknown> }> =
+      await dataSource.query(
+        `SELECT action, actor, new_values FROM audit_events WHERE entity_type='NOTIFICATION_TEST_SEND'`,
+      );
     expect(audit.length).toBe(1);
     expect(audit[0]!.action).toBe('NOTIFICATION_TEST_SENT');
     expect(audit[0]!.actor).toBe('workforce-ops-1');
@@ -810,7 +1027,9 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     expect(audit[0]!.new_values.providerRef).toMatch(/^test-email-/);
 
     // NO notification_deliveries row is written for test sends
-    const deliveries: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM notification_deliveries`);
+    const deliveries: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM notification_deliveries`,
+    );
     expect(Number(deliveries[0]!.count)).toBe(0);
   });
 
@@ -842,9 +1061,10 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     expect(res.body.status).toBe('FAILED');
     expect(res.body.errorCode).toBe('RESEND_HTTP_429:rate_limited');
     expect(res.body.providerRef).toBeNull();
-    const audit: Array<{ action: string; new_values: Record<string, unknown> }> = await dataSource.query(
-      `SELECT action, new_values FROM audit_events WHERE entity_type='NOTIFICATION_TEST_SEND'`,
-    );
+    const audit: Array<{ action: string; new_values: Record<string, unknown> }> =
+      await dataSource.query(
+        `SELECT action, new_values FROM audit_events WHERE entity_type='NOTIFICATION_TEST_SEND'`,
+      );
     expect(audit.length).toBe(1);
     expect(audit[0]!.action).toBe('NOTIFICATION_TEST_FAILED');
     expect(audit[0]!.new_values.errorCode).toBe('RESEND_HTTP_429:rate_limited');
@@ -890,7 +1110,11 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     const auditRows: Array<{ new_values: Record<string, unknown> }> = await dataSource.query(
       `SELECT new_values FROM audit_events WHERE entity_type='NOTIFICATION_TEST_SEND'`,
     );
-    for (const blob of [JSON.stringify(res.body), JSON.stringify(statusRes.body), JSON.stringify(auditRows)]) {
+    for (const blob of [
+      JSON.stringify(res.body),
+      JSON.stringify(statusRes.body),
+      JSON.stringify(auditRows),
+    ]) {
       expect(blob).not.toContain('re_');
       expect(blob).not.toContain('robe_');
       expect(blob.toLowerCase()).not.toContain('bearer');
@@ -902,7 +1126,10 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
   // ---- Phase 3 integration: registry governance over the EMAIL channel ----
 
   it('22. EVENT_DISABLED gating — disabling the EMAIL configuration skips email while SMS delivers', async () => {
-    const cid = await createCustomer({ phone: '8011000022', email: `c22-${randomUUID().slice(0, 8)}@example.com` });
+    const cid = await createCustomer({
+      phone: '8011000022',
+      email: `c22-${randomUUID().slice(0, 8)}@example.com`,
+    });
     // Arena 1 registry: disable ONLY the EMAIL configuration row for this event (guard
     // triggers permit is_enabled flips; identity changes are refused).
     await dataSource.query(
@@ -913,7 +1140,13 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     const result = await dispatcher.dispatch({
       eventType: 'transfer.completed',
       eventKey: key,
-      payload: { sourceCustomerId: cid, destinationCustomerId: cid, transferId: 'abcdef12-3456-7890', amountMinor: '25000', reference: 'REF-DIS22' },
+      payload: {
+        sourceCustomerId: cid,
+        destinationCustomerId: cid,
+        transferId: 'abcdef12-3456-7890',
+        amountMinor: '25000',
+        reference: 'REF-DIS22',
+      },
     });
     const smsRow = result.deliveries.find((d) => d.channel === 'SMS')!;
     const emailRow = result.deliveries.find((d) => d.channel === 'EMAIL')!;
@@ -922,11 +1155,15 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     // Provider never invoked for email; SMS unaffected (channel-level enablement is independent)
     expect(emailProvider.sent.length).toBe(0);
     expect(smsProvider.sent.length).toBe(1);
-    const rows: Array<{ channel: string; status: string; message: string; last_error: string | null }> =
-      await dataSource.query(
-        `SELECT channel, status, message, last_error FROM notification_deliveries WHERE event_key=$1 ORDER BY channel`,
-        [key],
-      );
+    const rows: Array<{
+      channel: string;
+      status: string;
+      message: string;
+      last_error: string | null;
+    }> = await dataSource.query(
+      `SELECT channel, status, message, last_error FROM notification_deliveries WHERE event_key=$1 ORDER BY channel`,
+      [key],
+    );
     const emailDb = rows.find((r) => r.channel === 'EMAIL')!;
     expect(emailDb.status).toBe('SKIPPED');
     expect(emailDb.last_error).toBe('EVENT_DISABLED');
@@ -934,7 +1171,10 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
   });
 
   it('23. registry ACTIVE EMAIL version controls rendering — approved v2 subject/body replace seeded v1', async () => {
-    const cid = await createCustomer({ phone: '8011000023', email: `c23-${randomUUID().slice(0, 8)}@example.com` });
+    const cid = await createCustomer({
+      phone: '8011000023',
+      email: `c23-${randomUUID().slice(0, 8)}@example.com`,
+    });
     // Simulate an approved maker-checker change request outcome: deactivate the seeded v1
     // EMAIL template (guard trigger permits is_active true->false only) and activate a v2
     // with a distinct approved subject/body. SMS templates are untouched.
@@ -950,7 +1190,13 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     const result = await dispatcher.dispatch({
       eventType: 'transfer.completed',
       eventKey: key,
-      payload: { sourceCustomerId: cid, destinationCustomerId: cid, transferId: 'abcdef12-3456-7890', amountMinor: '25000', reference: 'REF-V2' },
+      payload: {
+        sourceCustomerId: cid,
+        destinationCustomerId: cid,
+        transferId: 'abcdef12-3456-7890',
+        amountMinor: '25000',
+        reference: 'REF-V2',
+      },
     });
     expect(result.deliveries.find((d) => d.channel === 'EMAIL')!.status).toBe('SENT');
     const sent = emailProvider.sent[0]!;

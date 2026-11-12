@@ -12,10 +12,17 @@ interface AuthenticatedRequest {
 
 @Controller('wallets')
 export class WalletTransactionController {
-  constructor(private readonly transferService: TransferService, private readonly auth: AuthorizationService) {}
+  constructor(
+    private readonly transferService: TransferService,
+    private readonly auth: AuthorizationService,
+  ) {}
 
   @Get(':walletId/transactions')
-  async getTransactions(@Param('walletId') walletId: string, @Query() query: TransferHistoryQueryDto, @Req() req: AuthenticatedRequest) {
+  async getTransactions(
+    @Param('walletId') walletId: string,
+    @Query() query: TransferHistoryQueryDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
     if (this.isWorkforce(req)) await this.requireFunction(req, 'transaction.view');
     return this.transferService.getWalletTransactions(walletId, query.page, query.limit);
   }

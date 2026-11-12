@@ -1,0 +1,16 @@
+{
+  "checkpointUnderTest": "0070eaf (backend unchanged by subsequent recovery focus fix)",
+  "environment": "Local disposable namespaced PostgreSQL databases, in-process HTTP and test service fixtures; no approved staging or production environment",
+  "command": "NODE_ENV=test PG_TEST_RUN_ID=acceptgate02 NOTIFICATION_WORKER_ENABLED=false CASH_TO_CASH_EXPIRY_WORKER_ENABLED=false NODE_OPTIONS=\"--require ./test/support/mission-25c-network-guard.cjs\" npx jest --config jest.integration.config.js --runInBand test/v1-funding-approvals-inbox.integration.spec.ts test/a19-agent-funding.integration.spec.ts test/v1-security-super-admin-recovery-01.integration.spec.ts test/v1-administrator-role-and-assignment-implementation-01.integration.spec.ts test/v1-admin-role-definition-governance-implementation-01.integration.spec.ts",
+  "suites": [
+    "test/v1-funding-approvals-inbox.integration.spec.ts",
+    "test/a19-agent-funding.integration.spec.ts",
+    "test/v1-security-super-admin-recovery-01.integration.spec.ts",
+    "test/v1-administrator-role-and-assignment-implementation-01.integration.spec.ts",
+    "test/v1-admin-role-definition-governance-implementation-01.integration.spec.ts"
+  ],
+  "suitesPassed": 5,
+  "testsPassed": 114,
+  "scope": "Selected local bearer-session role/assignment and governance HTTP, funding checker discovery and separation; service-level fund/defund, ledger, idempotency and recovery; local signed statement verifier/consumer including failure and replay paths.",
+  "restrictions": "Loopback-only network guard, notification worker disabled, cash-to-cash expiry worker disabled. Test principals, test-only data, test keys and disposable database financial effects only; no messages, vendor calls or real funds. Test role fixtures and keys are not production credentials or independent policy sign-off. Recovery suite exercises the service verifier/consumer rather than a full live recovery ceremony. The funding service suite is not an end-to-end browser workflow."
+}

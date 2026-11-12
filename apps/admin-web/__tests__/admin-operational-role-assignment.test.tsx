@@ -37,8 +37,8 @@ function setPrincipal(roles: string[], scopes: string[]) {
 describe('Admin Web operational role governance', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (ApiClient.post as jest.Mock).mockResolvedValue({ status: 'ACTIVE' });
-    (ApiClient.delete as jest.Mock).mockResolvedValue({ status: 'REVOKED' });
+    (ApiClient.post as jest.Mock).mockImplementation((_url: string, body: any) => Promise.resolve({ assignmentReference:'synthetic-reference', assignmentVersion:1, status:'ACTIVE', principalId:body.targetPrincipalId, roleKey:body.roleKey, assignedBy:'issuer:ADMINISTRATOR', assignedAt:'2026-10-23T09:00:00Z', effectiveFrom:body.effectiveFrom, effectiveTo:body.effectiveTo }));
+    (ApiClient.delete as jest.Mock).mockResolvedValue({ assignmentReference:'synthetic-reference', assignmentVersion:1, status:'REVOKED', principalId:'issuer:operator-28', roleKey:'TREASURY', revokedBy:'issuer:ADMINISTRATOR', revokedAt:'2026-10-23T09:00:00Z' });
   });
 
   test('ADMINISTRATOR can assign only one of the six existing operational roles through the guarded endpoint', async () => {
@@ -62,6 +62,7 @@ describe('Admin Web operational role governance', () => {
     fireEvent.change(view.getByLabelText('Effective From'), { target: { value: '2026-10-23T10:00' } });
     fireEvent.change(view.getByLabelText('Effective To'), { target: { value: '2027-10-23T10:00' } });
     fireEvent.click(view.getByRole('button', { name: 'Commit Role Assignment' }));
+    fireEvent.click(view.getByRole('button', { name: 'Confirm role change' }));
 
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenCalledWith('/internal/a2/workforce/roles', {
@@ -83,6 +84,7 @@ describe('Admin Web operational role governance', () => {
     fireEvent.change(view.getByLabelText('Effective From'), { target: { value: '2026-10-23T10:00' } });
     fireEvent.change(view.getByLabelText('Effective To'), { target: { value: '2027-10-23T10:00' } });
     fireEvent.click(view.getByRole('button', { name: 'Execute Revocation' }));
+    fireEvent.click(view.getByRole('button', { name: 'Confirm role change' }));
 
     await waitFor(() => {
       expect(ApiClient.delete).toHaveBeenCalledWith('/internal/a2/workforce/roles/issuer%3Aoperator-28/TREASURY', {

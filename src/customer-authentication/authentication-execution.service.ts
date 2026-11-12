@@ -75,7 +75,8 @@ export class AuthenticationExecutionService {
 
     // Resolve Customer by UUID, customer reference, or Nigerian phone number
     const customer = await this.resolveCustomer(rawIdentifier);
-    if (!customer || customer.deletedAt !== null) {
+    // Synthetic credentials belong exclusively to the isolated onboarding exchange.
+    if (!customer || customer.deletedAt !== null || customer.isSynthetic) {
       return this.invalidCredentials(rawIdentifier);
     }
 
@@ -83,7 +84,7 @@ export class AuthenticationExecutionService {
     const credential = await this.credentialRepository.findOne({
       where: { customerId, deletedAt: IsNull() },
     });
-    if (!credential || credential.deletedAt !== null) {
+    if (!credential || credential.deletedAt !== null || credential.mobileOtpRequired) {
       return this.invalidCredentials(customerId);
     }
 

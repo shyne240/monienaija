@@ -1,4 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import './operational-surfaces.css';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { PageHeader } from '../../design-system/primitives';
+import { WorkspaceFilterTabs } from '../../design-system/WorkspaceDrawer';
+import './agent-classes-workspace.css';
 
 import { ApiClient } from '../../services/api-client';
 import {
@@ -130,21 +134,43 @@ function parseJsonField(raw: string, label: string): unknown | null {
   }
 }
 
-export const AgentClassesScreen: React.FC = () => {
-  const { principal } = useAuthStore();
-  const hasFunction = (functionCode: string) => principal?.scopes.includes(functionCode) ?? false;
+export const AgentClassesScreen: React.FC<{onClassGuardChange?: (guarded: boolean, busy: boolean) => void}> = ({onClassGuardChange}) => {
+  const { principal, sessionId } = useAuthStore();
+  const hasFunction = (functionCode: string) => Boolean(principal && ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type) && principal.scopes.includes(functionCode));
   const canView = hasFunction('agent.view');
-  const canManage = hasFunction('agent.manage_classes');
+  const canManage = hasFunction('agent.manage_classes') && !principal?.readOnlyPrincipal;
   const canViewLimits = hasFunction('limit.view');
-  const canModifyLimits = hasFunction('limit.modify');
+  const canModifyLimits = hasFunction('limit.modify') && !principal?.readOnlyPrincipal;
 
+  const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  return <AgentClassesWorkspace key={key} canView={canView} canManage={canManage} canViewLimits={canViewLimits} canModifyLimits={canModifyLimits} onClassGuardChange={onClassGuardChange} />;
+};
+
+const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; canViewLimits: boolean; canModifyLimits: boolean; onClassGuardChange?: (guarded: boolean, busy: boolean) => void}> = ({canView, canManage, canViewLimits, canModifyLimits, onClassGuardChange}) => {
+  const listGeneration = useRef(0);
+  const limitGeneration = useRef(0);
+  const mutationGeneration = useRef(0);
+  const mutationLock = useRef(false);
+  const formBaseline = useRef<AgentClassForm>(EMPTY_FORM);
+  const [pendingNavigation, setPendingNavigation] = useState<AgentClassRecord | 'create' | 'close' | null>(null);
+  const keepEditingRef = useRef<HTMLButtonElement>(null);
+  const navigationTrigger = useRef<HTMLElement | null>(null);
+  const restoreNavigationFocus = useRef(false);
+  const [classUnconfirmed, setClassUnconfirmed] = useState(false);
+  const [classNeedsRefresh, setClassNeedsRefresh] = useState(false);
+  const [limitUnconfirmedClassId, setLimitUnconfirmedClassId] = useState<string | null>(null);
+  useEffect(() => { if (pendingNavigation) keepEditingRef.current?.focus(); else if (restoreNavigationFocus.current) { restoreNavigationFocus.current = false; navigationTrigger.current?.focus(); } }, [pendingNavigation]);
+  useEffect(() => () => { listGeneration.current += 1; limitGeneration.current += 1; mutationGeneration.current += 1; }, []);
   const [items, setItems] = useState<AgentClassRecord[]>([]);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [selected, setSelected] = useState<AgentClassRecord | null>(null);
   const [form, setForm] = useState<AgentClassForm>(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [listError, setListError] = useState('');
   const [message, setMessage] = useState('');
 
   // Agent class limit assignments state (limit.view read / limit.modify write)
@@ -154,11 +180,26 @@ export const AgentClassesScreen: React.FC = () => {
   const [classLimitsError, setClassLimitsError] = useState('');
   const [classLimitsMsg, setClassLimitsMsg] = useState('');
   const [classLimits, setClassLimits] = useState<ClassLimitAssignmentRecord[]>([]);
+  const [classLimitsPage, setClassLimitsPage] = useState<{ page: number; total: number; totalPages: number; hasNextPage: boolean } | null>(null);
   const [classLimitProfileCode, setClassLimitProfileCode] = useState('');
+  const classBusy = saving || classLimitsBusy;
+  const classGuard = classBusy || classUnconfirmed || Boolean(limitUnconfirmedClassId) || Boolean(classLimitProfileCode.trim()) || ((creating || Boolean(selected)) && JSON.stringify(form) !== JSON.stringify(formBaseline.current));
+  useEffect(() => { onClassGuardChange?.(classGuard, classBusy); }, [onClassGuardChange, classGuard, classBusy]);
+  useEffect(() => () => onClassGuardChange?.(false, false), [onClassGuardChange]);
+  useEffect(() => {
+    if (!classGuard) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+  }, [classGuard]);
+
 
   const resetClassLimitsState = () => {
+    limitGeneration.current += 1;
+    mutationGeneration.current += 1;
+    setClassLimitsLoading(false);
     setClassLimitsLoaded(false);
     setClassLimits([]);
+    setClassLimitsPage(null);
     setClassLimitsError('');
     setClassLimitsMsg('');
     setClassLimitProfileCode('');
@@ -166,47 +207,63 @@ export const AgentClassesScreen: React.FC = () => {
 
   const loadClasses = useCallback(async () => {
     if (!canView) return;
-    setLoading(true);
-    setError('');
+    const request = ++listGeneration.current;
+    setLoading(true); setListError('');
     try {
       const response: unknown = await ApiClient.get('/internal/agents/classes');
-      const rows = Array.isArray(response)
-        ? response
-        : (response as { data?: unknown[] } | null)?.data ?? [];
-      setItems(rows as AgentClassRecord[]);
-      if (selected) {
-        const refreshed =
-          (rows as AgentClassRecord[]).find((item) => item.id === selected.id) ?? null;
-        setSelected(refreshed);
-        if (refreshed && !creating) setForm(toForm(refreshed));
-      }
+      const rows = Array.isArray(response) ? response : (response as { data?: unknown } | null)?.data;
+      if (!Array.isArray(rows) || rows.some((row) => !row || typeof row.id !== 'string' || typeof row.reference !== 'string' || typeof row.code !== 'string' || typeof row.name !== 'string' || typeof row.isActive !== 'boolean' || !Number.isSafeInteger(row.version) || row.version < 1)) throw new Error('Invalid Agent class catalogue response.');
+      if (request === listGeneration.current) { setItems(rows as AgentClassRecord[]); setClassNeedsRefresh(false); }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Failed to load Agent classes.');
+      if (request === listGeneration.current) { setItems([]); setListError(loadError instanceof Error ? loadError.message : 'Failed to load Agent classes.'); }
     } finally {
-      setLoading(false);
+      if (request === listGeneration.current) setLoading(false);
     }
-  }, [canView, creating, selected]);
-
-  useEffect(() => {
-    if (canView) void loadClasses();
   }, [canView]);
 
-  const chooseClass = (agentClass: AgentClassRecord) => {
+  useEffect(() => { if (canView) void loadClasses(); }, [canView, loadClasses]);
+
+  const applyChooseClass = (agentClass: AgentClassRecord) => {
     setSelected(agentClass);
     setCreating(false);
-    setForm(toForm(agentClass));
+    const next = toForm(agentClass);
+    formBaseline.current = next;
+    setForm(next);
     setError('');
     setMessage('');
     resetClassLimitsState();
   };
 
-  const startCreate = () => {
+  const applyStartCreate = () => {
+    formBaseline.current = EMPTY_FORM;
     setSelected(null);
     setCreating(true);
     setForm(EMPTY_FORM);
     setError('');
     setMessage('');
     resetClassLimitsState();
+  };
+
+  const navigateEditor = (target: AgentClassRecord | 'create' | 'close') => {
+    if (mutationLock.current || saving || classLimitsBusy || pendingNavigation || ((classNeedsRefresh || classUnconfirmed) && target !== 'close')) return;
+    if ((creating || selected) && (JSON.stringify(form) !== JSON.stringify(formBaseline.current) || Boolean(classLimitProfileCode.trim()) || classUnconfirmed)) {
+      navigationTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setPendingNavigation(target);
+      return;
+    }
+    applyNavigation(target);
+  };
+
+  const applyNavigation = (target: AgentClassRecord | 'create' | 'close') => {
+    setPendingNavigation(null);
+    if (target === 'close') { setCreating(false); setSelected(null); setForm(EMPTY_FORM); resetClassLimitsState(); return; }
+    if (classNeedsRefresh || classUnconfirmed) return;
+    if (target === 'create') applyStartCreate();
+    else {
+      const current = items.find(item => item.id === target.id && item.version === target.version);
+      if (!current) { setError('Catalogue changed; choose the current class again.'); return; }
+      applyChooseClass(current);
+    }
   };
 
   const changeField = <K extends keyof AgentClassForm>(key: K, value: AgentClassForm[K]) => {
@@ -225,27 +282,43 @@ export const AgentClassesScreen: React.FC = () => {
     });
   };
 
-  const loadClassLimitAssignments = async (agentClassId: string) => {
+  const loadClassLimitAssignments = async (agentClassId: string, page = 1) => {
     if (!canViewLimits || classLimitsLoading) return;
-    setClassLimitsLoading(true);
+    const request = ++limitGeneration.current;
+    setClassLimitsLoading(true); setClassLimitsLoaded(false); setClassLimits([]); setClassLimitsPage(null);
     setClassLimitsError('');
     try {
       const res: any = await ApiClient.get(
-        `/internal/limit-assignments/agent-class/${encodeURIComponent(agentClassId)}`,
+        `/internal/limit-assignments/agent-class/${encodeURIComponent(agentClassId)}?page=${page}&limit=20`,
       );
-      const rows = res?.data || res?.items || (Array.isArray(res) ? res : []);
-      setClassLimits(rows);
+      if (!res || res.page !== page || !Number.isSafeInteger(res.limit) || res.limit < 1 ||
+          !Number.isSafeInteger(res.total) || res.total < 0 || !Number.isSafeInteger(res.totalPages) ||
+          res.totalPages !== Math.ceil(res.total / res.limit) || res.hasNextPage !== (page < res.totalPages) ||
+          !Array.isArray(res.data) || res.data.length > res.limit ||
+          res.data.some((row: any) => !row || typeof row.id !== 'string' || !row.id.trim() ||
+            typeof row.limitProfileCode !== 'string' || !row.limitProfileCode.trim() ||
+            row.subjectType !== 'AGENT_CLASS' || row.subjectId !== agentClassId || typeof row.isActive !== 'boolean')) {
+        throw new Error('Invalid Agent class limit assignments response.');
+      }
+      if (request !== limitGeneration.current) return;
+      setClassLimits(res.data);
+      setClassLimitsPage({ page, total: res.total, totalPages: res.totalPages, hasNextPage: res.hasNextPage });
       setClassLimitsLoaded(true);
     } catch (err: any) {
-      setClassLimitsError(err?.message || 'Failed to load Agent class limit assignments.');
+      if (request === limitGeneration.current) setClassLimitsError(err?.message || 'Failed to load Agent class limit assignments.');
     } finally {
-      setClassLimitsLoading(false);
+      if (request === limitGeneration.current) setClassLimitsLoading(false);
     }
   };
 
+  const matchesLimitReceipt = (row: any, classId: string, code: string, active: boolean, id?: string, version?: number) =>
+    row && typeof row.id === 'string' && !!row.id.trim() && (!id || row.id === id) &&
+    row.subjectType === 'AGENT_CLASS' && row.subjectId === classId && row.limitProfileCode === code &&
+    row.isActive === active && Number.isSafeInteger(row.version) && row.version > (version ?? 0);
+
   const assignClassLimitProfile = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selected || !canModifyLimits || classLimitsBusy) return;
+    if (!selected || !canModifyLimits || classLimitsBusy || saving || classLimitsLoading || (Boolean(limitUnconfirmedClassId) || classUnconfirmed) || mutationLock.current || pendingNavigation) return;
     const code = classLimitProfileCode.trim().toUpperCase();
     if (!/^[A-Z0-9_]{3,80}$/.test(code)) {
       setClassLimitsError(
@@ -253,15 +326,19 @@ export const AgentClassesScreen: React.FC = () => {
       );
       return;
     }
+    const request = ++mutationGeneration.current;
+    mutationLock.current = true;
     setClassLimitsBusy(true);
     setClassLimitsError('');
     setClassLimitsMsg('');
     try {
-      await ApiClient.post('/internal/limit-assignments', {
+      const receipt = await ApiClient.post('/internal/limit-assignments', {
         subjectType: 'AGENT_CLASS',
         subjectId: selected.id,
         limitProfileCode: code,
       });
+      if (request !== mutationGeneration.current) return;
+      if (!matchesLimitReceipt(receipt, selected.id, code, true)) throw new Error('Unconfirmed class limit assignment receipt.');
       setClassLimitProfileCode('');
       setClassLimitsMsg(
         canViewLimits
@@ -272,39 +349,47 @@ export const AgentClassesScreen: React.FC = () => {
         await loadClassLimitAssignments(selected.id);
       }
     } catch (err: any) {
-      setClassLimitsError(err?.message || 'Failed to assign limit profile to Agent class.');
+      if (request === mutationGeneration.current) { setClassLimitsLoaded(false); setClassLimits([]); setClassLimitsPage(null); setLimitUnconfirmedClassId(selected.id); setClassLimitsError('The assignment outcome could not be confirmed. Review the class limits before retrying.'); }
     } finally {
-      setClassLimitsBusy(false);
+      mutationLock.current = false;
+      if (request === mutationGeneration.current) setClassLimitsBusy(false);
     }
   };
 
   const toggleClassLimitAssignment = async (assignment: ClassLimitAssignmentRecord) => {
-    if (!selected || !canModifyLimits || classLimitsBusy) return;
+    if (!selected || !canModifyLimits || classLimitsBusy || saving || classLimitsLoading || (Boolean(limitUnconfirmedClassId) || classUnconfirmed) || mutationLock.current || pendingNavigation || !Number.isSafeInteger(assignment.version) || (assignment.version ?? 0) < 1) return;
+    const request = ++mutationGeneration.current;
+    mutationLock.current = true;
     setClassLimitsBusy(true);
     setClassLimitsError('');
     setClassLimitsMsg('');
     try {
-      await ApiClient.patch(`/internal/limit-assignments/${encodeURIComponent(assignment.id)}`, {
+      const receipt = await ApiClient.patch(`/internal/limit-assignments/${encodeURIComponent(assignment.id)}`, {
         subjectType: 'AGENT_CLASS',
         isActive: !assignment.isActive,
-        version: assignment.version ?? 1,
+        version: assignment.version,
       });
+      if (request !== mutationGeneration.current) return;
+      if (!matchesLimitReceipt(receipt, selected.id, assignment.limitProfileCode, !assignment.isActive, assignment.id, assignment.version)) throw new Error('Unconfirmed class limit update receipt.');
       setClassLimitsMsg(
         `Class limit ${assignment.limitProfileCode} ${assignment.isActive ? 'deactivated' : 'activated'}.`,
       );
       if (canViewLimits) {
-        await loadClassLimitAssignments(selected.id);
+        await loadClassLimitAssignments(selected.id, classLimitsPage?.page ?? 1);
       }
     } catch (err: any) {
-      setClassLimitsError(err?.message || 'Failed to update Agent class limit assignment.');
+      if (request === mutationGeneration.current) { setClassLimitsLoaded(false); setClassLimits([]); setClassLimitsPage(null); setLimitUnconfirmedClassId(selected.id); setClassLimitsError('The update outcome could not be confirmed. Reload class limits and inspect the assignment before retrying.'); }
     } finally {
-      setClassLimitsBusy(false);
+      mutationLock.current = false;
+      if (request === mutationGeneration.current) setClassLimitsBusy(false);
     }
   };
 
+  const selectedStale = Boolean(selected && !creating && (!items.find(item => item.id === selected.id) || items.find(item => item.id === selected.id)?.version !== selected.version));
+
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canManage || saving) return;
+    if (!canManage || saving || classLimitsBusy || classLimitsLoading || loading || !!listError || selectedStale || classUnconfirmed || Boolean(limitUnconfirmedClassId) || mutationLock.current || pendingNavigation) return;
     setError('');
     setMessage('');
 
@@ -323,6 +408,9 @@ export const AgentClassesScreen: React.FC = () => {
       return;
     }
 
+    const request = ++mutationGeneration.current;
+    let writeStarted = false;
+    mutationLock.current = true;
     try {
       const config = {
         requirements: parseJsonField(form.requirements, 'Requirements'),
@@ -345,15 +433,20 @@ export const AgentClassesScreen: React.FC = () => {
         if (form.reference.trim()) body.reference = form.reference.trim();
         if (form.code.trim()) body.code = form.code.trim();
         if (form.description.trim()) body.description = form.description.trim();
+        writeStarted = true;
         const created = await ApiClient.post<AgentClassRecord>('/internal/agents/classes', body);
+        if (request !== mutationGeneration.current) return;
+        if (!created || typeof created.id !== 'string' || !created.id.trim() || typeof created.reference !== 'string' || !created.reference.trim() || typeof created.code !== 'string' || !created.code.trim() || created.name !== form.name.trim() || created.isActive !== form.isActive || !Number.isSafeInteger(created.version) || created.version < 1 || (form.reference.trim() && created.reference !== form.reference.trim()) || (form.code.trim() && created.code !== form.code.trim())) throw new Error('Class creation response is incomplete.');
         setMessage(
           `Agent class ${created.reference} created. New classes start inactive unless explicitly activated.`,
         );
         setSelected(created);
         setCreating(false);
-        setForm(toForm(created));
+        formBaseline.current = toForm(created);
+        setForm(formBaseline.current);
         await loadClasses();
       } else if (selected) {
+        writeStarted = true;
         const updated = await ApiClient.patch<AgentClassRecord>(
           `/internal/agents/classes/${encodeURIComponent(selected.id)}`,
           {
@@ -364,24 +457,29 @@ export const AgentClassesScreen: React.FC = () => {
             expectedVersion: selected.version,
           },
         );
+        if (request !== mutationGeneration.current) return;
+        if (!updated || updated.id !== selected.id || updated.reference !== selected.reference || updated.code !== selected.code || updated.name !== form.name.trim() || updated.isActive !== form.isActive || !Number.isSafeInteger(updated.version) || updated.version <= selected.version) throw new Error('Class update response is incomplete.');
         setMessage(`Agent class ${updated.reference} saved at version ${updated.version}.`);
         setSelected(updated);
-        setForm(toForm(updated));
+        formBaseline.current = toForm(updated);
+        setForm(formBaseline.current);
         await loadClasses();
       }
     } catch (saveError) {
-      setError(
+      if (request === mutationGeneration.current && writeStarted) { listGeneration.current++; setLoading(false); setClassUnconfirmed(true); setClassNeedsRefresh(true); }
+      if (request === mutationGeneration.current) setError(
         `${saveError instanceof Error ? saveError.message : 'Unable to save Agent class.'} ` +
           'If the response was lost, refresh the list and inspect the class before retrying.',
       );
     } finally {
-      setSaving(false);
+      mutationLock.current = false;
+      if (request === mutationGeneration.current) setSaving(false);
     }
   };
 
   if (!canView) {
     return (
-      <div style={styles.wrap} role="alert">
+      <div className="mn-operational" style={styles.wrap} role="alert">
         <div style={styles.error}>
           Agent class listing requires <code>agent.view</code>. Editing also requires{' '}
           <code>agent.manage_classes</code>.
@@ -390,34 +488,23 @@ export const AgentClassesScreen: React.FC = () => {
     );
   }
 
+  const matchingItems = items.filter(item => {
+    const query = search.trim().toLocaleLowerCase();
+    return (statusFilter === 'all' || item.isActive === (statusFilter === 'active')) &&
+      (!query || [item.reference, item.code, item.name].some(value => value.toLocaleLowerCase().includes(query)));
+  });
+
   return (
-    <div style={styles.wrap}>
-      <header style={styles.header}>
-        <div>
-          <h2 style={styles.title}>Agent Classes &amp; Service Eligibility</h2>
-          <p style={styles.subtitle}>
-            Review class configuration and manage it only with the dedicated authorization function.
-          </p>
-        </div>
+    <div className="mn-operational mn-agent-classes" style={styles.wrap}>
+      <PageHeader eyebrow="Agent network" title="Agent classes & service eligibility" description="Review class configuration and manage it only with the dedicated authorization function." actions={
         <div style={styles.headerActions}>
-          <button
-            type="button"
-            onClick={() => void loadClasses()}
-            style={styles.secondaryButton}
-            disabled={loading}
-          >
-            Refresh
-          </button>
-          {canManage && (
-            <button type="button" onClick={startCreate} style={styles.primaryButton}>
-              Create class
-            </button>
-          )}
+          <button type="button" onClick={() => void loadClasses()} style={styles.secondaryButton} disabled={loading || saving || classLimitsBusy || Boolean(pendingNavigation)}>Refresh</button>
+          {canManage && <button type="button" onClick={() => navigateEditor('create')} style={styles.primaryButton} disabled={loading || saving || classLimitsBusy || !!listError || classNeedsRefresh || classUnconfirmed || Boolean(pendingNavigation)}>Create class</button>}
         </div>
-      </header>
+      } />
 
       <div style={styles.notice} role="note">
-        Class fields are policy-bearing configuration. Applicable services are restricted to validated canonical Ordinary Agent V1 service identifiers; leaving all services unchecked saves <code>null</code>. Blank JSON fields are saved as <code>null</code>; no capability or regulatory defaults are supplied. New classes begin inactive.
+        Class fields are policy-bearing configuration. Applicable services are restricted to validated canonical Ordinary Agent V1 service identifiers; leaving all services unchecked saves <code>null</code>. Blank JSON fields are saved as <code>null</code>; no capability or regulatory defaults are supplied. New classes default to inactive; activation must be selected explicitly.
       </div>
       {!canManage && (
         <div
@@ -425,29 +512,42 @@ export const AgentClassesScreen: React.FC = () => {
           role="note"
           data-testid="agent-classes-readonly-governance"
         >
-          <strong>Read-Only Governance Mode:</strong> Your principal holds <code>agent.view</code>{' '}
-          without <code>agent.manage_classes</code>. Class catalogue creation and editing require{' '}
+          <strong>Read-Only Governance Mode:</strong> Your session is read-only or lacks <code>agent.manage_classes</code>. Class catalogue creation and editing require{' '}
           <code>agent.manage_classes</code> (granted to <code>AGENT_NETWORK_MANAGER</code> and{' '}
           <code>SUPER_ADMIN</code>).
         </div>
       )}
-      {error && (
+      {classUnconfirmed && <div style={styles.warningBox} role="status">The last class outcome is unconfirmed or conflicted. Refresh the catalogue and independently inspect class records and available audit history before acting again. A fresh catalogue or missing record cannot exclude a late commit. The local review lock is lost on confirmed exit or session change.
+        {!classNeedsRefresh && !loading && !listError && <button type="button" style={styles.smallButton} onClick={() => { if ((creating || selected) && !window.confirm('Acknowledge review and discard the local class editor? Copy any needed entries before continuing.')) return; setCreating(false); setSelected(null); setForm(EMPTY_FORM); formBaseline.current = EMPTY_FORM; resetClassLimitsState(); setError(''); setClassUnconfirmed(false); }}>I reviewed the class and audit history</button>}
+      </div>}
+      {listError && <div style={styles.error} role="alert">Agent class catalogue unavailable: {listError}. Draft values remain in this workspace; refresh before taking action.</div>}
+      {error && (loading || Boolean(listError) || !(creating || selected)) && (
         <div style={styles.error} role="alert">
           {error}
         </div>
       )}
-      {message && (
+      {message && (loading || Boolean(listError) || !(creating || selected)) && (
         <div style={styles.success} role="status">
           {message}
         </div>
       )}
 
+      <div id="class-catalogue" className="mn-agent-class-catalogue-header">
+        <div><p>CLASS GOVERNANCE</p><h2>Class catalogue</h2><span>Review services, configuration and version before making changes.</span></div>
+        {!loading && !listError && <span className="mn-agent-class-count">{matchingItems.length} of {items.length} {items.length === 1 ? 'class' : 'classes'} shown</span>}
+      </div>
+      <div className="mn-agent-class-filters">
+        <WorkspaceFilterTabs label="Class state" value={statusFilter} options={[{value:'all',label:'All classes'},{value:'active',label:'Active'},{value:'inactive',label:'Inactive'}]} onChange={setStatusFilter} />
+        <label>Search returned classes<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Reference, code or name" /></label>
+      </div>
       {loading ? (
         <div style={styles.loading}>Loading Agent classes…</div>
-      ) : items.length === 0 ? (
+      ) : listError ? null : items.length === 0 ? (
         <div style={styles.empty}>No Agent classes returned by the authorized API.</div>
+      ) : matchingItems.length === 0 ? (
+        <div style={styles.empty}>No returned classes match these filters.</div>
       ) : (
-        <div style={styles.tableWrap}>
+        <div style={styles.tableWrap} role="region" aria-label="Agent classes" tabIndex={0}>
           <table style={styles.table}>
             <thead>
               <tr>
@@ -461,7 +561,7 @@ export const AgentClassesScreen: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {matchingItems.map((item) => (
                 <tr key={item.id}>
                   <td>
                     <strong>{item.reference}</strong>
@@ -480,7 +580,8 @@ export const AgentClassesScreen: React.FC = () => {
                   <td>
                     <button
                       type="button"
-                      onClick={() => chooseClass(item)}
+                      onClick={() => navigateEditor(item)}
+                      disabled={saving || classLimitsBusy || classNeedsRefresh || classUnconfirmed || Boolean(pendingNavigation)}
                       style={styles.smallButton}
                     >
                       {canManage ? 'Review / edit' : 'Review'}
@@ -493,30 +594,46 @@ export const AgentClassesScreen: React.FC = () => {
         </div>
       )}
 
-      {(creating || selected) && (
+      {!loading && !listError && (creating || selected) && (
         <section
+          className="mn-agent-class-editor"
           style={styles.editor}
           aria-label={creating ? 'Create Agent class' : 'Agent class details'}
         >
-          <div style={styles.editorHeader}>
+          <div className="mn-agent-class-editor-header" style={styles.editorHeader}>
+            <div><p className="mn-agent-class-editor-eyebrow">{creating ? 'NEW CONFIGURATION' : 'CLASS CONFIGURATION'}</p>
             <h3 style={styles.sectionTitle}>
               {creating ? 'Create Agent class' : `${selected?.reference} — configuration`}
-            </h3>
+            </h3><p className="mn-agent-class-editor-note">Changes remain local until saved. Review policy-bearing fields before submitting.</p></div>
             <button
               type="button"
               style={styles.secondaryButton}
-              onClick={() => {
-                setCreating(false);
-                setSelected(null);
-                setForm(EMPTY_FORM);
-                resetClassLimitsState();
-              }}
+              disabled={saving || classLimitsBusy || Boolean(pendingNavigation)}
+              onClick={() => navigateEditor('close')}
             >
               Close
             </button>
           </div>
+          <nav className="mn-agent-class-editor-nav" aria-label="Class configuration sections">
+            <a href="#class-catalogue">Catalogue</a>
+            <a href="#class-identity">{canManage ? 'Class details' : 'Configuration'}</a>
+            {canManage && <><a href="#class-services">Services</a><a href="#class-policy">Policy fields</a></>}
+            {!creating && selected && <a href="#class-limits">Limit assignments</a>}
+          </nav>
+          {error && <div style={styles.error} role="alert">{error}</div>}
+          {message && <div style={styles.success} role="status">{message}</div>}
+          {pendingNavigation && <div role="group" aria-label="Discard class changes" style={styles.warningBox}>
+            <p>Discard the local class changes? Saved changes remain in the catalogue. Inspect a refreshed catalogue after an unconfirmed outcome.</p>
+            <button ref={keepEditingRef} type="button" style={styles.secondaryButton} onClick={() => { restoreNavigationFocus.current = true; setPendingNavigation(null); }}>Keep editing</button>{' '}
+            <button type="button" style={styles.secondaryButton} onClick={() => applyNavigation(pendingNavigation)}>Discard changes</button>
+          </div>}
+
+          {selectedStale && <div style={styles.warningBox} role="alert">The catalogue has changed or this class is no longer listed. Your draft is retained; review and reselect the current class before saving. Reselecting replaces the draft.</div>}
           {canManage ? (
             <form onSubmit={save} style={styles.form}>
+              <fieldset disabled={saving || Boolean(pendingNavigation)} className="mn-agent-class-fields">
+              <section id="class-identity" className="mn-agent-class-editor-section" aria-labelledby="class-identity-title">
+              <div className="mn-agent-class-section-heading"><div><p className="mn-agent-class-editor-eyebrow">PROFILE</p><h4 id="class-identity-title">Class details</h4></div><span>{creating ? 'New class' : `Version ${selected?.version}`}</span></div>
               {creating && (
                 <>
                   <label style={styles.label}>
@@ -568,8 +685,9 @@ export const AgentClassesScreen: React.FC = () => {
                 />
                 Class active
               </label>
+              </section>
 
-              <fieldset style={styles.serviceFieldset} aria-label="Canonical applicable services">
+              <fieldset id="class-services" style={styles.serviceFieldset} aria-label="Canonical applicable services">
                 <legend style={styles.serviceLegend}>
                   Applicable services (validated canonical Ordinary Agent V1 set)
                 </legend>
@@ -650,6 +768,8 @@ export const AgentClassesScreen: React.FC = () => {
                 </div>
               </fieldset>
 
+              <section id="class-policy" className="mn-agent-class-editor-section" aria-labelledby="class-policy-title">
+              <div className="mn-agent-class-section-heading"><div><p className="mn-agent-class-editor-eyebrow">POLICY CONFIGURATION</p><h4 id="class-policy-title">Requirements &amp; limits</h4><p>Blank fields are saved as null; enter valid JSON where configured.</p></div></div>
               <div style={styles.configGrid}>
                 {JSON_FIELDS.map(({ key, label }) => (
                   <label key={key} style={styles.label}>
@@ -664,18 +784,20 @@ export const AgentClassesScreen: React.FC = () => {
                   </label>
                 ))}
               </div>
+              </section>
               {!creating && (
                 <p style={styles.versionNote}>
                   Update uses expected version {selected?.version}. A stale edit is rejected; refresh
                   before applying it again.
                 </p>
               )}
-              <button type="submit" style={styles.primaryButton} disabled={saving}>
-                {saving ? 'Saving…' : creating ? 'Create inactive class' : 'Save class'}
+              <button type="submit" style={styles.primaryButton} disabled={saving || classLimitsBusy || classLimitsLoading || selectedStale || classUnconfirmed || Boolean(limitUnconfirmedClassId) || Boolean(pendingNavigation)}>
+                {saving ? 'Saving…' : creating ? (form.isActive ? 'Create active class' : 'Create inactive class') : 'Save class'}
               </button>
+              </fieldset>
             </form>
           ) : (
-            <div style={styles.readOnlyDetails}>
+            <div id="class-identity" className="mn-agent-class-readonly" style={styles.readOnlyDetails}>
               <div>
                 <strong>Name:</strong> {selected?.name}
               </div>
@@ -703,7 +825,7 @@ export const AgentClassesScreen: React.FC = () => {
           )}
 
           {!creating && selected && (
-            <div style={styles.classLimitsSection} aria-label="Agent class limit assignments">
+            <div id="class-limits" className="mn-agent-class-limits" style={styles.classLimitsSection} aria-label="Agent class limit assignments">
               <div style={styles.editorHeader}>
                 <div>
                   <h4 style={styles.subSectionTitle}>
@@ -718,8 +840,8 @@ export const AgentClassesScreen: React.FC = () => {
                   <button
                     type="button"
                     style={styles.smallButton}
-                    disabled={classLimitsLoading}
-                    onClick={() => void loadClassLimitAssignments(selected.id)}
+                    disabled={classLimitsLoading || classLimitsBusy || saving}
+                    onClick={() => void loadClassLimitAssignments(selected.id, classLimitsPage?.page ?? 1)}
                   >
                     {classLimitsLoading
                       ? 'Loading…'
@@ -745,6 +867,10 @@ export const AgentClassesScreen: React.FC = () => {
                 </div>
               )}
 
+              {limitUnconfirmedClassId && <div role="status" style={styles.warningBox}>
+                A class limit outcome is unconfirmed for class <code>{limitUnconfirmedClassId}</code>. Inspect the relevant assignments and available audit history before further writes. A page or fresh read cannot prove absence or exclude a late commit. The local lock is lost on confirmed exit or session change. If you cannot view limits, use an independently authorized reviewer.
+                {selected.id === limitUnconfirmedClassId && ((canViewLimits && classLimitsLoaded) || !canViewLimits) && <div><button type="button" style={styles.smallButton} onClick={() => setLimitUnconfirmedClassId(null)}>I reviewed the class limits and audit history</button></div>}
+              </div>}
               {classLimitsError && (
                 <div style={styles.error} role="alert">
                   {classLimitsError}
@@ -760,8 +886,9 @@ export const AgentClassesScreen: React.FC = () => {
                 <div style={{ marginTop: 8 }}>
                   {classLimits.length === 0 ? (
                     <div style={styles.versionNote}>
-                      No <code>AGENT_CLASS</code> limit assignments configured for{' '}
-                      <code>{selected.reference}</code>.
+                      {classLimitsPage?.total === 0
+                        ? <>No <code>AGENT_CLASS</code> limit assignments configured for <code>{selected.reference}</code>.</>
+                        : 'No assignments on this page. Return to an earlier page to review current results.'}
                     </div>
                   ) : (
                     <ul style={styles.limitList}>
@@ -772,13 +899,14 @@ export const AgentClassesScreen: React.FC = () => {
                             <span style={assignment.isActive ? styles.active : styles.inactive}>
                               {assignment.isActive ? 'ACTIVE' : 'INACTIVE'}
                             </span>{' '}
-                            · v{assignment.version ?? 1}
+                            · {Number.isSafeInteger(assignment.version) && (assignment.version ?? 0) > 0 ? `v${assignment.version}` : 'version unavailable'}
                           </span>
                           {canModifyLimits && (
                             <button
                               type="button"
                               style={styles.smallButton}
-                              disabled={classLimitsBusy}
+                              disabled={classLimitsBusy || classLimitsLoading || saving || (Boolean(limitUnconfirmedClassId) || classUnconfirmed) || Boolean(pendingNavigation) || !Number.isSafeInteger(assignment.version) || (assignment.version ?? 0) < 1}
+                              title={!Number.isSafeInteger(assignment.version) || (assignment.version ?? 0) < 1 ? 'Version unavailable; refresh before changing this assignment.' : undefined}
                               onClick={() => void toggleClassLimitAssignment(assignment)}
                             >
                               {assignment.isActive
@@ -789,6 +917,13 @@ export const AgentClassesScreen: React.FC = () => {
                         </li>
                       ))}
                     </ul>
+                  )}
+                  {classLimitsPage && (classLimitsPage.totalPages > 1 || classLimitsPage.page > 1) && (
+                    <nav aria-label="Class limit assignment pages" style={styles.inlineLimitForm}>
+                      <button type="button" style={styles.smallButton} disabled={classLimitsPage.page <= 1 || classLimitsBusy || saving} onClick={() => void loadClassLimitAssignments(selected.id, classLimitsPage.page - 1)}>Previous</button>
+                      <span>Page {classLimitsPage.page} of {Math.max(classLimitsPage.totalPages, 1)} · {classLimitsPage.total} assignments</span>
+                      <button type="button" style={styles.smallButton} disabled={!classLimitsPage.hasNextPage || classLimitsBusy || saving} onClick={() => void loadClassLimitAssignments(selected.id, classLimitsPage.page + 1)}>Next</button>
+                    </nav>
                   )}
                 </div>
               )}
@@ -805,12 +940,12 @@ export const AgentClassesScreen: React.FC = () => {
                     value={classLimitProfileCode}
                     onChange={(event) => setClassLimitProfileCode(event.target.value)}
                     style={styles.inlineInput}
-                    disabled={classLimitsBusy}
+                    disabled={classLimitsBusy || classLimitsLoading || saving}
                   />
                   <button
                     type="submit"
                     style={styles.smallButton}
-                    disabled={classLimitsBusy}
+                    disabled={classLimitsBusy || classLimitsLoading || saving || (Boolean(limitUnconfirmedClassId) || classUnconfirmed) || Boolean(pendingNavigation)}
                   >
                     Assign class limit
                   </button>
@@ -825,48 +960,48 @@ export const AgentClassesScreen: React.FC = () => {
 };
 
 const styles: Record<string, React.CSSProperties> = {
-  wrap: { padding: 24, maxWidth: 1250, color: '#0F172A', fontFamily: 'system-ui, -apple-system, sans-serif' },
+  wrap: { padding: 'clamp(16px, 3vw, 32px)', maxWidth: 1250, color: 'var(--mn-text-primary, #132b25)', fontFamily: 'system-ui, -apple-system, sans-serif' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' },
-  title: { margin: '0 0 6px', color: '#032B14', fontSize: 22 },
-  subtitle: { margin: 0, color: '#64748B', fontSize: 13 },
+  title: { margin: '0 0 6px', color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 22 },
+  subtitle: { margin: 0, color: 'var(--mn-text-secondary, #52655f)', fontSize: 13 },
   headerActions: { display: 'flex', gap: 8 },
   notice: { margin: '18px 0', padding: 12, border: '1px solid #FCD34D', borderRadius: 8, background: '#FFFBEB', color: '#78350F', fontSize: 13, lineHeight: 1.5 },
   governanceBanner: { margin: '0 0 12px', padding: 11, border: '1px solid #BFDBFE', borderRadius: 8, background: '#EFF6FF', color: '#1E3A8A', fontSize: 12, lineHeight: 1.5 },
   warningBox: { margin: '0 0 12px', padding: 11, border: '1px solid #FDBA74', borderRadius: 8, background: '#FFF7ED', color: '#9A3412', fontSize: 12, lineHeight: 1.5 },
-  primaryButton: { padding: '9px 14px', border: '1px solid #0A3D25', borderRadius: 6, color: '#fff', background: '#0A3D25', cursor: 'pointer', fontWeight: 700 },
-  secondaryButton: { padding: '8px 12px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#fff', color: '#1E293B', cursor: 'pointer' },
+  primaryButton: { padding: '9px 14px', border: '1px solid var(--mn-action-primary, #0b624a)', borderRadius: 6, color: '#fff', background: 'var(--mn-action-primary, #0b624a)', cursor: 'pointer', fontWeight: 700 },
+  secondaryButton: { padding: '8px 12px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#fff', color: 'var(--mn-text-primary, #132b25)', cursor: 'pointer' },
   smallButton: { padding: '5px 9px', border: '1px solid #CBD5E1', borderRadius: 5, background: '#fff', cursor: 'pointer', fontSize: 12 },
   error: { padding: 11, marginBottom: 12, border: '1px solid #FCA5A5', borderRadius: 6, background: '#FEF2F2', color: '#991B1B', fontSize: 13 },
   success: { padding: 11, marginBottom: 12, border: '1px solid #6EE7B7', borderRadius: 6, background: '#ECFDF5', color: '#065F46', fontSize: 13 },
-  loading: { padding: 24, textAlign: 'center', color: '#64748B' },
-  empty: { padding: 24, color: '#64748B', textAlign: 'center', background: '#fff', border: '1px dashed #CBD5E1', borderRadius: 8 },
-  tableWrap: { width: '100%', overflowX: 'auto', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8 },
+  loading: { padding: 24, textAlign: 'center', color: 'var(--mn-text-secondary, #52655f)' },
+  empty: { padding: 24, color: 'var(--mn-text-secondary, #52655f)', textAlign: 'center', background: '#fff', border: '1px dashed #CBD5E1', borderRadius: 8 },
+  tableWrap: { width: '100%', overflowX: 'auto', background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8 },
   table: { width: '100%', borderCollapse: 'collapse', minWidth: 750, fontSize: 13 },
   active: { padding: '3px 8px', borderRadius: 12, background: '#ECFDF5', color: '#065F46', fontSize: 11, fontWeight: 700 },
-  inactive: { padding: '3px 8px', borderRadius: 12, background: '#F1F5F9', color: '#475569', fontSize: 11, fontWeight: 700 },
+  inactive: { padding: '3px 8px', borderRadius: 12, background: 'var(--mn-surface-sunken, #eef3f0)', color: 'var(--mn-text-secondary, #52655f)', fontSize: 11, fontWeight: 700 },
   editor: { marginTop: 20, padding: 16, background: '#fff', border: '1px solid #CBD5E1', borderRadius: 8 },
   editorHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' },
-  sectionTitle: { margin: 0, color: '#032B14', fontSize: 16 },
-  subSectionTitle: { margin: '0 0 4px', color: '#032B14', fontSize: 14 },
+  sectionTitle: { margin: 0, color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 16 },
+  subSectionTitle: { margin: '0 0 4px', color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 14 },
   form: { display: 'flex', flexDirection: 'column', gap: 12 },
-  label: { display: 'flex', flexDirection: 'column', gap: 6, color: '#334155', fontSize: 12, fontWeight: 600 },
+  label: { display: 'flex', flexDirection: 'column', gap: 6, color: 'var(--mn-text-primary, #132b25)', fontSize: 12, fontWeight: 600 },
   input: { width: '100%', boxSizing: 'border-box', padding: 9, border: '1px solid #CBD5E1', borderRadius: 5, font: 'inherit', fontWeight: 400 },
   inlineInput: { padding: '7px 9px', border: '1px solid #CBD5E1', borderRadius: 5, font: 'inherit', fontSize: 12, minWidth: 240 },
   textarea: { width: '100%', boxSizing: 'border-box', minHeight: 68, padding: 9, border: '1px solid #CBD5E1', borderRadius: 5, font: 'inherit', fontWeight: 400, resize: 'vertical' },
   jsonArea: { width: '100%', boxSizing: 'border-box', minHeight: 112, padding: 9, border: '1px solid #CBD5E1', borderRadius: 5, fontFamily: 'ui-monospace, SFMono-Regular, monospace', fontSize: 12, fontWeight: 400, resize: 'vertical' },
-  checkboxLabel: { display: 'flex', alignItems: 'center', gap: 8, color: '#334155', fontSize: 13 },
-  serviceFieldset: { margin: 0, padding: 12, border: '1px solid #E2E8F0', borderRadius: 8, background: '#F8FAFC' },
-  serviceLegend: { padding: '0 6px', fontSize: 12, fontWeight: 700, color: '#032B14' },
+  checkboxLabel: { display: 'flex', alignItems: 'center', gap: 8, color: 'var(--mn-text-primary, #132b25)', fontSize: 13 },
+  serviceFieldset: { margin: 0, padding: 12, border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8, background: 'var(--mn-surface-canvas, #f5f8f6)' },
+  serviceLegend: { padding: '0 6px', fontSize: 12, fontWeight: 700, color: 'var(--mn-nav-surface-deep, #082f23)' },
   serviceActions: { display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 },
-  serviceGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 8 },
-  serviceOption: { display: 'flex', alignItems: 'flex-start', gap: 8, padding: 8, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 6, fontSize: 12, color: '#1E293B', cursor: 'pointer' },
-  serviceDesc: { display: 'block', marginTop: 2, color: '#64748B', fontSize: 11 },
-  configGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 },
-  versionNote: { margin: 0, color: '#64748B', fontSize: 12 },
+  serviceGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))', gap: 8 },
+  serviceOption: { display: 'flex', alignItems: 'flex-start', gap: 8, padding: 8, background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 6, fontSize: 12, color: 'var(--mn-text-primary, #132b25)', cursor: 'pointer' },
+  serviceDesc: { display: 'block', marginTop: 2, color: 'var(--mn-text-secondary, #52655f)', fontSize: 11 },
+  configGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 12 },
+  versionNote: { margin: 0, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 },
   readOnlyDetails: { display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 },
-  pre: { padding: 10, margin: '6px 0 0', maxHeight: 240, overflow: 'auto', background: '#F8FAFC', borderRadius: 5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
-  classLimitsSection: { marginTop: 18, paddingTop: 14, borderTop: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: 8 },
+  pre: { padding: 10, margin: '6px 0 0', maxHeight: 240, overflow: 'auto', background: 'var(--mn-surface-canvas, #f5f8f6)', borderRadius: 5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
+  classLimitsSection: { marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--mn-border-subtle, #dde7e2)', display: 'flex', flexDirection: 'column', gap: 8 },
   limitList: { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 6 },
-  limitItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '6px 8px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 6, fontSize: 12 },
+  limitItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '6px 8px', background: 'var(--mn-surface-canvas, #f5f8f6)', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 6, fontSize: 12 },
   inlineLimitForm: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 },
 };

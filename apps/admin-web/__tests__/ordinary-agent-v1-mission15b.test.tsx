@@ -306,7 +306,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
       if (path === `/internal/agents/${AGENT_ID}/terminals`) return Promise.resolve([existingTerminal]);
       return Promise.resolve([]);
     });
-    (ApiClient.post as jest.Mock).mockResolvedValue({});
+    (ApiClient.post as jest.Mock).mockResolvedValue({ ...existingOutlet, id:'outlet-new', reference:'OUT-GRK-02', name:'Area 11 Annex', code:'GRK02', displayName:'Area 11 Express', addressLine:'5 Gimbiya Street', version:1 });
 
     const view = render(<AgentNetworkScreen />);
     fireEvent.click(await view.findByRole('button', { name: 'View' }));
@@ -337,6 +337,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
       }),
     );
 
+    await view.findByText('Outlet OUT-GRK-02 created.');
     // Edit outlet metadata: first simulate pre-merge Arena 1 404 -> honest boundary banner, no fake success
     (ApiClient.patch as jest.Mock).mockRejectedValueOnce(new ApiError('Not Found', 404));
     fireEvent.click(view.getByRole('button', { name: 'Edit outlet' }));
@@ -349,7 +350,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     );
 
     // Now simulate live Arena 1 200 response -> updates cleanly with expectedVersion
-    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ ...existingOutlet, version: 3 });
+    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ ...existingOutlet, addressLine:'18 Tafawa Balewa Way', version: 3 });
     fireEvent.click(view.getByRole('button', { name: 'Save outlet changes' }));
     await waitFor(() =>
       // `code` is NOT editable via PATCH: UpdateOutletMetadataDto omits it and the global
@@ -367,7 +368,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     expect((await view.findByRole('status')).textContent).toContain('Outlet OUT-GRK-01 metadata updated');
 
     // Edit terminal metadata -> verify live PATCH /internal/terminals/:terminalId
-    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ ...existingTerminal, version: 2 });
+    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ ...existingTerminal, label:'VIP Counter POS', version: 2 });
     fireEvent.click(view.getByRole('button', { name: 'Edit terminal' }));
     fireEvent.change(view.getByLabelText('Edit terminal label for TRM-GRK-01'), {
       target: { value: 'VIP Counter POS' },
@@ -392,9 +393,6 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     expect(credView.getByRole('button', { name: 'Invalidate active sessions' })).toBeTruthy();
 
     (ApiClient.post as jest.Mock).mockRejectedValueOnce(new ApiError('Not Found', 404));
-    fireEvent.change(credView.getByLabelText('Session revocation reason'), {
-      target: { value: 'Device lost at desk' },
-    });
     fireEvent.click(credView.getByRole('button', { name: 'Invalidate active sessions' }));
     expect((await credView.findByTestId('agent-session-revoke-arena1-boundary')).textContent).toContain(
       `/internal/admin/agents/${AGENT_ID}/sessions/revoke`,
@@ -405,7 +403,6 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     await waitFor(() =>
       expect(ApiClient.post).toHaveBeenCalledWith(
         `/internal/admin/agents/${AGENT_ID}/sessions/revoke`,
-        { reason: 'Device lost at desk' },
       ),
     );
     expect((await credView.findByRole('status')).textContent).toContain(
@@ -439,8 +436,8 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
 
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
       if (path === '/internal/agents/classes') return Promise.resolve([legacyClass]);
-      if (path === `/internal/limit-assignments/agent-class/${CLASS_ID}`) {
-        return Promise.resolve([
+      if (path === `/internal/limit-assignments/agent-class/${CLASS_ID}?page=1&limit=20`) {
+        return Promise.resolve({data:[
           {
             id: 'cls-lim-1',
             subjectType: 'AGENT_CLASS',
@@ -449,7 +446,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
             isActive: true,
             version: 2,
           },
-        ]);
+        ], page:1, limit:20, total:1, totalPages:1, hasNextPage:false});
       }
       return Promise.resolve([]);
     });
@@ -458,7 +455,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
       applicableServices: ['CASH_IN', 'CASH_TO_CASH'],
       version: 5,
     });
-    (ApiClient.post as jest.Mock).mockResolvedValue({});
+    (ApiClient.post as jest.Mock).mockResolvedValue({id:'new-limit',subjectType:'AGENT_CLASS',subjectId:CLASS_ID,limitProfileCode:'AGENT_CLASS_TIER2',isActive:true,version:1});
 
     const classesView = render(<AgentClassesScreen />);
     fireEvent.click(await classesView.findByRole('button', { name: 'Review / edit' }));
@@ -489,6 +486,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     );
 
     // Load and manage AGENT_CLASS limit assignments directly inside AgentClassesScreen
+    await waitFor(() => expect((classesView.getByRole('button', { name: 'Load class limit assignments' }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(classesView.getByRole('button', { name: 'Load class limit assignments' }));
     expect(await classesView.findByText('AGENT_CLASS_STD')).toBeTruthy();
 
@@ -571,8 +569,8 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
         },
       ],
     });
-    (ApiClient.post as jest.Mock).mockResolvedValue({});
-    (ApiClient.patch as jest.Mock).mockResolvedValue({});
+    (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'new-assignment', subjectType: 'AGENT_CLASS', subjectId: CLASS_ID, limitProfileCode: 'AGENT_CLASS_VIP', isActive: true, version: 1 });
+    (ApiClient.patch as jest.Mock).mockResolvedValue({ id: 'cls-assign-9', subjectType: 'AGENT_CLASS', subjectId: CLASS_ID, limitProfileCode: 'AGENT_CLASS_CAP', isActive: false, version: 4 });
 
     const limitScreen = render(<LimitAssignmentScreen />);
     expect(await limitScreen.findByText(`AGENT_CLASS: ${CLASS_ID}`)).toBeTruthy();
@@ -592,7 +590,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
       }),
     );
 
-    fireEvent.click(limitScreen.getByRole('button', { name: 'Deactivate' }));
+    fireEvent.click(await limitScreen.findByRole('button', { name: `Deactivate AGENT_CLASS_CAP for AGENT_CLASS ${CLASS_ID}` }));
     await waitFor(() =>
       expect(ApiClient.patch).toHaveBeenCalledWith('/internal/limit-assignments/cls-assign-9', {
         subjectType: 'AGENT_CLASS',
@@ -619,6 +617,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
         return Promise.resolve({
           templateKey: 'agent-ops',
           displayName: 'Agent Operations Dashboard',
+          description: 'Synthetic Agent operations',
           isFallback: false,
           widgets: [
             {
@@ -627,7 +626,8 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
               description: 'Counts by Agent lifecycle status.',
               order: 1,
               authorized: true,
-              fetchMode: 'widget',
+              fetchMode: 'proxy',
+              kind: 'status-breakdown',
             },
           ],
         });
@@ -673,14 +673,14 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     // Corrected Money Movement navigation labels (Deposits / Withdrawals instead of misleading C2W/W2C)
     const rail = appShell.getByTestId('desktop-nav');
     expect(within(rail).getByTestId('nav-cashIn').textContent).toBe(
-      '💸 Transaction & Fee Ops — Deposits',
+      'Deposits',
     );
     expect(within(rail).getByTestId('nav-cashOut').textContent).toBe(
-      '💸 Transaction & Fee Ops — Withdrawals',
+      'Withdrawals',
     );
 
     // Dashboard widget navigates directly to Agent Network Management
-    fireEvent.click(await appShell.findByRole('button', { name: 'Open Agent Network →' }));
+    fireEvent.click(await appShell.findByRole('button', { name: 'Agent network' }));
     expect(await appShell.findByText('AGT-NAV-01')).toBeTruthy();
 
     // Open Agent drawer -> jump to Agent-filtered Support Tickets -> return to Agent Network drawer
@@ -753,6 +753,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
         return Promise.resolve({
           templateKey: 'super-admin',
           displayName: 'Super Admin Dashboard',
+          description: 'Synthetic administration',
           isFallback: false,
           widgets: [
             {
@@ -762,6 +763,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
               order: 1,
               authorized: true,
               fetchMode: 'direct',
+              kind: 'table',
               endpoint: '/internal/agents/applications',
             },
           ],
@@ -835,7 +837,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     });
 
     const shell = render(<Layout />);
-    fireEvent.click(await shell.findByRole('button', { name: 'Open Onboarding Queue →' }));
+    fireEvent.click(await shell.findByRole('button', { name: 'Agent onboarding' }));
     // Navigating from agent-applications-queue auto-loads the onboarding applications table
     expect(await shell.findByText('APP-QUEUE-77')).toBeTruthy();
 

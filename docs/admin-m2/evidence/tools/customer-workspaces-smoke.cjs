@@ -1,0 +1,70 @@
+const assertVisibleLabels = require('./assert-visible-labels.cjs');
+// Synthetic customer fixtures: every non-GET is rejected; no live backend actions.
+const { chromium: playwright } = require('playwright-core');
+const chromium = require('@sparticuz/chromium').default;
+const fs = require('fs');
+(async () => {
+ const browser = await playwright.launch({executablePath:await chromium.executablePath(),args:chromium.args,headless:true});
+ const page = await browser.newPage({viewport:{width:320,height:900}});
+ const c={id:'customer-synthetic',reference:'mn-synthetic-1234',type:'INDIVIDUAL',status:'ACTIVE',kycLevel:'LEVEL_1',kycStatus:'APPROVED',displayName:'Synthetic Customer',legalName:'Synthetic Customer',createdAt:'2026-11-01T10:00:00Z',primaryContact:{type:'PHONE',maskedValue:'+234*****1234',isVerified:true}};
+ const addr={id:'address-synthetic',type:'RESIDENTIAL',lineOne:'1 Synthetic Road',lineTwo:null,city:'Abuja',state:'FCT',country:'NG',postalCode:null,isPrimary:true};
+ const doc={id:'doc-synthetic',submissionGroupId:'group-synthetic',revisionNumber:1,supersedesSubmissionId:null,customerId:c.id,residentialAddressId:addr.id,category:'UTILITY',documentType:'UTILITY_BILL',issuerName:'Synthetic Utility',documentDate:'2026-10-01',reviewStatus:'PENDING',documentStatus:'AVAILABLE',scannerResult:'CLEAN',originalFileName:'synthetic.png',detectedMimeType:'image/png',fileSizeBytes:'2048',uploadedAt:'2026-11-01T10:00:00Z',createdAt:'2026-11-01T10:00:00Z',updatedAt:'2026-11-01T10:00:00Z'};
+ await page.route('**/api/v1/**', route => {const req=route.request(),u=new URL(req.url());let body;
+  if(req.method()!=='GET')return route.fulfill({status:403,contentType:'application/json',body:JSON.stringify({message:'Synthetic harness blocks mutations'})});
+  if(u.pathname.endsWith('/proof-of-address/doc-synthetic/content'))return route.fulfill({status:200,contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aGf8AAAAASUVORK5CYII=','base64')});
+  if(u.pathname.endsWith('/my-dashboard'))body={templateKey:'SYNTHETIC',displayName:'Overview',description:'Synthetic',isFallback:false,widgets:[]};
+  else if(u.pathname.endsWith('/internal/customers'))body={data:[c],total:1,page:1,limit:20,totalPages:1,hasNextPage:false,hasPreviousPage:false};
+  else if(u.pathname.endsWith('/phone-verification'))body={customerId:c.id,customerStatus:'ACTIVE',phones:[{isPrimary:true,maskedValue:'+234*****1234',verifiedAt:'2026-10-01'}],activationGate:{verifiedPrimaryPhone:true}};
+  else if(u.pathname.endsWith('/onboarding-readiness'))body={status:'READY',onboardingStatus:'COMPLETED',missing:[]};
+  else if(u.pathname.endsWith('/eligibility'))body={status:'ELIGIBLE',statusChangedAt:'2026-10-01'};
+  else if(u.pathname.endsWith('/transactions'))body={items:[{id:'tx-synthetic',type:'WALLET_TRANSFER',status:'COMPLETED',amountMinor:'123456',currency:'NGN',direction:'OUTGOING',createdAt:'2026-11-01'}]};
+  else if(u.pathname.endsWith('/wallets'))body={data:[{id:'wallet-synthetic',currency:'NGN',status:'ACTIVE'}]};
+  else if(u.pathname.endsWith('/balance'))body={currency:'NGN',balanceMinor:'123456'};
+  else if(u.pathname.endsWith('/profile'))body={displayName:c.displayName,legalName:c.legalName,firstName:'Synthetic',middleName:null,lastName:'Customer',dateOfBirth:'1990-01-01',nationality:'NG'};
+  else if(u.pathname.endsWith('/addresses'))body=[addr];
+  else if(u.pathname.endsWith('/contact-methods'))body=[{id:'contact-synthetic',type:'PHONE',maskedValue:'+234*****1234',isPrimary:true,verifiedAt:'2026-10-01'}];
+  else if(u.pathname.endsWith('/identity-documents'))body=[];
+  else if(u.pathname.endsWith('/proof-of-address/capabilities'))body={enabled:true,maxUploadBytes:10485760,allowedMimeTypes:['application/pdf','image/png','image/jpeg'],previewAvailable:true,documentaryReviewEnabled:false,physicalVerificationEnabled:false,tier3OrWalletChangesEnabled:false};
+  else if(u.pathname.endsWith('/proof-of-address'))body={items:[doc],page:1,limit:20,total:1};
+  else return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({message:'Synthetic service unavailable'})});
+  return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)});
+ });
+ await page.goto('http://127.0.0.1:5173/'); await page.evaluate(()=>{localStorage.setItem('admin_workforce_token','synthetic');localStorage.setItem('admin_workforce_session_id','synthetic');localStorage.setItem('admin_workforce_principal',JSON.stringify({type:'OPERATOR',principalId:'synthetic',sessionId:'synthetic',audience:'workforce-admin',roles:['OPERATIONS'],scopes:['customer.view','customer.create','customer.view_address','customer.view_contact_methods','customer.view_identity_documents','customer.view_transactions','customer.view_wallets','customer.suspend','customer.view_proof_of_address_metadata','customer.upload_proof_of_address','customer.download_proof_of_address','customer.withdraw_proof_of_address'],customerAccess:'NONE',assuranceLevel:'MFA'}));});await page.reload({waitUntil:'networkidle'});
+ const report=[];
+ async function record(width,name) {await assertVisibleLabels(page);const sizes=await page.evaluate(()=>({page:document.documentElement.scrollWidth,view:document.documentElement.clientWidth}));report.push({width,workspace:name,visibleLabelMechanisms:true,...sizes}); if([320,1440].includes(width)){await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:`${process.cwd()}/docs/admin-m2/evidence/customer-${name}-${width}.png`,fullPage:true});}}
+ for(const width of [320,360,390,768,769,1024,1280,1440]){
+  await page.setViewportSize({width,height:900});
+  if(width<1024){
+   const toggle=page.getByTestId('mobile-menu-toggle');await toggle.focus();await page.keyboard.press('Enter');await page.getByTestId('mobile-menu-close').waitFor();
+   if(!await page.getByTestId('mobile-menu-close').evaluate(el=>document.activeElement===el))throw Error('Drawer did not focus close control');
+   await page.keyboard.press('Shift+Tab');if(!await page.getByTestId('mobile-nav').evaluate(el=>el.contains(document.activeElement)))throw Error('Drawer reverse tab escaped');
+   await page.keyboard.press('Tab');if(!await page.getByTestId('mobile-menu-close').evaluate(el=>document.activeElement===el))throw Error('Drawer forward tab did not wrap');
+   await page.keyboard.press('Escape');if(!await toggle.evaluate(el=>document.activeElement===el))throw Error('Drawer focus not restored');
+   report.push({width,workspace:'mobile-drawer-keyboard',trap:true,escape:true,restored:true});await toggle.click();
+  }
+  await page.getByTestId((width<1024?'mobile-':'')+'nav-customers').click();
+  const create=page.getByRole('button',{name:'New Customer'});await create.focus();await page.keyboard.press('Enter');const heading=page.getByRole('heading',{name:'Customer details'});await heading.waitFor();
+  if(!await heading.evaluate(el=>document.activeElement===el))throw Error('Registration heading did not receive focus');await record(width,'registration');
+  await page.getByRole('button',{name:'Create DRAFT & continue'}).focus();await page.keyboard.press('Enter');const firstName=page.getByLabel(/First name/);if(!await firstName.evaluate(el=>document.activeElement===el && el.getAttribute('aria-invalid')==='true'))throw Error('Registration validation did not focus first invalid field');
+  const wizard=page.getByRole('region',{name:'New customer registration'});await wizard.getByRole('button',{name:'Close',exact:true}).focus();await page.keyboard.press('Enter');
+  if(!await page.getByRole('button',{name:'New Customer'}).evaluate(el=>document.activeElement===el))throw Error('Registration focus not restored');
+  report.push({width,workspace:'registration-keyboard',heading:true,validation:true,restored:true});await page.getByRole('button',{name:'Open Customer 360° for Synthetic Customer'}).click();
+  await page.getByText('₦1,234.56').first().waitFor(); await record(width,'overview');
+  await page.getByRole('button',{name:'Suspend'}).click(); const dialog=page.getByRole('dialog'); await dialog.waitFor();
+  const firstFocused=await page.evaluate(()=>document.activeElement?.textContent?.trim());if(firstFocused!=='Cancel')throw Error('Lifecycle dialog initial focus incorrect');
+  await page.keyboard.press('Shift+Tab');if(!await dialog.getByRole('button',{name:'Confirm change'}).evaluate(el=>document.activeElement===el))throw Error('Lifecycle reverse tab did not wrap');
+  await page.keyboard.press('Tab');if(!await dialog.getByRole('button',{name:'Cancel'}).evaluate(el=>document.activeElement===el))throw Error('Lifecycle forward tab did not wrap');
+  await page.keyboard.press('Escape'); if(await dialog.isVisible())throw Error('Lifecycle dialog did not close on Escape');
+  const restored=await page.evaluate(()=>document.activeElement?.textContent?.trim());if(restored!=='Suspend')throw Error('Lifecycle focus not restored');
+  report.push({width,workspace:'lifecycle-keyboard',focused:firstFocused,trap:true,restored});
+  await page.getByRole('tab',{name:'Overview'}).focus();await page.keyboard.press('ArrowRight');const personal=page.getByRole('tab',{name:'Personal information & contact'});if(!await personal.evaluate(el=>document.activeElement===el && el.getAttribute('aria-selected')==='true'))throw Error('Customer tab keyboard selection failed');
+  report.push({width,workspace:'customer-tabs-keyboard',arrowRight:true});await page.getByText('1 Synthetic Road').waitFor(); await record(width,'personal');
+  await page.getByRole('tab',{name:'Proof of Address & physical verification'}).click(); await page.getByRole('heading',{name:'Utility bill · revision 1'}).waitFor(); await record(width,'proof');
+  const preview=page.getByRole('button',{name:'Preview',exact:true});await preview.focus();await page.keyboard.press('Enter');const previewDialog=page.getByRole('dialog');await previewDialog.waitFor();
+  if(!await previewDialog.getByRole('button',{name:'Close preview'}).evaluate(el=>document.activeElement===el))throw Error('Preview initial focus incorrect');await page.keyboard.press('Shift+Tab');if(!await previewDialog.evaluate(el=>el.contains(document.activeElement)))throw Error('Preview focus escaped');await page.keyboard.press('Escape');if(!await preview.evaluate(el=>document.activeElement===el))throw Error('Preview focus not restored');
+  const withdraw=page.getByRole('button',{name:'Withdraw',exact:true});await withdraw.focus();await page.keyboard.press('Enter');const withdrawal=page.getByRole('dialog');await withdrawal.waitFor();if(!await withdrawal.getByLabel('Reason (required)').evaluate(el=>document.activeElement===el))throw Error('Withdrawal initial focus incorrect');await page.keyboard.press('Shift+Tab');if(!await withdrawal.getByRole('button',{name:'Cancel'}).evaluate(el=>document.activeElement===el))throw Error('Withdrawal reverse tab did not wrap');await page.keyboard.press('Tab');if(!await withdrawal.getByLabel('Reason (required)').evaluate(el=>document.activeElement===el))throw Error('Withdrawal forward tab did not wrap');await page.keyboard.press('Escape');if(!await withdraw.evaluate(el=>document.activeElement===el))throw Error('Withdrawal focus not restored');
+  report.push({width,workspace:'proof-dialogs-keyboard',preview:true,withdrawal:true,escape:true,restored:true});await page.getByRole('button',{name:'← Back to directory'}).click();
+ }
+ fs.writeFileSync(`${process.cwd()}/docs/admin-m2/evidence/customer-workspaces-smoke.json`,JSON.stringify(report,null,2)+'\n');
+ console.log(JSON.stringify({total:report.length,overflow:report.filter(x=>x.page>x.view)},null,2));await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});

@@ -1,0 +1,92 @@
+{
+  "name": "notification-migration",
+  "kind": "pg",
+  "implementation_commit": "377b1207905909867dbce75cf78717fa5015b90a",
+  "exit_code": 0,
+  "duration_seconds": 68.07,
+  "requested_paths": [
+    "test/h04-h06-notification-upgrade.integration.spec.ts",
+    "test/h04-h06-cash-to-cash-channels.integration.spec.ts",
+    "test/notification-registry.integration.spec.ts",
+    "test/notification-reliability.integration.spec.ts",
+    "test/migration-chain.integration.spec.ts",
+    "test/notification-migration-upgrade-01.integration.spec.ts"
+  ],
+  "success": true,
+  "suites": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "runtime_errors": 0
+  },
+  "tests": {
+    "total": 52,
+    "passed": 52,
+    "failed": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "files": [
+    {
+      "file": "test/h04-h06-cash-to-cash-channels.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/h04-h06-notification-upgrade.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/migration-chain.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 17,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/notification-migration-upgrade-01.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 2,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/notification-registry.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 10,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/notification-reliability.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 21,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    }
+  ]
+}

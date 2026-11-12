@@ -24,7 +24,10 @@ interface AuthenticatedRequest {
 
 @Controller('wallets')
 export class WalletController {
-  constructor(private readonly walletService: WalletService, private readonly auth: AuthorizationService) {}
+  constructor(
+    private readonly walletService: WalletService,
+    private readonly auth: AuthorizationService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)

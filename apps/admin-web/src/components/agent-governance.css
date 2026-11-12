@@ -1,0 +1,18 @@
+/* Embedded governance and support surfaces, scoped to Agent panels. */
+.agent-governance{padding:clamp(16px,2vw,24px)}
+.agent-governance__header{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.agent-governance__eyebrow{margin:0 0 5px;color:#4a6b5a;font-size:10px;font-weight:700;letter-spacing:.09em}
+.agent-governance__fact{display:grid;gap:5px;min-width:0;margin:15px 0;padding:13px 15px;background:#f5f8f6;border:1px solid #dce7e0;border-radius:8px;overflow-wrap:anywhere}
+.agent-governance__fact span{font-size:12px;color:#52655f;font-weight:600}
+.agent-governance__fact strong{font-size:14px;color:#183d2e}
+.agent-governance__boundary{margin:14px 0 0;padding:14px 16px;border:1px solid #e9d6a5;border-left:4px solid #9d7826;border-radius:8px;background:#fffbef;color:#5e481b;font-size:13px;line-height:1.55;overflow-wrap:anywhere}
+.agent-governance__blocked-action{margin-top:12px}
+.agent-governance__actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.agent-governance__form{padding:15px;margin-top:14px;border:1px solid #e0eae4;border-radius:8px;background:#f6faf7}
+.agent-governance__feedback{flex-basis:100%;padding:12px;border-radius:8px;margin-top:12px;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.agent-governance__feedback--error{border:1px solid #e5aaa2;background:#fff5f4;color:#7d241d}
+.agent-governance__feedback--success{border:1px solid #a8d5b9;background:#f0faf3;color:#1c6036}
+.agent-governance__state{display:flex;flex-direction:column;gap:8px;padding:14px;margin-top:14px;border:1px solid #dce7e0;border-radius:8px;background:#f6faf7;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.agent-governance__hint{font-size:13px;line-height:1.5;color:#52655f;margin:14px 0 0}
+.agent-governance__badge{display:inline-block;padding:3px 9px;border:1px solid #cbd5d0;border-radius:99px;background:#f4f6f5;color:#344a40;font-size:11px;font-weight:700}
+.agent-governance__badge--locked{border-color:#e5aaa2;background:#fff5f4;color:#7d241d}

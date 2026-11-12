@@ -140,6 +140,8 @@ export class CreateRoleDefinitionGovernance1785753600086 implements MigrationInt
     await queryRunner.query(
       `ALTER TABLE authorization_roles DROP CONSTRAINT IF EXISTS chk_authorization_roles_non_seeded_no_elevated_class`,
     );
-    await queryRunner.query(`ALTER TABLE authorization_roles DROP COLUMN IF EXISTS definition_version`);
+    await queryRunner.query(
+      `ALTER TABLE authorization_roles DROP COLUMN IF EXISTS definition_version`,
+    );
   }
 }

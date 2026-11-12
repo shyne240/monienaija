@@ -23,7 +23,9 @@ export class CreateLimitProfileCatalogue1785753600067 implements MigrationInterf
       )
     `);
 
-    await queryRunner.query(`CREATE UNIQUE INDEX uq_limit_profiles_code_active ON limit_profiles (code) WHERE deleted_at IS NULL`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX uq_limit_profiles_code_active ON limit_profiles (code) WHERE deleted_at IS NULL`,
+    );
     await queryRunner.query(`CREATE INDEX idx_limit_profiles_kind ON limit_profiles (kind)`);
     await queryRunner.query(`CREATE INDEX idx_limit_profiles_status ON limit_profiles (status)`);
     await queryRunner.query(`CREATE INDEX idx_limit_profiles_enabled ON limit_profiles (enabled)`);
@@ -63,12 +65,20 @@ export class CreateLimitProfileCatalogue1785753600067 implements MigrationInterf
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX idx_limit_rules_profile ON limit_rules (limit_profile_code)`);
-    await queryRunner.query(`CREATE INDEX idx_limit_rules_profile_product ON limit_rules (limit_profile_code, product)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_rules_profile ON limit_rules (limit_profile_code)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_rules_profile_product ON limit_rules (limit_profile_code, product)`,
+    );
     await queryRunner.query(`CREATE INDEX idx_limit_rules_dimension ON limit_rules (dimension)`);
-    await queryRunner.query(`CREATE INDEX idx_limit_rules_effective ON limit_rules (effective_from, effective_to)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_rules_effective ON limit_rules (effective_from, effective_to)`,
+    );
     await queryRunner.query(`CREATE INDEX idx_limit_rules_currency ON limit_rules (currency)`);
-    await queryRunner.query(`CREATE UNIQUE INDEX uq_limit_rules_active_key ON limit_rules (limit_profile_code, product, COALESCE(direction,'BOTH'), COALESCE(channel,''), currency, dimension, effective_from) WHERE deleted_at IS NULL`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX uq_limit_rules_active_key ON limit_rules (limit_profile_code, product, COALESCE(direction,'BOTH'), COALESCE(channel,''), currency, dimension, effective_from) WHERE deleted_at IS NULL`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

@@ -1,4 +1,11 @@
-import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 
@@ -34,18 +41,32 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
     private readonly dataSource: DataSource,
     private readonly dispatcher: NotificationDispatcherService,
     private readonly configService: ConfigService,
-    @Inject(NOTIFICATION_PROVIDER_TOKEN) @Optional() private readonly provider: NotificationProvider | null,
-    @Inject(NOTIFICATION_EMAIL_PROVIDER_TOKEN) @Optional() private readonly emailProvider: NotificationProvider | null = null,
+    @Inject(NOTIFICATION_PROVIDER_TOKEN)
+    @Optional()
+    private readonly provider: NotificationProvider | null,
+    @Inject(NOTIFICATION_EMAIL_PROVIDER_TOKEN)
+    @Optional()
+    private readonly emailProvider: NotificationProvider | null = null,
     // Kept for constructor/DI compatibility. New deliveries store the exact rendered email
     // at materialization and never re-render a potentially different template during recovery.
-    @Inject(NOTIFICATION_EMAIL_TEMPLATE_TOKEN) @Optional() _emailTemplates: NotificationEmailTemplateLookup | null = null,
+    @Inject(NOTIFICATION_EMAIL_TEMPLATE_TOKEN)
+    @Optional()
+    _emailTemplates: NotificationEmailTemplateLookup | null = null,
     @Optional() private readonly templateService?: NotificationTemplateService,
     @Optional() private readonly providerConfigService?: NotificationProviderConfigService,
-  ) { void _emailTemplates; }
+  ) {
+    void _emailTemplates;
+  }
 
-  private get enabled(): boolean { return this.configService.get<boolean>('NOTIFICATION_WORKER_ENABLED') === true; }
-  private get pollIntervalMs(): number { return this.configService.get<number>('NOTIFICATION_WORKER_POLL_INTERVAL_MS') ?? 5_000; }
-  private get batchSize(): number { return this.configService.get<number>('NOTIFICATION_WORKER_BATCH_SIZE') ?? 10; }
+  private get enabled(): boolean {
+    return this.configService.get<boolean>('NOTIFICATION_WORKER_ENABLED') === true;
+  }
+  private get pollIntervalMs(): number {
+    return this.configService.get<number>('NOTIFICATION_WORKER_POLL_INTERVAL_MS') ?? 5_000;
+  }
+  private get batchSize(): number {
+    return this.configService.get<number>('NOTIFICATION_WORKER_BATCH_SIZE') ?? 10;
+  }
 
   onModuleInit(): void {
     if (!this.enabled) {
@@ -66,8 +87,12 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
 
   async tick(): Promise<NotificationWorkerTickResult> {
     const empty: NotificationWorkerTickResult = {
-      outboxProcessed: 0, retriesClaimed: 0, retriesSent: 0, retriesFailed: 0,
-      retriesOptedOut: 0, retriesSuppressed: 0,
+      outboxProcessed: 0,
+      retriesClaimed: 0,
+      retriesSent: 0,
+      retriesFailed: 0,
+      retriesOptedOut: 0,
+      retriesSuppressed: 0,
     };
     if (this.running) return empty;
     this.running = true;
@@ -84,8 +109,14 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
         baseDelaySeconds: this.configService.get<number>('SMS_RETRY_BASE_DELAY_SECONDS') ?? 60,
       });
       const result = await processor.processBatch(this.batchSize);
-      return { outboxProcessed, retriesClaimed: result.claimed, retriesSent: result.sent,
-        retriesFailed: result.failed, retriesOptedOut: result.optedOut, retriesSuppressed: result.suppressed };
+      return {
+        outboxProcessed,
+        retriesClaimed: result.claimed,
+        retriesSent: result.sent,
+        retriesFailed: result.failed,
+        retriesOptedOut: result.optedOut,
+        retriesSuppressed: result.suppressed,
+      };
     } finally {
       this.running = false;
     }

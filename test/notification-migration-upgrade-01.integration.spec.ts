@@ -80,11 +80,13 @@ describe('NOTIFICATION-MIGRATION-UPGRADE-01 baseline upgrade (real PostgreSQL)',
 
     const legacyPublished = randomUUID();
     const legacyPending = randomUUID();
-    await dataSource.query(`INSERT INTO outbox_events
+    await dataSource.query(
+      `INSERT INTO outbox_events
       (id,event_type,aggregate_type,aggregate_id,payload,status,available_at)
       VALUES ($1,'transfer.completed','TRANSFER',$3,'{}','PUBLISHED',NOW()),
              ($2,'transfer.failed','TRANSFER',$3,'{}','PENDING',NOW())`,
-      [legacyPublished, legacyPending, randomUUID()]);
+      [legacyPublished, legacyPending, randomUUID()],
+    );
 
     // Baseline posture: EMAIL channel and PHONE recipient type are rejected.
     await expect(
@@ -110,7 +112,10 @@ describe('NOTIFICATION-MIGRATION-UPGRADE-01 baseline upgrade (real PostgreSQL)',
     expect(registryBefore).toEqual([]);
 
     // ---- UPGRADE: normal TypeORM chain against the already-migrated database ----
-    const upgraded = new DataSource({ ...dataSource.options, migrations: fullChain.map((m) => m.constructor) });
+    const upgraded = new DataSource({
+      ...dataSource.options,
+      migrations: fullChain.map((m) => m.constructor),
+    });
     await dataSource.destroy();
     dataSource = upgraded;
     await dataSource.initialize();
@@ -121,26 +126,56 @@ describe('NOTIFICATION-MIGRATION-UPGRADE-01 baseline upgrade (real PostgreSQL)',
       'AllowPhoneNotificationRecipients1785753600099',
       'CreateNotificationProviderConfiguration1785753600100',
       'NotificationReliability1785753600101',
+      'AddNotificationCredentialBinding1785753600102',
+      'ConfigureTransactionNotificationEvents1785753600103',
     ]);
     expect(await dataSource.showMigrations()).toBe(false);
 
     // Legacy evidence survives; an old FAILED send is explicitly UNKNOWN because the old
     // implementation could not prove whether the provider accepted it before a crash.
-    const legacy: Array<{ channel: string; status: string; recipient_id: string; provider_ref: string | null; message: string | null }> =
-      await dataSource.query(
-        `SELECT channel, status, recipient_id::text AS recipient_id, provider_ref, message
+    const legacy: Array<{
+      channel: string;
+      status: string;
+      recipient_id: string;
+      provider_ref: string | null;
+      message: string | null;
+    }> = await dataSource.query(
+      `SELECT channel, status, recipient_id::text AS recipient_id, provider_ref, message
            FROM notification_deliveries ORDER BY channel DESC`,
-      );
+    );
     expect(legacy).toEqual([
-      { channel: 'SMS', status: 'SENT', recipient_id: customerId, provider_ref: 'sms-ref-legacy', message: 'Transfer of NGN 250.00 completed.' },
-      { channel: 'PUSH', status: 'UNKNOWN', recipient_id: agentId, provider_ref: null, message: 'Funding approved.' },
+      {
+        channel: 'SMS',
+        status: 'SENT',
+        recipient_id: customerId,
+        provider_ref: 'sms-ref-legacy',
+        message: 'Transfer of NGN 250.00 completed.',
+      },
+      {
+        channel: 'PUSH',
+        status: 'UNKNOWN',
+        recipient_id: agentId,
+        provider_ref: null,
+        message: 'Funding approved.',
+      },
     ]);
 
-    const legacyReceipts = await dataSource.query<Array<{ outbox_event_id: string; status: string; reason: string }>>(
+    const legacyReceipts = await dataSource.query<
+      Array<{ outbox_event_id: string; status: string; reason: string }>
+    >(
       `SELECT outbox_event_id,status,reason FROM notification_outbox_receipts ORDER BY outbox_event_id`,
     );
-    expect(legacyReceipts).toEqual([{ outbox_event_id: legacyPublished, status: 'QUARANTINED', reason: 'LEGACY_PUBLISHED_UNVERIFIED' }]);
-    const outbox = await dataSource.query<Array<{ id: string; status: string }>>(`SELECT id,status FROM outbox_events WHERE id=ANY($1::uuid[]) ORDER BY id`, [[legacyPublished, legacyPending]]);
+    expect(legacyReceipts).toEqual([
+      {
+        outbox_event_id: legacyPublished,
+        status: 'QUARANTINED',
+        reason: 'LEGACY_PUBLISHED_UNVERIFIED',
+      },
+    ]);
+    const outbox = await dataSource.query<Array<{ id: string; status: string }>>(
+      `SELECT id,status FROM outbox_events WHERE id=ANY($1::uuid[]) ORDER BY id`,
+      [[legacyPublished, legacyPending]],
+    );
     expect(outbox.find((event) => event.id === legacyPublished)?.status).toBe('PUBLISHED');
     expect(outbox.find((event) => event.id === legacyPending)?.status).toBe('PENDING');
 
@@ -155,8 +190,14 @@ describe('NOTIFICATION-MIGRATION-UPGRADE-01 baseline upgrade (real PostgreSQL)',
     );
 
     // Registry seeded by migration 098 during the real upgrade run.
-    const counts: Array<{ configs: string; sms_enabled: string; email_enabled: string; locked_security: string; templates: string; active_templates: string }> =
-      await dataSource.query(`
+    const counts: Array<{
+      configs: string;
+      sms_enabled: string;
+      email_enabled: string;
+      locked_security: string;
+      templates: string;
+      active_templates: string;
+    }> = await dataSource.query(`
         SELECT
           (SELECT count(*)::text FROM notification_event_configurations) AS configs,
           (SELECT count(*)::text FROM notification_event_configurations WHERE channel='SMS' AND is_enabled) AS sms_enabled,
@@ -165,16 +206,16 @@ describe('NOTIFICATION-MIGRATION-UPGRADE-01 baseline upgrade (real PostgreSQL)',
           (SELECT count(*)::text FROM notification_templates) AS templates,
           (SELECT count(*)::text FROM notification_templates WHERE is_active AND version=1) AS active_templates
       `);
-    // 20 transactional defaults + 3 SECURITY config-only events, both channels; SMS enabled
-    // for all 23 (SECURITY rows deliver SMS directly, locked against ordinary edits); EMAIL
-    // dark by default; 20 defaults x 2 channels = 40 active v1 templates (SECURITY has none).
+    // 25 ordinary events each have EVENT/SMS/EMAIL rows; direct SECURITY retains two
+    // locked channels. New deposit/withdrawal controls start disabled; transfer.unknown
+    // inherits the earlier transfer.failed channel settings once during the upgrade.
     expect(counts[0]).toEqual({
-      configs: '46',
-      sms_enabled: '23',
+      configs: '81',
+      sms_enabled: '24',
       email_enabled: '0',
       locked_security: '6',
-      templates: '40',
-      active_templates: '40',
+      templates: '50',
+      active_templates: '50',
     });
   }, 240_000);
 
@@ -195,8 +236,9 @@ describe('NOTIFICATION-MIGRATION-UPGRADE-01 baseline upgrade (real PostgreSQL)',
     }
 
     // 101 cannot be rolled back into the unsafe legacy state and discard its evidence.
-    await expect(inTransaction((runner) => new NotificationReliability1785753600101().down(runner)))
-      .rejects.toThrow(/forward-only/);
+    await expect(
+      inTransaction((runner) => new NotificationReliability1785753600101().down(runner)),
+    ).rejects.toThrow(/forward-only/);
 
     // 097 down refuses while EMAIL delivery rows exist (rows inserted by test 1 persist).
     await expect(

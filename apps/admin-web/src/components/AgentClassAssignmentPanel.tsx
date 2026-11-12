@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import './agent-workspaces.css';
+import './agent-governance.css';
 
 export interface AgentClassOption {
   id: string;
@@ -27,13 +29,18 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const generation = useRef(0);
+  const context = useRef({ agentId, canManageClasses });
+  context.current = { agentId, canManageClasses };
 
   useEffect(() => {
     setTargetClassId(currentClassId ?? '');
     setReason('');
     setError('');
     setMessage('');
-  }, [agentId, currentClassId]);
+    setBusy(false);
+    return () => { generation.current += 1; };
+  }, [agentId, currentClassId, canManageClasses]);
 
   const currentClass = availableClasses.find((cls) => cls.id === currentClassId) ?? null;
   const activeChoices = availableClasses.filter((cls) => cls.isActive);
@@ -49,35 +56,33 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
       setError('Audit reason is required before reclassifying an Agent.');
       return;
     }
+    const request = ++generation.current;
+    const valid = () => request === generation.current && context.current.agentId === agentId && context.current.canManageClasses;
     setBusy(true);
     setError('');
     setMessage('');
     try {
       await onReclassify(agentId, targetClassId, reason.trim());
+      if (!valid()) return;
       setReason('');
       setMessage('Agent class updated.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to update Agent class.');
+      if (valid()) setError(err instanceof Error ? err.message : 'Unable to update Agent class.');
     } finally {
-      setBusy(false);
+      if (valid()) setBusy(false);
     }
   };
 
   return (
-    <section aria-label="Agent class governance assignment" style={styles.panel}>
-      <div style={styles.header}>
-        <strong style={styles.title}>Class Governance &amp; Reclassification</strong>
-        <span style={styles.currentLabel}>
-          Current:{' '}
-          {currentClass
-            ? `${currentClass.name} (${currentClass.code})`
-            : currentClassId || 'Unassigned'}
-        </span>
+    <section aria-label="Agent class governance assignment" className="mn-agent-workspace agent-governance">
+      <div className="agent-governance__header">
+        <div><p className="agent-governance__eyebrow">AGENT GOVERNANCE</p><h4 className="mn-agent-workspace__title">Class Governance &amp; Reclassification</h4><p className="mn-agent-workspace__description">Review the Agent’s assigned class and the availability of governed reclassification.</p></div>
       </div>
+      <div className="agent-governance__fact"><span>Current assigned class</span><strong>{currentClass ? `${currentClass.name} (${currentClass.code})` : currentClassId || 'Unassigned'}</strong></div>
 
       {!onReclassify ? (
         <div>
-          <div style={styles.dependencyBox} role="note" data-testid="agent-reclassify-dependency">
+          <div className="agent-governance__boundary" role="note" data-testid="agent-reclassify-dependency">
             <strong>Policy-Blocked Capability:</strong> Post-activation Agent class reassignment (
             <code>PATCH /internal/admin/agents/:id/class</code>) is not enabled in V1 policy. While{' '}
             <code>agent.manage_classes</code> governs the class catalogue, an active Agent&apos;s assigned
@@ -87,16 +92,16 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
           <button
             type="button"
             disabled
-            style={{ ...styles.button, marginTop: 8, opacity: 0.55, cursor: 'not-allowed' }}
+            className="mn-agent-workspace__button agent-governance__blocked-action"
           >
             Reclassify Agent (Policy blocked)
           </button>
         </div>
       ) : !canManageClasses ? (
-        <div style={styles.note}>Reclassification requires <code>agent.manage_classes</code>.</div>
+        <div className="agent-governance__boundary">Reclassification requires <code>agent.manage_classes</code>.</div>
       ) : (
-        <form onSubmit={handleSubmit} style={styles.form}>
-          <label style={styles.label}>
+        <form onSubmit={handleSubmit} className="mn-agent-workspace__controls agent-governance__form">
+          <label className="mn-agent-workspace__field">
             Target active class
             <select
               aria-label="Target Agent class"
@@ -105,7 +110,7 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
                 setTargetClassId(e.target.value);
                 setError('');
               }}
-              style={styles.input}
+              className="mn-agent-workspace__input"
               disabled={busy}
             >
               <option value="">Select active class…</option>
@@ -116,7 +121,7 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
               ))}
             </select>
           </label>
-          <label style={styles.label}>
+          <label className="mn-agent-workspace__field">
             Governance reason
             <input
               aria-label="Class change reason"
@@ -126,45 +131,21 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
                 setReason(e.target.value);
                 setError('');
               }}
-              style={styles.input}
+              className="mn-agent-workspace__input"
               disabled={busy}
             />
           </label>
           <button
             type="submit"
-            style={styles.button}
+            className="mn-agent-workspace__button mn-agent-workspace__button--primary"
             disabled={busy || !targetClassId || targetClassId === currentClassId || !reason.trim()}
           >
             {busy ? 'Updating…' : 'Reclassify Agent'}
           </button>
-          {error && <div style={styles.errorBox} role="alert">{error}</div>}
-          {message && <div style={styles.successBox} role="status">{message}</div>}
+          {error && <div className="agent-governance__feedback agent-governance__feedback--error" role="alert">{error}</div>}
+          {message && <div className="agent-governance__feedback agent-governance__feedback--success" role="status">{message}</div>}
         </form>
       )}
     </section>
   );
-};
-
-const styles: Record<string, React.CSSProperties> = {
-  panel: { padding: 10, border: '1px solid #CBD5E1', borderRadius: 7, background: '#F8FAFC', marginTop: 10 },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12 },
-  title: { color: '#032B14', fontSize: 13 },
-  currentLabel: { color: '#334155', fontSize: 12 },
-  dependencyBox: {
-    marginTop: 8,
-    padding: 9,
-    borderRadius: 5,
-    border: '1px solid #FDE68A',
-    background: '#FFFBEB',
-    color: '#78350F',
-    fontSize: 11,
-    lineHeight: 1.5,
-  },
-  note: { marginTop: 6, color: '#64748B', fontSize: 12 },
-  form: { marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 },
-  label: { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, fontWeight: 600, color: '#334155' },
-  input: { padding: '6px 8px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 },
-  button: { alignSelf: 'flex-start', padding: '6px 11px', border: '1px solid #0A3D25', borderRadius: 5, background: '#0A3D25', color: '#FFF', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
-  errorBox: { padding: 8, borderRadius: 5, border: '1px solid #FCA5A5', background: '#FEF2F2', color: '#991B1B', fontSize: 11 },
-  successBox: { padding: 8, borderRadius: 5, border: '1px solid #6EE7B7', background: '#ECFDF5', color: '#065F46', fontSize: 11 },
 };

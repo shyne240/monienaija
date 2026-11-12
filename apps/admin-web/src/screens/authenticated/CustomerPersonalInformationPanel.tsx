@@ -17,6 +17,7 @@ import {
 } from '../../../../../src/customer/customer-validation';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { maskContactValue } from './customer-masking';
 import {
   CustomerCountrySelect,
@@ -26,6 +27,7 @@ import {
 import { countryNameForCode, isNigeriaIdentityType } from './CountrySelect';
 
 interface ProfileRecord {
+  id?: string;
   displayName: string;
   legalName: string | null;
   firstName: string | null;
@@ -66,34 +68,6 @@ interface IdentityRecord {
   expiresAt: string | null;
 }
 
-interface CustomerPreferenceViewRecord {
-  notifications: {
-    email: boolean;
-    sms: boolean;
-    push: boolean;
-    inApp: boolean;
-  };
-  security: {
-    loginAlerts: boolean;
-    transactionAlerts: boolean;
-    deviceRegistrationAlerts: boolean;
-    biometricAllowed: boolean;
-  };
-  language: string;
-  theme: 'LIGHT' | 'DARK' | 'SYSTEM' | string;
-  version: number;
-  updatedAt: string;
-}
-
-interface CustomerPreferenceHistoryRecord {
-  id: string;
-  action: string;
-  previousValues: Record<string, unknown> | null;
-  newValues: Record<string, unknown>;
-  actor: string;
-  createdAt: string;
-}
-
 type IdentityType =
   | 'BVN'
   | 'NIN'
@@ -114,6 +88,7 @@ interface CustomerPersonalInformationPanelProps {
   customerType?: string;
   onProfileUpdated: (profile: Pick<ProfileRecord, 'displayName' | 'legalName'>) => void;
   onVerificationUpdated?: () => void;
+  onGuardChange?: (guarded: boolean, busy: boolean) => void;
 }
 
 interface ProfileFormState {
@@ -184,6 +159,12 @@ function emptyAddress(): AddressFormState {
   };
 }
 
+function requiresOutcomeReview(error: unknown): boolean {
+  const status = error && typeof error === 'object' && 'status' in error
+    ? Number((error as { status?: unknown }).status) : undefined;
+  return ![400, 401, 403, 404, 413, 422].includes(status ?? 0);
+}
+
 function messageFor(error: unknown): string {
   const status =
     error && typeof error === 'object' && 'status' in error
@@ -195,7 +176,7 @@ function messageFor(error: unknown): string {
   if (status === 404) return 'The requested customer data is no longer available.';
   if (status === 409)
     return 'A conflicting record already exists. Refresh the customer data and review it.';
-  return 'The change could not be saved. Retry without leaving this page.';
+  return 'The request outcome could not be confirmed. Refresh customer data and check before retrying.';
 }
 
 async function safeGet<T>(path: string): Promise<ReadResult<T>> {
@@ -225,6 +206,13 @@ function fieldErrorsFrom(error: unknown, valueField = 'value'): Record<string, s
   );
 }
 
+function matchesCustomerReceipt(value: unknown, customerId: string, recordId?: string | null): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return record.customerId === customerId && typeof record.id === 'string' && Boolean(record.id.trim()) &&
+    (!recordId || record.id === recordId);
+}
+
 function profileFormFrom(profile: ProfileRecord | null): ProfileFormState {
   if (!profile) return emptyProfile();
   return {
@@ -238,35 +226,33 @@ function profileFormFrom(profile: ProfileRecord | null): ProfileFormState {
   };
 }
 
-export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformationPanelProps> = ({
+export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformationPanelProps> = (props) => {
+  const { principal, sessionId } = useAuthStore();
+  const key = JSON.stringify([props.customerId, props.customerType, sessionId, principal?.principalId,
+    principal?.sessionId, principal?.type, principal?.roles, principal?.scopes,
+    principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  return <CustomerPersonalInformationWorkspace key={key} {...props} />;
+};
+
+const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformationPanelProps> = ({
   customerId,
   customerType = 'INDIVIDUAL',
   onProfileUpdated,
   onVerificationUpdated,
+  onGuardChange,
 }) => {
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
   const hasFunction = (code: string) => scopes.includes(code);
-  const canWriteProfile = hasFunction('customer.create');
+  const canWriteProfile = hasFunction('customer.create') && !principal?.readOnlyPrincipal;
   const canViewProfile = hasFunction('customer.view');
   const canViewAddress = hasFunction('customer.view_address');
   const canWriteAddress = canViewAddress && canWriteProfile;
   const canViewContacts = hasFunction('customer.view_contact_methods');
   const canWriteContacts = canViewContacts && canWriteProfile;
   const canViewIdentity = hasFunction('customer.view_identity_documents');
-  const canWriteIdentity = canViewIdentity && hasFunction('kyc.review');
-  const isPureCustomerServiceRole = Boolean(
-    principal &&
-      principal.roles.length > 0 &&
-      principal.roles.every((role) => role === 'CUSTOMER_SERVICE'),
-  );
-  const canViewPreferences = Boolean(
-    canViewProfile &&
-      principal &&
-      (principal.type === 'OPERATOR' || principal.type === 'PRIVILEGED') &&
-      !isPureCustomerServiceRole,
-  );
-  const scopesKey = `${scopes.join('|')}::${principal?.type ?? ''}::${(principal?.roles ?? []).join(',')}`;
+  const canWriteIdentity = canViewIdentity && hasFunction('kyc.review') && !principal?.readOnlyPrincipal;
+  const scopesKey = scopes.join('|');
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -274,6 +260,11 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const busyRef = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const [reloadVersion, setReloadVersion] = useState(0);
 
   const [profile, setProfile] = useState<ProfileRecord | null>(null);
@@ -295,32 +286,46 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
   const [otpRequested, setOtpRequested] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [verificationToken, setVerificationToken] = useState('');
+  const [uncertain, setUncertain] = useState<'profile' | 'address' | 'contact' | 'identity' | 'otp' | null>(null);
+  const [reviewLoaded, setReviewLoaded] = useState(false);
+  const [discardSection, setDiscardSection] = useState<'profile' | 'address' | 'contact' | 'identity' | 'otp' | null>(null);
+  const preserveOnReload = useRef(false);
+  const discardDialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(discardDialogRef, Boolean(discardSection), () => setDiscardSection(null));
 
   const [identityDocuments, setIdentityDocuments] = useState<IdentityRecord[] | null>(null);
   const [identityStatus, setIdentityStatus] = useState<number | undefined>();
   const [identityForm, setIdentityForm] = useState<IdentityFormState | null>(null);
 
-  const [preferences, setPreferences] = useState<CustomerPreferenceViewRecord | null>(null);
-  const [preferencesStatus, setPreferencesStatus] = useState<number | undefined>();
-  const [preferenceHistory, setPreferenceHistory] = useState<CustomerPreferenceHistoryRecord[]>([]);
+  const editorActive = Boolean(profileEditing || addressForm || contactForm || identityForm || verifyContactId);
+  const draftTarget = profileEditing ? 'c360-profile-editor' : contactForm ? 'c360-contact-editor' : addressForm ? 'c360-address-editor' : identityForm ? 'c360-identity-editor' : verifyContactId && otpRequested ? 'c360-otp-editor' : null;
+  const guarded = editorActive || Boolean(uncertain) || busy;
+  useEffect(() => { onGuardChange?.(guarded, busy); }, [guarded, busy, onGuardChange]);
+  useEffect(() => {
+    if (!guarded) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [guarded]);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
     setFieldErrors({});
-    setNotice(null);
-    setProfileEditing(false);
-    setProfileForm(emptyProfile());
-    setAddressForm(null);
-    setAddressId(null);
-    setContactForm(null);
-    setIdentityForm(null);
-    setVerifyContactId(null);
-    setOtpRequested(false);
-    setOtpCode('');
-    setVerificationToken('');
-    setShowContactValues(false);
+    if (!preserveOnReload.current) {
+      setProfileEditing(false);
+      setProfileForm(emptyProfile());
+      setAddressForm(null);
+      setAddressId(null);
+      setContactForm(null);
+      setIdentityForm(null);
+      setVerifyContactId(null);
+      setOtpRequested(false);
+      setOtpCode('');
+      setVerificationToken('');
+      setShowContactValues(false);
+    }
     const id = encodeURIComponent(customerId);
     const requests = Promise.all([
       canViewProfile ? safeGet<ProfileRecord>(`/customers/${id}/profile`) : Promise.resolve(null),
@@ -333,49 +338,29 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       canViewIdentity
         ? safeGet<IdentityRecord[]>(`/customers/${id}/identity-documents`)
         : Promise.resolve(null),
-      canViewPreferences
-        ? safeGet<CustomerPreferenceViewRecord>(`/customers/${id}/preferences`)
-        : Promise.resolve(null),
-      canViewPreferences
-        ? safeGet<CustomerPreferenceHistoryRecord[]>(`/customers/${id}/preferences/history`)
-        : Promise.resolve(null),
     ]);
     requests
-      .then(
-        ([
-          profileResult,
-          addressResult,
-          contactResult,
-          identityResult,
-          preferencesResult,
-          preferenceHistoryResult,
-        ]) => {
-          if (!active) return;
-          setProfile(profileResult?.value ?? null);
-          setProfileStatus(profileResult?.status);
-          setAddresses(addressResult?.value ?? null);
-          setAddressStatus(addressResult?.status);
-          setContacts(contactResult?.value ?? null);
-          setContactStatus(contactResult?.status);
-          setIdentityDocuments(identityResult?.value ?? null);
-          setIdentityStatus(identityResult?.status);
-
-          const rawPrefs = preferencesResult?.value;
-          const validPrefs =
-            rawPrefs &&
-            !Array.isArray(rawPrefs) &&
-            typeof rawPrefs === 'object' &&
-            'notifications' in rawPrefs
-              ? rawPrefs
-              : null;
-          setPreferences(validPrefs);
-          setPreferencesStatus(preferencesResult?.status);
-          setPreferenceHistory(
-            Array.isArray(preferenceHistoryResult?.value) ? preferenceHistoryResult.value : [],
-          );
-          setLoading(false);
-        },
-      )
+      .then(([profileResult, addressResult, contactResult, identityResult]) => {
+        if (!active) return;
+        const belongsToCustomer = (value: unknown) => Boolean(value && typeof value === 'object' && !Array.isArray(value) &&
+          (!('customerId' in value) || (value as { customerId?: unknown }).customerId === customerId));
+        setProfile(profileResult?.value && belongsToCustomer(profileResult.value) && typeof profileResult.value.displayName === 'string' ? profileResult.value : null);
+        setProfileStatus(profileResult?.status);
+        setAddresses(Array.isArray(addressResult?.value) && addressResult.value.every(belongsToCustomer) ? addressResult.value : null);
+        setAddressStatus(addressResult?.status);
+        setContacts(Array.isArray(contactResult?.value) && contactResult.value.every(belongsToCustomer) ? contactResult.value : null);
+        setContactStatus(contactResult?.status);
+        setIdentityDocuments(Array.isArray(identityResult?.value) && identityResult.value.every(belongsToCustomer) ? identityResult.value : null);
+        setIdentityStatus(identityResult?.status);
+        if (preserveOnReload.current) {
+          const validProfile = Boolean(profileResult?.value && matchesCustomerReceipt(profileResult.value, customerId) && typeof profileResult.value.displayName === 'string' && ['legalName', 'firstName', 'middleName', 'lastName', 'dateOfBirth', 'nationality'].every(key => { const value = (profileResult.value as unknown as Record<string, unknown>)[key]; return value === null || typeof value === 'string'; }));
+          const validAddress = Array.isArray(addressResult?.value) && addressResult.value.every(item => item && (item as AddressRecord & { customerId?: string }).customerId === customerId && typeof item.id === 'string' && Boolean(item.id) && ['RESIDENTIAL', 'BUSINESS', 'MAILING'].includes(item.type) && typeof item.lineOne === 'string' && typeof item.city === 'string' && typeof item.state === 'string' && typeof item.country === 'string' && typeof item.isPrimary === 'boolean');
+          const validContact = Array.isArray(contactResult?.value) && contactResult.value.every(item => item && (item as ContactRecord & { customerId?: string }).customerId === customerId && typeof item.id === 'string' && Boolean(item.id) && ['PHONE', 'EMAIL'].includes(item.type) && typeof item.isPrimary === 'boolean' && (typeof item.maskedValue === 'string' || typeof item.value === 'string') && (item.verifiedAt == null || typeof item.verifiedAt === 'string'));
+          const validIdentity = Array.isArray(identityResult?.value) && identityResult.value.every(item => item && (item as IdentityRecord & { customerId?: string }).customerId === customerId && typeof item.id === 'string' && Boolean(item.id) && typeof item.type === 'string' && typeof item.maskedDocumentNumber === 'string' && typeof item.issuingCountry === 'string' && (item.issuedAt == null || typeof item.issuedAt === 'string') && (item.expiresAt == null || typeof item.expiresAt === 'string'));
+          setReviewLoaded(uncertain === 'profile' ? validProfile : uncertain === 'address' ? validAddress : uncertain === 'identity' ? validIdentity : validContact);
+        }
+        setLoading(false);
+      })
       .catch(() => {
         if (!active) return;
         setError('Authorized personal-information sections could not be loaded.');
@@ -386,11 +371,20 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
     };
   }, [customerId, scopesKey, reloadVersion]);
 
-  const refresh = () => setReloadVersion((value) => value + 1);
+  const refresh = (preserve = false) => { preserveOnReload.current = preserve; setReviewLoaded(false); setReloadVersion((value) => value + 1); };
+  const markUncertain = (kind: 'profile' | 'address' | 'contact' | 'identity' | 'otp') => { setUncertain(kind); setReviewLoaded(false); };
+  const discardEditor = (section: 'profile' | 'address' | 'contact' | 'identity' | 'otp') => {
+    if (section === 'profile') setProfileEditing(false);
+    if (section === 'address') { setAddressForm(null); setAddressId(null); }
+    if (section === 'contact') setContactForm(null);
+    if (section === 'identity') setIdentityForm(null);
+    if (section === 'otp') { setVerifyContactId(null); setOtpRequested(false); setOtpCode(''); setVerificationToken(''); }
+    setDiscardSection(null); setFieldErrors({});
+  };
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (busyRef.current || !canWriteProfile || !canViewProfile) return;
+    if (busyRef.current || uncertain || !canWriteProfile || !canViewProfile || (!profile && profileStatus !== 404)) return;
     const displayNameChanged = !profile || profileForm.displayName !== profile.displayName;
     const legalNameChanged = !profile || profileForm.legalName !== (profile.legalName ?? '');
     const firstNameChanged = !profile || profileForm.firstName !== (profile.firstName ?? '');
@@ -494,6 +488,9 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
             `/customers/${encodeURIComponent(customerId)}/profile`,
             body,
           );
+      if (!mounted.current) return;
+      if (!matchesCustomerReceipt(saved, customerId, profile?.id) || typeof saved.displayName !== 'string' ||
+          (saved.legalName !== null && typeof saved.legalName !== 'string')) throw new Error('Unconfirmed profile receipt');
       setProfile(saved);
       setProfileForm(profileFormFrom(saved));
       setProfileEditing(false);
@@ -504,17 +501,19 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       );
       refresh();
     } catch (saveError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError));
+      if (requiresOutcomeReview(saveError)) markUncertain('profile');
       setError(messageFor(saveError));
     } finally {
       busyRef.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
   const saveAddress = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!addressForm || busyRef.current || !canWriteAddress) return;
+    if (!addressForm || !addresses || busyRef.current || uncertain || !canWriteAddress) return;
     const normalizedForm = {
       ...addressForm,
       lineOne: normalizeCustomerText(addressForm.lineOne),
@@ -622,14 +621,14 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
     setError(null);
     setNotice(null);
     try {
-      if (addressId) {
-        await ApiClient.patch(
+      const saved = addressId
+        ? await ApiClient.patch(
           `/customers/${encodeURIComponent(customerId)}/addresses/${encodeURIComponent(addressId)}`,
           body,
-        );
-      } else {
-        await ApiClient.post(`/customers/${encodeURIComponent(customerId)}/address`, body);
-      }
+        )
+        : await ApiClient.post(`/customers/${encodeURIComponent(customerId)}/address`, body);
+      if (!mounted.current) return;
+      if (!matchesCustomerReceipt(saved, customerId, addressId)) throw new Error('Unconfirmed address receipt');
       setAddressForm(null);
       setAddressId(null);
       setFieldErrors({});
@@ -638,17 +637,19 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       );
       refresh();
     } catch (saveError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError));
+      if (requiresOutcomeReview(saveError)) markUncertain('address');
       setError(messageFor(saveError));
     } finally {
       busyRef.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
   const saveContact = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!contactForm || busyRef.current || !canWriteContacts) return;
+    if (!contactForm || !contacts || busyRef.current || uncertain || !canWriteContacts) return;
     const original = contacts?.find((contact) => contact.id === contactForm.id);
     const hasValueInput = Boolean(normalizeCustomerText(contactForm.value));
     const requiresValue = !contactForm.id;
@@ -688,17 +689,17 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
     setError(null);
     setNotice(null);
     try {
-      if (contactForm.id) {
-        await ApiClient.patch(
+      const saved = contactForm.id
+        ? await ApiClient.patch(
           `/customers/${encodeURIComponent(customerId)}/contact-methods/${encodeURIComponent(contactForm.id)}`,
           body,
-        );
-      } else {
-        await ApiClient.post(`/customers/${encodeURIComponent(customerId)}/contact-method`, {
+        )
+        : await ApiClient.post(`/customers/${encodeURIComponent(customerId)}/contact-method`, {
           type: contactForm.type,
           ...body,
         });
-      }
+      if (!mounted.current) return;
+      if (!matchesCustomerReceipt(saved, customerId, contactForm.id) || saved.type !== contactForm.type) throw new Error('Unconfirmed contact receipt');
       setContactForm(null);
       setFieldErrors({});
       setNotice(
@@ -706,16 +707,18 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       );
       refresh();
     } catch (saveError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError, contactForm.type === 'PHONE' ? 'phone' : 'email'));
+      if (requiresOutcomeReview(saveError)) markUncertain('contact');
       setError(messageFor(saveError));
     } finally {
       busyRef.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
   const requestOtp = async (contact: ContactRecord) => {
-    if (busyRef.current) return;
+    if (!canWriteContacts || busyRef.current || editorActive || uncertain) return;
     if (!contact.value) {
       setError(
         'The contact value is masked by the API, so it cannot be submitted to the existing OTP flow.',
@@ -733,25 +736,29 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
     setFieldErrors({});
     setNotice(null);
     try {
-      await ApiClient.post('/customers/registration/otp', { phone: normalized.e164 });
+      const receipt = await ApiClient.post<{ status: string }>('/customers/registration/otp', { phone: normalized.e164 });
+      if (!mounted.current) return;
+      if (!receipt || receipt.status !== 'OTP_REQUEST_ACCEPTED') throw new Error('Unconfirmed OTP request');
       setVerifyContactId(contact.id);
       setVerifyPhoneValue(normalized.e164);
       setOtpRequested(true);
       setOtpCode('');
       setVerificationToken('');
-      setNotice('OTP request accepted. Enter the one-time code sent to the phone number.');
+      setNotice('OTP request accepted; delivery is not confirmed. Enter the one-time code if received.');
     } catch (otpError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(otpError));
+      if (requiresOutcomeReview(otpError)) markUncertain('otp');
       setError(messageFor(otpError));
     } finally {
       busyRef.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
   const verifyPhone = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!verifyContactId || busyRef.current || !otpRequested) return;
+    if (!canWriteContacts || !verifyContactId || busyRef.current || uncertain || !otpRequested) return;
     const normalized = normalizePhoneNumber(verifyPhoneValue, 'NG');
     if (!normalized.valid || !normalized.e164 || normalized.country !== 'NG') {
       setError('The existing OTP flow can verify Nigerian phone numbers only.');
@@ -762,18 +769,24 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
     setError(null);
     setFieldErrors({});
     setNotice(null);
+    let verificationSaveStarted = false;
     try {
       let token = verificationToken;
       if (!token) {
-        const result = await ApiClient.post<{ verificationToken: string }>(
+        const result = await ApiClient.post<{ status: string; verificationToken: string }>(
           '/customers/registration/otp/verify',
           { phone: normalized.e164, code: otpCode.trim() },
         );
+        if (!mounted.current) return;
+        if (!result || result.status !== 'PHONE_VERIFIED' || typeof result.verificationToken !== 'string' || !result.verificationToken.trim()) {
+          throw new Error('Verification token unavailable');
+        }
         token = result.verificationToken;
         setVerificationToken(token);
       }
       const contact = contacts?.find((item) => item.id === verifyContactId);
-      await ApiClient.patch(
+      verificationSaveStarted = true;
+      const saved = await ApiClient.patch(
         `/customers/${encodeURIComponent(customerId)}/contact-methods/${encodeURIComponent(verifyContactId)}`,
         {
           value: normalized.e164,
@@ -782,6 +795,9 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
           verificationToken: token,
         },
       );
+      if (!mounted.current) return;
+      if (!matchesCustomerReceipt(saved, customerId, verifyContactId) || saved.type !== 'PHONE' ||
+          typeof saved.verifiedAt !== 'string' || !Number.isFinite(Date.parse(saved.verifiedAt))) throw new Error('Unconfirmed phone verification receipt');
       setOtpRequested(false);
       setOtpCode('');
       setVerificationToken('');
@@ -790,17 +806,19 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       onVerificationUpdated?.();
       refresh();
     } catch (verifyError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(verifyError));
-      setError(messageFor(verifyError));
+      if (requiresOutcomeReview(verifyError) || verificationSaveStarted) markUncertain('otp');
+      setError(verificationSaveStarted ? 'Phone verification outcome could not be confirmed. Refresh and review the contact before another action.' : messageFor(verifyError));
     } finally {
       busyRef.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
   const saveIdentity = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!identityForm || busyRef.current || !canWriteIdentity) return;
+    if (!identityForm || !identityDocuments || busyRef.current || uncertain || !canWriteIdentity) return;
     const original = identityDocuments?.find((document) => document.id === identityForm.id);
     const typeChanged = Boolean(original) && identityForm.type !== original?.type;
     const countryChanged =
@@ -876,17 +894,17 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
     setError(null);
     setNotice(null);
     try {
-      if (identityForm.id) {
-        await ApiClient.patch(
+      const saved = identityForm.id
+        ? await ApiClient.patch(
           `/customers/${encodeURIComponent(customerId)}/identity-documents/${encodeURIComponent(identityForm.id)}`,
           body,
-        );
-      } else {
-        await ApiClient.post(
+        )
+        : await ApiClient.post(
           `/customers/${encodeURIComponent(customerId)}/identity-document`,
           body,
         );
-      }
+      if (!mounted.current) return;
+      if (!matchesCustomerReceipt(saved, customerId, identityForm.id) || saved.type !== identityForm.type) throw new Error('Unconfirmed identity receipt');
       setIdentityForm(null);
       setFieldErrors({});
       setNotice(
@@ -894,15 +912,18 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       );
       refresh();
     } catch (saveError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError, 'documentNumber'));
+      if (requiresOutcomeReview(saveError)) markUncertain('identity');
       setError(messageFor(saveError));
     } finally {
       busyRef.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
   const startAddressEdit = (address?: AddressRecord) => {
+    if (editorActive || uncertain || busyRef.current || !addresses) return;
     setFieldErrors({});
     setAddressId(address?.id ?? null);
     setAddressForm(
@@ -922,6 +943,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
   };
 
   const startContactEdit = (contact?: ContactRecord) => {
+    if (editorActive || uncertain || busyRef.current || !contacts) return;
     setFieldErrors({});
     setContactForm(
       contact
@@ -938,6 +960,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
   };
 
   const startIdentityEdit = (document?: IdentityRecord) => {
+    if (editorActive || uncertain || busyRef.current || !identityDocuments) return;
     setFieldErrors({});
     setIdentityForm(
       document
@@ -971,6 +994,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
 
   return (
     <div className="cm-personal-grid">
+      <nav className="cm-section-nav cm-card-wide" aria-label="Personal information sections"><a href="#c360-profile">Profile</a><a href="#c360-contacts">Contacts</a><a href="#c360-addresses">Addresses</a><a href="#c360-identity">Identity metadata</a><a href="#c360-preferences">Preferences</a></nav>
       {error && (
         <div className="cm-error cm-card-wide" role="alert">
           {error}
@@ -982,7 +1006,28 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
         </div>
       )}
 
-      <article className="cm-card cm-card-wide">
+      {editorActive && !uncertain && <div className="cm-personal-draft-banner cm-card-wide" role="status"><div><strong>Draft in progress</strong><p>Finish or discard the current draft before starting another action. Leaving the customer workspace or changing session discards local drafts and one-time proofs.</p></div>{draftTarget && <a href={`#${draftTarget}`}>Return to draft</a>}</div>}
+      {uncertain && <section className="cm-card cm-card-wide cm-policy-notice cm-policy-notice-warning" aria-labelledby="c360-review-title">
+        <h2 id="c360-review-title">Review an unconfirmed or conflicting action</h2>
+        <p>The {uncertain} action may already have taken effect. Further writes are blocked. Refresh and inspect the current records before deciding what to do. A refreshed list cannot prove whether an OTP was delivered or an earlier operation occurred.</p>
+        <p>The draft is retained here for comparison only; unlocking discards it and does not retry the action. Drafts and this lock are lost when leaving the customer workspace, changing session, or reloading the browser.</p>
+        <button type="button" className="cm-button cm-button-secondary" disabled={busy || loading} onClick={() => refresh(true)}>Refresh personal records for review</button>
+        {reviewLoaded && <div>
+          <p>Current {uncertain === 'otp' ? 'contact' : uncertain} records loaded. Inspect the relevant section and any available audit history. Masked values may not establish an exact match.</p>
+          {uncertain === 'profile' && profile && <p>Current profile: {profile.displayName} · {profile.legalName || 'No legal name recorded'} · {profile.firstName || 'No first name'} · {profile.middleName || 'No middle name'} · {profile.lastName || 'No last name'} · {profile.dateOfBirth || 'No birth date'} · {profile.nationality || 'No nationality'}</p>}
+          <button type="button" className="cm-button cm-button-secondary" onClick={() => { if (uncertain === 'otp') discardEditor('otp'); else discardEditor(uncertain); setUncertain(null); setReviewLoaded(false); setError(null); setNotice('Review acknowledged. The earlier action may still have occurred; start a new action only after checking the current record and audit history.'); }}>I reviewed the records; discard draft and unlock</button>
+        </div>}
+        {!reviewLoaded && <p>Review remains locked until the relevant records load successfully.</p>}
+      </section>}
+      {discardSection && <div className="cm-modal-backdrop" role="presentation">
+        <section ref={discardDialogRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="c360-discard-title">
+          <h2 id="c360-discard-title">Discard {discardSection} draft?</h2>
+          <p>Unsaved changes and any one-time proof in this workspace will be lost.{uncertain ? ' The earlier action may already have occurred; discarding does not unlock further writes.' : ''}</p>
+          <button type="button" className="cm-button cm-button-secondary" onClick={() => setDiscardSection(null)}>Keep editing</button>{' '}
+          <button type="button" className="cm-button cm-button-danger" onClick={() => discardEditor(discardSection)}>Discard draft</button>
+        </section>
+      </div>}
+      <article id="c360-profile" className="cm-card cm-card-wide">
         <div className="cm-card-heading">
           <div>
             <p className="cm-eyebrow">PROFILE</p>
@@ -992,7 +1037,9 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
             <button
               className="cm-button cm-button-secondary"
               type="button"
+              disabled={editorActive || Boolean(uncertain) || busy || (!profile && profileStatus !== 404)}
               onClick={() => {
+                if (editorActive || uncertain || busyRef.current || (!profile && profileStatus !== 404)) return;
                 setProfileForm(profileFormFrom(profile));
                 setFieldErrors({});
                 setProfileEditing(true);
@@ -1005,7 +1052,8 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
         {!canViewProfile ? (
           <p className="cm-muted">Profile fields are restricted to authorized customer viewers.</p>
         ) : profileEditing ? (
-          <form className="cm-editor-form" noValidate onSubmit={saveProfile}>
+          <form id="c360-profile-editor" className="cm-editor-form cm-personal-editor" noValidate onSubmit={saveProfile}>
+            <div className="cm-personal-editor__heading"><p className="cm-eyebrow">PROFILE DRAFT</p><h3>Update personal information</h3><p>Changes remain local until saved.</p></div>
             <div className="cm-wizard-field-grid">
               <label htmlFor="c360-display-name">
                 Display name <span className="cm-required-indicator">Required</span>
@@ -1134,17 +1182,14 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
               <button
                 className="cm-button cm-button-primary"
                 type="submit"
-                disabled={busy || !canWriteProfile}
+                disabled={busy || Boolean(uncertain) || !canWriteProfile}
               >
                 {busy ? 'Saving…' : 'Save profile'}
               </button>
               <button
                 className="cm-button cm-button-secondary"
                 type="button"
-                onClick={() => {
-                  setProfileEditing(false);
-                  setFieldErrors({});
-                }}
+                onClick={() => setDiscardSection('profile')}
                 disabled={busy}
               >
                 Cancel
@@ -1194,7 +1239,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
         )}
       </article>
 
-      <article className="cm-card">
+      <article id="c360-contacts" className="cm-card">
         <div className="cm-card-heading">
           <div>
             <p className="cm-eyebrow">CONTACT METHODS</p>
@@ -1216,6 +1261,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
                 className="cm-button cm-button-secondary"
                 type="button"
                 onClick={() => startContactEdit()}
+                disabled={editorActive || Boolean(uncertain) || busy || !contacts}
               >
                 Add contact
               </button>
@@ -1248,6 +1294,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
                       className="cm-text-button"
                       type="button"
                       onClick={() => startContactEdit(contact)}
+                      disabled={editorActive || Boolean(uncertain) || busy || !contacts}
                     >
                       Edit
                     </button>
@@ -1265,7 +1312,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
                         className="cm-text-button"
                         type="button"
                         onClick={() => void requestOtp(contact)}
-                        disabled={busy}
+                        disabled={busy || editorActive || Boolean(uncertain)}
                       >
                         Verify phone
                       </button>
@@ -1273,8 +1320,8 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
                       <span className="cm-secondary-line">Current OTP flow is Nigeria-only</span>
                     ))}
                 </div>
-                {verifyContactId === contact.id && otpRequested && (
-                  <form className="cm-otp-form cm-contact-otp" noValidate onSubmit={verifyPhone}>
+                {canWriteContacts && verifyContactId === contact.id && otpRequested && (
+                  <form id="c360-otp-editor" className="cm-otp-form cm-contact-otp" noValidate onSubmit={verifyPhone}>
                     <label htmlFor="c360-otp-code">
                       One-time code
                       <input
@@ -1292,7 +1339,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
                     <button
                       className="cm-button cm-button-primary"
                       type="submit"
-                      disabled={busy || otpCode.length < 4}
+                      disabled={busy || Boolean(uncertain) || otpCode.length < 4}
                     >
                       {busy
                         ? 'Verifying…'
@@ -1300,6 +1347,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
                           ? 'Retry verification save'
                           : 'Verify phone'}
                     </button>
+                    <button type="button" className="cm-button cm-button-secondary" disabled={busy} onClick={() => setDiscardSection('otp')}>Cancel verification</button>
                   </form>
                 )}
               </li>
@@ -1316,7 +1364,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
           </p>
         )}
         {contactForm && canWriteContacts && (
-          <form className="cm-editor-form" noValidate onSubmit={saveContact}>
+          <form id="c360-contact-editor" className="cm-editor-form cm-personal-editor" noValidate onSubmit={saveContact}>
             <h3>{contactForm.id ? 'Edit contact method' : 'Add contact method'}</h3>
             <div className="cm-wizard-field-grid">
               <label htmlFor="c360-contact-type">
@@ -1393,16 +1441,13 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
               </label>
             </div>
             <div className="cm-actions-row">
-              <button className="cm-button cm-button-primary" type="submit" disabled={busy}>
+              <button className="cm-button cm-button-primary" type="submit" disabled={busy || Boolean(uncertain)}>
                 {busy ? 'Saving…' : 'Save contact'}
               </button>
               <button
                 className="cm-button cm-button-secondary"
                 type="button"
-                onClick={() => {
-                  setContactForm(null);
-                  setFieldErrors({});
-                }}
+                onClick={() => setDiscardSection('contact')}
                 disabled={busy}
               >
                 Cancel
@@ -1412,7 +1457,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
         )}
       </article>
 
-      <article className="cm-card cm-card-wide">
+      <article id="c360-addresses" className="cm-card cm-card-wide">
         <div className="cm-card-heading">
           <div>
             <p className="cm-eyebrow">ADDRESSES</p>
@@ -1423,6 +1468,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
               className="cm-button cm-button-secondary"
               type="button"
               onClick={() => startAddressEdit()}
+              disabled={editorActive || Boolean(uncertain) || busy || !addresses}
             >
               Add address
             </button>
@@ -1442,6 +1488,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
                       className="cm-text-button"
                       type="button"
                       onClick={() => startAddressEdit(address)}
+                      disabled={editorActive || Boolean(uncertain) || busy || !addresses}
                     >
                       Edit
                     </button>
@@ -1469,7 +1516,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
           </p>
         )}
         {addressForm && canWriteAddress && (
-          <form className="cm-editor-form" noValidate onSubmit={saveAddress}>
+          <form id="c360-address-editor" className="cm-editor-form cm-personal-editor" noValidate onSubmit={saveAddress}>
             <h3>{addressId ? 'Edit address' : 'Add address'}</h3>
             <div className="cm-wizard-field-grid">
               <label htmlFor="c360-address-type">
@@ -1587,17 +1634,13 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
               uses the selected country’s rule where available.
             </p>
             <div className="cm-actions-row">
-              <button className="cm-button cm-button-primary" type="submit" disabled={busy}>
+              <button className="cm-button cm-button-primary" type="submit" disabled={busy || Boolean(uncertain)}>
                 {busy ? 'Saving…' : 'Save address'}
               </button>
               <button
                 className="cm-button cm-button-secondary"
                 type="button"
-                onClick={() => {
-                  setAddressForm(null);
-                  setAddressId(null);
-                  setFieldErrors({});
-                }}
+                onClick={() => setDiscardSection('address')}
                 disabled={busy}
               >
                 Cancel
@@ -1607,7 +1650,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
         )}
       </article>
 
-      <article className="cm-card cm-card-wide">
+      <article id="c360-identity" className="cm-card cm-card-wide">
         <div className="cm-card-heading">
           <div>
             <p className="cm-eyebrow">IDENTITY DOCUMENTS</p>
@@ -1618,6 +1661,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
               className="cm-button cm-button-secondary"
               type="button"
               onClick={() => startIdentityEdit()}
+              disabled={editorActive || Boolean(uncertain) || busy || !identityDocuments}
             >
               Add document
             </button>
@@ -1656,6 +1700,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
                       className="cm-text-button"
                       type="button"
                       onClick={() => startIdentityEdit(document)}
+                      disabled={editorActive || Boolean(uncertain) || busy || !identityDocuments}
                     >
                       Edit
                     </button>
@@ -1675,7 +1720,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
           </p>
         )}
         {identityForm && canWriteIdentity && (
-          <form className="cm-editor-form" noValidate onSubmit={saveIdentity}>
+          <form id="c360-identity-editor" className="cm-editor-form cm-personal-editor" noValidate onSubmit={saveIdentity}>
             <h3>{identityForm.id ? 'Correct identity metadata' : 'Add identity metadata'}</h3>
             <div className="cm-wizard-field-grid">
               <label htmlFor="c360-identity-type">
@@ -1800,16 +1845,13 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
               digits, Nigeria as issuing country, and no issue/expiry dates.
             </p>
             <div className="cm-actions-row">
-              <button className="cm-button cm-button-primary" type="submit" disabled={busy}>
+              <button className="cm-button cm-button-primary" type="submit" disabled={busy || Boolean(uncertain)}>
                 {busy ? 'Saving…' : 'Save identity details'}
               </button>
               <button
                 className="cm-button cm-button-secondary"
                 type="button"
-                onClick={() => {
-                  setIdentityForm(null);
-                  setFieldErrors({});
-                }}
+                onClick={() => setDiscardSection('identity')}
                 disabled={busy}
               >
                 Cancel
@@ -1819,102 +1861,22 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
         )}
       </article>
 
-      {/* Read-only Customer Communication & Account Preferences (F-09 — authorized OPERATOR/PRIVILEGED with customer.view, excluding CUSTOMER_SERVICE) */}
-      <article className="cm-card" data-testid="customer-preferences-card">
+      {/* Customer Communication & Account Preferences — customer self-service only; workforce access not authorized */}
+      <article id="c360-preferences" className="cm-card" data-testid="customer-preferences-card">
         <div className="cm-card-header">
           <div>
-            <h4>Communication &amp; account preferences (read-only)</h4>
+            <h4>Communication &amp; account preferences</h4>
             <p className="cm-card-subtitle">
               Customer-controlled notification, security alert, language, and theme settings.
-              Mandatory security OTPs bypass channel opt-outs by policy.
             </p>
           </div>
-          <span className="cm-badge">Read-only</span>
+          <span className="cm-badge">Restricted</span>
         </div>
 
-        {!canViewPreferences ? (
-          <p className="cm-muted-copy" data-testid="customer-preferences-restricted">
-            Preference visibility is restricted to authorized operational and privileged workforce
-            roles with <code>customer.view</code>.
-          </p>
-        ) : preferencesStatus === 403 ? (
-          <p className="cm-muted-copy" data-testid="customer-preferences-denied">
-            Customer preferences are not permitted for your current workforce session (403).
-          </p>
-        ) : preferencesStatus === 404 ? (
-          <p className="cm-muted-copy" data-testid="customer-preferences-empty">
-            No custom preference profile initialized yet — default platform communication and
-            security alert settings apply.
-          </p>
-        ) : !preferences ? (
-          <p className="cm-muted-copy" data-testid="customer-preferences-empty">
-            No customer preference snapshot returned.
-          </p>
-        ) : (
-          <div data-testid="customer-preferences-section">
-            <dl className="cm-definition-grid">
-              <div>
-                <dt>Email notifications</dt>
-                <dd data-testid="customer-pref-email">
-                  {preferences.notifications.email ? 'Enabled' : 'Disabled'}
-                </dd>
-              </div>
-              <div>
-                <dt>SMS notifications</dt>
-                <dd data-testid="customer-pref-sms">
-                  {preferences.notifications.sms ? 'Enabled' : 'Disabled'}
-                </dd>
-              </div>
-              <div>
-                <dt>Push notifications</dt>
-                <dd data-testid="customer-pref-push">
-                  {preferences.notifications.push ? 'Enabled' : 'Disabled'}
-                </dd>
-              </div>
-              <div>
-                <dt>In-app notifications</dt>
-                <dd data-testid="customer-pref-inapp">
-                  {preferences.notifications.inApp ? 'Enabled' : 'Disabled'}
-                </dd>
-              </div>
-              <div>
-                <dt>Security alerts (login / tx / device)</dt>
-                <dd data-testid="customer-pref-security">
-                  Login: {preferences.security.loginAlerts ? 'On' : 'Off'} · Tx:{' '}
-                  {preferences.security.transactionAlerts ? 'On' : 'Off'} · Device:{' '}
-                  {preferences.security.deviceRegistrationAlerts ? 'On' : 'Off'} · Biometric:{' '}
-                  {preferences.security.biometricAllowed ? 'Allowed' : 'Disabled'}
-                </dd>
-              </div>
-              <div>
-                <dt>Language, theme &amp; version</dt>
-                <dd data-testid="customer-pref-meta">
-                  {preferences.language} · {preferences.theme} · v{preferences.version} (updated{' '}
-                  {preferences.updatedAt
-                    ? new Date(preferences.updatedAt).toLocaleString()
-                    : '—'}
-                  )
-                </dd>
-              </div>
-            </dl>
-
-            {preferenceHistory.length > 0 && (
-              <div style={{ marginTop: 12 }} data-testid="customer-preference-history-list">
-                <strong style={{ fontSize: 13 }}>
-                  Recent preference history ({preferenceHistory.length})
-                </strong>
-                <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12 }}>
-                  {preferenceHistory.slice(0, 5).map((entry) => (
-                    <li key={entry.id} data-testid={`customer-pref-history-${entry.id}`}>
-                      <code>{entry.action}</code> by <code>{entry.actor}</code> at{' '}
-                      {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : '—'}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
+        <p className="cm-muted-copy" data-testid="customer-preferences-restricted">
+          Customer preferences are restricted to authenticated customers accessing their own
+          records. Workforce preference access is not authorized.
+        </p>
       </article>
     </div>
   );

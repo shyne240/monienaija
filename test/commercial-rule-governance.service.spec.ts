@@ -172,7 +172,10 @@ describe('CommercialRuleGovernanceService (P0-A)', () => {
 
   it('refuses unauthorized initiation and persists nothing', async () => {
     const { governance, approvalRepository, authorizationService } = fixture();
-    authorizationService.authorize.mockResolvedValueOnce({ allowed: false, reason: 'ROLE_MISSING' });
+    authorizationService.authorize.mockResolvedValueOnce({
+      allowed: false,
+      reason: 'ROLE_MISSING',
+    });
 
     await expect(
       governance.requestChange({

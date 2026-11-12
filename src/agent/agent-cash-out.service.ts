@@ -71,7 +71,9 @@ export class AgentCashOutService {
 
     const idempotencyKey = input.idempotencyKey?.trim();
     if (!idempotencyKey || idempotencyKey.length > 255) {
-      throw new BadRequestException('idempotencyKey is required and must be at most 255 characters');
+      throw new BadRequestException(
+        'idempotencyKey is required and must be at most 255 characters',
+      );
     }
     if (!input.agentPin || typeof input.agentPin !== 'string' || !input.agentPin.trim()) {
       throw new BadRequestException('agentPin is required');
@@ -79,7 +81,11 @@ export class AgentCashOutService {
     if (!input.customerPin || typeof input.customerPin !== 'string' || !input.customerPin.trim()) {
       throw new BadRequestException('customerPin is required');
     }
-    if (!input.mfaChallengeId || typeof input.mfaChallengeId !== 'string' || !input.mfaChallengeId.trim()) {
+    if (
+      !input.mfaChallengeId ||
+      typeof input.mfaChallengeId !== 'string' ||
+      !input.mfaChallengeId.trim()
+    ) {
       throw new BadRequestException('mfaChallengeId is required');
     }
     if (!input.otp || typeof input.otp !== 'string' || !input.otp.trim()) {
@@ -87,10 +93,11 @@ export class AgentCashOutService {
     }
 
     // 1. Customer existence & eligibility
-    const custRows: Array<{ id: string; status: string; deleted_at: string | null }> = await this.dataSource.query(
-      `SELECT id, status, deleted_at FROM customers WHERE id = $1 LIMIT 1`,
-      [customerId],
-    );
+    const custRows: Array<{ id: string; status: string; deleted_at: string | null }> =
+      await this.dataSource.query(
+        `SELECT id, status, deleted_at FROM customers WHERE id = $1 LIMIT 1`,
+        [customerId],
+      );
     const customer = custRows[0];
     if (!customer || customer.deleted_at !== null) {
       throw new NotFoundException(`Customer ${customerId} not found`);
@@ -107,10 +114,16 @@ export class AgentCashOutService {
     const pinResult = await this.customerPinService.verifyTransactionPin(
       customerId,
       { pin: input.customerPin, actor: customerId },
-      this.verificationService as unknown as { verify: (pin: string, alg: string, hash: string) => { verified: boolean } },
+      this.verificationService as unknown as {
+        verify: (pin: string, alg: string, hash: string) => { verified: boolean };
+      },
     );
     if (!pinResult.verified) {
-      if (pinResult.failureReason === 'PIN_NOT_FOUND' || pinResult.failureReason === 'INVALID_PIN' || pinResult.failureReason === 'MISMATCH') {
+      if (
+        pinResult.failureReason === 'PIN_NOT_FOUND' ||
+        pinResult.failureReason === 'INVALID_PIN' ||
+        pinResult.failureReason === 'MISMATCH'
+      ) {
         throw new UnauthorizedException('Customer PIN invalid');
       }
       if (pinResult.locked || pinResult.failureReason === 'PIN_LOCKED') {
@@ -140,10 +153,11 @@ export class AgentCashOutService {
     // to the canonical service. All security decisions (customer binding,
     // session binding, expiry, replay, hash equality, enrollment/method
     // ENABLED, status transitions) remain inside MfaExecutionService.
-    const challengeMeta: Array<{ customer_id: string; session_id: string }> = await this.dataSource.query(
-      `SELECT customer_id, session_id FROM mfa_challenges WHERE id = $1 LIMIT 1`,
-      [challengeId],
-    );
+    const challengeMeta: Array<{ customer_id: string; session_id: string }> =
+      await this.dataSource.query(
+        `SELECT customer_id, session_id FROM mfa_challenges WHERE id = $1 LIMIT 1`,
+        [challengeId],
+      );
     const meta = challengeMeta[0];
     if (!meta) {
       throw new BadRequestException('Invalid OTP challenge');
@@ -206,7 +220,10 @@ export class AgentCashOutService {
           `SELECT status FROM idempotency_records WHERE scope = $1 AND idempotency_key = $2 LIMIT 1`,
           [scope, idempotencyKey],
         );
-        if (!existing[0] || (existing[0].status !== 'COMPLETED' && existing[0].status !== 'IN_PROGRESS')) {
+        if (
+          !existing[0] ||
+          (existing[0].status !== 'COMPLETED' && existing[0].status !== 'IN_PROGRESS')
+        ) {
           throw new BadRequestException('OTP already used');
         }
         // Allow to proceed — financial execution will return REPLAYED
@@ -214,7 +231,12 @@ export class AgentCashOutService {
         throw new BadRequestException('OTP expired');
       } else if (reason === 'MISMATCH') {
         throw new BadRequestException('OTP invalid');
-      } else if (reason === 'INVALID_CHALLENGE' || reason === 'MFA_UNAVAILABLE' || reason === 'WRONG_CUSTOMER' || reason === 'WRONG_SESSION') {
+      } else if (
+        reason === 'INVALID_CHALLENGE' ||
+        reason === 'MFA_UNAVAILABLE' ||
+        reason === 'WRONG_CUSTOMER' ||
+        reason === 'WRONG_SESSION'
+      ) {
         throw new BadRequestException(`OTP invalid: ${reason}`);
       } else {
         throw new BadRequestException(`OTP verification failed: ${reason}`);
@@ -234,7 +256,11 @@ export class AgentCashOutService {
         throw new UnauthorizedException(`Agent PIN invalid: ${reason}`);
       }
       if (reason === 'PIN_LOCKED') throw new UnauthorizedException('Agent PIN is locked');
-      if (reason === 'PRINCIPAL_MISMATCH' || reason === 'PRINCIPAL_NOT_AGENT' || reason === 'WORKFORCE_NOT_PERMITTED') {
+      if (
+        reason === 'PRINCIPAL_MISMATCH' ||
+        reason === 'PRINCIPAL_NOT_AGENT' ||
+        reason === 'WORKFORCE_NOT_PERMITTED'
+      ) {
         throw new ForbiddenException(`Authorization denied: ${reason}`);
       }
       if (
@@ -266,7 +292,9 @@ export class AgentCashOutService {
     const agentWallet = await this.ensureWalletAccount(agentId, 'NGN');
 
     // 7. Financial execution via A12 — DEBIT Customer, CREDIT Agent
-    const reference = input.reference?.trim() ? input.reference.trim() : `CASH_OUT-${idempotencyKey}`;
+    const reference = input.reference?.trim()
+      ? input.reference.trim()
+      : `CASH_OUT-${idempotencyKey}`;
     const description = input.description?.trim()
       ? input.description.trim()
       : `Wallet→Cash ${amountString} NGN from Customer ${customerId} to Agent ${agentId}`;
@@ -280,8 +308,16 @@ export class AgentCashOutService {
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
       lines: [
-        { accountId: customerWallet.ledgerAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: amountString },
-        { accountId: agentWallet.ledgerAccountId, direction: LedgerEntryDirection.CREDIT, amountMinor: amountString },
+        {
+          accountId: customerWallet.ledgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: amountString,
+        },
+        {
+          accountId: agentWallet.ledgerAccountId,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: amountString,
+        },
       ],
       reference,
       description,

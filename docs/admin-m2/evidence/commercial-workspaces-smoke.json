@@ -1,0 +1,386 @@
+[
+  {
+    "width": 320,
+    "workspace": "feeRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "commissionRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "rewardRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "productCatalogue",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "limitCatalogue",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "limitAssignments",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "workspace": "feeRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "commissionRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "rewardRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "productCatalogue",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "limitCatalogue",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "limitAssignments",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "workspace": "feeRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "commissionRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "rewardRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "productCatalogue",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "limitCatalogue",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "limitAssignments",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "workspace": "feeRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "commissionRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "rewardRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "productCatalogue",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "limitCatalogue",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "limitAssignments",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "workspace": "feeRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "commissionRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "rewardRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "productCatalogue",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "limitCatalogue",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "limitAssignments",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "workspace": "feeRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "commissionRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "rewardRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "productCatalogue",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "limitCatalogue",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "limitAssignments",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "workspace": "feeRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "commissionRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "rewardRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "productCatalogue",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "limitCatalogue",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "limitAssignments",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "workspace": "feeRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": true,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "commissionRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "rewardRules",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "productCatalogue",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "limitCatalogue",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "limitAssignments",
+    "visibleLabelMechanisms": true,
+    "keyboard": false,
+    "page": 1440,
+    "view": 1440
+  }
+]

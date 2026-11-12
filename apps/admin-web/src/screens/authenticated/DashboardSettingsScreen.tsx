@@ -1,4 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { PageHeader, ScrollRegion } from '../../design-system/primitives';
+import './operational-surfaces.css';
+import './dashboard-settings-workspace.css';
 import { ApiClient, ApiError } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import type {
@@ -31,28 +34,60 @@ type LoadState = 'loading' | 'ready' | 'forbidden' | 'error';
  * template with zero source-code change: the dropdown below lists every existing template, for
  * every role returned by the backend.
  *
- * No authorization rule is re-implemented or weakened here: every request goes through the same
- * backend checks as any other caller, and a 401/403 is shown exactly as returned — this screen
- * never decides on its own that a user may or may not configure dashboards.
+ * The UI gates actions by session scopes and read-only context; the backend remains authoritative
+ * and applies its own checks. A failed or unconfirmed write is not displayed as successful.
  */
-export const DashboardSettingsScreen: React.FC = () => {
+export const DashboardSettingsScreen: React.FC<{onDashboardGuardChange?: (guarded: boolean, busy: boolean) => void}> = ({onDashboardGuardChange}) => {
+  const { principal, sessionId } = useAuthStore();
+  const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  return <DashboardSettingsWorkspace key={key} onDashboardGuardChange={onDashboardGuardChange} />;
+};
+
+const DashboardSettingsWorkspace: React.FC<{onDashboardGuardChange?: (guarded: boolean, busy: boolean) => void}> = ({onDashboardGuardChange}) => {
   const { principal } = useAuthStore();
+  const generation = useRef(0);
+  const savingRef = useRef(false);
+  useEffect(() => () => { generation.current += 1; }, []);
   const canView = principal?.scopes.includes('workforce.dashboard.view') ?? false;
-  const canAssign = principal?.scopes.includes('workforce.dashboard.assign') ?? false;
+  const canAssign = Boolean(principal?.scopes.includes('workforce.dashboard.assign') && !principal?.readOnlyPrincipal);
   const [state, setState] = useState<LoadState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
   const [templates, setTemplates] = useState<DashboardTemplateSummary[]>([]);
   const [assignments, setAssignments] = useState<RoleDashboardAssignmentSummary[]>([]);
   const [registry, setRegistry] = useState<WidgetRegistryEntry[]>([]);
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null);
+  const [templateSearch, setTemplateSearch] = useState('');
 
   // Per-role in-flight edit state
   const [pendingTemplateByRole, setPendingTemplateByRole] = useState<Record<string, string>>({});
   const [reasonByRole, setReasonByRole] = useState<Record<string, string>>({});
   const [savingRole, setSavingRole] = useState<string | null>(null);
+  const [needsReview, setNeedsReview] = useState<Record<string, 'refresh' | 'ack'>>({});
+  const [uncertainRoles, setUncertainRoles] = useState<Record<string, true>>({});
+  const drafts = useRef({templates: pendingTemplateByRole, reasons: reasonByRole});
+  drafts.current = {templates: pendingTemplateByRole, reasons: reasonByRole};
+  const [confirmRole, setConfirmRole] = useState<string | null>(null);
+  const guard = Boolean(savingRole || confirmRole || Object.keys(needsReview).length || Object.keys(uncertainRoles).length || Object.keys(pendingTemplateByRole).length || Object.values(reasonByRole).some(value => value.trim()));
+  useEffect(() => { onDashboardGuardChange?.(guard, Boolean(savingRole)); }, [onDashboardGuardChange, guard, savingRole]);
+  useEffect(() => () => onDashboardGuardChange?.(false, false), [onDashboardGuardChange]);
+  useEffect(() => {
+    if (!guard) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+  }, [guard]);
+
+  const confirmCancelRef = useRef<HTMLButtonElement>(null);
+  const saveButtons = useRef<Record<string, HTMLButtonElement | null>>({});
+  const returnToRole = useRef<string | null>(null);
+  useEffect(() => {
+    if (confirmRole) confirmCancelRef.current?.focus();
+    else if (returnToRole.current) { saveButtons.current[returnToRole.current]?.focus(); returnToRole.current = null; }
+  }, [confirmRole]);
   const [feedbackByRole, setFeedbackByRole] = useState<Record<string, { kind: 'success' | 'error'; message: string }>>({});
 
   const load = useCallback(async () => {
+    if (savingRef.current) return;
+    const request = ++generation.current;
     setState('loading');
     setErrorMessage('');
     try {
@@ -61,11 +96,25 @@ export const DashboardSettingsScreen: React.FC = () => {
         ApiClient.get<RoleDashboardAssignmentSummary[]>(`${DASH}/assignments`),
         ApiClient.get<WidgetRegistryEntry[]>(`${DASH}/widget-registry`),
       ]);
-      setTemplates(Array.isArray(templatesRes) ? templatesRes : []);
-      setAssignments(Array.isArray(assignmentsRes) ? assignmentsRes : []);
-      setRegistry(Array.isArray(registryRes) ? registryRes : []);
+      if (!Array.isArray(templatesRes) || templatesRes.some(t => !t || typeof t.templateKey !== 'string' || !t.templateKey.trim() || typeof t.displayName !== 'string' || typeof t.isActive !== 'boolean' || !t.layout || !Array.isArray(t.layout.widgets) || t.layout.widgets.some(w => !w || typeof w.widgetKey !== 'string' || typeof w.order !== 'number')) ||
+          !Array.isArray(assignmentsRes) || assignmentsRes.some(a => !a || typeof a.id !== 'string' || !a.id.trim() || typeof a.roleKey !== 'string' || !a.roleKey.trim() || typeof a.templateKey !== 'string' || !a.templateKey.trim()) ||
+          !Array.isArray(registryRes) || registryRes.some(w => !w || typeof w.widgetKey !== 'string' || typeof w.displayName !== 'string') ||
+          new Set(assignmentsRes.map(a => a.roleKey)).size !== assignmentsRes.length || new Set(templatesRes.map(t => t.templateKey)).size !== templatesRes.length) {
+        throw new Error('Invalid dashboard configuration response.');
+      }
+      if (request !== generation.current) return;
+      setTemplates(templatesRes);
+      setAssignments(assignmentsRes);
+      setRegistry(registryRes);
+      setNeedsReview(prev => {
+        const next: Record<string, 'ack'> = {};
+        for (const role of new Set([...Object.keys(prev), ...Object.keys(drafts.current.templates), ...Object.keys(drafts.current.reasons)])) next[role] = 'ack';
+        return next;
+      });
+      setFeedbackByRole({});
       setState('ready');
     } catch (err: any) {
+      if (request !== generation.current) return;
       if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
         setState('forbidden');
       } else {
@@ -82,14 +131,20 @@ export const DashboardSettingsScreen: React.FC = () => {
 
   const widgetName = (widgetKey: string) => registry.find((w) => w.widgetKey === widgetKey)?.displayName || widgetKey;
   const activeTemplates = templates.filter((t) => t.isActive);
+  const templateQuery = templateSearch.trim().toLowerCase();
+  const visibleTemplates = templates.filter(t => !templateQuery || [t.templateKey, t.displayName, t.description ?? ''].some(value => value.toLowerCase().includes(templateQuery))); 
 
   const handleSave = async (roleKey: string) => {
-    if (!canAssign) return;
+    if (!canView || !canAssign || savingRef.current || needsReview[roleKey] || confirmRole !== roleKey) return;
+    const current = assignments.find(a => a.roleKey === roleKey);
     const templateKey = pendingTemplateByRole[roleKey];
-    if (!templateKey) {
+    if (!current || !templateKey || !activeTemplates.some(t => t.templateKey === templateKey)) {
       setFeedbackByRole((prev) => ({ ...prev, [roleKey]: { kind: 'error', message: 'Choose a template first.' } }));
       return;
     }
+    setConfirmRole(null);
+    const request = ++generation.current;
+    savingRef.current = true;
     setSavingRole(roleKey);
     setFeedbackByRole((prev) => {
       const next = { ...prev };
@@ -101,23 +156,30 @@ export const DashboardSettingsScreen: React.FC = () => {
         templateKey,
         reason: reasonByRole[roleKey]?.trim() || undefined,
       });
+      if (request !== generation.current) return;
+      if (!saved || saved.id !== current.id || saved.roleKey !== roleKey || saved.templateKey !== templateKey || saved.assignedBy !== principal?.principalId || typeof saved.assignedAt !== 'string' || !Number.isFinite(Date.parse(saved.assignedAt))) throw new Error('Unconfirmed assignment receipt.');
+      setPendingTemplateByRole(prev => { const next = { ...prev }; delete next[roleKey]; return next; });
+      setReasonByRole(prev => { const next = { ...prev }; delete next[roleKey]; return next; });
       setAssignments((prev) => {
         const withoutRole = prev.filter((a) => a.roleKey !== roleKey);
         return [...withoutRole, saved].sort((a, b) => a.roleKey.localeCompare(b.roleKey));
       });
       setFeedbackByRole((prev) => ({ ...prev, [roleKey]: { kind: 'success', message: `Dashboard for ${roleKey} is now ${templateKey}.` } }));
     } catch (err: any) {
-      const message = err instanceof ApiError ? err.message : err?.message || 'Failed to save assignment.';
+      if (request !== generation.current) return;
+      const rejected = err instanceof ApiError && [400, 401, 403, 404, 422].includes(err.status);
+      const message = rejected ? err.message : 'The assignment outcome could not be confirmed. Reload configuration and review the current assignment before retrying.';
+      if (!rejected) { setNeedsReview(prev => ({ ...prev, [roleKey]: 'refresh' })); setUncertainRoles(prev => ({...prev, [roleKey]: true})); }
       setFeedbackByRole((prev) => ({ ...prev, [roleKey]: { kind: 'error', message } }));
     } finally {
-      setSavingRole(null);
+      if (request === generation.current) { savingRef.current = false; setSavingRole(null); }
     }
   };
 
   if (state === 'loading') {
     return (
-      <div style={styles.container}>
-        <div style={styles.stateBox}>
+      <div className="mn-operational" style={styles.container}>
+        <div style={styles.stateBox} role="status">
           <div style={styles.spinner} />
           <span>Loading dashboard configuration…</span>
         </div>
@@ -127,11 +189,11 @@ export const DashboardSettingsScreen: React.FC = () => {
 
   if (state === 'forbidden') {
     return (
-      <div style={styles.container}>
+      <div className="mn-operational" style={styles.container}>
         <div style={styles.header}>
           <h2 style={styles.title}>Dashboard Settings</h2>
         </div>
-        <div style={styles.forbiddenBox}>
+        <div style={styles.forbiddenBox} role="alert">
           🔒 You do not have permission to view dashboard configuration. This requires the{' '}
           <code style={styles.code}>workforce.dashboard.view</code> function.
         </div>
@@ -141,12 +203,12 @@ export const DashboardSettingsScreen: React.FC = () => {
 
   if (state === 'error') {
     return (
-      <div style={styles.container}>
+      <div className="mn-operational" style={styles.container}>
         <div style={styles.header}>
           <h2 style={styles.title}>Dashboard Settings</h2>
         </div>
-        <div style={styles.errorBox}>⚠️ {errorMessage}</div>
-        <button style={styles.retryBtn} onClick={load}>
+        <div style={styles.errorBox} role="alert">⚠️ {errorMessage}</div>
+        <button type="button" style={styles.retryBtn} onClick={load}>
           Retry
         </button>
       </div>
@@ -154,34 +216,42 @@ export const DashboardSettingsScreen: React.FC = () => {
   }
 
   return (
-    <div style={styles.container}>
+    <div className="mn-operational mn-dashboard-settings" style={styles.container}>
       <div style={styles.header}>
-        <h2 style={styles.title}>Dashboard Settings</h2>
+        <PageHeader eyebrow="WORKFORCE CONFIGURATION" title="Dashboard Settings" description="Review templates and role assignments." />
         <p style={styles.subtitle}>
           Assign which dashboard template each role displays. Assigning a template never grants or changes any permission — it only
           changes which widgets that role's dashboard shows.
         </p>
+        <p style={styles.note}>Changes and outcome safeguards are local to this workspace and are lost on navigation, browser refresh or session change. Assignments do not use an optimistic version. Reload and independently review the current assignment and audit history before making changes; another operator may change it concurrently, and a fresh read cannot exclude a late commit.</p>
+        <button type="button" style={styles.retryBtn} disabled={savingRole !== null || confirmRole !== null} onClick={() => void load()}>Reload configuration</button>
       </div>
 
-      <h3 style={styles.sectionHeader}>Dashboard Templates ({templates.length})</h3>
+      <nav className="mn-dashboard-settings__nav" aria-label="Dashboard settings sections"><a href="#dashboard-template-catalogue">Template catalogue</a><a href="#dashboard-role-assignments">Role assignments</a></nav>
+      <section id="dashboard-template-catalogue" tabIndex={-1} className="mn-dashboard-settings__panel" aria-label="Dashboard templates">
+      <p className="mn-dashboard-settings__eyebrow">TEMPLATE CATALOGUE</p>
+      <h2 style={styles.sectionHeader}>Dashboard Templates ({templates.length})</h2>
       <p style={styles.note}>
         Templates are read-only in this release — only the role → template assignment below can be changed. Creating or editing a
         template's widget list requires a source change (see the task report).
       </p>
+      <div className="mn-dashboard-settings__filter"><label>Search loaded templates<input type="search" value={templateSearch} onChange={event => setTemplateSearch(event.target.value)} placeholder="Name or template key" /></label><button type="button" disabled={!templateSearch} onClick={() => setTemplateSearch('')}>Clear search</button></div>
+      <p className="mn-dashboard-settings__count" role="status">Showing {visibleTemplates.length} of {templates.length} loaded templates. Assignment choices are not filtered.</p>
       <div style={styles.templateList}>
-        {templates.map((t) => (
+        {visibleTemplates.length === 0 && <p className="mn-dashboard-settings__empty">{templates.length ? 'No loaded templates match this search.' : 'No dashboard templates were returned.'}</p>}
+        {visibleTemplates.map((t) => (
           <div key={t.templateKey} style={styles.templateRow}>
-            <div style={styles.templateHeaderRow} onClick={() => setExpandedTemplate(expandedTemplate === t.templateKey ? null : t.templateKey)}>
+            <button type="button" className="mn-dashboard-settings__template-header" style={styles.templateHeaderRow} aria-expanded={expandedTemplate === t.templateKey} onClick={() => setExpandedTemplate(expandedTemplate === t.templateKey ? null : t.templateKey)}>
               <div>
-                <span style={styles.templateKey}>{t.templateKey}</span>
+                <span style={styles.templateKey}>{t.templateKey}</span>{' '}
                 <span style={styles.templateDisplayName}>{t.displayName}</span>
               </div>
               <div style={styles.templateMeta}>
                 <span style={t.isActive ? styles.activeBadge : styles.inactiveBadge}>{t.isActive ? 'ACTIVE' : 'INACTIVE'}</span>
-                <span style={styles.widgetCount}>{t.layout?.widgets?.length ?? 0} widgets</span>
-                <span style={styles.expandIcon}>{expandedTemplate === t.templateKey ? '▲' : '▼'}</span>
+                <span style={styles.widgetCount}>{t.layout.widgets.length} {t.layout.widgets.length === 1 ? 'widget' : 'widgets'}</span>
+                <span aria-hidden="true" style={styles.expandIcon}>{expandedTemplate === t.templateKey ? '▲' : '▼'}</span>
               </div>
-            </div>
+            </button>
             {expandedTemplate === t.templateKey && (
               <div style={styles.templateDetail}>
                 <p style={styles.templateDescription}>{t.description}</p>
@@ -201,9 +271,14 @@ export const DashboardSettingsScreen: React.FC = () => {
         ))}
       </div>
 
-      <h3 style={styles.sectionHeader}>Role → Dashboard Assignment ({assignments.length})</h3>
-      <div style={styles.assignmentTableWrap}>
-        <table style={styles.table}>
+      </section>
+      <section id="dashboard-role-assignments" tabIndex={-1} className="mn-dashboard-settings__panel" aria-label="Role dashboard assignments">
+      <p className="mn-dashboard-settings__eyebrow">ROLE CONFIGURATION</p>
+      <h2 style={styles.sectionHeader}>Role → Dashboard Assignment ({assignments.length})</h2>
+      {!canAssign && <p role="note">Assignment controls are unavailable for this session.</p>}
+      {Object.keys(needsReview).filter(role => !assignments.some(a => a.roleKey === role)).map(role => <div role="alert" key={role}>The refreshed configuration does not contain {role}; its local draft cannot be submitted. {uncertainRoles[role] && 'A missing role does not prove the action failed or exclude a late commit. Independently inspect assignment and audit history before clearing this local review.'} <button type="button" onClick={() => { if (uncertainRoles[role] && !window.confirm(`Acknowledge independent ${role} assignment and audit review and discard this local draft? The action may have occurred.`)) return; setPendingTemplateByRole(prev => {const next={...prev}; delete next[role]; return next;}); setReasonByRole(prev => {const next={...prev}; delete next[role]; return next;}); setNeedsReview(prev => {const next={...prev}; delete next[role]; return next;}); setUncertainRoles(prev => {const next={...prev}; delete next[role]; return next;}); }}>{uncertainRoles[role] ? `I reviewed ${role} and discard draft` : `Discard ${role} draft`}</button></div>)}
+      <ScrollRegion label="Role dashboard assignments" hint="Scroll horizontally to view all assignment controls.">
+        <div style={styles.assignmentTableWrap}><table style={styles.table}>
           <thead>
             <tr>
               <th style={styles.th}>Role</th>
@@ -228,9 +303,12 @@ export const DashboardSettingsScreen: React.FC = () => {
                     <td style={styles.td}>
                       <select
                         style={styles.select}
+                        aria-label={`Dashboard template for ${a.roleKey}`}
+                        disabled={savingRole !== null || confirmRole !== null || !!needsReview[a.roleKey]}
                         value={pendingTemplateByRole[a.roleKey] ?? a.templateKey}
                         onChange={(e) => setPendingTemplateByRole((prev) => ({ ...prev, [a.roleKey]: e.target.value }))}
                       >
+                        {!activeTemplates.some(t => t.templateKey === a.templateKey) && <option value={a.templateKey} disabled>{a.templateKey} (not active)</option>}
                         {activeTemplates.map((t) => (
                           <option key={t.templateKey} value={t.templateKey}>
                             {t.templateKey}
@@ -241,7 +319,10 @@ export const DashboardSettingsScreen: React.FC = () => {
                     <td style={styles.td}>
                       <input
                         style={styles.reasonInput}
+                        aria-label={`Reason for ${a.roleKey} dashboard change`}
                         type="text"
+                        disabled={savingRole !== null || confirmRole !== null || !!needsReview[a.roleKey]}
+                        maxLength={500}
                         placeholder="Reason for this change (optional)"
                         value={reasonByRole[a.roleKey] ?? ''}
                         onChange={(e) => setReasonByRole((prev) => ({ ...prev, [a.roleKey]: e.target.value }))}
@@ -249,14 +330,18 @@ export const DashboardSettingsScreen: React.FC = () => {
                     </td>
                     <td style={styles.td}>
                       <button
+                        type="button"
+                        aria-label={`Save dashboard assignment for ${a.roleKey}`}
+                        ref={element => { saveButtons.current[a.roleKey] = element; }}
                         style={styles.saveBtn}
-                        disabled={savingRole === a.roleKey || (pendingTemplateByRole[a.roleKey] ?? a.templateKey) === a.templateKey}
-                        onClick={() => handleSave(a.roleKey)}
+                        disabled={savingRole !== null || confirmRole !== null || !!needsReview[a.roleKey] || (pendingTemplateByRole[a.roleKey] ?? a.templateKey) === a.templateKey}
+                        onClick={() => setConfirmRole(a.roleKey)}
                       >
                         {savingRole === a.roleKey ? 'Saving…' : 'Save'}
                       </button>
+                      {needsReview[a.roleKey] && <div role="status" className="mn-dashboard-settings__review">{needsReview[a.roleKey] === 'refresh' ? 'Reload configuration before reviewing this unconfirmed outcome.' : 'Independently review the current assignment, audit history and your retained draft. A fresh read does not exclude a late commit or prevent concurrent changes.'}{needsReview[a.roleKey] === 'ack' && <div><button type="button" onClick={() => { setNeedsReview(prev => {const next={...prev}; delete next[a.roleKey]; return next;}); setUncertainRoles(prev => {const next={...prev}; delete next[a.roleKey]; return next;}); }}>I reviewed {a.roleKey}</button></div>}</div>}
                       {feedback && (
-                        <div style={feedback.kind === 'success' ? styles.rowSuccess : styles.rowError}>{feedback.message}</div>
+                        <div role={feedback.kind === 'success' ? 'status' : 'alert'} style={feedback.kind === 'success' ? styles.rowSuccess : styles.rowError}>{feedback.message}</div>
                       )}
                     </td>
                   </>}
@@ -264,15 +349,22 @@ export const DashboardSettingsScreen: React.FC = () => {
               );
             })}
           </tbody>
-        </table>
-      </div>
+        </table></div>
+      </ScrollRegion>
+      {confirmRole && <div role="group" aria-label={`Confirm assignment for ${confirmRole}`} className="mn-dashboard-settings__review">
+        <p>Change {confirmRole} from {assignments.find(a => a.roleKey === confirmRole)?.templateKey} to {pendingTemplateByRole[confirmRole]}.</p>
+        <p>Reason: {reasonByRole[confirmRole]?.trim() || 'Not provided'}</p>
+        <button ref={confirmCancelRef} type="button" onClick={() => { returnToRole.current = confirmRole; setConfirmRole(null); }}>Keep editing</button>{' '}
+        <button type="button" onClick={() => void handleSave(confirmRole)}>Confirm assignment</button>
+      </div>}
+      </section>
     </div>
   );
 };
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    padding: '24px',
+    padding: 'clamp(16px, 3vw, 32px)',
     fontFamily: 'system-ui, -apple-system, sans-serif',
   },
   header: {
@@ -281,25 +373,25 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     margin: '0 0 6px 0',
   },
   subtitle: {
     fontSize: 13,
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     margin: 0,
     maxWidth: 720,
   },
   note: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: 'var(--mn-text-muted, #5b6b66)',
     marginBottom: 16,
     maxWidth: 720,
   },
   sectionHeader: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     margin: '24px 0 12px 0',
   },
   templateList: {
@@ -308,11 +400,16 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
   },
   templateRow: {
-    backgroundColor: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    backgroundColor: 'var(--mn-surface-raised, #ffffff)',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 8,
   },
   templateHeaderRow: {
+    width: '100%',
+    border: 0,
+    background: 'transparent',
+    textAlign: 'left',
+    font: 'inherit',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -323,12 +420,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'monospace',
     fontSize: 12,
     fontWeight: 700,
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     marginRight: 10,
   },
   templateDisplayName: {
     fontSize: 13,
-    color: '#334155',
+    color: 'var(--mn-text-primary, #132b25)',
   },
   templateMeta: {
     display: 'flex',
@@ -338,34 +435,34 @@ const styles: Record<string, React.CSSProperties> = {
   activeBadge: {
     fontSize: 10,
     fontWeight: 700,
-    color: '#10B981',
-    backgroundColor: '#D1FAE5',
+    color: 'var(--mn-status-success, #146348)',
+    backgroundColor: 'var(--mn-status-success-bg, #e4f4ec)',
     padding: '2px 8px',
     borderRadius: 10,
   },
   inactiveBadge: {
     fontSize: 10,
     fontWeight: 700,
-    color: '#94A3B8',
-    backgroundColor: '#F1F5F9',
+    color: 'var(--mn-text-muted, #5b6b66)',
+    backgroundColor: 'var(--mn-surface-sunken, #eef3f0)',
     padding: '2px 8px',
     borderRadius: 10,
   },
   widgetCount: {
     fontSize: 11,
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
   },
   expandIcon: {
     fontSize: 10,
-    color: '#94A3B8',
+    color: 'var(--mn-text-muted, #5b6b66)',
   },
   templateDetail: {
-    borderTop: '1px solid #F1F5F9',
+    borderTop: '1px solid var(--mn-surface-sunken, #eef3f0)',
     padding: '12px 16px',
   },
   templateDescription: {
     fontSize: 12,
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     margin: '0 0 10px 0',
   },
   widgetList: {
@@ -373,7 +470,7 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     paddingLeft: 18,
     fontSize: 12,
-    color: '#334155',
+    color: 'var(--mn-text-primary, #132b25)',
     display: 'flex',
     flexDirection: 'column',
     gap: 4,
@@ -382,14 +479,16 @@ const styles: Record<string, React.CSSProperties> = {
   widgetKeyLabel: {
     fontFamily: 'monospace',
     fontSize: 10,
-    color: '#94A3B8',
+    color: 'var(--mn-text-muted, #5b6b66)',
   },
   assignmentTableWrap: {
-    backgroundColor: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    backgroundColor: 'var(--mn-surface-raised, #ffffff)',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 8,
     padding: 12,
-    overflowX: 'auto',
+    width: 'max-content',
+    minWidth: '100%',
+    boxSizing: 'border-box',
   },
   table: {
     width: '100%',
@@ -399,20 +498,20 @@ const styles: Record<string, React.CSSProperties> = {
   th: {
     textAlign: 'left',
     padding: '8px 10px',
-    borderBottom: '2px solid #E2E8F0',
-    color: '#64748B',
+    borderBottom: '2px solid var(--mn-border-subtle, #dde7e2)',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontWeight: 600,
     fontSize: 11,
     textTransform: 'uppercase',
   },
   td: {
     padding: '10px',
-    borderBottom: '1px solid #F1F5F9',
+    borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)',
     verticalAlign: 'top',
   },
   select: {
     height: 32,
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 6,
     padding: '0 8px',
     fontSize: 12,
@@ -420,15 +519,15 @@ const styles: Record<string, React.CSSProperties> = {
   },
   reasonInput: {
     height: 32,
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 6,
     padding: '0 8px',
     fontSize: 12,
     minWidth: 220,
   },
   saveBtn: {
-    backgroundColor: '#0A3D25',
-    color: '#FFFFFF',
+    backgroundColor: 'var(--mn-action-primary, #0b624a)',
+    color: 'var(--mn-surface-raised, #ffffff)',
     border: 'none',
     borderRadius: 6,
     padding: '8px 14px',
@@ -440,52 +539,52 @@ const styles: Record<string, React.CSSProperties> = {
   rowSuccess: {
     marginTop: 6,
     fontSize: 11,
-    color: '#10B981',
+    color: 'var(--mn-status-success, #146348)',
     maxWidth: 220,
   },
   rowError: {
     marginTop: 6,
     fontSize: 11,
-    color: '#EF4444',
+    color: 'var(--mn-status-danger, #b3261e)',
     maxWidth: 220,
   },
   stateBox: {
     display: 'flex',
     alignItems: 'center',
     gap: 10,
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontSize: 13,
   },
   spinner: {
     width: 16,
     height: 16,
-    border: '2px solid #E2E8F0',
-    borderTop: '2px solid #0A3D25',
+    border: '2px solid var(--mn-border-subtle, #dde7e2)',
+    borderTop: '2px solid var(--mn-action-primary, #0b624a)',
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
   },
   forbiddenBox: {
-    backgroundColor: '#F1F5F9',
-    color: '#64748B',
+    backgroundColor: 'var(--mn-surface-sunken, #eef3f0)',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontSize: 13,
     padding: 16,
     borderRadius: 8,
     maxWidth: 640,
   },
   errorBox: {
-    backgroundColor: '#FEE2E2',
-    color: '#EF4444',
+    backgroundColor: 'var(--mn-status-danger-bg, #fdebe9)',
+    color: 'var(--mn-status-danger, #b3261e)',
     fontSize: 13,
     fontWeight: 500,
     padding: 12,
     borderRadius: 6,
-    border: '1px solid #EF4444',
+    border: '1px solid var(--mn-status-danger, #b3261e)',
     maxWidth: 640,
     marginBottom: 12,
   },
   retryBtn: {
-    backgroundColor: '#0A3D25',
-    color: '#FFFFFF',
+    backgroundColor: 'var(--mn-action-primary, #0b624a)',
+    color: 'var(--mn-surface-raised, #ffffff)',
     border: 'none',
     borderRadius: 6,
     padding: '10px 16px',
@@ -495,7 +594,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   code: {
     fontFamily: 'monospace',
-    backgroundColor: '#E2E8F0',
+    backgroundColor: 'var(--mn-border-subtle, #dde7e2)',
     padding: '1px 5px',
     borderRadius: 4,
   },

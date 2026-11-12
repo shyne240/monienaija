@@ -27,7 +27,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { pbkdf2Sync, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import {
@@ -221,7 +221,9 @@ describe('Final integration gates — focused real-HTTP checks (real PostgreSQL)
       .expect(200);
 
     const transfersBefore = await dataSource.query(`SELECT count(*)::text AS c FROM transfers`);
-    const journalsBefore = await dataSource.query(`SELECT count(*)::text AS c FROM ledger_journals`);
+    const journalsBefore = await dataSource.query(
+      `SELECT count(*)::text AS c FROM ledger_journals`,
+    );
 
     const wrongPin = await request(app.getHttpServer())
       .post('/api/v1/customers/me/transfers')
@@ -250,7 +252,7 @@ describe('Final integration gates — focused real-HTTP checks (real PostgreSQL)
     expect(journalsAfter[0].c).toBe(journalsBefore[0].c);
 
     const { WalletService } = await import('../src/wallet/wallet.service');
-    const balance = await app.get(WalletService).getWalletBalance(source.id);
+    const balance = await app.get(WalletService).getWalletBalance(source.id as string);
     expect(balance.balanceMinor).toBe('50000');
   });
 
@@ -285,7 +287,9 @@ describe('Final integration gates — focused real-HTTP checks (real PostgreSQL)
       })
       .expect(404);
 
-    const transfersAfterDenial = await dataSource.query(`SELECT count(*)::text AS c FROM transfers`);
+    const transfersAfterDenial = await dataSource.query(
+      `SELECT count(*)::text AS c FROM transfers`,
+    );
     expect(transfersAfterDenial[0].c).toBe(transfersBefore[0].c);
 
     // The legitimate owner still transfers from that same wallet.
@@ -305,7 +309,7 @@ describe('Final integration gates — focused real-HTTP checks (real PostgreSQL)
 
     const { WalletService } = await import('../src/wallet/wallet.service');
     const service = app.get(WalletService);
-    expect((await service.getWalletBalance(walletA.id)).balanceMinor).toBe('40000');
-    expect((await service.getWalletBalance(walletB.id)).balanceMinor).toBe('10000');
+    expect((await service.getWalletBalance(walletA.id as string)).balanceMinor).toBe('40000');
+    expect((await service.getWalletBalance(walletB.id as string)).balanceMinor).toBe('10000');
   });
 });

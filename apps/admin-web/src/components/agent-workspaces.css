@@ -1,0 +1,27 @@
+/* Scoped embedded Agent workspace primitives. No policy or action behavior is defined here. */
+.mn-agent-workspace { box-sizing: border-box; min-width: 0; margin-top: 12px; padding: clamp(16px, 2vw, 20px); border: 1px solid var(--mn-border-subtle, #dde7e2); border-radius: var(--mn-radius-md, 12px); background: var(--mn-surface-raised, #fff); color: var(--mn-text-primary, #132b25); font-family: var(--mn-font-sans, system-ui, sans-serif); overflow-wrap: anywhere; }
+.mn-agent-workspace__header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.mn-agent-workspace__title { margin: 0; font-size: 16px; line-height: 1.35; color: var(--mn-text-primary, #132b25); }
+.mn-agent-workspace__description { margin: 8px 0; color: var(--mn-text-secondary, #52655f); font-size: 13px; line-height: 1.55; }
+.mn-agent-workspace__controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-top: 14px; }
+.mn-agent-workspace__field { display: flex; flex: 1 1 180px; flex-direction: column; gap: 6px; min-width: 0; max-width: 420px; font-size: 13px; font-weight: 600; }
+.mn-agent-workspace__input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid var(--mn-border-control, #6d817a); border-radius: var(--mn-radius-sm, 8px); background: var(--mn-surface-raised, #fff); color: var(--mn-text-primary, #132b25); font: inherit; font-weight: 400; }
+.mn-agent-workspace__button { box-sizing: border-box; min-height: 38px; max-width: 100%; padding: 8px 12px; border: 1px solid var(--mn-border-control, #6d817a); border-radius: var(--mn-radius-sm, 8px); background: var(--mn-surface-raised, #fff); color: var(--mn-text-primary, #132b25); font: inherit; font-size: 13px; font-weight: 600; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.mn-agent-workspace__button--primary { border-color: var(--mn-action-primary, #0b624a); background: var(--mn-action-primary, #0b624a); color: #fff; }
+.mn-agent-workspace__button:disabled { opacity: .55; cursor: not-allowed; }
+.mn-agent-workspace__button:focus-visible, .mn-agent-workspace__input:focus-visible { outline: 2px solid var(--mn-focus-ring, #0b624a); outline-offset: 2px; }
+.mn-agent-workspace__scroll { max-width: 100%; overflow-x: auto; }
+.mn-agent-workspace__scroll:focus-visible { outline: 2px solid var(--mn-focus-ring, #0b624a); outline-offset: 2px; }
+.mn-agent-workspace__table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 13px; }
+.mn-agent-workspace__table th, .mn-agent-workspace__table td { padding: 10px; border-bottom: 1px solid var(--mn-border-subtle, #dde7e2); text-align: left; vertical-align: top; }
+.mn-agent-workspace__table th { color: var(--mn-text-secondary, #52655f); font-size: 12px; }
+.mn-agent-workspace__table td { font-variant-numeric: tabular-nums; }
+.mn-agent-workspace__pager { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 12px; color: var(--mn-text-secondary, #52655f); font-size: 13px; }
+.mn-agent-workspace--stack { display: flex; flex-direction: column; gap: 10px; }
+.mn-agent-workspace__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Read-only funding inspection is separate from the governed checker panel. */
+.funding-inbox-drawer { width:min(100%,680px); }
+.funding-inbox-drawer [data-testid="funding-inbox-detail"] { margin:0 !important; padding:24px !important; border:0 !important; box-shadow:none !important; overflow-wrap:anywhere; }
+.funding-inbox-drawer [data-testid="funding-inbox-detail"] > div:first-child { flex-wrap:wrap; gap:14px; }
+.funding-inbox-drawer code { overflow-wrap:anywhere; word-break:break-word; white-space:pre-wrap; }
+@media(max-width:600px) { .funding-inbox-drawer [data-testid="funding-inbox-detail"] { padding:20px !important; } }

@@ -1,3 +1,9 @@
+jest.mock('../src/config', () => ({
+  API_BASE_URL: '/api/v1',
+  DEV_AUTH_MOCK: false,
+  DEFAULT_INTERNAL_AUDIENCE: 'workforce-admin',
+}));
+
 import { ApiClient, ApiError } from '../src/services/api-client';
 import { useAuthStore } from '../src/store/auth-store';
 
@@ -64,6 +70,22 @@ describe('Admin API client multipart and private-content requests', () => {
       Accept: 'application/pdf, image/jpeg, image/png',
       Authorization: 'Bearer workforce-test-token',
     });
+  });
+
+  test('clears an expired session when a multipart upload receives a 401', async () => {
+    localStorage.setItem('admin_workforce_token', 'expired-token');
+    localStorage.setItem('admin_workforce_session_id', 'expired-session');
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: { get: () => 'application/json' },
+      json: async () => ({ message: 'Session expired', code: 'UNAUTHORIZED' }),
+    } as unknown as Response);
+
+    await expect(ApiClient.postForm('/private-document', new FormData())).rejects.toBeInstanceOf(ApiError);
+    expect(localStorage.getItem('admin_workforce_token')).toBeNull();
+    expect(localStorage.getItem('admin_workforce_session_id')).toBeNull();
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
 
   test('converts protected-content errors to ApiError and clears expired local sessions', async () => {

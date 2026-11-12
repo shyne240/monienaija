@@ -1,71 +1,71 @@
-import React, { useEffect, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useAuthStore } from '../../store/auth-store';
 import { DEV_AUTH_MOCK } from '../../config';
+import '../../design-system/tokens.css';
+import './login.css';
 
 export const LoginScreen: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [tokenInput, setTokenInput] = useState('');
   const [bootstrapInput, setBootstrapInput] = useState('');
   const [advancedTab, setAdvancedTab] = useState<'oidc' | 'bootstrap'>('oidc');
   const [valError, setValError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [invalidField, setInvalidField] = useState<'email' | 'password' | 'oidc' | 'bootstrap' | null>(null);
+  const [activeAction, setActiveAction] = useState<'password' | 'oidc' | 'bootstrap' | null>(null);
+  const busyRef = useRef(false);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const oidcRef = useRef<HTMLTextAreaElement>(null);
+  const bootstrapRef = useRef<HTMLTextAreaElement>(null);
 
   const { loginWithPassword, login, bootstrap, isLoading, error, clearError } = useAuthStore();
 
-  useEffect(() => {
-    return () => {
-      setPassword('');
-      setTokenInput('');
-      setBootstrapInput('');
-    };
-  }, []);
+  const resetFeedback = () => { setValError(''); setInvalidField(null); setSuccessMsg(''); clearError(); };
+  const failValidation = (field: 'email' | 'password' | 'oidc' | 'bootstrap', message: string) => {
+    setValError(message); setInvalidField(field); setSuccessMsg(''); clearError();
+    ({ email: emailRef, password: passwordRef, oidc: oidcRef, bootstrap: bootstrapRef })[field].current?.focus();
+  };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (busyRef.current || isLoading) return;
     if (!email.trim() || !password) {
-      setValError('Email/username and password are required');
+      failValidation(!email.trim() ? 'email' : 'password', 'Email/username and password are required');
       return;
     }
-    setValError('');
-    clearError();
-    setSuccessMsg('');
+    resetFeedback(); busyRef.current = true; setActiveAction('password');
 
     try {
       await loginWithPassword(email, password);
       setPassword('');
     } catch {
       // Handled by store
-    }
+    } finally { busyRef.current = false; setActiveAction(null); }
   };
 
   const handleOidcLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tokenInput.trim()) {
-      setValError('OIDC ID Token is required');
-      return;
-    }
-    setValError('');
-    clearError();
-    setSuccessMsg('');
+    if (busyRef.current || isLoading) return;
+    if (!tokenInput.trim()) { failValidation('oidc', 'OIDC ID Token is required'); return; }
+    resetFeedback(); busyRef.current = true; setActiveAction('oidc');
 
     try {
       await login(tokenInput);
+      setTokenInput('');
     } catch {
       // Handled by store
-    }
+    } finally { busyRef.current = false; setActiveAction(null); }
   };
 
   const handleBootstrap = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!bootstrapInput.trim()) {
-      setValError('Bootstrap Statement JWS is required');
-      return;
-    }
-    setValError('');
-    clearError();
-    setSuccessMsg('');
+    if (busyRef.current || isLoading) return;
+    if (!bootstrapInput.trim()) { failValidation('bootstrap', 'Bootstrap Statement JWS is required'); return; }
+    resetFeedback(); busyRef.current = true; setActiveAction('bootstrap');
 
     try {
       await bootstrap(bootstrapInput);
@@ -73,138 +73,160 @@ export const LoginScreen: React.FC = () => {
       setBootstrapInput('');
     } catch {
       // Handled by store
-    }
+    } finally { busyRef.current = false; setActiveAction(null); }
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
-        <div style={styles.logoSection}>
-          <img src="/favicon.png" alt="MonieNaija" style={styles.logoIcon} />
-          <h1 style={styles.logoText}>MonieNaija</h1>
-          <p style={styles.logoTag}>Operational & Business Administration</p>
-        </div>
+    <main className="mn-login mn-login__container">
+      <div className="mn-login__shell">
+        <section className="mn-login__identity" aria-label="MonieNaija administration">
+          <div className="one-login-brand"><span>MonieNaija <em>One</em></span><small>Financial Operations Console</small></div>
+          <div className="one-login-message"><span className="one-login-rule" aria-hidden="true" /><p className="one-login-lead">A secure, unified workspace<br />for your financial network</p>
+            <ul className="one-login-features">
+              <li><span aria-hidden="true">◇</span>Manage customers &amp; agents</li>
+              <li><span aria-hidden="true">⇄</span>Oversee transactions &amp; operations</li>
+              <li><span aria-hidden="true">⌑</span>Control risk, compliance &amp; approvals</li>
+              <li><span aria-hidden="true">▥</span>Monitor performance &amp; growth</li>
+            </ul>
+          </div>
+          <div className="one-login-art" aria-hidden="true"><i /><i /><i /><i /><i /></div>
+          <p className="mn-login__identity-note">Access is governed by your workforce identity and assigned permissions.</p>
+        </section>
+      <section className="mn-login__card" aria-labelledby="admin-login-title">
+        <header className="mn-login__intro"><h1 id="admin-login-title">Welcome back</h1><p>Sign in to your MonieNaija One admin console</p></header>
 
         {DEV_AUTH_MOCK && (
-          <div style={styles.devBanner}>
-            <span style={styles.devBannerTitle}>Local development build</span>
-            <p style={styles.devBannerText}>
-              Sign in with your workforce email and password. A deterministic default local
-              administrator can be created with <code>node scripts/local-dev-seed-admin.js</code>
-              {' '}(see docs/V1/V1-ADMIN-LOCAL-LOGIN-01.md).
+          <div className="mn-login__dev-banner">
+            <span className="mn-login__dev-banner-title">Local development build</span>
+            <p className="mn-login__dev-banner-text">
+              For a disposable local database, follow the 11-role setup in
+              {' '}<code>docs/admin-m2/windows-local-run.md</code>. These accounts are not production credentials.
             </p>
           </div>
         )}
 
         {(!!valError || !!error) && (
-          <div style={styles.errorBox}>
+          <div className="mn-login__error-box" role="alert" id="admin-login-error">
             {valError || error}
           </div>
         )}
 
         {!!successMsg && (
-          <div style={styles.successBox}>
+          <div className="mn-login__success-box" role="status">
             {successMsg}
           </div>
         )}
 
-        <form onSubmit={handleSignIn} style={styles.form}>
-          <div style={styles.inputGroup}>
-            <label style={styles.label} htmlFor="admin-login-email">Email or username</label>
+        <form onSubmit={handleSignIn} className="mn-login__form">
+          <div className="mn-login__input-group">
+            <label className="mn-login__label" htmlFor="admin-login-email">Email or username</label>
             <input
-              id="admin-login-email"
-              style={styles.input}
+              ref={emailRef} id="admin-login-email"
+              aria-invalid={invalidField === 'email' || undefined} aria-describedby={invalidField === 'email' ? 'admin-login-error' : undefined}
+              className="mn-login__input"
               type="text"
               autoComplete="username"
-              placeholder="admin@monienaija.local"
+              placeholder={DEV_AUTH_MOCK ? 'super-admin@monienaija.local' : 'Workforce email'}
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => { setEmail(e.target.value); if (invalidField === 'email') { setInvalidField(null); setValError(''); } }}
               disabled={isLoading}
             />
           </div>
 
-          <div style={styles.inputGroup}>
-            <label style={styles.label} htmlFor="admin-login-password">Password</label>
-            <input
-              id="admin-login-password"
-              style={styles.input}
-              type="password"
+          <div className="mn-login__input-group">
+            <label className="mn-login__label" htmlFor="admin-login-password">Password</label>
+            <div className="one-login-password"><input
+              ref={passwordRef} id="admin-login-password"
+              aria-invalid={invalidField === 'password' || undefined} aria-describedby={invalidField === 'password' ? 'admin-login-error' : undefined}
+              className="mn-login__input"
+              type={passwordVisible ? 'text' : 'password'}
               autoComplete="current-password"
               placeholder="••••••••••••"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => { setPassword(e.target.value); if (invalidField === 'password') { setInvalidField(null); setValError(''); } }}
               disabled={isLoading}
-            />
+            /><button type="button" className="one-login-password-toggle" aria-label={passwordVisible ? 'Hide password' : 'Show password'} aria-pressed={passwordVisible} onClick={() => setPasswordVisible(value => !value)} disabled={isLoading}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
           </div>
 
           <button
             type="submit"
             disabled={isLoading}
-            style={styles.submitBtn}
+            className="mn-login__submit-btn"
           >
-            {isLoading ? 'Signing in...' : 'Sign In'}
+            {isLoading ? activeAction === 'password' ? 'Signing in...' : 'Please wait...' : 'Sign In'} <span aria-hidden="true">→</span>
           </button>
         </form>
 
+        <p className="mn-login__availability">Password sign-in is available only where the local workforce authentication endpoint is enabled.</p>
         {DEV_AUTH_MOCK && (
-          <div style={styles.advancedSection}>
+          <div className="mn-login__advanced-section">
             <button
               type="button"
-              style={styles.advancedToggle}
-              onClick={() => setShowAdvanced((prev) => !prev)}
+              className="mn-login__advanced-toggle"
+              aria-expanded={showAdvanced}
+              aria-controls={showAdvanced ? "admin-advanced-options" : undefined}
+              disabled={isLoading}
+              onClick={() => { if (showAdvanced) { setTokenInput(''); setBootstrapInput(''); } resetFeedback(); setShowAdvanced((prev) => !prev); }}
             >
               {showAdvanced ? '▲ Hide advanced (engineering) options' : '▼ Advanced: OIDC / Bootstrap (engineering only)'}
             </button>
 
             {showAdvanced && (
-              <div>
-                <div style={styles.tabHeader}>
+              <div id="admin-advanced-options">
+                <p className="mn-login__advanced-note">Local engineering tools. Closing this section or switching tools clears typed assertions.</p>
+                <div className="mn-login__tab-header" role="group" aria-label="Advanced authentication tools">
                   <button
                     type="button"
-                    style={advancedTab === 'oidc' ? styles.activeTabBtn : styles.tabBtn}
-                    onClick={() => { setAdvancedTab('oidc'); setValError(''); }}
+                    className={advancedTab === 'oidc' ? 'mn-login__tab-btn mn-login__tab-btn--active' : 'mn-login__tab-btn'}
+                    aria-pressed={advancedTab === 'oidc'} disabled={isLoading}
+                    onClick={() => { if (advancedTab !== 'oidc') { setTokenInput(''); setBootstrapInput(''); resetFeedback(); setAdvancedTab('oidc'); } }}
                   >
                     OIDC Ingress Login
                   </button>
                   <button
                     type="button"
-                    style={advancedTab === 'bootstrap' ? styles.activeTabBtn : styles.tabBtn}
-                    onClick={() => { setAdvancedTab('bootstrap'); setValError(''); }}
+                    className={advancedTab === 'bootstrap' ? 'mn-login__tab-btn mn-login__tab-btn--active' : 'mn-login__tab-btn'}
+                    aria-pressed={advancedTab === 'bootstrap'} disabled={isLoading}
+                    onClick={() => { if (advancedTab !== 'bootstrap') { setTokenInput(''); setBootstrapInput(''); resetFeedback(); setAdvancedTab('bootstrap'); } }}
                   >
                     Bootstrap Authority
                   </button>
                 </div>
 
                 {advancedTab === 'oidc' ? (
-                  <form onSubmit={handleOidcLogin} style={styles.form}>
-                    <div style={styles.inputGroup}>
-                      <label style={styles.label}>Signed OIDC ID Assertion Token (Compact JWS)</label>
+                  <form onSubmit={handleOidcLogin} className="mn-login__form">
+                    <div className="mn-login__input-group">
+                      <label className="mn-login__label" htmlFor="admin-oidc-token">Signed OIDC ID Assertion Token (Compact JWS)</label>
                       <textarea
-                        style={styles.textarea}
+                        ref={oidcRef} id="admin-oidc-token" autoComplete="off" spellCheck={false}
+                        aria-invalid={invalidField === 'oidc' || undefined} aria-describedby={invalidField === 'oidc' ? 'admin-login-error' : undefined}
+                        className="mn-login__textarea"
                         placeholder="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Ii4uLg"
                         value={tokenInput}
-                        onChange={(e) => setTokenInput(e.target.value)}
+                        onChange={(e) => { setTokenInput(e.target.value); if (invalidField === 'oidc') { setInvalidField(null); setValError(''); } }}
                         disabled={isLoading}
                       />
                     </div>
-                    <button type="submit" disabled={isLoading} style={styles.submitBtn}>
-                      {isLoading ? 'Exchanging Session...' : 'Establish Session'}
+                    <button type="submit" disabled={isLoading} className="mn-login__submit-btn">
+                      {isLoading ? activeAction === 'oidc' ? 'Exchanging Session...' : 'Please wait...' : 'Establish Session'}
                     </button>
                   </form>
                 ) : (
-                  <form onSubmit={handleBootstrap} style={styles.form}>
-                    <div style={styles.inputGroup}>
-                      <label style={styles.label}>Finance Admin Bootstrap Statement (JWS)</label>
+                  <form onSubmit={handleBootstrap} className="mn-login__form">
+                    <div className="mn-login__input-group">
+                      <label className="mn-login__label" htmlFor="admin-bootstrap-token">Finance Admin Bootstrap Statement (JWS)</label>
                       <textarea
-                        style={styles.textarea}
+                        ref={bootstrapRef} id="admin-bootstrap-token" autoComplete="off" spellCheck={false}
+                        aria-invalid={invalidField === 'bootstrap' || undefined} aria-describedby={invalidField === 'bootstrap' ? 'admin-login-error' : undefined}
+                        className="mn-login__textarea"
                         placeholder="eyJhbGciOiJSUzI1NiIsImtpZCI6Ii4uLg"
                         value={bootstrapInput}
-                        onChange={(e) => setBootstrapInput(e.target.value)}
+                        onChange={(e) => { setBootstrapInput(e.target.value); if (invalidField === 'bootstrap') { setInvalidField(null); setValError(''); } }}
                         disabled={isLoading}
                       />
                     </div>
-                    <button type="submit" disabled={isLoading} style={styles.submitBtn}>
-                      {isLoading ? 'Consuming Statement...' : 'Consume Bootstrap Statement'}
+                    <button type="submit" disabled={isLoading} className="mn-login__submit-btn">
+                      {isLoading ? activeAction === 'bootstrap' ? 'Consuming Statement...' : 'Please wait...' : 'Consume Bootstrap Statement'}
                     </button>
                   </form>
                 )}
@@ -212,184 +234,8 @@ export const LoginScreen: React.FC = () => {
             )}
           </div>
         )}
+      </section>
       </div>
-    </div>
+    </main>
   );
-};
-
-const styles = {
-  container: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: '100vh',
-    backgroundColor: '#F8FAFC',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
-    padding: '20px',
-  },
-  card: {
-    width: '100%',
-    maxWidth: '480px',
-    backgroundColor: '#FFFFFF',
-    borderRadius: '12px',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.1)',
-    padding: '32px',
-  },
-  logoSection: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    marginBottom: '24px',
-  },
-  logoIcon: {
-    // V1-ADMIN-UAT-READINESS-01: the real, already-approved MonieNaija "M" mark
-    // (apps/admin-web/public/favicon.png, wired in commit 2a05c62) replaces the previous
-    // plain-text "₦" glyph-in-a-circle placeholder — no new asset, no redesign.
-    width: '72px',
-    height: '72px',
-    objectFit: 'contain' as const,
-    marginBottom: '12px',
-  },
-  logoText: {
-    fontSize: '24px',
-    fontWeight: 'bold',
-    color: '#0A3D25',
-    margin: '0 0 4px 0',
-  },
-  logoTag: {
-    fontSize: '13px',
-    color: '#64748B',
-    margin: 0,
-  },
-  devBanner: {
-    backgroundColor: '#F0F9F4',
-    borderColor: '#0A3D25',
-    borderWidth: '1px',
-    borderStyle: 'solid',
-    borderRadius: '6px',
-    padding: '12px',
-    marginBottom: '20px',
-  },
-  devBannerTitle: {
-    fontSize: '12px',
-    fontWeight: 'bold',
-    color: '#0A3D25',
-    display: 'block',
-    marginBottom: '4px',
-  },
-  devBannerText: {
-    fontSize: '11px',
-    color: '#475569',
-    margin: 0,
-    lineHeight: '15px',
-  },
-  errorBox: {
-    backgroundColor: '#FEE2E2',
-    color: '#EF4444',
-    fontSize: '13px',
-    fontWeight: '500',
-    padding: '12px',
-    borderRadius: '6px',
-    marginBottom: '20px',
-    borderWidth: '1px',
-    borderStyle: 'solid',
-    borderColor: '#EF4444',
-  },
-  successBox: {
-    backgroundColor: '#D1FAE5',
-    color: '#10B981',
-    fontSize: '13px',
-    fontWeight: '500',
-    padding: '12px',
-    borderRadius: '6px',
-    marginBottom: '20px',
-    borderWidth: '1px',
-    borderStyle: 'solid',
-    borderColor: '#10B981',
-  },
-  tabHeader: {
-    display: 'flex',
-    borderBottom: '1px solid #E2E8F0',
-    marginBottom: '20px',
-  },
-  tabBtn: {
-    flex: 1,
-    padding: '12px',
-    fontSize: '14px',
-    fontWeight: '500',
-    color: '#64748B',
-    border: 'none',
-    backgroundColor: 'transparent',
-    cursor: 'pointer',
-  },
-  activeTabBtn: {
-    flex: 1,
-    padding: '12px',
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#0A3D25',
-    border: 'none',
-    borderBottom: '2px solid #0A3D25',
-    backgroundColor: 'transparent',
-    cursor: 'pointer',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-  },
-  inputGroup: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    marginBottom: '16px',
-  },
-  label: {
-    fontSize: '13px',
-    fontWeight: '500',
-    color: '#334155',
-    marginBottom: '6px',
-  },
-  input: {
-    height: '44px',
-    border: '1px solid #E2E8F0',
-    borderRadius: '6px',
-    padding: '0 12px',
-    fontSize: '14px',
-    color: '#1E293B',
-  },
-  textarea: {
-    height: '100px',
-    border: '1px solid #E2E8F0',
-    borderRadius: '6px',
-    padding: '12px',
-    fontSize: '13px',
-    fontFamily: 'monospace',
-    resize: 'none' as const,
-    color: '#1E293B',
-  },
-  submitBtn: {
-    backgroundColor: '#0A3D25',
-    color: '#FFFFFF',
-    border: 'none',
-    borderRadius: '6px',
-    padding: '14px',
-    fontSize: '14px',
-    fontWeight: '600',
-    cursor: 'pointer',
-  },
-  advancedSection: {
-    marginTop: '24px',
-    paddingTop: '16px',
-    borderTop: '1px dashed #E2E8F0',
-  },
-  advancedToggle: {
-    width: '100%',
-    textAlign: 'left' as const,
-    backgroundColor: 'transparent',
-    border: 'none',
-    color: '#64748B',
-    fontSize: '12px',
-    fontWeight: '600',
-    padding: '4px 0',
-    cursor: 'pointer',
-  },
 };

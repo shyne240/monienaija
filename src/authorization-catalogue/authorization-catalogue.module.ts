@@ -19,7 +19,9 @@ import { AuthorizationRole } from './authorization-role.entity';
  * from `A2WorkforceSessionService` and `A2FinanceRoleAdministrationService`.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([AuthorizationFunction, AuthorizationRole, AuthorizationRoleFunction])],
+  imports: [
+    TypeOrmModule.forFeature([AuthorizationFunction, AuthorizationRole, AuthorizationRoleFunction]),
+  ],
   providers: [AuthorizationCatalogueSeedService, AuthorizationCatalogueRuntimeService],
   exports: [AuthorizationCatalogueSeedService, AuthorizationCatalogueRuntimeService],
 })

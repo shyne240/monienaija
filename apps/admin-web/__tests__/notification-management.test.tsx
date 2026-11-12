@@ -3,9 +3,12 @@ import { act, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { ApiClient, ApiError } from '../src/services/api-client';
 import { useAuthStore, WorkforcePrincipal } from '../src/store/auth-store';
 import { NotificationManagementScreen } from '../src/screens/authenticated/NotificationManagementScreen';
+import { NotificationManagementApi } from '../src/services/notification-management-api';
 import { SystemHealthScreen } from '../src/screens/authenticated/SystemHealthScreen';
 import {
   BASELINE_CODE_EVENT_CATALOGUE,
+  BASELINE_CODE_TEMPLATES,
+  deriveNotificationPermissions,
   sanitizeProviderStatusForDisplay,
 } from '../src/services/notification-domain';
 
@@ -176,6 +179,9 @@ const REGISTRY_EVENT_FIXTURES = [
     eventType: 'customer.funding.requested',
     deliveryClass: 'TRANSACTIONAL',
     editable: true,
+    eventEnabled: false,
+    eventLocked: false,
+    eventConfigurationVersion: 1,
     variables: ['reference'],
     channels: {
       SMS: { enabled: true, locked: false, configurationVersion: 1, activeTemplateVersion: 1 },
@@ -186,6 +192,9 @@ const REGISTRY_EVENT_FIXTURES = [
     eventType: 'customer.funding.approved',
     deliveryClass: 'TRANSACTIONAL',
     editable: true,
+    eventEnabled: true,
+    eventLocked: false,
+    eventConfigurationVersion: 1,
     variables: ['reference', 'amount_clause'],
     channels: {
       SMS: { enabled: true, locked: false, configurationVersion: 1, activeTemplateVersion: 1 },
@@ -196,6 +205,9 @@ const REGISTRY_EVENT_FIXTURES = [
     eventType: 'transfer.completed',
     deliveryClass: 'TRANSACTIONAL',
     editable: true,
+    eventEnabled: true,
+    eventLocked: false,
+    eventConfigurationVersion: 1,
     variables: ['reference', 'amount_clause'],
     channels: {
       SMS: { enabled: true, locked: false, configurationVersion: 1, activeTemplateVersion: 1 },
@@ -206,6 +218,9 @@ const REGISTRY_EVENT_FIXTURES = [
     eventType: 'support.ticket.assigned',
     deliveryClass: 'INFORMATIONAL',
     editable: true,
+    eventEnabled: true,
+    eventLocked: false,
+    eventConfigurationVersion: 1,
     variables: ['reference'],
     channels: {
       SMS: { enabled: true, locked: false, configurationVersion: 1, activeTemplateVersion: 1 },
@@ -216,6 +231,9 @@ const REGISTRY_EVENT_FIXTURES = [
     eventType: 'cash_to_cash.created',
     deliveryClass: 'INFORMATIONAL',
     editable: true,
+    eventEnabled: true,
+    eventLocked: false,
+    eventConfigurationVersion: 1,
     variables: ['sender_name', 'amount', 'locator_clause'],
     channels: {
       SMS: { enabled: true, locked: false, configurationVersion: 1, activeTemplateVersion: 1 },
@@ -354,9 +372,10 @@ const CHANGE_LIST_FIXTURE = {
 };
 
 const PROVIDER_STATUS_FIXTURE = {
+  projectionScope: 'FULL',
   channels: ['SMS', 'PUSH', 'EMAIL'],
   sms: {
-    provider: 'robase',
+    provider: 'robase', enabled: true, deliveryTested: true, lifecycleState: 'DELIVERY_TESTED',
     baseUrl: 'https://api.robase.dev',
     configured: true,
     keyFingerprint: '9f2a',
@@ -366,7 +385,7 @@ const PROVIDER_STATUS_FIXTURE = {
     apiKey: 'robe_99999999999999999999999999999999',
   },
   email: {
-    provider: 'resend',
+    provider: 'resend', enabled: true, deliveryTested: true, lifecycleState: 'DELIVERY_TESTED',
     baseUrl: 'https://api.resend.com',
     configured: true,
     keyFingerprint: 'ab12',
@@ -545,14 +564,16 @@ function mockIntegratedRegistryBackend() {
       return Promise.resolve({ approvalId: endpoint.split('/')[4], type: 'TEMPLATE' });
     }
     if (endpoint.includes('/internal/a2/workforce/approvals/')) {
-      return Promise.resolve({ status: 'APPROVED' });
+      const approvalId = endpoint.split('/')[5];
+      const status = endpoint.endsWith('/reject') ? 'REJECTED' : 'APPROVED';
+      return Promise.resolve({ approved: status === 'APPROVED', reason: status, approval: { id: approvalId, status } });
     }
     if (endpoint === '/internal/notifications/test-send') {
       return Promise.resolve({
         status: 'SENT',
         channel: body?.channel,
         correlationId: 'corr-test-1',
-        destination: '+23480***0100',
+        destination: body?.channel === 'SMS' ? '+**********100' : `${body.destination.slice(0,2)}***@${body.destination.split('@')[1]}`,
         provider: 'test',
         providerRef: 'ref-test-1',
         errorCode: null,
@@ -567,6 +588,24 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockBaselineUnintegratedBackend();
+  });
+
+  test('failed notification reads do not claim an active pipeline or zero delivery and outbox counts', async () => {
+    seedPrincipal({ scopes: ['notification.view_deliveries', 'notification.provider.view', 'diagnostics.view', 'outbox.view'] });
+    (ApiClient.get as jest.Mock).mockRejectedValue(new ApiError('Service unavailable', 503));
+    const view = render(<NotificationManagementScreen />);
+    await waitFor(() => expect(view.getByTestId('notification-global-load-errors')).toBeTruthy());
+    const sms = within(view.getByRole('region', { name: 'SMS channel status' }));
+    expect(sms.getByText('STATUS UNAVAILABLE')).toBeTruthy();
+    expect(sms.queryByText('PIPELINE ACTIVE')).toBeNull();
+    const health = view.getByRole('region', { name: 'Event catalogue and outbox health' });
+    expect(health.textContent).toMatch(/Pending Shared Outbox:\s*Unavailable/);
+    expect(health.textContent).toMatch(/Total Recorded Deliveries:\s*Unavailable/);
+    fireEvent.click(view.getByTestId('notif-tab-deliveries'));
+    expect(await view.findByText('Delivery records unavailable.')).toBeTruthy();
+    expect(view.queryByText('No notification delivery records matched the selected filters.')).toBeNull();
+    expect(view.queryByTestId('delivery-summary-cards')).toBeNull();
+    expect(view.queryByTestId('notification-deliveries-pager')).toBeNull();
   });
 
   test('Capability 12: denies access fail-closed and fires zero API calls when principal holds no notification.* scope', () => {
@@ -606,10 +645,10 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     expect(view.container.querySelector('pre')).toBeNull();
   });
 
-  test('Capability 2: permanently locks SECURITY and required transactional triggers while eligible trigger changes flow through the real maker-checker change lifecycle', async () => {
+  test('Capability 2: locks SECURITY while transaction trigger changes flow through the real maker-checker lifecycle', async () => {
     mockIntegratedRegistryBackend();
     seedPrincipal({
-      roles: ['OPERATIONS'],
+      roles: ['SUPER_ADMIN'],
       scopes: ['notification.view_deliveries', 'notification.manage_configuration'],
     });
 
@@ -621,13 +660,14 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     const otpBtn = view.getByTestId('configure-trigger-agent.desk.customer_otp') as HTMLButtonElement;
     expect(otpBtn.disabled).toBe(true);
 
-    // Required transactional funding outcome stays locked by product decision D-N8
-    // (client-side stricter-than-server lock preserved through the registry merge)
+    // The owner-approved policy makes this financial outcome configurable, not mandatory.
     const fundingApprovedBtn = view.getByTestId(
       'configure-trigger-customer.funding.approved',
     ) as HTMLButtonElement;
-    expect(fundingApprovedBtn.disabled).toBe(true);
+    await waitFor(() => expect(fundingApprovedBtn.disabled).toBe(false));
 
+    // Wait for the live registry rather than the initial offline reference before opening.
+    await waitFor(() => expect(view.getByTestId('event-master-customer.funding.requested').textContent).toBe('DISABLED'));
     // Eligible event (customer.funding.requested) can open Configure Triggers drawer
     const eligibleBtn = view.getByTestId(
       'configure-trigger-customer.funding.requested',
@@ -637,12 +677,14 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
 
     const drawer = view.getByTestId('event-trigger-config-panel');
     expect(drawer).toBeTruthy();
+    expect(view.getByTestId('event-master-customer.funding.requested').textContent).toBe('DISABLED');
+    expect(view.getByTestId('event-master-disabled-notice').textContent).toContain('Enabling a channel alone');
 
     // Submitting with no toggle change and short reason fails validation before any network call
     const postsBefore = (ApiClient.post as jest.Mock).mock.calls.length;
     fireEvent.click(view.getByTestId('submit-trigger-config-btn'));
     expect(view.getByTestId('trigger-validation-errors').textContent).toMatch(
-      /Modify at least one channel trigger/i,
+      /Modify at least one Event, SMS or Email control/i,
     );
     expect((ApiClient.post as jest.Mock).mock.calls.length).toBe(postsBefore);
 
@@ -997,19 +1039,21 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     await waitFor(() => expect(view.getByTestId('notification-deliveries-table')).toBeTruthy());
 
     // Inspect failed delivery row with 3 attempts
+    view.getByTestId('inspect-delivery-deliv-failed-2').focus();
     fireEvent.click(view.getByTestId('inspect-delivery-deliv-failed-2'));
     const inspector = view.getByTestId('delivery-inspector-panel');
     // SPRINT1-P0-02: the API returns only the sanitized errorCode — never raw provider errors.
     expect(within(inspector).getByText(/UNCLASSIFIED/)).toBeTruthy();
     expect(inspector.textContent).toMatch(/3 attempt\(s\)/);
 
-    // Manual retry endpoint is genuinely absent from the backend — honest BLOCKED state,
-    // automatic bounded retry lives in NotificationWorkerService
-    fireEvent.change(view.getByTestId('manual-retry-reason-input'), {
-      target: { value: 'Provider recovered after upstream timeout incident' },
-    });
-    fireEvent.click(view.getByTestId('request-manual-retry-btn'));
-    expect(await view.findByTestId('manual-retry-blocked')).toBeTruthy();
+    // No manual retry route or policy exists: the control must not issue any POST.
+    expect((view.getByTestId('request-manual-retry-btn') as HTMLButtonElement).disabled).toBe(true);
+    expect(view.getByTestId('manual-retry-policy').textContent).toMatch(/No retry or worker action is started/);
+    fireEvent.click(view.getByTestId('request-manual-retry-btn')); expect(ApiClient.post).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(view.queryByRole('dialog', { name: 'Delivery diagnostic inspector' })).toBeNull();
+    expect(document.activeElement).toBe(view.getByTestId('inspect-delivery-deliv-failed-2'));
 
     // Invalid UUID in Recipient ID filter catches client-side before hitting backend
     fireEvent.change(view.getByLabelText('Recipient UUID filter'), {
@@ -1126,6 +1170,8 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     });
     const makerView = render(<NotificationManagementScreen initialTab="smsTemplates" />);
     await waitFor(() => expect(makerView.getByTestId('template-workspace-sms')).toBeTruthy());
+    await makerView.findByTestId('template-version-history-table');
+    await waitFor(() => expect(makerView.getByText(/Active SMS:/).textContent).toContain('v1 (DB)'));
 
     (ApiClient.post as jest.Mock).mockRejectedValue(
       new ApiError('Notification change request denied: UNAUTHORIZED', 403),
@@ -1208,6 +1254,27 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
       ).toBe(true),
     );
     expect((ApiClient.get as jest.Mock).mock.calls.length).toBe(1);
+  });
+
+  test('notification tabs support manual keyboard navigation and associated panels', async () => {
+    mockBaselineUnintegratedBackend();
+    seedPrincipal({});
+    const view = render(<NotificationManagementScreen />);
+    const overview = view.getByTestId('notif-tab-overview');
+    const events = view.getByTestId('notif-tab-events');
+    overview.focus();
+    fireEvent.keyDown(overview, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(events);
+    expect(overview.getAttribute('aria-selected')).toBe('true');
+    fireEvent.click(events);
+    expect(events.getAttribute('aria-selected')).toBe('true');
+    expect(view.getByRole('tabpanel').id).toBe(events.getAttribute('aria-controls'));
+    fireEvent.keyDown(events, { key: 'End' });
+    const lastTab = view.getByTestId('notif-tab-testSend');
+    expect(document.activeElement).toBe(lastTab);
+    fireEvent.keyDown(lastTab, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(overview);
+    await waitFor(() => expect(view.getByTestId('notif-panel-events')).toBeTruthy());
   });
 
   describe('Mission 25D — Notification Admin Web Completeness Remediation (F-01 .. F-13)', () => {
@@ -1360,7 +1427,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
             },
             {
               approvalId: selfApprovedId,
-              type: 'EVENT_CONFIGURATION',
+              type: 'CONFIGURATION',
               eventType: 'customer.funding.approved',
               channel: 'EMAIL',
               status: 'APPROVED',
@@ -1378,6 +1445,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
           return Promise.resolve({
             id: 'chg-approved-1',
             approvalId: approvedProposalId,
+            type: 'TEMPLATE',
             status: 'APPLIED',
           });
         }
@@ -1450,7 +1518,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
         }
         if (path === '/internal/notifications/provider-status') {
           return Promise.resolve({
-            channels: ['SMS', 'PUSH', 'EMAIL'],
+            channels: ['SMS', 'PUSH', 'EMAIL'], projectionScope: 'MINIMAL',
             sms: { available: true, provider: 'console' },
             push: { available: false },
             email: { available: false, provider: 'none' },
@@ -1542,7 +1610,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
         }
         if (path === '/internal/notifications/provider-status') {
           return Promise.resolve({
-            channels: ['SMS', 'PUSH', 'EMAIL'],
+            channels: ['SMS', 'PUSH', 'EMAIL'], projectionScope: 'MINIMAL',
             sms: { available: true, provider: 'console' },
             push: { available: false },
             email: { available: false, provider: 'none' },
@@ -1665,7 +1733,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
         if (path === '/internal/notifications/events') return Promise.resolve([]);
         if (path === '/internal/notifications/provider-status') {
           return Promise.resolve({
-            channels: ['SMS', 'PUSH', 'EMAIL'],
+            channels: ['SMS', 'PUSH', 'EMAIL'], projectionScope: 'MINIMAL',
             sms: { available: true, provider: 'console' },
             push: { available: false },
             email: { available: false, provider: 'none' },
@@ -1683,11 +1751,130 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
       });
 
       const overview = render(<NotificationManagementScreen initialTab="overview" />);
-      expect(await overview.findByTestId('overview-email-disabled-badge')).toBeTruthy();
+      expect((await overview.findByTestId('overview-email-coarse-badge')).textContent).toContain('UNAVAILABLE (COARSE)');
+      expect(overview.queryByText(/Confirmed disabled \/ dark/)).toBeNull();
       const matrixText = overview.getByTestId('backend-readiness-matrix').textContent ?? '';
       expect(matrixText).toContain('GET /internal/notifications/outbox-receipts');
       expect(matrixText).toContain('POST /internal/notifications/changes/:approvalId/execute');
       expect(matrixText).not.toContain('/internal/notifications/change-requests');
     });
   });
+});
+
+
+test('offline template baselines are references, not confirmation of an active registry version', () => {
+  const { NotificationTemplateWorkspace } = require('../src/components/NotificationTemplateWorkspace');
+  const permissions = deriveNotificationPermissions(null);
+  const view = render(<NotificationTemplateWorkspace channel="SMS" events={BASELINE_CODE_EVENT_CATALOGUE} templates={BASELINE_CODE_TEMPLATES} templatesRegistryBlocked emailChannelBlocked={false} permissions={permissions} currentPrincipalId="synthetic" initialEventType="transfer.completed" />);
+  expect(view.getByText(/Active SMS:/).textContent).toContain('Not confirmed');
+  expect(view.getByText('REFERENCE · activation unconfirmed')).toBeTruthy();
+  expect(view.queryByText('ACTIVE')).toBeNull();
+});
+
+test('a console test response is shown as simulation, not live delivery', async () => {
+    mockIntegratedRegistryBackend();seedPrincipal({roles:['OPERATIONS'],scopes:['notification.view_deliveries','notification.test_send']});
+    (ApiClient.post as jest.Mock).mockResolvedValueOnce({status:'SENT',channel:'SMS',provider:'console',correlationId:'synthetic-correlation',destination:'+**********100',providerRef:null});
+    const view=render(<NotificationManagementScreen initialTab="testSend"/>);fireEvent.change(view.getByTestId('test-send-destination-input'),{target:{value:'08030000100'}});fireEvent.click(view.getByTestId('test-send-workforce-attestation'));fireEvent.click(view.getByTestId('submit-test-send-btn'));
+    expect((await view.findByTestId('test-send-outcome-banner')).textContent).toContain('Console simulation only; no live provider delivery was confirmed.');
+  });
+
+  test('a test-send receipt for another channel is not shown as sent', async () => {
+    mockIntegratedRegistryBackend();seedPrincipal({roles:['OPERATIONS'],scopes:['notification.view_deliveries','notification.test_send']});
+    (ApiClient.post as jest.Mock).mockResolvedValueOnce({status:'SENT',channel:'EMAIL',provider:'console',correlationId:'synthetic-correlation',destination:'+**********100',providerRef:null});
+    const view=render(<NotificationManagementScreen initialTab="testSend"/>);fireEvent.change(view.getByTestId('test-send-destination-input'),{target:{value:'08030000100'}});fireEvent.click(view.getByTestId('test-send-workforce-attestation'));fireEvent.click(view.getByTestId('submit-test-send-btn'));
+    expect((await view.findByTestId('test-send-error-banner')).textContent).toContain('Test-send outcome not confirmed');expect(view.queryByTestId('test-send-outcome-banner')).toBeNull();
+  });
+
+test('template event switching protects a draft and reason without issuing a proposal', async () => {
+  jest.clearAllMocks(); mockIntegratedRegistryBackend();
+  seedPrincipal({roles:['SUPER_ADMIN'], scopes:['notification.view_deliveries'], assuranceLevel:'MFA'});
+  const view = render(<NotificationManagementScreen initialTab="smsTemplates"/>);
+  await waitFor(() => expect(view.getByTestId('template-version-history-table')).toBeTruthy());
+  const selector = view.getByTestId('template-event-select') as HTMLSelectElement;
+  fireEvent.change(selector, {target:{value:'transfer.completed'}});
+  const body = view.getByTestId('template-body-textarea') as HTMLTextAreaElement;
+  fireEvent.change(body, {target:{value:'Draft {{reference}}'}});
+  fireEvent.change(view.getByTestId('template-change-summary-input'), {target:{value:'A careful change reason'}});
+  fireEvent.change(selector, {target:{value:'cash_to_cash.created'}});
+  const prompt = view.getByTestId('template-event-switch-prompt');
+  expect(document.activeElement).toBe(prompt); expect(selector.value).toBe('transfer.completed');
+  expect((view.getByTestId('submit-template-version-btn') as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(view.getByRole('button',{name:'Keep draft'}));
+  expect(document.activeElement).toBe(selector); expect(body.value).toBe('Draft {{reference}}');
+  fireEvent.change(selector, {target:{value:'cash_to_cash.created'}});
+  fireEvent.click(view.getByRole('button',{name:'Discard and switch'}));
+  expect(selector.value).toBe('cash_to_cash.created'); expect(document.activeElement).toBe(selector);
+  expect(view.getByTestId('template-c2c-nondisclosure-banner')).toBeTruthy();
+  expect((view.getByTestId('template-change-summary-input') as HTMLInputElement).value).toBe('');
+  expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('template drafts survive tab switches, but not a workforce session change', async () => {
+  jest.clearAllMocks(); mockIntegratedRegistryBackend();
+  seedPrincipal({roles:['SUPER_ADMIN'], scopes:['notification.view_deliveries'], assuranceLevel:'MFA'});
+  const view=render(<NotificationManagementScreen initialTab="smsTemplates"/>);
+  const sms=await view.findByTestId('template-workspace-sms');
+  fireEvent.change(within(sms).getByTestId('template-body-textarea'),{target:{value:'SMS local draft'}});
+  fireEvent.change(within(sms).getByTestId('template-change-summary-input'),{target:{value:'SMS local reason'}});
+  fireEvent.click(view.getByTestId('notif-tab-emailTemplates'));
+  const email=await view.findByTestId('template-workspace-email');
+  fireEvent.change(within(email).getByTestId('template-body-textarea'),{target:{value:'Email local draft'}});
+  fireEvent.click(view.getByTestId('notif-tab-smsTemplates'));
+  expect((within(sms).getByTestId('template-body-textarea') as HTMLTextAreaElement).value).toBe('SMS local draft');
+  expect((within(sms).getByTestId('template-change-summary-input') as HTMLInputElement).value).toBe('SMS local reason');
+  fireEvent.click(view.getByTestId('notif-tab-emailTemplates'));
+  expect((within(email).getByTestId('template-body-textarea') as HTMLTextAreaElement).value).toBe('Email local draft');
+  act(()=>useAuthStore.setState(state=>({principal:{...state.principal!,sessionId:'new-session'}})));
+  const newSms=await view.findByTestId('template-workspace-sms');
+  expect((within(newSms).getByTestId('template-body-textarea') as HTMLTextAreaElement).value).not.toBe('SMS local draft');
+  expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('catalogue jumps to another event ask before replacing an existing channel draft', async () => {
+  jest.clearAllMocks(); mockIntegratedRegistryBackend();
+  seedPrincipal({roles:['SUPER_ADMIN'], scopes:['notification.view_deliveries'], assuranceLevel:'MFA'});
+  const view=render(<NotificationManagementScreen initialTab="smsTemplates"/>);
+  const workspace=await view.findByTestId('template-workspace-sms');
+  fireEvent.change(within(workspace).getByTestId('template-event-select'),{target:{value:'transfer.completed'}});
+  fireEvent.change(within(workspace).getByTestId('template-body-textarea'),{target:{value:'Protected local draft'}});
+  fireEvent.click(view.getByTestId('notif-tab-events'));
+  fireEvent.click(view.getByRole('button',{name:'SMS Template for customer.funding.approved'}));
+  expect(within(workspace).getByTestId('template-event-switch-prompt')).toBeTruthy();
+  expect((within(workspace).getByTestId('template-event-select') as HTMLSelectElement).value).toBe('transfer.completed');
+  fireEvent.click(within(workspace).getByRole('button',{name:'Keep draft'}));
+  expect((within(workspace).getByTestId('template-body-textarea') as HTMLTextAreaElement).value).toBe('Protected local draft');
+  expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('switching tabs cannot start a duplicate template proposal while the first is pending', async () => {
+  jest.clearAllMocks(); mockIntegratedRegistryBackend();
+  seedPrincipal({roles:['SUPER_ADMIN'], scopes:['notification.view_deliveries'], assuranceLevel:'MFA'});
+  let resolve!: (value:any)=>void; const pending=new Promise<any>(r=>resolve=r);
+  const original=(ApiClient.post as jest.Mock).getMockImplementation()!;
+  (ApiClient.post as jest.Mock).mockImplementation((endpoint:string,...args:any[])=>endpoint==='/internal/notifications/changes'?pending:original(endpoint,...args));
+  const view=render(<NotificationManagementScreen initialTab="smsTemplates"/>);
+  const sms=await view.findByTestId('template-workspace-sms');
+  await waitFor(()=>expect(within(sms).getByTestId('template-version-history-table')).toBeTruthy());
+  fireEvent.change(within(sms).getByTestId('template-body-textarea'),{target:{value:'A controlled draft'}});
+  fireEvent.change(within(sms).getByTestId('template-change-summary-input'),{target:{value:'A detailed reason'}});
+  const submit=within(sms).getByTestId('submit-template-version-btn') as HTMLButtonElement;fireEvent.click(submit);
+  expect(submit.disabled).toBe(true);fireEvent.click(view.getByTestId('notif-tab-overview'));fireEvent.click(view.getByTestId('notif-tab-smsTemplates'));
+  expect(submit.disabled).toBe(true);fireEvent.click(submit);
+  expect((ApiClient.post as jest.Mock).mock.calls.filter(([path])=>path==='/internal/notifications/changes')).toHaveLength(1);
+  await act(async()=>{resolve({approvalId:'550e8400-e29b-41d4-a716-4466554400aa',status:'REQUESTED',actionType:'NOTIFICATION_TEMPLATE_CHANGE',requestedAt:'2026-11-01',expiresAt:'2026-11-02'});await pending;});
+});
+
+test('a mismatched probe receipt locks sends across tabs until independent review', async () => {
+  mockIntegratedRegistryBackend(); seedPrincipal({roles:['OPERATIONS'],scopes:['notification.view_deliveries','notification.test_send']});
+  (ApiClient.post as jest.Mock).mockResolvedValueOnce({status:'SENT',channel:'SMS',provider:'console',correlationId:'synthetic-correlation',destination:'+**********999',providerRef:null});
+  const view=render(<NotificationManagementScreen initialTab="testSend"/>);fireEvent.change(view.getByTestId('test-send-destination-input'),{target:{value:'08030000100'}});fireEvent.click(view.getByTestId('test-send-workforce-attestation'));fireEvent.click(view.getByTestId('submit-test-send-btn'));
+  expect((await view.findByTestId('notification-probe-review-lock')).textContent).toMatch(/do not create delivery rows.*cannot prove non-delivery/i);expect((view.getByTestId('submit-test-send-btn') as HTMLButtonElement).disabled).toBe(true); expect((view.getByRole('button',{name:'Clear local probe draft'}) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(view.getByTestId('notif-tab-overview'));expect(view.getByTestId('notification-probe-review-lock')).toBeTruthy();const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);
+  const confirm=jest.spyOn(window,'confirm').mockReturnValue(false);fireEvent.click(view.getByRole('button',{name:'Acknowledge independent test-send review'}));expect(view.getByTestId('notification-probe-review-lock')).toBeTruthy();confirm.mockReturnValue(true);fireEvent.click(view.getByRole('button',{name:'Acknowledge independent test-send review'}));confirm.mockRestore();expect(view.queryByTestId('notification-probe-review-lock')).toBeNull();
+});
+
+test('the deferred manual retry service fails closed without any network request', async()=>{
+  (ApiClient.post as jest.Mock).mockClear();
+  const result=await NotificationManagementApi.requestManualDeliveryRetry('synthetic-delivery','Synthetic reason');
+  expect(result.status).toBe('BLOCKED');expect(result.status === 'BLOCKED' && result.httpStatus).toBe(0);expect(ApiClient.post).not.toHaveBeenCalled();
 });

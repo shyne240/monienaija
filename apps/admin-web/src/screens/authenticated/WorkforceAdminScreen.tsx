@@ -1,5 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import './operational-surfaces.css';
+import { Button, PageHeader } from '../../design-system/primitives';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import './workforce-workspace.css';
 import { ApiClient } from '../../services/api-client';
+import { useDialogFocus } from '../../utils/use-dialog-focus';
+import './workforce-redesign.css';
 import { useAuthStore } from '../../store/auth-store';
 import { DataRecord, StructuredColumn, StructuredRecordTable } from '../../components/StructuredData';
 
@@ -14,48 +19,80 @@ const ROLE_COLUMNS: StructuredColumn[] = [
   { key: 'count', label: 'Active assignments' },
 ];
 
-export const WorkforceAdminScreen: React.FC = () => {
-  const { principal } = useAuthStore();
+export const WorkforceAdminScreen: React.FC<{onWorkforceGuardChange?: (guarded: boolean, busy: boolean) => void}> = ({onWorkforceGuardChange}) => {
+  const { principal, sessionId } = useAuthStore();
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
   const canViewOverview = hasFn('workforce.dashboard.view');
-  const canCreateSupportUser = hasFn('workforce.user.create');
-  const canSuspendSupportUser = hasFn('workforce.user.suspend');
-  const canView = canViewOverview || canCreateSupportUser || canSuspendSupportUser;
+  const canCreateSupportUser = hasFn('workforce.user.create') && !principal?.readOnlyPrincipal;
+  const canSuspendSupportUser = hasFn('workforce.user.suspend') && !principal?.readOnlyPrincipal;
+  const canView = canViewOverview || hasFn('workforce.user.create') || hasFn('workforce.user.suspend');
 
+  const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.customerAccess, principal?.assuranceLevel, principal?.readOnlyPrincipal, canViewOverview, canCreateSupportUser, canSuspendSupportUser]);
+  return <WorkforceWorkspace key={key} canView={canView} canViewOverview={canViewOverview} canCreateSupportUser={canCreateSupportUser} canSuspendSupportUser={canSuspendSupportUser} onWorkforceGuardChange={onWorkforceGuardChange} />;
+};
+
+const WorkforceWorkspace: React.FC<{ canView: boolean; canViewOverview: boolean; canCreateSupportUser: boolean; canSuspendSupportUser: boolean; onWorkforceGuardChange?: (guarded: boolean, busy: boolean) => void }> = ({canView, canViewOverview, canCreateSupportUser, canSuspendSupportUser, onWorkforceGuardChange}) => {
+  const overviewRequest = useRef(0);
+  const createRequest = useRef(0);
+  const disableRequest = useRef(0);
   const [overview, setOverview] = useState<WorkforceOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [roleSearch, setRoleSearch] = useState('');
   const [error, setError] = useState('');
   const [createUsername, setCreateUsername] = useState('');
   const [createRes, setCreateRes] = useState('');
   const [createErr, setCreateErr] = useState('');
+  const [createLoading, setCreateLoading] = useState(false);
   const [disableUserId, setDisableUserId] = useState('');
   const [disableReason, setDisableReason] = useState('');
   const [disableRes, setDisableRes] = useState('');
   const [disableErr, setDisableErr] = useState('');
   const [disableLoading, setDisableLoading] = useState(false);
+  const [pendingDisable, setPendingDisable] = useState<{id:string; reason:string} | null>(null);
+  const [uncertain, setUncertain] = useState<{action: 'provision' | 'disable'; target: string} | null>(null);
+  const mutationInFlight = useRef(false);
+  const workforceBusy = createLoading || disableLoading;
+  const workforceGuard = workforceBusy || Boolean(pendingDisable) || Boolean(uncertain) || Boolean(createRes) || Boolean(createUsername.trim() || disableUserId.trim() || disableReason.trim());
+  useEffect(() => { onWorkforceGuardChange?.(workforceGuard, workforceBusy); }, [onWorkforceGuardChange, workforceGuard, workforceBusy]);
+  useEffect(() => () => onWorkforceGuardChange?.(false, false), [onWorkforceGuardChange]);
+  useEffect(() => {
+    if (!workforceGuard) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+  }, [workforceGuard]);
 
-  const fetchOverview = async () => {
+  const disableInFlight = useRef(false);
+  const dialogRef = useRef<HTMLElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  useDialogFocus(dialogRef, Boolean(pendingDisable), () => { if (!disableInFlight.current) setPendingDisable(null); }, triggerRef);
+  useEffect(() => { if (disableLoading) dialogRef.current?.focus(); }, [disableLoading]);
+
+  const fetchOverview = useCallback(async () => {
     if (!canViewOverview) return;
-    setLoading(true);
-    setError('');
+    const request = ++overviewRequest.current;
+    setLoading(true); setError(''); setOverview(null);
     try {
       const data = await ApiClient.get<WorkforceOverview>('/internal/a2/workforce/dashboard/widgets/workforce-overview');
+      if (request !== overviewRequest.current) return;
+      const validCount = (value: unknown) => value === undefined || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0);
+      if (!data || !validCount(data.activeWorkforceHeadcount) || !validCount(data.activeSessionCount) || !Array.isArray(data.roleDistribution) || data.roleDistribution.some(item => !item || typeof item.roleKey !== 'string' || typeof item.count !== 'number' || !Number.isSafeInteger(item.count) || item.count < 0)) throw new Error('Invalid workforce overview response.');
       setOverview(data);
     } catch (err: any) {
-      setError(err?.message || 'Failed to load workforce overview');
+      if (request === overviewRequest.current) setError(err?.message || 'Failed to load workforce overview');
     } finally {
-      setLoading(false);
+      if (request === overviewRequest.current) setLoading(false);
     }
-  };
+  }, [canViewOverview]);
 
   useEffect(() => {
     if (canViewOverview) void fetchOverview();
     else setLoading(false);
-  }, [canViewOverview]);
+    return () => { overviewRequest.current += 1; createRequest.current += 1; disableRequest.current += 1; };
+  }, [canViewOverview, fetchOverview]);
 
   const handleCreate = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canCreateSupportUser) return;
+    if (!canCreateSupportUser || workforceBusy || mutationInFlight.current || uncertain || createRes || pendingDisable) return;
     setCreateRes('');
     setCreateErr('');
     if (!createUsername.trim()) {
@@ -63,45 +100,60 @@ export const WorkforceAdminScreen: React.FC = () => {
       return;
     }
 
+    const username = createUsername.trim();
+    const request = ++createRequest.current;
+    mutationInFlight.current = true; setCreateLoading(true);
     try {
-      const result: any = await ApiClient.post('/internal/admin/support/workforce-users', { username: createUsername.trim() });
+      const result: any = await ApiClient.post('/internal/admin/support/workforce-users', { username });
+      if (request !== createRequest.current) return;
+      if (!result || typeof result.username !== 'string' || typeof result.supportUserId !== 'string' || typeof result.temporaryPassword !== 'string' || typeof result.passwordExpiresAt !== 'string' || result.username !== username.toLowerCase() || !result.supportUserId.trim() || !result.temporaryPassword.trim() || !Number.isFinite(Date.parse(result.passwordExpiresAt))) {
+        setUncertain({action:'provision', target:username});
+        setCreateErr('The provisioning response was incomplete. The outcome and credential are unconfirmed; check an authorized workforce record before retrying.');
+        return;
+      }
       setCreateRes(`Support user ${result.username} created (ID ${result.supportUserId}). One-time temporary password: ${result.temporaryPassword}. Expires: ${result.passwordExpiresAt}. Deliver this credential out-of-band.`);
-      setDisableUserId(result.supportUserId ?? '');
+      if (canSuspendSupportUser) setDisableUserId(result.supportUserId);
       setCreateUsername('');
       if (canViewOverview) void fetchOverview();
     } catch (err: any) {
-      setCreateErr(err?.message || 'Create failed');
-    }
+      if (request === createRequest.current) { setUncertain({action:'provision', target:username}); setCreateErr(`Provisioning outcome not confirmed; check an authorized workforce record before retrying. ${err?.message || 'Service unavailable.'}`); }
+    } finally { mutationInFlight.current = false; if (request === createRequest.current) setCreateLoading(false); }
   };
 
-  const handleDisable = async (event: React.FormEvent) => {
+  const handleDisable = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canSuspendSupportUser) return;
-    setDisableRes('');
-    setDisableErr('');
-    if (!disableUserId.trim()) {
-      setDisableErr('Support user ID is required.');
-      return;
-    }
+    if (!canSuspendSupportUser || workforceBusy || mutationInFlight.current || disableInFlight.current || uncertain || createRes || pendingDisable) return;
+    setDisableRes(''); setDisableErr('');
+    if (!disableUserId.trim()) { setDisableErr('Support user ID is required.'); return; }
+    setPendingDisable({ id: disableUserId.trim(), reason: disableReason.trim() });
+  };
 
-    setDisableLoading(true);
+  const confirmDisable = async () => {
+    if (!canSuspendSupportUser || !pendingDisable || workforceBusy || mutationInFlight.current || disableInFlight.current || uncertain || createRes) return;
+    const { id, reason } = pendingDisable;
+    const request = ++disableRequest.current;
+    mutationInFlight.current = true; disableInFlight.current = true; setDisableLoading(true);
     try {
-      await ApiClient.post(`/internal/admin/support/workforce-users/${encodeURIComponent(disableUserId.trim())}/disable`, {
-        reason: disableReason.trim() || undefined,
-      });
-      setDisableRes(`Support user ${disableUserId.trim()} disabled.`);
-      setDisableReason('');
+      const result: any = await ApiClient.post(`/internal/admin/support/workforce-users/${encodeURIComponent(id)}/disable`, { reason: reason || undefined });
+      if (request !== disableRequest.current) return;
+      if (!result || result.id !== id || result.status !== 'DISABLED') {
+        setUncertain({action:'disable', target:id});
+        setDisableErr('Disable outcome not confirmed; check an authorized workforce record before retrying.');
+        return;
+      }
+      setDisableRes(`Support user ${id} disabled.`); setDisableUserId(''); setDisableReason('');
       if (canViewOverview) void fetchOverview();
     } catch (err: any) {
-      setDisableErr(err?.message || 'Disable failed');
+      if (request === disableRequest.current) { setUncertain({action:'disable', target:id}); setDisableErr(`Disable outcome not confirmed; check an authorized workforce record before retrying. ${err?.message || 'Service unavailable.'}`); }
     } finally {
-      setDisableLoading(false);
+      mutationInFlight.current = false; disableInFlight.current = false;
+      if (request === disableRequest.current) { setDisableLoading(false); setPendingDisable(null); }
     }
   };
 
   if (!canView) {
     return (
-      <div style={wrap} role="alert">
+      <div className="mn-operational" style={wrap} role="alert">
         <div style={denied}>
           This screen requires <code>workforce.dashboard.view</code>, <code>workforce.user.create</code>, or <code>workforce.user.suspend</code>.
         </div>
@@ -109,99 +161,59 @@ export const WorkforceAdminScreen: React.FC = () => {
     );
   }
 
-  const roleRows: DataRecord[] = (overview?.roleDistribution ?? []).map((item) => ({ roleKey: item.roleKey, count: item.count }));
+  const roleRows: DataRecord[] = (overview?.roleDistribution ?? []).filter(item => item.roleKey.toLocaleLowerCase().includes(roleSearch.trim().toLocaleLowerCase())).map((item) => ({ roleKey: item.roleKey, count: item.count }));
 
   return (
-    <div style={wrap}>
-      <h2 style={h2}>👷 Workforce Overview & Support Provisioning</h2>
-      <p style={sub}>The available read-only workforce summary and SUPPORT identity actions are shown only when their matching functions are granted.</p>
-
-      {canViewOverview && (
-        <section style={overviewCard} aria-label="Workforce overview">
-          <div style={sectionHeading}>
-            <h3 style={h3}>Workforce Overview</h3>
-            <button type="button" onClick={() => void fetchOverview()} style={btn} disabled={loading}>
-              {loading ? 'Loading…' : 'Refresh'}
-            </button>
-          </div>
-          {error && <div style={errBox} role="alert">{error}</div>}
-          {loading ? <div style={loadingBox}>Loading workforce overview…</div> : overview ? (
-            <>
-              <div style={summaryGrid}>
-                <div style={summaryCard}><strong>Active workforce headcount</strong><div style={big}>{overview.activeWorkforceHeadcount ?? '—'}</div></div>
-                <div style={summaryCard}><strong>Active sessions</strong><div style={big}>{overview.activeSessionCount ?? '—'}</div></div>
-              </div>
-              <h4 style={h4}>Active role distribution</h4>
-              <StructuredRecordTable
-                rows={roleRows}
-                columns={ROLE_COLUMNS}
-                showDetails={false}
-                emptyMessage="No active role assignments were returned."
-              />
-            </>
-          ) : <div style={empty}>No overview data was returned by the workforce widget.</div>}
-        </section>
-      )}
-
-      {canCreateSupportUser && (
-        <section style={formCard} aria-label="Provision SUPPORT workforce user">
-          <h3 style={h3}>Provision SUPPORT workforce user</h3>
-          <p style={sub}>Creates a SUPPORT-type identity. Copy the one-time temporary password from the response and deliver it out-of-band; no credential retrieval flow exists.</p>
-          <form onSubmit={handleCreate} style={form}>
-            <label style={fieldLabel}>Support username or email
-              <input value={createUsername} onChange={(event) => setCreateUsername(event.target.value)} placeholder="Support username or email" style={input} />
-            </label>
-            <button type="submit" style={btn}>Create SUPPORT User</button>
+    <div className="mn-operational mn-workforce workforce-redesign" style={wrap}>
+      <PageHeader eyebrow="Workforce and governance" title="Workforce Overview & Support Provisioning" description="Review the workforce summary and manage SUPPORT identities according to your function grants." />
+      {uncertain && <div className="workforce-redesign__boundary" role="status"><strong>Independent workforce review required</strong><span>The {uncertain.action} action for {uncertain.target} may have occurred. Inspect authorized workforce and audit records before acting again. A missing record or fresh read cannot exclude a late commit. A lost one-time credential may be unrecoverable. This lock is local and lost on confirmed exit or session change.</span><button type="button" onClick={() => { setUncertain(null); setCreateErr(''); setDisableErr(''); }}>I reviewed workforce and audit records</button></div>}
+      <div className="workforce-redesign__boundary" role="note"><strong>Access controls</strong><span>Workforce metrics are read-only. SUPPORT provisioning and disabling are separate permission-gated actions; no enable action is available here.</span></div>
+      <nav className="workforce-redesign__nav" aria-label="Workforce workspace sections">
+        {canViewOverview && <a href="#workforce-overview">Overview</a>}
+        {canCreateSupportUser && <a href="#workforce-provision">Provision SUPPORT</a>}
+        {canSuspendSupportUser && <a href="#workforce-disable">Disable SUPPORT</a>}
+      </nav>
+      {canViewOverview && <section id="workforce-overview" className="workforce-redesign__panel" aria-label="Workforce overview">
+        <div className="workforce-redesign__heading"><div><p className="workforce-redesign__eyebrow">READ-ONLY SUMMARY</p><h2>Workforce Overview</h2><p>Current workforce dashboard figures returned by the service.</p></div><Button size="sm" onClick={() => void fetchOverview()} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</Button></div>
+        {error && <div className="workforce-redesign__state workforce-redesign__state--error" role="alert">{error}</div>}
+        {loading ? <div className="workforce-redesign__state" role="status">Loading workforce overview…</div> : overview ? <>
+          <div className="workforce-redesign__stats"><div><span>Active workforce headcount</span><strong>{overview.activeWorkforceHeadcount ?? '—'}</strong></div><div><span>Active sessions</span><strong>{overview.activeSessionCount ?? '—'}</strong></div></div>
+          <div className="workforce-redesign__distribution-heading"><div><h3 className="workforce-redesign__subheading">Active role distribution</h3><p>Filter the role totals returned by this overview. Counts are assignments, not a workforce directory.</p></div><label>Search returned roles<input value={roleSearch} onChange={event => setRoleSearch(event.target.value)} placeholder="Role name" type="search" /></label></div>
+          <p className="workforce-redesign__result-count" role="status">{roleRows.length} of {overview.roleDistribution?.length ?? 0} returned roles shown</p>
+          <StructuredRecordTable rows={roleRows} columns={ROLE_COLUMNS} showDetails={false} emptyMessage={roleSearch.trim() ? 'No returned roles match this search.' : 'No active role assignments were returned.'} />
+        </> : !error && <div className="workforce-redesign__state">No overview data was returned by the workforce widget.</div>}
+      </section>}
+      <div className="workforce-redesign__actions-grid">
+        {canCreateSupportUser && <section id="workforce-provision" className="workforce-redesign__panel" aria-label="Provision SUPPORT workforce user">
+          <div className="workforce-redesign__heading"><div><p className="workforce-redesign__eyebrow">PROVISIONING</p><h2>Provision SUPPORT workforce user</h2><p>Creates a SUPPORT-type identity. The temporary password is shown once and must be delivered out-of-band.</p></div></div>
+          <form onSubmit={handleCreate} className="workforce-redesign__form">
+            <label>Support username or email<input disabled={workforceBusy || Boolean(uncertain) || Boolean(createRes) || Boolean(pendingDisable)} value={createUsername} onChange={event => setCreateUsername(event.target.value)} placeholder="Support username or email" /></label>
+            <Button type="submit" variant="primary" disabled={workforceBusy || Boolean(uncertain) || Boolean(createRes) || Boolean(pendingDisable) || !createUsername.trim()}>{createLoading ? 'Creating…' : 'Create SUPPORT User'}</Button>
           </form>
-          {createRes && <div style={successBox} role="status">{createRes}</div>}
-          {createErr && <div style={errBox} role="alert">{createErr}</div>}
-          <div style={note}>SUPPORT cannot self-provision; the backend requires <code>workforce.user.create</code>.</div>
-        </section>
-      )}
-
-      {canSuspendSupportUser && (
-        <section style={formCard} aria-label="Disable SUPPORT workforce user">
-          <h3 style={h3}>Disable SUPPORT workforce user</h3>
-          <p style={sub}>The API has no workforce-user list route. Use the ID returned during provisioning or an ID from an authorized workforce record.</p>
-          <form onSubmit={handleDisable} style={form}>
-            <label style={fieldLabel}>Support user ID
-              <input value={disableUserId} onChange={(event) => setDisableUserId(event.target.value)} placeholder="SUPPORT user ID" style={input} />
-            </label>
-            <label style={fieldLabel}>Reason (optional)
-              <input value={disableReason} onChange={(event) => setDisableReason(event.target.value)} placeholder="Reason for disabling access" style={input} />
-            </label>
-            <button type="submit" style={dangerBtn} disabled={disableLoading || !disableUserId.trim()}>
-              {disableLoading ? 'Disabling…' : 'Disable SUPPORT User'}
-            </button>
+          {createRes && <div className="workforce-redesign__credential" role="status"><strong>One-time credential</strong><p>{createRes}</p><p>There is no credential retrieval flow. Dismiss only after recording it securely.</p><Button size="sm" onClick={() => { if (window.confirm('Dismiss this one-time credential? It may not be retrievable again.')) setCreateRes(''); }}>Dismiss credential</Button></div>}
+          {createErr && <div className="workforce-redesign__state workforce-redesign__state--error" role="alert">{createErr}</div>}
+          <p className="workforce-redesign__hint">SUPPORT cannot self-provision; the backend requires <code>workforce.user.create</code>.</p>
+        </section>}
+        {canSuspendSupportUser && <section id="workforce-disable" className="workforce-redesign__panel" aria-label="Disable SUPPORT workforce user">
+          <div className="workforce-redesign__heading"><div><p className="workforce-redesign__eyebrow">ACCESS CONTROL</p><h2>Disable SUPPORT workforce user</h2><p>Use the ID returned during provisioning or from an authorized workforce record. There is no workforce-user list route here.</p></div></div>
+          <form onSubmit={handleDisable} className="workforce-redesign__form">
+            <label>Support user ID<input disabled={workforceBusy || Boolean(uncertain) || Boolean(createRes) || Boolean(pendingDisable)} value={disableUserId} onChange={event => setDisableUserId(event.target.value)} placeholder="SUPPORT user ID" /></label>
+            <label>Reason (optional)<input disabled={workforceBusy || Boolean(uncertain) || Boolean(createRes) || Boolean(pendingDisable)} value={disableReason} onChange={event => setDisableReason(event.target.value)} placeholder="Reason for disabling access" /></label>
+            <Button ref={triggerRef} type="submit" variant="danger" disabled={workforceBusy || Boolean(uncertain) || Boolean(createRes) || Boolean(pendingDisable) || !disableUserId.trim()}>{disableLoading ? 'Disabling…' : 'Disable SUPPORT User'}</Button>
           </form>
-          {disableRes && <div style={successBox} role="status">{disableRes}</div>}
-          {disableErr && <div style={errBox} role="alert">{disableErr}</div>}
-          <div style={note}>No enable action is shown: the existing enable endpoint has no matching catalogue function. The screen does not add a guessed permission.</div>
-        </section>
-      )}
+          {disableRes && <div className="workforce-redesign__state workforce-redesign__state--success" role="status">{disableRes}</div>}
+          {disableErr && <div className="workforce-redesign__state workforce-redesign__state--error" role="alert">{disableErr}</div>}
+          <p className="workforce-redesign__hint">No enable action is shown: the existing enable endpoint has no matching catalogue function. The screen does not add a guessed permission.</p>
+        </section>}
+      </div>
+      {pendingDisable && <div className="workforce-redesign__overlay"><section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="disable-support-title" aria-describedby="disable-support-description" tabIndex={-1} className="workforce-redesign__dialog">
+        <p className="workforce-redesign__eyebrow">REVIEW ACCESS CHANGE</p><h2 id="disable-support-title">Disable SUPPORT user?</h2>
+        <p id="disable-support-description">This disables the selected SUPPORT user. No enable action is available in this console. Review the identity before confirming.</p>
+        <dl><div><dt>Support user ID</dt><dd><code>{pendingDisable.id}</code></dd></div><div><dt>Reason</dt><dd>{pendingDisable.reason || 'Not provided'}</dd></div></dl>
+        <div className="workforce-redesign__dialog-actions"><Button onClick={() => setPendingDisable(null)} disabled={disableLoading}>Cancel</Button><Button variant="danger" onClick={() => void confirmDisable()} disabled={disableLoading}>{disableLoading ? 'Disabling…' : 'Confirm disable'}</Button></div>
+      </section></div>}
     </div>
   );
 };
-
-const wrap: React.CSSProperties = { padding: '24px', maxWidth: 1100 };
-const h2: React.CSSProperties = { margin: '0 0 8px', color: '#032B14' };
-const h3: React.CSSProperties = { margin: 0, color: '#334155', fontSize: 16 };
-const h4: React.CSSProperties = { margin: '16px 0 10px', color: '#334155', fontSize: 14 };
-const sub: React.CSSProperties = { color: '#64748B', fontSize: 13, margin: '8px 0 12px' };
-const overviewCard: React.CSSProperties = { padding: 16, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8, marginBottom: 16 };
-const sectionHeading: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 12 };
-const summaryGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 };
-const summaryCard: React.CSSProperties = { padding: 14, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 6, color: '#475569', fontSize: 13 };
-const big: React.CSSProperties = { fontSize: 28, fontWeight: 800, color: '#032B14', marginTop: 6 };
-const formCard: React.CSSProperties = { marginTop: 16, padding: 16, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8 };
-const form: React.CSSProperties = { display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'end' };
-const fieldLabel: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 5, flex: 1, minWidth: 220, color: '#475569', fontSize: 12 };
-const input: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 6, border: '1px solid #CBD5E1' };
-const btn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid #CBD5E1', background: '#fff', cursor: 'pointer' };
-const dangerBtn: React.CSSProperties = { ...btn, borderColor: '#FCA5A5', background: '#FEF2F2', color: '#991B1B' };
-const errBox: React.CSSProperties = { background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#991B1B', padding: 10, borderRadius: 6, margin: '10px 0', fontSize: 13 };
-const successBox: React.CSSProperties = { background: '#ECFDF5', border: '1px solid #6EE7B7', color: '#065F46', padding: 10, borderRadius: 6, margin: '10px 0', fontSize: 13, overflowWrap: 'anywhere' };
-const loadingBox: React.CSSProperties = { padding: 18, textAlign: 'center', color: '#64748B' };
-const empty: React.CSSProperties = { padding: 16, color: '#64748B', background: '#F8FAFC', borderRadius: 6, fontSize: 13 };
+const wrap: React.CSSProperties = { padding: 'clamp(16px, 3vw, 32px)', maxWidth: 1440 };
 const denied: React.CSSProperties = { background: '#FFF7ED', border: '1px solid #FDBA74', color: '#92400E', padding: 12, borderRadius: 8, fontSize: 13 };
-const note: React.CSSProperties = { marginTop: 12, padding: 10, color: '#64748B', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 6, fontSize: 12 };

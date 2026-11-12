@@ -91,7 +91,9 @@ export class CreateCashToCashTransfers1785753600057 implements MigrationInterfac
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DELETE FROM ledger_accounts WHERE code = 'CASH_TO_CASH-UNCLAIMED-NGN'`);
+    await queryRunner.query(
+      `DELETE FROM ledger_accounts WHERE code = 'CASH_TO_CASH-UNCLAIMED-NGN'`,
+    );
     await queryRunner.query(`DROP TABLE IF EXISTS cash_to_cash_transfers`);
   }
 }

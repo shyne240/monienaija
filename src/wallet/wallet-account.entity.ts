@@ -25,9 +25,12 @@ export class WalletAccount {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  /** Opaque reference owned by the future identity/customer bounded context. */
+  /** Historical owner reference. Its classification is derived from authoritative domain rows. */
   @Column({ name: 'customer_id', type: 'varchar', length: 160 })
   customerId!: string;
+
+  @Column({ name: 'owner_class', type: 'varchar', length: 12, default: 'REVIEW' })
+  ownerClass!: 'CUSTOMER' | 'AGENT' | 'REVIEW';
 
   @Column({ type: 'varchar', length: 3 })
   currency!: string;

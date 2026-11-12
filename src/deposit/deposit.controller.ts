@@ -25,20 +25,25 @@ interface AuthenticatedRequest {
 
 @Controller('deposits')
 export class DepositController {
-  constructor(private readonly depositService: DepositService, private readonly auth: AuthorizationService) {}
+  constructor(
+    private readonly depositService: DepositService,
+    private readonly auth: AuthorizationService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async createDeposit(
+  createDeposit(
     @Body() dto: CreateDepositDto,
     @Headers('idempotency-key') idempotencyKey?: string,
     @Req() req?: AuthenticatedRequest,
-  ) {
+  ): Promise<never> {
     void dto;
     void idempotencyKey;
     void req;
-    throw new ForbiddenException(
-      'Generic deposit commands are disabled; this endpoint cannot create or assert external settlement',
+    return Promise.reject(
+      new ForbiddenException(
+        'Generic deposit commands are disabled; this endpoint cannot create or assert external settlement',
+      ),
     );
   }
 
@@ -56,30 +61,43 @@ export class DepositController {
 
   @Post(':depositId/complete')
   @HttpCode(HttpStatus.OK)
-  async completeDeposit(@Param('depositId') depositId: string, @Req() req: AuthenticatedRequest) {
+  completeDeposit(
+    @Param('depositId') depositId: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<never> {
     void depositId;
     void req;
-    throw new ForbiddenException(
-      'Manual sandbox completion is disabled; this endpoint is not evidence of external settlement',
+    return Promise.reject(
+      new ForbiddenException(
+        'Manual sandbox completion is disabled; this endpoint is not evidence of external settlement',
+      ),
     );
   }
 
   @Post(':depositId/fail')
   @HttpCode(HttpStatus.OK)
-  async failDeposit(@Param('depositId') depositId: string, @Body() dto: PaymentReasonDto, @Req() req: AuthenticatedRequest) {
+  failDeposit(
+    @Param('depositId') depositId: string,
+    @Body() dto: PaymentReasonDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<never> {
     void depositId;
     void dto;
     void req;
-    throw new ForbiddenException('Generic deposit state changes are disabled');
+    return Promise.reject(new ForbiddenException('Generic deposit state changes are disabled'));
   }
 
   @Post(':depositId/cancel')
   @HttpCode(HttpStatus.OK)
-  async cancelDeposit(@Param('depositId') depositId: string, @Body() dto: PaymentReasonDto, @Req() req: AuthenticatedRequest) {
+  cancelDeposit(
+    @Param('depositId') depositId: string,
+    @Body() dto: PaymentReasonDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<never> {
     void depositId;
     void dto;
     void req;
-    throw new ForbiddenException('Generic deposit state changes are disabled');
+    return Promise.reject(new ForbiddenException('Generic deposit state changes are disabled'));
   }
 
   private isWorkforce(req?: AuthenticatedRequest): boolean {

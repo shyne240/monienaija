@@ -127,7 +127,8 @@ export class RuntimeAccessGuard implements CanActivate {
         validatedA2Session &&
         principal.readOnlyPrincipal === true &&
         request.method.toUpperCase() === 'DELETE' &&
-        typeof currentSessionId === 'string' && currentSessionId.length > 0 &&
+        typeof currentSessionId === 'string' &&
+        currentSessionId.length > 0 &&
         request.params?.id === currentSessionId &&
         request.url.split('?', 1)[0] ===
           `/api/v1/internal/a2/workforce/sessions/${currentSessionId}`;
@@ -218,7 +219,9 @@ export class RuntimeAccessGuard implements CanActivate {
             ...(declaredPolicy.requiredScopes
               ? { requiredScopes: declaredPolicy.requiredScopes }
               : {}),
-            ...(declaredPolicy.requiredRoles ? { requiredRoles: declaredPolicy.requiredRoles } : {}),
+            ...(declaredPolicy.requiredRoles
+              ? { requiredRoles: declaredPolicy.requiredRoles }
+              : {}),
             ...(declaredPolicy.requiredFunctions
               ? { requiredFunctions: declaredPolicy.requiredFunctions }
               : {}),
@@ -242,7 +245,10 @@ export class RuntimeAccessGuard implements CanActivate {
           // controller-level requireFunction() can record a denial. Audit only these explicitly
           // marked single-function routes, and only on denial, so allowed requests still get
           // exactly one controller decision and unrelated Arena 3 policies retain their behavior.
-          if (route.auditDeniedWorkforceFunction && declaredPolicy.requiredFunctions?.length === 1) {
+          if (
+            route.auditDeniedWorkforceFunction &&
+            declaredPolicy.requiredFunctions?.length === 1
+          ) {
             const functionCode = declaredPolicy.requiredFunctions[0]!;
             await this.authorizationService.authorize(
               principal,
@@ -270,7 +276,10 @@ export class RuntimeAccessGuard implements CanActivate {
         if (!this.workforceConfig.enabled) {
           throw new UnauthorizedException('Workforce authentication disabled');
         }
-        principal = await this.workforceSessions.validate(token, this.workforceConfig.internalAudience);
+        principal = await this.workforceSessions.validate(
+          token,
+          this.workforceConfig.internalAudience,
+        );
       } catch {
         try {
           const supportPrincipal = await this.supportAuthenticationService.validate(token);
@@ -384,7 +393,10 @@ export class RuntimeAccessGuard implements CanActivate {
     // policy, so this cannot grant access beyond what each route already declared allowed.
     if (!principal && this.workforceConfig.enabled) {
       try {
-        principal = await this.workforceSessions.validate(token, this.workforceConfig.internalAudience);
+        principal = await this.workforceSessions.validate(
+          token,
+          this.workforceConfig.internalAudience,
+        );
       } catch {
         // Not a valid A2 workforce session — fall through to the next session type.
       }
@@ -432,7 +444,10 @@ export class RuntimeAccessGuard implements CanActivate {
    * for whom this field is `undefined` (every non-workforce principal type, and any workforce
    * principal holding zero recognized roles) is never vacuously treated as read-only.
    */
-  private denyUnsafeMethodForReadOnlyPrincipal(principal: AuthorizationPrincipal, method: string): void {
+  private denyUnsafeMethodForReadOnlyPrincipal(
+    principal: AuthorizationPrincipal,
+    method: string,
+  ): void {
     if (principal.readOnlyPrincipal === true && !SAFE_HTTP_METHODS.has(method.toUpperCase())) {
       throw new ForbiddenException('Read-only principal may not perform this operation');
     }

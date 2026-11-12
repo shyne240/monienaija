@@ -1,3 +1,4 @@
+import { testWalletFinancialBoundary } from './support/test-wallet-financial-boundary';
 import { ConflictException } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 
@@ -225,6 +226,7 @@ function makeService() {
     idempotency as never,
     auditService as never,
     partnerConnectionService as never,
+    testWalletFinancialBoundary,
   );
   return { service, operations, references, manager, idempotency, auditService };
 }

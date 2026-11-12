@@ -35,7 +35,11 @@ import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
-import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
+import {
+  createIntegrationDataSource,
+  destroyIntegrationDataSource,
+  truncateAllTables,
+} from './support/pg-harness';
 
 describe('V1-HARDEN-01 Part L — limit-catalog CHECK-constraint boundary is not reachable via real HTTP', () => {
   let dataSource: DataSource;
@@ -58,7 +62,8 @@ describe('V1-HARDEN-01 Part L — limit-catalog CHECK-constraint boundary is not
 
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
+      if (!token || !token.startsWith('workforce-'))
+        throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
       return {
         type,
@@ -94,7 +99,9 @@ describe('V1-HARDEN-01 Part L — limit-catalog CHECK-constraint boundary is not
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
   }, 180000);
@@ -137,7 +144,13 @@ describe('V1-HARDEN-01 Part L — limit-catalog CHECK-constraint boundary is not
     const created = await request(app.getHttpServer())
       .post('/api/v1/internal/limit-profiles/CHK_DIR2/rules')
       .set(OPERATOR)
-      .send({ product: 'WALLET_TRANSFER', direction: 'OUTGOING', currency: 'NGN', dimension: 'DAILY_AMOUNT', limitValueMinor: '1000' })
+      .send({
+        product: 'WALLET_TRANSFER',
+        direction: 'OUTGOING',
+        currency: 'NGN',
+        dimension: 'DAILY_AMOUNT',
+        limitValueMinor: '1000',
+      })
       .expect(201);
     const res = await request(app.getHttpServer())
       .patch(`/api/v1/internal/limit-rules/${created.body.id}`)
@@ -151,13 +164,23 @@ describe('V1-HARDEN-01 Part L — limit-catalog CHECK-constraint boundary is not
     const res = await request(app.getHttpServer())
       .post('/api/v1/internal/limit-profiles/CHK_DIM/rules')
       .set(OPERATOR)
-      .send({ product: 'WALLET_TRANSFER', currency: 'NGN', dimension: 'NOT_A_REAL_DIMENSION', limitValueMinor: '1000' });
+      .send({
+        product: 'WALLET_TRANSFER',
+        currency: 'NGN',
+        dimension: 'NOT_A_REAL_DIMENSION',
+        limitValueMinor: '1000',
+      });
     expect(res.status).toBe(400);
 
     const created = await request(app.getHttpServer())
       .post('/api/v1/internal/limit-profiles/CHK_DIM/rules')
       .set(OPERATOR)
-      .send({ product: 'WALLET_TRANSFER', currency: 'NGN', dimension: 'DAILY_AMOUNT', limitValueMinor: '1000' })
+      .send({
+        product: 'WALLET_TRANSFER',
+        currency: 'NGN',
+        dimension: 'DAILY_AMOUNT',
+        limitValueMinor: '1000',
+      })
       .expect(201);
     const upd = await request(app.getHttpServer())
       .patch(`/api/v1/internal/limit-rules/${created.body.id}`)
@@ -171,7 +194,12 @@ describe('V1-HARDEN-01 Part L — limit-catalog CHECK-constraint boundary is not
     const created = await request(app.getHttpServer())
       .post('/api/v1/internal/limit-profiles/CHK_EXCL/rules')
       .set(OPERATOR)
-      .send({ product: 'WALLET_TRANSFER', currency: 'NGN', dimension: 'DAILY_AMOUNT', limitValueMinor: '1000' })
+      .send({
+        product: 'WALLET_TRANSFER',
+        currency: 'NGN',
+        dimension: 'DAILY_AMOUNT',
+        limitValueMinor: '1000',
+      })
       .expect(201);
     // Flip to a COUNT dimension but forget to clear limitValueMinor / set limitValueCount.
     const res = await request(app.getHttpServer())

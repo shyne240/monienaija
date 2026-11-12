@@ -1,9 +1,20 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 import { OutletService } from './outlet.service';
 import { TerminalService } from './terminal.service';
 import { CreateOutletDto } from './dto/create-outlet.dto';
 import { CreateTerminalDto } from './dto/create-terminal.dto';
+import { OutletTransitionDto } from './dto/outlet-transition.dto';
 import { UpdateOutletMetadataDto } from './dto/update-outlet-metadata.dto';
 import { UpdateTerminalMetadataDto } from './dto/update-terminal-metadata.dto';
 import { AuthorizationService } from '../authorization/authorization.service';
@@ -25,7 +36,11 @@ export class OutletController {
   // ----- Outlets -----
   @Post('agents/:agentId/outlets')
   @HttpCode(201)
-  async createOutlet(@Param('agentId') agentId: string, @Body() dto: CreateOutletDto, @Req() req: AuthenticatedRequest) {
+  async createOutlet(
+    @Param('agentId') agentId: string,
+    @Body() dto: CreateOutletDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
     const actor = await this.requireManage(req);
     const principal = req.authorizationPrincipal;
     return this.outletService.create({
@@ -102,23 +117,35 @@ export class OutletController {
 
   @Post('outlets/:outletId/suspend')
   @HttpCode(200)
-  async suspendOutlet(@Param('outletId') outletId: string, @Req() req: AuthenticatedRequest) {
+  async suspendOutlet(
+    @Param('outletId') outletId: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto?: OutletTransitionDto,
+  ) {
     const actor = await this.requireManage(req);
-    return this.outletService.suspend(outletId, actor);
+    return this.outletService.suspend(outletId, actor, dto?.expectedVersion);
   }
 
   @Post('outlets/:outletId/reactivate')
   @HttpCode(200)
-  async reactivateOutlet(@Param('outletId') outletId: string, @Req() req: AuthenticatedRequest) {
+  async reactivateOutlet(
+    @Param('outletId') outletId: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto?: OutletTransitionDto,
+  ) {
     const actor = await this.requireManage(req);
-    return this.outletService.reactivate(outletId, actor);
+    return this.outletService.reactivate(outletId, actor, dto?.expectedVersion);
   }
 
   @Post('outlets/:outletId/terminate')
   @HttpCode(200)
-  async terminateOutlet(@Param('outletId') outletId: string, @Req() req: AuthenticatedRequest) {
+  async terminateOutlet(
+    @Param('outletId') outletId: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto?: OutletTransitionDto,
+  ) {
     const actor = await this.requireManage(req);
-    return this.outletService.terminate(outletId, actor);
+    return this.outletService.terminate(outletId, actor, dto?.expectedVersion);
   }
 
   // ----- Terminals -----
@@ -196,7 +223,10 @@ export class OutletController {
   }
 
   @Get('outlets/:outletId/terminals')
-  async listTerminalsByOutlet(@Param('outletId') outletId: string, @Req() req: AuthenticatedRequest) {
+  async listTerminalsByOutlet(
+    @Param('outletId') outletId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     await this.requireView(req);
     return this.terminalService.listByOutlet(outletId);
   }
@@ -230,23 +260,35 @@ export class OutletController {
 
   @Post('terminals/:terminalId/suspend')
   @HttpCode(200)
-  async suspendTerminal(@Param('terminalId') terminalId: string, @Req() req: AuthenticatedRequest) {
+  async suspendTerminal(
+    @Param('terminalId') terminalId: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto?: OutletTransitionDto,
+  ) {
     const actor = await this.requireManage(req);
-    return this.terminalService.suspend(terminalId, actor);
+    return this.terminalService.suspend(terminalId, actor, dto?.expectedVersion);
   }
 
   @Post('terminals/:terminalId/reactivate')
   @HttpCode(200)
-  async reactivateTerminal(@Param('terminalId') terminalId: string, @Req() req: AuthenticatedRequest) {
+  async reactivateTerminal(
+    @Param('terminalId') terminalId: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto?: OutletTransitionDto,
+  ) {
     const actor = await this.requireManage(req);
-    return this.terminalService.reactivate(terminalId, actor);
+    return this.terminalService.reactivate(terminalId, actor, dto?.expectedVersion);
   }
 
   @Post('terminals/:terminalId/terminate')
   @HttpCode(200)
-  async terminateTerminal(@Param('terminalId') terminalId: string, @Req() req: AuthenticatedRequest) {
+  async terminateTerminal(
+    @Param('terminalId') terminalId: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto?: OutletTransitionDto,
+  ) {
     const actor = await this.requireManage(req);
-    return this.terminalService.terminate(terminalId, actor);
+    return this.terminalService.terminate(terminalId, actor, dto?.expectedVersion);
   }
 
   private async requireManage(req: AuthenticatedRequest): Promise<string> {

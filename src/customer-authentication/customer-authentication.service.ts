@@ -513,11 +513,12 @@ export class CustomerAuthenticationService {
     const actor = this.normalizeActor(command.actor);
     const reason = this.normalizeOptionalText(command.reason, 'reason', 500);
     return this.dataSource.transaction(async (manager) => {
-      const credential = await this.requireCredential(
-        manager.getRepository(CustomerAuthenticationCredential),
-        customerId,
-        credentialId,
-      );
+      const credential = await manager.getRepository(CustomerAuthenticationCredential).findOne({
+        where: { id: credentialId, customerId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!credential || !this.isNotDeleted(credential.deletedAt))
+        throw new NotFoundException(`Authentication credential ${credentialId} was not found`);
       if (credential.status === AuthenticationCredentialStatus.REVOKED) {
         throw new ConflictException('Revoked credentials cannot record authentication failures');
       }

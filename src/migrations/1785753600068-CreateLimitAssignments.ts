@@ -37,11 +37,21 @@ export class CreateLimitAssignments1785753600068 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX idx_limit_assignments_profile ON limit_assignments (limit_profile_code)`);
-    await queryRunner.query(`CREATE INDEX idx_limit_assignments_subject ON limit_assignments (subject_type, subject_id)`);
-    await queryRunner.query(`CREATE INDEX idx_limit_assignments_segment ON limit_assignments (segment_code)`);
-    await queryRunner.query(`CREATE INDEX idx_limit_assignments_effective ON limit_assignments (effective_from, effective_to)`);
-    await queryRunner.query(`CREATE INDEX idx_limit_assignments_active ON limit_assignments (is_active)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_assignments_profile ON limit_assignments (limit_profile_code)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_assignments_subject ON limit_assignments (subject_type, subject_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_assignments_segment ON limit_assignments (segment_code)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_assignments_effective ON limit_assignments (effective_from, effective_to)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_assignments_active ON limit_assignments (is_active)`,
+    );
     await queryRunner.query(`
       CREATE UNIQUE INDEX uq_limit_assignments_active_key
       ON limit_assignments (subject_type, COALESCE(subject_id::text, ''), COALESCE(segment_code, ''), limit_profile_code, effective_from)

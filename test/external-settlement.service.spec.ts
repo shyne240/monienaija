@@ -404,6 +404,9 @@ class FakeLedgerService {
   private nextId = 1;
   private nextLineId = 1;
 
+  postReversalInTransaction: FakeLedgerService['postJournalInTransaction'] = (manager, command) =>
+    this.postJournalInTransaction(manager, command);
+
   postJournalInTransaction(
     _manager: unknown,
     command: {

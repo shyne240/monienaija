@@ -1,0 +1,53 @@
+/* Agent Network page hierarchy; nested operational workspaces keep their own styles. */
+.agent-network-header { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:20px; padding:24px; border:1px solid #cfdfd6; border-radius:14px; background:linear-gradient(120deg,#e9f4ed,#f8fbf8); }
+.agent-network-header h2 { margin:4px 0 8px; color:#103a2b; font-size:clamp(24px,3vw,31px); letter-spacing:-.025em; }
+.agent-network-header p:not(.agent-network-eyebrow) { margin:0; max-width:660px; color:#38564b; line-height:1.5; }
+.agent-network-eyebrow { margin:0 0 6px; color:#356b52; font-size:11px; font-weight:800; letter-spacing:.1em; }
+.agent-network-header nav { display:flex; flex-wrap:wrap; gap:10px; }
+.agent-network-header a { display:inline-block; padding:9px 12px; background:#fff; border:1px solid #b8cec1; border-radius:8px; color:#174c36; font-size:13px; font-weight:700; text-decoration:none; }
+.agent-network-header a:focus-visible { outline:2px solid var(--mn-focus-ring); outline-offset:2px; }
+.agent-network-section { margin-top:20px; padding:clamp(16px,2.5vw,24px); border:1px solid #d8e5dc; border-radius:14px; background:#fff; box-shadow:0 4px 20px #183b2810; scroll-margin-top:16px; }
+.agent-network-directory-heading { margin-top:28px; border-top:1px solid #d8e5dc; padding-top:20px; scroll-margin-top:16px; }
+.agent-network-directory-heading h3 { margin:0 0 6px; color:#103a2b; font-size:20px; }
+.agent-network-directory-heading p:not(.agent-network-eyebrow) { margin:0; color:#486157; font-size:13px; line-height:1.5; }
+@media (max-width: 600px) { .agent-network-header { padding:18px; } .agent-network-header nav { width:100%; } }
+.agent-network-form-fields { min-width:0; margin:0; padding:0; border:0; }
+
+/* Agent outlet and terminal workspace: records, editors and distinct creation contexts. */
+.agent-sites__heading, .agent-sites__group-heading { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-start; gap:12px; }
+.agent-sites__heading h3, .agent-sites__group-heading h4, .agent-sites__form h4 { margin:0; color:#103a2b; }
+.agent-sites__heading h3 { font-size:20px; }
+.agent-sites__heading p:not(.agent-network-eyebrow), .agent-sites__form-heading p:not(.agent-network-eyebrow) { margin:6px 0 0; color:#486157; line-height:1.5; max-width:700px; }
+.agent-sites__notice { color:#486157; margin:16px 0 0; }
+.agent-sites__content { display:grid; gap:16px; margin-top:18px; }
+.agent-sites__group, .agent-sites__form { min-width:0; border:1px solid #d8e5dc; border-radius:10px; padding:16px; background:#fbfdfb; }
+.agent-sites__group-heading { align-items:center; margin-bottom:12px; }
+.agent-sites__group-heading span { color:#486157; font-size:13px; }
+.agent-sites__creation { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:16px; }
+.agent-sites__form-heading { margin-bottom:16px; }
+.agent-sites__fields, .agent-sites__editor { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); gap:12px; }
+.agent-sites__editor { align-items:end; margin-top:12px; padding-top:12px; border-top:1px solid #d8e5dc; }
+.agent-sites__field { display:flex; flex-direction:column; min-width:0; gap:5px; color:#29483b; font-size:13px; font-weight:600; }
+.agent-sites__field input, .agent-sites__field select { width:100%; min-width:0; box-sizing:border-box; border:1px solid #6d817a; border-radius:7px; padding:9px 10px; background:#fff; color:#132b25; font:inherit; font-weight:400; }
+.agent-sites__field input:focus-visible, .agent-sites__field select:focus-visible { outline:2px solid #0b624a; outline-offset:2px; }
+.agent-sites__actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+@media (max-width:600px) { .agent-sites__group, .agent-sites__form { padding:12px; } }
+.agent-limits__records, .agent-limits__form { margin-top:16px; }
+.agent-limits__catalog-page { margin-top:14px; padding-top:12px; border-top:1px solid #d8e5dc; color:#486157; font-size:13px; }
+.agent-limits__catalog-page p { margin:0; }
+.agent-limits__catalog-error { color:#9d261e; }
+
+/* Bring retained network controls into the same field rhythm as the M2 shell. */
+.agent-network-filters label { display:flex; flex-direction:column; gap:6px; color:#29483b; font-size:13px; font-weight:700; }
+.agent-network-filters select { min-width:180px; }
+/* The selected Agent retains its governed controls in a contextual workspace. */
+.agent-network-drawer { width:min(100%,760px); }
+.agent-network-drawer__header { position:sticky; top:0; z-index:4; flex-wrap:wrap; padding:18px 20px !important; background:#fff !important; overflow-wrap:anywhere; }
+.agent-network-drawer__header strong { font-size:19px; color:#103a2b; }
+.agent-network-drawer__body { padding:20px !important; overflow-wrap:anywhere; }
+.agent-network-drawer__body > div, .agent-network-drawer__body > section { min-width:0; }
+@media(max-width:600px) { .agent-network-drawer__header,.agent-network-drawer__body { padding:16px !important; } }
+.agent-network-filters .one-workspace-filter-control { flex:1 1 420px; }
+.agent-network-filters .one-workspace-filter-tabs { margin:0; }
+.agent-network-directory-table th:last-child,.agent-network-directory-table td:last-child { position:sticky;right:0;z-index:1;box-shadow:-3px 0 6px #18382b0d }
+.agent-network-directory-table td:last-child { background:#fff }

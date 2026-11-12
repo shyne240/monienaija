@@ -3,10 +3,9 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Not, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, Not, QueryFailedError, Repository, type EntityManager } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import { LimitAssignment } from './limit-assignment.entity';
@@ -29,10 +28,13 @@ export class LimitAssignmentService {
     @InjectRepository(LimitProfile)
     private readonly profileRepo: Repository<LimitProfile>,
     private readonly dataSource: DataSource,
-    @Optional() private readonly auditService?: AuditService,
+    private readonly auditService: AuditService,
   ) {}
 
-  async createAssignment(input: LimitAssignmentCreateInput, actor: string): Promise<LimitAssignmentSafeProjection> {
+  async createAssignment(
+    input: LimitAssignmentCreateInput,
+    actor: string,
+  ): Promise<LimitAssignmentSafeProjection> {
     this.validateCreate(input);
     const limitProfileCode = input.limitProfileCode.trim().toUpperCase();
     const profile = await this.profileRepo.findOne({ where: { code: limitProfileCode } as never });
@@ -42,16 +44,21 @@ export class LimitAssignmentService {
     const subjectId = input.subjectId ? input.subjectId.trim() : null;
     const segmentCode = input.segmentCode ? input.segmentCode.trim().toUpperCase() : null;
 
-    await this.validateSubjectExistence(subjectType, subjectId, segmentCode);
+    await this.validateSubjectExistence(subjectType, subjectId);
     this.validateSubjectConsistency(subjectType, subjectId, segmentCode);
 
-    const effectiveFrom = input.effectiveFrom ? new Date(input.effectiveFrom as string) : new Date();
-    if (isNaN(effectiveFrom.getTime())) throw new BadRequestException('effectiveFrom must be valid ISO date');
+    const effectiveFrom = input.effectiveFrom
+      ? new Date(input.effectiveFrom as string)
+      : new Date();
+    if (isNaN(effectiveFrom.getTime()))
+      throw new BadRequestException('effectiveFrom must be valid ISO date');
     let effectiveTo: Date | null = null;
     if (input.effectiveTo) {
       effectiveTo = new Date(input.effectiveTo as string);
-      if (isNaN(effectiveTo.getTime())) throw new BadRequestException('effectiveTo must be valid ISO date');
-      if (effectiveTo <= effectiveFrom) throw new BadRequestException('effectiveTo must be after effectiveFrom');
+      if (isNaN(effectiveTo.getTime()))
+        throw new BadRequestException('effectiveTo must be valid ISO date');
+      if (effectiveTo <= effectiveFrom)
+        throw new BadRequestException('effectiveTo must be after effectiveFrom');
     }
 
     const entity = this.assignmentRepo.create({
@@ -66,26 +73,26 @@ export class LimitAssignmentService {
       createdBy: actor,
       updatedBy: actor,
       version: 1,
-    } as never);
+    } as never) as unknown as LimitAssignment;
 
     try {
-      const saved = await this.assignmentRepo.save(entity as never) as unknown as LimitAssignment;
-      if (this.auditService) {
-        try {
-          await this.dataSource.transaction(async (m) => {
-            await this.auditService!.record(m, {
-              entityType: 'LIMIT_ASSIGNMENT',
-              entityId: saved.id as never,
-              action: 'CREATED',
-              actor,
-              newValues: this.assignmentValues(saved),
-            } as never);
-          });
-        } catch {}
-      }
+      const saved = await this.dataSource.transaction(async (manager) => {
+        const persisted = await manager.getRepository(LimitAssignment).save(entity);
+        await this.auditService.record(manager, {
+          entityType: 'LIMIT_ASSIGNMENT',
+          entityId: persisted.id,
+          action: 'CREATED',
+          actor,
+          newValues: this.assignmentValues(persisted),
+        });
+        return persisted;
+      });
       return this.toSafe(saved);
     } catch (e) {
-      if (this.isUniqueViolation(e)) throw new ConflictException('Limit assignment with same subject/profile/effectiveFrom already exists');
+      if (this.isUniqueViolation(e))
+        throw new ConflictException(
+          'Limit assignment with same subject/profile/effectiveFrom already exists',
+        );
       throw e;
     }
   }
@@ -94,77 +101,97 @@ export class LimitAssignmentService {
     id: string,
     input: LimitAssignmentUpdateInput,
     actor: string,
-    access: { excludeAgent?: boolean } = {},
+    access: { excludeAgent?: boolean; onlyAgent?: boolean } = {},
   ): Promise<LimitAssignmentSafeProjection> {
-    const where: Record<string, unknown> = { id };
-    if (access.excludeAgent) where.subjectType = Not(LimitAssignmentSubjectType.AGENT);
-    const assignment = await this.assignmentRepo.findOne({ where: where as never });
-    // Keep the same response for an unknown ID and a filtered-out Agent assignment.
-    if (!assignment) throw new NotFoundException('Limit assignment not found');
-    const row = assignment as unknown as LimitAssignment;
-    this.assertVersion(row.version, input.version);
-
-    const previous = this.assignmentValues(row);
-
-    if (input.limitProfileCode !== undefined) {
-      const code = input.limitProfileCode.trim().toUpperCase();
-      if (!PROFILE_CODE_PATTERN.test(code)) throw new BadRequestException('limitProfileCode must match ^[A-Z0-9_]{3,80}$');
-      const profile = await this.profileRepo.findOne({ where: { code } as never });
-      if (!profile) throw new NotFoundException(`Limit profile ${code} not found`);
-      row.limitProfileCode = code;
-    }
-    if (input.subjectType !== undefined) {
-      this.assertEnum(input.subjectType, LimitAssignmentSubjectType, 'subjectType');
-      row.subjectType = input.subjectType.trim().toUpperCase();
-    }
-    if (input.subjectId !== undefined) {
-      row.subjectId = input.subjectId ? input.subjectId.trim() : null;
-    }
-    if (input.segmentCode !== undefined) {
-      row.segmentCode = input.segmentCode ? input.segmentCode.trim().toUpperCase() : null;
-    }
-    // validate consistency after potential subject change
-    this.validateSubjectConsistency(row.subjectType, row.subjectId, row.segmentCode);
-    await this.validateSubjectExistence(row.subjectType, row.subjectId, row.segmentCode);
-
-    if (input.precedence !== undefined) {
-      if (!Number.isSafeInteger(input.precedence)) throw new BadRequestException('precedence must be integer');
-      row.precedence = input.precedence;
-    }
-    if (input.effectiveFrom !== undefined) {
-      const d = input.effectiveFrom ? new Date(input.effectiveFrom as string) : null;
-      if (input.effectiveFrom && d && isNaN(d.getTime())) throw new BadRequestException('effectiveFrom must be valid ISO date');
-      if (d) row.effectiveFrom = d;
-    }
-    if (input.effectiveTo !== undefined) {
-      const d = input.effectiveTo ? new Date(input.effectiveTo as string) : null;
-      if (input.effectiveTo && d && isNaN(d.getTime())) throw new BadRequestException('effectiveTo must be valid ISO date');
-      row.effectiveTo = d;
-    }
-    if (row.effectiveTo && row.effectiveTo <= row.effectiveFrom) throw new BadRequestException('effectiveTo must be after effectiveFrom');
-    if (input.isActive !== undefined) row.isActive = input.isActive;
-
-    row.updatedBy = actor;
-
     try {
-      const saved = await this.assignmentRepo.save(row as never) as unknown as LimitAssignment;
-      if (this.auditService) {
-        try {
-          await this.dataSource.transaction(async (m) => {
-            await this.auditService!.record(m, {
-              entityType: 'LIMIT_ASSIGNMENT',
-              entityId: saved.id as never,
-              action: 'UPDATED',
-              actor,
-              previousValues: previous,
-              newValues: this.assignmentValues(saved),
-            } as never);
-          });
-        } catch {}
-      }
+      const saved = await this.dataSource.transaction(async (manager) => {
+        const repo = manager.getRepository(LimitAssignment);
+        const where: Record<string, unknown> = { id };
+        if (access.excludeAgent) where.subjectType = Not(LimitAssignmentSubjectType.AGENT);
+        if (access.onlyAgent) where.subjectType = LimitAssignmentSubjectType.AGENT;
+        const assignment = await repo.findOne({
+          where: where as never,
+          lock: { mode: 'pessimistic_write' },
+        });
+        // Keep the same response for an unknown ID and a filtered-out Agent assignment.
+        if (!assignment) throw new NotFoundException('Limit assignment not found');
+        const row = assignment as unknown as LimitAssignment;
+        this.assertVersion(row.version, input.version);
+
+        const previous = this.assignmentValues(row);
+
+        if (input.limitProfileCode !== undefined) {
+          const code = input.limitProfileCode.trim().toUpperCase();
+          if (!PROFILE_CODE_PATTERN.test(code))
+            throw new BadRequestException('limitProfileCode must match ^[A-Z0-9_]{3,80}$');
+          const profile = await manager
+            .getRepository(LimitProfile)
+            .findOne({ where: { code } as never });
+          if (!profile) throw new NotFoundException(`Limit profile ${code} not found`);
+          row.limitProfileCode = code;
+        }
+        if (input.subjectType !== undefined) {
+          this.assertEnum(input.subjectType, LimitAssignmentSubjectType, 'subjectType');
+          const subjectType = input.subjectType.trim().toUpperCase() as LimitAssignmentSubjectType;
+          if (
+            (access.excludeAgent && subjectType === LimitAssignmentSubjectType.AGENT) ||
+            (access.onlyAgent && subjectType !== LimitAssignmentSubjectType.AGENT)
+          ) {
+            throw new NotFoundException('Limit assignment not found');
+          }
+          row.subjectType = subjectType;
+        }
+        if (input.subjectId !== undefined) {
+          row.subjectId = input.subjectId ? input.subjectId.trim() : null;
+        }
+        if (input.segmentCode !== undefined) {
+          row.segmentCode = input.segmentCode ? input.segmentCode.trim().toUpperCase() : null;
+        }
+        // validate consistency after potential subject change
+        this.validateSubjectConsistency(row.subjectType, row.subjectId, row.segmentCode);
+        await this.validateSubjectExistence(row.subjectType, row.subjectId, manager);
+
+        if (input.precedence !== undefined) {
+          if (!Number.isSafeInteger(input.precedence))
+            throw new BadRequestException('precedence must be integer');
+          row.precedence = input.precedence;
+        }
+        if (input.effectiveFrom !== undefined) {
+          const d = input.effectiveFrom ? new Date(input.effectiveFrom as string) : null;
+          if (input.effectiveFrom && d && isNaN(d.getTime()))
+            throw new BadRequestException('effectiveFrom must be valid ISO date');
+          if (d) row.effectiveFrom = d;
+        }
+        if (input.effectiveTo !== undefined) {
+          const d = input.effectiveTo ? new Date(input.effectiveTo as string) : null;
+          if (input.effectiveTo && d && isNaN(d.getTime()))
+            throw new BadRequestException('effectiveTo must be valid ISO date');
+          row.effectiveTo = d;
+        }
+        if (row.effectiveTo && row.effectiveTo <= row.effectiveFrom)
+          throw new BadRequestException('effectiveTo must be after effectiveFrom');
+        if (input.isActive !== undefined) row.isActive = input.isActive;
+
+        row.updatedBy = actor;
+        // Consume the version even for an otherwise identical update. Under the row lock,
+        // a concurrent request using the same version must observe this increment and fail.
+        row.version += 1;
+
+        const persisted = await repo.save(row);
+        await this.auditService.record(manager, {
+          entityType: 'LIMIT_ASSIGNMENT',
+          entityId: persisted.id,
+          action: 'UPDATED',
+          actor,
+          previousValues: previous,
+          newValues: this.assignmentValues(persisted),
+        });
+        return persisted;
+      });
       return this.toSafe(saved);
     } catch (e) {
-      if (this.isUniqueViolation(e)) throw new ConflictException('Limit assignment unique constraint violation');
+      if (this.isUniqueViolation(e))
+        throw new ConflictException('Limit assignment unique constraint violation');
       throw e;
     }
   }
@@ -183,7 +210,14 @@ export class LimitAssignmentService {
     isActive?: boolean;
     page?: number;
     limit?: number;
-  }): Promise<{ data: LimitAssignmentSafeProjection[]; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean }> {
+  }): Promise<{
+    data: LimitAssignmentSafeProjection[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  }> {
     const page = this.normalizePage(params.page);
     const limit = this.normalizeLimit(params.limit);
     const skip = (page - 1) * limit;
@@ -191,7 +225,8 @@ export class LimitAssignmentService {
     if (params.subjectType) where['subjectType'] = params.subjectType.trim().toUpperCase();
     if (params.subjectId) where['subjectId'] = params.subjectId.trim();
     if (params.segmentCode) where['segmentCode'] = params.segmentCode.trim().toUpperCase();
-    if (params.limitProfileCode) where['limitProfileCode'] = params.limitProfileCode.trim().toUpperCase();
+    if (params.limitProfileCode)
+      where['limitProfileCode'] = params.limitProfileCode.trim().toUpperCase();
     if (params.isActive !== undefined) where['isActive'] = params.isActive;
     const [rows, total] = await this.assignmentRepo.findAndCount({
       where: where as never,
@@ -205,20 +240,79 @@ export class LimitAssignmentService {
     return { data, total, page, limit, totalPages, hasNextPage: page < totalPages };
   }
 
-  async listByProfile(profileCode: string, params: { page?: number; limit?: number }): Promise<{ data: LimitAssignmentSafeProjection[]; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean }> {
-    return this.listAssignments({ limitProfileCode: profileCode, page: params.page, limit: params.limit });
+  async listByProfile(
+    profileCode: string,
+    params: { page?: number; limit?: number },
+  ): Promise<{
+    data: LimitAssignmentSafeProjection[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  }> {
+    return this.listAssignments({
+      limitProfileCode: profileCode,
+      page: params.page,
+      limit: params.limit,
+    });
   }
 
-  async listByCustomer(customerId: string, params: { page?: number; limit?: number }): Promise<{ data: LimitAssignmentSafeProjection[]; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean }> {
-    return this.listAssignments({ subjectType: 'CUSTOMER', subjectId: customerId, page: params.page, limit: params.limit });
+  async listByCustomer(
+    customerId: string,
+    params: { page?: number; limit?: number },
+  ): Promise<{
+    data: LimitAssignmentSafeProjection[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  }> {
+    return this.listAssignments({
+      subjectType: 'CUSTOMER',
+      subjectId: customerId,
+      page: params.page,
+      limit: params.limit,
+    });
   }
 
-  async listByAgent(agentId: string, params: { page?: number; limit?: number }): Promise<{ data: LimitAssignmentSafeProjection[]; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean }> {
-    return this.listAssignments({ subjectType: 'AGENT', subjectId: agentId, page: params.page, limit: params.limit });
+  async listByAgent(
+    agentId: string,
+    params: { page?: number; limit?: number },
+  ): Promise<{
+    data: LimitAssignmentSafeProjection[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  }> {
+    return this.listAssignments({
+      subjectType: 'AGENT',
+      subjectId: agentId,
+      page: params.page,
+      limit: params.limit,
+    });
   }
 
-  async listByAgentClass(agentClassId: string, params: { page?: number; limit?: number }): Promise<{ data: LimitAssignmentSafeProjection[]; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean }> {
-    return this.listAssignments({ subjectType: 'AGENT_CLASS', subjectId: agentClassId, page: params.page, limit: params.limit });
+  async listByAgentClass(
+    agentClassId: string,
+    params: { page?: number; limit?: number },
+  ): Promise<{
+    data: LimitAssignmentSafeProjection[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  }> {
+    return this.listAssignments({
+      subjectType: 'AGENT_CLASS',
+      subjectId: agentClassId,
+      page: params.page,
+      limit: params.limit,
+    });
   }
 
   async countAssignments(): Promise<number> {
@@ -226,23 +320,35 @@ export class LimitAssignmentService {
   }
 
   private validateCreate(input: LimitAssignmentCreateInput): void {
-    if (!PROFILE_CODE_PATTERN.test(input.limitProfileCode.trim().toUpperCase())) throw new BadRequestException('limitProfileCode must match ^[A-Z0-9_]{3,80}$');
+    if (!PROFILE_CODE_PATTERN.test(input.limitProfileCode.trim().toUpperCase()))
+      throw new BadRequestException('limitProfileCode must match ^[A-Z0-9_]{3,80}$');
     this.assertEnum(input.subjectType, LimitAssignmentSubjectType, 'subjectType');
     if (input.subjectType.toUpperCase() === 'SEGMENT') {
-      if (!input.segmentCode || !SEGMENT_PATTERN.test(input.segmentCode.trim().toUpperCase())) throw new BadRequestException('segmentCode must match ^[A-Z0-9_]{3,80}$ for SEGMENT');
+      if (!input.segmentCode || !SEGMENT_PATTERN.test(input.segmentCode.trim().toUpperCase()))
+        throw new BadRequestException('segmentCode must match ^[A-Z0-9_]{3,80}$ for SEGMENT');
       if (input.subjectId) throw new BadRequestException('subjectId must be null for SEGMENT');
     } else if (input.subjectType.toUpperCase() === 'GLOBAL') {
       if (input.subjectId) throw new BadRequestException('subjectId must be null for GLOBAL');
       if (input.segmentCode) throw new BadRequestException('segmentCode must be null for GLOBAL');
     } else {
       // CUSTOMER, AGENT, AGENT_CLASS require subjectId
-      if (!input.subjectId) throw new BadRequestException(`subjectId is required for ${input.subjectType}`);
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.subjectId.trim())) throw new BadRequestException('subjectId must be UUID');
-      if (input.segmentCode) throw new BadRequestException('segmentCode must be null for non-SEGMENT');
+      if (!input.subjectId)
+        throw new BadRequestException(`subjectId is required for ${input.subjectType}`);
+      if (
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          input.subjectId.trim(),
+        )
+      )
+        throw new BadRequestException('subjectId must be UUID');
+      if (input.segmentCode)
+        throw new BadRequestException('segmentCode must be null for non-SEGMENT');
     }
-    if (input.precedence !== undefined && !Number.isSafeInteger(input.precedence)) throw new BadRequestException('precedence must be integer');
-    if (input.effectiveFrom && isNaN(new Date(input.effectiveFrom as string).getTime())) throw new BadRequestException('effectiveFrom must be valid ISO date');
-    if (input.effectiveTo && isNaN(new Date(input.effectiveTo as string).getTime())) throw new BadRequestException('effectiveTo must be valid ISO date');
+    if (input.precedence !== undefined && !Number.isSafeInteger(input.precedence))
+      throw new BadRequestException('precedence must be integer');
+    if (input.effectiveFrom && isNaN(new Date(input.effectiveFrom as string).getTime()))
+      throw new BadRequestException('effectiveFrom must be valid ISO date');
+    if (input.effectiveTo && isNaN(new Date(input.effectiveTo as string).getTime()))
+      throw new BadRequestException('effectiveTo must be valid ISO date');
     if (input.effectiveFrom && input.effectiveTo) {
       const from = new Date(input.effectiveFrom as string);
       const to = new Date(input.effectiveTo as string);
@@ -250,7 +356,11 @@ export class LimitAssignmentService {
     }
   }
 
-  private validateSubjectConsistency(subjectType: string, subjectId: string | null, segmentCode: string | null): void {
+  private validateSubjectConsistency(
+    subjectType: string,
+    subjectId: string | null,
+    segmentCode: string | null,
+  ): void {
     const t = subjectType.trim().toUpperCase();
     if (['CUSTOMER', 'AGENT', 'AGENT_CLASS'].includes(t)) {
       if (!subjectId) throw new BadRequestException(`subjectId required for ${t}`);
@@ -258,7 +368,8 @@ export class LimitAssignmentService {
     } else if (t === 'SEGMENT') {
       if (!segmentCode) throw new BadRequestException('segmentCode required for SEGMENT');
       if (subjectId) throw new BadRequestException('subjectId must be null for SEGMENT');
-      if (!SEGMENT_PATTERN.test(segmentCode.trim().toUpperCase())) throw new BadRequestException('segmentCode must match ^[A-Z0-9_]{3,80}$');
+      if (!SEGMENT_PATTERN.test(segmentCode.trim().toUpperCase()))
+        throw new BadRequestException('segmentCode must match ^[A-Z0-9_]{3,80}$');
     } else if (t === 'GLOBAL') {
       if (subjectId) throw new BadRequestException('subjectId must be null for GLOBAL');
       if (segmentCode) throw new BadRequestException('segmentCode must be null for GLOBAL');
@@ -267,16 +378,32 @@ export class LimitAssignmentService {
     }
   }
 
-  private async validateSubjectExistence(subjectType: string, subjectId: string | null, segmentCode: string | null): Promise<void> {
+  private async validateSubjectExistence(
+    subjectType: string,
+    subjectId: string | null,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const query = manager
+      ? manager.query.bind(manager)
+      : this.dataSource.query.bind(this.dataSource);
     const t = subjectType.trim().toUpperCase();
     if (t === 'CUSTOMER' && subjectId) {
-      const row: Array<{ id: string }> = await this.dataSource.query(`SELECT id FROM customers WHERE id = $1 AND deleted_at IS NULL LIMIT 1`, [subjectId]);
+      const row: Array<{ id: string }> = await query(
+        `SELECT id FROM customers WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+        [subjectId],
+      );
       if (row.length === 0) throw new NotFoundException(`Customer ${subjectId} not found`);
     } else if (t === 'AGENT' && subjectId) {
-      const row: Array<{ id: string }> = await this.dataSource.query(`SELECT id FROM agents WHERE id = $1 AND deleted_at IS NULL LIMIT 1`, [subjectId]);
+      const row: Array<{ id: string }> = await query(
+        `SELECT id FROM agents WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+        [subjectId],
+      );
       if (row.length === 0) throw new NotFoundException(`Agent ${subjectId} not found`);
     } else if (t === 'AGENT_CLASS' && subjectId) {
-      const row: Array<{ id: string }> = await this.dataSource.query(`SELECT id FROM agent_classes WHERE id = $1 AND deleted_at IS NULL LIMIT 1`, [subjectId]);
+      const row: Array<{ id: string }> = await query(
+        `SELECT id FROM agent_classes WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+        [subjectId],
+      );
       if (row.length === 0) throw new NotFoundException(`Agent Class ${subjectId} not found`);
     }
     // SEGMENT and GLOBAL require no existence check beyond pattern
@@ -294,22 +421,39 @@ export class LimitAssignmentService {
 
   private normalizePage(page?: number): number {
     const p = page ?? 1;
-    if (!Number.isSafeInteger(p) || p < 1) throw new BadRequestException('page must be a positive integer');
+    if (!Number.isSafeInteger(p) || p < 1)
+      throw new BadRequestException('page must be a positive integer');
     return p;
   }
 
   private normalizeLimit(limit?: number): number {
     const l = limit ?? 20;
-    if (!Number.isSafeInteger(l) || l < 1 || l > 100) throw new BadRequestException('limit must be between 1 and 100');
+    if (!Number.isSafeInteger(l) || l < 1 || l > 100)
+      throw new BadRequestException('limit must be between 1 and 100');
     return l;
   }
 
   private isUniqueViolation(error: unknown): boolean {
-    return error instanceof QueryFailedError && (error as unknown as { code?: string }).code === '23505';
+    return (
+      error instanceof QueryFailedError &&
+      (error as unknown as { code?: string; constraint?: string }).code === '23505' &&
+      (error as unknown as { constraint?: string }).constraint === 'uq_limit_assignments_active_key'
+    );
   }
 
   private assignmentValues(a: LimitAssignment): Record<string, unknown> {
-    return { id: a.id, limitProfileCode: a.limitProfileCode, subjectType: a.subjectType, subjectId: a.subjectId, segmentCode: a.segmentCode, precedence: a.precedence, version: a.version, effectiveFrom: a.effectiveFrom, effectiveTo: a.effectiveTo, isActive: a.isActive };
+    return {
+      id: a.id,
+      limitProfileCode: a.limitProfileCode,
+      subjectType: a.subjectType,
+      subjectId: a.subjectId,
+      segmentCode: a.segmentCode,
+      precedence: a.precedence,
+      version: a.version,
+      effectiveFrom: a.effectiveFrom,
+      effectiveTo: a.effectiveTo,
+      isActive: a.isActive,
+    };
   }
 
   private toSafe(row: LimitAssignment): LimitAssignmentSafeProjection {

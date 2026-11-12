@@ -1,0 +1,104 @@
+{
+  "mission": "H-04/H-06",
+  "date": "2026-11-02T21:16:42.634Z",
+  "backendScoped": {
+    "description": "Changed backend TS files (src/ and test/) versus the 25P baseline; root eslint config scope",
+    "head": {
+      "files": 34,
+      "errors": 132,
+      "warnings": 8,
+      "exitCode": 1
+    },
+    "baseline": {
+      "files": 29,
+      "errors": 132,
+      "warnings": 8,
+      "exitCode": 1
+    },
+    "perFileProfileMismatches": [],
+    "addedFiles": 5,
+    "addedFilesWithDiagnostics": 0,
+    "filesWithFindings": [
+      {
+        "file": "test/a20-outlets-terminals.integration.spec.ts",
+        "errors": 0,
+        "warnings": 2
+      },
+      {
+        "file": "test/sms-v1-01.integration.spec.ts",
+        "errors": 0,
+        "warnings": 1
+      },
+      {
+        "file": "test/transfer-notification-producer-01.integration.spec.ts",
+        "errors": 0,
+        "warnings": 1
+      },
+      {
+        "file": "test/v1-003-admin-operational-writes.integration.spec.ts",
+        "errors": 16,
+        "warnings": 1
+      },
+      {
+        "file": "test/v1-005-notification-delivery.integration.spec.ts",
+        "errors": 26,
+        "warnings": 1
+      },
+      {
+        "file": "test/v1-006-customer-notification-inbox.integration.spec.ts",
+        "errors": 36,
+        "warnings": 0
+      },
+      {
+        "file": "test/v1-007-support-ticket.integration.spec.ts",
+        "errors": 12,
+        "warnings": 0
+      },
+      {
+        "file": "test/v1-email-notification-01.integration.spec.ts",
+        "errors": 6,
+        "warnings": 2
+      },
+      {
+        "file": "test/v1-hardening-09-admin-notification-delivery-diagnostics.integration.spec.ts",
+        "errors": 27,
+        "warnings": 0
+      },
+      {
+        "file": "test/v1-limit-02-limit-assignment.integration.spec.ts",
+        "errors": 9,
+        "warnings": 0
+      }
+    ]
+  },
+  "backendRepoWide": {
+    "description": "Full {src,test}/**/*.ts on both trees, identical config and eslint binary",
+    "head": {
+      "files": 1410,
+      "errors": 1351,
+      "warnings": 80
+    },
+    "baseline": {
+      "files": 1405,
+      "errors": 1351,
+      "warnings": 80
+    },
+    "deltaErrors": 0,
+    "deltaWarnings": 0,
+    "deltaFiles": 5,
+    "filesWithChangedProfile": []
+  },
+  "adminWeb": {
+    "lintConfigured": false,
+    "note": "apps/admin-web has no ESLint configuration and is outside the root eslint.config.mjs files scope (src/**/*.ts, test/**/*.ts). Admin Web TypeScript is covered by npm run ts:check, which exited 0."
+  },
+  "conclusion": {
+    "newLintRegressions": 0,
+    "preExistingBackendBacklog": {
+      "errors": 132,
+      "warnings": 8,
+      "filesCoveredByScopedRun": 34
+    },
+    "note": "132 errors / 8 warnings are pre-existing in ten legacy test files and are identical to the 25P baseline; the 5 files added by H-04/H-06 are lint-clean. No repository-wide cleanup was performed."
+  }
+}

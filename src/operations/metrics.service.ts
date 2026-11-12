@@ -24,8 +24,13 @@ export class MetricsService {
          DO UPDATE SET value = operational_metrics.value + EXCLUDED.value, updated_at = NOW()`,
         [metricName, amount],
       );
-    } catch {
-      // Observability must not make a financial transaction fail.
+    } catch (error) {
+      // PostgreSQL marks a transaction as failed after any statement error. Swallowing
+      // that error lets COMMIT silently roll the whole transaction back while its caller
+      // believes its financial writes succeeded. Preserve the error so the transaction
+      // owner can roll back and apply its existing retry policy.
+      if (manager?.queryRunner?.isTransactionActive) throw error;
+      // Outside a transaction, metrics remain best-effort.
     }
   }
 

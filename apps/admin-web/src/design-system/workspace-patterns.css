@@ -1,0 +1,18 @@
+.one-workspace-drawer{position:fixed;inset:0;z-index:350;display:flex;justify-content:flex-end}
+.one-workspace-drawer__backdrop{position:absolute;inset:0;background:#10271b55}
+.one-workspace-drawer__surface{position:relative;z-index:1;box-sizing:border-box;width:min(100%,520px);height:100dvh;overflow-y:auto;background:#fff;border-left:1px solid #e1e7e2;box-shadow:-8px 0 30px #10271b20;outline:none}
+.one-workspace-filter-tabs{display:flex;gap:24px;overflow-x:auto;border-bottom:1px solid #e0e8e1;margin:0 0 16px}
+.one-workspace-filter-tabs button{flex:none;border:0;border-bottom:3px solid transparent;padding:12px 0;background:none;color:#53665a;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.one-workspace-filter-tabs button[aria-pressed=true]{color:#005236;border-color:#00633e}
+.one-workspace-filter-tabs button:focus-visible{outline:2px solid #0a6442;outline-offset:-2px}
+@media(min-width:1024px){.one-workspace-drawer__backdrop{background:#10271b1a}}
+@media(max-width:600px){.one-workspace-drawer__surface{width:100%}.one-workspace-filter-tabs{gap:18px}}
+/* Keep the horizontal affordance visible where filter choices extend beyond the viewport. */
+.one-workspace-filter-tabs{scrollbar-width:thin;scrollbar-color:#789986 #edf4ef}
+.one-workspace-filter-tabs::-webkit-scrollbar{height:6px}
+.one-workspace-filter-tabs::-webkit-scrollbar-track{background:#edf4ef;border-radius:6px}
+.one-workspace-filter-tabs::-webkit-scrollbar-thumb{background:#789986;border-radius:6px}
+
+.one-workspace-filter-control{min-width:0}
+.one-workspace-filter-control--overflow .one-workspace-filter-tabs{margin-bottom:4px}
+.one-workspace-filter-hint{margin:0 0 12px;color:#52655f;font-size:12px;line-height:1.4}

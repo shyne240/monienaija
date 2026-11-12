@@ -2,7 +2,7 @@
  * MonieNaija Admin — M1 semantic design tokens (light only).
  *
  * Scope contract (M1 allowlist):
- *   - Tokens are declared only on explicitly classed pilot/shell nodes.
+ *   - Tokens are declared only on explicitly classed pilot/shell and login nodes.
  *   - No `html`, `body`, `:root`, universal (`*`) or global element selectors.
  *   - Declaring custom properties is inert: nothing changes visually unless a
  *     pilot-owned class consumes a token, so excluded screens are untouched.
@@ -17,6 +17,7 @@
  */
 
 .mn-shell,
+.mn-login,
 .mn-dir-header,
 .mn-dir-panel {
   /* Surfaces --------------------------------------------------------------- */

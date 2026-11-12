@@ -57,9 +57,8 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
 
     const { getByText, getByPlaceholderText, findByText, queryByText } = render(<App />);
 
-    fireEvent.click(getByText('💸 Transaction & Fee Ops — Transfers (W2W)'));
-    const selectEl = getByText('P2P TRANSFER').parentElement as HTMLSelectElement;
-    fireEvent.change(selectEl, { target: { value: 'DEPOSIT' } });
+    fireEvent.click(getByText('Transfers'));
+    fireEvent.click(document.querySelector('[data-testid="nav-cashIn"]')!);
     fireEvent.change(getByPlaceholderText('e.g. 5e6f7g8h-...'), { target: { value: 'dep-uuid-777' } });
     fireEvent.click(getByText('Track'));
 
@@ -76,16 +75,17 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
 
   test('should run fee simulator calculations and display gross output', async () => {
     const mockFeeResult = {
-      feeMinor: '1500', // 15 Naira
-      vatMinor: '112',  // 1.12 Naira
-      totalMinor: '101612', // 1,016.12 Naira
+      paymentType: 'VIRTUAL_ACCOUNT', currency: 'NGN', amountMinor: '100000',
+      feeMinor: '6000', // 60 Naira
+      vatMinor: '450',  // 4.50 Naira
+      totalMinor: '106450', // 1,064.50 Naira
     };
 
     (ApiClient.post as jest.Mock).mockResolvedValue(mockFeeResult);
 
     const { getByText, getByPlaceholderText, findByText } = render(<App />);
 
-    fireEvent.click(getByText('💸 Transaction & Fee Ops — Transfers (W2W)'));
+    fireEvent.click(getByText('Transfers'));
 
     expect(getByText('Pricing Fee Simulator Tool')).toBeTruthy();
 
@@ -101,9 +101,9 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
         percentageBps: '100',
         vatBps: '750',
       });
-      expect(getByText('₦15.00')).toBeTruthy();
-      expect(getByText('₦1.12')).toBeTruthy();
-      expect(getByText('₦1,016.12')).toBeTruthy();
+      expect(getByText('₦60.00')).toBeTruthy();
+      expect(getByText('₦4.50')).toBeTruthy();
+      expect(getByText('₦1,064.50')).toBeTruthy();
     });
   });
 });

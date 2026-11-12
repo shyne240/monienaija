@@ -1,0 +1,236 @@
+{
+  "source": "real Vite + Nest AppModule + synthetic disposable PostgreSQL",
+  "screens": [
+    {
+      "width": 1440,
+      "file": "dashboard-1440.png"
+    },
+    {
+      "width": 1440,
+      "file": "account-1440.png"
+    },
+    {
+      "width": 1280,
+      "file": "dashboard-1280.png"
+    },
+    {
+      "width": 1280,
+      "file": "account-1280.png"
+    },
+    {
+      "width": 768,
+      "file": "dashboard-768.png"
+    },
+    {
+      "width": 768,
+      "file": "account-768.png"
+    },
+    {
+      "width": 1440,
+      "file": "customer-directory-1440.png"
+    }
+  ],
+  "destinations": [
+    {
+      "key": "dashboard",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "dashboardSettings",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "customers",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "agents",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "agentClasses",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "support",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "transfers",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "cashIn",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "cashOut",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "cashToCashOps",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "ledgerExplorer",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "reconciliation",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "feeRules",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "commissionRules",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "rewardRules",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "productCatalogue",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "limitCatalogue",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "limitAssignments",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "kycQueue",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "complianceCases",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "workforceAccess",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "roleGovernance",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "notifications",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "systemHealth",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "auditEvents",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "key": "approvalsInbox",
+      "role": "FINANCE_CONTROLLER"
+    },
+    {
+      "key": "superAdminRecovery",
+      "role": "ADMINISTRATOR"
+    },
+    {
+      "key": "fraudCases",
+      "role": "RISK_FRAUD"
+    }
+  ],
+  "icons": [
+    {
+      "width": 1440,
+      "label": "Open Overview navigation"
+    },
+    {
+      "width": 1440,
+      "label": "Open Customers & agents navigation"
+    },
+    {
+      "width": 1440,
+      "label": "Open Transactions navigation"
+    },
+    {
+      "width": 1440,
+      "label": "Open Finance navigation"
+    },
+    {
+      "width": 1440,
+      "label": "Open Products & pricing navigation"
+    },
+    {
+      "width": 1440,
+      "label": "Open Risk & compliance navigation"
+    },
+    {
+      "width": 1440,
+      "label": "Open Administration navigation"
+    },
+    {
+      "width": 1280,
+      "label": "Open Overview navigation"
+    },
+    {
+      "width": 1280,
+      "label": "Open Customers & agents navigation"
+    },
+    {
+      "width": 1280,
+      "label": "Open Transactions navigation"
+    },
+    {
+      "width": 1280,
+      "label": "Open Finance navigation"
+    },
+    {
+      "width": 1280,
+      "label": "Open Products & pricing navigation"
+    },
+    {
+      "width": 1280,
+      "label": "Open Risk & compliance navigation"
+    },
+    {
+      "width": 1280,
+      "label": "Open Administration navigation"
+    }
+  ],
+  "interactions": [
+    {
+      "width": 1440,
+      "check": "collapse and expand sidebar"
+    },
+    {
+      "width": 1440,
+      "check": "transaction period filter"
+    },
+    {
+      "width": 1280,
+      "check": "collapse and expand sidebar"
+    },
+    {
+      "width": 1280,
+      "check": "transaction period filter"
+    },
+    {
+      "width": 768,
+      "check": "transaction period filter"
+    },
+    {
+      "check": "customer preview drawer Escape and focus"
+    },
+    {
+      "check": "real synthetic session logout"
+    }
+  ],
+  "browserErrors": [],
+  "apiFailures": [],
+  "warnings": []
+}

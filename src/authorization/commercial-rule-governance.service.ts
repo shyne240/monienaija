@@ -160,7 +160,10 @@ export class CommercialRuleGovernanceService {
     if (!approval) {
       throw new NotFoundException('Approval not found');
     }
-    if (approval.actionType !== definition.action || approval.resourceType !== definition.resourceType) {
+    if (
+      approval.actionType !== definition.action ||
+      approval.resourceType !== definition.resourceType
+    ) {
       throw new ForbiddenException('Approval does not govern this change');
     }
     const resourceId = approval.resourceId;

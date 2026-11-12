@@ -158,9 +158,9 @@ describe('M1 style isolation — pilot CSS selector discipline', () => {
     expect(reduceIndex).toBeGreaterThan(-1);
 
     const tokenScopeSelectors = extractSelectors(css.slice(0, reduceIndex));
-    expect(tokenScopeSelectors.length).toBe(3);
+    expect(tokenScopeSelectors.length).toBe(4);
     expect(new Set(tokenScopeSelectors)).toEqual(
-      new Set(['.mn-shell', '.mn-dir-header', '.mn-dir-panel']),
+      new Set(['.mn-shell', '.mn-login', '.mn-dir-header', '.mn-dir-panel']),
     );
 
     // The reduced-motion block may only narrow motion inside pilot-owned subtrees.

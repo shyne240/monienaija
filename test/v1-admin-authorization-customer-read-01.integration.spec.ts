@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
 /**
  * V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — dedicated real-PostgreSQL, real-HTTP proof suite.
  *
@@ -44,7 +44,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID, pbkdf2Sync } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { LocalAdminAuthenticationService } from '../src/local-admin-authentication/local-admin-authentication.service';
@@ -82,7 +82,9 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
 
@@ -108,7 +110,7 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
-  });
+  }, 30000);
 
   async function loginSuperAdmin(): Promise<string> {
     await localAdminService.seedDefaultAdmin({
@@ -265,7 +267,13 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
     return { Authorization: `Bearer ${token}` };
   }
 
-  const CUSTOMER_VIEW_ROLES = ['SUPER_ADMIN', 'FINANCE_AUDITOR', 'OPERATIONS', 'COMPLIANCE', 'CUSTOMER_SERVICE'];
+  const CUSTOMER_VIEW_ROLES = [
+    'SUPER_ADMIN',
+    'FINANCE_AUDITOR',
+    'OPERATIONS',
+    'COMPLIANCE',
+    'CUSTOMER_SERVICE',
+  ];
   const NON_CUSTOMER_VIEW_ROLES = [
     'FINANCE_PREPARER',
     'FINANCE_CONTROLLER',
@@ -285,19 +293,27 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
 
   for (const route of MIGRATED_ROUTES) {
     describe(`A. ${route.name} requires customer.view`, () => {
-      it.each(CUSTOMER_VIEW_ROLES)(`A1 [${route.name}]. %s succeeds (holds customer.view)`, async (roleKey) => {
-        const token = roleKey === 'SUPER_ADMIN' ? await loginSuperAdmin() : await tokenForRole(roleKey);
-        const customerId = await createActiveCustomer();
-        const res = await request(app.getHttpServer()).get(route.path(customerId)).set(auth(token));
-        expect(res.status).toBe(200);
-      });
+      it.each(CUSTOMER_VIEW_ROLES)(
+        `A1 [${route.name}]. %s succeeds (holds customer.view)`,
+        async (roleKey) => {
+          const token =
+            roleKey === 'SUPER_ADMIN' ? await loginSuperAdmin() : await tokenForRole(roleKey);
+          const customerId = await createActiveCustomer();
+          const res = await request(app.getHttpServer())
+            .get(route.path(customerId))
+            .set(auth(token));
+          expect(res.status).toBe(200);
+        },
+      );
 
       it.each(NON_CUSTOMER_VIEW_ROLES)(
         `A2 [${route.name}]. %s is denied (does not hold customer.view) — 403`,
         async (roleKey) => {
           const token = await tokenForRole(roleKey);
           const customerId = await createActiveCustomer();
-          const res = await request(app.getHttpServer()).get(route.path(customerId)).set(auth(token));
+          const res = await request(app.getHttpServer())
+            .get(route.path(customerId))
+            .set(auth(token));
           expect(res.status).toBe(403);
         },
       );
@@ -324,11 +340,14 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
     expect(Array.isArray(res.body)).toBe(true);
   });
 
-  it.each(NON_CUSTOMER_VIEW_ROLES)('A6. GET /customers (list) denies %s (does not hold customer.view) — 403', async (roleKey) => {
-    const token = await tokenForRole(roleKey);
-    const res = await request(app.getHttpServer()).get('/api/v1/customers').set(auth(token));
-    expect(res.status).toBe(403);
-  });
+  it.each(NON_CUSTOMER_VIEW_ROLES)(
+    'A6. GET /customers (list) denies %s (does not hold customer.view) — 403',
+    async (roleKey) => {
+      const token = await tokenForRole(roleKey);
+      const res = await request(app.getHttpServer()).get('/api/v1/customers').set(auth(token));
+      expect(res.status).toBe(403);
+    },
+  );
 
   it('A7. GET /customers (list) unauthenticated is 401', async () => {
     await request(app.getHttpServer()).get('/api/v1/customers').expect(401);
@@ -346,7 +365,9 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
     const superAdmin = await loginSuperAdmin();
 
     const filtered = await request(app.getHttpServer())
-      .get('/api/v1/internal/customers?search=Alpha&status=ACTIVE&type=INDIVIDUAL&kycLevel=LEVEL_1&kycStatus=APPROVED&page=1&limit=1')
+      .get(
+        '/api/v1/internal/customers?search=Alpha&status=ACTIVE&type=INDIVIDUAL&kycLevel=LEVEL_1&kycStatus=APPROVED&page=1&limit=1',
+      )
       .set(auth(superAdmin))
       .expect(200);
     expect(filtered.body.total).toBe(1);
@@ -401,10 +422,11 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
 
     expect(response.body.status).toBe('DRAFT');
     expect(response.body.reference).toBe('mn-••••4567');
-    const auditRows: Array<{ actor: string; new_values: Record<string, unknown> }> = await dataSource.query(
-      `SELECT actor, new_values FROM audit_events WHERE entity_type='CUSTOMER' AND entity_id=$1 AND action='CREATED'`,
-      [response.body.id],
-    );
+    const auditRows: Array<{ actor: string; new_values: Record<string, unknown> }> =
+      await dataSource.query(
+        `SELECT actor, new_values FROM audit_events WHERE entity_type='CUSTOMER' AND entity_id=$1 AND action='CREATED'`,
+        [response.body.id],
+      );
     expect(auditRows[0]?.actor).toBe(principalId);
     expect(auditRows[0]?.new_values?.reference).toBe('mn-••••4567');
     expect(JSON.stringify(auditRows[0]?.new_values)).not.toContain('0801234567');
@@ -436,12 +458,25 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
     const address = await request(app.getHttpServer())
       .post(`/api/v1/customers/${customerId}/address`)
       .set(auth(token))
-      .send({ type: 'RESIDENTIAL', lineOne: '1 Synthetic Road', city: 'Abuja', state: 'FCT', country: 'NG', isPrimary: true, actor: 'spoofed-address-actor' })
+      .send({
+        type: 'RESIDENTIAL',
+        lineOne: '1 Synthetic Road',
+        city: 'Abuja',
+        state: 'FCT',
+        country: 'NG',
+        isPrimary: true,
+        actor: 'spoofed-address-actor',
+      })
       .expect(201);
     const contact = await request(app.getHttpServer())
       .post(`/api/v1/customers/${customerId}/contact-method`)
       .set(auth(token))
-      .send({ type: 'PHONE', value: '+2348012345678', isPrimary: true, actor: 'spoofed-contact-actor' })
+      .send({
+        type: 'PHONE',
+        value: '+2348012345678',
+        isPrimary: true,
+        actor: 'spoofed-contact-actor',
+      })
       .expect(201);
 
     for (const [entityType, entityId] of [
@@ -460,7 +495,12 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
     const selfContact = await request(app.getHttpServer())
       .post(`/api/v1/customers/${self.customerId}/contact-method`)
       .set(auth(self.token))
-      .send({ type: 'EMAIL', value: `self-${randomUUID()}@example.test`, isPrimary: false, actor: 'spoofed-self-actor' })
+      .send({
+        type: 'EMAIL',
+        value: `self-${randomUUID()}@example.test`,
+        isPrimary: false,
+        actor: 'spoofed-self-actor',
+      })
       .expect(201);
     const selfAudit: Array<{ actor: string }> = await dataSource.query(
       `SELECT actor FROM audit_events WHERE entity_type='CUSTOMER_CONTACT_METHOD' AND entity_id=$1 AND action='CREATED'`,
@@ -477,7 +517,12 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
     // masking the 403 authorization proof this test exists for. The synthetic 11-digit
     // NIN below keeps the last-4 mask assertions ('••••••4321') unchanged.
     const documentNumber = '12345674321';
-    const body = { type: 'NIN', documentNumber, issuingCountry: 'NG', actor: 'forged-document-actor' };
+    const body = {
+      type: 'NIN',
+      documentNumber,
+      issuingCountry: 'NG',
+      actor: 'forged-document-actor',
+    };
     const operations = await tokenForRole('OPERATIONS');
     const denied = await request(app.getHttpServer())
       .post(`/api/v1/customers/${customerId}/identity-document`)
@@ -502,10 +547,11 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
     expect(listed.body[0]).not.toHaveProperty('documentNumber');
     expect(JSON.stringify(listed.body)).not.toContain(documentNumber);
 
-    const auditRows: Array<{ actor: string; new_values: Record<string, unknown> }> = await dataSource.query(
-      `SELECT actor, new_values FROM audit_events WHERE entity_type='CUSTOMER_IDENTITY_DOCUMENT' AND entity_id=$1 AND action='CREATED'`,
-      [created.body.id],
-    );
+    const auditRows: Array<{ actor: string; new_values: Record<string, unknown> }> =
+      await dataSource.query(
+        `SELECT actor, new_values FROM audit_events WHERE entity_type='CUSTOMER_IDENTITY_DOCUMENT' AND entity_id=$1 AND action='CREATED'`,
+        [created.body.id],
+      );
     expect(auditRows[0]?.actor).toBe(principalId);
     expect(JSON.stringify(auditRows[0]?.new_values)).not.toContain(documentNumber);
   });
@@ -517,7 +563,13 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
       .post(`/api/v1/customers/${self.customerId}/kyc-assessment`)
       .set(auth(complianceToken))
       .send({ level: 'LEVEL_1', status: 'PENDING', assessedBy: 'forged-seed-actor' })
-      .expect(201);
+      .expect(409);
+    // Seed a historical pending assessment solely to exercise the read route; the
+    // public mutation above must remain closed to bypassing the governed evaluator.
+    await dataSource.query(
+      "INSERT INTO customer_kyc_assessments(customer_id,kyc_level,kyc_status,assessed_by,is_current) VALUES($1,'LEVEL_1','PENDING','historical-test-fixture',true)",
+      [self.customerId],
+    );
 
     await request(app.getHttpServer())
       .get(`/api/v1/customers/${self.customerId}/kyc`)
@@ -531,7 +583,7 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
     expect(denied.status).toBe(403);
   });
 
-  it('A14. lifecycle and KYC audit actors are derived from authenticated workforce principals', async () => {
+  it('A14. lifecycle audit actor is authenticated and direct KYC mutation remains blocked', async () => {
     const customerId = await createActiveCustomer();
     const operations = await createRoleSession('OPERATIONS', 'lifecycle-actor');
     await request(app.getHttpServer())
@@ -547,12 +599,16 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
 
     const kycCustomerId = await createBareCustomer();
     const compliance = await createRoleSession('COMPLIANCE', 'kyc-actor');
-    const response = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .post(`/api/v1/customers/${kycCustomerId}/kyc-assessment`)
       .set(auth(compliance.token))
       .send({ level: 'LEVEL_1', status: 'PENDING', assessedBy: 'forged-kyc-actor' })
-      .expect(201);
-    expect(response.body.assessedBy).toBe(compliance.principalId);
+      .expect(409);
+    const kycRows = await dataSource.query<Array<{ count: string }>>(
+      'SELECT count(*) AS count FROM customer_kyc_assessments WHERE customer_id=$1',
+      [kycCustomerId],
+    );
+    expect(kycRows[0]?.count).toBe('0');
   });
 
   it('A15. onboarding/eligibility summaries require customer.view and omit internal eligibility reasons/reviewer fields', async () => {
@@ -630,7 +686,9 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
   describe('C. CUSTOMER self-service is unaffected by this task', () => {
     it('C1. a real CUSTOMER session reads its own /customers/:id with no function required', async () => {
       const { customerId, token } = await createCustomerWithLogin();
-      const res = await request(app.getHttpServer()).get(`/api/v1/customers/${customerId}`).set(auth(token));
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/customers/${customerId}`)
+        .set(auth(token));
       expect(res.status).toBe(200);
       expect(res.body.id).toBe(customerId);
     });
@@ -666,11 +724,14 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
   // D. Non-migrated endpoints retain their exact pre-existing behavior
   // =====================================================================================
 
-  describe('D. /addresses, /contact-methods, /identity-documents (AMENDED by V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01 — now function-gated; see that task\'s dedicated suite)', () => {
+  describe("D. /addresses, /contact-methods, /identity-documents (AMENDED by V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01 — now function-gated; see that task's dedicated suite)", () => {
     const NOT_MIGRATED = [
       { name: 'addresses', path: (id: string) => `/api/v1/customers/${id}/addresses` },
       { name: 'contact-methods', path: (id: string) => `/api/v1/customers/${id}/contact-methods` },
-      { name: 'identity-documents', path: (id: string) => `/api/v1/customers/${id}/identity-documents` },
+      {
+        name: 'identity-documents',
+        path: (id: string) => `/api/v1/customers/${id}/identity-documents`,
+      },
     ];
 
     it.each(NOT_MIGRATED)(
@@ -685,10 +746,13 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
       },
     );
 
-    it.each(NOT_MIGRATED)('D2. $name unauthenticated is still 401 (route-policy gate unaffected)', async ({ path }) => {
-      const customerId = await createActiveCustomer();
-      await request(app.getHttpServer()).get(path(customerId)).expect(401);
-    });
+    it.each(NOT_MIGRATED)(
+      'D2. $name unauthenticated is still 401 (route-policy gate unaffected)',
+      async ({ path }) => {
+        const customerId = await createActiveCustomer();
+        await request(app.getHttpServer()).get(path(customerId)).expect(401);
+      },
+    );
 
     it.each(NOT_MIGRATED)(
       'D3. $name: a real CUSTOMER session can still read its own sub-resource (self-service unaffected)',

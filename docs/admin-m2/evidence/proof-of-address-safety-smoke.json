@@ -1,0 +1,178 @@
+[
+  {
+    "width": 320,
+    "workspace": "proof of address actions",
+    "synthetic": true,
+    "keyboard": true,
+    "uploadMismatchRejected": true,
+    "withdrawMismatchRejected": true,
+    "draftTabShellGuard": true,
+    "pendingTabGuard": true,
+    "confirmed": true,
+    "pendingSize": {
+      "page": 320,
+      "view": 320
+    },
+    "reviewSize": {
+      "page": 320,
+      "view": 320
+    },
+    "targetedAxeViolations": [],
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "workspace": "proof of address actions",
+    "synthetic": true,
+    "keyboard": true,
+    "uploadMismatchRejected": true,
+    "withdrawMismatchRejected": true,
+    "draftTabShellGuard": true,
+    "pendingTabGuard": true,
+    "confirmed": true,
+    "pendingSize": {
+      "page": 360,
+      "view": 360
+    },
+    "reviewSize": {
+      "page": 360,
+      "view": 360
+    },
+    "targetedAxeViolations": [],
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "workspace": "proof of address actions",
+    "synthetic": true,
+    "keyboard": true,
+    "uploadMismatchRejected": true,
+    "withdrawMismatchRejected": true,
+    "draftTabShellGuard": true,
+    "pendingTabGuard": true,
+    "confirmed": true,
+    "pendingSize": {
+      "page": 390,
+      "view": 390
+    },
+    "reviewSize": {
+      "page": 390,
+      "view": 390
+    },
+    "targetedAxeViolations": [],
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "workspace": "proof of address actions",
+    "synthetic": true,
+    "keyboard": true,
+    "uploadMismatchRejected": true,
+    "withdrawMismatchRejected": true,
+    "draftTabShellGuard": true,
+    "pendingTabGuard": true,
+    "confirmed": true,
+    "pendingSize": {
+      "page": 768,
+      "view": 768
+    },
+    "reviewSize": {
+      "page": 768,
+      "view": 768
+    },
+    "targetedAxeViolations": [],
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "workspace": "proof of address actions",
+    "synthetic": true,
+    "keyboard": true,
+    "uploadMismatchRejected": true,
+    "withdrawMismatchRejected": true,
+    "draftTabShellGuard": true,
+    "pendingTabGuard": true,
+    "confirmed": true,
+    "pendingSize": {
+      "page": 769,
+      "view": 769
+    },
+    "reviewSize": {
+      "page": 769,
+      "view": 769
+    },
+    "targetedAxeViolations": [],
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "workspace": "proof of address actions",
+    "synthetic": true,
+    "keyboard": true,
+    "uploadMismatchRejected": true,
+    "withdrawMismatchRejected": true,
+    "draftTabShellGuard": true,
+    "pendingTabGuard": true,
+    "confirmed": true,
+    "pendingSize": {
+      "page": 1024,
+      "view": 1024
+    },
+    "reviewSize": {
+      "page": 1024,
+      "view": 1024
+    },
+    "targetedAxeViolations": [],
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "workspace": "proof of address actions",
+    "synthetic": true,
+    "keyboard": true,
+    "uploadMismatchRejected": true,
+    "withdrawMismatchRejected": true,
+    "draftTabShellGuard": true,
+    "pendingTabGuard": true,
+    "confirmed": true,
+    "pendingSize": {
+      "page": 1280,
+      "view": 1280
+    },
+    "reviewSize": {
+      "page": 1280,
+      "view": 1280
+    },
+    "targetedAxeViolations": [],
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "workspace": "proof of address actions",
+    "synthetic": true,
+    "keyboard": true,
+    "uploadMismatchRejected": true,
+    "withdrawMismatchRejected": true,
+    "draftTabShellGuard": true,
+    "pendingTabGuard": true,
+    "confirmed": true,
+    "pendingSize": {
+      "page": 1440,
+      "view": 1440
+    },
+    "reviewSize": {
+      "page": 1440,
+      "view": 1440
+    },
+    "targetedAxeViolations": [],
+    "page": 1440,
+    "view": 1440
+  }
+]

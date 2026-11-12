@@ -169,7 +169,7 @@ describe('Agent classes and Cash-to-Cash Admin Web integrations', () => {
     (ApiClient.get as jest.Mock).mockResolvedValue({ data: [], total: 0, page: 1, limit: 20, totalPages: 0 });
     const view = render(<CashToCashOperationsScreen />);
     await view.findByText('No Cash-to-Cash transfers match these filters.');
-    fireEvent.change(view.getByLabelText('Status'), { target: { value: 'CLAIMED' } });
+    fireEvent.click(view.getByRole('button', { name: 'Claimed' }));
     fireEvent.change(view.getByLabelText('Agent UUID'), { target: { value: 'agent-uuid' } });
     fireEvent.click(view.getByRole('button', { name: 'Search' }));
     await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith(
@@ -248,12 +248,12 @@ describe('Agent classes and Cash-to-Cash Admin Web integrations', () => {
     view.rerender(<AgentCredentialPanel agentId="agent-2" agentStatus="ACTIVE" canManage />);
     expect(view.queryByTestId('temporary-agent-password')).toBeNull();
 
-    // 409 Conflict when initial credential already exists gives clear reissue guidance
+    // A 409 can also reflect an inactive Agent; do not assume a credential already exists
     const conflict = Object.assign(new Error('Initial credential already exists for this Agent'), { status: 409 });
     (ApiClient.post as jest.Mock).mockRejectedValueOnce(conflict);
     fireEvent.click(view.getByRole('button', { name: 'Issue initial credential' }));
     const alertText = (await view.findByRole('alert')).textContent ?? '';
-    expect(alertText).toContain('Use "Reissue + invalidate sessions"');
+    expect(alertText).toContain('Check the Agent status and existing credential');
     expect(alertText).not.toContain('The result may be uncertain');
   });
 
@@ -275,7 +275,7 @@ describe('Agent classes and Cash-to-Cash Admin Web integrations', () => {
     );
 
     (ApiClient.get as jest.Mock).mockClear();
-    fireEvent.change(view.getByLabelText('Status'), { target: { value: 'EXPIRED' } });
+    fireEvent.click(view.getByRole('button', { name: 'Expired' }));
     fireEvent.click(view.getByRole('button', { name: 'Search' }));
 
     await waitFor(() =>

@@ -1,0 +1,1077 @@
+{
+  "source": "Windows-equivalent Vite dev server from current source, real Nest AppModule and disposable migrated PostgreSQL",
+  "baseCommit": "3d36053e92064bf3e947c2ccc689e231d9a6e134",
+  "auth": "real local development login for seeded test roles",
+  "backend": "Only GET and local-login POST allowed; no fixtures, real providers or workers",
+  "screens": [
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 1440,
+      "file": "login-1440.png",
+      "heading": [
+        "Sign in to your workspace"
+      ]
+    },
+    {
+      "key": "dashboard",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "dashboard-1440.png",
+      "headings": [
+        "System Administration Dashboard",
+        "Identity & Session",
+        "Entitlements & Scopes",
+        "Executive & Governance"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "dashboardSettings",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "dashboardSettings-1440.png",
+      "headings": [
+        "Dashboard Settings",
+        "Dashboard Templates (12)",
+        "Role → Dashboard Assignment (11)"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "customers",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "customers-1440.png",
+      "headings": [
+        "Customer directory"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "customer-registration",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "customer-registration-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "customer-overview",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "customer-overview-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "customer-personal",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "customer-personal-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "customer-proof",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "customer-proof-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "agents",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "agents-1440.png",
+      "headings": [
+        "Agent Network Management"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "agent-detail",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "agent-detail-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "agent-transactions",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "agent-transactions-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "agentClasses",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "agentClasses-1440.png",
+      "headings": [
+        "Agent classes & service eligibility",
+        "Class catalogue"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "support",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "support-1440.png",
+      "headings": [
+        "Support Tickets",
+        "Ticket queue"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "support-detail",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "support-detail-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "transfers",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "transfers-1440.png",
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "cashIn",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "cashIn-1440.png",
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "cashOut",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "cashOut-1440.png",
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "cashToCashOps",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "cashToCashOps-1440.png",
+      "headings": [
+        "Cash-to-Cash Operations",
+        "Find a transfer"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "ledgerExplorer",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "ledgerExplorer-1440.png",
+      "headings": [
+        "Ledger Core & Reversals Desk",
+        "Chart of Accounts",
+        "Journal Audit & Compensations"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "reconciliation",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "reconciliation-1440.png",
+      "headings": [
+        "Independent Reconciliation & Breaks Desk",
+        "Verification checks"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "feeRules",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "feeRules-1440.png",
+      "headings": [
+        "Commercial Rule Registries",
+        "Fees"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "commissionRules",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "commissionRules-1440.png",
+      "headings": [
+        "Commercial Rule Registries",
+        "Commissions"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "rewardRules",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "rewardRules-1440.png",
+      "headings": [
+        "Commercial Rule Registries",
+        "Rewards"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "productCatalogue",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "productCatalogue-1440.png",
+      "headings": [
+        "Commercial Rule Registries",
+        "Products"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "limitCatalogue",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "limitCatalogue-1440.png",
+      "headings": [
+        "Commercial Rule Registries",
+        "Limit profiles",
+        "Limit rules"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "limitAssignments",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "limitAssignments-1440.png",
+      "headings": [
+        "Limit Assignments",
+        "Existing assignments",
+        "Manage assignments",
+        "Usage Diagnostics",
+        "Reservation Diagnostics"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "kycQueue",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "kycQueue-1440.png",
+      "headings": [
+        "KYC assessment lookup & review",
+        "Find a customer",
+        "KYC assessment",
+        "Submit KYC assessment decision"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "complianceCases",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "complianceCases-1440.png",
+      "headings": [
+        "Compliance case lookup",
+        "Find a customer",
+        "Compliance cases"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "workforceAccess",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "workforceAccess-1440.png",
+      "headings": [
+        "Workforce Overview & Support Provisioning",
+        "Workforce Overview",
+        "Provision SUPPORT workforce user",
+        "Disable SUPPORT workforce user"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "roleGovernance",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "roleGovernance-1440.png",
+      "headings": [
+        "Workforce Role Governance",
+        "Role and action",
+        "Create Finance Role Assignment"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "notifications",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "notifications-1440.png",
+      "headings": [
+        "SMS & Email Notification Management",
+        "Channel and service signals"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "notification-overview",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "notification-overview-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "notification-events",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "notification-events-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "notification-smsTemplates",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "notification-smsTemplates-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "notification-emailTemplates",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "notification-emailTemplates-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "notification-approvals",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "notification-approvals-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "notification-providers",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "notification-providers-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "notification-deliveries",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "notification-deliveries-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "notification-testSend",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "notification-testSend-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "notification-providerConfig",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "notification-providerConfig-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "systemHealth",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "systemHealth-1440.png",
+      "headings": [
+        "System Health",
+        "Metrics",
+        "Diagnostics",
+        "Outbox (recent events)",
+        "Notification Deliveries"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "auditEvents",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "auditEvents-1440.png",
+      "headings": [
+        "Audit & Security Events",
+        "Find audit events",
+        "Search results"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "approvalsInbox",
+      "role": "FINANCE_CONTROLLER",
+      "width": 1440,
+      "file": "approvalsInbox-1440.png",
+      "headings": [
+        "Privileged Approvals (Maker-Checker)",
+        "Funding checker workspace",
+        "Generic checker decision"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "fraudCases",
+      "role": "RISK_FRAUD",
+      "width": 1440,
+      "file": "fraudCases-1440.png",
+      "headings": [
+        "Fraud case lookup",
+        "Find a customer",
+        "Fraud cases"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "superAdminRecovery",
+      "role": "ADMINISTRATOR",
+      "width": 1440,
+      "file": "superAdminRecovery-1440.png",
+      "headings": [
+        "Super-Admin recovery",
+        "Submit recovery statement"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      }
+    },
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 375,
+      "file": "login-375.png",
+      "heading": [
+        "Sign in to your workspace"
+      ]
+    },
+    {
+      "key": "dashboard",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "dashboard-375.png",
+      "headings": [
+        "System Administration Dashboard",
+        "Identity & Session",
+        "Entitlements & Scopes",
+        "Executive & Governance"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "dashboardSettings",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "dashboardSettings-375.png",
+      "headings": [
+        "Dashboard Settings",
+        "Dashboard Templates (12)",
+        "Role → Dashboard Assignment (11)"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "customers",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "customers-375.png",
+      "headings": [
+        "Customer directory"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "customer-registration",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "customer-registration-375.png",
+      "interaction": true
+    },
+    {
+      "key": "customer-overview",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "customer-overview-375.png",
+      "interaction": true
+    },
+    {
+      "key": "customer-personal",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "customer-personal-375.png",
+      "interaction": true
+    },
+    {
+      "key": "customer-proof",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "customer-proof-375.png",
+      "interaction": true
+    },
+    {
+      "key": "agents",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "agents-375.png",
+      "headings": [
+        "Agent Network Management"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "agent-detail",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "agent-detail-375.png",
+      "interaction": true
+    },
+    {
+      "key": "agent-transactions",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "agent-transactions-375.png",
+      "interaction": true
+    },
+    {
+      "key": "agentClasses",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "agentClasses-375.png",
+      "headings": [
+        "Agent classes & service eligibility",
+        "Class catalogue"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "support",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "support-375.png",
+      "headings": [
+        "Support Tickets",
+        "Ticket queue"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "support-detail",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "support-detail-375.png",
+      "interaction": true
+    },
+    {
+      "key": "transfers",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "transfers-375.png",
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "cashIn",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "cashIn-375.png",
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "cashOut",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "cashOut-375.png",
+      "headings": [
+        "Transaction trace & fee simulation",
+        "Transaction Audit & Traceability",
+        "Pricing Fee Simulator Tool"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "cashToCashOps",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "cashToCashOps-375.png",
+      "headings": [
+        "Cash-to-Cash Operations",
+        "Find a transfer"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "ledgerExplorer",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "ledgerExplorer-375.png",
+      "headings": [
+        "Ledger Core & Reversals Desk",
+        "Chart of Accounts",
+        "Journal Audit & Compensations"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "reconciliation",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "reconciliation-375.png",
+      "headings": [
+        "Independent Reconciliation & Breaks Desk",
+        "Verification checks"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "feeRules",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "feeRules-375.png",
+      "headings": [
+        "Commercial Rule Registries",
+        "Fees"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "commissionRules",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "commissionRules-375.png",
+      "headings": [
+        "Commercial Rule Registries",
+        "Commissions"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "rewardRules",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "rewardRules-375.png",
+      "headings": [
+        "Commercial Rule Registries",
+        "Rewards"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "productCatalogue",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "productCatalogue-375.png",
+      "headings": [
+        "Commercial Rule Registries",
+        "Products"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "limitCatalogue",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "limitCatalogue-375.png",
+      "headings": [
+        "Commercial Rule Registries",
+        "Limit profiles",
+        "Limit rules"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "limitAssignments",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "limitAssignments-375.png",
+      "headings": [
+        "Limit Assignments",
+        "Existing assignments",
+        "Manage assignments",
+        "Usage Diagnostics",
+        "Reservation Diagnostics"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "kycQueue",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "kycQueue-375.png",
+      "headings": [
+        "KYC assessment lookup & review",
+        "Find a customer",
+        "KYC assessment",
+        "Submit KYC assessment decision"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "complianceCases",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "complianceCases-375.png",
+      "headings": [
+        "Compliance case lookup",
+        "Find a customer",
+        "Compliance cases"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "workforceAccess",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "workforceAccess-375.png",
+      "headings": [
+        "Workforce Overview & Support Provisioning",
+        "Workforce Overview",
+        "Provision SUPPORT workforce user",
+        "Disable SUPPORT workforce user"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "roleGovernance",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "roleGovernance-375.png",
+      "headings": [
+        "Workforce Role Governance",
+        "Role and action",
+        "Create Finance Role Assignment"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "notifications",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "notifications-375.png",
+      "headings": [
+        "SMS & Email Notification Management",
+        "Channel and service signals"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "notification-overview",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "notification-overview-375.png",
+      "interaction": true
+    },
+    {
+      "key": "notification-events",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "notification-events-375.png",
+      "interaction": true
+    },
+    {
+      "key": "notification-smsTemplates",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "notification-smsTemplates-375.png",
+      "interaction": true
+    },
+    {
+      "key": "notification-emailTemplates",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "notification-emailTemplates-375.png",
+      "interaction": true
+    },
+    {
+      "key": "notification-approvals",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "notification-approvals-375.png",
+      "interaction": true
+    },
+    {
+      "key": "notification-providers",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "notification-providers-375.png",
+      "interaction": true
+    },
+    {
+      "key": "notification-deliveries",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "notification-deliveries-375.png",
+      "interaction": true
+    },
+    {
+      "key": "notification-testSend",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "notification-testSend-375.png",
+      "interaction": true
+    },
+    {
+      "key": "notification-providerConfig",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "notification-providerConfig-375.png",
+      "interaction": true
+    },
+    {
+      "key": "systemHealth",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "systemHealth-375.png",
+      "headings": [
+        "System Health",
+        "Metrics",
+        "Diagnostics",
+        "Outbox (recent events)",
+        "Notification Deliveries"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "auditEvents",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "auditEvents-375.png",
+      "headings": [
+        "Audit & Security Events",
+        "Find audit events",
+        "Search results"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "approvalsInbox",
+      "role": "FINANCE_CONTROLLER",
+      "width": 375,
+      "file": "approvalsInbox-375.png",
+      "headings": [
+        "Privileged Approvals (Maker-Checker)",
+        "Funding checker workspace",
+        "Generic checker decision"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "fraudCases",
+      "role": "RISK_FRAUD",
+      "width": 375,
+      "file": "fraudCases-375.png",
+      "headings": [
+        "Fraud case lookup",
+        "Find a customer",
+        "Fraud cases"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    },
+    {
+      "key": "superAdminRecovery",
+      "role": "ADMINISTRATOR",
+      "width": 375,
+      "file": "superAdminRecovery-375.png",
+      "headings": [
+        "Super-Admin recovery",
+        "Submit recovery statement"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      }
+    }
+  ],
+  "warnings": []
+}

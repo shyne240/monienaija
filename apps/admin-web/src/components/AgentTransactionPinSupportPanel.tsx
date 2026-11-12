@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import './agent-workspaces.css';
+import './agent-governance.css';
 
 export interface AgentAdminPinStatus {
   agentId: string;
@@ -27,64 +29,83 @@ export const AgentTransactionPinSupportPanel: React.FC<AgentTransactionPinSuppor
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const generation = useRef(0);
+  const context = useRef({ agentId, canManageSupport });
+  context.current = { agentId, canManageSupport };
 
   useEffect(() => {
     setPinState(null);
     setReason('');
     setError('');
     setMessage('');
-  }, [agentId]);
+    setLoading(false);
+    setUnlockBusy(false);
+    return () => { generation.current += 1; };
+  }, [agentId, canManageSupport]);
 
   if (!canManageSupport || !agentId) return null;
 
   const inspectStatus = async () => {
-    if (!loadPinStatus || loading) return;
+    if (!loadPinStatus || loading || unlockBusy) return;
+    const current = ++generation.current;
+    const valid = () => generation.current === current && context.current.agentId === agentId && context.current.canManageSupport;
     setLoading(true);
     setError('');
     setMessage('');
     try {
       const status = await loadPinStatus(agentId);
+      if (!valid()) return;
+      if (!status || status.agentId !== agentId) throw new Error('PIN status did not match the selected Agent.');
       setPinState(status);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load Agent Transaction PIN status.');
+      if (valid()) {
+        setPinState(null);
+        setError(err instanceof Error ? err.message : 'Unable to load Agent Transaction PIN status.');
+      }
     } finally {
-      setLoading(false);
+      if (valid()) setLoading(false);
     }
   };
 
   const handleUnlock = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!onUnlockPin || unlockBusy) return;
+    if (!onUnlockPin || unlockBusy || loading) return;
     if (!reason.trim()) {
       setError('Audit reason is required before unlocking a locked Agent Transaction PIN.');
       return;
     }
+    const current = ++generation.current;
+    const valid = () => generation.current === current && context.current.agentId === agentId && context.current.canManageSupport;
     setUnlockBusy(true);
     setError('');
     setMessage('');
     try {
       await onUnlockPin(agentId, reason.trim());
+      if (!valid()) return;
+      setPinState(null);
       setReason('');
       setMessage(`Transaction PIN lockout cleared for Agent ${agentId}.`);
       if (loadPinStatus) {
         const refreshed = await loadPinStatus(agentId);
+        if (!valid()) return;
+        if (!refreshed || refreshed.agentId !== agentId) throw new Error('PIN status did not match the selected Agent.');
         setPinState(refreshed);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to unlock Agent Transaction PIN.');
+      if (valid()) setError(err instanceof Error ? err.message : 'Unable to unlock Agent Transaction PIN.');
     } finally {
-      setUnlockBusy(false);
+      if (valid()) setUnlockBusy(false);
     }
   };
 
   return (
-    <section aria-label="Agent Transaction PIN support controls" style={styles.panel}>
-      <div style={styles.header}>
-        <h4 style={styles.title}>Transaction PIN Support &amp; Lockout Remediation</h4>
+    <section aria-label="Agent Transaction PIN support controls" className="mn-agent-workspace agent-governance">
+      <div className="mn-agent-workspace__header">
+        <div><p className="agent-governance__eyebrow">SUPPORT · SECURITY</p><h4 className="mn-agent-workspace__title">Transaction PIN Support &amp; Lockout Remediation</h4></div>
         {loadPinStatus && (
           <button
             type="button"
-            style={styles.button}
+            className="mn-agent-workspace__button"
             disabled={loading || unlockBusy}
             onClick={() => void inspectStatus()}
           >
@@ -93,7 +114,7 @@ export const AgentTransactionPinSupportPanel: React.FC<AgentTransactionPinSuppor
         )}
       </div>
 
-      <p style={styles.note}>
+      <p className="mn-agent-workspace__description">
         Security boundary (V1-AGENT-05): Workforce operators never view, generate, or set an Agent&apos;s
         Transaction PIN. Agents create and rotate their own 4–12 digit PIN in Agent Mobile; after 5 failed
         attempts, PIN lockout requires verified Support remediation.
@@ -101,25 +122,25 @@ export const AgentTransactionPinSupportPanel: React.FC<AgentTransactionPinSuppor
 
       {!loadPinStatus && !onUnlockPin ? (
         <div>
-          <div style={styles.dependencyBox} role="note" data-testid="agent-pin-support-dependency">
+          <div className="agent-governance__boundary" role="note" data-testid="agent-pin-support-dependency">
             <strong>Policy-Blocked Capability (V1-AGENT-05 §7):</strong> Operational Agent Transaction PIN
             status and lockout-reset endpoints (<code>GET /internal/admin/agents/:id/transaction-pin</code>{' '}
             and <code>POST /internal/admin/agents/:id/transaction-pin/unlock</code>) remain disabled pending
             explicit dual-control governance policy. Record verified out-of-band identity evidence in the
             Support ticket thread for Agent <code>{agentId}</code>.
           </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+          <div className="agent-governance__actions">
             <button
               type="button"
               disabled
-              style={{ ...styles.button, opacity: 0.55, cursor: 'not-allowed' }}
+              className="mn-agent-workspace__button"
             >
               Inspect PIN state (Unavailable)
             </button>
             <button
               type="button"
               disabled
-              style={{ ...styles.button, opacity: 0.55, cursor: 'not-allowed' }}
+              className="mn-agent-workspace__button"
             >
               Clear PIN Lockout (Policy blocked)
             </button>
@@ -127,14 +148,16 @@ export const AgentTransactionPinSupportPanel: React.FC<AgentTransactionPinSuppor
         </div>
       ) : (
         <>
-          {error && <div style={styles.errorBox} role="alert">{error}</div>}
-          {message && <div style={styles.successBox} role="status">{message}</div>}
+          {error && <div className="agent-governance__feedback agent-governance__feedback--error" role="alert">{error}</div>}
+          {message && <div className="agent-governance__feedback agent-governance__feedback--success" role="status">{message}</div>}
 
-          {pinState && (
-            <div style={styles.stateBox} data-testid="agent-pin-support-state">
+          {!pinState && !loading && !error && loadPinStatus && <p className="agent-governance__hint">PIN state has not been loaded. Inspect the state before considering remediation.</p>}
+          {!onUnlockPin && loadPinStatus && <p className="agent-governance__hint">Lockout reset is unavailable in this workspace.</p>}
+          {pinState && !loading && (
+            <div className="agent-governance__state" data-testid="agent-pin-support-state">
               <div>
                 <strong>PIN Status:</strong>{' '}
-                <span style={styles.badge}>{pinState.status}</span>
+                <span className={pinState.status === 'LOCKED' ? 'agent-governance__badge agent-governance__badge--locked' : 'agent-governance__badge'}>{pinState.status}</span>
                 {pinState.pinVersion != null && (
                   <span> · Version: <code>{pinState.pinVersion}</code></span>
                 )}
@@ -147,8 +170,8 @@ export const AgentTransactionPinSupportPanel: React.FC<AgentTransactionPinSuppor
               )}
 
               {pinState.status === 'LOCKED' && onUnlockPin && (
-                <form onSubmit={handleUnlock} style={styles.unlockForm}>
-                  <label style={styles.label}>
+                <form onSubmit={handleUnlock} className="mn-agent-workspace__controls agent-governance__form">
+                  <label className="mn-agent-workspace__field">
                     Support verification &amp; unlock audit reason
                     <input
                       aria-label="PIN unlock audit reason"
@@ -158,14 +181,14 @@ export const AgentTransactionPinSupportPanel: React.FC<AgentTransactionPinSuppor
                         setReason(e.target.value);
                         setError('');
                       }}
-                      style={styles.input}
-                      disabled={unlockBusy}
+                      className="mn-agent-workspace__input"
+                      disabled={unlockBusy || loading}
                     />
                   </label>
                   <button
                     type="submit"
-                    style={styles.unlockButton}
-                    disabled={unlockBusy || !reason.trim()}
+                    className="mn-agent-workspace__button mn-agent-workspace__button--primary"
+                    disabled={unlockBusy || loading || !reason.trim()}
                   >
                     {unlockBusy ? 'Unlocking…' : 'Clear PIN Lockout'}
                   </button>
@@ -177,47 +200,4 @@ export const AgentTransactionPinSupportPanel: React.FC<AgentTransactionPinSuppor
       )}
     </section>
   );
-};
-
-const styles: Record<string, React.CSSProperties> = {
-  panel: {
-    padding: 12,
-    border: '1px solid #CBD5E1',
-    borderRadius: 7,
-    background: '#F8FAFC',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 8,
-    marginTop: 10,
-  },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  title: { margin: 0, fontSize: 13, color: '#032B14' },
-  note: { margin: 0, fontSize: 12, color: '#475569', lineHeight: 1.5 },
-  dependencyBox: {
-    padding: 10,
-    borderRadius: 6,
-    border: '1px solid #FDE68A',
-    background: '#FFFBEB',
-    color: '#78350F',
-    fontSize: 12,
-    lineHeight: 1.5,
-  },
-  stateBox: {
-    padding: 10,
-    borderRadius: 6,
-    border: '1px solid #E2E8F0',
-    background: '#FFFFFF',
-    fontSize: 12,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 6,
-  },
-  badge: { display: 'inline-block', padding: '2px 7px', borderRadius: 99, background: '#FEE2E2', color: '#991B1B', fontSize: 11, fontWeight: 700 },
-  unlockForm: { display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap', marginTop: 6 },
-  label: { display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 220px', fontSize: 11, fontWeight: 600, color: '#334155' },
-  input: { padding: '6px 8px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 },
-  button: { padding: '6px 10px', border: '1px solid #CBD5E1', borderRadius: 5, background: '#FFF', cursor: 'pointer', fontSize: 12 },
-  unlockButton: { padding: '7px 12px', border: '1px solid #0A3D25', borderRadius: 5, background: '#0A3D25', color: '#FFF', cursor: 'pointer', fontSize: 12, fontWeight: 600 },
-  errorBox: { padding: 8, borderRadius: 5, border: '1px solid #FCA5A5', background: '#FEF2F2', color: '#991B1B', fontSize: 12 },
-  successBox: { padding: 8, borderRadius: 5, border: '1px solid #6EE7B7', background: '#ECFDF5', color: '#065F46', fontSize: 12 },
 };

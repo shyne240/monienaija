@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -10,7 +10,11 @@ import { TransferService } from '../src/transfer/transfer.service';
 import { CustomerFundingService } from '../src/customer-funding/customer-funding.service';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { LedgerAccountType, LedgerEntryDirection, LedgerNormalBalance } from '../src/ledger/ledger.enums';
+import {
+  LedgerAccountType,
+  LedgerEntryDirection,
+  LedgerNormalBalance,
+} from '../src/ledger/ledger.enums';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 
 /**
@@ -59,7 +63,9 @@ describe('V1-SYSTEM-01 suspended-customer financial boundary (real PostgreSQL)',
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     transferService = moduleRef.get(TransferService);
@@ -79,13 +85,20 @@ describe('V1-SYSTEM-01 suspended-customer financial boundary (real PostgreSQL)',
     }
   });
 
-  async function createActiveCustomerWithWallet(): Promise<{ customerId: string; walletId: string; ledgerAccountId: string }> {
+  async function createActiveCustomerWithWallet(): Promise<{
+    customerId: string;
+    walletId: string;
+    ledgerAccountId: string;
+  }> {
     const rows: Array<{ id: string }> = await dataSource.query(
       `INSERT INTO customers (reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED') RETURNING id`,
       [`cust-sys01-${randomUUID().slice(0, 8)}`],
     );
     const customerId = rows[0]!.id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, 'Suspend Boundary Customer']);
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`,
+      [customerId, 'Suspend Boundary Customer'],
+    );
     const canonical10 = `8${String(Math.floor(100000000 + Math.random() * 900000000))}`;
     await dataSource.query(
       `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$2,true,NOW())`,
@@ -233,7 +246,10 @@ describe('V1-SYSTEM-01 suspended-customer financial boundary (real PostgreSQL)',
       idempotencyKey: `sys01-funding-create-active-${randomUUID()}`,
       principal: supportMaker,
     });
-    const approved = await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
+    const approved = await fundingService.approve({
+      fundingRequestId: created.id,
+      principal: operatorChecker,
+    });
     expect(approved.status).toBe('APPROVED');
     expect(await getBalance(customer.ledgerAccountId)).toBe(45000n);
   });

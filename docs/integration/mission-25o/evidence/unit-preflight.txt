@@ -1,0 +1,5 @@
+Implementation commit: 3a0f87eafe86b455e1906d7779f83ca3152b9d00
+Command: jest --config ./test/jest-unit.json --maxWorkers=2 --json
+Network: non-loopback egress blocked
+Process exit: 1
+Cause: incorrect nonexistent Jest config path; no suites ran. Corrected to the repository default configuration for the final run.

@@ -1,4 +1,12 @@
-import { BadRequestException, Controller, ForbiddenException, Get, Query, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  ForbiddenException,
+  Get,
+  Query,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
@@ -44,7 +52,9 @@ export class CommissionRuleResolverController {
     this.requireWorkforce(req);
     if (!productCode) throw new BadRequestException('productCode is required');
     if (!principalMinor || !/^\d+$/.test(principalMinor.trim())) {
-      throw new BadRequestException('principalMinor is required (non-negative integer minor units)');
+      throw new BadRequestException(
+        'principalMinor is required (non-negative integer minor units)',
+      );
     }
     if (currency !== undefined && currency !== '' && !/^[A-Za-z]{3}$/.test(currency.trim())) {
       throw new BadRequestException('currency must be a 3-letter ISO code');
@@ -104,7 +114,9 @@ export class CommissionRuleResolverController {
     if (!principal) throw new UnauthorizedException('Authentication required');
     const allowed = ['OPERATOR', 'SERVICE', 'PRIVILEGED'];
     if (!allowed.includes((principal as { type?: string }).type as string)) {
-      throw new ForbiddenException('Commission-rule resolution diagnostics are workforce-only — OPERATOR/SERVICE/PRIVILEGED only');
+      throw new ForbiddenException(
+        'Commission-rule resolution diagnostics are workforce-only — OPERATOR/SERVICE/PRIVILEGED only',
+      );
     }
   }
 }

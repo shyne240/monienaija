@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { colors } from './tokens';
+import { ScrollRegion } from '../../design-system/primitives';
 import { WidgetCard } from './WidgetCard';
 import { KpiTile } from './KpiTile';
 import { PeriodControls } from './PeriodControls';
 import { useWidgetData } from './useWidgetData';
+import { isReconciliationWidgetData, isStatusCountData, isTransactionSummary, isTransactionTrend, isRecentTransactions, isLedgerSummary, isWorkforceOverview, isAuditEntries, parseDirectWidget, DIRECT_ENDPOINTS, type DirectWidgetKey, type DirectWidgetData, type ReconciliationWidgetData, type StatusCountData } from './widget-validation';
 import {
   formatMinor,
   formatPercent,
@@ -23,6 +25,16 @@ function buildQuery(params: Record<string, string | undefined>): string {
     .filter(([, v]) => v !== undefined && v !== '')
     .map(([k, v]) => `${k}=${encodeURIComponent(v as string)}`);
   return parts.length ? `?${parts.join('&')}` : '';
+}
+
+/** Date inputs describe inclusive calendar days in UTC, as sent to the backend. */
+function periodParams(period: DashboardPeriod, from: string, to: string, maxDays?: number): Record<string, string | undefined> {
+  if (period !== 'custom') return { period };
+  if (!from || !to) throw new Error('Choose both dates for the custom UTC range.');
+  const start = new Date(`${from}T00:00:00.000Z`), end = new Date(`${to}T23:59:59.999Z`);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start.getTime() > end.getTime()) throw new Error('Choose a valid custom UTC range with the start on or before the end.');
+  if (maxDays && end.getTime() - start.getTime() >= maxDays * 86400000) throw new Error(`Choose a range of at most ${maxDays} UTC days.`);
+  return { period, from: start.toISOString(), to: end.toISOString() };
 }
 
 function deltaTone(value: number | null | undefined): 'positive' | 'negative' | 'neutral' {
@@ -61,15 +73,12 @@ export const TransactionSummaryWidget: React.FC = () => {
   const [compare, setCompare] = useState(false);
 
   const { data, loading, error } = useWidgetData<TransactionSummaryResponse>(
-    () =>
-      ApiClient.get(
-        `${DASH}/widgets/transaction-summary${buildQuery({
-          period,
-          from: period === 'custom' ? from : undefined,
-          to: period === 'custom' ? to : undefined,
-          compare: compare ? 'true' : undefined,
-        })}`,
-      ),
+    async () => {
+      const params = periodParams(period, from, to);
+      const result: unknown = await ApiClient.get(`${DASH}/widgets/transaction-summary${buildQuery({ ...params, compare: compare ? 'true' : undefined })}`);
+      if (!isTransactionSummary(result, period, compare)) throw new Error('Invalid transaction summary response.');
+      return result as TransactionSummaryResponse;
+    },
     [period, from, to, compare],
   );
 
@@ -118,7 +127,7 @@ export const TransactionSummaryWidget: React.FC = () => {
             recognized transaction fees only, not profit — no profit/margin figure is computed anywhere in this dashboard because no
             verified cost-accounting source exists in V1 ({data.commissionNote})
           </p>
-          <table style={styles.table}>
+          <ScrollRegion label="Dashboard data table" hint="Scroll horizontally to view all columns."><table style={styles.table}>
             <thead>
               <tr>
                 <th style={styles.th}>Type</th>
@@ -141,7 +150,7 @@ export const TransactionSummaryWidget: React.FC = () => {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></ScrollRegion>
           {data.comparison && <p style={styles.note}>{data.comparison.definition}</p>}
         </>
       )}
@@ -149,32 +158,34 @@ export const TransactionSummaryWidget: React.FC = () => {
   );
 };
 
-/** 5. Historical trend: daily completed-transaction count/value, rendered as a lightweight inline SVG bar chart (no new chart-library dependency). */
+/** Daily completed-transaction count with an accessible exact-value table. */
 export const TransactionTrendWidget: React.FC = () => {
   const [period, setPeriod] = useState<DashboardPeriod>('30d');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
 
   const { data, loading, error } = useWidgetData<TransactionTrendResponse>(
-    () =>
-      ApiClient.get(
-        `${DASH}/widgets/transaction-trend${buildQuery({
-          period,
-          from: period === 'custom' ? from : undefined,
-          to: period === 'custom' ? to : undefined,
-        })}`,
-      ),
+    async () => {
+      const params = periodParams(period, from, to, 92);
+      const result: unknown = await ApiClient.get(`${DASH}/widgets/transaction-trend${buildQuery(params)}`);
+      if (!isTransactionTrend(result, period)) throw new Error('Invalid transaction trend response.');
+      return result as TransactionTrendResponse;
+    },
     [period, from, to],
   );
 
   const daily = data?.daily ?? [];
   const maxCount = Math.max(1, ...daily.map((d) => d.completedCount));
-  const barWidth = 22;
+  const trendPoints = daily.map((day, index) => ({
+    x: daily.length > 1 ? (index / (daily.length - 1)) * 1000 : 500,
+    y: 118 - (day.completedCount / maxCount) * 100,
+  }));
+  const trendLine = trendPoints.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
 
   return (
     <WidgetCard
-      title="Transaction Volume Trend"
-      description={data?.definition || 'Daily completed-transaction count, zero-filled for days with no activity (max 92-day window).'}
+      title="Transaction activity"
+      description="Completed transactions over time"
       loading={loading}
       error={error}
       empty={!!data && daily.length === 0}
@@ -182,22 +193,26 @@ export const TransactionTrendWidget: React.FC = () => {
     >
       {daily.length > 0 && (
         <div style={styles.chartWrap}>
-          <svg width="100%" height={140} viewBox={`0 0 ${Math.max(daily.length * barWidth, 100)} 140`} preserveAspectRatio="none" role="img" aria-label="Daily transaction volume trend">
-            {daily.map((d, i) => {
-              const barHeight = Math.round((d.completedCount / maxCount) * 100);
-              return (
-                <g key={d.date}>
-                  <rect x={i * barWidth + 2} y={118 - barHeight} width={barWidth - 6} height={Math.max(barHeight, 1)} fill={colors.brandGreen} rx={2}>
-                    <title>{`${d.date}: ${d.completedCount} completed, ${formatMinor(d.completedValueMinor, data?.currency)}`}</title>
-                  </rect>
-                </g>
-              );
-            })}
+          <svg width="100%" height={140} viewBox="0 0 1000 140" preserveAspectRatio="none" role="img" aria-label="Daily transaction volume trend">
+            <defs><linearGradient id="one-trend-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#58ba7d" stopOpacity=".35"/><stop offset="100%" stopColor="#58ba7d" stopOpacity=".03"/></linearGradient></defs>
+            {[18, 43, 68, 93, 118].map(y => <line key={y} x1="0" x2="1000" y1={y} y2={y} stroke="#e5ede6" vectorEffect="non-scaling-stroke" />)}
+            <path d={`${trendLine} L ${trendPoints[trendPoints.length - 1].x} 118 L ${trendPoints[0].x} 118 Z`} fill="url(#one-trend-fill)" />
+            <path d={trendLine} fill="none" stroke="#087346" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+            {daily.map((day, index) => <circle key={day.date} cx={trendPoints[index].x} cy={trendPoints[index].y} r="3" fill="#087346"><title>{`${day.date}: ${day.completedCount} completed, ${formatMinor(day.completedValueMinor, data?.currency)}`}</title></circle>)}
           </svg>
           <div style={styles.chartAxis}>
             <span>{daily[0]?.date}</span>
             <span>{daily[daily.length - 1]?.date}</span>
           </div>
+          <details>
+            <summary>View daily trend data</summary>
+            <ScrollRegion label="Daily transaction trend data" hint="Scroll horizontally to view all columns.">
+              <table style={styles.table}>
+                <thead><tr><th scope="col">Date</th><th scope="col">Completed count</th><th scope="col">Completed value</th></tr></thead>
+                <tbody>{daily.map((d) => <tr key={d.date}><td>{d.date}</td><td>{d.completedCount}</td><td>{formatMinor(d.completedValueMinor, data?.currency)}</td></tr>)}</tbody>
+              </table>
+            </ScrollRegion>
+          </details>
         </div>
       )}
     </WidgetCard>
@@ -206,19 +221,19 @@ export const TransactionTrendWidget: React.FC = () => {
 
 /** 4A. Recent transaction activity (Defects #3/#4 fixed: UNION ALL syntax + wrong completed-at column for cash-to-cash). */
 export const RecentTransactionsWidget: React.FC = () => {
-  const { data, loading, error } = useWidgetData<RecentTransactionRow[]>(() => ApiClient.get(`${DASH}/widgets/recent-transactions`), []);
-  const rows = data ?? [];
+  const { data, loading, error } = useWidgetData<RecentTransactionRow[]>(async () => { const value: unknown = await ApiClient.get(`${DASH}/widgets/recent-transactions`); if (!isRecentTransactions(value)) throw new Error('Invalid recent transactions response.'); return value as RecentTransactionRow[]; }, []);
+  const rows = (data ?? []).slice(0, 5);
 
   return (
     <WidgetCard
       title="Recent Transactions"
-      description="The most recent completed/failed/pending transactions across all four V1 types (no customer PII)."
+      description="Latest transaction activity"
       loading={loading}
       error={error}
       empty={!!data && rows.length === 0}
     >
       {rows.length > 0 && (
-        <table style={styles.table}>
+        <ScrollRegion label="Dashboard data table" hint="Scroll horizontally to view all columns."><table style={styles.table}>
           <thead>
             <tr>
               <th style={styles.th}>Type</th>
@@ -243,7 +258,7 @@ export const RecentTransactionsWidget: React.FC = () => {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></ScrollRegion>
       )}
     </WidgetCard>
   );
@@ -258,12 +273,12 @@ interface LedgerSummaryRow {
 }
 
 export const LedgerSummaryWidget: React.FC = () => {
-  const { data, loading, error } = useWidgetData<LedgerSummaryRow[]>(() => ApiClient.get(`${DASH}/widgets/ledger-summary`), []);
+  const { data, loading, error } = useWidgetData<LedgerSummaryRow[]>(async () => { const value: unknown = await ApiClient.get(`${DASH}/widgets/ledger-summary`); if (!isLedgerSummary(value)) throw new Error('Invalid ledger summary response.'); return value as LedgerSummaryRow[]; }, []);
   const rows = data ?? [];
   return (
     <WidgetCard title="Ledger Summary" description="Ledger debit/credit totals by currency and accounting unit, sourced directly from ledger_journals/ledger_lines." loading={loading} error={error} empty={!!data && rows.length === 0}>
       {rows.length > 0 && (
-        <table style={styles.table}>
+        <ScrollRegion label="Dashboard data table" hint="Scroll horizontally to view all columns."><table style={styles.table}>
           <thead>
             <tr>
               <th style={styles.th}>Currency</th>
@@ -284,28 +299,28 @@ export const LedgerSummaryWidget: React.FC = () => {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></ScrollRegion>
       )}
     </WidgetCard>
   );
 };
 
-interface ReconciliationStatusResponse {
-  report: { status: string; generatedAt: string; checks: Array<{ name: string; status: string; message: string }> };
-  trialBalance: { balanced: boolean; dimensions: Array<{ currency: string; accountingUnit: string; balanced: boolean }> };
-}
-
 export const ReconciliationStatusWidget: React.FC = () => {
-  const { data, loading, error } = useWidgetData<ReconciliationStatusResponse>(() => ApiClient.get(`${DASH}/widgets/reconciliation-status`), []);
+  const { data, loading, error } = useWidgetData<ReconciliationWidgetData>(async () => {
+    const response: unknown = await ApiClient.get(`${DASH}/widgets/reconciliation-status`);
+    if (!isReconciliationWidgetData(response)) throw new Error('Invalid reconciliation widget response.');
+    return response;
+  }, []);
   return (
-    <WidgetCard title="Reconciliation Status" description="The latest independent reconciliation run and trial balance." loading={loading} error={error}>
+    <WidgetCard title="Reconciliation Status" description="Independent reconciliation and trial-balance reports, generated separately." loading={loading} error={error}>
       {data && (
         <>
           <div style={styles.kpiRow}>
-            <KpiTile label="Run Status" value={data.report?.status ?? '—'} />
-            <KpiTile label="Trial Balance" value={data.trialBalance?.balanced ? 'Balanced' : 'Out of balance'} deltaTone={data.trialBalance?.balanced ? 'positive' : 'negative'} />
+            <KpiTile label="Run Status" value={data.report.status} caption={`Reconciliation: ${formatDate(data.report.generatedAt)}`} />
+            <KpiTile label="Trial Balance" value={data.trialBalance.balanced ? 'Balanced' : 'Out of balance'} caption={`Trial balance: ${formatDate(data.trialBalance.generatedAt)}`} />
           </div>
-          {Array.isArray(data.report?.checks) && data.report.checks.length > 0 && (
+          {data.trialBalance.dimensions.length === 0 && <p style={styles.note}>No trial-balance dimensions were returned; the reported balance does not establish account activity.</p>}
+          {data.report.checks.length > 0 && (
             <ul style={styles.list}>
               {data.report.checks.map((c) => (
                 <li key={c.name} style={styles.listItem}>
@@ -327,7 +342,7 @@ interface WorkforceOverviewResponse {
 }
 
 export const WorkforceOverviewWidget: React.FC = () => {
-  const { data, loading, error } = useWidgetData<WorkforceOverviewResponse>(() => ApiClient.get(`${DASH}/widgets/workforce-overview`), []);
+  const { data, loading, error } = useWidgetData<WorkforceOverviewResponse>(async () => { const value: unknown = await ApiClient.get(`${DASH}/widgets/workforce-overview`); if (!isWorkforceOverview(value)) throw new Error('Invalid workforce overview response.'); return value as WorkforceOverviewResponse; }, []);
   return (
     <WidgetCard title="Workforce Overview" description="Active workforce headcount, role distribution and currently active sessions." loading={loading} error={error}>
       {data && (
@@ -358,16 +373,20 @@ export const StatusCountWidget: React.FC<{
   description: string;
   actions?: React.ReactNode;
 }> = ({ widgetKey, title, description, actions }) => {
-  const { data, loading, error } = useWidgetData<any>(() => ApiClient.get(`${DASH}/widgets/${widgetKey}`), [widgetKey]);
+  const { data, loading, error } = useWidgetData<StatusCountData>(async () => {
+    const response: unknown = await ApiClient.get(`${DASH}/widgets/${widgetKey}`);
+    if (!isStatusCountData(response, widgetKey)) throw new Error('Invalid status summary response.');
+    return response;
+  }, [widgetKey]);
 
   const rows: Array<{ label: string; count: number }> = [];
   let pendingApplicationCount: number | undefined;
   if (data) {
     if (Array.isArray(data.byStatus)) {
-      for (const r of data.byStatus) rows.push({ label: String(r.status), count: Number(r.count ?? 0) });
+      for (const r of data.byStatus) rows.push({ label: String(r.status), count: r.count });
     }
     if (Array.isArray(data.byCategoryStatus)) {
-      for (const r of data.byCategoryStatus) rows.push({ label: `${r.category} / ${r.status}`, count: Number(r.count ?? 0) });
+      for (const r of data.byCategoryStatus) rows.push({ label: `${r.category} / ${r.status}`, count: r.count });
     }
     if (typeof data.pendingApplicationCount === 'number') {
       pendingApplicationCount = data.pendingApplicationCount;
@@ -405,82 +424,42 @@ export const StatusCountWidget: React.FC<{
   );
 };
 
-/**
- * Generic renderer for the 'direct'-fetchMode widgets that call a pre-existing, independently
- * owned endpoint (system-health → /internal/metrics, role-governance-queue, agent applications
- * queue, support ticket queue). Deliberately defensive about shape (array → table of the first
- * few primitive columns; flat-ish object → KPI tiles) rather than hardcoding each endpoint's
- * exact contract, since these endpoints are owned by other, independently-evolving modules.
- */
-export const GenericDirectWidget: React.FC<{
-  title: string;
-  description: string;
-  endpoint: string;
-  actions?: React.ReactNode;
-}> = ({ title, description, endpoint, actions }) => {
-  const { data, loading, error } = useWidgetData<any>(() => ApiClient.get(endpoint), [endpoint]);
+interface AuditWidgetRow { id: string; entityType: string; action: string; actor: string; occurredAt: string; }
+export const AuditTrailWidget: React.FC = () => {
+  const { data, loading, error } = useWidgetData<AuditWidgetRow[]>(async () => {
+    const value: unknown = await ApiClient.get(`${DASH}/widgets/audit-trail`);
+    if (!isAuditEntries(value)) throw new Error('Invalid audit activity response.');
+    return value as AuditWidgetRow[];
+  }, []);
+  return <WidgetCard title="Recent Audit Activity" description="Most recent authorized audit events; sensitive audit details are not shown here." loading={loading} error={error} empty={!!data && data.length === 0}>
+    {data && data.length > 0 && <ScrollRegion label="Recent audit activity" hint="Scroll horizontally to view all columns."><table style={{...styles.table, minWidth: 720}}>
+      <thead><tr><th scope="col" style={{...styles.th, minWidth: 130}}>Time</th><th scope="col" style={styles.th}>Entity</th><th scope="col" style={styles.th}>Action</th><th scope="col" style={styles.th}>Actor</th></tr></thead>
+      <tbody>{data.map(row => <tr key={row.id}><td style={styles.td}>{formatDate(row.occurredAt)}</td><td style={styles.td}>{row.entityType}</td><td style={styles.td}>{row.action}</td><td style={styles.td}>{row.actor}</td></tr>)}</tbody>
+    </table></ScrollRegion>}
+  </WidgetCard>;
+};
 
-  let body: React.ReactNode = null;
-  let isEmpty = false;
-
-  if (data !== undefined && data !== null) {
-    if (Array.isArray(data)) {
-      if (data.length === 0) {
-        isEmpty = true;
-      } else {
-        const first = data[0] && typeof data[0] === 'object' ? data[0] : {};
-        const keys = Object.keys(first)
-          .filter((k) => typeof first[k] !== 'object' || first[k] === null)
-          .slice(0, 5);
-        body = (
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                {keys.map((k) => (
-                  <th key={k} style={styles.th}>
-                    {k}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.slice(0, 10).map((row: any, i: number) => (
-                <tr key={row?.id ?? i}>
-                  {keys.map((k) => (
-                    <td key={k} style={styles.td}>
-                      {row?.[k] === null || row?.[k] === undefined ? '—' : String(row[k])}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        );
-      }
-    } else if (typeof data === 'object') {
-      const metricsLike = data.metrics && typeof data.metrics === 'object' ? data.metrics : data;
-      const entries = Object.entries(metricsLike).filter(([, v]) => typeof v !== 'object' || v === null);
-      if (entries.length === 0) {
-        isEmpty = true;
-      } else {
-        body = (
-          <div style={styles.kpiRow}>
-            {entries.slice(0, 8).map(([k, v]) => (
-              <KpiTile key={k} label={k} value={v === null || v === undefined ? '—' : String(v)} />
-            ))}
-          </div>
-        );
-      }
-    } else {
-      isEmpty = true;
-    }
-  }
-
-  return (
-    <WidgetCard title={title} description={description} loading={loading} error={error} empty={isEmpty} actions={actions}>
-      {body}
-    </WidgetCard>
-  );
+/** Direct sources use explicit projections; no arbitrary payload fields or PII are surfaced. */
+export const GenericDirectWidget: React.FC<{ title: string; description: string; widgetKey: DirectWidgetKey; actions?: React.ReactNode }> = ({ title, description, widgetKey, actions }) => {
+  const { data, loading, error } = useWidgetData<DirectWidgetData>(async () => {
+    const value: unknown = await ApiClient.get(DIRECT_ENDPOINTS[widgetKey]);
+    const parsed = parseDirectWidget(value, widgetKey);
+    if (!parsed) throw new Error('Invalid dashboard source response.');
+    return parsed;
+  }, [widgetKey]);
+  const metrics = data?.metrics ? Object.entries(data.metrics) : [];
+  const rows = data?.rows ?? [];
+  const isMetrics = widgetKey === 'system-health';
+  const columns = widgetKey === 'role-governance-queue'
+    ? [{ key: 'targetRoleKey', label: 'Role' }, { key: 'proposalType', label: 'Type' }, { key: 'status', label: 'Status' }]
+    : [{ key: 'reference', label: 'Reference' }, { key: 'status', label: 'Status' }];
+  return <WidgetCard title={title} description={description} loading={loading} error={error} empty={!!data && (isMetrics ? metrics.length === 0 : rows.length === 0)} actions={actions}>
+    {isMetrics && data && <><p style={styles.note}>Metrics only, generated {formatDate(data.generatedAt)}. Diagnostics and outbox are not included in this widget.</p><div style={styles.kpiRow}>{metrics.slice(0, 8).map(([key, value]) => <KpiTile key={key} label={key} value={value} />)}</div>{metrics.length > 8 && <p style={styles.note}>Showing 8 of {metrics.length} metrics.</p>}</>}
+    {!isMetrics && data && <><p style={styles.note}>Recent records, all statuses. Showing {Math.min(rows.length, 10)}{data.total !== undefined ? ` of ${data.total} matching records` : ` of ${rows.length} returned records`}.</p>
+      <ScrollRegion label={`${title} records`} hint="Scroll horizontally to view all columns."><table style={styles.table}><thead><tr>{columns.map(column => <th key={column.key} scope="col" style={styles.th}>{column.label}</th>)}</tr></thead>
+        <tbody>{rows.slice(0, 10).map((row, index) => <tr key={String(row.id ?? index)}>{columns.map(column => <td key={column.key} style={styles.td}>{String(row[column.key])}</td>)}</tr>)}</tbody>
+      </table></ScrollRegion></>}
+  </WidgetCard>;
 };
 
 export const DirectoryLinkWidget: React.FC<{ title: string; description: string; onNavigate?: () => void }> = ({ title, description, onNavigate }) => (
@@ -521,6 +500,8 @@ export const WidgetRenderer: React.FC<{
       return <LedgerSummaryWidget />;
     case 'reconciliation-status':
       return <ReconciliationStatusWidget />;
+    case 'audit-trail':
+      return <AuditTrailWidget />;
     case 'workforce-overview':
       return <WorkforceOverviewWidget />;
     case 'agent-lifecycle-summary':
@@ -557,13 +538,19 @@ export const WidgetRenderer: React.FC<{
         />
       );
     default:
-      if (widget.fetchMode === 'direct' && widget.endpoint) {
+      if (widget.fetchMode === 'direct' && widget.widgetKey in DIRECT_ENDPOINTS && widget.endpoint === DIRECT_ENDPOINTS[widget.widgetKey as DirectWidgetKey]) {
         const isAgentApplicationsQueue = widget.widgetKey === 'agent-applications-queue';
+        const directCopy: Record<DirectWidgetKey, { title: string; description: string }> = {
+          'system-health': { title: 'Operational Metrics', description: 'Metrics from the operational metrics endpoint.' },
+          'role-governance-queue': { title: 'Role Definition Proposals', description: 'Recent proposals across all returned statuses.' },
+          'agent-applications-queue': { title: 'Agent Applications', description: 'Recent applications across all returned statuses.' },
+          'support-ticket-queue': { title: 'Support Tickets', description: 'Recent tickets across all returned statuses.' },
+        };
         return (
           <GenericDirectWidget
-            title={widget.title || widget.displayName}
-            description={widget.description}
-            endpoint={widget.endpoint}
+            title={directCopy[widget.widgetKey as DirectWidgetKey].title}
+            description={directCopy[widget.widgetKey as DirectWidgetKey].description}
+            widgetKey={widget.widgetKey as DirectWidgetKey}
             actions={
               isAgentApplicationsQueue && onNavigateToAgents ? (
                 <button

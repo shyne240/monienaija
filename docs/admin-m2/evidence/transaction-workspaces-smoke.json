@@ -1,0 +1,170 @@
+[
+  {
+    "width": 320,
+    "workspace": "transfers",
+    "visibleLabelMechanisms": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "cashIn",
+    "visibleLabelMechanisms": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "cashOut",
+    "visibleLabelMechanisms": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "workspace": "transfers",
+    "visibleLabelMechanisms": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "cashIn",
+    "visibleLabelMechanisms": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "cashOut",
+    "visibleLabelMechanisms": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "workspace": "transfers",
+    "visibleLabelMechanisms": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "cashIn",
+    "visibleLabelMechanisms": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "cashOut",
+    "visibleLabelMechanisms": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "workspace": "transfers",
+    "visibleLabelMechanisms": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "cashIn",
+    "visibleLabelMechanisms": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "cashOut",
+    "visibleLabelMechanisms": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "workspace": "transfers",
+    "visibleLabelMechanisms": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "cashIn",
+    "visibleLabelMechanisms": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "cashOut",
+    "visibleLabelMechanisms": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "workspace": "transfers",
+    "visibleLabelMechanisms": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "cashIn",
+    "visibleLabelMechanisms": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "cashOut",
+    "visibleLabelMechanisms": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "workspace": "transfers",
+    "visibleLabelMechanisms": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "cashIn",
+    "visibleLabelMechanisms": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "cashOut",
+    "visibleLabelMechanisms": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "workspace": "transfers",
+    "visibleLabelMechanisms": true,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "cashIn",
+    "visibleLabelMechanisms": true,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "cashOut",
+    "visibleLabelMechanisms": true,
+    "page": 1440,
+    "view": 1440
+  }
+]

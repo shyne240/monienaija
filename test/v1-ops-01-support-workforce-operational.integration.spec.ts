@@ -110,7 +110,9 @@ describe('V1-OPS-01 Support Workforce Operational Workflow (real PostgreSQL + re
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     walletService = moduleRef.get(WalletService);
@@ -133,20 +135,35 @@ describe('V1-OPS-01 Support Workforce Operational Workflow (real PostgreSQL + re
       [reference],
     );
     const customerId = rows[0]!.id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, 'Ops01 Customer']);
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`,
+      [customerId, 'Ops01 Customer'],
+    );
     const canonical10 = `8${String(Math.floor(100000000 + Math.random() * 900000000))}`;
-    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$3,true)`, [customerId, `0${canonical10.slice(1)}`, canonical10]);
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$3,true)`,
+      [customerId, `0${canonical10.slice(1)}`, canonical10],
+    );
     const hash = encodePbkdf2(password);
     await dataSource.query(
       `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
       [customerId, hash],
     );
-    await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `ops01-wallet-${customerId}` });
-    const login = await request(app.getHttpServer()).post('/api/v1/customers/sessions').send({ customerId, password }).expect(200);
+    await walletService.createWallet({
+      customerId,
+      currency: 'NGN',
+      idempotencyKey: `ops01-wallet-${customerId}`,
+    });
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/customers/sessions')
+      .send({ customerId, password })
+      .expect(200);
     return { customerId, token: login.body.accessToken as string };
   }
 
-  async function provisionSupportUser(username: string): Promise<{ username: string; temporaryPassword: string; supportUserId: string }> {
+  async function provisionSupportUser(
+    username: string,
+  ): Promise<{ username: string; temporaryPassword: string; supportUserId: string }> {
     const res = await request(app.getHttpServer())
       .post('/api/v1/internal/admin/support/workforce-users')
       .set(OPERATOR)
@@ -154,10 +171,17 @@ describe('V1-OPS-01 Support Workforce Operational Workflow (real PostgreSQL + re
       .expect(201);
     expect(res.body.temporaryPassword).toEqual(expect.any(String));
     expect(res.body.username).toBe(username);
-    return { username, temporaryPassword: res.body.temporaryPassword, supportUserId: res.body.supportUserId };
+    return {
+      username,
+      temporaryPassword: res.body.temporaryPassword,
+      supportUserId: res.body.supportUserId,
+    };
   }
 
-  async function loginSupport(username: string, password: string): Promise<{ accessToken: string; sessionId: string }> {
+  async function loginSupport(
+    username: string,
+    password: string,
+  ): Promise<{ accessToken: string; sessionId: string }> {
     const res = await request(app.getHttpServer())
       .post('/api/v1/internal/support/workforce-sessions')
       .send({ username, password })
@@ -249,7 +273,11 @@ describe('V1-OPS-01 Support Workforce Operational Workflow (real PostgreSQL + re
     const ticketRes = await request(app.getHttpServer())
       .post('/api/v1/customers/me/support/tickets')
       .set({ Authorization: `Bearer ${customer.token}` })
-      .send({ subject: 'Cannot see my balance', category: 'WALLET', description: 'Balance looks wrong since this morning.' })
+      .send({
+        subject: 'Cannot see my balance',
+        category: 'WALLET',
+        description: 'Balance looks wrong since this morning.',
+      })
       .expect(201);
     const ticketId = ticketRes.body.id as string;
 
@@ -288,7 +316,9 @@ describe('V1-OPS-01 Support Workforce Operational Workflow (real PostgreSQL + re
       .get(`/api/v1/customers/me/support/tickets/${ticketId}/messages`)
       .set({ Authorization: `Bearer ${customer.token}` })
       .expect(200);
-    const bodies = (customerMessages.body.items ?? customerMessages.body).map((m: any) => m.body as string);
+    const bodies = (customerMessages.body.items ?? customerMessages.body).map(
+      (m: any) => m.body as string,
+    );
     expect(bodies.some((b: string) => b.includes('looking into your balance'))).toBe(true);
     expect(bodies.some((b: string) => b.includes('escalate to Ops'))).toBe(false);
   });
@@ -322,7 +352,11 @@ describe('V1-OPS-01 Support Workforce Operational Workflow (real PostgreSQL + re
     const ticketRes = await request(app.getHttpServer())
       .post('/api/v1/customers/me/support/tickets')
       .set({ Authorization: `Bearer ${customer.token}` })
-      .send({ subject: 'Idempotency check', category: 'OTHER', description: 'Testing idempotent reply.' })
+      .send({
+        subject: 'Idempotency check',
+        category: 'OTHER',
+        description: 'Testing idempotent reply.',
+      })
       .expect(201);
     const ticketId = ticketRes.body.id as string;
 

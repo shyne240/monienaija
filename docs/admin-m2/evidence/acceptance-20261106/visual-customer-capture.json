@@ -1,0 +1,66 @@
+[
+  {
+    "width": 320,
+    "workspace": "directory",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "overview",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "personal",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "proof",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 1440,
+    "workspace": "directory",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "overview",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "personal",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "proof",
+    "zeroWrites": true,
+    "axeViolations": [],
+    "page": 1440,
+    "view": 1440
+  }
+]

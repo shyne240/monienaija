@@ -67,7 +67,9 @@ export class CreateFeeRules1785753600072 implements MigrationInterface {
     await queryRunner.query(`CREATE INDEX idx_fee_rules_product ON fee_rules (product_code)`);
     await queryRunner.query(`CREATE INDEX idx_fee_rules_currency ON fee_rules (currency)`);
     await queryRunner.query(`CREATE INDEX idx_fee_rules_active ON fee_rules (is_active)`);
-    await queryRunner.query(`CREATE INDEX idx_fee_rules_effective_from ON fee_rules (effective_from)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_fee_rules_effective_from ON fee_rules (effective_from)`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

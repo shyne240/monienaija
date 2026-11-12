@@ -1,0 +1,29 @@
+# Batch 1C — incomplete; not ready for Batch 2
+
+This is a partial implementation on top of Batch 1B, not completion of the six requested areas. Nothing here is wired into the live application, and no financial privileges or existing registration behavior were changed. Do not enable or deploy this foundation as production KYC.
+
+## Implemented in this increment
+
+- An internal store operation quarantines old, already-queued `DISPATCHING` attempts as `UNKNOWN`, under the same customer lock used by completion. It records a refresh request and audit event, and leaves the identity claim blocked. It is idempotent for an already-unknown attempt. Once quarantined, a late provider result cannot silently create a match. The minimum permitted age is 60 seconds; operations must choose an appropriate threshold. It is a server-only primitive, not an authorized endpoint or scheduled worker.
+- An internal reconciliation-review service supports authenticated-principal authorization with MFA and existing `kyc.review` / `kyc.approve` function checks. It stores reason-coded decisions and audit records. A separate principal must close an unresolved case after review; request IDs support idempotent replay and reject changed payloads. `TERMINAL` closes the administrative case, **not** the unresolved verification or identity claim: it neither declares a match nor permits a retry. It relies on a future runtime guard to supply an authenticated, current principal and is not exposed by a controller or registered as a Nest service.
+- The additive migration preserves review history and refuses destructive rollback once review history exists. A late conclusive result can close an interrupted case in `REVIEW`, provided quarantine has not already made the attempt uncertain.
+
+These operations do not query a provider, establish what happened or whether a charge occurred, release a claim, or offer safe retries. No undocumented status API or idempotency contract was invented.
+
+## Remaining acceptance gaps
+
+1. **Pre-customer registration:** missing session-bound OTP issuance/verification, safe recovery, durable pre-customer identity ownership and dispatch, and consent integration. The existing OTP verification token is a transferable one-use bearer not bound at issuance. Exchanging/consuming it for an unrelated session would allow token theft to hijack the binding and can interfere with existing completion, so that experimental approach was removed. Design issuance and verification around an authenticated session and preserve the existing registration contract; test abuse, expiration, retry and recovery before wiring.
+2. **Provider governance:** the existing router is only an in-memory fail-closed selection primitive. Durable maker-checker enablement/capabilities, secret-free admin views, audited runtime-enforced routing and safe fallback are missing. The orchestrator currently accepts a provider directly and can bypass the primitive. Monnify remains disabled/unwired; no live verification was performed.
+3. **Reconciliation:** review/quarantine are partial. Actual charge/outcome reconciliation, governed claim resolution and a proven-safe retry decision are missing; uncertainty remains blocked indefinitely. These need a provider-supported status/idempotency contract or an approved, evidence-based operational process. No automated worker or authenticated surface exists.
+4. **Tier transitions:** no authorized, evidence-gated, concurrency-safe transition service or immutable tier history exists. Regulatory/business requirements and authoritative tier definitions require confirmation; do not infer them. The legacy `CustomerService.createKycAssessment` writes existing KYC fields outside the foundation; its authority and migration path must be addressed before claiming a single controlled transition boundary.
+5. **Eligibility reevaluation:** refresh revisions are recorded, but no worker consumes them, applies approved policy or makes idempotent transitions. Existing evaluation is advisory and accepts trusted external evidence; it is not an enforcement boundary and does not activate financial permissions or classes of service.
+6. **Tests:** new and existing tests exercise selected internal paths only; the other required features cannot be tested as completed. Full migration chain against the real app schema, Nest wiring, operational authorization and full regression suite were not validated.
+
+## Validation and constraints
+
+- Synthetic socket-only PostgreSQL **16.14**, isolated schema with minimal synthetic customer/session tables: **15/15** KYC integration tests passed, including review authorization, replay, separate reviewers, concurrent replay, quarantine and blocked late results/retries. The cluster was stopped and its synthetic directories removed. This is not production-schema or real-provider validation.
+- Guarded targeted suites: **50/50** tests across KYC foundation, Monnify adapter, customer eligibility, customer onboarding and authorization. TypeScript no-emit and targeted ESLint passed.
+- No real provider calls, notifications, transactions, actual environment files, user database or deployment were used. The first isolated PG run exposed a SQL parameter-type mismatch; it was fixed before the passing run.
+- Provider dependencies remain: confirm account entitlement, billing, timeouts, idempotency and status/reconciliation support; resolve official NIN endpoint and BVN response-shape discrepancies with Monnify. No live credentials or testing were requested.
+
+**Internal Batch 2 readiness: NO.** Complete and validate all outstanding internal areas, obtain approved regulatory policy and resolve provider-specific dependencies before requesting authorization for Batch 2. No Tier 1/Tier 2 onboarding, Tier 3 or financial policy activation was started here.

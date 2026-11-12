@@ -68,7 +68,9 @@ export class CommercialAccountingRegistryService {
       );
     }
 
-    const account = await manager.getRepository(LedgerAccount).findOne({ where: { code: accountCode } });
+    const account = await manager
+      .getRepository(LedgerAccount)
+      .findOne({ where: { code: accountCode } });
     if (!account) {
       throw new CommercialAccountingBlockedError(
         'COMMERCIAL_ACCOUNTING_ACCOUNT_NOT_PROVISIONED',

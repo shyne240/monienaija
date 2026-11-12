@@ -131,7 +131,11 @@ export class CommercialDecisionSnapshot {
   @Column({ type: 'varchar', length: 3 })
   currency!: string;
 
-  @Column({ name: 'principal_amount_minor', type: 'bigint', transformer: principalAmountTransformer })
+  @Column({
+    name: 'principal_amount_minor',
+    type: 'bigint',
+    transformer: principalAmountTransformer,
+  })
   principalAmountMinor!: string;
 
   @Column({ name: 'transaction_reference', type: 'varchar', length: 255 })

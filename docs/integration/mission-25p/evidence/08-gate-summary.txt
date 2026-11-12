@@ -1,0 +1,31 @@
+=== MISSION 25P GATE SUMMARY (every gate below exited 0) ===
+
+GATE                                           EXIT       RESULT
+npx tsc --noEmit                               0          no type errors
+npm run build (nest build)                     0          compiled
+npm test (backend unit)                        0          230/230 suites, 2728/2728 tests, 0 fail, 0 skip, 89.3 s
+PG matrix PG_TEST_CONCURRENCY=1                0          134/134 files, 2475/2475 tests, 9/9 batches, 0 fail, 0 skip, 43 m 56 s
+focused H-07/provider unit (3 files)           0          60/60 tests
+focused H-07 integration (4 files)             0          39/39 tests
+25O verbose behavior suites (2 files)          0          23/23 assertions
+independent H-07 harness (25P-authored)        0          39/39 checks
+independent migration 102 upgrade              0          15/15 checks
+
+Baseline comparison:
+  25K unit baseline     : 229 suites / 2713 tests   -> 25P: 230 / 2728  (delta +1 suite / +15 tests)
+  25M PG baseline       : 132 files / 2452 tests    -> 25P: 134 / 2475    (delta +2 files / +23 tests)
+  All deltas originate in Mission 25O (mission-25o-credential-binding*.integration.spec.ts + unit spec).
+
+Raw evidence files:
+  03-backend-unit-suite.log.gz             unit run (gzipped: repository ignores *.log)
+  04-pg-integration-matrix.log.gz          full PG matrix run
+  04-pg-matrix-start-utc.txt               matrix start timestamp
+  05-h07-focused-unit.log.gz               focused H-07 unit run
+  06-h07-focused-integration.log.gz        focused H-07 integration run
+  07-h07-behavior-map-verbose.log.gz       15 required behaviors, verbose assertion text
+  09-independent-h07-harness.cjs / -results.json
+  10-independent-migration102-upgrade.cjs / -results.json
+  11-lint-comparison.json                  scoped + repository-wide lint comparison
+
+No environment-related failures were excluded, downgraded or reclassified: every run above completed
+and reported its own totals. No failures, no skips, no timeouts.

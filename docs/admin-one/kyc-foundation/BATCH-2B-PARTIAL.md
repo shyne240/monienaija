@@ -1,0 +1,25 @@
+# Batch 2B — unified entry and existing-customer claiming
+
+## Implemented
+
+The phone-first mobile entry verifies OTP before asking the server for a journey. An unknown phone is routed to new registration; a non-synthetic customer with a credential is routed to login; one without a credential or pre-existing PIN is routed to claiming; unsupported/conflicting states are pending. An unfinished match in the same live registration session resumes credential setup. The synthetic test registration can resume using its linked original session. No customer or wallet is created by claiming.
+
+Claiming compares the submitted BVN or NIN internally, without any provider call. Only a unique `kyc_identity_claims` row for the phone-bound customer is usable, with a VERIFIED status, a linked matching MONNIFY attempt and customer-bound authenticated consent, unexpired evidence and consent, and no ownership conflict. Legacy administrative identity-document rows and synthetic attempts do not qualify. The submitted identifier is reduced to the same domain-separated HMAC as the existing ownership store; neither the identifier nor the key is persisted by the claim flow. A configured key must match the existing ownership key version and proof or the result is pending. Attempts are capped per customer across sessions. Match proof is bound to the verified session and is rechecked under locks, including after password hashing, before atomically creating independently salted passcode and PIN credentials. Existing credentials or PINs are never overwritten; concurrent or replayed setup fails.
+
+New claim-created credentials require the OTP-bound mobile exchange and cannot be used through the legacy password login. The existing onboarding session is limited to status and logout, expires after 15 minutes, binds to credential version, and cannot authorize customer-api or financial routes. This scope is intentionally used for both DRAFT and ACTIVE customers in this increment. The mobile app keeps that bearer separate from its customer-api session and provides claim, mismatch, pending, setup, login, resume and logout screens. No wallet, tier, lifecycle status or financial permission is changed.
+
+`KYC_OWNERSHIP_KEY_BASE64` and `KYC_OWNERSHIP_KEY_VERSION` must be supplied by the deployment's approved secret/configuration system and match the existing `kyc_ownership_key_state`; this work does not set, create or rotate any production secret. The pre-existing genuine KYC orchestration path has no wired production provider/key reader, so real claims depend on trustworthy existing evidence and approved key custody. A privileged database principal remains able to bypass database constraints; production role separation is required.
+
+## Remaining blockers and scope limits
+
+* **This does not complete the requested production journey.** Genuine new-customer identity verification and registration completion are not wired; a new phone outside the isolated synthetic test environment is shown a pending state. A fresh OTP cannot yet resume an unfinished synthetic draft created under a different session.
+* Claiming and login currently issue only an onboarding session, including for an ACTIVE customer. They do not issue a financial-capable customer-api session or navigate to the ordinary authenticated home. The trusted tier evidence reader is unavailable and there is no validated, current end-to-end financial eligibility decision in this path. Do not infer financial access from a successful identifier match. Production enablement requires an approved eligibility integration, including revocation/re-evaluation enforcement.
+* Existing legacy password credentials are routed to the mobile passcode screen; the OTP-bound exchange accepts only six digits. Users with other legacy passwords must use the pre-existing password sign-in path. Credential recovery and device biometrics are not included.
+* The simulation-availability endpoint checks test runtime and SMS but not the disposable database guard, so it can advertise a simulation whose completion is unavailable. Synthetic records are never valid genuine claim evidence or eligible for financial privileges.
+* Provenance for previously provider-verified records must be genuine and correctly linked. No unverified admin record is silently promoted. Provider availability, regulatory policy, key lifecycle and production activation remain separate dependencies.
+
+No live provider calls, real notifications, financial transactions, activation, deployment or merge were performed.
+
+## Verification
+
+The PostgreSQL 16 full-AppModule tests use controlled MONNIFY-labeled evidence fixtures, not live provider responses. They cover BVN and NIN claims; wrong, expired, synthetic and unverified evidence; missing/mismatched key; concurrent attempt lockout and setup; evidence withdrawal between match and setup; replay; scoped login and wallet-route rejection; post-OTP routing; and unchanged customer/wallet counts. Mobile tests cover both identifier choices, credential setup and scoped sign-in, and pending verification. See test results reported with the commit for the executed regression suites.

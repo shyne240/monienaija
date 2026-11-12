@@ -1,0 +1,37 @@
+{
+  "name": "admin-notification",
+  "kind": "admin",
+  "implementation_commit": "377b1207905909867dbce75cf78717fa5015b90a",
+  "exit_code": 0,
+  "duration_seconds": 7.86,
+  "requested_paths": [
+    "__tests__/notification-management.test.tsx"
+  ],
+  "success": true,
+  "suites": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "runtime_errors": 0
+  },
+  "tests": {
+    "total": 19,
+    "passed": 19,
+    "failed": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "files": [
+    {
+      "file": "apps/admin-web/__tests__/notification-management.test.tsx",
+      "status": "passed",
+      "tests": {
+        "passed": 19,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    }
+  ]
+}

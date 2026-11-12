@@ -1,0 +1,43 @@
+/* Scoped audit search and results workspace. */
+.mn-audit{padding:clamp(16px,3vw,32px);max-width:1440px;min-width:0;color:var(--mn-text-primary);font-family:var(--mn-font-sans)}
+.mn-audit__boundary{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;padding:13px 16px;margin:20px 0;background:#f0f7f3;border:1px solid #c8dfd1;border-left:4px solid #39795a;border-radius:8px;color:#244e3a;font-size:13px;line-height:1.5}
+.mn-audit__boundary strong{color:#153e2d}
+.mn-audit__panel{background:var(--mn-surface-raised);border:1px solid var(--mn-border-subtle);border-radius:var(--mn-radius-md);padding:clamp(16px,2vw,24px);box-shadow:var(--mn-shadow-1);min-width:0}
+.mn-audit__results{margin-top:16px}
+.mn-audit__heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.mn-audit__heading h2{font-size:20px;line-height:1.3;margin:4px 0;color:#132b25}
+.mn-audit__heading p:not(.mn-audit__eyebrow){font-size:13px;line-height:1.5;color:#52655f;margin:0}
+.mn-audit__eyebrow{font-size:11px;letter-spacing:.08em;font-weight:700;color:#4a6b5a;margin:0}
+.mn-audit__form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;gap:14px;margin-top:20px}
+.mn-audit__field{min-width:0}
+.mn-audit__input{box-sizing:border-box;width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--mn-border-control);border-radius:var(--mn-radius-sm);color:var(--mn-text-primary);font:inherit}
+.mn-audit__input:focus-visible{outline:2px solid var(--mn-focus-ring);outline-offset:2px}
+.mn-audit__actions{display:flex;flex-wrap:wrap;gap:8px;grid-column:1/-1}
+.mn-audit__state,.mn-audit__hint{color:var(--mn-text-secondary);font-size:14px;line-height:1.5}
+.mn-audit__state{padding:18px;border:1px dashed #c7d9cf;border-radius:8px;background:#f6faf7;margin:18px 0 0}
+.mn-audit__hint{font-size:12px;margin:12px 0 0}
+.mn-audit__count{border:1px solid #c8d9cf;border-radius:99px;padding:5px 10px;background:#f1f7f3;color:#204c38;font-size:12px;font-weight:700}
+.mn-audit__summary{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:16px 0 0;color:#52655f;font-size:12px;overflow-wrap:anywhere}
+.mn-audit__chip{background:#f4f7f5;border:1px solid #dce7e0;border-radius:6px;padding:5px 8px;color:#344f43;overflow-wrap:anywhere;max-width:100%}
+.mn-audit__limit{font-size:13px;color:#704e15;background:#fff9e9;border:1px solid #e9d6a5;border-radius:7px;padding:10px 12px;margin:14px 0}
+.mn-audit__table{border-collapse:collapse;min-width:720px;width:100%;margin-top:18px;font-size:13px;text-align:left}
+.mn-audit__table th,.mn-audit__table td{padding:12px;border-bottom:1px solid var(--mn-border-subtle);vertical-align:top;overflow-wrap:anywhere}
+.mn-audit__table th{color:var(--mn-text-secondary);background:var(--mn-surface-sunken)}
+.mn-audit .mn-scroll-region__hint{display:block}
+@media(max-width:900px){.mn-audit__form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.mn-audit__form{grid-template-columns:minmax(0,1fr)}}
+/* Keep search and records in the same open workspace as the directory. */
+.mn-audit__panel{padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+.mn-audit__results{margin-top:36px}
+.mn-audit__boundary{background:#f2f7f2;border-color:#dce8dc;border-left:3px solid #12804e}
+.mn-audit__table{background:white;border:1px solid #dfe9e1}
+.mn-audit__table th:last-child,.mn-audit__table td:last-child{position:sticky;right:0;z-index:1;box-shadow:-3px 0 6px #18382b0d}
+.mn-audit__table td:last-child{background:white}
+.mn-audit__detail-trigger{white-space:nowrap;border:1px solid #78978a;border-radius:7px;padding:9px 12px;background:white;color:#006444;font:inherit;font-weight:700;cursor:pointer}
+.mn-audit__detail-trigger:focus-visible{outline:3px solid #2179bf;outline-offset:2px}
+.mn-audit__drawer-header{position:sticky;top:0;z-index:1;display:flex;justify-content:space-between;gap:16px;padding:24px;background:white;border-bottom:1px solid #dfe9e1}
+.mn-audit__drawer-header h2{margin:6px 0 0;font-size:20px;color:#123c2b}
+.mn-audit__drawer-body{padding:24px;overflow-wrap:anywhere;font-size:13px;color:#52655f}
+.mn-audit__drawer-body dl{display:grid;grid-template-columns:minmax(105px,1fr) minmax(0,2fr);gap:12px;padding:16px;border:1px solid #dfe9e1;border-radius:8px;line-height:1.5}
+.mn-audit__drawer-body dt{font-weight:600}.mn-audit__drawer-body dd{margin:0;color:#132b25}
+@media(max-width:560px){.mn-audit__drawer-header,.mn-audit__drawer-body{padding:20px}}

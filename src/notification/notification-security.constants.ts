@@ -21,14 +21,14 @@
  *    channel. Any future security flow that routes through NotificationDispatcherService
  *    must add its event type here at design time, and the resolver will bypass the opt-out.
  *
- * 2. TRANSACTIONAL (REQUIRED FOR V1, opt-out honored) — funding, transfer, support
- *    outcomes. Customers can silence the SMS copy via notification_sms_enabled=false;
+ * 2. TRANSACTIONAL (governed and configurable, opt-out honored) — funding, transfer,
+ *    payment and support outcomes. Customers can silence SMS via notification_sms_enabled=false;
  *    the in-app inbox (notification_deliveries projection) remains available only
  *    while a delivery record was created — opt-out happens BEFORE insert, so the
  *    message is recorded SKIPPED with reason SMS_OPT_OUT (visible in diagnostics,
  *    hidden from the inbox per existing semantics).
  *
- * 3. OPTIONAL INFORMATIONAL — any event not in classes 1 and the REQUIRED set;
+ * 3. INFORMATIONAL — any event not in the security or transactional classes;
  *    same opt-out treatment as class 2. No arbitrary new categories introduced.
  */
 /** V1-CUSTOMER-CREDENTIALS-01 — event type for the temporary customer credential SMS. */

@@ -19,10 +19,14 @@ export class AddExpiryToCashToCash1785753600059 implements MigrationInterface {
     `);
 
     // Enforce NOT NULL after backfill
-    await queryRunner.query(`ALTER TABLE cash_to_cash_transfers ALTER COLUMN expires_at SET NOT NULL`);
+    await queryRunner.query(
+      `ALTER TABLE cash_to_cash_transfers ALTER COLUMN expires_at SET NOT NULL`,
+    );
 
     // Expand status check to allow EXPIRED
-    await queryRunner.query(`ALTER TABLE cash_to_cash_transfers DROP CONSTRAINT chk_cash_to_cash_status`);
+    await queryRunner.query(
+      `ALTER TABLE cash_to_cash_transfers DROP CONSTRAINT chk_cash_to_cash_status`,
+    );
     await queryRunner.query(
       `ALTER TABLE cash_to_cash_transfers ADD CONSTRAINT chk_cash_to_cash_status CHECK (status IN ('UNCLAIMED', 'CLAIMED', 'EXPIRED'))`,
     );
@@ -52,9 +56,15 @@ export class AddExpiryToCashToCash1785753600059 implements MigrationInterface {
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP INDEX IF EXISTS idx_cash_to_cash_expired_at`);
     await queryRunner.query(`DROP INDEX IF EXISTS idx_cash_to_cash_expiry`);
-    await queryRunner.query(`ALTER TABLE cash_to_cash_transfers DROP CONSTRAINT chk_cash_to_cash_expired_at`);
-    await queryRunner.query(`ALTER TABLE cash_to_cash_transfers DROP CONSTRAINT chk_cash_to_cash_status`);
-    await queryRunner.query(`ALTER TABLE cash_to_cash_transfers ADD CONSTRAINT chk_cash_to_cash_status CHECK (status IN ('UNCLAIMED', 'CLAIMED'))`);
+    await queryRunner.query(
+      `ALTER TABLE cash_to_cash_transfers DROP CONSTRAINT chk_cash_to_cash_expired_at`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE cash_to_cash_transfers DROP CONSTRAINT chk_cash_to_cash_status`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE cash_to_cash_transfers ADD CONSTRAINT chk_cash_to_cash_status CHECK (status IN ('UNCLAIMED', 'CLAIMED'))`,
+    );
     await queryRunner.query(`ALTER TABLE cash_to_cash_transfers DROP COLUMN expired_at`);
     await queryRunner.query(`ALTER TABLE cash_to_cash_transfers DROP COLUMN expires_at`);
   }

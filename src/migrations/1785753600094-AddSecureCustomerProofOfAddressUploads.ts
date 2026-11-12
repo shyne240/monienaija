@@ -106,8 +106,12 @@ export class AddSecureCustomerProofOfAddressUploads1785753600094 implements Migr
     await queryRunner.query(`DROP TABLE IF EXISTS customer_proof_of_address_document_history`);
     await queryRunner.query(`DROP INDEX IF EXISTS uq_customer_poa_submission_customer_idempotency`);
     await queryRunner.query(`DROP INDEX IF EXISTS idx_customer_poa_customer_status_created`);
-    await queryRunner.query(`DROP INDEX IF EXISTS idx_customer_poa_document_history_submission_created`);
-    await queryRunner.query(`DROP INDEX IF EXISTS idx_customer_poa_document_history_customer_created`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS idx_customer_poa_document_history_submission_created`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS idx_customer_poa_document_history_customer_created`,
+    );
     await queryRunner.query(`
       ALTER TABLE customer_proof_of_address_submissions
         DROP CONSTRAINT IF EXISTS chk_customer_poa_document_status,

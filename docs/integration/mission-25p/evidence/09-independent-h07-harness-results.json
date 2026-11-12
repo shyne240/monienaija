@@ -1,0 +1,244 @@
+{
+  "pass": 39,
+  "fail": 0,
+  "total": 39,
+  "results": [
+    {
+      "name": "1. binding is deterministic for identical inputs",
+      "ok": true,
+      "detail": {
+        "b1": "1d68b37190781574da339c648af18d6c547d5881c761751fe9f1bdce48db848a",
+        "b2": "1d68b37190781574da339c648af18d6c547d5881c761751fe9f1bdce48db848a"
+      }
+    },
+    {
+      "name": "2. scheme is the versioned HMAC scheme",
+      "ok": true,
+      "detail": "HMAC_SHA256_V1"
+    },
+    {
+      "name": "3. MAC is 64 hex chars and key version is the active one",
+      "ok": true,
+      "detail": {
+        "mac": "1d68b37190781574da339c648af18d6c547d5881c761751fe9f1bdce48db848a",
+        "keyVersion": "v1"
+      }
+    },
+    {
+      "name": "4. emitted binding carries no key material and no credential",
+      "ok": true,
+      "detail": [
+        "scheme",
+        "keyVersion",
+        "mac"
+      ]
+    },
+    {
+      "name": "5. changing the secret changes the MAC",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "6. changing the channel changes the MAC",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "7. changing the provider changes the MAC",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "8. changing the credential source changes the MAC",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "9. correct binding verifies",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "10. substituted credential fails verification",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "11. null/unbound binding fails verification (legacy rows fail closed)",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "12. malformed scheme / key version / MAC all fail verification",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "13. tampered MAC of correct shape fails verification",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "14. new bindings after rotation use the new active version",
+      "ok": true,
+      "detail": {
+        "keyVersion": "v2"
+      }
+    },
+    {
+      "name": "15. a retained previous version still verifies (rotation without mass re-approval)",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "16. a retired (removed) key version fails closed",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "17. absent keyring fails closed with the safe boundary code",
+      "ok": true,
+      "detail": {
+        "threw": true,
+        "code": "PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE"
+      }
+    },
+    {
+      "name": "17. empty keyring fails closed with the safe boundary code",
+      "ok": true,
+      "detail": {
+        "threw": true,
+        "code": "PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE"
+      }
+    },
+    {
+      "name": "17. invalid JSON fails closed with the safe boundary code",
+      "ok": true,
+      "detail": {
+        "threw": true,
+        "code": "PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE"
+      }
+    },
+    {
+      "name": "17. wrong-length key fails closed with the safe boundary code",
+      "ok": true,
+      "detail": {
+        "threw": true,
+        "code": "PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE"
+      }
+    },
+    {
+      "name": "17. active version absent from ring fails closed with the safe boundary code",
+      "ok": true,
+      "detail": {
+        "threw": true,
+        "code": "PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE"
+      }
+    },
+    {
+      "name": "18. reusing the AES-GCM encryption key as a binding key is rejected",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "19. reuse of any key from the encryption keyring form is rejected",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "20. migration 102 applied and recorded",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "21. additive columns exist on both tables",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "22. provider-config binding CHECK constraint exists",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "23. proposal binding CHECK constraint exists",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "24. fingerprint-version CHECK constraint exists",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "25. binding CHECK permits unbound (NULL) legacy rows",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "26a. unbound (legacy-style) row is accepted",
+      "ok": true,
+      "detail": {
+        "unbound": "accepted"
+      }
+    },
+    {
+      "name": "26b. partial binding metadata (missing MAC) is rejected by the binding check",
+      "ok": true,
+      "detail": {
+        "partial": "rejected-by-binding-check"
+      }
+    },
+    {
+      "name": "26c. non-64-hex MAC is rejected by the binding check",
+      "ok": true,
+      "detail": {
+        "shortMac": "rejected-by-binding-check"
+      }
+    },
+    {
+      "name": "26d. unsupported scheme is rejected by the binding check",
+      "ok": true,
+      "detail": {
+        "badScheme": "rejected-by-binding-check"
+      }
+    },
+    {
+      "name": "26e. binding with credential_source NONE is rejected (no unbound fallback source)",
+      "ok": true,
+      "detail": {
+        "noneSource": "rejected-by-binding-check"
+      }
+    },
+    {
+      "name": "26f. complete, well-formed ENV_SECRET binding is accepted",
+      "ok": true,
+      "detail": {
+        "full": "accepted"
+      }
+    },
+    {
+      "name": "26. binding CHECK requires all three fields together and a 64-hex MAC (behavioural)",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "27. binding CHECK restricts source to ENV_SECRET/ENCRYPTED_DB (no fallback source)",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "28. fingerprint version is pinned to 2 when present",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "29. rollback refusal guard behaves correctly with governance rows present",
+      "ok": true,
+      "detail": {
+        "rollbackRefused": "not-applicable-no-rows",
+        "anyCfg": 0
+      }
+    }
+  ]
+}

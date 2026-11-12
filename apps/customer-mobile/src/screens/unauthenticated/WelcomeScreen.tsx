@@ -18,7 +18,8 @@ export const WelcomeScreen: React.FC = () => {
         <Text style={styles.icon}>👋</Text>
         <Text style={styles.title}>Welcome to MonieNaija</Text>
         <Text style={styles.description}>
-          Your in-house, secure, and blazing-fast financial companion. Fund wallets, send money, and withdraw easily in Nigeria.
+          Your in-house, secure, and blazing-fast financial companion. Fund wallets, send money, and
+          withdraw easily in Nigeria.
         </Text>
       </View>
 
@@ -27,7 +28,7 @@ export const WelcomeScreen: React.FC = () => {
           label="Log In to Account"
           style={styles.button}
           variant="primary"
-          onPress={() => navigation.navigate('Login')}
+          onPress={() => navigation.navigate('Registration')}
         />
         <Button
           label="Create New Wallet"

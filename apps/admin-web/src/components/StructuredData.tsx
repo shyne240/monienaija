@@ -1,4 +1,5 @@
 import React from 'react';
+import { ScrollRegion } from '../design-system/primitives';
 
 export type DataRecord = Record<string, unknown>;
 
@@ -100,21 +101,24 @@ export function StructuredRecordTable({
   columns,
   emptyMessage = 'No records returned.',
   showDetails = true,
+  onViewDetails,
 }: {
   rows: DataRecord[];
   columns: StructuredColumn[];
   emptyMessage?: string;
   showDetails?: boolean;
+  onViewDetails?: (row: DataRecord) => void;
 }) {
   if (rows.length === 0) return <p style={styles.empty}>{emptyMessage}</p>;
 
   return (
+    <ScrollRegion label="Records table" hint="Scroll horizontally to see all columns.">
     <div style={styles.tableWrap}>
-      <table style={styles.table}>
+      <table className="mn-data-table" style={styles.table}>
         <thead>
           <tr>
-            {columns.map((column) => <th key={column.key} style={styles.headerCell}>{column.label}</th>)}
-            {showDetails && <th style={styles.headerCell}>Details</th>}
+            {columns.map((column) => <th key={column.key} scope="col" style={styles.headerCell}>{column.label}</th>)}
+            {showDetails && <th scope="col" style={styles.headerCell}>Details</th>}
           </tr>
         </thead>
         <tbody>
@@ -131,10 +135,10 @@ export function StructuredRecordTable({
                 ))}
                 {showDetails && (
                   <td style={styles.cell}>
-                    <details>
+                    {onViewDetails ? <button type="button" className="commercial-detail-trigger" onClick={() => onViewDetails(row)}>View details</button> : <details>
                       <summary>View details</summary>
                       <StructuredKeyValueList data={row} />
-                    </details>
+                    </details>}
                   </td>
                 )}
               </tr>
@@ -143,17 +147,18 @@ export function StructuredRecordTable({
         </tbody>
       </table>
     </div>
+    </ScrollRegion>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  tableWrap: { width: '100%', overflowX: 'auto', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8 },
+  tableWrap: { minWidth: '100%', width: 'max-content', boxSizing: 'border-box', background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8 },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 12 },
-  headerCell: { padding: '10px 12px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', textAlign: 'left', color: '#475569', whiteSpace: 'nowrap' },
-  cell: { padding: '10px 12px', borderBottom: '1px solid #F1F5F9', verticalAlign: 'top', color: '#1E293B' },
+  headerCell: { padding: '10px 12px', background: 'var(--mn-surface-canvas, #f5f8f6)', borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)', textAlign: 'left', color: 'var(--mn-text-secondary, #52655f)', whiteSpace: 'nowrap' },
+  cell: { padding: '10px 12px', borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)', verticalAlign: 'top', color: 'var(--mn-text-primary, #132b25)' },
   definitionList: { display: 'grid', gridTemplateColumns: 'minmax(120px, max-content) minmax(0, 1fr)', gap: '6px 12px', margin: '10px 0 0', fontSize: 12 },
-  term: { fontWeight: 600, color: '#475569' },
-  description: { margin: 0, overflowWrap: 'anywhere', color: '#1E293B' },
+  term: { fontWeight: 600, color: 'var(--mn-text-secondary, #52655f)' },
+  description: { margin: 0, overflowWrap: 'anywhere', color: 'var(--mn-text-primary, #132b25)' },
   valueList: { margin: '6px 0 6px 18px', padding: 0 },
-  empty: { padding: 16, margin: 0, color: '#64748B', fontSize: 13, background: '#F8FAFC', borderRadius: 6 },
+  empty: { padding: 16, margin: 0, color: 'var(--mn-text-secondary, #52655f)', fontSize: 13, background: 'var(--mn-surface-canvas, #f5f8f6)', borderRadius: 6 },
 };

@@ -1,0 +1,194 @@
+[
+  {
+    "width": 320,
+    "workspace": "kycQueue",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "complianceCases",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "fraudCases",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "workspace": "kycQueue",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "complianceCases",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "fraudCases",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "workspace": "kycQueue",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "complianceCases",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "fraudCases",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "workspace": "kycQueue",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "complianceCases",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "fraudCases",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "workspace": "kycQueue",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "complianceCases",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "fraudCases",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "workspace": "kycQueue",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "complianceCases",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "fraudCases",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "workspace": "kycQueue",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "complianceCases",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "fraudCases",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "workspace": "kycQueue",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "complianceCases",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "fraudCases",
+    "keyboardSearch": true,
+    "categoryIsolation": true,
+    "page": 1440,
+    "view": 1440
+  }
+]

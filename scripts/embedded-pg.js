@@ -1,3 +1,16 @@
+// This legacy helper initializes and may remove its data directory. Never point it at
+// an existing local database or run it as part of ordinary development startup.
+const fs = require('node:fs');
+const path = require('node:path');
+if (process.env.EMBEDDED_PG_CONFIRM_DISPOSABLE !== 'yes') {
+  console.error('Embedded PostgreSQL is destructive test tooling; set EMBEDDED_PG_CONFIRM_DISPOSABLE=yes only for a fresh disposable checkout.');
+  process.exit(1);
+}
+if (fs.existsSync(path.resolve('./data/embedded-pg'))) {
+  console.error('Refusing to initialize over an existing embedded PostgreSQL data directory.');
+  process.exit(1);
+}
+
 const EmbeddedPostgres = require('embedded-postgres').default;
 
 const pg = new EmbeddedPostgres({

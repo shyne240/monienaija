@@ -1,6 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import './operational-surfaces.css';
+import React, { useEffect, useRef, useState } from 'react';
+import { PageHeader } from '../../design-system/primitives';
+import { WorkspaceDrawer, WorkspaceFilterTabs } from '../../design-system/WorkspaceDrawer';
+import './transaction-workspace.css';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { formatFinancialAmount, formatMinorUnits } from '../../utils/financial-display';
 
 interface TransactionDetail {
   id: string;
@@ -18,6 +23,9 @@ interface TransactionDetail {
 }
 
 interface FeeResult {
+  paymentType: string;
+  currency: string;
+  amountMinor: string;
   feeMinor: string;
   vatMinor: string;
   totalMinor: string;
@@ -48,10 +56,28 @@ interface TransactionObservabilityProps {
   onBackToCustomer?: () => void;
 }
 
+/** Convert naira to kobo exactly, without binary floating-point rounding. */
+function parseNaira(value: string, label: string): string {
+  if (value.trim().length > 40) throw new Error(`${label} exceeds supported integer limits.`);
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());
+  if (!match) throw new Error(`${label} must be a non-negative amount with at most two decimal places.`);
+  return (BigInt(match[1]) * 100n + BigInt((match[2] ?? '').padEnd(2, '0'))).toString();
+}
+
 export const TransactionObservabilityScreen: React.FC<TransactionObservabilityProps> = ({ initialType, initialCustomerId, onBackToCustomer }) => {
-  const { principal } = useAuthStore();
+  const { principal, sessionId } = useAuthStore();
   const canViewGlobalTransactions = principal?.scopes.includes('transaction.view') ?? false;
   const canViewCustomerTransactions = principal?.scopes.includes('customer.view_transactions') ?? false;
+  const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal, initialType, initialCustomerId]);
+  const canSimulate = canViewGlobalTransactions && !principal?.readOnlyPrincipal;
+  return <TransactionWorkspace key={key} initialType={initialType} initialCustomerId={initialCustomerId} onBackToCustomer={onBackToCustomer} canSimulate={canSimulate} canViewGlobalTransactions={canViewGlobalTransactions} canViewCustomerTransactions={canViewCustomerTransactions} />;
+};
+const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlobalTransactions: boolean; canViewCustomerTransactions: boolean; canSimulate: boolean}> = ({initialType, initialCustomerId, onBackToCustomer, canViewGlobalTransactions, canViewCustomerTransactions, canSimulate}) => {
+  const traceGeneration = useRef(0);
+  const feeGeneration = useRef(0);
+  const traceLock = useRef(false);
+  const feeLock = useRef(false);
+  useEffect(() => () => { traceGeneration.current += 1; feeGeneration.current += 1; }, []);
   const isCustomerHistoryView = Boolean(initialCustomerId) && canViewCustomerTransactions;
   const [searchTxId, setSearchTxId] = useState('');
   const [txType, setTxType] = useState<'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER'>((initialType as any) || 'TRANSFER');
@@ -71,6 +97,7 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
   // Customer 360° uses the implemented customer-scoped unified history endpoint; a customer UUID
   // is never treated as a transaction UUID.
   const [historyItems, setHistoryItems] = useState<CustomerTransaction[]>([]);
+  const [selectedHistory, setSelectedHistory] = useState<CustomerTransaction | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
   const [historyType, setHistoryType] = useState('');
   const [historyTotal, setHistoryTotal] = useState(0);
@@ -83,14 +110,21 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
     let active = true;
     const params = new URLSearchParams({ page: String(historyPage), limit: '20' });
     if (historyType) params.set('type', historyType);
+    setSelectedHistory(null);
     setHistoryLoading(true);
     setHistoryError('');
+    setHistoryItems([]);
+    setHistoryTotal(0);
+    setHistoryTotalPages(0);
     ApiClient.get<CustomerTransactionHistoryResponse>(
       `/internal/customers/${encodeURIComponent(initialCustomerId)}/transactions?${params.toString()}`,
     )
       .then((response) => {
         if (!active) return;
-        setHistoryItems(response?.items ?? []);
+        if (!Array.isArray(response?.items) || response.items.some(item => !item || typeof item.id !== 'string' || typeof item.type !== 'string' || typeof item.status !== 'string' || typeof item.direction !== 'string' || typeof item.currency !== 'string' || typeof item.amountMinor !== 'string' || !/^-?\d+$/.test(item.amountMinor) || typeof item.createdAt !== 'string') || !response?.pagination || !Number.isSafeInteger(response.pagination.total) || response.pagination.total < 0 || response.pagination.page !== historyPage || response.pagination.limit !== 20 || response.items.length > response.pagination.limit || !Number.isSafeInteger(response.pagination.totalPages) || response.pagination.totalPages !== Math.ceil(response.pagination.total / response.pagination.limit) || response.pagination.hasNextPage !== (historyPage < response.pagination.totalPages) || (historyType && response.items.some(item => item.type !== historyType))) {
+          throw new Error('Transaction history returned an invalid response.');
+        }
+        setHistoryItems(response.items);
         setHistoryTotal(response?.pagination?.total ?? 0);
         setHistoryTotalPages(response?.pagination?.totalPages ?? 0);
       })
@@ -105,41 +139,57 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
 
   const handleSearchTx = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canViewGlobalTransactions) return;
+    if (!canViewGlobalTransactions || traceLock.current) return;
     if (!searchTxId.trim()) {
       setTxError('Transaction ID (UUID) is required');
       return;
     }
+    traceLock.current = true;
+    const request = ++traceGeneration.current;
+    const requestedId = searchTxId.trim();
     setTxError('');
     setTxDetail(null);
     setTxLoading(true);
 
     try {
       let endpoint = '';
-      if (txType === 'DEPOSIT') endpoint = `/deposits/${searchTxId.trim()}`;
-      else if (txType === 'WITHDRAWAL') endpoint = `/withdrawals/${searchTxId.trim()}`;
-      else endpoint = `/transfers/${searchTxId.trim()}`;
+      if (txType === 'DEPOSIT') endpoint = `/deposits/${encodeURIComponent(requestedId)}`;
+      else if (txType === 'WITHDRAWAL') endpoint = `/withdrawals/${encodeURIComponent(requestedId)}`;
+      else endpoint = `/transfers/${encodeURIComponent(requestedId)}`;
 
       const res = await ApiClient.get<TransactionDetail>(endpoint);
+      if (request !== traceGeneration.current) return;
+      if (!res || res.id !== requestedId || typeof res.status !== 'string' || typeof res.currency !== 'string' || typeof res.amountMinor !== 'string' || !/^-?\d+$/.test(res.amountMinor) || typeof res.createdAt !== 'string') throw new Error('Transaction lookup returned an invalid or mismatched record.');
       setTxDetail(res);
     } catch (err: any) {
-      setTxError(err?.message || 'Transaction record not found.');
+      if (request === traceGeneration.current) setTxError(err?.message || 'Transaction record not found.');
     } finally {
-      setTxLoading(false);
+      traceLock.current = false;
+      if (request === traceGeneration.current) setTxLoading(false);
     }
   };
 
   const handleCalculateFee = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canViewGlobalTransactions) return;
+    if (!canSimulate || feeLock.current) return;
+    feeLock.current = true;
+    const request = ++feeGeneration.current;
     setFeeError('');
     setFeeResult(null);
     setFeeLoading(true);
 
     try {
-      const amountMinor = Math.round(parseFloat(amountStr) * 100).toString();
-      const flatFeeMinor = Math.round(parseFloat(flatFeeStr) * 100).toString();
+      const amountMinor = parseNaira(amountStr, 'Transaction amount');
+      const flatFeeMinor = parseNaira(flatFeeStr, 'Flat fee');
+      if (BigInt(amountMinor) <= 0n) throw new Error('Transaction amount must be greater than zero.');
+      if (!/^\d+$/.test(percentBpsStr.trim()) || !/^\d+$/.test(vatBpsStr.trim())) throw new Error('Fee and VAT basis points must be non-negative whole numbers.');
 
+      const max = 9223372036854775807n;
+      if ([amountMinor, flatFeeMinor, percentBpsStr.trim(), vatBpsStr.trim()].some(value => value.length > 40 || BigInt(value) > max)) throw new Error('Simulation values exceed supported integer limits.');
+      const expectedFee = BigInt(flatFeeMinor) + BigInt(amountMinor) * BigInt(percentBpsStr.trim()) / 10000n;
+      const expectedVat = expectedFee * BigInt(vatBpsStr.trim()) / 10000n;
+      const expectedTotal = BigInt(amountMinor) + expectedFee + expectedVat;
+      if (expectedTotal > max) throw new Error('Simulation total exceeds supported integer limits.');
       // POST /fees/calculate
       const res = await ApiClient.post<FeeResult>('/fees/calculate', {
         amountMinor,
@@ -149,17 +199,20 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
         percentageBps: percentBpsStr,
         vatBps: vatBpsStr,
       });
+      if (request !== feeGeneration.current) return;
+      if (!res || res.currency !== 'NGN' || res.paymentType !== 'VIRTUAL_ACCOUNT' || res.amountMinor !== amountMinor || ![res.feeMinor, res.vatMinor, res.totalMinor].every(value => typeof value === 'string' && /^\d+$/.test(value) && value.length <= 40) || BigInt(res.feeMinor) !== expectedFee || BigInt(res.vatMinor) !== expectedVat || BigInt(res.totalMinor) !== expectedTotal) throw new Error('Fee simulation returned an invalid or inconsistent result.');
       setFeeResult(res);
     } catch (err: any) {
-      setFeeError(err?.message || 'Fee calculation failed.');
+      if (request === feeGeneration.current) setFeeError(err?.message || 'Fee calculation failed.');
     } finally {
-      setFeeLoading(false);
+      feeLock.current = false;
+      if (request === feeGeneration.current) setFeeLoading(false);
     }
   };
 
   if (initialCustomerId ? !canViewCustomerTransactions : !canViewGlobalTransactions) {
     return (
-      <div style={styles.container} role="alert">
+      <div className="mn-operational" style={styles.container} role="alert">
         <div style={styles.errorBox}>
           {initialCustomerId
             ? 'Customer transaction history requires customer.view_transactions.'
@@ -170,22 +223,12 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>{isCustomerHistoryView ? 'Customer Transaction History' : 'In-House Transaction & Fee Operations'}</h2>
-        <p style={styles.subtitle}>
-          {isCustomerHistoryView
-            ? 'Read-only, customer-scoped transaction history from the existing unified history service.'
-            : 'Read-only transaction tracing and fee simulation; no settlement or financial commands run from this screen.'}
-        </p>
-        {isCustomerHistoryView && onBackToCustomer && (
-          <button type="button" style={styles.backButton} onClick={onBackToCustomer}>← Back to Customer 360°</button>
-        )}
-      </div>
+    <div className="mn-operational mn-transactions" style={styles.container}>
+      <PageHeader eyebrow="Transactions and finance" title={isCustomerHistoryView ? 'Customer transaction history' : 'Transaction trace & fee simulation'} description={isCustomerHistoryView ? 'Read-only, customer-scoped transaction history from the existing unified history service.' : 'Read-only transaction tracing and fee simulation; no settlement or financial commands run from this screen.'} actions={isCustomerHistoryView && onBackToCustomer ? <button type="button" style={styles.backButton} onClick={onBackToCustomer}>← Back to Customer 360°</button> : undefined} />
 
       {canViewGlobalTransactions && (
         <div style={styles.gapWarning}>
-          <span style={styles.gapTitle}>⚠️ ADMIN API GAP: Global Transactions Search Listing Unavailable</span>
+          <span style={styles.gapTitle}>Global transaction listing unavailable</span>
           <p style={styles.gapText}>
             The transfer controller does not expose a general GET `/transfers` search list route. Querying transfers requires the absolute Transaction UUID reference.
           </p>
@@ -193,10 +236,10 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
       )}
 
       {isCustomerHistoryView && (
-        <section style={styles.historySection} aria-label="Customer transaction history">
-          <div style={styles.historyHeader}>
+        <section className="mn-transactions__history" style={styles.historySection} aria-label="Customer transaction history">
+          <div className="mn-transactions__history-header" style={styles.historyHeader}>
             <div>
-              <h3 style={styles.sectionTitle}>Transactions for Customer</h3>
+              <h2 style={styles.sectionTitle}>Transactions for Customer</h2>
               <p style={styles.historyCustomer}>Customer ID: <code>{initialCustomerId}</code></p>
             </div>
             <label style={styles.historyFilterLabel}>
@@ -204,7 +247,7 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
               <select
                 style={styles.historyFilter}
                 value={historyType}
-                onChange={(event) => { setHistoryType(event.target.value); setHistoryPage(1); }}
+                onChange={(event) => { setSelectedHistory(null); setHistoryType(event.target.value); setHistoryPage(1); }}
               >
                 <option value="">All transaction types</option>
                 <option value="WALLET_TRANSFER">Wallet transfer</option>
@@ -215,61 +258,59 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
               </select>
             </label>
           </div>
-          {historyError && <div style={styles.errorBox}>{historyError}</div>}
-          {historyLoading ? <p style={styles.historyEmpty}>Loading transaction history…</p> : historyItems.length === 0 ? (
-            <p style={styles.historyEmpty}>No transactions found for this customer and type filter.</p>
+          {historyError && <div style={styles.errorBox} role="alert">{historyError}</div>}
+          {historyLoading ? <p style={styles.historyEmpty}>Loading transaction history…</p> : historyError ? null : historyItems.length === 0 ? (
+            <p style={styles.historyEmpty}>{historyTotal > 0 ? 'No transactions on this page. Return to an earlier page.' : 'No transactions found for this customer and type filter.'}</p>
           ) : (
-            <div style={styles.historyTableWrap}>
+            <div style={styles.historyTableWrap} role="region" aria-label="Customer transaction history table" tabIndex={0}>
               <table style={styles.historyTable}>
-                <thead><tr><th>Type</th><th>Status</th><th>Direction</th><th>Amount</th><th>Reference</th><th>Created</th></tr></thead>
+                <thead><tr><th>Type</th><th>Status</th><th>Direction</th><th>Amount</th><th>Reference</th><th>Created</th><th>Details</th></tr></thead>
                 <tbody>
                   {historyItems.map((item) => (
                     <tr key={item.id}>
                       <td>{item.type}</td>
                       <td>{item.status}</td>
                       <td>{item.direction}</td>
-                      <td>{item.currency} {(Number(item.amountMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                      <td>{formatMinorUnits(item.amountMinor, item.currency)}</td>
                       <td>{item.reference || '—'}</td>
                       <td>{new Date(item.createdAt).toLocaleString()}</td>
+                      <td><button type="button" className="mn-transactions__detail-button" aria-label={`View transaction ${item.id}`} onClick={() => setSelectedHistory(item)}>View details</button></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-          <div style={styles.historyPager}>
+          {!historyLoading && !historyError && <div style={styles.historyPager}>
             <span>{historyTotal} transaction{historyTotal === 1 ? '' : 's'} · Page {historyPage}{historyTotalPages ? ` of ${historyTotalPages}` : ''}</span>
-            <button type="button" style={styles.historyPageButton} disabled={historyPage <= 1 || historyLoading} onClick={() => setHistoryPage((page) => Math.max(1, page - 1))}>Previous</button>
-            <button type="button" style={styles.historyPageButton} disabled={historyPage >= historyTotalPages || historyLoading} onClick={() => setHistoryPage((page) => page + 1)}>Next</button>
-          </div>
+            <button type="button" style={styles.historyPageButton} disabled={historyPage <= 1 || historyLoading} onClick={() => { setSelectedHistory(null); setHistoryPage((page) => Math.max(1, page - 1)); }}>Previous</button>
+            <button type="button" style={styles.historyPageButton} disabled={historyPage >= historyTotalPages || historyLoading} onClick={() => { setSelectedHistory(null); setHistoryPage((page) => page + 1); }}>Next</button>
+          </div>}
         </section>
       )}
 
       {(canViewGlobalTransactions || !isCustomerHistoryView) && <div style={styles.splitLayout}>
         {/* Transaction Ingress Auditing */}
-        {canViewGlobalTransactions && <div style={styles.leftSection}>
-          <h3 style={styles.sectionTitle}>Transaction Audit & Traceability</h3>
+        {canViewGlobalTransactions && <section className="mn-transactions__panel" style={styles.leftSection} aria-label="Transaction trace">
+          <p className="mn-transactions__eyebrow">TRANSACTION LOOKUP</p>
+          <h2 style={styles.sectionTitle}>Transaction Audit & Traceability</h2>
           
+          <WorkspaceFilterTabs label="Transaction category" value={txType} disabled={txLoading} options={[
+            { value: 'TRANSFER', label: 'Transfers' }, { value: 'DEPOSIT', label: 'Deposits' }, { value: 'WITHDRAWAL', label: 'Withdrawals' },
+          ]} onChange={value => { setTxType(value as typeof txType); setTxDetail(null); setTxError(''); }} />
+          <p className="mn-transactions__description">Find an existing record by its exact transaction UUID. Category changes select the corresponding trace endpoint.</p>
           <form onSubmit={handleSearchTx} style={styles.searchForm}>
             <div style={styles.grid}>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Select Category</label>
-                <select style={styles.select} value={txType} onChange={(e: any) => setTxType(e.target.value)}>
-                  <option value="TRANSFER">P2P TRANSFER</option>
-                  <option value="DEPOSIT">DEPOSIT FUNDING</option>
-                  <option value="WITHDRAWAL">WITHDRAWAL OUTFLOW</option>
-                </select>
-              </div>
-
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Transaction ID (UUID)</label>
+                <label htmlFor="transaction-id" style={styles.label}>Transaction ID (UUID)</label>
                 <div style={styles.searchRow}>
                   <input
+                    id="transaction-id"
                     type="text"
                     style={styles.input}
                     placeholder="e.g. 5e6f7g8h-..."
                     value={searchTxId}
-                    onChange={(e) => setSearchTxId(e.target.value)}
+                    onChange={(e) => { setSearchTxId(e.target.value); setTxDetail(null); setTxError(''); }}
                     disabled={txLoading}
                   />
                   <button type="submit" disabled={txLoading} style={styles.searchBtn}>
@@ -280,7 +321,7 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
             </div>
           </form>
 
-          {txError && <div style={styles.errorBox}>{txError}</div>}
+          {txError && <div style={styles.errorBox} role="alert">{txError}</div>}
 
           {txDetail && (
             <div style={styles.txCard}>
@@ -288,13 +329,13 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
               <div style={styles.txMetaGrid}>
                 <p style={styles.metaItem}><strong>ID:</strong> {txDetail.id}</p>
                 <p style={styles.metaItem}><strong>Status:</strong> <span style={txDetail.status === 'SUCCESS' || txDetail.status === 'COMPLETED' ? styles.successStatus : styles.pendingStatus}>{txDetail.status}</span></p>
-                <p style={styles.metaItem}><strong>Amount:</strong> ₦{(parseFloat(txDetail.amountMinor || '0') / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
+                <p style={styles.metaItem}><strong>Amount:</strong> {formatMinorUnits(txDetail.amountMinor, txDetail.currency)}</p>
                 <p style={styles.metaItem}><strong>Reference:</strong> {txDetail.reference || 'N/A'}</p>
                 
                 {txDetail.walletId && <p style={styles.metaItem}><strong>Wallet:</strong> {txDetail.walletId}</p>}
                 {txDetail.sourceWalletId && <p style={styles.metaItem}><strong>Source Wallet:</strong> {txDetail.sourceWalletId}</p>}
                 {txDetail.destinationWalletId && <p style={styles.metaItem}><strong>Dest Wallet:</strong> {txDetail.destinationWalletId}</p>}
-                {txDetail.failureReason && <p style={{ ...styles.metaItem, color: '#EF4444' }}><strong>Failure reason:</strong> {txDetail.failureReason}</p>}
+                {txDetail.failureReason && <p style={{ ...styles.metaItem, color: 'var(--mn-status-danger, #b3261e)' }}><strong>Failure reason:</strong> {txDetail.failureReason}</p>}
                 
                 <p style={styles.metaItem}><strong>Created:</strong> {new Date(txDetail.createdAt).toLocaleString()}</p>
                 {txDetail.completedAt && <p style={styles.metaItem}><strong>Completed:</strong> {new Date(txDetail.completedAt).toLocaleString()}</p>}
@@ -307,63 +348,69 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
               )}
             </div>
           )}
-        </div>}
+        </section>}
 
         {/* Fee Simulator Panel */}
-        {canViewGlobalTransactions && <div style={styles.rightSection}>
-          <h3 style={styles.sectionTitle}>Pricing Fee Simulator Tool</h3>
-          <p style={styles.infoText}>Deterministic pricing fee engine simulator executing the backend math endpoint.</p>
+        {canViewGlobalTransactions && <section className="mn-transactions__panel" style={styles.rightSection} aria-label="Fee simulation">
+          <p className="mn-transactions__eyebrow">HYPOTHETICAL SCENARIO</p>
+          <h2 style={styles.sectionTitle}>Pricing Fee Simulator Tool</h2>
+          <p style={styles.infoText}>Calculates an NGN virtual-account scenario using the values entered below. These example inputs are not active pricing, a quote, or evidence of a charged fee.</p>
+          {!canSimulate && <div role="note" style={styles.readOnlyNotice}>This read-only session cannot run the POST simulation endpoint.</div>}
 
-          {feeError && <div style={styles.errorBox}>{feeError}</div>}
+          {feeError && <div style={styles.errorBox} role="alert">{feeError}</div>}
 
           <form onSubmit={handleCalculateFee} style={styles.form}>
             <div style={styles.inputGroup}>
-              <label style={styles.label}>Transaction Amount (NGN)</label>
+              <label htmlFor="fee-amount" style={styles.label}>Transaction Amount (NGN)</label>
               <input
-                type="number"
+                id="fee-amount"
+                type="text" inputMode="decimal"
                 style={styles.input}
                 value={amountStr}
-                onChange={(e) => setAmountStr(e.target.value)}
+                onChange={(e) => { setAmountStr(e.target.value); setFeeResult(null); setFeeError(''); }}
                 disabled={feeLoading}
               />
             </div>
 
             <div style={styles.grid}>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Flat Fee Rule (NGN)</label>
+                <label htmlFor="fee-flat" style={styles.label}>Flat Fee Rule (NGN)</label>
                 <input
-                  type="number"
+                id="fee-flat"
+                  type="text" inputMode="decimal"
                   style={styles.input}
                   value={flatFeeStr}
-                  onChange={(e) => setFlatFeeStr(e.target.value)}
+                  onChange={(e) => { setFlatFeeStr(e.target.value); setFeeResult(null); setFeeError(''); }}
                   disabled={feeLoading}
                 />
               </div>
 
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Variable Fee (BPS)</label>
+                <label htmlFor="fee-percent" style={styles.label}>Variable Fee (BPS)</label>
                 <input
+                id="fee-percent"
                   type="number"
                   style={styles.input}
                   value={percentBpsStr}
-                  onChange={(e) => setPercentBpsStr(e.target.value)}
+                  onChange={(e) => { setPercentBpsStr(e.target.value); setFeeResult(null); setFeeError(''); }}
                   disabled={feeLoading}
                 />
               </div>
             </div>
 
             <div style={styles.inputGroup}>
-              <label style={styles.label}>VAT Tax Rate (BPS)</label>
+              <label htmlFor="fee-vat" style={styles.label}>VAT Tax Rate (BPS)</label>
               <input
+                id="fee-vat"
                 type="number"
                 style={styles.input}
                 value={vatBpsStr}
-                onChange={(e) => setVatBpsStr(e.target.value)}
+                onChange={(e) => { setVatBpsStr(e.target.value); setFeeResult(null); setFeeError(''); }}
                 disabled={feeLoading}
               />
             </div>
 
-            <button type="submit" disabled={feeLoading} style={styles.submitBtn}>
+            <button type="submit" disabled={feeLoading || !canSimulate} style={styles.submitBtn}>
               {feeLoading ? 'Calculating...' : 'Run Simulation'}
             </button>
           </form>
@@ -374,29 +421,35 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
               <div style={styles.feeMetaGrid}>
                 <div style={styles.feeRow}>
                   <span style={styles.feeLabel}>Calculated Net Fee:</span>
-                  <span style={styles.feeValue}>₦{(parseFloat(feeResult.feeMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
+                  <span style={styles.feeValue}>{formatFinancialAmount(feeResult.feeMinor, 'NGN')}</span>
                 </div>
                 <div style={styles.feeRow}>
                   <span style={styles.feeLabel}>Calculated Tax (VAT):</span>
-                  <span style={styles.feeValue}>₦{(parseFloat(feeResult.vatMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
+                  <span style={styles.feeValue}>{formatFinancialAmount(feeResult.vatMinor, 'NGN')}</span>
                 </div>
                 <div style={styles.feeRow}>
                   <span style={styles.feeLabel}>Total Gross Outflow:</span>
-                  <span style={styles.feeValue}>₦{(parseFloat(feeResult.totalMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
+                  <span style={styles.feeValue}>{formatFinancialAmount(feeResult.totalMinor, 'NGN')}</span>
                 </div>
               </div>
             </div>
           )}
-        </div>}
+        </section>}
       </div>}
+      {selectedHistory && <WorkspaceDrawer label="Customer transaction details" className="mn-transactions__drawer" onDismiss={() => setSelectedHistory(null)}>
+        <header className="mn-transactions__drawer-header"><div><p className="mn-transactions__eyebrow">CUSTOMER TRANSACTION</p><h2>Transaction details</h2></div><button type="button" className="mn-transactions__detail-button" onClick={() => setSelectedHistory(null)}>Close</button></header>
+        <div className="mn-transactions__drawer-body"><p>Read-only details from the customer transaction history.</p><dl>
+          <dt>Transaction ID</dt><dd>{selectedHistory.id}</dd><dt>Type</dt><dd>{selectedHistory.type}</dd><dt>Status</dt><dd>{selectedHistory.status}</dd><dt>Direction</dt><dd>{selectedHistory.direction}</dd><dt>Amount</dt><dd>{formatMinorUnits(selectedHistory.amountMinor, selectedHistory.currency)}</dd><dt>Reference</dt><dd>{selectedHistory.reference || '—'}</dd><dt>Created</dt><dd>{new Date(selectedHistory.createdAt).toLocaleString()}</dd>
+        </dl></div>
+      </WorkspaceDrawer>}
     </div>
   );
 };
 
 const styles = {
   container: {
-    padding: '24px',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
+    padding: 'clamp(16px, 3vw, 32px)',
+    fontFamily: 'var(--mn-font-sans)',
   },
   header: {
     marginBottom: '24px',
@@ -404,12 +457,12 @@ const styles = {
   title: {
     fontSize: '22px',
     fontWeight: 'bold',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     margin: '0 0 6px 0',
   },
   subtitle: {
     fontSize: '14px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     margin: 0,
   },
   backButton: {
@@ -418,26 +471,27 @@ const styles = {
     border: '1px solid #D1D5DB',
     borderRadius: '6px',
     background: '#FFFFFF',
-    color: '#334155',
+    color: 'var(--mn-text-primary, #132b25)',
     cursor: 'pointer',
   },
   historySection: {
     marginBottom: '24px',
     padding: '20px',
     background: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '8px',
   },
   historyHeader: {
     display: 'flex',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
+    flexWrap: 'wrap' as const,
     gap: '16px',
     marginBottom: '16px',
   },
   historyCustomer: {
     margin: '-8px 0 0',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontSize: '12px',
     wordBreak: 'break-all' as const,
   },
@@ -445,7 +499,7 @@ const styles = {
     display: 'flex',
     flexDirection: 'column' as const,
     gap: '4px',
-    color: '#475569',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontSize: '12px',
   },
   historyFilter: {
@@ -467,8 +521,8 @@ const styles = {
   },
   historyEmpty: {
     padding: '16px',
-    color: '#64748B',
-    background: '#F8FAFC',
+    color: 'var(--mn-text-secondary, #52655f)',
+    background: 'var(--mn-surface-canvas, #f5f8f6)',
     borderRadius: '6px',
     fontSize: '13px',
   },
@@ -478,7 +532,7 @@ const styles = {
     alignItems: 'center',
     gap: '8px',
     marginTop: '12px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontSize: '12px',
   },
   historyPageButton: {
@@ -489,8 +543,8 @@ const styles = {
     cursor: 'pointer',
   },
   gapWarning: {
-    backgroundColor: '#FEF3C7',
-    borderColor: '#F59E0B',
+    backgroundColor: 'var(--mn-status-warning-bg, #fff3d9)',
+    borderColor: 'var(--mn-status-warning, #8c5600)',
     borderWidth: '1px',
     borderStyle: 'solid',
     borderRadius: '6px',
@@ -500,7 +554,7 @@ const styles = {
   gapTitle: {
     fontSize: '13px',
     fontWeight: 'bold',
-    color: '#D97706',
+    color: '#78350F',
     display: 'block',
     marginBottom: '6px',
   },
@@ -514,20 +568,22 @@ const styles = {
     display: 'flex',
     gap: '24px',
     alignItems: 'flex-start',
+    flexWrap: 'wrap' as const,
   },
   leftSection: {
-    flex: 1,
+    flex: '1 1 340px',
+    minWidth: 0,
     backgroundColor: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '8px',
     padding: '20px',
   },
   sectionTitle: {
     fontSize: '16px',
     fontWeight: 'bold',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     margin: '0 0 16px 0',
-    borderBottom: '1px solid #E2E8F0',
+    borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)',
     paddingBottom: '8px',
   },
   searchForm: {
@@ -535,7 +591,7 @@ const styles = {
   },
   grid: {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))',
     gap: '16px',
   },
   inputGroup: {
@@ -546,17 +602,17 @@ const styles = {
   label: {
     fontSize: '12px',
     fontWeight: '500',
-    color: '#475569',
+    color: 'var(--mn-text-secondary, #52655f)',
     marginBottom: '6px',
   },
   select: {
     height: '38px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '6px',
     padding: '0 12px',
     fontSize: '13px',
     backgroundColor: '#FFFFFF',
-    color: '#334155',
+    color: 'var(--mn-text-primary, #132b25)',
   },
   searchRow: {
     display: 'flex',
@@ -565,14 +621,14 @@ const styles = {
   input: {
     flex: 1,
     height: '38px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '6px',
     padding: '0 12px',
     fontSize: '13px',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
   },
   searchBtn: {
-    backgroundColor: '#0A3D25',
+    backgroundColor: 'var(--mn-action-primary, #0b624a)',
     color: '#FFFFFF',
     border: 'none',
     borderRadius: '6px',
@@ -582,8 +638,8 @@ const styles = {
     cursor: 'pointer',
   },
   errorBox: {
-    backgroundColor: '#FEE2E2',
-    color: '#EF4444',
+    backgroundColor: 'var(--mn-status-danger-bg, #fdebe9)',
+    color: 'var(--mn-status-danger, #b3261e)',
     fontSize: '13px',
     fontWeight: '500',
     padding: '12px',
@@ -591,52 +647,52 @@ const styles = {
     marginBottom: '20px',
     borderWidth: '1px',
     borderStyle: 'solid',
-    borderColor: '#EF4444',
+    borderColor: 'var(--mn-status-danger, #b3261e)',
   },
   txCard: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'var(--mn-surface-canvas, #f5f8f6)',
     borderRadius: '8px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     padding: '16px',
   },
   txTitle: {
     fontSize: '14px',
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
     margin: '0 0 12px 0',
     borderBottom: '1px dashed #CBD5E1',
     paddingBottom: '6px',
   },
   txMetaGrid: {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))',
     gap: '12px',
     marginBottom: '16px',
   },
   metaItem: {
     fontSize: '11px',
-    color: '#475569',
+    color: 'var(--mn-text-secondary, #52655f)',
     margin: 0,
     wordBreak: 'break-all' as const,
   },
   successStatus: {
-    color: '#10B981',
+    color: 'var(--mn-status-success, #146348)',
     fontWeight: 'bold',
-    backgroundColor: '#D1FAE5',
+    backgroundColor: 'var(--mn-status-success-bg, #e4f4ec)',
     padding: '2px 6px',
     borderRadius: '4px',
   },
   pendingStatus: {
-    color: '#F59E0B',
+    color: 'var(--mn-status-warning, #8c5600)',
     fontWeight: 'bold',
-    backgroundColor: '#FEF3C7',
+    backgroundColor: 'var(--mn-status-warning-bg, #fff3d9)',
     padding: '2px 6px',
     borderRadius: '4px',
   },
   readOnlyNotice: {
     marginTop: '16px',
     padding: '12px',
-    border: '1px solid #F59E0B',
+    border: '1px solid var(--mn-status-warning, #8c5600)',
     borderRadius: '6px',
     backgroundColor: '#FFFBEB',
     color: '#92400E',
@@ -644,15 +700,16 @@ const styles = {
     lineHeight: '18px',
   },
   rightSection: {
-    width: '460px',
+    flex: '1 1 340px',
+    minWidth: 0,
     backgroundColor: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '8px',
     padding: '20px',
   },
   infoText: {
     fontSize: '13px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     lineHeight: '18px',
     margin: '0 0 16px 0',
   },
@@ -661,7 +718,7 @@ const styles = {
     flexDirection: 'column' as const,
   },
   submitBtn: {
-    backgroundColor: '#0A3D25',
+    backgroundColor: 'var(--mn-action-primary, #0b624a)',
     color: '#FFFFFF',
     border: 'none',
     borderRadius: '6px',
@@ -674,7 +731,7 @@ const styles = {
   },
   feeCard: {
     marginTop: '20px',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'var(--mn-surface-canvas, #f5f8f6)',
     borderRadius: '8px',
     border: '1px solid #CBD5E1',
     padding: '16px',
@@ -682,7 +739,7 @@ const styles = {
   feeTitle: {
     fontSize: '14px',
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
     margin: '0 0 12px 0',
   },
   feeMetaGrid: {
@@ -696,11 +753,11 @@ const styles = {
     fontSize: '13px',
   },
   feeLabel: {
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontWeight: '500',
   },
   feeValue: {
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     fontWeight: '700',
   },
 };

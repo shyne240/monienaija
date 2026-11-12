@@ -4,15 +4,9 @@ import type { NotificationIntent } from './notification.types';
 import { canonicalNotificationEvent } from './notification-template.service';
 
 /**
- * V1-005 Event catalogue → recipient/channel/template mapping.
- * Explicit, safe, redacted. Covers required events.
- *
- * Required events:
- *  - funding approved/rejected (CUSTOMER SMS)
- *  - transfer.completed (CUSTOMER SMS to both source & destination)
- *  - support 5 events: created, assigned, status_changed, resolved/closed, message_added
- *  - cash-to-cash claim/expiry
- *  - agent lifecycle (transaction/operational/support/lifecycle) — dependency
+ * Event catalogue → recipient/channel/template mapping. Financial events are
+ * independently configurable, not mandatory. Actual delivery additionally requires the
+ * event and channel controls, a valid recipient, preferences and provider readiness.
  */
 
 export function mapEventToIntents(
@@ -59,6 +53,27 @@ export function mapEventToIntents(
     ];
   }
 
+  // Payment recipients are supplied by the dispatcher only after resolving the committed
+  // deposit/withdrawal wallet owner; an outbox payload is not authority for ownership.
+  if (
+    ['deposit.completed', 'deposit.failed', 'withdrawal.completed', 'withdrawal.failed'].includes(
+      eventType,
+    )
+  ) {
+    const customerId = payload.customerId as string | undefined;
+    if (!customerId) return [];
+    return [
+      {
+        recipientType: 'CUSTOMER',
+        recipientId: customerId,
+        channel: 'SMS',
+        templateKey: eventType,
+        correlationId,
+        causationId,
+      },
+    ];
+  }
+
   // Transfer events — internal transfer completed
   if (eventType === 'transfer.completed') {
     const sourceCustomerId = payload.sourceCustomerId as string | undefined;
@@ -90,14 +105,15 @@ export function mapEventToIntents(
 
   if (eventType === 'transfer.failed' || eventType === 'transfer.unknown') {
     const sourceCustomerId =
-      (payload.sourceCustomerId as string | undefined) ?? (payload.customerId as string | undefined);
+      (payload.sourceCustomerId as string | undefined) ??
+      (payload.customerId as string | undefined);
     if (!sourceCustomerId) return [];
     return [
       {
         recipientType: 'CUSTOMER',
         recipientId: sourceCustomerId,
         channel: 'SMS',
-        templateKey: 'transfer.failed',
+        templateKey: eventType,
         correlationId,
         causationId,
       },
@@ -127,7 +143,8 @@ export function mapEventToIntents(
     // Status mapping: status_changed with status RESOLVED/CLOSED should use resolved/closed template
     let templateKey = eventType;
     if (eventType === 'support.ticket.status_changed') {
-      const status = (payload.status as string | undefined) ?? (payload.newStatus as string | undefined);
+      const status =
+        (payload.status as string | undefined) ?? (payload.newStatus as string | undefined);
       if (status === 'RESOLVED') templateKey = 'support.ticket.resolved';
       else if (status === 'CLOSED') templateKey = 'support.ticket.closed';
     }
@@ -264,15 +281,22 @@ export function mapEventToIntents(
  * ONLY when an email provider is configured (NOTIFICATION_EMAIL_PROVIDER != none);
  * while email is dark, no EMAIL intents are generated at all (no SKIPPED-row churn).
  *
- * Scope: already-live wired events with CUSTOMER recipients only. cash_to_cash.* and
- * agent.* intents are intentionally NOT augmented (agent email is a documented dependency —
- * AGENT_EMAIL_DEPENDENCY_MISSING; cash-to-cash beneficiary wiring is out of mission scope).
- * SMS intents are never modified — EMAIL copies are appended after them.
+ * Scope: events with a valid CUSTOMER recipient. Cash-to-cash claim/expiry customer
+ * recipients can use email; unregistered PHONE beneficiaries and AGENT contacts have no
+ * authoritative email source and are not invented here. SMS intents are not modified.
  */
 const EMAIL_ENABLED_CUSTOMER_EVENTS: ReadonlySet<string> = new Set([
   'customer.funding.requested',
   'customer.funding.approved',
   'customer.funding.rejected',
+  'deposit.completed',
+  'deposit.failed',
+  'withdrawal.completed',
+  'withdrawal.failed',
+  'cash_to_cash.claimed',
+  'cash_to_cash.expired',
+  'cash-to-cash.claimed',
+  'cash-to-cash.expired',
   'transfer.completed',
   'transfer.failed',
   'transfer.unknown',
@@ -291,7 +315,7 @@ export function appendCustomerEmailIntents(
   if (!EMAIL_ENABLED_CUSTOMER_EVENTS.has(eventType)) return intents;
   const copies: NotificationIntent[] = [];
   for (const intent of intents) {
-    if (intent.recipientType !== 'CUSTOMER') continue;
+    if (intent.recipientType !== 'CUSTOMER' || intent.channel !== 'SMS') continue;
     copies.push({ ...intent, channel: 'EMAIL' });
   }
   return copies.length > 0 ? [...intents, ...copies] : intents;
@@ -313,30 +337,50 @@ export const NOTIFICATION_EVENT_CATALOGUE: Array<{
   {
     eventType: 'customer.funding.approved',
     recipient: 'CUSTOMER (customerId from payload)',
-    channel: 'SMS (CUSTOMER PHONE via customer_contact_methods.normalized_value)',
+    channel: 'SMS and/or EMAIL for an eligible CUSTOMER, according to event configuration',
     templateKey: 'customer.funding.approved',
-    required: true,
+    required: false,
     possible: true,
     fallback: 'If phone missing: delivery SKIPPED with reason CUSTOMER_PHONE_MISSING, audit only',
   },
   {
     eventType: 'customer.funding.rejected',
     recipient: 'CUSTOMER',
-    channel: 'SMS',
+    channel: 'SMS and/or EMAIL for an eligible CUSTOMER, according to event configuration',
     templateKey: 'customer.funding.rejected',
-    required: true,
+    required: false,
     possible: true,
     fallback: 'Same as approved',
   },
   {
     eventType: 'transfer.completed',
     recipient: 'CUSTOMER (sourceCustomerId AND destinationCustomerId)',
-    channel: 'SMS to both',
+    channel: 'SMS and/or EMAIL to each eligible CUSTOMER, according to event configuration',
     templateKey: 'transfer.completed',
-    required: true,
+    required: false,
     possible: true,
     fallback: 'If one phone missing, other still delivered; duplicate suppressed via eventKey',
   },
+  ...['customer.funding.requested', 'transfer.failed', 'transfer.unknown'].map((eventType) => ({
+    eventType,
+    recipient: 'CUSTOMER (existing event-specific recipient mapping)',
+    channel: "SMS and/or EMAIL, according to this event's independent configuration",
+    templateKey: eventType,
+    required: false,
+    possible: true,
+    fallback: 'Verified contact and current recipient preferences are required',
+  })),
+  ...['deposit.completed', 'deposit.failed', 'withdrawal.completed', 'withdrawal.failed'].map(
+    (eventType) => ({
+      eventType,
+      recipient: 'CUSTOMER (resolved from committed payment and wallet)',
+      channel: "SMS and/or EMAIL, according to this event's independent configuration",
+      templateKey: eventType,
+      required: false,
+      possible: true,
+      fallback: 'Unverified ownership or unavailable preferences/contacts fail closed',
+    }),
+  ),
   {
     eventType: 'support.ticket.created',
     recipient: 'CUSTOMER and/or AGENT (payload customerId/agentId)',
@@ -398,7 +442,7 @@ export const NOTIFICATION_EVENT_CATALOGUE: Array<{
     channel:
       'SMS to canonical Nigerian phone; verified customer SMS preference honored when available',
     templateKey: 'cash_to_cash.created',
-    required: true,
+    required: false,
     possible: true,
     fallback:
       'Malformed/missing phone is not dispatched; delivery is idempotent by eventKey + phone + channel',
@@ -406,7 +450,7 @@ export const NOTIFICATION_EVENT_CATALOGUE: Array<{
   {
     eventType: 'cash_to_cash.claimed',
     recipient: 'CUSTOMER (claimant) + AGENT (sender)',
-    channel: 'SMS',
+    channel: 'SMS and/or EMAIL for an eligible CUSTOMER; agent contact remains unavailable',
     templateKey: 'cash_to_cash.claimed',
     required: false,
     possible: true,
@@ -415,7 +459,7 @@ export const NOTIFICATION_EVENT_CATALOGUE: Array<{
   {
     eventType: 'cash_to_cash.expired',
     recipient: 'CUSTOMER + AGENT',
-    channel: 'SMS',
+    channel: 'SMS and/or EMAIL for an eligible CUSTOMER; agent contact remains unavailable',
     templateKey: 'cash_to_cash.expired',
     required: false,
     possible: true,
@@ -466,16 +510,21 @@ export const NOTIFICATION_EVENT_CATALOGUE: Array<{
     templateKey: '*',
     required: false,
     possible: false,
-    fallback: 'SKIPPED PUSH_TOKEN_DEPENDENCY_MISSING until device-token entity exists; notification_push_enabled respected',
+    fallback:
+      'SKIPPED PUSH_TOKEN_DEPENDENCY_MISSING until device-token entity exists; notification_push_enabled respected',
   },
   // EMAIL (ARENA3-NOTIFICATION-EMAIL)
   {
-    eventType: 'customer.funding.* / transfer.completed|failed|unknown / support.ticket.*',
+    eventType:
+      'customer.funding.* / deposit.* / withdrawal.* / transfer.* / cash_to_cash.claimed|expired / support.ticket.*',
     recipient: 'CUSTOMER only (AGENT email is a documented dependency)',
-    channel: 'EMAIL (customer_contact_methods type=EMAIL normalized_value; only generated when NOTIFICATION_EMAIL_PROVIDER is configured)',
-    templateKey: 'same as SMS intent — plain-text body identical (NotificationEmailTemplateLookup seam)',
+    channel:
+      'EMAIL (customer_contact_methods type=EMAIL normalized_value; only generated when NOTIFICATION_EMAIL_PROVIDER is configured)',
+    templateKey:
+      'same as SMS intent — plain-text body identical (NotificationEmailTemplateLookup seam)',
     required: false,
     possible: true,
-    fallback: 'Email dark (provider none): no EMAIL intent generated. Configured: EMAIL_OPT_OUT (notification_email_enabled=false, security-critical events bypass), CUSTOMER_EMAIL_MISSING, AGENT_EMAIL_DEPENDENCY_MISSING → SKIPPED with reason; provider failure → FAILED with bounded retries via worker',
+    fallback:
+      'Email dark (provider none): no EMAIL intent generated. Configured: EMAIL_OPT_OUT (notification_email_enabled=false, security-critical events bypass), CUSTOMER_EMAIL_MISSING, AGENT_EMAIL_DEPENDENCY_MISSING → SKIPPED with reason; provider failure → FAILED with bounded retries via worker',
   },
 ];

@@ -1,0 +1,78 @@
+{
+  "source": "Vite dev server from current source, real Nest AppModule and disposable migrated PostgreSQL",
+  "baseCommit": "fc98c37cf856f1366a7cca2a3dbc7e77572abef3",
+  "auth": "real local development login for seeded test roles",
+  "backend": "Real API, seeded synthetic local workforce in disposable PostgreSQL; browser proxy permits only GET and local-login POST; no real providers or workers",
+  "screens": [
+    {
+      "key": "superAdminRecovery",
+      "role": "ADMINISTRATOR",
+      "width": 1440,
+      "file": "superAdminRecovery-1440.png",
+      "headings": [
+        "Super-Admin recovery",
+        "Submit recovery statement",
+        "Recovery procedure"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "review",
+      "role": "ADMINISTRATOR",
+      "width": 1440,
+      "file": "review-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "superAdminRecovery",
+      "role": "ADMINISTRATOR",
+      "width": 768,
+      "file": "superAdminRecovery-768.png",
+      "headings": [
+        "Super-Admin recovery",
+        "Submit recovery statement",
+        "Recovery procedure"
+      ],
+      "geometry": {
+        "client": 768,
+        "scroll": 768
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "review",
+      "role": "ADMINISTRATOR",
+      "width": 768,
+      "file": "review-768.png",
+      "interaction": true
+    },
+    {
+      "key": "superAdminRecovery",
+      "role": "ADMINISTRATOR",
+      "width": 375,
+      "file": "superAdminRecovery-375.png",
+      "headings": [
+        "Super-Admin recovery",
+        "Submit recovery statement",
+        "Recovery procedure"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "review",
+      "role": "ADMINISTRATOR",
+      "width": 375,
+      "file": "review-375.png",
+      "interaction": true
+    }
+  ],
+  "warnings": []
+}

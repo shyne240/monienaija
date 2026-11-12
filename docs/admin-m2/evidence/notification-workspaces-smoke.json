@@ -1,0 +1,226 @@
+[
+  {
+    "width": 320,
+    "workspace": "notification-tabs-keyboard",
+    "end": true,
+    "home": true,
+    "activation": true
+  },
+  {
+    "width": 320,
+    "workspace": "sms-template",
+    "visibleLabelMechanisms": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "email-template",
+    "visibleLabelMechanisms": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "provider-config",
+    "visibleLabelMechanisms": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "workspace": "notification-tabs-keyboard",
+    "end": true,
+    "home": true,
+    "activation": true
+  },
+  {
+    "width": 360,
+    "workspace": "sms-template",
+    "visibleLabelMechanisms": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "email-template",
+    "visibleLabelMechanisms": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "provider-config",
+    "visibleLabelMechanisms": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "workspace": "notification-tabs-keyboard",
+    "end": true,
+    "home": true,
+    "activation": true
+  },
+  {
+    "width": 390,
+    "workspace": "sms-template",
+    "visibleLabelMechanisms": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "email-template",
+    "visibleLabelMechanisms": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "provider-config",
+    "visibleLabelMechanisms": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "workspace": "notification-tabs-keyboard",
+    "end": true,
+    "home": true,
+    "activation": true
+  },
+  {
+    "width": 768,
+    "workspace": "sms-template",
+    "visibleLabelMechanisms": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "email-template",
+    "visibleLabelMechanisms": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "provider-config",
+    "visibleLabelMechanisms": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "workspace": "notification-tabs-keyboard",
+    "end": true,
+    "home": true,
+    "activation": true
+  },
+  {
+    "width": 769,
+    "workspace": "sms-template",
+    "visibleLabelMechanisms": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "email-template",
+    "visibleLabelMechanisms": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "provider-config",
+    "visibleLabelMechanisms": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "workspace": "notification-tabs-keyboard",
+    "end": true,
+    "home": true,
+    "activation": true
+  },
+  {
+    "width": 1024,
+    "workspace": "sms-template",
+    "visibleLabelMechanisms": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "email-template",
+    "visibleLabelMechanisms": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "provider-config",
+    "visibleLabelMechanisms": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "workspace": "notification-tabs-keyboard",
+    "end": true,
+    "home": true,
+    "activation": true
+  },
+  {
+    "width": 1280,
+    "workspace": "sms-template",
+    "visibleLabelMechanisms": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "email-template",
+    "visibleLabelMechanisms": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "provider-config",
+    "visibleLabelMechanisms": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "workspace": "notification-tabs-keyboard",
+    "end": true,
+    "home": true,
+    "activation": true
+  },
+  {
+    "width": 1440,
+    "workspace": "sms-template",
+    "visibleLabelMechanisms": true,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "email-template",
+    "visibleLabelMechanisms": true,
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "provider-config",
+    "visibleLabelMechanisms": true,
+    "page": 1440,
+    "view": 1440
+  }
+]

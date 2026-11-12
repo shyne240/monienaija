@@ -31,14 +31,16 @@ export const DASHBOARD_TEMPLATE_SEED: DashboardTemplateSeed[] = [
   {
     templateKey: 'DEFAULT_FALLBACK',
     displayName: 'Default Dashboard',
-    description: 'Safe minimum dashboard shown whenever a role has no valid, active template assignment. Shows only the signed-in principal\'s own identity and entitlements — never any other widget.',
+    description:
+      "Safe minimum dashboard shown whenever a role has no valid, active template assignment. Shows only the signed-in principal's own identity and entitlements — never any other widget.",
     operationalArea: 'FALLBACK',
     widgets: [...SELF_WIDGETS],
   },
   {
     templateKey: 'EXECUTIVE_GOVERNANCE',
     displayName: 'Executive & Governance',
-    description: 'Platform-wide executive overview: transaction/financial summary, ledger position, reconciliation health, workforce overview, role-governance queue, audit activity and system health.',
+    description:
+      'Platform-wide executive overview: transaction/financial summary, ledger position, reconciliation health, workforce overview, role-governance queue, audit activity and system health.',
     operationalArea: 'EXECUTIVE_GOVERNANCE',
     widgets: [
       ...SELF_WIDGETS,
@@ -56,17 +58,16 @@ export const DASHBOARD_TEMPLATE_SEED: DashboardTemplateSeed[] = [
   {
     templateKey: 'WORKFORCE_ADMINISTRATION',
     displayName: 'Workforce Administration',
-    description: 'Workforce headcount/role distribution and the delegable operational-role assignment surface.',
+    description:
+      'Workforce headcount/role distribution and the delegable operational-role assignment surface.',
     operationalArea: 'WORKFORCE_ADMINISTRATION',
-    widgets: [
-      ...SELF_WIDGETS,
-      { widgetKey: 'workforce-overview', order: 2 },
-    ],
+    widgets: [...SELF_WIDGETS, { widgetKey: 'workforce-overview', order: 2 }],
   },
   {
     templateKey: 'FINANCE_PREPARATION',
     displayName: 'Finance Preparation',
-    description: 'Ledger position and recognized transaction/fee summary relevant to preparing ledger postings and commercial-rule changes.',
+    description:
+      'Ledger position and recognized transaction/fee summary relevant to preparing ledger postings and commercial-rule changes.',
     operationalArea: 'FINANCE_PREPARATION',
     widgets: [
       ...SELF_WIDGETS,
@@ -77,7 +78,8 @@ export const DASHBOARD_TEMPLATE_SEED: DashboardTemplateSeed[] = [
   {
     templateKey: 'FINANCIAL_CONTROL_APPROVALS',
     displayName: 'Financial Control & Approvals',
-    description: 'Ledger position, transaction summary and the pending role-governance approval queue this role independently checks.',
+    description:
+      'Ledger position, transaction summary and the pending role-governance approval queue this role independently checks.',
     operationalArea: 'FINANCIAL_CONTROL_APPROVALS',
     widgets: [
       ...SELF_WIDGETS,
@@ -89,7 +91,8 @@ export const DASHBOARD_TEMPLATE_SEED: DashboardTemplateSeed[] = [
   {
     templateKey: 'FINANCIAL_AUDIT_ASSURANCE',
     displayName: 'Financial Audit & Assurance',
-    description: 'Read-only platform financial/transaction/ledger/reconciliation visibility plus audit trail and system health, for independent assurance review.',
+    description:
+      'Read-only platform financial/transaction/ledger/reconciliation visibility plus audit trail and system health, for independent assurance review.',
     operationalArea: 'FINANCIAL_AUDIT_ASSURANCE',
     widgets: [
       ...SELF_WIDGETS,
@@ -104,7 +107,8 @@ export const DASHBOARD_TEMPLATE_SEED: DashboardTemplateSeed[] = [
   {
     templateKey: 'TRANSACTION_OPERATIONS',
     displayName: 'Transaction Operations',
-    description: 'Transaction volumes/success rate, recent transactions and support/system health relevant to day-to-day operations.',
+    description:
+      'Transaction volumes/success rate, recent transactions and support/system health relevant to day-to-day operations.',
     operationalArea: 'TRANSACTION_OPERATIONS',
     widgets: [
       ...SELF_WIDGETS,
@@ -143,15 +147,13 @@ export const DASHBOARD_TEMPLATE_SEED: DashboardTemplateSeed[] = [
     displayName: 'Fraud Case Monitoring',
     description: 'FRAUD-category case summary only — no AML/KYC/SANCTIONS case visibility.',
     operationalArea: 'FRAUD_CASE_MONITORING',
-    widgets: [
-      ...SELF_WIDGETS,
-      { widgetKey: 'fraud-case-summary', order: 2 },
-    ],
+    widgets: [...SELF_WIDGETS, { widgetKey: 'fraud-case-summary', order: 2 }],
   },
   {
     templateKey: 'CUSTOMER_SERVICING',
     displayName: 'Customer Servicing',
-    description: 'Support ticket queue and a shortcut into the authorized customer directory/lookup workflow.',
+    description:
+      'Support ticket queue and a shortcut into the authorized customer directory/lookup workflow.',
     operationalArea: 'CUSTOMER_SERVICING',
     widgets: [
       ...SELF_WIDGETS,
@@ -162,24 +164,38 @@ export const DASHBOARD_TEMPLATE_SEED: DashboardTemplateSeed[] = [
   {
     templateKey: 'RECONCILIATION_VISIBILITY',
     displayName: 'Reconciliation Visibility',
-    description: 'Reconciliation run status, exceptions and trial balance only — the single function this role holds.',
+    description:
+      'Reconciliation run status, exceptions and trial balance only — the single function this role holds.',
     operationalArea: 'RECONCILIATION_VISIBILITY',
-    widgets: [
-      ...SELF_WIDGETS,
-      { widgetKey: 'reconciliation-status', order: 2 },
-    ],
+    widgets: [...SELF_WIDGETS, { widgetKey: 'reconciliation-status', order: 2 }],
   },
 ];
 
 /** Layer C seed: initial role -> template assignment for all eleven V1 roles. */
-export const ROLE_DASHBOARD_ASSIGNMENT_SEED: Array<{ roleKey: string; templateKey: string; reason: string }> = [
+export const ROLE_DASHBOARD_ASSIGNMENT_SEED: Array<{
+  roleKey: string;
+  templateKey: string;
+  reason: string;
+}> = [
   { roleKey: 'SUPER_ADMIN', templateKey: 'EXECUTIVE_GOVERNANCE', reason: 'V1 initial seed' },
   { roleKey: 'ADMINISTRATOR', templateKey: 'WORKFORCE_ADMINISTRATION', reason: 'V1 initial seed' },
   { roleKey: 'FINANCE_PREPARER', templateKey: 'FINANCE_PREPARATION', reason: 'V1 initial seed' },
-  { roleKey: 'FINANCE_CONTROLLER', templateKey: 'FINANCIAL_CONTROL_APPROVALS', reason: 'V1 initial seed' },
-  { roleKey: 'FINANCE_AUDITOR', templateKey: 'FINANCIAL_AUDIT_ASSURANCE', reason: 'V1 initial seed' },
+  {
+    roleKey: 'FINANCE_CONTROLLER',
+    templateKey: 'FINANCIAL_CONTROL_APPROVALS',
+    reason: 'V1 initial seed',
+  },
+  {
+    roleKey: 'FINANCE_AUDITOR',
+    templateKey: 'FINANCIAL_AUDIT_ASSURANCE',
+    reason: 'V1 initial seed',
+  },
   { roleKey: 'OPERATIONS', templateKey: 'TRANSACTION_OPERATIONS', reason: 'V1 initial seed' },
-  { roleKey: 'AGENT_NETWORK_MANAGER', templateKey: 'AGENT_NETWORK_MANAGEMENT', reason: 'V1 initial seed' },
+  {
+    roleKey: 'AGENT_NETWORK_MANAGER',
+    templateKey: 'AGENT_NETWORK_MANAGEMENT',
+    reason: 'V1 initial seed',
+  },
   { roleKey: 'COMPLIANCE', templateKey: 'COMPLIANCE_KYC', reason: 'V1 initial seed' },
   { roleKey: 'RISK_FRAUD', templateKey: 'FRAUD_CASE_MONITORING', reason: 'V1 initial seed' },
   { roleKey: 'CUSTOMER_SERVICE', templateKey: 'CUSTOMER_SERVICING', reason: 'V1 initial seed' },

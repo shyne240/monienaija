@@ -49,10 +49,18 @@ export class CreateAuthorizationCatalogue1785753600083 implements MigrationInter
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await queryRunner.query(`CREATE INDEX idx_authorization_functions_domain ON authorization_functions (domain)`);
-    await queryRunner.query(`CREATE INDEX idx_authorization_functions_v1_status ON authorization_functions (v1_status)`);
-    await queryRunner.query(`CREATE INDEX idx_authorization_functions_assignable ON authorization_functions (assignable)`);
-    await queryRunner.query(`CREATE INDEX idx_authorization_functions_sensitivity ON authorization_functions (sensitivity)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_authorization_functions_domain ON authorization_functions (domain)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_authorization_functions_v1_status ON authorization_functions (v1_status)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_authorization_functions_assignable ON authorization_functions (assignable)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_authorization_functions_sensitivity ON authorization_functions (sensitivity)`,
+    );
 
     // ---------------------------------------------------------------------
     // authorization_roles — persistent role records. Deliberately NOT a DB
@@ -99,8 +107,12 @@ export class CreateAuthorizationCatalogue1785753600083 implements MigrationInter
         CONSTRAINT uq_authorization_roles_role_key UNIQUE (role_key)
       )
     `);
-    await queryRunner.query(`CREATE INDEX idx_authorization_roles_is_active ON authorization_roles (is_active)`);
-    await queryRunner.query(`CREATE INDEX idx_authorization_roles_finance_role_class ON authorization_roles (finance_role_class)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_authorization_roles_is_active ON authorization_roles (is_active)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_authorization_roles_finance_role_class ON authorization_roles (finance_role_class)`,
+    );
     // Structural invariant: at most one role may ever hold the single
     // reserved "administrative capability" at a time (generalizes the old
     // single-FINANCE_ADMIN reservation without naming a role).
@@ -135,9 +147,15 @@ export class CreateAuthorizationCatalogue1785753600083 implements MigrationInter
         CONSTRAINT uq_authorization_role_functions_pair UNIQUE (role_id, function_code)
       )
     `);
-    await queryRunner.query(`CREATE INDEX idx_authorization_role_functions_role_id ON authorization_role_functions (role_id)`);
-    await queryRunner.query(`CREATE INDEX idx_authorization_role_functions_function_code ON authorization_role_functions (function_code)`);
-    await queryRunner.query(`CREATE INDEX idx_authorization_role_functions_access_type ON authorization_role_functions (access_type)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_authorization_role_functions_role_id ON authorization_role_functions (role_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_authorization_role_functions_function_code ON authorization_role_functions (function_code)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_authorization_role_functions_access_type ON authorization_role_functions (access_type)`,
+    );
 
     // ---------------------------------------------------------------------
     // Governance-integrity trigger: a CRITICAL_FINANCIAL, finance-class-
@@ -218,10 +236,16 @@ export class CreateAuthorizationCatalogue1785753600083 implements MigrationInter
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP TRIGGER IF EXISTS trg_authorization_role_functions_read_only ON authorization_role_functions`);
+    await queryRunner.query(
+      `DROP TRIGGER IF EXISTS trg_authorization_role_functions_read_only ON authorization_role_functions`,
+    );
     await queryRunner.query(`DROP FUNCTION IF EXISTS fn_authorization_enforce_read_only_role()`);
-    await queryRunner.query(`DROP TRIGGER IF EXISTS trg_authorization_role_functions_finance_class ON authorization_role_functions`);
-    await queryRunner.query(`DROP FUNCTION IF EXISTS fn_authorization_enforce_finance_class_restriction()`);
+    await queryRunner.query(
+      `DROP TRIGGER IF EXISTS trg_authorization_role_functions_finance_class ON authorization_role_functions`,
+    );
+    await queryRunner.query(
+      `DROP FUNCTION IF EXISTS fn_authorization_enforce_finance_class_restriction()`,
+    );
     await queryRunner.query(`DROP TABLE IF EXISTS authorization_role_functions`);
     await queryRunner.query(`DROP TABLE IF EXISTS authorization_roles`);
     await queryRunner.query(`DROP TABLE IF EXISTS authorization_functions`);

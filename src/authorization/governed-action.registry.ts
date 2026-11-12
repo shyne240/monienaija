@@ -66,10 +66,7 @@ const FINANCE_PREPARER = 'FINANCE_PREPARER';
 const FINANCE_CONTROLLER = 'FINANCE_CONTROLLER';
 const AGENT_NETWORK_MANAGER = 'AGENT_NETWORK_MANAGER';
 
-const crossFunctionalRule = (
-  action: string,
-  functionCode: string,
-): GovernedActionDefinition => ({
+const crossFunctionalRule = (action: string, functionCode: string): GovernedActionDefinition => ({
   action,
   resourceType: 'AGENT_FUNDING_REQUEST',
   initiatingFunctionCodes: [functionCode],
@@ -162,28 +159,34 @@ export const LEDGER_JOURNAL_REVERSAL_ACTION = rule(
 );
 
 /** Decision 7: AGENT_NETWORK_MANAGER initiates; independent FINANCE_CONTROLLER approves. */
-export const AGENT_FUNDING_ACTIONS: Readonly<Record<'FUND' | 'DEFUND', GovernedActionDefinition>> = {
-  FUND: crossFunctionalRule('AGENT_FUND', 'agent.fund'),
-  DEFUND: crossFunctionalRule('AGENT_DEFUND', 'agent.defund'),
-};
+export const AGENT_FUNDING_ACTIONS: Readonly<Record<'FUND' | 'DEFUND', GovernedActionDefinition>> =
+  {
+    FUND: crossFunctionalRule('AGENT_FUND', 'agent.fund'),
+    DEFUND: crossFunctionalRule('AGENT_DEFUND', 'agent.defund'),
+  };
 
 /** Notification governance uses existing workforce roles until dedicated catalogue functions are
  * approved by the catalogue owner. MFA + an independent FINANCE_CONTROLLER checker are mandatory;
  * the initiating SUPER_ADMIN must also have the existing notification read function. */
 export const NOTIFICATION_CHANGE_ACTIONS: Readonly<Record<string, GovernedActionDefinition>> =
-  Object.fromEntries(['NOTIFICATION_TEMPLATE_CHANGE', 'NOTIFICATION_EVENT_CONFIGURATION_CHANGE'].map((action) => [action, {
-    action,
-    resourceType: 'NOTIFICATION_EVENT_CONFIGURATION',
-    initiatingFunctionCodes: ['notification.view_deliveries'],
-    approvingFunctionCodes: [],
-    initiatingRoles: ['SUPER_ADMIN'],
-    approvingRoles: ['FINANCE_CONTROLLER'],
-    minimumApprovals: 1,
-    selfApprovalProhibited: true,
-    mfaRequired: true,
-    minimumAssurance: 'MFA' as const,
-    approvalScope: 'privileged:approve',
-  }]));
+  Object.fromEntries(
+    ['NOTIFICATION_TEMPLATE_CHANGE', 'NOTIFICATION_EVENT_CONFIGURATION_CHANGE'].map((action) => [
+      action,
+      {
+        action,
+        resourceType: 'NOTIFICATION_EVENT_CONFIGURATION',
+        initiatingFunctionCodes: ['notification.view_deliveries'],
+        approvingFunctionCodes: [],
+        initiatingRoles: ['SUPER_ADMIN'],
+        approvingRoles: ['FINANCE_CONTROLLER'],
+        minimumApprovals: 1,
+        selfApprovalProhibited: true,
+        mfaRequired: true,
+        minimumAssurance: 'MFA' as const,
+        approvalScope: 'privileged:approve',
+      },
+    ]),
+  );
 
 export const GOVERNED_ACTIONS: Readonly<Record<string, GovernedActionDefinition>> = {
   ...COMMERCIAL_RULE_ACTIONS,

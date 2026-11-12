@@ -1,0 +1,74 @@
+[
+  {
+    "width": 320,
+    "keyboardNavigation": true,
+    "typedCredentialCleared": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "keyboardNavigation": true,
+    "typedCredentialCleared": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "keyboardNavigation": true,
+    "typedCredentialCleared": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "keyboardNavigation": true,
+    "typedCredentialCleared": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "keyboardNavigation": true,
+    "typedCredentialCleared": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "keyboardNavigation": true,
+    "typedCredentialCleared": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "keyboardNavigation": true,
+    "typedCredentialCleared": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "keyboardNavigation": true,
+    "typedCredentialCleared": true,
+    "zeroWrites": true,
+    "visibleLabelMechanisms": true,
+    "page": 1440,
+    "view": 1440
+  }
+]

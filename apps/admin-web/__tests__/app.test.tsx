@@ -91,7 +91,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
         email: 'admin@monienaija.local',
         password: 'MonieNaijaAdmin123!',
       });
-      expect(getByText('System Administration Dashboard')).toBeTruthy();
+      expect(getByText(/^Welcome back, /)).toBeTruthy();
     });
   });
 
@@ -106,7 +106,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     await waitFor(() => {
       expect(getByText('Invalid local administrator credentials')).toBeTruthy();
     });
-    expect(queryByText('System Administration Dashboard')).toBeNull();
+    expect(queryByText(/^Welcome back, /)).toBeNull();
   });
 
   test('should render Dashboard and FINANCE_ADMIN sidebar link for SUPER_ADMIN operator', async () => {
@@ -129,15 +129,15 @@ describe('Admin Web Portal F1 Shell Tests', () => {
 
     const { getByText, queryByText, getAllByText } = render(<App />);
 
-    expect(getByText('System Administration Dashboard')).toBeTruthy();
+    expect(getByText(/^Welcome back, /)).toBeTruthy();
     expect(getAllByText('SUPER_ADMIN').length).toBeGreaterThan(0);
     
     // Admin links must be present for SUPER_ADMIN
-    expect(getByText('🔑 Role Governance')).toBeTruthy();
-    expect(getByText('⚙️ Dashboard Settings')).toBeTruthy();
+    expect(getByText('Role governance')).toBeTruthy();
+    expect(getByText('Dashboard Settings')).toBeTruthy();
     
     // All major links present for SUPER_ADMIN
-    expect(getByText('📖 Ledger & Reversals')).toBeTruthy();
+    expect(getByText('Ledger & reversals')).toBeTruthy();
   });
 
   test('should render Dashboard and Privileged Approvals sidebar link for FINANCE_CONTROLLER operator', async () => {
@@ -160,15 +160,15 @@ describe('Admin Web Portal F1 Shell Tests', () => {
 
     const { getByText, queryByText, getAllByText } = render(<App />);
 
-    expect(getByText('System Administration Dashboard')).toBeTruthy();
+    expect(getByText(/^Welcome back, /)).toBeTruthy();
     expect(getAllByText('FINANCE_CONTROLLER').length).toBeGreaterThan(0);
     
     // Controller links must be present via catalogue functions
-    expect(getByText('⚖️ Privileged Approvals')).toBeTruthy();
-    expect(queryByText('🔑 Role Governance')).toBeNull();
+    expect(getByText('Approvals')).toBeTruthy();
+    expect(queryByText('Role governance')).toBeNull();
     
     // Customers must NOT be present for finance controller
-    expect(queryByText('👥 Customer & KYC Servicing')).toBeNull();
+    expect(queryByText('Customers')).toBeNull();
   });
 
   test('should render read-only Dashboard for FINANCE_AUDITOR operator without admin or controller controls', async () => {
@@ -191,14 +191,14 @@ describe('Admin Web Portal F1 Shell Tests', () => {
 
     const { getByText, queryByText, getAllByText } = render(<App />);
 
-    expect(getByText('System Administration Dashboard')).toBeTruthy();
+    expect(getByText(/^Welcome back, /)).toBeTruthy();
     expect(getAllByText('FINANCE_AUDITOR').length).toBeGreaterThan(0);
     
     // Admin & Controller controls must NOT be present for auditor (read-only)
-    expect(queryByText('🔑 Role Governance')).toBeNull();
-    expect(queryByText('⚖️ Privileged Approvals')).toBeNull();
+    expect(queryByText('Role governance')).toBeNull();
+    expect(queryByText('Approvals')).toBeNull();
     // But ledger should be visible for auditor
-    expect(getByText('📖 Ledger & Reversals')).toBeTruthy();
+    expect(getByText('Ledger & reversals')).toBeTruthy();
   });
 
   test('should execute approvals POST trigger on form submit', async () => {
@@ -219,12 +219,12 @@ describe('Admin Web Portal F1 Shell Tests', () => {
       },
     });
 
-    (ApiClient.post as jest.Mock).mockResolvedValue({ status: 'APPROVED' });
+    (ApiClient.post as jest.Mock).mockResolvedValue({ approved: true, reason: 'APPROVED', approval: { id: 'approval-uuid-555', status: 'APPROVED' } });
 
     const { getByText, getByPlaceholderText } = render(<App />);
 
     // Click approvals navigation
-    fireEvent.click(getByText('⚖️ Privileged Approvals'));
+    fireEvent.click(getByText('Approvals'));
 
     // Fill verification form
     fireEvent.change(getByPlaceholderText('e.g. 5e6f7g8h-1234-...'), { target: { value: 'approval-uuid-555' } });
@@ -232,13 +232,14 @@ describe('Admin Web Portal F1 Shell Tests', () => {
 
     // Submit
     fireEvent.click(getByText('Sign & Approve Action'));
+    fireEvent.click(getByText('Confirm decision'));
 
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenCalledWith(
         '/internal/a2/workforce/approvals/approval-uuid-555/approve',
         { comment: 'Approved for pilot compliance check' }
       );
-      expect(getByText('Privileged action checked and approved successfully!')).toBeTruthy();
+      expect(getByText('Approval recorded. The underlying action may require a separate execution step.')).toBeTruthy();
     });
   });
 });

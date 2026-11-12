@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import type { CustomerFinancialEligibilityService } from '../src/kyc-verification/customer-financial-eligibility.service';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import type {
   DataSource,
   DeepPartial,
@@ -173,7 +174,9 @@ describe('CustomerService', () => {
       [CustomerKycAssessment, kycRepository as unknown as MemoryRepository<ObjectLiteral>],
     ]);
     const manager = new MemoryManager(repositories);
-    const audit = { record: jest.fn().mockResolvedValue({}) };
+    const record = jest.fn() as jest.MockedFunction<AuditService['record']>;
+    record.mockResolvedValue({} as Awaited<ReturnType<AuditService['record']>>);
+    const audit = { record };
     const service = new CustomerService(
       customerRepository as unknown as Repository<Customer>,
       profileRepository as unknown as Repository<CustomerProfile>,
@@ -183,6 +186,9 @@ describe('CustomerService', () => {
       kycRepository as unknown as Repository<CustomerKycAssessment>,
       new MemoryDataSource(manager) as unknown as DataSource,
       audit as unknown as AuditService,
+      {
+        require: jest.fn().mockResolvedValue(undefined),
+      } as unknown as CustomerFinancialEligibilityService,
     );
     return { service, audit, repositories };
   }
@@ -224,6 +230,17 @@ describe('CustomerService', () => {
         actor: 'customer-ops',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects activation of a synthetic customer before the phone gate', async () => {
+    const { service, repositories } = fixture();
+    const customer = await createCustomer(service);
+    customer.isSynthetic = true;
+    const repo = repositories.get(Customer)!;
+    await repo.save(customer);
+    await expect(
+      service.updateStatus(customer.id, { status: CustomerStatus.ACTIVE, actor: 'customer-ops' }),
+    ).rejects.toThrow('Synthetic customers cannot be activated');
   });
 
   it('masks phone-derived customer references in customer audit records', async () => {
@@ -282,7 +299,7 @@ describe('CustomerService', () => {
   it('persists profile, address, contact and identity corrections with minimal audit metadata', async () => {
     const { service, audit } = fixture();
     const customer = await createCustomer(service);
-    const profile = await service.createProfile(customer.id, {
+    await service.createProfile(customer.id, {
       displayName: 'Synthetic Old Name',
       firstName: 'Synthetic',
       lastName: 'Person',
@@ -405,28 +422,16 @@ describe('CustomerService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('supports KYC lifecycle and rejects invalid transitions', async () => {
+  it('rejects legacy direct KYC assessment mutations', async () => {
     const { service } = fixture();
     const customer = await createCustomer(service);
-    const pending = await service.createKycAssessment(customer.id, {
-      level: CustomerKycLevel.LEVEL_1,
-      status: CustomerKycStatus.PENDING,
-      assessedBy: 'kyc-ops',
-    });
-    const approved = await service.createKycAssessment(customer.id, {
-      level: CustomerKycLevel.LEVEL_1,
-      status: CustomerKycStatus.APPROVED,
-      assessedBy: 'kyc-ops',
-    });
-
-    expect(pending.status).toBe(CustomerKycStatus.PENDING);
-    expect(approved.status).toBe(CustomerKycStatus.APPROVED);
     await expect(
       service.createKycAssessment(customer.id, {
-        level: CustomerKycLevel.LEVEL_3,
-        status: CustomerKycStatus.NOT_STARTED,
+        level: CustomerKycLevel.LEVEL_1,
+        status: CustomerKycStatus.APPROVED,
         assessedBy: 'kyc-ops',
       }),
-    ).rejects.toBeInstanceOf(ConflictException);
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect((await service.get(customer.id)).kycLevel).toBe(CustomerKycLevel.NONE);
   });
 });

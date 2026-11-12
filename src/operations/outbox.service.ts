@@ -182,8 +182,10 @@ export class OutboxService {
       existing.retentionClass !== (command.retentionClass ?? 'OPERATIONS_DEFAULT') ||
       (command.occurredAt !== undefined &&
         existing.occurredAt.getTime() !== command.occurredAt.getTime()) ||
-      (sanitizeDiagnosticIdentifier(existing.correlationId) ?? null) !== (command.correlationId ?? null) ||
-      (sanitizeDiagnosticIdentifier(existing.causationId) ?? null) !== (command.causationId ?? null) ||
+      (sanitizeDiagnosticIdentifier(existing.correlationId) ?? null) !==
+        (command.correlationId ?? null) ||
+      (sanitizeDiagnosticIdentifier(existing.causationId) ?? null) !==
+        (command.causationId ?? null) ||
       this.canonicalJson(existing.payload) !== this.canonicalJson(redactRecord(command.payload))
     ) {
       throw new ConflictException('The outbox event key was reused for a different event');

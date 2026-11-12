@@ -1,3 +1,4 @@
+import { KycTierModule } from '../kyc-verification/kyc-tier.module';
 import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -31,6 +32,7 @@ import { TrustedDevice } from './trusted-device.entity';
 
 @Module({
   imports: [
+    forwardRef(() => KycTierModule),
     forwardRef(() => OperationsModule),
     // A2SecurityRateLimitService provides the platform's existing DB-backed token bucket used to
     // throttle customer credential exchange. The edge is lazy because AuthorizationModule reaches

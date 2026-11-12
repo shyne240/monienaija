@@ -1,0 +1,25 @@
+.mn-support-redesign__queue { margin:20px 0; padding:clamp(16px,2.5vw,24px); background:#fff; border:1px solid #d7e5da; border-radius:14px; box-shadow:0 4px 20px #183b2810; }
+.mn-support-redesign__section-head { padding-bottom:12px; border-bottom:1px solid #e1ebe4; }
+.mn-support-redesign__section-head p { margin:0 0 5px; color:#386b53; font-size:11px; font-weight:800; letter-spacing:.1em; }
+.mn-support-redesign__section-head h2 { margin:0 0 5px; color:#103a2b; font-size:20px; }
+.mn-support-redesign__section-head span { color:#496157; font-size:13px; }
+.mn-support-redesign__detail-title { margin:0; color:#103a2b; font-size:17px; }
+.mn-support-redesign__detail-title:focus-visible { outline:2px solid var(--mn-focus-ring); outline-offset:3px; }
+.mn-support-redesign [role="group"] { overflow-wrap:anywhere; }
+.mn-support-redesign__filters { padding:16px 0 4px; }
+.mn-support-redesign__filters label { color:#29483b; font-weight:700; }
+.mn-support-redesign__filters button:focus-visible, .mn-support-redesign__filters input:focus-visible, .mn-support-redesign__filters select:focus-visible { outline:2px solid var(--mn-focus-ring); outline-offset:2px; }
+/* Queue and detail adopt the One directory pattern while keeping all existing
+   ticket lifecycle, review-lock and retry-key behavior in the workspace. */
+.mn-support-redesign{max-width:none !important;background:#f8f8f5;padding:26px clamp(20px,2.3vw,36px) 48px !important}
+.mn-support-redesign__queue{padding:0;border:0;background:transparent;box-shadow:none;border-radius:0}
+.mn-support-redesign__section-head{display:flex;align-items:center;justify-content:space-between;border:0;padding:0 0 8px}
+.mn-support-redesign__section-head p{letter-spacing:.02em}.mn-support-redesign__section-head h2{font-size:20px}
+.mn-support-redesign__filters{align-items:end !important;gap:10px !important;padding:0 0 8px}
+.mn-support-redesign__filters label{display:flex;flex-direction:column;align-items:stretch !important;gap:5px;font-size:11px !important}
+.mn-support-redesign__queue .mn-scroll-region__viewport{border:1px solid #e4eae4;border-radius:10px;background:#fff;box-shadow:0 3px 12px #132d1e09}
+.mn-support-redesign__queue .mn-data-table th{background:#f4f6f1;color:#385547;font-size:11px;letter-spacing:.02em;text-transform:uppercase}
+.mn-support-redesign__queue .mn-data-table td{padding:15px 12px;vertical-align:middle}
+.one-support-drawer>div:first-child{position:sticky;top:0;z-index:2;background:#fff !important;padding:18px 24px !important}
+.one-support-drawer>div:nth-child(2){padding:24px !important;gap:16px !important}
+@media(max-width:600px){.mn-support-redesign{padding:20px 16px 40px !important}.one-support-drawer>div:nth-child(2){padding:18px !important}}

@@ -12,7 +12,10 @@ interface AuthenticatedRequest {
 /** Internal finance verification surface; not a customer or partner API. */
 @Controller('internal/reconciliation')
 export class ReconciliationController {
-  constructor(private readonly reconciliationService: ReconciliationService, private readonly auth: AuthorizationService) {}
+  constructor(
+    private readonly reconciliationService: ReconciliationService,
+    private readonly auth: AuthorizationService,
+  ) {}
 
   @Get('report')
   async getReport(@Req() req: AuthenticatedRequest) {
@@ -33,16 +36,20 @@ export class ReconciliationController {
   }
 
   @Get('accounts/:accountId/activity')
-  async getAccountActivity(@Param('accountId') accountId: string, @Req() req: AuthenticatedRequest) {
+  async getAccountActivity(
+    @Param('accountId') accountId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     await this.requireFunction(req, 'reconciliation.view');
     return this.reconciliationService.getAccountActivity(accountId);
   }
 
   private requireFunction(req: AuthenticatedRequest, functionCode: string): Promise<string> {
-    return this.auth.requireFunction(req.authorizationPrincipal, functionCode, 'internal-reconciliation', [
-      'OPERATOR',
-      'SERVICE',
-      'PRIVILEGED',
-    ]);
+    return this.auth.requireFunction(
+      req.authorizationPrincipal,
+      functionCode,
+      'internal-reconciliation',
+      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
   }
 }

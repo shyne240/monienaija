@@ -87,8 +87,10 @@ export class ProductCatalogController {
     this.requireWorkforce(req);
     const p = page !== undefined ? Number.parseInt(page, 10) : undefined;
     const l = limit !== undefined ? Number.parseInt(limit, 10) : undefined;
-    if (page !== undefined && (Number.isNaN(p!) || !Number.isSafeInteger(p!))) throw new BadRequestException('page must be a positive integer');
-    if (limit !== undefined && (Number.isNaN(l!) || !Number.isSafeInteger(l!))) throw new BadRequestException('limit must be between 1 and 100');
+    if (page !== undefined && (Number.isNaN(p!) || !Number.isSafeInteger(p!)))
+      throw new BadRequestException('page must be a positive integer');
+    if (limit !== undefined && (Number.isNaN(l!) || !Number.isSafeInteger(l!)))
+      throw new BadRequestException('limit must be between 1 and 100');
     let enabledBool: boolean | undefined;
     if (enabled !== undefined && enabled !== '') {
       if (enabled === 'true') enabledBool = true;
@@ -204,7 +206,9 @@ export class ProductCatalogController {
   }
 
   private actorOf(req: AuthenticatedRequest): string {
-    const p = req.authorizationPrincipal as unknown as { principalId?: string; type?: string } | undefined;
+    const p = req.authorizationPrincipal as unknown as
+      | { principalId?: string; type?: string }
+      | undefined;
     return p?.principalId ?? p?.type ?? 'workforce';
   }
 
@@ -246,7 +250,11 @@ export class ProductCatalogController {
   }
 
   private buildUpdateCommand(body: ProductUpdateBody) {
-    if (typeof body.version !== 'number' || !Number.isSafeInteger(body.version) || body.version < 1) {
+    if (
+      typeof body.version !== 'number' ||
+      !Number.isSafeInteger(body.version) ||
+      body.version < 1
+    ) {
       throw new BadRequestException('version is required for updates (optimistic concurrency)');
     }
     return {

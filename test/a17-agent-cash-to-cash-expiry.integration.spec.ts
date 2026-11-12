@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { AuditService } from '../src/operations/audit.service';
 import { AgentCashToCashExpiryWorker } from '../src/agent/agent-cash-to-cash-expiry-worker.service';
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-argument, no-empty */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-argument */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -21,7 +21,11 @@ import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-au
 import { AgentStatus } from '../src/agent/agent.enums';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { LedgerAccountType, LedgerEntryDirection, LedgerNormalBalance } from '../src/ledger/ledger.enums';
+import {
+  LedgerAccountType,
+  LedgerEntryDirection,
+  LedgerNormalBalance,
+} from '../src/ledger/ledger.enums';
 import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
 import { CustomerService } from '../src/customer/customer.service';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
@@ -60,7 +64,9 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     cashToCashService = moduleRef.get(AgentCashToCashService);
@@ -86,7 +92,9 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       allowNegativeBalance: true,
     });
     systemLedgerAccountId = sys.id;
-    const unclaimedRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='CASH_TO_CASH-UNCLAIMED-NGN' LIMIT 1`);
+    const unclaimedRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='CASH_TO_CASH-UNCLAIMED-NGN' LIMIT 1`,
+    );
     if (unclaimedRows[0]) unclaimedLedgerAccountId = unclaimedRows[0]!.id;
     else {
       const acc = await ledgerService.createAccount({
@@ -108,12 +116,20 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       try {
         await destroyIntegrationDataSource(dataSource);
       } catch {
-        try { if (dataSource.isInitialized) await dataSource.destroy().catch(() => undefined); } catch { void 0; }
+        try {
+          if (dataSource.isInitialized) await dataSource.destroy().catch(() => undefined);
+        } catch {
+          void 0;
+        }
       }
     }
   }, 60000);
 
-  async function createActiveAgentWithServicesAndPin(services: unknown, pin: string | null, isActive = true) {
+  async function createActiveAgentWithServicesAndPin(
+    services: unknown,
+    pin: string | null,
+    isActive = true,
+  ) {
     const cls = await classService.create({
       reference: `cls-a17-${randomUUID().slice(0, 8)}`,
       code: `A17-${randomUUID().slice(0, 6)}`,
@@ -130,7 +146,10 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       actor: 'applicant-a17',
     });
     await appService.submit(appEntity.id, 'applicant-a17');
-    await dataSource.query(`UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`, [appEntity.id]);
+    await dataSource.query(
+      `UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`,
+      [appEntity.id],
+    );
     const agent = await lifecycleService.activateFromApplication(appEntity.id, 'test-actor');
     expect(agent.status).toBe(AgentStatus.ACTIVE);
     if (pin !== null) {
@@ -150,24 +169,46 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   }
 
   function agentPrincipal(agentId: string) {
-    return { type: 'AGENT' as const, agentId, principalId: agentId, roles: [], scopes: [], customerAccess: 'NONE' as const, agentAccess: 'SELF' as const };
+    return {
+      type: 'AGENT' as const,
+      agentId,
+      principalId: agentId,
+      roles: [],
+      scopes: [],
+      customerAccess: 'NONE' as const,
+      agentAccess: 'SELF' as const,
+    };
   }
 
-  async function createBeneficiaryCustomer(phoneCanonical: string, withKyc = true, withDoc = false) {
+  async function createBeneficiaryCustomer(
+    phoneCanonical: string,
+    withKyc = true,
+    withDoc = false,
+  ) {
     const custRows: Array<{ id: string }> = await dataSource.query(
       `INSERT INTO customers (reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,'INDIVIDUAL','ACTIVE',$2,$3) RETURNING id`,
-      [`cust-a17-${randomUUID().slice(0, 8)}`, withKyc ? 'LEVEL_1' : 'NONE', withKyc ? 'APPROVED' : 'NOT_STARTED'],
+      [
+        `cust-a17-${randomUUID().slice(0, 8)}`,
+        withKyc ? 'LEVEL_1' : 'NONE',
+        withKyc ? 'APPROVED' : 'NOT_STARTED',
+      ],
     );
     const customerId = custRows[0]!.id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, `Customer A17 ${randomUUID().slice(0,4)}`]);
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`,
+      [customerId, `Customer A17 ${randomUUID().slice(0, 4)}`],
+    );
     // verified_at set: a real ACTIVE customer can only reach ACTIVE via the activation gate,
     // which requires a verified primary phone (see CustomerService.assertVerifiedPrimaryPhone);
     // required since V1-SYSTEM-01's claimant phone-binding check reads this column.
-    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$2,true,NOW())`, [customerId, phoneCanonical]);
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$2,true,NOW())`,
+      [customerId, phoneCanonical],
+    );
     if (withDoc) {
       await customerService.createIdentityDocument(customerId, {
         type: 'NIN' as any,
-        documentNumber: `NIN${randomUUID().slice(0,8)}`,
+        documentNumber: `NIN${randomUUID().slice(0, 8)}`,
         issuingCountry: 'NG',
         actor: customerId,
       } as any);
@@ -213,7 +254,10 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       );
       methodId = mRows[0]!.id;
     }
-    const credentialRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`, [customerId]);
+    const credentialRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`,
+      [customerId],
+    );
     let credentialId = credentialRows[0]?.id;
     if (!credentialId) {
       const cRows: Array<{ id: string }> = await dataSource.query(
@@ -224,13 +268,29 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     }
     const sessionId = randomUUID();
     const tokenHash = randomBytes(32).toString('hex');
-    await dataSource.query(
-      `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
-      [sessionId, customerId, credentialId, tokenHash],
-    ).catch(() => {});
+    await dataSource
+      .query(
+        `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
+        [sessionId, customerId, credentialId, tokenHash],
+      )
+      .catch(() => {});
     const principal: any = { principalType: 'CUSTOMER', customerId, credentialId, sessionId };
-    const challenge = await mfaService.issueChallenge({ principal, enrollmentId, methodId, challengeHash: otp, ttlSeconds, actor: customerId } as any);
-    return { challengeId: (challenge as any).id ?? (challenge as any).challengeId, otp, enrollmentId, methodId, sessionId, credentialId };
+    const challenge = await mfaService.issueChallenge({
+      principal,
+      enrollmentId,
+      methodId,
+      challengeHash: otp,
+      ttlSeconds,
+      actor: customerId,
+    } as any);
+    return {
+      challengeId: (challenge as any).id ?? (challenge as any).challengeId,
+      otp,
+      enrollmentId,
+      methodId,
+      sessionId,
+      credentialId,
+    };
   }
 
   async function fundAgent(agentWalletLedgerId: string, amount: string) {
@@ -239,14 +299,25 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
       lines: [
-        { accountId: systemLedgerAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: amount },
-        { accountId: agentWalletLedgerId, direction: LedgerEntryDirection.CREDIT, amountMinor: amount },
+        {
+          accountId: systemLedgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: amount,
+        },
+        {
+          accountId: agentWalletLedgerId,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: amount,
+        },
       ],
     });
   }
 
   async function initiateTransfer(amount = '4000') {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '10000');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const res = await cashToCashService.execute({
@@ -258,20 +329,35 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `init-${randomUUID()}`,
     });
-    return { agent, wallet, phone, transferId: res.transferId, transferCode: res.transferCode!, amount, res };
+    return {
+      agent,
+      wallet,
+      phone,
+      transferId: res.transferId,
+      transferCode: res.transferCode!,
+      amount,
+      res,
+    };
   }
 
   // 1. unclaimed transfer with future expiry remains UNCLAIMED
   it('1. unclaimed transfer with future expiry remains UNCLAIMED', async () => {
     const { transferId } = await initiateTransfer('3000');
-    const rows: Array<{ status: string; expires_at: string; expired_at: string | null }> = await dataSource.query(`SELECT status, expires_at, expired_at FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const rows: Array<{ status: string; expires_at: string; expired_at: string | null }> =
+      await dataSource.query(
+        `SELECT status, expires_at, expired_at FROM cash_to_cash_transfers WHERE id=$1`,
+        [transferId],
+      );
     expect(rows[0]!.status).toBe('UNCLAIMED');
     expect(new Date(rows[0]!.expires_at).getTime()).toBeGreaterThan(Date.now());
     expect(rows[0]!.expired_at).toBeNull();
     // Sweep now should expire 0
     const sweep = await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
     // It may expire other eligible transfers from previous tests, but at least this one not expired
-    const after: Array<{ status: string }> = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const after: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
     expect(after[0]!.status).toBe('UNCLAIMED');
   });
 
@@ -280,12 +366,19 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     const { transferId, phone, amount } = await initiateTransfer('2000');
     // Force expiry to past
     const past = new Date(Date.now() - 60_000);
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [past.toISOString(), transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      past.toISOString(),
+      transferId,
+    ]);
     const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const result = await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
     expect(result.expiredCount).toBeGreaterThanOrEqual(1);
     expect(result.expiredIds).toContain(transferId);
-    const rows: Array<{ status: string; expired_at: string; principal_minor: string }> = await dataSource.query(`SELECT status, expired_at, principal_minor FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const rows: Array<{ status: string; expired_at: string; principal_minor: string }> =
+      await dataSource.query(
+        `SELECT status, expired_at, principal_minor FROM cash_to_cash_transfers WHERE id=$1`,
+        [transferId],
+      );
     expect(rows[0]!.status).toBe('EXPIRED');
     expect(rows[0]!.expired_at).not.toBeNull();
     const afterUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
@@ -297,13 +390,22 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   // 3. EXPIRED state persists
   it('3. EXPIRED state persists', async () => {
     const { transferId } = await initiateTransfer('1500');
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      new Date(Date.now() - 1000).toISOString(),
+      transferId,
+    ]);
     await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
-    const rows1: Array<{ status: string }> = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const rows1: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
     expect(rows1[0]!.status).toBe('EXPIRED');
     // Second sweep should not change
     await expiryService.expireDueTransfers({ now: new Date(Date.now() + 10000), limit: 10 });
-    const rows2: Array<{ status: string }> = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const rows2: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
     expect(rows2[0]!.status).toBe('EXPIRED');
   });
 
@@ -322,85 +424,122 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       idempotencyKey: `claim-expire-${randomUUID()}`,
     });
     // Now try to expire — set expires_at to past manually (simulate race where expiry sweep sees CLAIMED)
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      new Date(Date.now() - 1000).toISOString(),
+      transferId,
+    ]);
     const sweep = await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
     expect(sweep.expiredIds).not.toContain(transferId);
-    const rows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const rows: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
     expect(rows[0]!.status).toBe('CLAIMED');
   });
 
   // 5. already expired transfer is idempotent
   it('5. already expired transfer is idempotent', async () => {
     const { transferId } = await initiateTransfer('1100');
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      new Date(Date.now() - 1000).toISOString(),
+      transferId,
+    ]);
     const first = await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
     expect(first.expiredIds).toContain(transferId);
-    const auditBefore: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM audit_events WHERE entity_id=$1 AND action='CASH_TO_CASH_EXPIRED'`, [transferId]);
+    const auditBefore: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM audit_events WHERE entity_id=$1 AND action='CASH_TO_CASH_EXPIRED'`,
+      [transferId],
+    );
     const second = await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
     expect(second.expiredIds).not.toContain(transferId);
     expect(second.expiredCount).toBe(0);
-    const auditAfter: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM audit_events WHERE entity_id=$1 AND action='CASH_TO_CASH_EXPIRED'`, [transferId]);
+    const auditAfter: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM audit_events WHERE entity_id=$1 AND action='CASH_TO_CASH_EXPIRED'`,
+      [transferId],
+    );
     expect(Number(auditAfter[0]!.count)).toBe(Number(auditBefore[0]!.count));
-    const rows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const rows: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
     expect(rows[0]!.status).toBe('EXPIRED');
   });
 
   // 6. expired transfer cannot be claimed
   it('6. expired transfer cannot be claimed', async () => {
     const { transferId, phone, transferCode } = await initiateTransfer('1300');
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      new Date(Date.now() - 1000).toISOString(),
+      transferId,
+    ]);
     await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
     const { customerId } = await createBeneficiaryCustomer(phone, true);
     const { challengeId } = await createMfaChallenge(customerId, 'expired-claim-otp');
-    await expect(claimService.execute({
-      transferId,
-      beneficiaryPhone: phone,
-      transferCode,
-      customerId,
-      mfaChallengeId: challengeId,
-      otp: 'expired-claim-otp',
-      idempotencyKey: `expired-claim-${randomUUID()}`,
-    })).rejects.toThrow(/expired/i);
+    await expect(
+      claimService.execute({
+        transferId,
+        beneficiaryPhone: phone,
+        transferCode,
+        customerId,
+        mfaChallengeId: challengeId,
+        otp: 'expired-claim-otp',
+        idempotencyKey: `expired-claim-${randomUUID()}`,
+      }),
+    ).rejects.toThrow(/expired/i);
   });
 
   // 7. expired claim creates no journal
   it('7. expired claim creates no journal', async () => {
     const { transferId, phone, transferCode } = await initiateTransfer('1400');
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      new Date(Date.now() - 1000).toISOString(),
+      transferId,
+    ]);
     await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
-    const journalsBefore: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
+    const journalsBefore: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM ledger_journals`,
+    );
     const { customerId } = await createBeneficiaryCustomer(phone, true);
     const { challengeId } = await createMfaChallenge(customerId, 'expired-no-journal');
-    await expect(claimService.execute({
-      transferId,
-      beneficiaryPhone: phone,
-      transferCode,
-      customerId,
-      mfaChallengeId: challengeId,
-      otp: 'expired-no-journal',
-      idempotencyKey: `expired-journal-${randomUUID()}`,
-    })).rejects.toThrow(/expired/i);
-    const journalsAfter: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
+    await expect(
+      claimService.execute({
+        transferId,
+        beneficiaryPhone: phone,
+        transferCode,
+        customerId,
+        mfaChallengeId: challengeId,
+        otp: 'expired-no-journal',
+        idempotencyKey: `expired-journal-${randomUUID()}`,
+      }),
+    ).rejects.toThrow(/expired/i);
+    const journalsAfter: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM ledger_journals`,
+    );
     expect(Number(journalsAfter[0]!.count)).toBe(Number(journalsBefore[0]!.count));
   });
 
   // 8. expired claim creates no beneficiary credit
   it('8. expired claim creates no beneficiary credit', async () => {
     const { transferId, phone, transferCode, amount } = await initiateTransfer('1600');
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      new Date(Date.now() - 1000).toISOString(),
+      transferId,
+    ]);
     await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
     const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
     const before = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     const { challengeId } = await createMfaChallenge(customerId, 'expired-no-credit');
-    await expect(claimService.execute({
-      transferId,
-      beneficiaryPhone: phone,
-      transferCode,
-      customerId,
-      mfaChallengeId: challengeId,
-      otp: 'expired-no-credit',
-      idempotencyKey: `expired-credit-${randomUUID()}`,
-    })).rejects.toThrow(/expired/i);
+    await expect(
+      claimService.execute({
+        transferId,
+        beneficiaryPhone: phone,
+        transferCode,
+        customerId,
+        mfaChallengeId: challengeId,
+        otp: 'expired-no-credit',
+        idempotencyKey: `expired-credit-${randomUUID()}`,
+      }),
+    ).rejects.toThrow(/expired/i);
     const after = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     expect(after.balanceMinor).toBe(before.balanceMinor);
   });
@@ -408,7 +547,10 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   // 9. expired claim creates no accidental Customer/Wallet
   it('9. expired claim creates no accidental Customer/Wallet', async () => {
     const { transferId, phone, transferCode } = await initiateTransfer('1700');
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      new Date(Date.now() - 1000).toISOString(),
+      transferId,
+    ]);
     await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
     // Use a phone that does not have a customer yet, but we will try to claim with a new random customer
     const newPhone = phone; // same phone but different customer not yet existed for this claim
@@ -416,29 +558,44 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     const fakeCustomerId = randomUUID();
     // Insert a fake customer not KYC? Actually claim will fail due to expired before wallet check, so we can use any customerId
     // Count customers before
-    const customersBefore: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM customers`);
-    const walletsBefore: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM wallet_accounts`);
+    const customersBefore: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM customers`,
+    );
+    const walletsBefore: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM wallet_accounts`,
+    );
     // Try claim with non-existent customer (should fail due to expired before customer existence check? Our pre-check checks expired first)
     // So it will throw expired, not create customer.
     // To test accidental creation, we use existing customer but not yet wallet for that customer? But wallet exists always if we create customer.
     // Instead we check that after expired claim attempt, no new wallet_accounts were created
-    const { customerId } = await createBeneficiaryCustomer(`82${Math.floor(10000000 + Math.random()*89999999)}`, true);
+    const { customerId } = await createBeneficiaryCustomer(
+      `82${Math.floor(10000000 + Math.random() * 89999999)}`,
+      true,
+    );
     // Delete wallet to simulate not existing? But claim on expired should not create wallet
     await dataSource.query(`DELETE FROM wallet_accounts WHERE customer_id=$1`, [customerId]);
-    const walletsMid: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM wallet_accounts`);
+    const walletsMid: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM wallet_accounts`,
+    );
     const { challengeId } = await createMfaChallenge(customerId, 'expired-no-wallet-create');
-    await expect(claimService.execute({
-      transferId,
-      beneficiaryPhone: phone,
-      transferCode,
-      customerId,
-      mfaChallengeId: challengeId,
-      otp: 'expired-no-wallet-create',
-      idempotencyKey: `expired-wallet-${randomUUID()}`,
-    })).rejects.toThrow(/expired/i);
-    const walletsAfter: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM wallet_accounts`);
+    await expect(
+      claimService.execute({
+        transferId,
+        beneficiaryPhone: phone,
+        transferCode,
+        customerId,
+        mfaChallengeId: challengeId,
+        otp: 'expired-no-wallet-create',
+        idempotencyKey: `expired-wallet-${randomUUID()}`,
+      }),
+    ).rejects.toThrow(/expired/i);
+    const walletsAfter: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM wallet_accounts`,
+    );
     expect(Number(walletsAfter[0]!.count)).toBe(Number(walletsMid[0]!.count));
-    const customersAfter: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM customers`);
+    const customersAfter: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM customers`,
+    );
     expect(Number(customersAfter[0]!.count)).toBe(Number(customersBefore[0]!.count) + 1); // only the one we created deliberately
   });
 
@@ -446,7 +603,10 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   it('10. Agent does NOT receive automatic refund', async () => {
     const { agent, wallet, transferId, amount } = await initiateTransfer('1800');
     const beforeAgent = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      new Date(Date.now() - 1000).toISOString(),
+      transferId,
+    ]);
     await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
     const afterAgent = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     expect(afterAgent.balanceMinor).toBe(beforeAgent.balanceMinor);
@@ -457,16 +617,29 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     // We captured beforeAgent after initiation; before expiry unclaimed includes credit. After expiry it should be same.
     // We didn't capture beforeUnclaimed after initiation, but we can verify that no journal was created that credits agent
     // Search for journals that involve agent wallet around expiry time
-    const journals: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_journals WHERE created_at > NOW() - INTERVAL '5 seconds'`);
+    const journals: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_journals WHERE created_at > NOW() - INTERVAL '5 seconds'`,
+    );
     // Not asserting count, just that agent balance unchanged proves no refund
   });
 
   // 11. principal remains identifiable as expired/unclaimed funds
   it('11. principal remains identifiable as expired/unclaimed funds', async () => {
     const { transferId, amount } = await initiateTransfer('1900');
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      new Date(Date.now() - 1000).toISOString(),
+      transferId,
+    ]);
     await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
-    const rows: Array<{ status: string; principal_minor: string; expired_at: string | null; expires_at: string }> = await dataSource.query(`SELECT status, principal_minor, expired_at, expires_at FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const rows: Array<{
+      status: string;
+      principal_minor: string;
+      expired_at: string | null;
+      expires_at: string;
+    }> = await dataSource.query(
+      `SELECT status, principal_minor, expired_at, expires_at FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
     expect(rows[0]!.status).toBe('EXPIRED');
     expect(rows[0]!.principal_minor).toBe(amount);
     expect(rows[0]!.expired_at).not.toBeNull();
@@ -477,10 +650,17 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   it('12. no money is created or destroyed', async () => {
     const { transferId, amount } = await initiateTransfer('2000');
     // Capture total trial balance before expiry: sum of all ledger_lines? Use reconciliation trial balance concept: total debits = total credits
-    const beforeTrial: Array<{ debits: string; credits: string }> = await dataSource.query(`SELECT SUM(CASE WHEN direction='DEBIT' THEN amount_minor::bigint ELSE 0 END)::text as debits, SUM(CASE WHEN direction='CREDIT' THEN amount_minor::bigint ELSE 0 END)::text as credits FROM ledger_lines`);
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
+    const beforeTrial: Array<{ debits: string; credits: string }> = await dataSource.query(
+      `SELECT SUM(CASE WHEN direction='DEBIT' THEN amount_minor::bigint ELSE 0 END)::text as debits, SUM(CASE WHEN direction='CREDIT' THEN amount_minor::bigint ELSE 0 END)::text as credits FROM ledger_lines`,
+    );
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      new Date(Date.now() - 1000).toISOString(),
+      transferId,
+    ]);
     await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
-    const afterTrial: Array<{ debits: string; credits: string }> = await dataSource.query(`SELECT SUM(CASE WHEN direction='DEBIT' THEN amount_minor::bigint ELSE 0 END)::text as debits, SUM(CASE WHEN direction='CREDIT' THEN amount_minor::bigint ELSE 0 END)::text as credits FROM ledger_lines`);
+    const afterTrial: Array<{ debits: string; credits: string }> = await dataSource.query(
+      `SELECT SUM(CASE WHEN direction='DEBIT' THEN amount_minor::bigint ELSE 0 END)::text as debits, SUM(CASE WHEN direction='CREDIT' THEN amount_minor::bigint ELSE 0 END)::text as credits FROM ledger_lines`,
+    );
     expect(afterTrial[0]!.debits).toBe(beforeTrial[0]!.debits);
     expect(afterTrial[0]!.credits).toBe(beforeTrial[0]!.credits);
     // Debits must equal credits
@@ -490,10 +670,28 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   // 13. expiry is auditable
   it('13. expiry is auditable', async () => {
     const { transferId, phone, amount } = await initiateTransfer('2100');
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
-    const before: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM audit_events WHERE entity_id=$1 AND action='CASH_TO_CASH_EXPIRED'`, [transferId]);
-    await expiryService.expireDueTransfers({ now: new Date(), limit: 10, correlationId: `corr-${randomUUID()}` });
-    const after: Array<{ new_values: any; previous_values: any; action: string; entity_type: string }> = await dataSource.query(`SELECT new_values, previous_values, action, entity_type FROM audit_events WHERE entity_id=$1 AND action='CASH_TO_CASH_EXPIRED' ORDER BY occurred_at DESC LIMIT 1`, [transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      new Date(Date.now() - 1000).toISOString(),
+      transferId,
+    ]);
+    const before: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM audit_events WHERE entity_id=$1 AND action='CASH_TO_CASH_EXPIRED'`,
+      [transferId],
+    );
+    await expiryService.expireDueTransfers({
+      now: new Date(),
+      limit: 10,
+      correlationId: `corr-${randomUUID()}`,
+    });
+    const after: Array<{
+      new_values: any;
+      previous_values: any;
+      action: string;
+      entity_type: string;
+    }> = await dataSource.query(
+      `SELECT new_values, previous_values, action, entity_type FROM audit_events WHERE entity_id=$1 AND action='CASH_TO_CASH_EXPIRED' ORDER BY occurred_at DESC LIMIT 1`,
+      [transferId],
+    );
     expect(after.length).toBe(1);
     expect(after[0]!.action).toBe('CASH_TO_CASH_EXPIRED');
     expect(after[0]!.entity_type).toBe('AGENT_CASH_TO_CASH');
@@ -510,9 +708,15 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   // 14. audit contains no secrets
   it('14. audit contains no secrets', async () => {
     const { transferId } = await initiateTransfer('2200');
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      new Date(Date.now() - 1000).toISOString(),
+      transferId,
+    ]);
     await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
-    const audits: Array<{ new_values: any; previous_values: any }> = await dataSource.query(`SELECT new_values, previous_values FROM audit_events WHERE entity_id=$1 AND action='CASH_TO_CASH_EXPIRED'`, [transferId]);
+    const audits: Array<{ new_values: any; previous_values: any }> = await dataSource.query(
+      `SELECT new_values, previous_values FROM audit_events WHERE entity_id=$1 AND action='CASH_TO_CASH_EXPIRED'`,
+      [transferId],
+    );
     const serial = JSON.stringify(audits).toLowerCase();
     expect(serial).not.toContain('transfer_code');
     expect(serial).not.toContain('transfercode');
@@ -524,16 +728,25 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   // 15. repeated expiry sweep is safe
   it('15. repeated expiry sweep is safe', async () => {
     const { transferId } = await initiateTransfer('2300');
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      new Date(Date.now() - 1000).toISOString(),
+      transferId,
+    ]);
     const first = await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
     expect(first.expiredIds).toContain(transferId);
     const second = await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
     expect(second.expiredIds).not.toContain(transferId);
     expect(second.expiredCount).toBe(0);
-    const rows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const rows: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
     expect(rows[0]!.status).toBe('EXPIRED');
     // No duplicate audit
-    const audits: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM audit_events WHERE entity_id=$1 AND action='CASH_TO_CASH_EXPIRED'`, [transferId]);
+    const audits: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM audit_events WHERE entity_id=$1 AND action='CASH_TO_CASH_EXPIRED'`,
+      [transferId],
+    );
     expect(Number(audits[0]!.count)).toBe(1);
   });
 
@@ -543,10 +756,15 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     const transfers: string[] = [];
     for (let i = 0; i < 3; i++) {
       const { transferId } = await initiateTransfer('1000');
-      await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
+      await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+        new Date(Date.now() - 1000).toISOString(),
+        transferId,
+      ]);
       transfers.push(transferId);
     }
-    const auditBefore: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM audit_events WHERE action='CASH_TO_CASH_EXPIRED'`);
+    const auditBefore: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM audit_events WHERE action='CASH_TO_CASH_EXPIRED'`,
+    );
     const results = await Promise.all([
       expiryService.expireDueTransfers({ now: new Date(), limit: 10 }),
       expiryService.expireDueTransfers({ now: new Date(), limit: 10 }),
@@ -556,13 +774,18 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     expect(totalExpired).toBe(3);
     const combinedIds = [...results[0]!.expiredIds, ...results[1]!.expiredIds];
     expect(new Set(combinedIds).size).toBe(3);
-    transfers.forEach(id => expect(combinedIds).toContain(id));
+    transfers.forEach((id) => expect(combinedIds).toContain(id));
     // Check DB: each is EXPIRED once
     for (const id of transfers) {
-      const rows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [id]);
+      const rows: Array<{ status: string }> = await dataSource.query(
+        `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
+        [id],
+      );
       expect(rows[0]!.status).toBe('EXPIRED');
     }
-    const auditAfter: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM audit_events WHERE action='CASH_TO_CASH_EXPIRED'`);
+    const auditAfter: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM audit_events WHERE action='CASH_TO_CASH_EXPIRED'`,
+    );
     expect(Number(auditAfter[0]!.count)).toBe(Number(auditBefore[0]!.count) + 3);
   });
 
@@ -570,21 +793,33 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   it('17. claim-vs-expiry concurrency produces exactly one valid terminal state', async () => {
     const { transferId, phone, transferCode } = await initiateTransfer('2400');
     // Make it due
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      new Date(Date.now() - 1000).toISOString(),
+      transferId,
+    ]);
     const { customerId } = await createBeneficiaryCustomer(phone, true);
     const { challengeId } = await createMfaChallenge(customerId, 'concurrent-expiry-claim');
-    const claimPromise = claimService.execute({
-      transferId,
-      beneficiaryPhone: phone,
-      transferCode,
-      customerId,
-      mfaChallengeId: challengeId,
-      otp: 'concurrent-expiry-claim',
-      idempotencyKey: `concurrent-${randomUUID()}`,
-    }).then(r => ({ kind: 'claimed' as const, result: r })).catch(e => ({ kind: 'claimFailed' as const, error: e }));
-    const expiryPromise = expiryService.expireDueTransfers({ now: new Date(), limit: 10 }).then(r => ({ kind: 'expired' as const, result: r })).catch(e => ({ kind: 'expiryFailed' as const, error: e }));
+    const claimPromise = claimService
+      .execute({
+        transferId,
+        beneficiaryPhone: phone,
+        transferCode,
+        customerId,
+        mfaChallengeId: challengeId,
+        otp: 'concurrent-expiry-claim',
+        idempotencyKey: `concurrent-${randomUUID()}`,
+      })
+      .then((r) => ({ kind: 'claimed' as const, result: r }))
+      .catch((e) => ({ kind: 'claimFailed' as const, error: e }));
+    const expiryPromise = expiryService
+      .expireDueTransfers({ now: new Date(), limit: 10 })
+      .then((r) => ({ kind: 'expired' as const, result: r }))
+      .catch((e) => ({ kind: 'expiryFailed' as const, error: e }));
     const [claimRes, expiryRes] = await Promise.all([claimPromise, expiryPromise]);
-    const rows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const rows: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
     const status = rows[0]!.status;
     expect(['CLAIMED', 'EXPIRED']).toContain(status);
     if (status === 'CLAIMED') {
@@ -595,7 +830,10 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
         expect((expiryRes as any).result.expiredIds).not.toContain(transferId);
       }
       // Verify claim journal exists and no expiry audit for this transfer beyond if expiry had already created? But status CLAIMED means expiry did not transition
-      const audits: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM audit_events WHERE entity_id=$1 AND action='CASH_TO_CASH_EXPIRED'`, [transferId]);
+      const audits: Array<{ count: string }> = await dataSource.query(
+        `SELECT count(*)::text as count FROM audit_events WHERE entity_id=$1 AND action='CASH_TO_CASH_EXPIRED'`,
+        [transferId],
+      );
       expect(Number(audits[0]!.count)).toBe(0);
     } else {
       expect(status).toBe('EXPIRED');
@@ -606,7 +844,10 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     }
     // Ensure exactly one journal/balance effect: if claimed, beneficiary credited; if expired, no credit
     // We don't check exact balance but ensure no double effect
-    const journals: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM cash_to_cash_transfers WHERE id=$1 AND status IN ('CLAIMED','EXPIRED')`, [transferId]);
+    const journals: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM cash_to_cash_transfers WHERE id=$1 AND status IN ('CLAIMED','EXPIRED')`,
+      [transferId],
+    );
     expect(Number(journals[0]!.count)).toBe(1);
   });
 
@@ -625,29 +866,43 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       idempotencyKey: `never-expire-${randomUUID()}`,
     });
     // Force expires_at to past and try expiry
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      new Date(Date.now() - 1000).toISOString(),
+      transferId,
+    ]);
     await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
-    const rows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const rows: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
     expect(rows[0]!.status).toBe('CLAIMED');
   });
 
   // 19. EXPIRED never becomes CLAIMED
   it('19. EXPIRED never becomes CLAIMED', async () => {
     const { transferId, phone, transferCode } = await initiateTransfer('2600');
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [new Date(Date.now() - 1000).toISOString(), transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
+      new Date(Date.now() - 1000).toISOString(),
+      transferId,
+    ]);
     await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
     const { customerId } = await createBeneficiaryCustomer(phone, true);
     const { challengeId } = await createMfaChallenge(customerId, 'expired-never-claim');
-    await expect(claimService.execute({
-      transferId,
-      beneficiaryPhone: phone,
-      transferCode,
-      customerId,
-      mfaChallengeId: challengeId,
-      otp: 'expired-never-claim',
-      idempotencyKey: `never-claim-${randomUUID()}`,
-    })).rejects.toThrow(/expired/i);
-    const rows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    await expect(
+      claimService.execute({
+        transferId,
+        beneficiaryPhone: phone,
+        transferCode,
+        customerId,
+        mfaChallengeId: challengeId,
+        otp: 'expired-never-claim',
+        idempotencyKey: `never-claim-${randomUUID()}`,
+      }),
+    ).rejects.toThrow(/expired/i);
+    const rows: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
     expect(rows[0]!.status).toBe('EXPIRED');
   });
 
@@ -655,7 +910,10 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   it('20. configured expiry is respected', async () => {
     const before = Date.now();
     const { transferId } = await initiateTransfer('2700');
-    const rows: Array<{ expires_at: string; created_at: string }> = await dataSource.query(`SELECT expires_at, created_at FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const rows: Array<{ expires_at: string; created_at: string }> = await dataSource.query(
+      `SELECT expires_at, created_at FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
     const expiresAt = new Date(rows[0]!.expires_at).getTime();
     const createdAt = new Date(rows[0]!.created_at).getTime();
     const diffSeconds = Math.round((expiresAt - createdAt) / 1000);
@@ -669,58 +927,80 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   // 21. persisted expiry timestamp remains stable even if configuration later changes
   it('21. persisted expiry timestamp remains stable even if configuration later changes', async () => {
     const { transferId } = await initiateTransfer('2800');
-    const rows1: Array<{ expires_at: string | Date }> = await dataSource.query(`SELECT expires_at FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const rows1: Array<{ expires_at: string | Date }> = await dataSource.query(
+      `SELECT expires_at FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
     const originalExpiresAt = new Date(rows1[0]!.expires_at).toISOString();
     // Simulate config change by directly updating other future transfers' expiry logic? But persisted value should not change.
     // Create a second transfer after "config change" — we can't easily change ConfigService, but we can show that first transfer's expires_at doesn't mutate when we update its own row's unrelated field
     // Instead we demonstrate stability by trying to "recalculate" — we update created_at but expires_at stays
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET updated_at=NOW() WHERE id=$1`, [transferId]);
-    const rows2: Array<{ expires_at: string | Date }> = await dataSource.query(`SELECT expires_at FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET updated_at=NOW() WHERE id=$1`, [
+      transferId,
+    ]);
+    const rows2: Array<{ expires_at: string | Date }> = await dataSource.query(
+      `SELECT expires_at FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
     expect(new Date(rows2[0]!.expires_at).toISOString()).toBe(originalExpiresAt);
     // More explicit: manually set a new config value in DB for next transfer and ensure first unchanged
     // Create second transfer and verify its expires_at is also ~7 days, but first unchanged
     const { transferId: secondId } = await initiateTransfer('2801');
-    const rowsSecond: Array<{ expires_at: string | Date }> = await dataSource.query(`SELECT expires_at FROM cash_to_cash_transfers WHERE id=$1`, [secondId]);
+    const rowsSecond: Array<{ expires_at: string | Date }> = await dataSource.query(
+      `SELECT expires_at FROM cash_to_cash_transfers WHERE id=$1`,
+      [secondId],
+    );
     // Both have similar expiry but are independent; first remains original
-    const afterRows1: Array<{ expires_at: string | Date }> = await dataSource.query(`SELECT expires_at FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const afterRows1: Array<{ expires_at: string | Date }> = await dataSource.query(
+      `SELECT expires_at FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
     expect(new Date(afterRows1[0]!.expires_at).toISOString()).toBe(originalExpiresAt);
   });
 
   // 22. invalid configuration is rejected/fails closed
   it('22. invalid configuration is rejected/fails closed', () => {
-    expect(() => validateEnvironment({
-      NODE_ENV: 'test',
-      DB_HOST: '127.0.0.1',
-      DB_NAME: 'monienaija',
-      DB_USER: 'monienaija',
-      DB_PASSWORD: 'monienaija-pw',
-      CASH_TO_CASH_EXPIRY_SECONDS: '10', // below min 60
-    })).toThrow(/CASH_TO_CASH_EXPIRY_SECONDS/i);
-    expect(() => validateEnvironment({
-      NODE_ENV: 'test',
-      DB_HOST: '127.0.0.1',
-      DB_NAME: 'monienaija',
-      DB_USER: 'monienaija',
-      DB_PASSWORD: 'monienaija-pw',
-      CASH_TO_CASH_EXPIRY_SECONDS: '999999999', // above max
-    })).toThrow(/CASH_TO_CASH_EXPIRY_SECONDS/i);
-    expect(() => validateEnvironment({
-      NODE_ENV: 'test',
-      DB_HOST: '127.0.0.1',
-      DB_NAME: 'monienaija',
-      DB_USER: 'monienaija',
-      DB_PASSWORD: 'monienaija-pw',
-      CASH_TO_CASH_EXPIRY_SECONDS: 'not-a-number',
-    })).toThrow(/CASH_TO_CASH_EXPIRY_SECONDS/i);
+    expect(() =>
+      validateEnvironment({
+        NODE_ENV: 'test',
+        DB_HOST: '127.0.0.1',
+        DB_NAME: 'monienaija',
+        DB_USER: 'monienaija',
+        DB_PASSWORD: 'monienaija-pw',
+        CASH_TO_CASH_EXPIRY_SECONDS: '10', // below min 60
+      }),
+    ).toThrow(/CASH_TO_CASH_EXPIRY_SECONDS/i);
+    expect(() =>
+      validateEnvironment({
+        NODE_ENV: 'test',
+        DB_HOST: '127.0.0.1',
+        DB_NAME: 'monienaija',
+        DB_USER: 'monienaija',
+        DB_PASSWORD: 'monienaija-pw',
+        CASH_TO_CASH_EXPIRY_SECONDS: '999999999', // above max
+      }),
+    ).toThrow(/CASH_TO_CASH_EXPIRY_SECONDS/i);
+    expect(() =>
+      validateEnvironment({
+        NODE_ENV: 'test',
+        DB_HOST: '127.0.0.1',
+        DB_NAME: 'monienaija',
+        DB_USER: 'monienaija',
+        DB_PASSWORD: 'monienaija-pw',
+        CASH_TO_CASH_EXPIRY_SECONDS: 'not-a-number',
+      }),
+    ).toThrow(/CASH_TO_CASH_EXPIRY_SECONDS/i);
     // Valid value should pass
-    expect(() => validateEnvironment({
-      NODE_ENV: 'test',
-      DB_HOST: '127.0.0.1',
-      DB_NAME: 'monienaija',
-      DB_USER: 'monienaija',
-      DB_PASSWORD: 'monienaija-pw',
-      CASH_TO_CASH_EXPIRY_SECONDS: '3600',
-    })).not.toThrow();
+    expect(() =>
+      validateEnvironment({
+        NODE_ENV: 'test',
+        DB_HOST: '127.0.0.1',
+        DB_NAME: 'monienaija',
+        DB_USER: 'monienaija',
+        DB_PASSWORD: 'monienaija-pw',
+        CASH_TO_CASH_EXPIRY_SECONDS: '3600',
+      }),
+    ).not.toThrow();
   });
 
   // 23. migration chain remains valid
@@ -734,9 +1014,13 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     expect(applied.map((migration) => migration.name).sort()).toEqual([...configured].sort());
     expect(await dataSource.showMigrations()).toBe(false);
     // Check constraints exist
-    const chk: Array<{ conname: string }> = await dataSource.query(`SELECT conname FROM pg_constraint WHERE conrelid='cash_to_cash_transfers'::regclass AND conname='chk_cash_to_cash_status'`);
+    const chk: Array<{ conname: string }> = await dataSource.query(
+      `SELECT conname FROM pg_constraint WHERE conrelid='cash_to_cash_transfers'::regclass AND conname='chk_cash_to_cash_status'`,
+    );
     expect(chk.length).toBe(1);
-    const def: Array<{ def: string }> = await dataSource.query(`SELECT pg_get_constraintdef(oid) as def FROM pg_constraint WHERE conname='chk_cash_to_cash_status'`);
+    const def: Array<{ def: string }> = await dataSource.query(
+      `SELECT pg_get_constraintdef(oid) as def FROM pg_constraint WHERE conname='chk_cash_to_cash_status'`,
+    );
     expect(def[0]!.def).toContain('EXPIRED');
   });
 
@@ -752,7 +1036,10 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   // 25. A15 remains green (initiation still works)
   it('25. A15 remains green', async () => {
     const { transferId, phone } = await initiateTransfer('2900');
-    const rows: Array<{ status: string; beneficiary_phone: string }> = await dataSource.query(`SELECT status, beneficiary_phone FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const rows: Array<{ status: string; beneficiary_phone: string }> = await dataSource.query(
+      `SELECT status, beneficiary_phone FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
     expect(rows[0]!.status).toBe('UNCLAIMED');
     expect(rows[0]!.beneficiary_phone).toBe(phone);
   });
@@ -775,21 +1062,35 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     expect(res.transferId).toBe(transferId);
   });
   function executionWorker(batchSize = 1) {
-    return new AgentCashToCashExpiryWorker(expiryService, new ConfigService({
-      CASH_TO_CASH_EXPIRY_WORKER_ENABLED: true,
-      CASH_TO_CASH_EXPIRY_WORKER_BATCH_SIZE: batchSize,
-      CASH_TO_CASH_EXPIRY_WORKER_STATEMENT_TIMEOUT_MS: 500,
-    }));
+    return new AgentCashToCashExpiryWorker(
+      expiryService,
+      new ConfigService({
+        CASH_TO_CASH_EXPIRY_WORKER_ENABLED: true,
+        CASH_TO_CASH_EXPIRY_WORKER_BATCH_SIZE: batchSize,
+        CASH_TO_CASH_EXPIRY_WORKER_STATEMENT_TIMEOUT_MS: 500,
+      }),
+    );
   }
 
   it('production execution is bounded, restart-safe and concurrent without journals or refunds', async () => {
     await expiryService.expireDueTransfers({ limit: 1000 });
-    const transfers = [await initiateTransfer('3100'), await initiateTransfer('3200'), await initiateTransfer('3300')];
-    const ids = transfers.map(t => t.transferId);
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=ANY($1::uuid[])`, [ids]);
-    const [before] = await dataSource.query(`SELECT count(*)::int AS journals FROM ledger_journals`);
+    const transfers = [
+      await initiateTransfer('3100'),
+      await initiateTransfer('3200'),
+      await initiateTransfer('3300'),
+    ];
+    const ids = transfers.map((t) => t.transferId);
+    await dataSource.query(
+      `UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=ANY($1::uuid[])`,
+      [ids],
+    );
+    const [before] = await dataSource.query(
+      `SELECT count(*)::int AS journals FROM ledger_journals`,
+    );
     const liability = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
-    const floats = await Promise.all(transfers.map(t => ledgerService.getAccountBalance(t.wallet.ledgerAccountId)));
+    const floats = await Promise.all(
+      transfers.map((t) => ledgerService.getAccountBalance(t.wallet.ledgerAccountId)),
+    );
     const first = executionWorker();
     expect((await first.tick()).expiredCount).toBe(1);
     await first.onModuleDestroy();
@@ -798,15 +1099,27 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     const results = await Promise.all([restarted.tick(), concurrent.tick()]);
     expect(results.reduce((n, r) => n + r.expiredCount, 0)).toBe(2);
     expect((await restarted.tick()).expiredCount).toBe(0);
-    const rows = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=ANY($1::uuid[])`, [ids]);
-    expect(rows.every((r: {status:string}) => r.status === 'EXPIRED')).toBe(true);
-    const audits = await dataSource.query(`SELECT entity_id, count(*)::int AS count FROM audit_events WHERE action='CASH_TO_CASH_EXPIRED' AND entity_id=ANY($1::uuid[]) GROUP BY entity_id`, [ids]);
+    const rows: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM cash_to_cash_transfers WHERE id=ANY($1::uuid[])`,
+      [ids],
+    );
+    expect(rows.every((r: { status: string }) => r.status === 'EXPIRED')).toBe(true);
+    const audits: Array<{ entity_id: string; count: number }> = await dataSource.query(
+      `SELECT entity_id, count(*)::int AS count FROM audit_events WHERE action='CASH_TO_CASH_EXPIRED' AND entity_id=ANY($1::uuid[]) GROUP BY entity_id`,
+      [ids],
+    );
     expect(audits).toHaveLength(3);
-    expect(audits.every((r: {count:number}) => r.count === 1)).toBe(true);
-    expect((await dataSource.query(`SELECT count(*)::int AS journals FROM ledger_journals`))[0].journals).toBe(before.journals);
-    expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor).toBe(liability.balanceMinor);
-    for (let i=0; i<transfers.length; i++) {
-      expect((await ledgerService.getAccountBalance(transfers[i]!.wallet.ledgerAccountId)).balanceMinor).toBe(floats[i]!.balanceMinor);
+    expect(audits.every((r: { count: number }) => r.count === 1)).toBe(true);
+    expect(
+      (await dataSource.query(`SELECT count(*)::int AS journals FROM ledger_journals`))[0].journals,
+    ).toBe(before.journals);
+    expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor).toBe(
+      liability.balanceMinor,
+    );
+    for (let i = 0; i < transfers.length; i++) {
+      expect(
+        (await ledgerService.getAccountBalance(transfers[i]!.wallet.ledgerAccountId)).balanceMinor,
+      ).toBe(floats[i]!.balanceMinor);
     }
     await restarted.onModuleDestroy();
     await concurrent.onModuleDestroy();
@@ -815,33 +1128,67 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   it('audit failure rolls back expiry and retry after restart processes the persisted due row once', async () => {
     await expiryService.expireDueTransfers({ limit: 1000 });
     const { transferId } = await initiateTransfer('3400');
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=$1`, [transferId]);
-    const spy = jest.spyOn(auditService, 'record').mockRejectedValueOnce(new Error('audit unavailable'));
+    await dataSource.query(
+      `UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=$1`,
+      [transferId],
+    );
+    const spy = jest
+      .spyOn(auditService, 'record')
+      .mockRejectedValueOnce(new Error('audit unavailable'));
     const worker = executionWorker();
-    try { expect((await worker.tick()).status).toBe('FAILED'); }
-    finally { spy.mockRestore(); await worker.onModuleDestroy(); }
-    expect((await dataSource.query(`SELECT status, expired_at FROM cash_to_cash_transfers WHERE id=$1`, [transferId]))[0])
-      .toMatchObject({ status: 'UNCLAIMED', expired_at: null });
+    try {
+      expect((await worker.tick()).status).toBe('FAILED');
+    } finally {
+      spy.mockRestore();
+      await worker.onModuleDestroy();
+    }
+    expect(
+      (
+        await dataSource.query(
+          `SELECT status, expired_at FROM cash_to_cash_transfers WHERE id=$1`,
+          [transferId],
+        )
+      )[0],
+    ).toMatchObject({ status: 'UNCLAIMED', expired_at: null });
     const restarted = executionWorker();
     expect((await restarted.tick()).expiredCount).toBe(1);
     expect((await restarted.tick()).expiredCount).toBe(0);
-    expect(await dataSource.query(`SELECT id FROM audit_events WHERE action='CASH_TO_CASH_EXPIRED' AND entity_id=$1`, [transferId])).toHaveLength(1);
+    expect(
+      await dataSource.query(
+        `SELECT id FROM audit_events WHERE action='CASH_TO_CASH_EXPIRED' AND entity_id=$1`,
+        [transferId],
+      ),
+    ).toHaveLength(1);
     await restarted.onModuleDestroy();
   });
 
   it('a database statement timeout rolls back and leaves work for the next execution', async () => {
     await expiryService.expireDueTransfers({ limit: 1000 });
     const { transferId } = await initiateTransfer('3500');
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=$1`, [transferId]);
+    await dataSource.query(
+      `UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=$1`,
+      [transferId],
+    );
     const record = auditService.record.bind(auditService);
-    const spy = jest.spyOn(auditService, 'record').mockImplementationOnce(async (manager, command) => {
-      await manager.query(`SELECT pg_sleep(1)`);
-      return record(manager, command);
-    });
+    const spy = jest
+      .spyOn(auditService, 'record')
+      .mockImplementationOnce(async (manager, command) => {
+        await manager.query(`SELECT pg_sleep(1)`);
+        return record(manager, command);
+      });
     const worker = executionWorker();
-    try { expect((await worker.tick()).status).toBe('FAILED'); }
-    finally { spy.mockRestore(); }
-    expect((await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [transferId]))[0].status).toBe('UNCLAIMED');
+    try {
+      expect((await worker.tick()).status).toBe('FAILED');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(
+      (
+        await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [
+          transferId,
+        ])
+      )[0].status,
+    ).toBe('UNCLAIMED');
     expect((await worker.tick()).expiredCount).toBe(1);
     await worker.onModuleDestroy();
   });
@@ -849,17 +1196,23 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   it('startup automatically executes a persisted due transfer without a manual tick', async () => {
     await expiryService.expireDueTransfers({ limit: 1000 });
     const { transferId } = await initiateTransfer('3600');
-    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=$1`, [transferId]);
+    await dataSource.query(
+      `UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=$1`,
+      [transferId],
+    );
     const original = expiryService.expireDueTransfers.bind(expiryService);
     const spy = jest.spyOn(expiryService, 'expireDueTransfers');
     const processed = new Promise<void>((resolve, reject) => {
-      spy.mockImplementationOnce(async input => {
+      spy.mockImplementationOnce(async (input) => {
         try {
           const result = await original(input);
           expect(result.expiredIds).toContain(transferId);
           resolve();
           return result;
-        } catch (error) { reject(error); throw error; }
+        } catch (error) {
+          reject(error as Error);
+          throw error;
+        }
       });
     });
     const worker = executionWorker();
@@ -870,7 +1223,12 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       await worker.onModuleDestroy();
       spy.mockRestore();
     }
-    expect((await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [transferId]))[0].status).toBe('EXPIRED');
+    expect(
+      (
+        await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [
+          transferId,
+        ])
+      )[0].status,
+    ).toBe('EXPIRED');
   });
-
 });

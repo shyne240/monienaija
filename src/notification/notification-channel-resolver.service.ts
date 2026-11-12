@@ -34,7 +34,11 @@ export class NotificationChannelResolverService {
     const source: QuerySource = manager ?? this.dataSource;
     const query = async <T>(sql: string, params: unknown[]): Promise<T[]> =>
       (await source.query(sql, params)) as T[];
-    const missing = (reason: string): ResolvedDestination => ({ channel, destination: null, reason });
+    const missing = (reason: string): ResolvedDestination => ({
+      channel,
+      destination: null,
+      reason,
+    });
 
     if (channel === 'PUSH') {
       if (recipientType === 'CUSTOMER' && !isSecurityCriticalNotificationEvent(eventType)) {
@@ -47,7 +51,8 @@ export class NotificationChannelResolverService {
       }
       return missing('PUSH_TOKEN_DEPENDENCY_MISSING');
     }
-    if (recipientType === 'AGENT') return missing(`AGENT_${channel === 'SMS' ? 'PHONE' : 'EMAIL'}_DEPENDENCY_MISSING`);
+    if (recipientType === 'AGENT')
+      return missing(`AGENT_${channel === 'SMS' ? 'PHONE' : 'EMAIL'}_DEPENDENCY_MISSING`);
 
     const preference = async (customerId: string): Promise<string | null> => {
       if (isSecurityCriticalNotificationEvent(eventType)) return null;
@@ -98,7 +103,8 @@ export class NotificationChannelResolverService {
           WHERE type='PHONE' AND normalized_value = ANY($1::text[]) AND deleted_at IS NULL`,
         [[phone, `0${phone}`, `234${phone}`, `+234${phone}`]],
       );
-      if (contacts.some((contact) => !contact.verified_at)) return missing('PHONE_RECIPIENT_UNVERIFIED');
+      if (contacts.some((contact) => !contact.verified_at))
+        return missing('PHONE_RECIPIENT_UNVERIFIED');
       for (const customerId of new Set(contacts.map((contact) => contact.customer_id))) {
         const preferenceReason = await preference(customerId);
         if (preferenceReason) return missing(preferenceReason);

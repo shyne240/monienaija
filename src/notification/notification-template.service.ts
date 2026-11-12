@@ -1,10 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
-import { NOTIFICATION_DEFAULTS_V1 } from './notification-defaults-v1';
+import { NOTIFICATION_ORDINARY_DEFAULTS } from './notification-defaults-v2';
 import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
 
 export type TemplateChannel = 'SMS' | 'EMAIL';
-export type TemplateDefinition = (typeof NOTIFICATION_DEFAULTS_V1)[number];
+export type TemplateDefinition = (typeof NOTIFICATION_ORDINARY_DEFAULTS)[number];
 export interface TemplateContent {
   subject: string | null;
   body: string;
@@ -18,7 +18,6 @@ export interface TemplateQuery {
 
 /** Internal aliases are normalized before config lookup; customer-facing text never contains them. */
 export function canonicalNotificationEvent(eventType: string): string {
-  if (eventType === 'transfer.unknown') return 'transfer.failed';
   if (eventType === 'cash-to-cash.claimed') return 'cash_to_cash.claimed';
   if (eventType === 'cash-to-cash.expired') return 'cash_to_cash.expired';
   return eventType;
@@ -26,10 +25,12 @@ export function canonicalNotificationEvent(eventType: string): string {
 
 /** Arena 4 C2C integration: control-character strip for the verified sender display name. */
 function stripControlCharacters(value: string): string {
-  return [...value].filter((character) => {
-    const code = character.charCodeAt(0);
-    return code > 0x1f && code !== 0x7f;
-  }).join('');
+  return [...value]
+    .filter((character) => {
+      const code = character.charCodeAt(0);
+      return code > 0x1f && code !== 0x7f;
+    })
+    .join('');
 }
 
 /** Plain-text, allowlist-only templates. There is deliberately no expression or property evaluator. */
@@ -54,9 +55,14 @@ export class NotificationTemplateService {
         try {
           this.assertSafe(name);
           if (name && !/\d{6,}/.test(name)) safe.senderDisplayName = name;
-        } catch { /* use generic sender */ }
+        } catch {
+          /* use generic sender */
+        }
       }
-      if (typeof payload.amountMinor === 'string' && /^[1-9][0-9]{0,14}$/.test(payload.amountMinor)) {
+      if (
+        typeof payload.amountMinor === 'string' &&
+        /^[1-9][0-9]{0,14}$/.test(payload.amountMinor)
+      ) {
         safe.amountMinor = payload.amountMinor;
       }
       if (payload.currency === 'NGN') safe.currency = 'NGN';
@@ -65,9 +71,18 @@ export class NotificationTemplateService {
           const url = new URL(payload.locatorUrl);
           const locator = url.toString();
           this.assertSafe(locator);
-          if (url.protocol === 'https:' && !url.username && !url.password &&
-              !url.search && !url.hash && locator.length <= 240) safe.locatorUrl = locator;
-        } catch { /* omit unsafe locator */ }
+          if (
+            url.protocol === 'https:' &&
+            !url.username &&
+            !url.password &&
+            !url.search &&
+            !url.hash &&
+            locator.length <= 240
+          )
+            safe.locatorUrl = locator;
+        } catch {
+          /* omit unsafe locator */
+        }
       }
       return safe;
     }
@@ -79,7 +94,10 @@ export class NotificationTemplateService {
     if (variables.includes('amount_clause') || variables.includes('amount')) {
       for (const key of ['amountMinor', 'principal_minor'] as const) {
         const value = payload[key];
-        if ((typeof value === 'string' || typeof value === 'number') && /^\d{1,15}$/.test(String(value))) {
+        if (
+          (typeof value === 'string' || typeof value === 'number') &&
+          /^\d{1,15}$/.test(String(value))
+        ) {
           safe[key] = value;
         }
       }
@@ -88,21 +106,23 @@ export class NotificationTemplateService {
       for (const key of ['reference', 'transferId', 'fundingRequestId', 'ticketId'] as const) {
         const raw = payload[key];
         if (typeof raw !== 'string') continue;
-        const candidate = key === 'reference' ? (raw.length > 20 ? raw.slice(0, 8) : raw) : raw.slice(0, 8);
+        const candidate =
+          key === 'reference' ? (raw.length > 20 ? raw.slice(0, 8) : raw) : raw.slice(0, 8);
         if (this.isSafePublicReference(candidate)) safe[key] = candidate;
       }
     }
     if (variables.includes('status')) {
       const statuses = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED'];
       for (const key of ['status', 'newStatus', 'to'] as const) {
-        if (typeof payload[key] === 'string' && statuses.includes(payload[key])) safe[key] = payload[key];
+        if (typeof payload[key] === 'string' && statuses.includes(payload[key]))
+          safe[key] = payload[key];
       }
     }
     return safe;
   }
 
   definition(eventType: string): TemplateDefinition | undefined {
-    return NOTIFICATION_DEFAULTS_V1.find((entry) => entry.eventType === eventType);
+    return NOTIFICATION_ORDINARY_DEFAULTS.find((entry) => entry.eventType === eventType);
   }
 
   requireDefinition(eventType: string): TemplateDefinition {
@@ -262,18 +282,37 @@ export class NotificationTemplateService {
     query: TemplateQuery,
     eventType: string,
     channel: TemplateChannel,
+    lock = false,
   ): Promise<boolean> {
     const canonical = canonicalNotificationEvent(eventType);
     this.requireDefinition(canonical);
+    // Separate, independently versioned EVENT and channel rows live in the same governed
+    // registry. Missing/inconsistent rows fail closed; neither is a fallback for the other.
     const rows = (await query.query(
-      `SELECT is_enabled, delivery_class FROM notification_event_configurations
-      WHERE event_type=$1 AND channel=$2`,
+      `SELECT c.is_enabled AS channel_enabled, e.is_enabled AS event_enabled,
+              c.delivery_class AS channel_class, e.delivery_class AS event_class
+         FROM notification_event_configurations c
+         JOIN notification_event_configurations e ON e.event_type=c.event_type AND e.channel='EVENT'
+        WHERE c.event_type=$1 AND c.channel=$2${lock ? ' FOR SHARE OF c, e' : ''}`,
       [canonical, channel],
-    )) as Array<{ is_enabled: boolean; delivery_class: string }>;
-    if (rows.length !== 1 || rows[0]!.delivery_class === 'SECURITY') {
+    )) as Array<{
+      channel_enabled: boolean;
+      event_enabled: boolean;
+      channel_class: string;
+      event_class: string;
+    }>;
+    const row = rows[0];
+    if (
+      rows.length !== 1 ||
+      !row ||
+      row.channel_class === 'SECURITY' ||
+      row.event_class !== row.channel_class ||
+      typeof row.channel_enabled !== 'boolean' ||
+      typeof row.event_enabled !== 'boolean'
+    ) {
       throw new Error('Notification event configuration unavailable');
     }
-    return rows[0]!.is_enabled;
+    return row.event_enabled && row.channel_enabled;
   }
 
   async renderActive(
@@ -306,9 +345,21 @@ export class NotificationTemplateService {
     const publicShape =
       /^(?:CF|FUND|SUP|TRF|REF|AG|SAMPLE|CASH_TO_CASH)-[A-Za-z0-9_-]+$/i.test(candidate) ||
       /^[a-f0-9]{8}$/i.test(candidate);
-    if (!publicShape || candidate.length > 20 || candidate.replace(/\D/g, '').length >= 6 ||
-        /otp|pin|password|passcode|credential|secret|token|api.?key|ledger|journal|robe_/i.test(candidate)) return false;
-    try { this.assertSafe(candidate); return true; } catch { return false; }
+    if (
+      !publicShape ||
+      candidate.length > 20 ||
+      candidate.replace(/\D/g, '').length >= 6 ||
+      /otp|pin|password|passcode|credential|secret|token|api.?key|ledger|journal|robe_/i.test(
+        candidate,
+      )
+    )
+      return false;
+    try {
+      this.assertSafe(candidate);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private resolveVariables(

@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react';
 
 import App from '../src/App';
 import { CustomerDirectoryScreen } from '../src/screens/authenticated/CustomerDirectoryScreen';
@@ -39,10 +39,10 @@ const dashboard = {
 function directoryResponse(data = [customer], page = 1, hasNextPage = false) {
   return {
     data,
-    total: hasNextPage ? 21 : data.length,
+    total: hasNextPage || page > 1 ? 21 : data.length,
     page,
     limit: 20,
-    totalPages: hasNextPage ? 2 : 1,
+    totalPages: hasNextPage || page > 1 ? 2 : Math.ceil(data.length / 20),
     hasNextPage,
     hasPreviousPage: page > 1,
   };
@@ -70,7 +70,8 @@ function setPrincipal(scopes: string[]) {
 describe('Batch 1 customer directory', () => {
   test('opens the directory from the authenticated application shell and preserves masked summaries', async () => {
     const view = render(<App />);
-    fireEvent.click(view.getByRole('button', { name: /Customer & KYC Servicing/ }));
+    fireEvent.click(view.getByRole('button', { name: 'Customers & agents' }));
+    fireEvent.click(view.getByRole('button', { name: 'Customers' }));
     await view.findByRole('heading', { name: 'Customer directory' });
     const row = await view.findByRole('row', { name: /Synthetic Directory Alpha/ });
     expect(within(row).getByText('mn-••••5678')).toBeTruthy();
@@ -96,6 +97,16 @@ describe('Batch 1 customer directory', () => {
       return Promise.resolve(directoryResponse());
     });
     (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'cust-created', reference: 'mn-••••9876' });
+  });
+
+  test('a new workforce session never inherits the previous customer directory', async () => {
+    const view = render(<CustomerDirectoryScreen />);
+    await view.findByText('Synthetic Directory Alpha');
+    (ApiClient.get as jest.Mock).mockRejectedValue(new Error('unavailable'));
+    const principal = useAuthStore.getState().principal!;
+    act(() => useAuthStore.setState({ sessionId:'new-session', principal:{ ...principal, principalId:'new-user', sessionId:'new-session' } }));
+    expect(await view.findByText('Customer records could not be loaded. Try again.')).toBeTruthy();
+    expect(view.queryByText('Synthetic Directory Alpha')).toBeNull();
   });
 
   test('uses the authorized, paginated workforce API and displays masked directory fields', async () => {
@@ -160,7 +171,7 @@ describe('Batch 1 customer directory', () => {
     };
     (ApiClient.post as jest.Mock).mockImplementation((path: string) => {
       if (path === '/customers') return Promise.resolve(created);
-      if (path.endsWith('/registration-profile')) return Promise.resolve({ displayName: 'Synthetic New Customer' });
+      if (path.endsWith('/registration-profile')) return Promise.resolve({ id: 'profile-created', customerId: 'cust-created', displayName: 'Synthetic New Customer' });
       return Promise.resolve({});
     });
 
@@ -199,4 +210,11 @@ describe('Batch 1 customer directory', () => {
     await view.findByText('Synthetic Directory Alpha');
     expect(view.queryByRole('button', { name: 'New Customer' })).toBeNull();
   });
+
+  test('closing the embedded registration restores focus to its directory trigger', async () => {
+    setPrincipal(['customer.view','customer.create']);const view=render(<CustomerDirectoryScreen/>);await view.findByText('Synthetic Directory Alpha');
+    const toggle=view.getByRole('button',{name:'New Customer'});toggle.focus();fireEvent.click(toggle);expect(document.activeElement).toBe(view.getByRole('heading',{name:'Customer details'}));
+    fireEvent.click(view.getByRole('region',{name:'New customer registration'}).querySelector('button')!);expect(document.activeElement).toBe(view.getByRole('button',{name:'New Customer'}));
+  });
+
 });

@@ -1,3 +1,4 @@
+import { KycTierTransitionService } from '../src/kyc-verification/kyc-tier-transition.service';
 import { APP_GUARD } from '@nestjs/core';
 import { HttpException, UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -341,6 +342,7 @@ describe('HTTP authorization matrix', () => {
         { provide: A2SecurityRateLimitService, useValue: securityRateLimits },
         { provide: CUSTOMER_AUTH_RATE_LIMIT_RULES, useValue: CUSTOMER_AUTH_RATE_LIMIT_DEFAULTS },
         { provide: CustomerService, useValue: customerService },
+        { provide: KycTierTransitionService, useValue: {} },
         { provide: ApiVersionService, useValue: apiVersionService },
         { provide: ProductionConfigurationService, useValue: productionConfigurationService },
         { provide: ProductionReadinessService, useValue: productionReadinessService },
@@ -704,12 +706,9 @@ describe('HTTP authorization matrix', () => {
       };
     }
 
-    it.each(allOperationalPaths)(
-      'resolves HEAD through exactly the GET policy for %s',
-      (path) => {
-        expect(resolutionFor('HEAD', path)).toEqual(resolutionFor('GET', path));
-      },
-    );
+    it.each(allOperationalPaths)('resolves HEAD through exactly the GET policy for %s', (path) => {
+      expect(resolutionFor('HEAD', path)).toEqual(resolutionFor('GET', path));
+    });
 
     it.each(allOperationalPaths)(
       'never falls through to the un-gated generic internal policy on HEAD %s',
@@ -737,27 +736,27 @@ describe('HTTP authorization matrix', () => {
     });
 
     it.each(allOperationalPaths)('denies a CUSTOMER HEAD 403 on %s', async (path) => {
-      await request(app.getHttpServer())
-        .head(path)
-        .set(asCustomer(TOKEN_A))
-        .expect(403);
+      await request(app.getHttpServer()).head(path).set(asCustomer(TOKEN_A)).expect(403);
       expect(productionReadinessService.getReadiness).not.toHaveBeenCalled();
       expect(apiVersionService.getVersionMetadata).not.toHaveBeenCalled();
       expect(auditService.list).not.toHaveBeenCalled();
     });
 
-    it.each(gatedPaths)('denies a SUPPORT HEAD 403 on %s and never invokes the handler', async (path) => {
-      await request(app.getHttpServer())
-        .head(path)
-        .set({ authorization: `Bearer ${SUPPORT_TOKEN}` })
-        .expect(403);
-      expect(apiVersionService.getVersionMetadata).not.toHaveBeenCalled();
-      expect(productionConfigurationService.getSafeConfiguration).not.toHaveBeenCalled();
-      expect(productionReadinessService.getReadiness).not.toHaveBeenCalled();
-      expect(diagnosticsService.getDiagnostics).not.toHaveBeenCalled();
-      expect(metricsService.getMetrics).not.toHaveBeenCalled();
-      expect(outboxService.list).not.toHaveBeenCalled();
-    });
+    it.each(gatedPaths)(
+      'denies a SUPPORT HEAD 403 on %s and never invokes the handler',
+      async (path) => {
+        await request(app.getHttpServer())
+          .head(path)
+          .set({ authorization: `Bearer ${SUPPORT_TOKEN}` })
+          .expect(403);
+        expect(apiVersionService.getVersionMetadata).not.toHaveBeenCalled();
+        expect(productionConfigurationService.getSafeConfiguration).not.toHaveBeenCalled();
+        expect(productionReadinessService.getReadiness).not.toHaveBeenCalled();
+        expect(diagnosticsService.getDiagnostics).not.toHaveBeenCalled();
+        expect(metricsService.getMetrics).not.toHaveBeenCalled();
+        expect(outboxService.list).not.toHaveBeenCalled();
+      },
+    );
 
     it.each(gatedPaths)(
       'denies a workforce principal holding only the retired internal:access scope on HEAD %s',
@@ -850,18 +849,21 @@ describe('HTTP authorization matrix', () => {
       ['OPERATIONS (holds metrics/diagnostics/outbox but not audit.view)', OPERATIONS_TOKEN],
       ['a principal holding only the retired internal:access scope', LEGACY_INTERNAL_SCOPE_TOKEN],
       ['a scope-less workforce principal', WORKFORCE_TOKEN_WITHOUT_SCOPE],
-    ])('denies %s 403 on GET and HEAD audit, and never lists audit records', async (_label, token) => {
-      await request(app.getHttpServer())
-        .get('/api/v1/internal/audit')
-        .set({ authorization: `Bearer ${token}` })
-        .expect(403);
-      await request(app.getHttpServer())
-        .head('/api/v1/internal/audit')
-        .set({ authorization: `Bearer ${token}` })
-        .expect(403);
-      expect(auditService.list).not.toHaveBeenCalled();
-      expect(auditService.listWithNotificationProviderOversight).not.toHaveBeenCalled();
-    });
+    ])(
+      'denies %s 403 on GET and HEAD audit, and never lists audit records',
+      async (_label, token) => {
+        await request(app.getHttpServer())
+          .get('/api/v1/internal/audit')
+          .set({ authorization: `Bearer ${token}` })
+          .expect(403);
+        await request(app.getHttpServer())
+          .head('/api/v1/internal/audit')
+          .set({ authorization: `Bearer ${token}` })
+          .expect(403);
+        expect(auditService.list).not.toHaveBeenCalled();
+        expect(auditService.listWithNotificationProviderOversight).not.toHaveBeenCalled();
+      },
+    );
 
     it('declares audit.view as the audit gate while exempting only SUPPORT', () => {
       const resolution = new RoutePolicyRegistry().resolve({

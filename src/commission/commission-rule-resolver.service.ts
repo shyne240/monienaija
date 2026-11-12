@@ -193,7 +193,14 @@ export class CommissionRuleResolverService {
     }
 
     if (allocations.length === 0) {
-      return { status: 'NOT_CONFIGURED', productCode, currency, evaluatedAt: at, allocations: [], ruleRefs: [] };
+      return {
+        status: 'NOT_CONFIGURED',
+        productCode,
+        currency,
+        evaluatedAt: at,
+        allocations: [],
+        ruleRefs: [],
+      };
     }
 
     // No cross-recipient sum constraint is imposed: rules may carry different bases
@@ -202,7 +209,10 @@ export class CommissionRuleResolverService {
   }
 
   /** Convenience wrapper for non-transactional diagnostics (workforce read-only). */
-  async resolve(context: CommissionResolveContext, baseEvidence: CommissionBaseEvidence): Promise<CommissionResolution> {
+  async resolve(
+    context: CommissionResolveContext,
+    baseEvidence: CommissionBaseEvidence,
+  ): Promise<CommissionResolution> {
     return this.resolveWithManager(this.dataSource.manager, context, baseEvidence);
   }
 
@@ -223,7 +233,10 @@ export class CommissionRuleResolverService {
       agentId: (row['agent_id'] as string | null) ?? null,
       aggregatorId: (row['aggregator_id'] as string | null) ?? null,
       effectiveFrom: new Date(row['effective_from'] as string),
-      effectiveTo: row['effective_to'] === null || row['effective_to'] === undefined ? null : new Date(row['effective_to'] as string),
+      effectiveTo:
+        row['effective_to'] === null || row['effective_to'] === undefined
+          ? null
+          : new Date(row['effective_to'] as string),
       priority: Number(row['priority']),
       isActive: true,
       createdBy: '',

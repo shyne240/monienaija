@@ -1,4 +1,9 @@
-import { ProductConfigurationStatus, ProductDomain, ProductScope, ProductStatus } from './product-catalog.enums';
+import {
+  ProductConfigurationStatus,
+  ProductDomain,
+  ProductScope,
+  ProductStatus,
+} from './product-catalog.enums';
 
 /**
  * V1-COMMERCIAL-02 — V1 product catalogue seed.
@@ -28,7 +33,8 @@ export const PRODUCT_CATALOG_SEED: ProductSeedEntry[] = [
   {
     code: 'WALLET_TRANSFER',
     name: 'Wallet Transfer',
-    description: 'Customer wallet-to-wallet transfer: DEBIT source wallet, CREDIT destination wallet.',
+    description:
+      'Customer wallet-to-wallet transfer: DEBIT source wallet, CREDIT destination wallet.',
     domain: ProductDomain.CUSTOMER,
     currency: 'NGN',
     productScope: ProductScope.V1,
@@ -40,7 +46,8 @@ export const PRODUCT_CATALOG_SEED: ProductSeedEntry[] = [
   {
     code: 'WALLET_TO_CASH',
     name: 'Wallet to Cash',
-    description: 'Customer Wallet-to-Cash via agent: DEBIT customer wallet, CREDIT agent funding pool.',
+    description:
+      'Customer Wallet-to-Cash via agent: DEBIT customer wallet, CREDIT agent funding pool.',
     domain: ProductDomain.AGENT,
     currency: 'NGN',
     productScope: ProductScope.V1,
@@ -52,7 +59,8 @@ export const PRODUCT_CATALOG_SEED: ProductSeedEntry[] = [
   {
     code: 'CASH_TO_WALLET',
     name: 'Cash to Wallet',
-    description: 'Customer Cash-to-Wallet via agent: DEBIT agent funding pool, CREDIT customer wallet.',
+    description:
+      'Customer Cash-to-Wallet via agent: DEBIT agent funding pool, CREDIT customer wallet.',
     domain: ProductDomain.AGENT,
     currency: 'NGN',
     productScope: ProductScope.V1,

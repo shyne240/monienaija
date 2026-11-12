@@ -1,3 +1,4 @@
+import { testWalletFinancialBoundary } from './support/test-wallet-financial-boundary';
 /* eslint-disable */
 import { createHash, randomUUID } from 'node:crypto';
 import { ConflictException } from '@nestjs/common';
@@ -114,6 +115,7 @@ describe('A7 Product Lifecycle (real PostgreSQL)', () => {
       dataSource.getRepository(LedgerJournal),
       dataSource.getRepository(LedgerLine),
       dataSource,
+      testWalletFinancialBoundary,
     );
     idempotency = new IdempotencyService(
       dataSource.getRepository(IdempotencyRecord),
@@ -136,6 +138,7 @@ describe('A7 Product Lifecycle (real PostgreSQL)', () => {
       idempotency,
       audit,
       connection,
+      testWalletFinancialBoundary,
     );
 
     // Build the A7 ports bridging dynamically to the real database

@@ -47,7 +47,9 @@ export class AgentAuthenticationExecutionService {
     private readonly passwordHashVerificationService: AgentPasswordHashVerificationService,
   ) {}
 
-  async authenticate(command: AgentAuthenticationExecutionCommand): Promise<AgentAuthenticationExecutionResult> {
+  async authenticate(
+    command: AgentAuthenticationExecutionCommand,
+  ): Promise<AgentAuthenticationExecutionResult> {
     const agentId = command.agentId.trim().toLowerCase();
     const actor = this.normalizeActor(command.actor);
     if (!UUID_PATTERN.test(agentId)) {
@@ -113,18 +115,24 @@ export class AgentAuthenticationExecutionService {
     };
   }
 
-  private credentialAvailability(credential: AgentAuthenticationCredential): AgentAuthenticationFailureReason | null {
+  private credentialAvailability(
+    credential: AgentAuthenticationCredential,
+  ): AgentAuthenticationFailureReason | null {
     if (
       credential.status !== AgentAuthenticationCredentialStatus.ACTIVE ||
       credential.accountLocked ||
-      (credential.passwordExpiresAt !== null && credential.passwordExpiresAt.getTime() <= Date.now())
+      (credential.passwordExpiresAt !== null &&
+        credential.passwordExpiresAt.getTime() <= Date.now())
     ) {
       return 'CREDENTIAL_UNAVAILABLE';
     }
     return null;
   }
 
-  private async recordSuccessfulAuthentication(credential: AgentAuthenticationCredential, actor: string): Promise<void> {
+  private async recordSuccessfulAuthentication(
+    credential: AgentAuthenticationCredential,
+    actor: string,
+  ): Promise<void> {
     await this.dataSource.transaction(async (manager: EntityManager) => {
       await this.auditService.record(manager, {
         entityType: 'AGENT_AUTHENTICATION_CREDENTIAL',

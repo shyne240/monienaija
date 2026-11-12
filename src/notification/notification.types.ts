@@ -5,7 +5,13 @@ export type NotificationChannel = 'SMS' | 'PUSH' | 'EMAIL';
 // ARENA4-INTEGRATION: PHONE widened for unregistered Cash-to-Cash beneficiaries. Migration
 // 1785753600099-AllowPhoneNotificationRecipients widens recipient_type + recipient_id.
 export type NotificationRecipientType = 'CUSTOMER' | 'AGENT' | 'PHONE';
-export type NotificationDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'UNKNOWN' | 'DEAD';
+export type NotificationDeliveryStatus =
+  | 'PENDING'
+  | 'SENT'
+  | 'FAILED'
+  | 'SKIPPED'
+  | 'UNKNOWN'
+  | 'DEAD';
 
 /**
  * Provider-neutral dispatch abstraction.
@@ -27,6 +33,8 @@ export interface NotificationSendRequest {
   subject?: string;
   /** EMAIL only — escaped HTML body. `message` always carries the plain-text equivalent. */
   html?: string;
+  /** Internal test-send fence; a different configuration version must not be used. */
+  expectedProviderConfigVersion?: number;
 }
 
 export interface NotificationSendResult {
@@ -61,7 +69,10 @@ export interface NotificationIntent {
  */
 export type EventNotificationMapping = {
   eventType: string;
-  intents: (payload: Record<string, unknown>, outbox: { correlationId: string | null; causationId: string | null }) => NotificationIntent[];
+  intents: (
+    payload: Record<string, unknown>,
+    outbox: { correlationId: string | null; causationId: string | null },
+  ) => NotificationIntent[];
   required: boolean;
   possible: boolean;
   fallback: string;
@@ -84,6 +95,11 @@ export type NotificationTemplateKey =
   | 'customer.funding.requested'
   | 'transfer.completed'
   | 'transfer.failed'
+  | 'transfer.unknown'
+  | 'deposit.completed'
+  | 'deposit.failed'
+  | 'withdrawal.completed'
+  | 'withdrawal.failed'
   | 'support.ticket.created'
   | 'support.ticket.assigned'
   | 'support.ticket.status_changed'

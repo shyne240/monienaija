@@ -1,0 +1,19 @@
+Implementation commit: 3a0f87eafe86b455e1906d7779f83ca3152b9d00
+Command: jest --config ./jest.integration.config.js --runInBand --runTestsByPath --json (files below)
+Database: disposable PostgreSQL on loopback; network guard blocks non-loopback egress
+File: test/a12-agent-financial-execution.integration.spec.ts
+File: test/a15-agent-cash-to-cash.integration.spec.ts
+File: test/a2-workforce-session.integration.spec.ts
+File: test/a5-ledger-reversal.integration.spec.ts
+File: test/a6-settlement-lifecycle.integration.spec.ts
+File: test/mission-15a-agent-sessions.integration.spec.ts
+PASS test/mission-15a-agent-sessions.integration.spec.ts
+PASS test/a5-ledger-reversal.integration.spec.ts
+PASS test/a2-workforce-session.integration.spec.ts
+PASS test/a6-settlement-lifecycle.integration.spec.ts
+PASS test/a15-agent-cash-to-cash.integration.spec.ts
+PASS test/a12-agent-financial-execution.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       110 passed, 110 total
+Ran all test suites within paths "test/a12-agent-financial-execution.integration.spec.ts", "test/a15-agent-cash-to-cash.integration.spec.ts", "test/a2-workforce-session.integration.spec.ts", "test/a5-ledger-reversal.integration.spec.ts", "test/a6-settlement-lifecycle.integration.spec.ts", "test/mission-15a-agent-sessions.integration.spec.ts".
+Process exit: 0

@@ -8,7 +8,10 @@ import { AgentAuthenticationService } from '../agent-authentication/agent-authen
 import { AgentPasswordHashVerificationService } from '../agent-authentication/agent-password-hash-verification.service';
 import { AgentServiceCapabilityService } from './agent-service-capability.service';
 import { type AgentService, normalizeAgentService } from './agent-service.enum';
-import type { AgentServiceCapabilityEvaluation, CapabilityReason } from './agent-service-capability.types';
+import type {
+  AgentServiceCapabilityEvaluation,
+  CapabilityReason,
+} from './agent-service-capability.types';
 import type {
   AgentTransactionAuthorizationReason,
   AgentTransactionAuthorizationResult,
@@ -82,35 +85,67 @@ export class AgentTransactionAuthorizationService {
     } as { type: string; agentId?: string; customerId?: string };
 
     if (type === 'CUSTOMER') {
-      const r = this.denied(agentId, rawService, canonicalPreview, 'PRINCIPAL_NOT_AGENT', principalInput);
+      const r = this.denied(
+        agentId,
+        rawService,
+        canonicalPreview,
+        'PRINCIPAL_NOT_AGENT',
+        principalInput,
+      );
       await this.auditDenied(r);
       return r;
     }
     if (type === 'AGENT') {
       const pid = (principalInput as unknown as { agentId?: string }).agentId;
       if (!pid || pid.toLowerCase() !== agentId.toLowerCase()) {
-        const r = this.denied(agentId, rawService, canonicalPreview, 'PRINCIPAL_MISMATCH', principalInput);
+        const r = this.denied(
+          agentId,
+          rawService,
+          canonicalPreview,
+          'PRINCIPAL_MISMATCH',
+          principalInput,
+        );
         await this.auditDenied(r);
         return r;
       }
       // principal is correct AGENT — continue
     } else if (['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)) {
-      const r = this.denied(agentId, rawService, canonicalPreview, 'WORKFORCE_NOT_PERMITTED', principalInput);
+      const r = this.denied(
+        agentId,
+        rawService,
+        canonicalPreview,
+        'WORKFORCE_NOT_PERMITTED',
+        principalInput,
+      );
       await this.auditDenied(r);
       return r;
     } else if (type) {
-      const r = this.denied(agentId, rawService, canonicalPreview, 'PRINCIPAL_NOT_AGENT', principalInput);
+      const r = this.denied(
+        agentId,
+        rawService,
+        canonicalPreview,
+        'PRINCIPAL_NOT_AGENT',
+        principalInput,
+      );
       await this.auditDenied(r);
       return r;
     } else {
-      const r = this.denied(agentId, rawService, canonicalPreview, 'INVALID_PRINCIPAL', principalInput);
+      const r = this.denied(
+        agentId,
+        rawService,
+        canonicalPreview,
+        'INVALID_PRINCIPAL',
+        principalInput,
+      );
       await this.auditDenied(r);
       return r;
     }
 
     // Ensure AuthorizationPrincipal shape for downstream context (fill minimal)
-    const principal: AuthorizationPrincipal =
-      this.toAuthorizationPrincipal(principalInput, agentId);
+    const principal: AuthorizationPrincipal = this.toAuthorizationPrincipal(
+      principalInput,
+      agentId,
+    );
 
     // 4. Service capability via A10 (reuse, not duplication)
     const cap = await this.capabilityService.evaluateWithPrincipal(
@@ -129,13 +164,20 @@ export class AgentTransactionAuthorizationService {
     // 5. Transaction PIN — missing → fail-closed
     const pin = input.pin;
     if (typeof pin !== 'string' || pin.length === 0) {
-      const r = this.denied(agentId, rawService, cap.canonicalService, 'PIN_REQUIRED', principal, cap);
+      const r = this.denied(
+        agentId,
+        rawService,
+        cap.canonicalService,
+        'PIN_REQUIRED',
+        principal,
+        cap,
+      );
       await this.auditDenied(r);
       return r;
     }
     // Do not trim PIN — spaces are meaningful, but empty after trim we already handled
 
-    const actor = input.actor?.trim() ? input.actor.trim() : principal.principalId ?? agentId;
+    const actor = input.actor?.trim() ? input.actor.trim() : (principal.principalId ?? agentId);
 
     // Delegate to existing PIN verification (reuses hashing, lockout, attempt counting, policy)
     let verifyResult: { verified: boolean; locked?: boolean; failureReason?: string };
@@ -147,7 +189,14 @@ export class AgentTransactionAuthorizationService {
       );
     } catch {
       // Any unexpected error → fail-closed as PIN_INVALID (do not leak)
-      const r = this.denied(agentId, rawService, cap.canonicalService, 'PIN_INVALID', principal, cap);
+      const r = this.denied(
+        agentId,
+        rawService,
+        cap.canonicalService,
+        'PIN_INVALID',
+        principal,
+        cap,
+      );
       await this.auditDenied(r);
       return r;
     }
@@ -227,9 +276,17 @@ export class AgentTransactionAuthorizationService {
     agentId: string,
     service: string,
     pin: string | undefined,
-    principal: AuthorizationPrincipal | { type: string; agentId?: string; customerId?: string } | undefined,
+    principal:
+      | AuthorizationPrincipal
+      | { type: string; agentId?: string; customerId?: string }
+      | undefined,
   ): Promise<AgentTransactionAuthorizationResult> {
-    return this.authorize({ agentId, service, pin, principal: principal as AuthorizationPrincipal });
+    return this.authorize({
+      agentId,
+      service,
+      pin,
+      principal: principal as AuthorizationPrincipal,
+    });
   }
 
   private denied(
@@ -241,11 +298,13 @@ export class AgentTransactionAuthorizationService {
     cap?: AgentServiceCapabilityEvaluation,
   ): AgentTransactionAuthorizationResult {
     const princ =
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
       principal && 'principalId' in principal
         ? (principal as AuthorizationPrincipal)
         : principal
-          ? this.tryToPrincipal(principal as { type: string; agentId?: string; customerId?: string }, agentId)
+          ? this.tryToPrincipal(
+              principal as { type: string; agentId?: string; customerId?: string },
+              agentId,
+            )
           : undefined;
     return {
       allowed: false,
@@ -269,15 +328,23 @@ export class AgentTransactionAuthorizationService {
   }
 
   private toAuthorizationPrincipal(
-    input: AuthorizationPrincipal | { type: string; agentId?: string; customerId?: string; principalId?: string },
+    input:
+      | AuthorizationPrincipal
+      | { type: string; agentId?: string; customerId?: string; principalId?: string },
     agentId: string,
   ): AuthorizationPrincipal {
     // If already a full AuthorizationPrincipal, return as-is
-    if ((input as AuthorizationPrincipal).principalId && (input as AuthorizationPrincipal).roles !== undefined) {
+    if (
+      (input as AuthorizationPrincipal).principalId &&
+      (input as AuthorizationPrincipal).roles !== undefined
+    ) {
       return input as AuthorizationPrincipal;
     }
     const type = (input.type ?? 'AGENT').toUpperCase() as AuthorizationPrincipal['type'];
-    const pId = (input as { principalId?: string }).principalId ?? (input as { agentId?: string }).agentId ?? agentId;
+    const pId =
+      (input as { principalId?: string }).principalId ??
+      (input as { agentId?: string }).agentId ??
+      agentId;
     return {
       type,
       principalId: pId,

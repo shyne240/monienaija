@@ -1,0 +1,21 @@
+/* Opt-in operational workspace affordances. No selectors escape this workspace. */
+.mn-operational { box-sizing: border-box; min-width: 0; color: var(--mn-text-primary); font-family: var(--mn-font-sans); }
+.mn-operational button:focus-visible,
+.mn-operational input:focus-visible,
+.mn-operational select:focus-visible,
+.mn-operational textarea:focus-visible,
+.mn-operational summary:focus-visible,
+.mn-operational [tabindex="0"]:focus-visible { outline: 2px solid var(--mn-focus-ring); outline-offset: 2px; }
+.mn-operational table { font-variant-numeric: tabular-nums; }
+.mn-operational button, .mn-operational input, .mn-operational select, .mn-operational textarea { font-family: inherit; }
+.mn-operational code { overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) {
+  .mn-operational *, .mn-operational *::before, .mn-operational *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}
+.mn-operational > .mn-page-header { margin-bottom: 24px; }
+.mn-operational input:not([type="checkbox"]):not([type="radio"]),
+.mn-operational select, .mn-operational textarea { box-sizing: border-box; max-width: 100%; }
+.mn-operational .mn-scroll-region__hint { display: block; }
+.mn-operational .mn-data-table { width: 100%; min-width: 600px; border-collapse: collapse; background: var(--mn-surface-raised); text-align: left; font-size: 13px; }
+.mn-operational .mn-data-table th, .mn-operational .mn-data-table td { padding: 12px; border-bottom: 1px solid var(--mn-border-subtle); vertical-align: top; }
+.mn-operational .mn-data-table th { background: var(--mn-surface-sunken); color: var(--mn-text-secondary); font-size: 12px; font-weight: 600; }

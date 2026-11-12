@@ -1,16 +1,23 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
-// @ts-nocheck
+
+import * as fs from 'node:fs';
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { DataSource } from 'typeorm';
-import request = require('supertest');
+import { DataSource, QueryFailedError } from 'typeorm';
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
+import { LimitAssignmentService } from '../src/limit-catalog/limit-assignment.service';
+import { AuditService } from '../src/operations/audit.service';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
-import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
+import {
+  createIntegrationDataSource,
+  destroyIntegrationDataSource,
+  truncateAllTables,
+} from './support/pg-harness';
 import { randomUUID } from 'node:crypto';
 
 describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () => {
@@ -26,7 +33,6 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     internalAudience: 'workforce-admin',
     sessionTtlSeconds: 900,
     jwksJson: [],
-    // @ts-ignore
     financeRoles: [],
     makerCheckerRules: [],
     rateLimits: [],
@@ -34,34 +40,45 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
-      const requestedRole = token.replace('workforce-', '').toUpperCase();
-      const isAgentNetworkManager = requestedRole === 'AGENT_NETWORK_MANAGER';
-      const type = isAgentNetworkManager ? 'OPERATOR' : requestedRole;
-      const allowed = ['SUPPORT','OPERATOR','SERVICE','PRIVILEGED','AGENT','CUSTOMER','AGGREGATOR'];
-      if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
-      return {
-        type,
-        principalId: `workforce-${requestedRole.toLowerCase()}-1`,
-        audience,
-        roles: isAgentNetworkManager ? ['AGENT_NETWORK_MANAGER'] : [],
-        // V1-ADMIN-AUTHORIZATION-HARDENING-01: the profile/rule helpers this suite creates
-        // assignments against require the catalogue functions `limit.view` / `limit.modify`
-        // (LimitCatalogController.requireFunction). Test 07 asserts SUPPORT/AGENT/CUSTOMER/
-        // AGGREGATOR stay blocked (requireWorkforce type allow-list), so the codes go to
-        // OPERATOR/SERVICE/PRIVILEGED only.
-        scopes: [
-          ...(['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
-            ? ['limit.view', 'limit.modify']
-            : []),
-          ...(isAgentNetworkManager ? ['agent.assign_limit'] : []),
-        ],
-        customerAccess: 'NONE',
-        agentAccess: 'NONE',
-        aggregatorAccess: 'NONE',
-      } as any;
-    },
+    validate: (token: string, audience: string) =>
+      Promise.resolve().then(() => {
+        if (!token || !token.startsWith('workforce-'))
+          throw new UnauthorizedException('invalid workforce token');
+        const requestedRole = token.replace('workforce-', '').toUpperCase();
+        const isAgentOnly = requestedRole === 'AGENT_ONLY';
+        const isAgentNetworkManager = requestedRole === 'AGENT_NETWORK_MANAGER' || isAgentOnly;
+        const type = isAgentNetworkManager ? 'OPERATOR' : requestedRole;
+        const allowed = [
+          'SUPPORT',
+          'OPERATOR',
+          'SERVICE',
+          'PRIVILEGED',
+          'AGENT',
+          'CUSTOMER',
+          'AGGREGATOR',
+        ];
+        if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
+        return {
+          type,
+          principalId: `workforce-${requestedRole.toLowerCase()}-1`,
+          audience,
+          roles: isAgentNetworkManager ? ['AGENT_NETWORK_MANAGER'] : [],
+          // V1-ADMIN-AUTHORIZATION-HARDENING-01: the profile/rule helpers this suite creates
+          // assignments against require the catalogue functions `limit.view` / `limit.modify`
+          // (LimitCatalogController.requireFunction). Test 07 asserts SUPPORT/AGENT/CUSTOMER/
+          // AGGREGATOR stay blocked (requireWorkforce type allow-list), so the codes go to
+          // OPERATOR/SERVICE/PRIVILEGED only.
+          scopes: [
+            ...(['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+              ? ['limit.view', ...(isAgentOnly ? [] : ['limit.modify'])]
+              : []),
+            ...(isAgentNetworkManager ? ['agent.assign_limit'] : []),
+          ],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+      }),
   };
 
   const auth = (type: string) => `Bearer workforce-${type.toLowerCase()}`;
@@ -78,7 +95,9 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await (app.getHttpAdapter().getInstance() as any).ready();
   });
@@ -109,8 +128,8 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
   }
 
   async function seedAgentClass(): Promise<string> {
-    const ref = `ac-ref-${randomUUID().slice(0,8)}`;
-    const code = `AC_${randomUUID().slice(0,8).toUpperCase().replace(/-/g,'X')}`;
+    const ref = `ac-ref-${randomUUID().slice(0, 8)}`;
+    const code = `AC_${randomUUID().slice(0, 8).toUpperCase().replace(/-/g, 'X')}`;
     const rows: Array<{ id: string }> = await dataSource.query(
       `INSERT INTO agent_classes (reference, code, name) VALUES ($1, $2, $3) RETURNING id`,
       [ref, code, `Class ${code}`],
@@ -136,59 +155,169 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
 
   // ── 1. migration & schema ──
   it('01. migration chain exposes limit_assignments (0068) and recognizes current heads', async () => {
-    const migs: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp ASC`);
+    const migs: Array<{ timestamp: string; name: string }> = await dataSource.query(
+      `SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp ASC`,
+    );
     expect(migs.length).toBeGreaterThanOrEqual(69);
-    expect(migs.some(m=>m.timestamp==='1785753600067')).toBe(true);
-    expect(migs.some(m=>m.timestamp==='1785753600068')).toBe(true);
+    expect(migs.some((m) => m.timestamp === '1785753600067')).toBe(true);
+    expect(migs.some((m) => m.timestamp === '1785753600068')).toBe(true);
     const last = migs[migs.length - 1];
-    expect(['1785753600068','1785753600069','1785753600070','1785753600071','1785753600072','1785753600073','1785753600074','1785753600075', '1785753600076', '1785753600077', '1785753600078', '1785753600079', '1785753600080', '1785753600081', '1785753600082', '1785753600083', '1785753600084', '1785753600085', '1785753600086', '1785753600087', '1785753600088', '1785753600089', '1785753600090', '1785753600094', '1785753600095', '1785753600096', '1785753600097', '1785753600098', '1785753600099', '1785753600100', '1785753600101']).toContain(last.timestamp);
-    if (last.timestamp === '1785753600076') expect(last.name).toBe('ProvisionV1CommercialAccountingFamilies1785753600076');
-    else if (last.timestamp === '1785753600077') expect(last.name).toBe('AddAgentCredentialRotation1785753600077');
-    else if (last.timestamp === '1785753600078') expect(last.name).toBe('CreateCustomerRegistrationPhoneChallenges1785753600078');
-    else if (last.timestamp === '1785753600079') expect(last.name).toBe('AddCustomerCredentialRotation1785753600079');
-    else if (last.timestamp === '1785753600080') expect(last.name).toBe('AddMfaChallengePurpose1785753600080');
-    else if (last.timestamp === '1785753600081') expect(last.name).toBe('CreateSupportWorkforceAuthentication1785753600081');
-    else if (last.timestamp === '1785753600082') expect(last.name).toBe('CreateLocalAdminAuthentication1785753600082');
-    else if (last.timestamp === '1785753600083') expect(last.name).toBe('CreateAuthorizationCatalogue1785753600083');
-    else if (last.timestamp === '1785753600084') expect(last.name).toBe('RenameWorkforceBootstrapRoleToSuperAdmin1785753600084');
-    else if (last.timestamp === '1785753600085') expect(last.name).toBe('AddAdministratorRoleAssignmentScope1785753600085');
-    else if (last.timestamp === '1785753600086') expect(last.name).toBe('CreateRoleDefinitionGovernance1785753600086');
-    else if (last.timestamp === '1785753600087') expect(last.name).toBe('CreateDashboardPlatform1785753600087');
-    else if (last.timestamp === '1785753600096') expect(last.name).toBe('CreateCashToCashLocators1785753600096');
-    else if (last.timestamp === '1785753600097') expect(last.name).toBe('AddEmailNotificationChannel1785753600097');
-    else if (last.timestamp === '1785753600098') expect(last.name).toBe('CreateNotificationTemplateRegistry1785753600098');
-    else if (last.timestamp === '1785753600099') expect(last.name).toBe('AllowPhoneNotificationRecipients1785753600099');
-    else if (last.timestamp === '1785753600100') expect(last.name).toBe('CreateNotificationProviderConfiguration1785753600100');
-    else if (last.timestamp === '1785753600101') expect(last.name).toBe('NotificationReliability1785753600101');
-    else if (last.timestamp === '1785753600095') expect(last.name).toBe('SecureAgentApplicationAccess1785753600095');
-    else if (last.timestamp === '1785753600094') expect(last.name).toBe('AddSecureCustomerProofOfAddressUploads1785753600094');
-    else if (last.timestamp === '1785753600090') expect(last.name).toBe('CreateAgentFundingRequests1785753600090');
-    else if (last.timestamp === '1785753600089') expect(last.name).toBe('WidenAuthorizationActorColumns1785753600089');
-    else     if (last.timestamp === '1785753600075') expect(last.name).toBe('AddTransferFeeColumns1785753600075');
-    else if (last.timestamp === '1785753600074') expect(last.name).toBe('CreateRewardRules1785753600074');
-    else if (last.timestamp === '1785753600073') expect(last.name).toBe('CreateCommissionRules1785753600073');
-    else if (last.timestamp === '1785753600072') expect(last.name).toBe('CreateFeeRules1785753600072');
-    else if (last.timestamp === '1785753600071') expect(last.name).toBe('CreateProductCatalogue1785753600071');
-    else if (last.timestamp === '1785753600070') expect(last.name).toBe('CreateCommercialDecisionSnapshots1785753600070');
-    else if (last.timestamp === '1785753600069') expect(last.name).toBe('CreateLimitUsages1785753600069');
-    else expect(last.name).toBe('CreateLimitAssignments1785753600068');
-    const tables: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('limit_assignments','limit_profiles','limit_rules') ORDER BY tablename`);
-    expect(tables.map(t=>t.tablename).sort()).toEqual(['limit_assignments','limit_profiles','limit_rules']);
+    expect([
+      '1785753600068',
+      '1785753600069',
+      '1785753600070',
+      '1785753600071',
+      '1785753600072',
+      '1785753600073',
+      '1785753600074',
+      '1785753600075',
+      '1785753600076',
+      '1785753600077',
+      '1785753600078',
+      '1785753600079',
+      '1785753600080',
+      '1785753600081',
+      '1785753600082',
+      '1785753600083',
+      '1785753600084',
+      '1785753600085',
+      '1785753600086',
+      '1785753600087',
+      '1785753600088',
+      '1785753600089',
+      '1785753600090',
+      '1785753600094',
+      '1785753600095',
+      '1785753600096',
+      '1785753600097',
+      '1785753600098',
+      '1785753600099',
+      '1785753600100',
+      '1785753600101',
+      '1785753600102',
+      '1785753600103',
+    ]).toContain(last!.timestamp);
+    if (last!.timestamp === '1785753600076')
+      expect(last!.name).toBe('ProvisionV1CommercialAccountingFamilies1785753600076');
+    else if (last!.timestamp === '1785753600077')
+      expect(last!.name).toBe('AddAgentCredentialRotation1785753600077');
+    else if (last!.timestamp === '1785753600078')
+      expect(last!.name).toBe('CreateCustomerRegistrationPhoneChallenges1785753600078');
+    else if (last!.timestamp === '1785753600079')
+      expect(last!.name).toBe('AddCustomerCredentialRotation1785753600079');
+    else if (last!.timestamp === '1785753600080')
+      expect(last!.name).toBe('AddMfaChallengePurpose1785753600080');
+    else if (last!.timestamp === '1785753600081')
+      expect(last!.name).toBe('CreateSupportWorkforceAuthentication1785753600081');
+    else if (last!.timestamp === '1785753600082')
+      expect(last!.name).toBe('CreateLocalAdminAuthentication1785753600082');
+    else if (last!.timestamp === '1785753600083')
+      expect(last!.name).toBe('CreateAuthorizationCatalogue1785753600083');
+    else if (last!.timestamp === '1785753600084')
+      expect(last!.name).toBe('RenameWorkforceBootstrapRoleToSuperAdmin1785753600084');
+    else if (last!.timestamp === '1785753600085')
+      expect(last!.name).toBe('AddAdministratorRoleAssignmentScope1785753600085');
+    else if (last!.timestamp === '1785753600086')
+      expect(last!.name).toBe('CreateRoleDefinitionGovernance1785753600086');
+    else if (last!.timestamp === '1785753600087')
+      expect(last!.name).toBe('CreateDashboardPlatform1785753600087');
+    else if (last!.timestamp === '1785753600096')
+      expect(last!.name).toBe('CreateCashToCashLocators1785753600096');
+    else if (last!.timestamp === '1785753600097')
+      expect(last!.name).toBe('AddEmailNotificationChannel1785753600097');
+    else if (last!.timestamp === '1785753600098')
+      expect(last!.name).toBe('CreateNotificationTemplateRegistry1785753600098');
+    else if (last!.timestamp === '1785753600099')
+      expect(last!.name).toBe('AllowPhoneNotificationRecipients1785753600099');
+    else if (last!.timestamp === '1785753600100')
+      expect(last!.name).toBe('CreateNotificationProviderConfiguration1785753600100');
+    else if (last!.timestamp === '1785753600101')
+      expect(last!.name).toBe('NotificationReliability1785753600101');
+    else if (last!.timestamp === '1785753600102')
+      expect(last!.name).toBe('AddNotificationCredentialBinding1785753600102');
+    else if (last!.timestamp === '1785753600103')
+      expect(last!.name).toBe('ConfigureTransactionNotificationEvents1785753600103');
+    else if (last!.timestamp === '1785753600095')
+      expect(last!.name).toBe('SecureAgentApplicationAccess1785753600095');
+    else if (last!.timestamp === '1785753600094')
+      expect(last!.name).toBe('AddSecureCustomerProofOfAddressUploads1785753600094');
+    else if (last!.timestamp === '1785753600090')
+      expect(last!.name).toBe('CreateAgentFundingRequests1785753600090');
+    else if (last!.timestamp === '1785753600089')
+      expect(last!.name).toBe('WidenAuthorizationActorColumns1785753600089');
+    else if (last!.timestamp === '1785753600075')
+      expect(last!.name).toBe('AddTransferFeeColumns1785753600075');
+    else if (last!.timestamp === '1785753600074')
+      expect(last!.name).toBe('CreateRewardRules1785753600074');
+    else if (last!.timestamp === '1785753600073')
+      expect(last!.name).toBe('CreateCommissionRules1785753600073');
+    else if (last!.timestamp === '1785753600072')
+      expect(last!.name).toBe('CreateFeeRules1785753600072');
+    else if (last!.timestamp === '1785753600071')
+      expect(last!.name).toBe('CreateProductCatalogue1785753600071');
+    else if (last!.timestamp === '1785753600070')
+      expect(last!.name).toBe('CreateCommercialDecisionSnapshots1785753600070');
+    else if (last!.timestamp === '1785753600069')
+      expect(last!.name).toBe('CreateLimitUsages1785753600069');
+    else expect(last!.name).toBe('CreateLimitAssignments1785753600068');
+    const tables: Array<{ tablename: string }> = await dataSource.query(
+      `SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('limit_assignments','limit_profiles','limit_rules') ORDER BY tablename`,
+    );
+    expect(tables.map((t) => t.tablename).sort()).toEqual([
+      'limit_assignments',
+      'limit_profiles',
+      'limit_rules',
+    ]);
     // CHECK constraints
-    const checks: Array<{ conname: string; consrc: string }> = await dataSource.query(`SELECT conname, pg_get_constraintdef(oid) as consrc FROM pg_constraint WHERE conrelid='limit_assignments'::regclass`);
-    const names = checks.map(c=>c.conname);
-    expect(names).toEqual(expect.arrayContaining(['chk_limit_assignments_subject_consistency','chk_limit_assignments_effective','chk_limit_assignments_subject_type']));
+    const checks: Array<{ conname: string; consrc: string }> = await dataSource.query(
+      `SELECT conname, pg_get_constraintdef(oid) as consrc FROM pg_constraint WHERE conrelid='limit_assignments'::regclass`,
+    );
+    const names = checks.map((c) => c.conname);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'chk_limit_assignments_subject_consistency',
+        'chk_limit_assignments_effective',
+        'chk_limit_assignments_subject_type',
+      ]),
+    );
     // indexes
-    const idx: Array<{ indexname: string }> = await dataSource.query(`SELECT indexname FROM pg_indexes WHERE tablename='limit_assignments'`);
-    const iNames = idx.map(i=>i.indexname);
-    expect(iNames).toEqual(expect.arrayContaining(['idx_limit_assignments_profile','idx_limit_assignments_subject','uq_limit_assignments_active_key']));
+    const idx: Array<{ indexname: string }> = await dataSource.query(
+      `SELECT indexname FROM pg_indexes WHERE tablename='limit_assignments'`,
+    );
+    const iNames = idx.map((i) => i.indexname);
+    expect(iNames).toEqual(
+      expect.arrayContaining([
+        'idx_limit_assignments_profile',
+        'idx_limit_assignments_subject',
+        'uq_limit_assignments_active_key',
+      ]),
+    );
     // FK to limit_profiles
-    const fk: Array<{ conname: string }> = await dataSource.query(`SELECT conname FROM pg_constraint WHERE conrelid='limit_assignments'::regclass AND contype='f'`);
+    const fk: Array<{ conname: string }> = await dataSource.query(
+      `SELECT conname FROM pg_constraint WHERE conrelid='limit_assignments'::regclass AND contype='f'`,
+    );
     expect(fk.length).toBeGreaterThanOrEqual(1);
     // columns existence
-    const cols: Array<{ column_name: string }> = await dataSource.query(`SELECT column_name FROM information_schema.columns WHERE table_name='limit_assignments' ORDER BY column_name`);
-    const colNames = cols.map(c=>c.column_name);
-    expect(colNames).toEqual(expect.arrayContaining(['id','limit_profile_code','subject_type','subject_id','segment_code','precedence','effective_from','effective_to','is_active','version','created_by','created_at']));
+    const cols: Array<{ column_name: string }> = await dataSource.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_name='limit_assignments' ORDER BY column_name`,
+    );
+    const colNames = cols.map((c) => c.column_name);
+    expect(colNames).toEqual(
+      expect.arrayContaining([
+        'id',
+        'limit_profile_code',
+        'subject_type',
+        'subject_id',
+        'segment_code',
+        'precedence',
+        'effective_from',
+        'effective_to',
+        'is_active',
+        'version',
+        'created_by',
+        'created_at',
+      ]),
+    );
   });
 
   // ── 2. arbitrary profile + creation for each subject type ──
@@ -204,30 +333,57 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     const agentId = await seedAgent(agentClassId);
 
     // CUSTOMER
-    let res = await createAssignment({ limitProfileCode: 'ASSIGN_A', subjectType: 'CUSTOMER', subjectId: custId, precedence: 10, effectiveFrom: '2026-01-01T00:00:00.000Z' });
+    let res = await createAssignment({
+      limitProfileCode: 'ASSIGN_A',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+      precedence: 10,
+      effectiveFrom: '2026-01-01T00:00:00.000Z',
+    });
     expect(res.status).toBe(201);
-    expect(res.body).toMatchObject({ limitProfileCode: 'ASSIGN_A', subjectType: 'CUSTOMER', subjectId: custId, precedence: 10, version: 1, isActive: true });
+    expect(res.body).toMatchObject({
+      limitProfileCode: 'ASSIGN_A',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+      precedence: 10,
+      version: 1,
+      isActive: true,
+    });
     expect(res.body.segmentCode).toBeNull();
     expect(res.body.effectiveFrom).toBeDefined();
     expect(res.body.createdBy).toBeDefined();
     const custAssignId = res.body.id;
 
     // AGENT
-    res = await createAssignment({ limitProfileCode: 'ASSIGN_B', subjectType: 'AGENT', subjectId: agentId, precedence: 20 }, 'AGENT_NETWORK_MANAGER');
+    res = await createAssignment(
+      { limitProfileCode: 'ASSIGN_B', subjectType: 'AGENT', subjectId: agentId, precedence: 20 },
+      'AGENT_NETWORK_MANAGER',
+    );
     expect(res.status).toBe(201);
     expect(res.body.subjectType).toBe('AGENT');
     expect(res.body.subjectId).toBe(agentId);
     const agentAssignId = res.body.id;
 
     // AGENT_CLASS
-    res = await createAssignment({ limitProfileCode: 'ASSIGN_C', subjectType: 'AGENT_CLASS', subjectId: agentClassId, precedence: 5, isActive: true });
+    res = await createAssignment({
+      limitProfileCode: 'ASSIGN_C',
+      subjectType: 'AGENT_CLASS',
+      subjectId: agentClassId,
+      precedence: 5,
+      isActive: true,
+    });
     expect(res.status).toBe(201);
     expect(res.body.subjectType).toBe('AGENT_CLASS');
     expect(res.body.subjectId).toBe(agentClassId);
     const classAssignId = res.body.id;
 
     // SEGMENT
-    res = await createAssignment({ limitProfileCode: 'ASSIGN_A', subjectType: 'SEGMENT', segmentCode: 'SEG_NORTH', precedence: 1 });
+    res = await createAssignment({
+      limitProfileCode: 'ASSIGN_A',
+      subjectType: 'SEGMENT',
+      segmentCode: 'SEG_NORTH',
+      precedence: 1,
+    });
     expect(res.status).toBe(201);
     expect(res.body.subjectType).toBe('SEGMENT');
     expect(res.body.segmentCode).toBe('SEG_NORTH');
@@ -235,7 +391,11 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     const segmentAssignId = res.body.id;
 
     // GLOBAL
-    res = await createAssignment({ limitProfileCode: 'ASSIGN_B', subjectType: 'GLOBAL', precedence: 0 });
+    res = await createAssignment({
+      limitProfileCode: 'ASSIGN_B',
+      subjectType: 'GLOBAL',
+      precedence: 0,
+    });
     expect(res.status).toBe(201);
     expect(res.body.subjectType).toBe('GLOBAL');
     expect(res.body.subjectId).toBeNull();
@@ -243,8 +403,16 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     const globalAssignId = res.body.id;
 
     // safe projection: no deletedAt
-    for (const id of [custAssignId, agentAssignId, classAssignId, segmentAssignId, globalAssignId]) {
-      const get = await request(app.getHttpServer()).get(`/api/v1/internal/limit-assignments/${id}`).set('Authorization', auth('OPERATOR'));
+    for (const id of [
+      custAssignId,
+      agentAssignId,
+      classAssignId,
+      segmentAssignId,
+      globalAssignId,
+    ]) {
+      const get = await request(app.getHttpServer())
+        .get(`/api/v1/internal/limit-assignments/${id}`)
+        .set('Authorization', auth('OPERATOR'));
       expect(get.status).toBe(200);
       expect(JSON.stringify(get.body)).not.toContain('deletedAt');
       expect(JSON.stringify(get.body)).not.toContain('deleted_at');
@@ -255,20 +423,27 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
   });
 
   it('03. unlimited arbitrary assignments — not fixed at 3, not Tier-bound', async () => {
-    const base = 'ARBITRARY';
     // create 6 distinct arbitrary profiles beyond Tier 1/2/3
-    const codes = ['ARB_1','ARB_2','ARB_3','ARB_4','ARB_5','ARB_6'];
+    const codes = ['ARB_1', 'ARB_2', 'ARB_3', 'ARB_4', 'ARB_5', 'ARB_6'];
     for (const c of codes) {
       const r = await createProfile(c);
       expect(r.status).toBe(201);
     }
     const custId = await seedCustomer();
     // assign all 6 to same customer with different precedence / effective dates
-    for (let i=0;i<codes.length;i++) {
-      const r = await createAssignment({ limitProfileCode: codes[i], subjectType: 'CUSTOMER', subjectId: custId, precedence: i, effectiveFrom: `2026-01-0${i+1}T00:00:00.000Z` });
+    for (let i = 0; i < codes.length; i++) {
+      const r = await createAssignment({
+        limitProfileCode: codes[i],
+        subjectType: 'CUSTOMER',
+        subjectId: custId,
+        precedence: i,
+        effectiveFrom: `2026-01-0${i + 1}T00:00:00.000Z`,
+      });
       expect(r.status).toBe(201);
     }
-    const list = await request(app.getHttpServer()).get(`/api/v1/internal/limit-assignments/customer/${custId}?limit=100`).set('Authorization', auth('OPERATOR'));
+    const list = await request(app.getHttpServer())
+      .get(`/api/v1/internal/limit-assignments/customer/${custId}?limit=100`)
+      .set('Authorization', auth('OPERATOR'));
     expect(list.status).toBe(200);
     expect(list.body.total).toBe(6);
     // disproof: we have 6 assignments for one customer — not capped at 3
@@ -278,54 +453,170 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     await createProfile('EFF_PROFILE');
     const custId = await seedCustomer();
     // first assignment global default precedence 0 from Jan 1
-    let r = await createAssignment({ limitProfileCode: 'EFF_PROFILE', subjectType: 'CUSTOMER', subjectId: custId, precedence: 0, effectiveFrom: '2026-01-01T00:00:00.000Z' });
+    let r = await createAssignment({
+      limitProfileCode: 'EFF_PROFILE',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+      precedence: 0,
+      effectiveFrom: '2026-01-01T00:00:00.000Z',
+    });
     expect(r.status).toBe(201);
     // second assignment same subject/profile but different effectiveFrom — legitimate multi-scope via dates, should succeed
-    r = await createAssignment({ limitProfileCode: 'EFF_PROFILE', subjectType: 'CUSTOMER', subjectId: custId, precedence: 10, effectiveFrom: '2026-02-01T00:00:00.000Z', effectiveTo: '2026-03-01T00:00:00.000Z' });
+    r = await createAssignment({
+      limitProfileCode: 'EFF_PROFILE',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+      precedence: 10,
+      effectiveFrom: '2026-02-01T00:00:00.000Z',
+      effectiveTo: '2026-03-01T00:00:00.000Z',
+    });
     expect(r.status).toBe(201);
     expect(r.body.precedence).toBe(10);
-    expect(new Date(r.body.effectiveTo).toISOString()).toBe('2026-03-01T00:00:00.000Z');
+    expect(new Date(r.body.effectiveTo as string).toISOString()).toBe('2026-03-01T00:00:00.000Z');
     // different profile same subject/effective same date — allowed (unique includes profile code)
     await createProfile('EFF_PROFILE_2');
-    r = await createAssignment({ limitProfileCode: 'EFF_PROFILE_2', subjectType: 'CUSTOMER', subjectId: custId, precedence: 5, effectiveFrom: '2026-01-01T00:00:00.000Z' });
+    r = await createAssignment({
+      limitProfileCode: 'EFF_PROFILE_2',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+      precedence: 5,
+      effectiveFrom: '2026-01-01T00:00:00.000Z',
+    });
     expect(r.status).toBe(201);
     // conflicting duplicate — same subject/profile/effectiveFrom should 409
-    const dup = await createAssignment({ limitProfileCode: 'EFF_PROFILE', subjectType: 'CUSTOMER', subjectId: custId, precedence: 0, effectiveFrom: '2026-01-01T00:00:00.000Z' });
+    const dup = await createAssignment({
+      limitProfileCode: 'EFF_PROFILE',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+      precedence: 0,
+      effectiveFrom: '2026-01-01T00:00:00.000Z',
+    });
     expect(dup.status).toBe(409);
     // verify precedence dimension is honored — list ordered by createdAt, but precedence field preserved
-    const list = await request(app.getHttpServer()).get(`/api/v1/internal/limit-assignments/customer/${custId}?limit=100`).set('Authorization', auth('OPERATOR'));
+    const list = await request(app.getHttpServer())
+      .get(`/api/v1/internal/limit-assignments/customer/${custId}?limit=100`)
+      .set('Authorization', auth('OPERATOR'));
     expect(list.status).toBe(200);
-    const precedences = list.body.data.map((a:any)=>a.precedence).sort((a:number,b:number)=>a-b);
-    expect(precedences).toEqual([0,5,10]);
+    const precedences = list.body.data
+      .map((a: any) => a.precedence)
+      .sort((a: number, b: number) => a - b);
+    expect(precedences).toEqual([0, 5, 10]);
     // invalid effectiveTo before effectiveFrom → 400
-    const bad = await createAssignment({ limitProfileCode: 'EFF_PROFILE', subjectType: 'SEGMENT', segmentCode: 'EFF_SEG', effectiveFrom: '2026-02-01T00:00:00.000Z', effectiveTo: '2026-01-01T00:00:00.000Z' });
+    const bad = await createAssignment({
+      limitProfileCode: 'EFF_PROFILE',
+      subjectType: 'SEGMENT',
+      segmentCode: 'EFF_SEG',
+      effectiveFrom: '2026-02-01T00:00:00.000Z',
+      effectiveTo: '2026-01-01T00:00:00.000Z',
+    });
     expect(bad.status).toBe(400);
   });
 
   it('05. version/concurrency — PATCH requires version, stale 409, correct increments', async () => {
     await createProfile('CONC_ASSIGN');
     const custId = await seedCustomer();
-    let r = await createAssignment({ limitProfileCode: 'CONC_ASSIGN', subjectType: 'CUSTOMER', subjectId: custId, precedence: 1 });
+    const r = await createAssignment({
+      limitProfileCode: 'CONC_ASSIGN',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+      precedence: 1,
+    });
     expect(r.status).toBe(201);
     const id = r.body.id;
     expect(r.body.version).toBe(1);
     // missing version → 400
-    let upd = await request(app.getHttpServer()).patch(`/api/v1/internal/limit-assignments/${id}`).set('Authorization', auth('OPERATOR')).send({ isActive: false });
+    let upd = await request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'))
+      .send({ isActive: false });
     expect(upd.status).toBe(400);
     // correct update
-    upd = await request(app.getHttpServer()).patch(`/api/v1/internal/limit-assignments/${id}`).set('Authorization', auth('OPERATOR')).send({ version: 1, isActive: false, precedence: 99 });
+    upd = await request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 1, isActive: false, precedence: 99 });
     expect(upd.status).toBe(200);
     expect(upd.body.version).toBe(2);
     expect(upd.body.isActive).toBe(false);
     expect(upd.body.precedence).toBe(99);
     // stale version 409
-    const stale = await request(app.getHttpServer()).patch(`/api/v1/internal/limit-assignments/${id}`).set('Authorization', auth('OPERATOR')).send({ version: 1, precedence: 5 });
+    const stale = await request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 1, precedence: 5 });
     expect(stale.status).toBe(409);
     // second correct update
-    const upd2 = await request(app.getHttpServer()).patch(`/api/v1/internal/limit-assignments/${id}`).set('Authorization', auth('OPERATOR')).send({ version: 2, isActive: true });
+    const upd2 = await request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 2, isActive: true });
     expect(upd2.status).toBe(200);
     expect(upd2.body.version).toBe(3);
     expect(upd2.body.isActive).toBe(true);
+  });
+
+  it('05 concurrent updates with one version serialize, including a no-op update', async () => {
+    await createProfile('RACE_ASSIGN');
+    const customerId = await seedCustomer();
+    const created = await createAssignment({
+      limitProfileCode: 'RACE_ASSIGN',
+      subjectType: 'CUSTOMER',
+      subjectId: customerId,
+      precedence: 1,
+    });
+    expect(created.status).toBe(201);
+    const id = created.body.id;
+    const runner = dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    await runner.query('SELECT id FROM limit_assignments WHERE id=$1 FOR UPDATE', [id]);
+    const first = request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 1, precedence: 1 })
+      .then((res) => res);
+    const second = request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 1, precedence: 9 })
+      .then((res) => res);
+    let blocked = false;
+    try {
+      const deadline = Date.now() + 10000;
+      while (Date.now() < deadline) {
+        const rows: Array<{ count: string }> = await dataSource.query(
+          `SELECT count(*)::text AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%limit_assignments%'`,
+        );
+        if (Number(rows[0]!.count) >= 2) {
+          blocked = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    } finally {
+      await runner.commitTransaction();
+      await runner.release();
+    }
+    const results = await Promise.all([first, second]);
+    expect(blocked).toBe(true);
+    expect(results.map((res) => res.status).sort()).toEqual([200, 409]);
+    expect(results.find((res) => res.status === 200)!.body.version).toBe(2);
+    const after = await request(app.getHttpServer())
+      .get(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'));
+    expect(after.status).toBe(200);
+    expect(after.body.version).toBe(2);
+    const noop = await request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 2, precedence: after.body.precedence });
+    expect(noop.status).toBe(200);
+    expect(noop.body.version).toBe(3);
+    const staleNoop = await request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 2, precedence: after.body.precedence });
+    expect(staleNoop.status).toBe(409);
   });
 
   it('05a. Agent assignment PATCH authorizes before lookup and preserves non-Agent access', async () => {
@@ -377,14 +668,97 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     expect(allowed.body.isActive).toBe(false);
   });
 
+  it('05b. Agent-only and non-Agent grants cannot mutate or retarget each other’s assignments', async () => {
+    const profileCode = 'PATCH_BOUNDARIES';
+    await createProfile(profileCode, { kind: 'UNIVERSAL' });
+    const agentId = await seedAgent();
+    const agent = await createAssignment(
+      { limitProfileCode: profileCode, subjectType: 'AGENT', subjectId: agentId },
+      'AGENT_NETWORK_MANAGER',
+    );
+    const global = await createAssignment({ limitProfileCode: profileCode, subjectType: 'GLOBAL' });
+    expect(agent.status).toBe(201);
+    expect(global.status).toBe(201);
+    const agentAssignmentId = agent.body.id as string;
+    const globalAssignmentId = global.body.id as string;
+    const patch = (id: string, role: string, body: object) =>
+      request(app.getHttpServer())
+        .patch(`/api/v1/internal/limit-assignments/${id}`)
+        .set('Authorization', auth(role))
+        .send(body);
+    const agentOnlyDenied = await patch(globalAssignmentId, 'AGENT_ONLY', {
+      version: 1,
+      isActive: false,
+    });
+    const missing = await patch(randomUUID(), 'AGENT_ONLY', { version: 1, isActive: false });
+    expect(agentOnlyDenied.status).toBe(404);
+    expect(agentOnlyDenied.body).toEqual(missing.body);
+    expect(
+      (await patch(agentAssignmentId, 'AGENT_ONLY', { version: 1, subjectType: 'GLOBAL' })).status,
+    ).toBe(403);
+    expect(
+      (
+        await patch(globalAssignmentId, 'OPERATOR', {
+          version: 1,
+          subjectType: 'AGENT',
+          subjectId: agentId,
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (await patch(agentAssignmentId, 'OPERATOR', { version: 1, subjectType: 'GLOBAL' })).status,
+    ).toBe(404);
+    expect(
+      (await patch(agentAssignmentId, 'AGENT_ONLY', { version: 1, isActive: false })).status,
+    ).toBe(200);
+    expect(
+      (await patch(globalAssignmentId, 'OPERATOR', { version: 1, isActive: false })).status,
+    ).toBe(200);
+    const rows: Array<{ entity_id: string }> = await dataSource.query(
+      `SELECT entity_id FROM audit_events WHERE entity_type='LIMIT_ASSIGNMENT' AND action='UPDATED'`,
+    );
+    expect(rows).toHaveLength(2);
+    expect(
+      (
+        await patch(agentAssignmentId, 'AGENT_NETWORK_MANAGER', {
+          version: 2,
+          subjectType: 'GLOBAL',
+          subjectId: null,
+        })
+      ).status,
+    ).toBe(200);
+    const retargeted = await patch(globalAssignmentId, 'AGENT_NETWORK_MANAGER', {
+      version: 2,
+      subjectType: 'AGENT',
+      subjectId: agentId,
+      effectiveTo: '2099-01-01T00:00:00Z',
+    });
+    expect(retargeted.status).toBe(200);
+    expect(retargeted.body).toMatchObject({ subjectType: 'AGENT', subjectId: agentId, version: 3 });
+    const cleared = await patch(globalAssignmentId, 'AGENT_ONLY', {
+      version: 3,
+      effectiveTo: null,
+    });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.effectiveTo).toBeNull();
+  });
+
   it('06. duplicate/conflict validation — 400/404 cases', async () => {
     await createProfile('VALID_PROFILE');
     const custId = await seedCustomer();
     // missing profile → 404
-    let bad = await createAssignment({ limitProfileCode: 'NOT_EXIST', subjectType: 'CUSTOMER', subjectId: custId });
+    let bad = await createAssignment({
+      limitProfileCode: 'NOT_EXIST',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+    });
     expect(bad.status).toBe(404);
     // invalid code pattern → 400
-    bad = await createAssignment({ limitProfileCode: 'bad-lower', subjectType: 'CUSTOMER', subjectId: custId });
+    bad = await createAssignment({
+      limitProfileCode: 'bad-lower',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+    });
     expect(bad.status).toBe(400);
     // CUSTOMER without subjectId → 400
     bad = await createAssignment({ limitProfileCode: 'VALID_PROFILE', subjectType: 'CUSTOMER' });
@@ -393,36 +767,85 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     bad = await createAssignment({ limitProfileCode: 'VALID_PROFILE', subjectType: 'SEGMENT' });
     expect(bad.status).toBe(400);
     // SEGMENT with subjectId → 400
-    bad = await createAssignment({ limitProfileCode: 'VALID_PROFILE', subjectType: 'SEGMENT', segmentCode: 'SEG_A', subjectId: custId });
+    bad = await createAssignment({
+      limitProfileCode: 'VALID_PROFILE',
+      subjectType: 'SEGMENT',
+      segmentCode: 'SEG_A',
+      subjectId: custId,
+    });
     expect(bad.status).toBe(400);
     // GLOBAL with subjectId → 400
-    bad = await createAssignment({ limitProfileCode: 'VALID_PROFILE', subjectType: 'GLOBAL', subjectId: custId });
+    bad = await createAssignment({
+      limitProfileCode: 'VALID_PROFILE',
+      subjectType: 'GLOBAL',
+      subjectId: custId,
+    });
     expect(bad.status).toBe(400);
     // GLOBAL with segmentCode → 400
-    bad = await createAssignment({ limitProfileCode: 'VALID_PROFILE', subjectType: 'GLOBAL', segmentCode: 'SEG_X' });
+    bad = await createAssignment({
+      limitProfileCode: 'VALID_PROFILE',
+      subjectType: 'GLOBAL',
+      segmentCode: 'SEG_X',
+    });
     expect(bad.status).toBe(400);
     // CUSTOMER with segmentCode → 400
-    bad = await createAssignment({ limitProfileCode: 'VALID_PROFILE', subjectType: 'CUSTOMER', subjectId: custId, segmentCode: 'SEG_Y' });
+    bad = await createAssignment({
+      limitProfileCode: 'VALID_PROFILE',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+      segmentCode: 'SEG_Y',
+    });
     expect(bad.status).toBe(400);
     // non-existent customer → 404
-    bad = await createAssignment({ limitProfileCode: 'VALID_PROFILE', subjectType: 'CUSTOMER', subjectId: randomUUID() });
+    bad = await createAssignment({
+      limitProfileCode: 'VALID_PROFILE',
+      subjectType: 'CUSTOMER',
+      subjectId: randomUUID(),
+    });
     expect(bad.status).toBe(404);
     // non-existent agent → 404
-    bad = await createAssignment({ limitProfileCode: 'VALID_PROFILE', subjectType: 'AGENT', subjectId: randomUUID() }, 'AGENT_NETWORK_MANAGER');
+    bad = await createAssignment(
+      { limitProfileCode: 'VALID_PROFILE', subjectType: 'AGENT', subjectId: randomUUID() },
+      'AGENT_NETWORK_MANAGER',
+    );
     expect(bad.status).toBe(404);
     // non-existent agent class → 404
-    bad = await createAssignment({ limitProfileCode: 'VALID_PROFILE', subjectType: 'AGENT_CLASS', subjectId: randomUUID() });
+    bad = await createAssignment({
+      limitProfileCode: 'VALID_PROFILE',
+      subjectType: 'AGENT_CLASS',
+      subjectId: randomUUID(),
+    });
     expect(bad.status).toBe(404);
     // invalid UUID → 400
-    bad = await createAssignment({ limitProfileCode: 'VALID_PROFILE', subjectType: 'CUSTOMER', subjectId: 'not-a-uuid' });
+    bad = await createAssignment({
+      limitProfileCode: 'VALID_PROFILE',
+      subjectType: 'CUSTOMER',
+      subjectId: 'not-a-uuid',
+    });
     expect(bad.status).toBe(400);
     // invalid segment pattern → 400
-    bad = await createAssignment({ limitProfileCode: 'VALID_PROFILE', subjectType: 'SEGMENT', segmentCode: 'bad-lower' });
+    bad = await createAssignment({
+      limitProfileCode: 'VALID_PROFILE',
+      subjectType: 'SEGMENT',
+      segmentCode: 'bad-lower',
+    });
     expect(bad.status).toBe(400);
     // duplicate same data → 409 after first success
-    const first = await createAssignment({ limitProfileCode: 'VALID_PROFILE', subjectType: 'SEGMENT', segmentCode: 'SEG_DUP', precedence: 0, effectiveFrom: '2026-01-01T00:00:00.000Z' });
+    const first = await createAssignment({
+      limitProfileCode: 'VALID_PROFILE',
+      subjectType: 'SEGMENT',
+      segmentCode: 'SEG_DUP',
+      precedence: 0,
+      effectiveFrom: '2026-01-01T00:00:00.000Z',
+    });
     expect(first.status).toBe(201);
-    const dup = await createAssignment({ limitProfileCode: 'VALID_PROFILE', subjectType: 'SEGMENT', segmentCode: 'SEG_DUP', precedence: 0, effectiveFrom: '2026-01-01T00:00:00.000Z' });
+    const dup = await createAssignment({
+      limitProfileCode: 'VALID_PROFILE',
+      subjectType: 'SEGMENT',
+      segmentCode: 'SEG_DUP',
+      precedence: 0,
+      effectiveFrom: '2026-01-01T00:00:00.000Z',
+    });
     expect(dup.status).toBe(409);
   });
 
@@ -430,38 +853,72 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     await createProfile('AUTH_ASSIGN');
     const custId = await seedCustomer();
     // no auth 401
-    let res = await request(app.getHttpServer()).post('/api/v1/internal/limit-assignments').send({ limitProfileCode: 'AUTH_ASSIGN', subjectType: 'CUSTOMER', subjectId: custId });
+    let res = await request(app.getHttpServer())
+      .post('/api/v1/internal/limit-assignments')
+      .send({ limitProfileCode: 'AUTH_ASSIGN', subjectType: 'CUSTOMER', subjectId: custId });
     expect(res.status).toBe(401);
     res = await request(app.getHttpServer()).get('/api/v1/internal/limit-assignments').expect(401);
     expect(res.status).toBe(401);
     // SUPPORT blocked 403
-    res = await createAssignment({ limitProfileCode: 'AUTH_ASSIGN', subjectType: 'CUSTOMER', subjectId: custId }, 'SUPPORT');
+    res = await createAssignment(
+      { limitProfileCode: 'AUTH_ASSIGN', subjectType: 'CUSTOMER', subjectId: custId },
+      'SUPPORT',
+    );
     expect(res.status).toBe(403);
     // AGENT blocked 403
-    res = await createAssignment({ limitProfileCode: 'AUTH_ASSIGN', subjectType: 'CUSTOMER', subjectId: custId }, 'AGENT');
+    res = await createAssignment(
+      { limitProfileCode: 'AUTH_ASSIGN', subjectType: 'CUSTOMER', subjectId: custId },
+      'AGENT',
+    );
     expect(res.status).toBe(403);
     // CUSTOMER blocked 403
-    res = await createAssignment({ limitProfileCode: 'AUTH_ASSIGN', subjectType: 'CUSTOMER', subjectId: custId }, 'CUSTOMER');
+    res = await createAssignment(
+      { limitProfileCode: 'AUTH_ASSIGN', subjectType: 'CUSTOMER', subjectId: custId },
+      'CUSTOMER',
+    );
     expect(res.status).toBe(403);
     // AGGREGATOR blocked 403
-    res = await createAssignment({ limitProfileCode: 'AUTH_ASSIGN', subjectType: 'CUSTOMER', subjectId: custId }, 'AGGREGATOR');
+    res = await createAssignment(
+      { limitProfileCode: 'AUTH_ASSIGN', subjectType: 'CUSTOMER', subjectId: custId },
+      'AGGREGATOR',
+    );
     expect(res.status).toBe(403);
     // OPERATOR allowed
-    res = await createAssignment({ limitProfileCode: 'AUTH_ASSIGN', subjectType: 'CUSTOMER', subjectId: custId, precedence: 1, effectiveFrom: '2026-09-01T00:00:00.000Z' }, 'OPERATOR');
+    res = await createAssignment(
+      {
+        limitProfileCode: 'AUTH_ASSIGN',
+        subjectType: 'CUSTOMER',
+        subjectId: custId,
+        precedence: 1,
+        effectiveFrom: '2026-09-01T00:00:00.000Z',
+      },
+      'OPERATOR',
+    );
     expect(res.status).toBe(201);
     const id = res.body.id;
     // SERVICE allowed for GET & PATCH
-    const getSvc = await request(app.getHttpServer()).get(`/api/v1/internal/limit-assignments/${id}`).set('Authorization', auth('SERVICE'));
+    const getSvc = await request(app.getHttpServer())
+      .get(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('SERVICE'));
     expect(getSvc.status).toBe(200);
-    const updSvc = await request(app.getHttpServer()).patch(`/api/v1/internal/limit-assignments/${id}`).set('Authorization', auth('SERVICE')).send({ version: 1, precedence: 2 });
+    const updSvc = await request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('SERVICE'))
+      .send({ version: 1, precedence: 2 });
     expect(updSvc.status).toBe(200);
     // PRIVILEGED allowed
-    const priv = await request(app.getHttpServer()).get('/api/v1/internal/limit-assignments').set('Authorization', auth('PRIVILEGED'));
+    const priv = await request(app.getHttpServer())
+      .get('/api/v1/internal/limit-assignments')
+      .set('Authorization', auth('PRIVILEGED'));
     expect(priv.status).toBe(200);
     // GET /profile/:code also guarded
-    const unauthProfile = await request(app.getHttpServer()).get('/api/v1/internal/limit-assignments/profile/AUTH_ASSIGN');
+    const unauthProfile = await request(app.getHttpServer()).get(
+      '/api/v1/internal/limit-assignments/profile/AUTH_ASSIGN',
+    );
     expect(unauthProfile.status).toBe(401);
-    const supportProfile = await request(app.getHttpServer()).get('/api/v1/internal/limit-assignments/profile/AUTH_ASSIGN').set('Authorization', auth('SUPPORT'));
+    const supportProfile = await request(app.getHttpServer())
+      .get('/api/v1/internal/limit-assignments/profile/AUTH_ASSIGN')
+      .set('Authorization', auth('SUPPORT'));
     expect(supportProfile.status).toBe(403);
   });
 
@@ -474,72 +931,122 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     const agentId = await seedAgent(acId);
 
     // seed 5 assignments
-    await createAssignment({ limitProfileCode: 'LIST_PROF_1', subjectType: 'CUSTOMER', subjectId: custId, precedence: 1, effectiveFrom: '2026-01-01T00:00:00.000Z' });
-    await createAssignment({ limitProfileCode: 'LIST_PROF_1', subjectType: 'CUSTOMER', subjectId: custId2, precedence: 2, effectiveFrom: '2026-01-02T00:00:00.000Z' });
-    await createAssignment({ limitProfileCode: 'LIST_PROF_2', subjectType: 'AGENT', subjectId: agentId }, 'AGENT_NETWORK_MANAGER');
-    await createAssignment({ limitProfileCode: 'LIST_PROF_1', subjectType: 'AGENT_CLASS', subjectId: acId });
-    await createAssignment({ limitProfileCode: 'LIST_PROF_2', subjectType: 'SEGMENT', segmentCode: 'LIST_SEG' });
+    await createAssignment({
+      limitProfileCode: 'LIST_PROF_1',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+      precedence: 1,
+      effectiveFrom: '2026-01-01T00:00:00.000Z',
+    });
+    await createAssignment({
+      limitProfileCode: 'LIST_PROF_1',
+      subjectType: 'CUSTOMER',
+      subjectId: custId2,
+      precedence: 2,
+      effectiveFrom: '2026-01-02T00:00:00.000Z',
+    });
+    await createAssignment(
+      { limitProfileCode: 'LIST_PROF_2', subjectType: 'AGENT', subjectId: agentId },
+      'AGENT_NETWORK_MANAGER',
+    );
+    await createAssignment({
+      limitProfileCode: 'LIST_PROF_1',
+      subjectType: 'AGENT_CLASS',
+      subjectId: acId,
+    });
+    await createAssignment({
+      limitProfileCode: 'LIST_PROF_2',
+      subjectType: 'SEGMENT',
+      segmentCode: 'LIST_SEG',
+    });
     await createAssignment({ limitProfileCode: 'LIST_PROF_1', subjectType: 'GLOBAL' });
 
     // list by profile
-    let list = await request(app.getHttpServer()).get('/api/v1/internal/limit-assignments/profile/LIST_PROF_1?limit=100').set('Authorization', auth('OPERATOR'));
+    let list = await request(app.getHttpServer())
+      .get('/api/v1/internal/limit-assignments/profile/LIST_PROF_1?limit=100')
+      .set('Authorization', auth('OPERATOR'));
     expect(list.status).toBe(200);
     expect(list.body.total).toBe(4);
     for (const a of list.body.data) expect(a.limitProfileCode).toBe('LIST_PROF_1');
 
     // list by customer
-    list = await request(app.getHttpServer()).get(`/api/v1/internal/limit-assignments/customer/${custId}?limit=100`).set('Authorization', auth('OPERATOR'));
+    list = await request(app.getHttpServer())
+      .get(`/api/v1/internal/limit-assignments/customer/${custId}?limit=100`)
+      .set('Authorization', auth('OPERATOR'));
     expect(list.status).toBe(200);
     expect(list.body.total).toBe(1);
     expect(list.body.data[0].subjectId).toBe(custId);
 
     // list by agent
-    list = await request(app.getHttpServer()).get(`/api/v1/internal/limit-assignments/agent/${agentId}?limit=100`).set('Authorization', auth('OPERATOR'));
+    list = await request(app.getHttpServer())
+      .get(`/api/v1/internal/limit-assignments/agent/${agentId}?limit=100`)
+      .set('Authorization', auth('OPERATOR'));
     expect(list.status).toBe(200);
     expect(list.body.total).toBe(1);
     expect(list.body.data[0].subjectType).toBe('AGENT');
 
     // list by agent-class
-    list = await request(app.getHttpServer()).get(`/api/v1/internal/limit-assignments/agent-class/${acId}?limit=100`).set('Authorization', auth('OPERATOR'));
+    list = await request(app.getHttpServer())
+      .get(`/api/v1/internal/limit-assignments/agent-class/${acId}?limit=100`)
+      .set('Authorization', auth('OPERATOR'));
     expect(list.status).toBe(200);
     expect(list.body.total).toBe(1);
 
     // list by segment
-    list = await request(app.getHttpServer()).get('/api/v1/internal/limit-assignments/segment/LIST_SEG?limit=100').set('Authorization', auth('OPERATOR'));
+    list = await request(app.getHttpServer())
+      .get('/api/v1/internal/limit-assignments/segment/LIST_SEG?limit=100')
+      .set('Authorization', auth('OPERATOR'));
     expect(list.status).toBe(200);
     expect(list.body.total).toBe(1);
     expect(list.body.data[0].segmentCode).toBe('LIST_SEG');
 
     // generic filter: subjectType=GLOBAL
-    list = await request(app.getHttpServer()).get('/api/v1/internal/limit-assignments?subjectType=GLOBAL&limit=100').set('Authorization', auth('OPERATOR'));
+    list = await request(app.getHttpServer())
+      .get('/api/v1/internal/limit-assignments?subjectType=GLOBAL&limit=100')
+      .set('Authorization', auth('OPERATOR'));
     expect(list.status).toBe(200);
     expect(list.body.total).toBe(1);
     expect(list.body.data[0].subjectType).toBe('GLOBAL');
 
     // filter by isActive + pagination deterministic
-    const p1 = await request(app.getHttpServer()).get('/api/v1/internal/limit-assignments?limit=2&page=1').set('Authorization', auth('OPERATOR'));
-    const p2 = await request(app.getHttpServer()).get('/api/v1/internal/limit-assignments?limit=2&page=2').set('Authorization', auth('OPERATOR'));
+    const p1 = await request(app.getHttpServer())
+      .get('/api/v1/internal/limit-assignments?limit=2&page=1')
+      .set('Authorization', auth('OPERATOR'));
+    const p2 = await request(app.getHttpServer())
+      .get('/api/v1/internal/limit-assignments?limit=2&page=2')
+      .set('Authorization', auth('OPERATOR'));
     expect(p1.status).toBe(200);
     expect(p2.status).toBe(200);
     expect(p1.body.data.length).toBe(2);
     expect(p1.body.hasNextPage).toBe(true);
     expect(p1.body.page).toBe(1);
     expect(p2.body.page).toBe(2);
-    const ids1 = p1.body.data.map((a:any)=>a.id);
-    const ids2 = p2.body.data.map((a:any)=>a.id);
+    const ids1 = p1.body.data.map((a: any) => a.id);
+    const ids2 = p2.body.data.map((a: any) => a.id);
     // deterministic: no overlap
     for (const id of ids1) expect(ids2).not.toContain(id);
     // limit validation
-    const badLimit = await request(app.getHttpServer()).get('/api/v1/internal/limit-assignments?limit=200').set('Authorization', auth('OPERATOR'));
+    const badLimit = await request(app.getHttpServer())
+      .get('/api/v1/internal/limit-assignments?limit=200')
+      .set('Authorization', auth('OPERATOR'));
     expect(badLimit.status).toBe(400);
-    const badPage = await request(app.getHttpServer()).get('/api/v1/internal/limit-assignments?page=0').set('Authorization', auth('OPERATOR'));
+    const badPage = await request(app.getHttpServer())
+      .get('/api/v1/internal/limit-assignments?page=0')
+      .set('Authorization', auth('OPERATOR'));
     expect(badPage.status).toBe(400);
   });
 
   it('09. safe projection & pagination/filtering invariants', async () => {
     await createProfile('SAFE_PROJ');
     const custId = await seedCustomer();
-    const r = await createAssignment({ limitProfileCode: 'SAFE_PROJ', subjectType: 'CUSTOMER', subjectId: custId, precedence: 42, effectiveFrom: '2026-06-01T00:00:00.000Z', isActive: true });
+    const r = await createAssignment({
+      limitProfileCode: 'SAFE_PROJ',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+      precedence: 42,
+      effectiveFrom: '2026-06-01T00:00:00.000Z',
+      isActive: true,
+    });
     expect(r.status).toBe(201);
     const bodyStr = JSON.stringify(r.body);
     expect(bodyStr).not.toContain('deletedAt');
@@ -547,12 +1054,17 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     expect(bodyStr).not.toContain('ledger');
     expect(r.body.precedence).toBe(42);
     // query filter returns safe projection too
-    const list = await request(app.getHttpServer()).get(`/api/v1/internal/limit-assignments?limitProfileCode=SAFE_PROJ&limit=100`).set('Authorization', auth('OPERATOR'));
+    const list = await request(app.getHttpServer())
+      .get(`/api/v1/internal/limit-assignments?limitProfileCode=SAFE_PROJ&limit=100`)
+      .set('Authorization', auth('OPERATOR'));
     expect(list.status).toBe(200);
     expect(list.body.total).toBe(1);
     expect(JSON.stringify(list.body)).not.toContain('deletedAt');
     // PATCH safe
-    const patch = await request(app.getHttpServer()).patch(`/api/v1/internal/limit-assignments/${r.body.id}`).set('Authorization', auth('OPERATOR')).send({ version: 1, precedence: 100 });
+    const patch = await request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-assignments/${r.body.id}`)
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 1, precedence: 100 });
     expect(patch.status).toBe(200);
     expect(JSON.stringify(patch.body)).not.toContain('deleted_at');
     expect(patch.body.precedence).toBe(100);
@@ -561,58 +1073,104 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
   it('10. profile deletion/disable interaction — assignments preserve history, FK RESTRICT', async () => {
     await createProfile('PROF_RETAIN');
     const custId = await seedCustomer();
-    const assign = await createAssignment({ limitProfileCode: 'PROF_RETAIN', subjectType: 'CUSTOMER', subjectId: custId });
+    const assign = await createAssignment({
+      limitProfileCode: 'PROF_RETAIN',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+    });
     expect(assign.status).toBe(201);
     const id = assign.body.id;
     // disable profile via PATCH status
-    const disable = await request(app.getHttpServer()).patch('/api/v1/internal/limit-profiles/PROF_RETAIN').set('Authorization', auth('OPERATOR')).send({ version: 1, status: 'DISABLED', enabled: false, configurationStatus: 'DISABLED' });
+    const disable = await request(app.getHttpServer())
+      .patch('/api/v1/internal/limit-profiles/PROF_RETAIN')
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 1, status: 'DISABLED', enabled: false, configurationStatus: 'DISABLED' });
     expect(disable.status).toBe(200);
     expect(disable.body.status).toBe('DISABLED');
     // assignment still readable after profile disabled (historical auditable)
-    const still = await request(app.getHttpServer()).get(`/api/v1/internal/limit-assignments/${id}`).set('Authorization', auth('OPERATOR'));
+    const still = await request(app.getHttpServer())
+      .get(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'));
     expect(still.status).toBe(200);
     expect(still.body.limitProfileCode).toBe('PROF_RETAIN');
     // attempt to hard delete profile via SQL should fail due to FK RESTRICT (limit_assignments references limit_profile_code)
-    await expect(dataSource.query(`DELETE FROM limit_profiles WHERE code = $1`, ['PROF_RETAIN'])).rejects.toThrow();
+    await expect(
+      dataSource.query(`DELETE FROM limit_profiles WHERE code = $1`, ['PROF_RETAIN']),
+    ).rejects.toThrow();
     // soft delete assignment via deleted_at → then list should exclude it
     await dataSource.query(`UPDATE limit_assignments SET deleted_at = NOW() WHERE id = $1`, [id]);
-    const afterDelete = await request(app.getHttpServer()).get(`/api/v1/internal/limit-assignments/${id}`).set('Authorization', auth('OPERATOR'));
+    const afterDelete = await request(app.getHttpServer())
+      .get(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'));
     expect(afterDelete.status).toBe(404);
-    const list = await request(app.getHttpServer()).get(`/api/v1/internal/limit-assignments/customer/${custId}?limit=100`).set('Authorization', auth('OPERATOR'));
+    const list = await request(app.getHttpServer())
+      .get(`/api/v1/internal/limit-assignments/customer/${custId}?limit=100`)
+      .set('Authorization', auth('OPERATOR'));
     expect(list.status).toBe(200);
     expect(list.body.total).toBe(0);
     // history still exists in DB with deleted_at
-    const hist: Array<{ deleted_at: string }> = await dataSource.query(`SELECT deleted_at FROM limit_assignments WHERE id = $1`, [id]);
-    expect(hist[0].deleted_at).not.toBeNull();
+    const hist: Array<{ deleted_at: string }> = await dataSource.query(
+      `SELECT deleted_at FROM limit_assignments WHERE id = $1`,
+      [id],
+    );
+    expect(hist[0]!.deleted_at).not.toBeNull();
   });
 
   it('11. no ledger mutation — assignment does not touch wallets/ledger, no limit_usages', async () => {
-    const beforeWallets: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM wallet_accounts`);
-    const beforeLines: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM ledger_lines`);
-    const beforeJournals: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM ledger_journals`);
+    const beforeWallets: Array<{ count: string }> = await dataSource.query(
+      `SELECT COUNT(*)::text as count FROM wallet_accounts`,
+    );
+    const beforeLines: Array<{ count: string }> = await dataSource.query(
+      `SELECT COUNT(*)::text as count FROM ledger_lines`,
+    );
+    const beforeJournals: Array<{ count: string }> = await dataSource.query(
+      `SELECT COUNT(*)::text as count FROM ledger_journals`,
+    );
     await createProfile('LEDGER_ASSIGN');
     const custId = await seedCustomer();
-    await createAssignment({ limitProfileCode: 'LEDGER_ASSIGN', subjectType: 'CUSTOMER', subjectId: custId });
-    await createAssignment({ limitProfileCode: 'LEDGER_ASSIGN', subjectType: 'SEGMENT', segmentCode: 'LEDGER_SEG' });
+    await createAssignment({
+      limitProfileCode: 'LEDGER_ASSIGN',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+    });
+    await createAssignment({
+      limitProfileCode: 'LEDGER_ASSIGN',
+      subjectType: 'SEGMENT',
+      segmentCode: 'LEDGER_SEG',
+    });
     await createAssignment({ limitProfileCode: 'LEDGER_ASSIGN', subjectType: 'GLOBAL' });
-    const afterWallets: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM wallet_accounts`);
-    const afterLines: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM ledger_lines`);
-    const afterJournals: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM ledger_journals`);
-    expect(afterWallets[0].count).toBe(beforeWallets[0].count);
-    expect(afterLines[0].count).toBe(beforeLines[0].count);
-    expect(afterJournals[0].count).toBe(beforeJournals[0].count);
+    const afterWallets: Array<{ count: string }> = await dataSource.query(
+      `SELECT COUNT(*)::text as count FROM wallet_accounts`,
+    );
+    const afterLines: Array<{ count: string }> = await dataSource.query(
+      `SELECT COUNT(*)::text as count FROM ledger_lines`,
+    );
+    const afterJournals: Array<{ count: string }> = await dataSource.query(
+      `SELECT COUNT(*)::text as count FROM ledger_journals`,
+    );
+    expect(afterWallets[0]!.count).toBe(beforeWallets[0]!.count);
+    expect(afterLines[0]!.count).toBe(beforeLines[0]!.count);
+    expect(afterJournals[0]!.count).toBe(beforeJournals[0]!.count);
     // V1-LIMIT-03 additive: limit_usages + limit_reservations now exist but assignment must not auto-create them
     const hasUsages = await dataSource.query(`SELECT to_regclass('public.limit_usages') as reg`);
     expect(hasUsages[0].reg).toBe('limit_usages');
-    const hasReservations = await dataSource.query(`SELECT to_regclass('public.limit_reservations') as reg`);
+    const hasReservations = await dataSource.query(
+      `SELECT to_regclass('public.limit_reservations') as reg`,
+    );
     expect(hasReservations[0].reg).toBe('limit_reservations');
-    const usagesCnt: Array<{ cnt: string }> = await dataSource.query(`SELECT COUNT(*)::text as cnt FROM limit_usages`);
-    expect(usagesCnt[0].cnt).toBe('0');
-    const resCnt: Array<{ cnt: string }> = await dataSource.query(`SELECT COUNT(*)::text as cnt FROM limit_reservations`);
-    expect(resCnt[0].cnt).toBe('0');
+    const usagesCnt: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT COUNT(*)::text as cnt FROM limit_usages`,
+    );
+    expect(usagesCnt[0]!.cnt).toBe('0');
+    const resCnt: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT COUNT(*)::text as cnt FROM limit_reservations`,
+    );
+    expect(resCnt[0]!.cnt).toBe('0');
     // also no commercial decision tables mutated via assignment — now 3 limit migrations
-    const hasDecisions: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM typeorm_migrations WHERE name LIKE '%Limit%'`);
-    expect(Number(hasDecisions[0].cnt)).toBe(3); // profile catalogue + assignments + usages (V1-LIMIT-03)
+    const hasDecisions: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM typeorm_migrations WHERE name LIKE '%Limit%'`,
+    );
+    expect(Number(hasDecisions[0]!.cnt)).toBe(3); // profile catalogue + assignments + usages (V1-LIMIT-03)
   });
 
   it('12. legacy preservation — customer_limit_profiles & AgentClass.applicableLimits untouched', async () => {
@@ -620,32 +1178,63 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     const custId = await seedCustomer();
     const acId = await seedAgentClass();
     // legacy tables still exist
-    const tables: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('customer_limit_profiles','agent_classes')`);
-    expect(tables.map(t=>t.tablename)).toEqual(expect.arrayContaining(['customer_limit_profiles','agent_classes']));
-    const col: Array<{ column_name: string }> = await dataSource.query(`SELECT column_name FROM information_schema.columns WHERE table_name='agent_classes' AND column_name='applicable_limits'`);
+    const tables: Array<{ tablename: string }> = await dataSource.query(
+      `SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('customer_limit_profiles','agent_classes')`,
+    );
+    expect(tables.map((t) => t.tablename)).toEqual(
+      expect.arrayContaining(['customer_limit_profiles', 'agent_classes']),
+    );
+    const col: Array<{ column_name: string }> = await dataSource.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_name='agent_classes' AND column_name='applicable_limits'`,
+    );
     expect(col.length).toBe(1);
     // creating assignment does not auto-create customer_limit_profiles row nor mutate applicable_limits
-    const beforeClp: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM customer_limit_profiles`);
-    const beforeLimits: Array<{ applicable_limits: any }> = await dataSource.query(`SELECT applicable_limits FROM agent_classes WHERE id = $1`, [acId]);
-    await createAssignment({ limitProfileCode: 'LEGACY_ASSIGN', subjectType: 'CUSTOMER', subjectId: custId });
-    await createAssignment({ limitProfileCode: 'LEGACY_ASSIGN', subjectType: 'AGENT_CLASS', subjectId: acId });
-    const afterClp: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM customer_limit_profiles`);
-    const afterLimits: Array<{ applicable_limits: any }> = await dataSource.query(`SELECT applicable_limits FROM agent_classes WHERE id = $1`, [acId]);
-    expect(afterClp[0].cnt).toBe(beforeClp[0].cnt);
-    expect(JSON.stringify(afterLimits[0].applicable_limits)).toBe(JSON.stringify(beforeLimits[0].applicable_limits));
+    const beforeClp: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM customer_limit_profiles`,
+    );
+    const beforeLimits: Array<{ applicable_limits: any }> = await dataSource.query(
+      `SELECT applicable_limits FROM agent_classes WHERE id = $1`,
+      [acId],
+    );
+    await createAssignment({
+      limitProfileCode: 'LEGACY_ASSIGN',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+    });
+    await createAssignment({
+      limitProfileCode: 'LEGACY_ASSIGN',
+      subjectType: 'AGENT_CLASS',
+      subjectId: acId,
+    });
+    const afterClp: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM customer_limit_profiles`,
+    );
+    const afterLimits: Array<{ applicable_limits: any }> = await dataSource.query(
+      `SELECT applicable_limits FROM agent_classes WHERE id = $1`,
+      [acId],
+    );
+    expect(afterClp[0]!.cnt).toBe(beforeClp[0]!.cnt);
+    expect(JSON.stringify(afterLimits[0]!.applicable_limits)).toBe(
+      JSON.stringify(beforeLimits[0]!.applicable_limits),
+    );
   });
 
   it('13. no flow change — LimitEngine & TransferService not invoked, no reservation', async () => {
     // verify assignment endpoint does not create ledger or usages side effects and no TransferService code path
     await createProfile('NO_FLOW');
     const custId = await seedCustomer();
-    await createAssignment({ limitProfileCode: 'NO_FLOW', subjectType: 'CUSTOMER', subjectId: custId });
+    await createAssignment({
+      limitProfileCode: 'NO_FLOW',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+    });
     // check that no transfer, wallet mutation present
-    const transfers: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM transfers`);
-    expect(transfers[0].count).toBe('0');
+    const transfers: Array<{ count: string }> = await dataSource.query(
+      `SELECT COUNT(*)::text as count FROM transfers`,
+    );
+    expect(transfers[0]!.count).toBe('0');
     // assignment service does not depend on TransferService — inspect file
-    const fs = require('node:fs');
-    const svc = fs.readFileSync('src/limit-catalog/limit-assignment.service.ts','utf8');
+    const svc = fs.readFileSync('src/limit-catalog/limit-assignment.service.ts', 'utf8');
     expect(svc).not.toContain('TransferService');
     expect(svc).not.toContain('AgentCash');
     expect(svc).not.toContain('limit_usages');
@@ -653,12 +1242,25 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
   });
 
   it('14. fixed Tier 1/2/3 disproof — no hardcoded KYC tiers in assignment', async () => {
-    const fs = require('node:fs');
-    const service = fs.readFileSync('src/limit-catalog/limit-assignment.service.ts','utf8');
-    const controller = fs.readFileSync('src/limit-catalog/limit-assignment.controller.ts','utf8');
-    const entity = fs.readFileSync('src/limit-catalog/limit-assignment.entity.ts','utf8');
-    const dto = fs.readFileSync('src/limit-catalog/dto/create-limit-assignment.dto.ts','utf8');
-    const banned = ['TIER_1','TIER_2','TIER_3','KYC_LEVEL_1','KYC_LEVEL_2','Basic','Premium','fixedTier','if (tier','if(kyc','if (kyc','KYC→','TIER1'];
+    const service = fs.readFileSync('src/limit-catalog/limit-assignment.service.ts', 'utf8');
+    const controller = fs.readFileSync('src/limit-catalog/limit-assignment.controller.ts', 'utf8');
+    const entity = fs.readFileSync('src/limit-catalog/limit-assignment.entity.ts', 'utf8');
+    const dto = fs.readFileSync('src/limit-catalog/dto/create-limit-assignment.dto.ts', 'utf8');
+    const banned = [
+      'TIER_1',
+      'TIER_2',
+      'TIER_3',
+      'KYC_LEVEL_1',
+      'KYC_LEVEL_2',
+      'Basic',
+      'Premium',
+      'fixedTier',
+      'if (tier',
+      'if(kyc',
+      'if (kyc',
+      'KYC→',
+      'TIER1',
+    ];
     for (const p of banned) {
       expect(service).not.toContain(p);
       expect(controller).not.toContain(p);
@@ -669,11 +1271,15 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     expect(service.toLowerCase()).not.toContain('if kyc_level_1 then');
     // prove arbitrary assignment: we can assign profile code TIER_100 to SEGMENT without any KYC check
     await createProfile('TIER_100');
-    const r = await createAssignment({ limitProfileCode: 'TIER_100', subjectType: 'SEGMENT', segmentCode: 'RANDOM_SEG_999' });
+    const r = await createAssignment({
+      limitProfileCode: 'TIER_100',
+      subjectType: 'SEGMENT',
+      segmentCode: 'RANDOM_SEG_999',
+    });
     expect(r.status).toBe(201);
     expect(r.body.limitProfileCode).toBe('TIER_100');
     // migration does not insert tier seeds
-    const mig = fs.readFileSync('src/migrations/1785753600068-CreateLimitAssignments.ts','utf8');
+    const mig = fs.readFileSync('src/migrations/1785753600068-CreateLimitAssignments.ts', 'utf8');
     expect(mig).not.toContain('TIER_1');
     expect(mig).not.toContain('INSERT INTO limit_assignments');
   });
@@ -681,20 +1287,116 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
   it('15. audit & version fields — createdBy/updatedBy tracked, historical auditable', async () => {
     await createProfile('AUDIT_PROF');
     const custId = await seedCustomer();
-    const r = await createAssignment({ limitProfileCode: 'AUDIT_PROF', subjectType: 'CUSTOMER', subjectId: custId });
+    const r = await createAssignment({
+      limitProfileCode: 'AUDIT_PROF',
+      subjectType: 'CUSTOMER',
+      subjectId: custId,
+    });
     expect(r.status).toBe(201);
     expect(r.body.createdBy).toBeDefined();
     expect(r.body.version).toBe(1);
     const id = r.body.id;
-    const patch = await request(app.getHttpServer()).patch(`/api/v1/internal/limit-assignments/${id}`).set('Authorization', auth('OPERATOR')).send({ version: 1, precedence: 7 });
+    const patch = await request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-assignments/${id}`)
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 1, precedence: 7 });
     expect(patch.status).toBe(200);
     expect(patch.body.updatedBy).toBeDefined();
     expect(patch.body.version).toBe(2);
     // direct DB check: updated_at changed
-    const row: Array<{ created_by: string; updated_by: string; version: number }> = await dataSource.query(`SELECT created_by, updated_by, version FROM limit_assignments WHERE id = $1`, [id]);
-    expect(row[0].created_by).toBeDefined();
-    expect(row[0].updated_by).toBeDefined();
-    expect(row[0].version).toBe(2);
-    // audit trail would be recorded via AuditService if present — at minimum audit table not polluted unexpectedly; just ensure no error
+    const row: Array<{ created_by: string; updated_by: string; version: number }> =
+      await dataSource.query(
+        `SELECT created_by, updated_by, version FROM limit_assignments WHERE id = $1`,
+        [id],
+      );
+    expect(row[0]!.created_by).toBeDefined();
+    expect(row[0]!.updated_by).toBeDefined();
+    expect(row[0]!.version).toBe(2);
+    const events: Array<{
+      action: string;
+      new_values: { version: number };
+      previous_values: { version: number } | null;
+    }> = await dataSource.query(
+      `SELECT action, new_values, previous_values FROM audit_events WHERE entity_type='LIMIT_ASSIGNMENT' AND entity_id=$1 ORDER BY created_at`,
+      [id],
+    );
+    expect(events.map((event) => event.action)).toEqual(['CREATED', 'UPDATED']);
+    expect(events[0]!.new_values.version).toBe(1);
+    expect(events[1]!.previous_values?.version).toBe(1);
+    expect(events[1]!.new_values.version).toBe(2);
+  });
+  it('rolls back assignment creation and updates if the audit write fails', async () => {
+    await createProfile('AUDIT_ATOMIC');
+    const service = app.get(LimitAssignmentService);
+    const audit = app.get(AuditService);
+    const input = {
+      limitProfileCode: 'AUDIT_ATOMIC',
+      subjectType: 'GLOBAL',
+      effectiveFrom: '2026-01-01T00:00:00.000Z',
+      createdBy: 'test-actor',
+    };
+    const original = audit.record.bind(audit);
+    const spy = jest
+      .spyOn(audit, 'record')
+      .mockImplementation((manager, command) =>
+        command.entityType === 'LIMIT_ASSIGNMENT'
+          ? Promise.reject(new Error('Synthetic audit unavailable'))
+          : original(manager, command),
+      );
+    try {
+      await expect(service.createAssignment(input, 'test-actor')).rejects.toThrow(
+        'Synthetic audit unavailable',
+      );
+      const missing: Array<{ count: string }> = await dataSource.query(
+        `SELECT count(*)::text AS count FROM limit_assignments WHERE limit_profile_code='AUDIT_ATOMIC'`,
+      );
+      expect(missing[0]!.count).toBe('0');
+    } finally {
+      spy.mockRestore();
+    }
+
+    // An audit-table uniqueness failure is not an assignment duplicate.
+    const auditError = new QueryFailedError(
+      'synthetic audit',
+      [],
+      Object.assign(new Error('Audit collision'), {
+        code: '23505',
+        constraint: 'audit_events_pkey',
+      }),
+    );
+    const uniqueSpy = jest.spyOn(audit, 'record').mockRejectedValue(auditError);
+    try {
+      await expect(service.createAssignment(input, 'test-actor')).rejects.toBe(auditError);
+    } finally {
+      uniqueSpy.mockRestore();
+    }
+
+    const created = await service.createAssignment(input, 'test-actor');
+    const updateSpy = jest
+      .spyOn(audit, 'record')
+      .mockImplementation((manager, command) =>
+        command.entityType === 'LIMIT_ASSIGNMENT'
+          ? Promise.reject(new Error('Synthetic audit unavailable'))
+          : original(manager, command),
+      );
+    try {
+      await expect(
+        service.updateAssignment(
+          created.id,
+          { version: created.version, isActive: false, updatedBy: 'test-actor' },
+          'test-actor',
+        ),
+      ).rejects.toThrow('Synthetic audit unavailable');
+    } finally {
+      updateSpy.mockRestore();
+    }
+    const unchanged = await service.getAssignment(created.id);
+    expect(unchanged.version).toBe(created.version);
+    expect(unchanged.isActive).toBe(true);
+    const events: Array<{ action: string }> = await dataSource.query(
+      `SELECT action FROM audit_events WHERE entity_type='LIMIT_ASSIGNMENT' AND entity_id=$1`,
+      [created.id],
+    );
+    expect(events.map((event) => event.action)).toEqual(['CREATED']);
   });
 });

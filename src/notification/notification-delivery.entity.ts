@@ -17,7 +17,13 @@ export type NotificationChannel = 'SMS' | 'PUSH' | 'EMAIL';
 // 1785753600099-AllowPhoneNotificationRecipients; recipient_id is varchar(255) — UUID for
 // CUSTOMER/AGENT, canonical phone for PHONE recipients).
 export type NotificationRecipientType = 'CUSTOMER' | 'AGENT' | 'PHONE';
-export type NotificationDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'UNKNOWN' | 'DEAD';
+export type NotificationDeliveryStatus =
+  | 'PENDING'
+  | 'SENT'
+  | 'FAILED'
+  | 'SKIPPED'
+  | 'UNKNOWN'
+  | 'DEAD';
 
 /**
  * V1-005 Notification Delivery Foundation
@@ -29,15 +35,25 @@ export type NotificationDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPE
  * Notification failure never reverses financial state or changes shared outbox progress.
  */
 @Entity({ name: 'notification_deliveries' })
-@Index('uq_notification_deliveries_event_recipient_channel', ['eventKey', 'recipientId', 'channel'], {
-  unique: true,
-})
+@Index(
+  'uq_notification_deliveries_event_recipient_channel',
+  ['eventKey', 'recipientId', 'channel'],
+  {
+    unique: true,
+  },
+)
 @Index('idx_notification_deliveries_recipient', ['recipientType', 'recipientId', 'createdAt'])
 @Index('idx_notification_deliveries_status', ['status', 'createdAt'])
 @Index('idx_notification_deliveries_event_type', ['eventType', 'createdAt'])
 @Check('chk_notification_deliveries_channel', "channel IN ('SMS', 'PUSH', 'EMAIL')")
-@Check('chk_notification_deliveries_recipient_type', "recipient_type IN ('CUSTOMER', 'AGENT', 'PHONE')")
-@Check('chk_notification_deliveries_status', "status IN ('PENDING', 'SENT', 'FAILED', 'SKIPPED', 'UNKNOWN', 'DEAD')")
+@Check(
+  'chk_notification_deliveries_recipient_type',
+  "recipient_type IN ('CUSTOMER', 'AGENT', 'PHONE')",
+)
+@Check(
+  'chk_notification_deliveries_status',
+  "status IN ('PENDING', 'SENT', 'FAILED', 'SKIPPED', 'UNKNOWN', 'DEAD')",
+)
 @Check('chk_notification_deliveries_attempts', 'attempts >= 0')
 export class NotificationDelivery {
   @PrimaryGeneratedColumn('uuid')

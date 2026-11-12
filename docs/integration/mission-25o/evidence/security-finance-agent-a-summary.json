@@ -1,0 +1,71 @@
+{
+  "label": "security-finance-agent-a",
+  "implementationCommit": "3a0f87eafe86b455e1906d7779f83ca3152b9d00",
+  "completedAtUtc": "2026-11-02T14:36:53.408Z",
+  "exitCode": 0,
+  "suites": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "runtimeErrors": 0
+  },
+  "tests": {
+    "total": 110,
+    "passed": 110,
+    "failed": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "resultsWritten": true,
+  "results": [
+    {
+      "file": "test/a12-agent-financial-execution.integration.spec.ts",
+      "status": "passed",
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    {
+      "file": "test/a15-agent-cash-to-cash.integration.spec.ts",
+      "status": "passed",
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    {
+      "file": "test/a2-workforce-session.integration.spec.ts",
+      "status": "passed",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    {
+      "file": "test/a5-ledger-reversal.integration.spec.ts",
+      "status": "passed",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    {
+      "file": "test/a6-settlement-lifecycle.integration.spec.ts",
+      "status": "passed",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    {
+      "file": "test/mission-15a-agent-sessions.integration.spec.ts",
+      "status": "passed",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "todo": 0
+    }
+  ]
+}

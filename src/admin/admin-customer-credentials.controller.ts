@@ -278,11 +278,12 @@ export class AdminCustomerCredentialsController {
       : delivery.simulated || ['console', 'test'].includes(delivery.provider)
         ? 'SIMULATED'
         : 'PROVIDER_ACCEPTED';
-    const deliveryNotice = deliveryStatus === 'NOT_CONFIRMED'
-      ? 'SMS delivery was not confirmed. Do not assume the customer received the credential; follow the authorized recovery or reissue process.'
-      : deliveryStatus === 'SIMULATED'
-        ? 'SMS delivery was simulated; no customer receipt is established.'
-        : 'The SMS provider accepted the request; receipt by the customer is not confirmed.';
+    const deliveryNotice =
+      deliveryStatus === 'NOT_CONFIRMED'
+        ? 'SMS delivery was not confirmed. Do not assume the customer received the credential; follow the authorized recovery or reissue process.'
+        : deliveryStatus === 'SIMULATED'
+          ? 'SMS delivery was simulated; no customer receipt is established.'
+          : 'The SMS provider accepted the request; receipt by the customer is not confirmed.';
     return {
       customerId,
       credentialId,

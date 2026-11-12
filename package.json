@@ -18,11 +18,11 @@
     "format": "prettier --write \"{src,test}/**/*.ts\" \"*.{json,yml,yaml,md}\"",
     "bootstrap:statement": "ts-node --transpile-only scripts/generate-bootstrap-statement.ts",
     "recovery:statement": "ts-node --transpile-only scripts/generate-revocation-statement.ts",
-    "test": "jest --maxWorkers=2",
+    "test": "node -r ./test/support/mission-25c-network-guard.cjs ./node_modules/jest/bin/jest.js --maxWorkers=2",
     "test:pg": "node scripts/run-pg-integration-tests.js",
     "test:all": "npm run test && npm run test:pg",
-    "test:watch": "jest --watch",
-    "test:cov": "jest --coverage --runInBand",
+    "test:watch": "node -r ./test/support/mission-25c-network-guard.cjs ./node_modules/jest/bin/jest.js --watch",
+    "test:cov": "node -r ./test/support/mission-25c-network-guard.cjs ./node_modules/jest/bin/jest.js --coverage --runInBand",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/config/data-source.ts src/migrations/Change",
     "migration:create": "typeorm-ts-node-commonjs migration:create src/migrations/Change",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/config/data-source.ts",
@@ -31,7 +31,10 @@
     "migration:run:compiled": "typeorm migration:run -d dist/config/data-source.js",
     "migration:show:compiled": "typeorm migration:show -d dist/config/data-source.js",
     "migration:revert:compiled": "typeorm migration:revert -d dist/config/data-source.js",
-    "test:e2e:batch-2a": "node scripts/batch-2a-customer-registration-e2e.cjs"
+    "test:e2e:batch-2a": "node scripts/batch-2a-customer-registration-e2e.cjs",
+    "local:preflight": "node scripts/local-preflight.cjs",
+    "local:start:safe": "node scripts/start-local-safe.cjs",
+    "test:local-safety": "node --test test/local-preflight.test.cjs"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.24",

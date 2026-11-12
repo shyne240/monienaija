@@ -1,6 +1,7 @@
 import type { WorkforcePrincipal } from '../store/auth-store';
 
 export type ManagedNotificationChannel = 'SMS' | 'EMAIL';
+export type NotificationConfigurationTarget = 'EVENT' | ManagedNotificationChannel;
 export type RuntimeNotificationChannel = 'SMS' | 'EMAIL' | 'PUSH';
 export type NotificationDeliveryClass = 'SECURITY' | 'TRANSACTIONAL' | 'INFORMATIONAL';
 export type NotificationEventCategory =
@@ -34,8 +35,16 @@ export interface NotificationEventCatalogueItem {
   deliveryClass: NotificationDeliveryClass;
   recipientTarget: NotificationRecipientTarget;
   runtimeTriggerState: NotificationRuntimeTriggerState;
-  smsEnabled: boolean;
-  emailEnabled: boolean;
+  /** Governed event-wide master; absent for direct SECURITY and offline reference rows. */
+  eventEnabled?: boolean;
+  eventLocked?: boolean;
+  eventConfigurationVersion?: number;
+  smsEnabled?: boolean;
+  smsLocked?: boolean;
+  smsConfigurationVersion?: number;
+  emailEnabled?: boolean;
+  emailLocked?: boolean;
+  emailConfigurationVersion?: number;
   toggleLocked: boolean;
   lockReason: string | null;
   templateEditable: boolean;
@@ -75,9 +84,16 @@ export interface NotificationChangeRequestRecord {
   approvalId: string | null;
   changeType: 'TEMPLATE_CREATE' | 'TEMPLATE_ACTIVATE' | 'EVENT_TRIGGER_CONFIG';
   eventType: string;
-  channel: ManagedNotificationChannel | 'MULTI';
+  channel: NotificationConfigurationTarget | 'MULTI';
   summary: string;
-  status: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'APPLIED';
+  status:
+    | 'PENDING_APPROVAL'
+    | 'APPROVED'
+    | 'REJECTED'
+    | 'APPLIED'
+    | 'CANCELLED'
+    | 'EXPIRED'
+    | 'UNKNOWN';
   requestedBy: string;
   requestedAt: string;
   decidedBy?: string | null;
@@ -85,6 +101,7 @@ export interface NotificationChangeRequestRecord {
   decisionComment?: string | null;
   proposedSubject?: string | null;
   proposedBody?: string | null;
+  proposedEventEnabled?: boolean;
   proposedSmsEnabled?: boolean;
   proposedEmailEnabled?: boolean;
 }
@@ -125,38 +142,6 @@ export interface NotificationOutboxReceiptPage {
   hasNextPage: boolean;
 }
 
-export interface CustomerCommunicationPreferences {
-  id: string;
-  customerId: string;
-  language: string;
-  theme: string;
-  notifications: {
-    email: boolean;
-    sms: boolean;
-    push: boolean;
-    inApp: boolean;
-  };
-  security: {
-    loginAlerts: boolean;
-    transactionAlerts: boolean;
-    deviceRegistrationAlerts: boolean;
-    biometricAllowed: boolean;
-  };
-  version: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CustomerPreferenceHistoryRecord {
-  id: string;
-  preferenceId: string;
-  action: string;
-  previousValues: Record<string, unknown> | null;
-  newValues: Record<string, unknown> | null;
-  actor: string;
-  createdAt: string;
-}
-
 export interface NotificationProviderStatus {
   checkedAt: string;
   environment: string | null;
@@ -177,28 +162,31 @@ export interface NotificationProviderStatus {
     senderId?: string | null;
     lastTest?: ProviderChannelSnapshot['lastTest'];
     baseUrl: string | null;
-    apiKeyConfigured: boolean;
-    apiKeyPrefixValid: boolean;
+    /** Legacy name: reported provider configuration gate, not a key inspection. */
+    apiKeyConfigured: boolean | null;
+    apiKeyPrefixValid: boolean | null;
     apiKeyLast4Fingerprint: string | null;
-    requestTimeoutMs: number;
-    productionGuardSatisfied: boolean;
+    requestTimeoutMs: number | null;
+    productionGuardSatisfied: boolean | null;
     senderIdentityMode: 'PROVIDER_WORKSPACE_ACCOUNT' | 'PER_MESSAGE_CONFIGURED';
     senderIdentitySummary: string;
     deliveryReceiptTracking: 'ACCEPTED_BY_PROVIDER_ONLY' | 'WEBHOOK_ENABLED' | 'POLLING_ENABLED';
   };
   email: {
+    /** Legacy name: membership in the reported API channel list, not a database schema check. */
     channelEnabledInSchema: boolean;
     provider: string | null;
     operationalStatus: 'READY' | 'CONSOLE_ONLY' | 'NOT_CONFIGURED' | 'DEGRADED';
     lifecycleState?: ProviderLifecycleState;
     gates?: ProviderReadinessGates;
     lastTest?: ProviderChannelSnapshot['lastTest'];
-    credentialsConfigured: boolean;
+    /** Legacy name: reported provider configuration gate, not a credential inspection. */
+    credentialsConfigured: boolean | null;
     credentialFingerprint: string | null;
     fromAddress: string | null;
     fromName: string | null;
-    domainVerificationStatus: 'VERIFIED' | 'UNVERIFIED' | 'NOT_APPLICABLE';
-    honorsCustomerEmailPreference: boolean;
+    domainVerificationStatus: 'VERIFIED' | 'UNVERIFIED' | 'CONFIGURED' | 'INCOMPLETE' | 'UNKNOWN' | 'NOT_APPLICABLE';
+    honorsCustomerEmailPreference: boolean | null;
   };
 }
 
@@ -279,6 +267,7 @@ export function deriveNotificationPermissions(
   const scopes = new Set(principal?.scopes ?? []);
   const roles = new Set(principal?.roles ?? []);
   const has = (code: string) => scopes.has(code);
+  const canWrite = !principal?.readOnlyPrincipal;
   const isFinanceControllerChecker = roles.has('FINANCE_CONTROLLER') && has('privileged:approve');
   // INTERIM governance policy (Arena 1 registry, Phase 6 — pending product-owner
   // ratification of granular notification.* catalogue functions): the maker of template
@@ -300,10 +289,10 @@ export function deriveNotificationPermissions(
       has('notification.manage_configuration') ||
       has('notification.approve_configuration') ||
       isFinanceControllerChecker,
-    canManageTemplates: has('notification.manage_templates') || isSuperAdminMaker,
-    canApproveTemplates: has('notification.approve_templates') || isFinanceControllerChecker,
-    canManageConfiguration: has('notification.manage_configuration') || isSuperAdminMaker,
-    canApproveConfiguration: has('notification.approve_configuration') || isFinanceControllerChecker,
+    canManageTemplates: canWrite && (has('notification.manage_templates') || isSuperAdminMaker),
+    canApproveTemplates: canWrite && (has('notification.approve_templates') || isFinanceControllerChecker),
+    canManageConfiguration: canWrite && (has('notification.manage_configuration') || isSuperAdminMaker),
+    canApproveConfiguration: canWrite && (has('notification.approve_configuration') || isFinanceControllerChecker),
     canViewProviderStatus:
       has('notification.view_provider_status') ||
       has('notification.provider.view') ||
@@ -312,14 +301,14 @@ export function deriveNotificationPermissions(
       has('diagnostics.view'),
     canViewProviderConfig: has('notification.provider.view'),
     canProposeProviderConfig:
-      has('notification.provider.configure') && roles.has('SUPER_ADMIN'),
+      canWrite && has('notification.provider.configure') && roles.has('SUPER_ADMIN'),
     canApproveProviderConfig:
-      has('notification.provider.configure') && roles.has('FINANCE_CONTROLLER'),
+      canWrite && has('notification.provider.configure') && roles.has('FINANCE_CONTROLLER'),
     canActivateProviderConfig:
-      has('notification.provider.configure') &&
+      canWrite && has('notification.provider.configure') &&
       (roles.has('SUPER_ADMIN') || roles.has('FINANCE_CONTROLLER')),
-    canTestSend: has('notification.test_send'),
-    canUseWorkforceApprovalEndpoint: isFinanceControllerChecker,
+    canTestSend: canWrite && has('notification.test_send'),
+    canUseWorkforceApprovalEndpoint: canWrite && isFinanceControllerChecker,
     canViewOutbox: has('outbox.view'),
     canViewDiagnostics: has('diagnostics.view'),
     canViewAudit: has('audit.view') || has('audit.search'),
@@ -598,8 +587,56 @@ function scrubSampleValue(value: string): string {
   return trimmed;
 }
 
+export interface NotificationConfigurationSnapshot {
+  enabled: boolean;
+  locked: boolean;
+  version: number;
+}
+
+/** A target is editable only when the live registry supplied its complete versioned state. */
+export function getNotificationConfigurationSnapshot(
+  event: NotificationEventCatalogueItem,
+  target: NotificationConfigurationTarget,
+): NotificationConfigurationSnapshot | null {
+  const enabled =
+    target === 'EVENT' ? event.eventEnabled : target === 'SMS' ? event.smsEnabled : event.emailEnabled;
+  const locked =
+    target === 'EVENT' ? event.eventLocked : target === 'SMS' ? event.smsLocked : event.emailLocked;
+  const version =
+    target === 'EVENT'
+      ? event.eventConfigurationVersion
+      : target === 'SMS'
+        ? event.smsConfigurationVersion
+        : event.emailConfigurationVersion;
+  if (
+    typeof enabled !== 'boolean' ||
+    typeof locked !== 'boolean' ||
+    typeof version !== 'number' ||
+    !Number.isInteger(version) ||
+    version < 1
+  ) {
+    return null;
+  }
+  return { enabled, locked, version };
+}
+
+/** Configuration gates only; actual delivery also depends on recipients and providers. */
+export function effectiveConfiguredChannels(event: NotificationEventCatalogueItem): string {
+  if (event.deliveryClass === 'SECURITY') return 'Managed separately';
+  if (typeof event.eventEnabled !== 'boolean') return 'Unavailable';
+  if (!event.eventEnabled) return 'Event disabled';
+  if (typeof event.smsEnabled !== 'boolean' || typeof event.emailEnabled !== 'boolean') {
+    return 'Unavailable';
+  }
+  if (event.smsEnabled && event.emailEnabled) return 'SMS and Email';
+  if (event.smsEnabled) return 'SMS only';
+  if (event.emailEnabled) return 'Email only';
+  return 'Neither channel';
+}
+
 export interface TriggerConfigValidationInput {
   event: NotificationEventCatalogueItem | null;
+  eventEnabled: boolean;
   smsEnabled: boolean;
   emailEnabled: boolean;
   reason: string;
@@ -607,7 +644,7 @@ export interface TriggerConfigValidationInput {
 
 export function validateTriggerConfigurationChange(input: TriggerConfigValidationInput): string[] {
   const errors: string[] = [];
-  const { event, smsEnabled, emailEnabled, reason } = input;
+  const { event, eventEnabled, smsEnabled, emailEnabled, reason } = input;
 
   if (!event) {
     errors.push('Select a notification event to configure.');
@@ -626,8 +663,24 @@ export function validateTriggerConfigurationChange(input: TriggerConfigValidatio
     return errors;
   }
 
-  if (smsEnabled === event.smsEnabled && emailEnabled === event.emailEnabled) {
-    errors.push('Modify at least one channel trigger (SMS or Email) before submitting a change.');
+  const targets: Array<{ target: NotificationConfigurationTarget; current?: boolean; desired: boolean }> = [
+    { target: 'EVENT', current: event.eventEnabled, desired: eventEnabled },
+    { target: 'SMS', current: event.smsEnabled, desired: smsEnabled },
+    { target: 'EMAIL', current: event.emailEnabled, desired: emailEnabled },
+  ];
+  const changed = targets.filter(
+    ({ current, desired }) => typeof current === 'boolean' && current !== desired,
+  );
+  if (changed.length === 0) {
+    errors.push('Modify at least one Event, SMS or Email control before submitting a change.');
+  }
+  for (const { target } of changed) {
+    const snapshot = getNotificationConfigurationSnapshot(event, target);
+    if (!snapshot) {
+      errors.push(`${target} configuration or version is unavailable; refresh the registry.`);
+    } else if (snapshot.locked) {
+      errors.push(`${target} configuration is locked and cannot be changed.`);
+    }
   }
 
   const trimmedReason = reason.trim();
@@ -1141,8 +1194,8 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
     runtimeTriggerState: 'LIVE_OUTBOX',
     smsEnabled: true,
     emailEnabled: false,
-    toggleLocked: true,
-    lockReason: 'Required V1 transactional outcome notification (Decision D-N8); customer SMS opt-out still honored.',
+    toggleLocked: false,
+    lockReason: null,
     templateEditable: true,
     approvedVariables: [REFERENCE_VAR, AMOUNT_CLAUSE_VAR],
     activeSmsVersion: 1,
@@ -1157,8 +1210,8 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
     runtimeTriggerState: 'LIVE_OUTBOX',
     smsEnabled: true,
     emailEnabled: false,
-    toggleLocked: true,
-    lockReason: 'Required V1 transactional outcome notification (Decision D-N8).',
+    toggleLocked: false,
+    lockReason: null,
     templateEditable: true,
     approvedVariables: [REFERENCE_VAR, AMOUNT_CLAUSE_VAR],
     activeSmsVersion: 1,
@@ -1191,8 +1244,8 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
     runtimeTriggerState: 'LIVE_OUTBOX',
     smsEnabled: true,
     emailEnabled: false,
-    toggleLocked: true,
-    lockReason: 'Required V1 transactional outcome notification for both transfer counterparties.',
+    toggleLocked: false,
+    lockReason: null,
     templateEditable: true,
     approvedVariables: [REFERENCE_VAR, AMOUNT_CLAUSE_VAR],
     activeSmsVersion: 1,

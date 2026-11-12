@@ -34,6 +34,9 @@ export class AuthenticationSession {
   @Column({ type: 'varchar', length: 80, default: 'customer-api' })
   audience!: string;
 
+  @Column({ name: 'onboarding_password_version', type: 'integer', nullable: true })
+  onboardingPasswordVersion!: number | null;
+
   @Column({ type: 'varchar', length: 20, default: AuthenticationSessionStatus.ACTIVE })
   status!: AuthenticationSessionStatus;
 

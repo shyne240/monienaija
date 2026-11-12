@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
-// @ts-nocheck
+
 import { UnauthorizedException } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import { Test, type TestingModule } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 
@@ -32,7 +32,8 @@ import { createIntegrationDataSource, destroyIntegrationDataSource } from './sup
  */
 describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real PostgreSQL)', () => {
   let dataSource: DataSource;
-  let moduleRef: Awaited<ReturnType<typeof Test.createTestingModule>> extends infer T ? any : never;
+  let moduleRef: TestingModule;
+  let app: NestFastifyApplication;
   let seedService: AuthorizationCatalogueSeedService;
 
   const workforceConfig: A2WorkforceConfigurationV1 = {
@@ -44,7 +45,6 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
     internalAudience: 'workforce-admin',
     sessionTtlSeconds: 900,
     jwksJson: [],
-    // @ts-ignore
     financeRoles: [],
     makerCheckerRules: [],
     rateLimits: [],
@@ -52,19 +52,20 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
-      if (!token) throw new UnauthorizedException('invalid workforce token');
-      return {
-        type: 'OPERATOR',
-        principalId: 'workforce-operator-1',
-        audience,
-        roles: [],
-        scopes: [],
-        customerAccess: 'NONE',
-        agentAccess: 'NONE',
-        aggregatorAccess: 'NONE',
-      } as any;
-    },
+    validate: (token: string, audience: string) =>
+      Promise.resolve().then(() => {
+        if (!token) throw new UnauthorizedException('invalid workforce token');
+        return {
+          type: 'OPERATOR',
+          principalId: 'workforce-operator-1',
+          audience,
+          roles: [],
+          scopes: [],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+      }),
   };
 
   beforeAll(async () => {
@@ -78,14 +79,12 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
       .useValue(workforceConfig)
       .compile();
 
-    const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+    app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     await app.init(); // runs OnApplicationBootstrap -> AuthorizationCatalogueSeedService.seedIfEmpty()
     seedService = moduleRef.get(AuthorizationCatalogueSeedService);
-    (moduleRef as any).__app = app;
   }, 180000);
 
   afterAll(async () => {
-    const app = (moduleRef as any)?.__app;
     if (app) await app.close().catch(() => undefined);
     if (dataSource) {
       try {
@@ -127,13 +126,17 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
 
   // --- 2. FINANCE_ADMIN is not seeded as an organizational role ---------
   it('does not seed FINANCE_ADMIN as an organizational role', async () => {
-    const rows = await dataSource.query(`SELECT 1 FROM authorization_roles WHERE role_key = 'FINANCE_ADMIN'`);
+    const rows = await dataSource.query(
+      `SELECT 1 FROM authorization_roles WHERE role_key = 'FINANCE_ADMIN'`,
+    );
     expect(rows.length).toBe(0);
   });
 
   // --- 3. Required functions exist --------------------------------------
   it('seeds the full approved function catalogue with exact stable identifiers', async () => {
-    const rows: Array<{ function_code: string }> = await dataSource.query(`SELECT function_code FROM authorization_functions`);
+    const rows: Array<{ function_code: string }> = await dataSource.query(
+      `SELECT function_code FROM authorization_functions`,
+    );
     const seeded = new Set(rows.map((r) => r.function_code));
     expect(seeded.size).toBe(AUTHORIZATION_FUNCTION_SEED.length);
     for (const item of AUTHORIZATION_FUNCTION_SEED) {
@@ -148,7 +151,8 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
 
   // --- 4. Required role/function assignments exist ----------------------
   it('seeds every role/function assignment in the approved matrix', async () => {
-    const rows: Array<{ role_key: string; function_code: string; access_type: string }> = await dataSource.query(`
+    const rows: Array<{ role_key: string; function_code: string; access_type: string }> =
+      await dataSource.query(`
       SELECT r.role_key, rf.function_code, rf.access_type
       FROM authorization_role_functions rf
       JOIN authorization_roles r ON r.id = rf.role_id
@@ -202,10 +206,16 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
       'treasury.resolve_suspense',
     ];
     for (const code of explicitlyBarred) {
-      const fn = await dataSource.query(`SELECT assignable FROM authorization_functions WHERE function_code = $1`, [code]);
+      const fn = await dataSource.query(
+        `SELECT assignable FROM authorization_functions WHERE function_code = $1`,
+        [code],
+      );
       expect(fn.length).toBe(1);
       expect(fn[0].assignable).toBe(false);
-      const assignments = await dataSource.query(`SELECT 1 FROM authorization_role_functions WHERE function_code = $1`, [code]);
+      const assignments = await dataSource.query(
+        `SELECT 1 FROM authorization_role_functions WHERE function_code = $1`,
+        [code],
+      );
       expect(assignments.length).toBe(0);
     }
   });
@@ -240,7 +250,9 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
 
   // --- 9. Finance Auditor receives only approved read/audit functions -----
   it('FINANCE_AUDITOR is read_only and holds zero mutation (non-READ) functions', async () => {
-    const role = await dataSource.query(`SELECT read_only FROM authorization_roles WHERE role_key = 'FINANCE_AUDITOR'`);
+    const role = await dataSource.query(
+      `SELECT read_only FROM authorization_roles WHERE role_key = 'FINANCE_AUDITOR'`,
+    );
     expect(role[0].read_only).toBe(true);
 
     const nonRead = await dataSource.query(`
@@ -252,7 +264,9 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
     expect(nonRead.length).toBe(0);
 
     // the trigger itself must reject an attempt to assign a mutation function
-    const financeAuditor = await dataSource.query(`SELECT id FROM authorization_roles WHERE role_key = 'FINANCE_AUDITOR'`);
+    const financeAuditor = await dataSource.query(
+      `SELECT id FROM authorization_roles WHERE role_key = 'FINANCE_AUDITOR'`,
+    );
     await expect(
       dataSource.query(
         `INSERT INTO authorization_role_functions (role_id, function_code, access_type, assigned_at) VALUES ($1, 'customer.create', 'EXECUTE', NOW())`,
@@ -271,7 +285,9 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
     `);
     expect(violations.length).toBe(0);
 
-    const superAdmin = await dataSource.query(`SELECT id FROM authorization_roles WHERE role_key = 'SUPER_ADMIN'`);
+    const superAdmin = await dataSource.query(
+      `SELECT id FROM authorization_roles WHERE role_key = 'SUPER_ADMIN'`,
+    );
     await expect(
       dataSource.query(
         `INSERT INTO authorization_role_functions (role_id, function_code, access_type, assigned_at) VALUES ($1, 'ledger.post', 'INITIATE', NOW())`,
@@ -300,7 +316,9 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
 
   // --- Structural invariant: at most one administrative_capability role ---
   it('enforces at most one role may hold administrative_capability = true', async () => {
-    const count = await dataSource.query(`SELECT COUNT(*)::int AS c FROM authorization_roles WHERE administrative_capability = TRUE`);
+    const count = await dataSource.query(
+      `SELECT COUNT(*)::int AS c FROM authorization_roles WHERE administrative_capability = TRUE`,
+    );
     expect(count[0].c).toBe(1);
     const superAdminOnly = await dataSource.query(
       `SELECT role_key FROM authorization_roles WHERE administrative_capability = TRUE`,
@@ -315,9 +333,13 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
     expect(result.roles).toBe(0);
     expect(result.roleFunctions).toBe(0);
 
-    const functionCount = await dataSource.query(`SELECT COUNT(*)::int AS c FROM authorization_functions`);
+    const functionCount = await dataSource.query(
+      `SELECT COUNT(*)::int AS c FROM authorization_functions`,
+    );
     const roleCount = await dataSource.query(`SELECT COUNT(*)::int AS c FROM authorization_roles`);
-    const rfCount = await dataSource.query(`SELECT COUNT(*)::int AS c FROM authorization_role_functions`);
+    const rfCount = await dataSource.query(
+      `SELECT COUNT(*)::int AS c FROM authorization_role_functions`,
+    );
     expect(functionCount[0].c).toBe(AUTHORIZATION_FUNCTION_SEED.length);
     expect(roleCount[0].c).toBe(AUTHORIZATION_ROLE_SEED.length);
     expect(rfCount[0].c).toBe(AUTHORIZATION_ROLE_FUNCTION_SEED.length);

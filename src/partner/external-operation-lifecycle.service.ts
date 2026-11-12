@@ -1,3 +1,4 @@
+import { WalletFinancialBoundaryService } from '../wallet/wallet-financial-boundary.service';
 import { createHash } from 'node:crypto';
 
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
@@ -77,6 +78,7 @@ export class ExternalOperationLifecycleService {
     private readonly circuitBreaker: PartnerCircuitBreakerService,
     @Inject(EXTERNAL_OPERATION_STATUS_VERIFIER)
     private readonly statusVerifier: ExternalOperationStatusVerifier,
+    private readonly walletBoundary: WalletFinancialBoundaryService,
   ) {}
 
   async get(externalOperationId: string): Promise<ExternalOperationLifecycleView> {
@@ -237,6 +239,15 @@ export class ExternalOperationLifecycleService {
       throw new ExternalOperationLifecycleException(
         'STALE_LIFECYCLE_VERSION',
         'The external-operation lifecycle version is stale',
+      );
+    }
+
+    if (command.nextState === ExternalOperationLifecycleState.SUBMITTING) {
+      await this.walletBoundary.requireCustomerWallet(
+        manager,
+        operation.customerId,
+        operation.walletAccountId,
+        operation.ledgerAccountId,
       );
     }
 

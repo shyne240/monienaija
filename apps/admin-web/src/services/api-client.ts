@@ -95,15 +95,7 @@ function asNetworkError(error: unknown): NetworkError | ApiError {
   return new NetworkError(error instanceof Error ? error.message : 'Network request failed');
 }
 
-/**
- * INTEGRATION (integration/main-backend-frontend-20261030): main's fail-closed API base URL guard
- * (39a9e504, phase 16-20 production readiness), carried over with its scope preserved exactly. It is
- * called ONLY from `request()` — the scope main ships. `postForm` and `requestBlob` are deliberately
- * left untouched so the three real document upload/download call sites
- * (`CustomerProofOfAddressPanel.tsx`) keep working; the Admin Web lead verified that a wider guard
- * broke four of them. See
- * docs/design-discovery-20261029/m1/acceptance/integration-prep.md §1 row 2.
- */
+/** Refuse every request type when the build has no API base URL configured. */
 function assertApiBaseUrlConfigured(): void {
   if (!API_BASE_URL) {
     throw new NetworkError(
@@ -142,6 +134,8 @@ async function requestForm<T>(
   body: FormData,
   options: ApiRequestOptions = {},
 ): Promise<T> {
+  assertApiBaseUrlConfigured();
+
   const url = `${API_BASE_URL}/${endpoint.replace(/^\//, '')}`;
   const headers = requestHeaders();
   if (options.idempotencyKey) headers['idempotency-key'] = options.idempotencyKey;
@@ -162,6 +156,8 @@ async function requestForm<T>(
 }
 
 async function requestBlob(endpoint: string, options: ApiRequestOptions = {}): Promise<Blob> {
+  assertApiBaseUrlConfigured();
+
   const url = `${API_BASE_URL}/${endpoint.replace(/^\//, '')}`;
   try {
     const response = await fetch(url, {

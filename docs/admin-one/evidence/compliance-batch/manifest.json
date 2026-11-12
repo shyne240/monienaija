@@ -1,0 +1,225 @@
+{
+  "source": "Vite dev server from current source, real Nest AppModule and disposable migrated PostgreSQL",
+  "baseCommit": "6fd7d6d8f230af8a8d4af8a255aaae9b4b01ded7",
+  "auth": "real local development login for seeded test roles",
+  "backend": "Real API, seeded synthetic local workforce and a synthetic customer, assessment and two case records in disposable PostgreSQL; browser proxy permits only GET and local-login POST; no real providers or workers",
+  "screens": [
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 1440,
+      "file": "login-1440.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "kycQueue",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "kycQueue-1440.png",
+      "headings": [
+        "KYC assessment lookup & review",
+        "Find a customer",
+        "KYC assessment",
+        "Submit KYC assessment decision"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "complianceCases",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "complianceCases-1440.png",
+      "headings": [
+        "Compliance case lookup",
+        "Find a customer",
+        "Compliance cases"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "complianceCases-drawer",
+      "role": "SUPER_ADMIN",
+      "width": 1440,
+      "file": "complianceCases-drawer-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "fraudCases",
+      "role": "RISK_FRAUD",
+      "width": 1440,
+      "file": "fraudCases-1440.png",
+      "headings": [
+        "Fraud case lookup",
+        "Find a customer",
+        "Fraud cases"
+      ],
+      "geometry": {
+        "client": 1440,
+        "scroll": 1440
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "fraudCases-drawer",
+      "role": "RISK_FRAUD",
+      "width": 1440,
+      "file": "fraudCases-drawer-1440.png",
+      "interaction": true
+    },
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 768,
+      "file": "login-768.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "kycQueue",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "kycQueue-768.png",
+      "headings": [
+        "KYC assessment lookup & review",
+        "Find a customer",
+        "KYC assessment",
+        "Submit KYC assessment decision"
+      ],
+      "geometry": {
+        "client": 768,
+        "scroll": 768
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "complianceCases",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "complianceCases-768.png",
+      "headings": [
+        "Compliance case lookup",
+        "Find a customer",
+        "Compliance cases"
+      ],
+      "geometry": {
+        "client": 768,
+        "scroll": 768
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "complianceCases-drawer",
+      "role": "SUPER_ADMIN",
+      "width": 768,
+      "file": "complianceCases-drawer-768.png",
+      "interaction": true
+    },
+    {
+      "key": "fraudCases",
+      "role": "RISK_FRAUD",
+      "width": 768,
+      "file": "fraudCases-768.png",
+      "headings": [
+        "Fraud case lookup",
+        "Find a customer",
+        "Fraud cases"
+      ],
+      "geometry": {
+        "client": 768,
+        "scroll": 768
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "fraudCases-drawer",
+      "role": "RISK_FRAUD",
+      "width": 768,
+      "file": "fraudCases-drawer-768.png",
+      "interaction": true
+    },
+    {
+      "key": "login",
+      "role": "unauthenticated",
+      "width": 375,
+      "file": "login-375.png",
+      "heading": [
+        "Welcome back"
+      ]
+    },
+    {
+      "key": "kycQueue",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "kycQueue-375.png",
+      "headings": [
+        "KYC assessment lookup & review",
+        "Find a customer",
+        "KYC assessment",
+        "Submit KYC assessment decision"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "complianceCases",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "complianceCases-375.png",
+      "headings": [
+        "Compliance case lookup",
+        "Find a customer",
+        "Compliance cases"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "complianceCases-drawer",
+      "role": "SUPER_ADMIN",
+      "width": 375,
+      "file": "complianceCases-drawer-375.png",
+      "interaction": true
+    },
+    {
+      "key": "fraudCases",
+      "role": "RISK_FRAUD",
+      "width": 375,
+      "file": "fraudCases-375.png",
+      "headings": [
+        "Fraud case lookup",
+        "Find a customer",
+        "Fraud cases"
+      ],
+      "geometry": {
+        "client": 375,
+        "scroll": 375
+      },
+      "captureHeight": 900
+    },
+    {
+      "key": "fraudCases-drawer",
+      "role": "RISK_FRAUD",
+      "width": 375,
+      "file": "fraudCases-drawer-375.png",
+      "interaction": true
+    }
+  ],
+  "warnings": []
+}

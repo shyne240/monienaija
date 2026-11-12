@@ -1,5 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import './agent-workspaces.css';
+import { formatMinorUnits } from '../utils/financial-display';
 import { ApiClient } from '../services/api-client';
+import { WorkspaceDrawer } from '../design-system/WorkspaceDrawer';
 
 export interface PendingFundingQueueItem {
   id: string;
@@ -79,7 +82,7 @@ export interface PendingFundingApprovalsQueueProps {
     agentId: string,
     idempotencyKey?: string,
     selection?: FundingInboxSelection,
-  ) => void;
+  ) => void | boolean;
 }
 
 export async function fetchGlobalFundingInbox(
@@ -97,6 +100,7 @@ export async function fetchGlobalFundingInbox(
 }
 
 function formatMinor(value: string, currency: string): string {
+  if (currency !== 'NGN') return formatMinorUnits(value, currency);
   try {
     const minor = BigInt(value);
     const negative = minor < 0n;
@@ -138,6 +142,9 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
   const [unauthorizedSessionMessage, setUnauthorizedSessionMessage] = useState('');
   const [inspectedItem, setInspectedItem] = useState<PendingFundingQueueItem | null>(null);
   const [handoffCopiedId, setHandoffCopiedId] = useState<string | null>(null);
+  const generation = useRef(0);
+  const access = useRef({ canReviewFunding, canAccessGlobalInbox });
+  access.current = { canReviewFunding, canAccessGlobalInbox };
 
   const effectiveLoader: (query: AgentFundingInboxQuery) => Promise<AgentFundingInboxPage> =
     useCallback(
@@ -147,7 +154,8 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
         }
         if (loadQueue) {
           const rows = await loadQueue();
-          const safeRows = Array.isArray(rows) ? rows : [];
+          if (!Array.isArray(rows)) throw new Error('Invalid funding inbox response.');
+          const safeRows = rows;
           const filtered = safeRows.filter((row) => {
             if (query.status && row.status !== query.status) return false;
             if (query.direction && row.direction !== query.direction) return false;
@@ -174,6 +182,10 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
       targetDirection: 'ALL' | 'FUND' | 'DEFUND',
     ) => {
       if (!canReviewFunding || !canAccessGlobalInbox || forbiddenMessage) return;
+      const current = ++generation.current;
+      const valid = () => generation.current === current && access.current.canReviewFunding && access.current.canAccessGlobalInbox;
+      setLoaded(false);
+      setInspectedItem(null);
       setLoading(true);
       setError('');
       setUnauthorizedSessionMessage('');
@@ -184,12 +196,17 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
           ...(targetStatus !== 'ALL' ? { status: targetStatus } : {}),
           ...(targetDirection !== 'ALL' ? { direction: targetDirection } : {}),
         });
-        const rows = Array.isArray(res?.items) ? res.items : [];
+        if (!valid()) return;
+        if (!res || !Array.isArray(res.items) || typeof res.total !== 'number' || !Number.isFinite(res.total) || res.total < 0) throw new Error('Invalid funding inbox response.');
+        const rows = res.items;
         setItems(rows);
-        setTotal(typeof res?.total === 'number' ? res.total : rows.length);
+        setTotal(res.total);
         setLoaded(true);
         setInspectedItem((cur) => (cur ? rows.find((r) => r.id === cur.id) ?? null : null));
       } catch (err: unknown) {
+        if (!valid()) return;
+        setItems([]);
+        setInspectedItem(null);
         const status = (err as { status?: number } | null)?.status;
         const msg = err instanceof Error ? err.message : 'Failed to load global funding inbox.';
         if (status === 403) {
@@ -212,7 +229,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
         }
         setError(msg);
       } finally {
-        setLoading(false);
+        if (valid()) setLoading(false);
       }
     },
     [canAccessGlobalInbox, canReviewFunding, effectiveLoader, forbiddenMessage],
@@ -221,6 +238,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
   useEffect(() => {
     if (!canReviewFunding || !canAccessGlobalInbox || forbiddenMessage) return;
     void loadPage(page, limit, statusFilter, directionFilter);
+    return () => { generation.current += 1; };
   }, [canReviewFunding, canAccessGlobalInbox, page, limit, statusFilter, directionFilter, refreshTrigger, loadPage, forbiddenMessage]);
 
   if (!canReviewFunding) return null;
@@ -241,13 +259,13 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
   return (
     <section
       aria-label="Global pending funding discovery queue"
-      style={styles.card}
+      className="mn-agent-workspace"
       data-testid="global-funding-inbox"
     >
-      <div style={styles.header}>
+      <div className="mn-agent-workspace__header">
         <div>
-          <h3 style={styles.title}>Global Funding &amp; Defunding Approvals Inbox</h3>
-          <p style={styles.subtitle}>
+          <h3 className="mn-agent-workspace__title">Global Funding &amp; Defunding Approvals Inbox</h3>
+          <p className="mn-agent-workspace__description">
             Live read-only checker discovery (<code>GET /internal/agents/funding-requests</code>). Own maker
             requests are excluded server-side; <code>agent.view</code> is not required.
           </p>
@@ -255,7 +273,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
         {canAccessGlobalInbox && !forbiddenMessage && (
           <button
             type="button"
-            style={styles.button}
+            className="mn-agent-workspace__button"
             disabled={loading}
             onClick={() => void loadPage(page, limit, statusFilter, directionFilter)}
           >
@@ -292,8 +310,8 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
         </div>
       ) : (
         <>
-          <div style={styles.filterRow}>
-            <label style={styles.filterLabel}>
+          <div className="mn-agent-workspace__controls">
+            <label className="mn-agent-workspace__field">
               Request status
               <select
                 aria-label="Funding inbox status filter"
@@ -303,7 +321,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                   setStatusFilter(e.target.value as 'ALL' | 'PENDING' | 'REJECTED' | 'EXECUTED');
                   setPage(1);
                 }}
-                style={styles.select}
+                className="mn-agent-workspace__input"
               >
                 <option value="PENDING">PENDING (awaiting checker action)</option>
                 <option value="EXECUTED">EXECUTED</option>
@@ -312,7 +330,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
               </select>
             </label>
 
-            <label style={styles.filterLabel}>
+            <label className="mn-agent-workspace__field">
               Direction
               <select
                 aria-label="Funding inbox direction filter"
@@ -322,7 +340,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                   setDirectionFilter(e.target.value as 'ALL' | 'FUND' | 'DEFUND');
                   setPage(1);
                 }}
-                style={styles.select}
+                className="mn-agent-workspace__input"
               >
                 <option value="ALL">All directions</option>
                 <option value="FUND">FUND</option>
@@ -330,7 +348,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
               </select>
             </label>
 
-            <label style={styles.filterLabel}>
+            <label className="mn-agent-workspace__field">
               Page size
               <select
                 aria-label="Funding inbox page size"
@@ -340,7 +358,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                   setLimit(Number(e.target.value));
                   setPage(1);
                 }}
-                style={styles.select}
+                className="mn-agent-workspace__input"
               >
                 <option value="10">10 per page</option>
                 <option value="20">20 per page</option>
@@ -354,7 +372,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
               <span>{error}</span>{' '}
               <button
                 type="button"
-                style={styles.smallButton}
+                className="mn-agent-workspace__button"
                 disabled={loading}
                 onClick={() => void loadPage(page, limit, statusFilter, directionFilter)}
               >
@@ -373,8 +391,10 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
               excluded by Decision 7 maker-checker separation.
             </div>
           ) : loaded ? (
-            <div style={styles.tableWrap}>
-              <table style={styles.table}>
+            <div>
+              <p className="mn-agent-workspace__description">Scroll horizontally to see all funding instruction columns.</p>
+              <div className="mn-agent-workspace__scroll" role="region" aria-label="Funding instructions table" tabIndex={0}>
+              <table className="mn-agent-workspace__table">
                 <thead>
                   <tr>
                     <th style={styles.th}>Created / Expires</th>
@@ -430,7 +450,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                           <div style={styles.actionGroup}>
                             <button
                               type="button"
-                              style={styles.smallButton}
+                              className="mn-agent-workspace__button"
                               onClick={() =>
                                 setInspectedItem((cur) => (cur?.id === item.id ? null : item))
                               }
@@ -439,7 +459,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                             </button>
                             <button
                               type="button"
-                              style={styles.primaryButton}
+                              className="mn-agent-workspace__button mn-agent-workspace__button--primary"
                               onClick={() =>
                                 onSelectRequest(item.agentId, item.idempotencyKey, {
                                   agentId: item.agentId,
@@ -458,6 +478,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           ) : null}
 
@@ -469,7 +490,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
               <div style={styles.actionGroup}>
                 <button
                   type="button"
-                  style={styles.smallButton}
+                  className="mn-agent-workspace__button"
                   disabled={loading || page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
@@ -477,7 +498,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                 </button>
                 <button
                   type="button"
-                  style={styles.smallButton}
+                  className="mn-agent-workspace__button"
                   disabled={loading || page >= totalPages}
                   onClick={() => setPage((p) => p + 1)}
                 >
@@ -487,7 +508,8 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
             </div>
           )}
 
-          {inspectedItem && (
+          {loaded && !loading && !error && inspectedItem && (
+            <WorkspaceDrawer label="Inspected funding request details" className="funding-inbox-drawer" onDismiss={() => setInspectedItem(null)}>
             <section
               aria-label="Inspected funding request details"
               data-testid="funding-inbox-detail"
@@ -500,15 +522,16 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                 <div style={styles.actionGroup}>
                   <button
                     type="button"
-                    style={styles.primaryButton}
-                    onClick={() =>
-                      onSelectRequest(inspectedItem.agentId, inspectedItem.idempotencyKey, {
+                    className="mn-agent-workspace__button mn-agent-workspace__button--primary"
+                    onClick={() => {
+                      const accepted = onSelectRequest(inspectedItem.agentId, inspectedItem.idempotencyKey, {
                         agentId: inspectedItem.agentId,
                         idempotencyKey: inspectedItem.idempotencyKey,
                         requestId: inspectedItem.id,
                         approvalId: inspectedItem.approvalId,
-                      })
-                    }
+                      });
+                      if (accepted !== false) setInspectedItem(null);
+                    }}
                   >
                     {inspectedItem.status === 'PENDING'
                       ? 'Proceed to Checker Decision'
@@ -516,7 +539,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                   </button>
                   <button
                     type="button"
-                    style={styles.smallButton}
+                    className="mn-agent-workspace__button"
                     onClick={() => setInspectedItem(null)}
                   >
                     Close details
@@ -602,7 +625,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                 {typeof navigator !== 'undefined' && navigator.clipboard && (
                   <button
                     type="button"
-                    style={styles.smallButton}
+                    className="mn-agent-workspace__button"
                     onClick={() => {
                       void navigator.clipboard
                         .writeText(buildHandoffJson(inspectedItem))
@@ -615,6 +638,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                 )}
               </div>
             </section>
+            </WorkspaceDrawer>
           )}
         </>
       )}
@@ -641,12 +665,12 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     margin: '0 0 4px',
     fontSize: 16,
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
   },
   subtitle: {
     margin: 0,
     fontSize: 12,
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
   },
   unauthorizedBox: {
     padding: 12,
@@ -670,7 +694,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 6,
     fontSize: 12,
     fontWeight: 600,
-    color: '#334155',
+    color: 'var(--mn-text-primary, #132b25)',
   },
   select: {
     padding: '6px 8px',
@@ -683,7 +707,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6,
     border: '1px solid #CBD5E1',
     background: '#FFFFFF',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
     cursor: 'pointer',
     fontSize: 12,
     fontWeight: 600,
@@ -693,7 +717,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 5,
     border: '1px solid #CBD5E1',
     background: '#FFFFFF',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
     cursor: 'pointer',
     fontSize: 11,
     fontWeight: 600,
@@ -701,8 +725,8 @@ const styles: Record<string, React.CSSProperties> = {
   primaryButton: {
     padding: '6px 10px',
     borderRadius: 5,
-    border: '1px solid #0A3D25',
-    background: '#0A3D25',
+    border: '1px solid var(--mn-action-primary, #0b624a)',
+    background: 'var(--mn-action-primary, #0b624a)',
     color: '#FFFFFF',
     cursor: 'pointer',
     fontSize: 11,
@@ -725,14 +749,14 @@ const styles: Record<string, React.CSSProperties> = {
   loading: {
     padding: 18,
     textAlign: 'center',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontSize: 12,
   },
   empty: {
     padding: 16,
     textAlign: 'center',
-    color: '#64748B',
-    background: '#F8FAFC',
+    color: 'var(--mn-text-secondary, #52655f)',
+    background: 'var(--mn-surface-canvas, #f5f8f6)',
     border: '1px dashed #CBD5E1',
     borderRadius: 6,
     fontSize: 12,
@@ -749,13 +773,13 @@ const styles: Record<string, React.CSSProperties> = {
   th: {
     textAlign: 'left',
     padding: '8px 6px',
-    borderBottom: '1px solid #E2E8F0',
-    color: '#475569',
+    borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontSize: 11,
   },
   td: {
     padding: '8px 6px',
-    borderBottom: '1px solid #F1F5F9',
+    borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)',
     verticalAlign: 'top',
   },
   activeRow: {
@@ -768,7 +792,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
   },
   muted: {
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontSize: 11,
   },
   badge: {
@@ -784,8 +808,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'inline-block',
     padding: '2px 7px',
     borderRadius: 10,
-    background: '#F1F5F9',
-    color: '#334155',
+    background: 'var(--mn-surface-sunken, #eef3f0)',
+    color: 'var(--mn-text-primary, #132b25)',
     fontWeight: 600,
     fontSize: 10,
   },
@@ -797,14 +821,14 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: 'wrap',
     gap: 8,
     fontSize: 12,
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
   },
   detailCard: {
     marginTop: 14,
     padding: 14,
     borderRadius: 6,
     border: '1px solid #CBD5E1',
-    background: '#F8FAFC',
+    background: 'var(--mn-surface-canvas, #f5f8f6)',
     fontSize: 12,
     lineHeight: 1.5,
   },
@@ -818,14 +842,14 @@ const styles: Record<string, React.CSSProperties> = {
   },
   detailGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 230px), 1fr))',
     gap: 8,
   },
   handoffRow: {
     marginTop: 10,
     padding: 8,
     background: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 5,
     display: 'flex',
     alignItems: 'center',

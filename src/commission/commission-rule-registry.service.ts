@@ -107,24 +107,49 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 @Injectable()
 export class CommissionRuleRegistryService {
   constructor(
-    @InjectRepository(CommissionRuleDefinition) private readonly repo: Repository<CommissionRuleDefinition>,
+    @InjectRepository(CommissionRuleDefinition)
+    private readonly repo: Repository<CommissionRuleDefinition>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly calculator: CommissionCalculator,
     @Optional() private readonly auditService?: AuditService,
   ) {}
 
-  async createRule(input: CommissionRuleCreateInput, actor: string): Promise<CommissionRuleSafeProjection> {
+  async createRule(
+    input: CommissionRuleCreateInput,
+    actor: string,
+  ): Promise<CommissionRuleSafeProjection> {
     const productCode = this.normalizeProductCode(input.productCode);
     await this.assertProductExists(productCode);
     const currency = this.normalizeCurrency(input.currency ?? 'NGN');
-    const recipientType = this.normalizeEnum(input.recipientType, COMMISSION_RECIPIENT_TYPES, 'recipientType');
-    const calculationModel = this.normalizeEnum(input.calculationModel, COMMISSION_CALCULATION_MODELS, 'calculationModel');
-    const calculationBasis = this.normalizeEnum(input.calculationBasis, COMMISSION_CALCULATION_BASES, 'calculationBasis');
+    const recipientType = this.normalizeEnum(
+      input.recipientType,
+      COMMISSION_RECIPIENT_TYPES,
+      'recipientType',
+    );
+    const calculationModel = this.normalizeEnum(
+      input.calculationModel,
+      COMMISSION_CALCULATION_MODELS,
+      'calculationModel',
+    );
+    const calculationBasis = this.normalizeEnum(
+      input.calculationBasis,
+      COMMISSION_CALCULATION_BASES,
+      'calculationBasis',
+    );
 
-    const flatCommissionMinor = this.parseOptionalMinor(input.flatCommissionMinor, 'flatCommissionMinor');
+    const flatCommissionMinor = this.parseOptionalMinor(
+      input.flatCommissionMinor,
+      'flatCommissionMinor',
+    );
     const percentageBps = this.parseOptionalBps(input.percentageBps, 'percentageBps');
-    const minimumCommissionMinor = this.parseOptionalMinor(input.minimumCommissionMinor, 'minimumCommissionMinor');
-    const maximumCommissionMinor = this.parseOptionalMinor(input.maximumCommissionMinor, 'maximumCommissionMinor');
+    const minimumCommissionMinor = this.parseOptionalMinor(
+      input.minimumCommissionMinor,
+      'minimumCommissionMinor',
+    );
+    const maximumCommissionMinor = this.parseOptionalMinor(
+      input.maximumCommissionMinor,
+      'maximumCommissionMinor',
+    );
     const tiers = this.normalizeTiers(calculationModel, input.tiers ?? null);
 
     this.assertModelParamCoherence(calculationModel, {
@@ -140,17 +165,23 @@ export class CommissionRuleRegistryService {
       agentId: input.agentId,
       aggregatorId: input.aggregatorId,
     });
-    if (targeting.agentClassId) await this.assertExists('agent_classes', targeting.agentClassId, 'AgentClass');
+    if (targeting.agentClassId)
+      await this.assertExists('agent_classes', targeting.agentClassId, 'AgentClass');
     if (targeting.agentId) await this.assertExists('agents', targeting.agentId, 'Agent');
-    if (targeting.aggregatorId) await this.assertExists('aggregators', targeting.aggregatorId, 'Aggregator');
+    if (targeting.aggregatorId)
+      await this.assertExists('aggregators', targeting.aggregatorId, 'Aggregator');
 
     const effectiveFrom = this.parseDate(input.effectiveFrom ?? new Date(), 'effectiveFrom');
-    const effectiveTo = input.effectiveTo === undefined || input.effectiveTo === null ? null : this.parseDate(input.effectiveTo, 'effectiveTo');
+    const effectiveTo =
+      input.effectiveTo === undefined || input.effectiveTo === null
+        ? null
+        : this.parseDate(input.effectiveTo, 'effectiveTo');
     if (effectiveTo !== null && effectiveTo.getTime() <= effectiveFrom.getTime()) {
       throw new BadRequestException('effectiveTo must be after effectiveFrom');
     }
     const priority = this.parsePriority(input.priority);
-    const isActive = input.isActive === undefined ? true : this.parseBoolean(input.isActive, 'isActive');
+    const isActive =
+      input.isActive === undefined ? true : this.parseBoolean(input.isActive, 'isActive');
 
     const entity = this.repo.create({
       productCode,
@@ -183,7 +214,9 @@ export class CommissionRuleRegistryService {
         );
       }
       if (this.isCheckViolation(e)) {
-        throw new BadRequestException(`commission rule violates schema coherence constraints: ${(e as Error).message}`);
+        throw new BadRequestException(
+          `commission rule violates schema coherence constraints: ${(e as Error).message}`,
+        );
       }
       throw e;
     }
@@ -191,20 +224,47 @@ export class CommissionRuleRegistryService {
     return this.toSafe(saved);
   }
 
-  async updateRule(id: string, input: CommissionRuleUpdateInput, actor: string): Promise<CommissionRuleSafeProjection> {
+  async updateRule(
+    id: string,
+    input: CommissionRuleUpdateInput,
+    actor: string,
+  ): Promise<CommissionRuleSafeProjection> {
     const ruleId = this.normalizeId(id);
     const rule = await this.repo.findOne({ where: { id: ruleId } as never });
     if (!rule) throw new NotFoundException(`Commission rule ${ruleId} not found`);
     this.assertVersion(rule.version, input.version);
 
     const previous = this.ruleValues(rule);
-    if (input.calculationBasis !== undefined) rule.calculationBasis = this.normalizeEnum(input.calculationBasis, COMMISSION_CALCULATION_BASES, 'calculationBasis');
-    if (input.flatCommissionMinor !== undefined) rule.flatCommissionMinor = this.parseOptionalMinor(input.flatCommissionMinor, 'flatCommissionMinor');
-    if (input.percentageBps !== undefined) rule.percentageBps = this.parseOptionalBps(input.percentageBps, 'percentageBps');
-    if (input.minimumCommissionMinor !== undefined) rule.minimumCommissionMinor = this.parseOptionalMinor(input.minimumCommissionMinor, 'minimumCommissionMinor');
-    if (input.maximumCommissionMinor !== undefined) rule.maximumCommissionMinor = this.parseOptionalMinor(input.maximumCommissionMinor, 'maximumCommissionMinor');
-    if (input.tiers !== undefined) rule.tiers = this.normalizeTiers(rule.calculationModel, input.tiers);
-    if (rule.minimumCommissionMinor !== null && rule.maximumCommissionMinor !== null && BigInt(rule.minimumCommissionMinor) > BigInt(rule.maximumCommissionMinor)) {
+    if (input.calculationBasis !== undefined)
+      rule.calculationBasis = this.normalizeEnum(
+        input.calculationBasis,
+        COMMISSION_CALCULATION_BASES,
+        'calculationBasis',
+      );
+    if (input.flatCommissionMinor !== undefined)
+      rule.flatCommissionMinor = this.parseOptionalMinor(
+        input.flatCommissionMinor,
+        'flatCommissionMinor',
+      );
+    if (input.percentageBps !== undefined)
+      rule.percentageBps = this.parseOptionalBps(input.percentageBps, 'percentageBps');
+    if (input.minimumCommissionMinor !== undefined)
+      rule.minimumCommissionMinor = this.parseOptionalMinor(
+        input.minimumCommissionMinor,
+        'minimumCommissionMinor',
+      );
+    if (input.maximumCommissionMinor !== undefined)
+      rule.maximumCommissionMinor = this.parseOptionalMinor(
+        input.maximumCommissionMinor,
+        'maximumCommissionMinor',
+      );
+    if (input.tiers !== undefined)
+      rule.tiers = this.normalizeTiers(rule.calculationModel, input.tiers);
+    if (
+      rule.minimumCommissionMinor !== null &&
+      rule.maximumCommissionMinor !== null &&
+      BigInt(rule.minimumCommissionMinor) > BigInt(rule.maximumCommissionMinor)
+    ) {
       throw new BadRequestException('minimumCommissionMinor cannot exceed maximumCommissionMinor');
     }
     this.assertModelParamCoherence(rule.calculationModel, {
@@ -215,7 +275,8 @@ export class CommissionRuleRegistryService {
       tiers: rule.tiers,
     });
     if (input.effectiveTo !== undefined) {
-      const effectiveTo = input.effectiveTo === null ? null : this.parseDate(input.effectiveTo, 'effectiveTo');
+      const effectiveTo =
+        input.effectiveTo === null ? null : this.parseDate(input.effectiveTo, 'effectiveTo');
       if (effectiveTo !== null && effectiveTo.getTime() <= rule.effectiveFrom.getTime()) {
         throw new BadRequestException('effectiveTo must be after effectiveFrom');
       }
@@ -248,7 +309,8 @@ export class CommissionRuleRegistryService {
           updatedAt: new Date(),
         } as never,
       );
-      if (result.affected !== 1) throw new ConflictException('Commission rule version conflict — stale version');
+      if (result.affected !== 1)
+        throw new ConflictException('Commission rule version conflict — stale version');
       const saved = await this.repo.findOne({ where: { id: ruleId } as never });
       if (!saved) throw new NotFoundException(`Commission rule ${ruleId} not found`);
       await this.audit(saved.id, 'UPDATED', actor, previous, this.ruleValues(saved));
@@ -258,7 +320,9 @@ export class CommissionRuleRegistryService {
         throw new ConflictException('Commission rule version conflict — stale version');
       }
       if (this.isCheckViolation(e)) {
-        throw new BadRequestException(`commission rule violates schema coherence constraints: ${(e as Error).message}`);
+        throw new BadRequestException(
+          `commission rule violates schema coherence constraints: ${(e as Error).message}`,
+        );
       }
       throw e;
     }
@@ -278,14 +342,26 @@ export class CommissionRuleRegistryService {
     isActive?: boolean;
     page?: number;
     limit?: number;
-  }): Promise<{ data: CommissionRuleSafeProjection[]; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean }> {
+  }): Promise<{
+    data: CommissionRuleSafeProjection[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  }> {
     const page = this.normalizePage(params.page);
     const limit = this.normalizeLimit(params.limit);
     const skip = (page - 1) * limit;
     const where: Record<string, unknown> = {};
     if (params.productCode) where['productCode'] = this.normalizeProductCode(params.productCode);
     if (params.currency) where['currency'] = this.normalizeCurrency(params.currency);
-    if (params.recipientType) where['recipientType'] = this.normalizeEnum(params.recipientType, COMMISSION_RECIPIENT_TYPES, 'recipientType');
+    if (params.recipientType)
+      where['recipientType'] = this.normalizeEnum(
+        params.recipientType,
+        COMMISSION_RECIPIENT_TYPES,
+        'recipientType',
+      );
     if (params.isActive !== undefined) where['isActive'] = params.isActive;
     const [rows, total] = await this.repo.findAndCount({
       where: where as never,
@@ -321,46 +397,104 @@ export class CommissionRuleRegistryService {
     };
     switch (model) {
       case 'FIXED':
-        req(p.flatCommissionMinor !== null && p.percentageBps === null && p.minimumCommissionMinor === null && p.maximumCommissionMinor === null && p.tiers === null,
-          'FIXED requires flatCommissionMinor only (use 0 for explicit ZERO)');
+        req(
+          p.flatCommissionMinor !== null &&
+            p.percentageBps === null &&
+            p.minimumCommissionMinor === null &&
+            p.maximumCommissionMinor === null &&
+            p.tiers === null,
+          'FIXED requires flatCommissionMinor only (use 0 for explicit ZERO)',
+        );
         break;
       case 'PERCENTAGE':
-        req(p.percentageBps !== null && p.flatCommissionMinor === null && p.minimumCommissionMinor === null && p.maximumCommissionMinor === null && p.tiers === null,
-          'PERCENTAGE requires percentageBps only');
+        req(
+          p.percentageBps !== null &&
+            p.flatCommissionMinor === null &&
+            p.minimumCommissionMinor === null &&
+            p.maximumCommissionMinor === null &&
+            p.tiers === null,
+          'PERCENTAGE requires percentageBps only',
+        );
         break;
       case 'PERCENTAGE_MIN':
-        req(p.percentageBps !== null && p.minimumCommissionMinor !== null && p.flatCommissionMinor === null && p.maximumCommissionMinor === null && p.tiers === null,
-          'PERCENTAGE_MIN requires percentageBps + minimumCommissionMinor only');
+        req(
+          p.percentageBps !== null &&
+            p.minimumCommissionMinor !== null &&
+            p.flatCommissionMinor === null &&
+            p.maximumCommissionMinor === null &&
+            p.tiers === null,
+          'PERCENTAGE_MIN requires percentageBps + minimumCommissionMinor only',
+        );
         break;
       case 'PERCENTAGE_MAX':
-        req(p.percentageBps !== null && p.maximumCommissionMinor !== null && p.flatCommissionMinor === null && p.minimumCommissionMinor === null && p.tiers === null,
-          'PERCENTAGE_MAX requires percentageBps + maximumCommissionMinor only');
+        req(
+          p.percentageBps !== null &&
+            p.maximumCommissionMinor !== null &&
+            p.flatCommissionMinor === null &&
+            p.minimumCommissionMinor === null &&
+            p.tiers === null,
+          'PERCENTAGE_MAX requires percentageBps + maximumCommissionMinor only',
+        );
         break;
       case 'PERCENTAGE_MIN_MAX':
-        req(p.percentageBps !== null && p.minimumCommissionMinor !== null && p.maximumCommissionMinor !== null && p.flatCommissionMinor === null && p.tiers === null,
-          'PERCENTAGE_MIN_MAX requires percentageBps + minimumCommissionMinor + maximumCommissionMinor only');
+        req(
+          p.percentageBps !== null &&
+            p.minimumCommissionMinor !== null &&
+            p.maximumCommissionMinor !== null &&
+            p.flatCommissionMinor === null &&
+            p.tiers === null,
+          'PERCENTAGE_MIN_MAX requires percentageBps + minimumCommissionMinor + maximumCommissionMinor only',
+        );
         break;
       case 'FLAT_PLUS_PERCENTAGE':
-        req(p.flatCommissionMinor !== null && p.percentageBps !== null && p.minimumCommissionMinor === null && p.maximumCommissionMinor === null && p.tiers === null,
-          'FLAT_PLUS_PERCENTAGE requires flatCommissionMinor + percentageBps only');
+        req(
+          p.flatCommissionMinor !== null &&
+            p.percentageBps !== null &&
+            p.minimumCommissionMinor === null &&
+            p.maximumCommissionMinor === null &&
+            p.tiers === null,
+          'FLAT_PLUS_PERCENTAGE requires flatCommissionMinor + percentageBps only',
+        );
         break;
       case 'TIERED':
-        req(p.tiers !== null && p.tiers.length > 0 && p.flatCommissionMinor === null && p.percentageBps === null && p.minimumCommissionMinor === null && p.maximumCommissionMinor === null,
-          'TIERED requires a non-empty tiers array only');
+        req(
+          p.tiers !== null &&
+            p.tiers.length > 0 &&
+            p.flatCommissionMinor === null &&
+            p.percentageBps === null &&
+            p.minimumCommissionMinor === null &&
+            p.maximumCommissionMinor === null,
+          'TIERED requires a non-empty tiers array only',
+        );
         break;
     }
   }
 
   /** Structural tier validation: the calculator's fail-closed checker is the authority. */
-  private normalizeTiers(model: CommissionCalculationModel, tiers: CommissionTier[] | null): CommissionTier[] | null {
+  private normalizeTiers(
+    model: CommissionCalculationModel,
+    tiers: CommissionTier[] | null,
+  ): CommissionTier[] | null {
     if (tiers === null) return null;
-    if (!Array.isArray(tiers)) throw new BadRequestException('tiers must be an array of marginal brackets');
+    if (!Array.isArray(tiers))
+      throw new BadRequestException('tiers must be an array of marginal brackets');
     const normalized = tiers.map((tier, index): CommissionTier => {
-      if (tier === null || typeof tier !== 'object') throw new BadRequestException(`tiers[${index}] must be an object`);
-      const upToMinor = tier.upToMinor === undefined || tier.upToMinor === null ? null : this.parseRequiredMinor(tier.upToMinor, `tiers[${index}].upToMinor`);
-      const flatMinor = tier.flatMinor === undefined || tier.flatMinor === null ? null : this.parseRequiredMinor(tier.flatMinor, `tiers[${index}].flatMinor`);
-      const bps = tier.bps === undefined || tier.bps === null ? null : this.parseOptionalBps(tier.bps, `tiers[${index}].bps`);
-      if (flatMinor === null && bps === null) throw new BadRequestException(`tiers[${index}] requires bps and/or flatMinor`);
+      if (tier === null || typeof tier !== 'object')
+        throw new BadRequestException(`tiers[${index}] must be an object`);
+      const upToMinor =
+        tier.upToMinor === undefined || tier.upToMinor === null
+          ? null
+          : this.parseRequiredMinor(tier.upToMinor, `tiers[${index}].upToMinor`);
+      const flatMinor =
+        tier.flatMinor === undefined || tier.flatMinor === null
+          ? null
+          : this.parseRequiredMinor(tier.flatMinor, `tiers[${index}].flatMinor`);
+      const bps =
+        tier.bps === undefined || tier.bps === null
+          ? null
+          : this.parseOptionalBps(tier.bps, `tiers[${index}].bps`);
+      if (flatMinor === null && bps === null)
+        throw new BadRequestException(`tiers[${index}] requires bps and/or flatMinor`);
       return { upToMinor, bps, flatMinor };
     });
     // Reuse the calculator's authoritative fail-closed structural validation with a zero base
@@ -369,14 +503,19 @@ export class CommissionRuleRegistryService {
     return normalized;
   }
 
-  private normalizeTargeting(input: { agentClassId?: string | null; agentId?: string | null; aggregatorId?: string | null }): {
+  private normalizeTargeting(input: {
+    agentClassId?: string | null;
+    agentId?: string | null;
+    aggregatorId?: string | null;
+  }): {
     agentClassId: string | null;
     agentId: string | null;
     aggregatorId: string | null;
   } {
     const clean = (value: string | null | undefined, field: string): string | null => {
       if (value === null || value === undefined) return null;
-      if (typeof value !== 'string' || !UUID_PATTERN.test(value.trim())) throw new BadRequestException(`${field} must be a UUID`);
+      if (typeof value !== 'string' || !UUID_PATTERN.test(value.trim()))
+        throw new BadRequestException(`${field} must be a UUID`);
       return value.trim().toLowerCase();
     };
     const targeting = {
@@ -384,30 +523,50 @@ export class CommissionRuleRegistryService {
       agentId: clean(input.agentId ?? null, 'agentId'),
       aggregatorId: clean(input.aggregatorId ?? null, 'aggregatorId'),
     };
-    const count = Number(targeting.agentClassId !== null) + Number(targeting.agentId !== null) + Number(targeting.aggregatorId !== null);
-    if (count > 1) throw new BadRequestException('targeting is single-dimensional: set at most one of agentClassId/agentId/aggregatorId');
+    const count =
+      Number(targeting.agentClassId !== null) +
+      Number(targeting.agentId !== null) +
+      Number(targeting.aggregatorId !== null);
+    if (count > 1)
+      throw new BadRequestException(
+        'targeting is single-dimensional: set at most one of agentClassId/agentId/aggregatorId',
+      );
     return targeting;
   }
 
   private async assertProductExists(productCode: string): Promise<void> {
-    const rows: Array<{ code: string }> = await this.dataSource.query(`SELECT code FROM products WHERE code = $1 AND deleted_at IS NULL`, [productCode]);
-    if (rows.length === 0) throw new NotFoundException(`Product ${productCode} does not exist in the product catalogue`);
+    const rows: Array<{ code: string }> = await this.dataSource.query(
+      `SELECT code FROM products WHERE code = $1 AND deleted_at IS NULL`,
+      [productCode],
+    );
+    if (rows.length === 0)
+      throw new NotFoundException(`Product ${productCode} does not exist in the product catalogue`);
   }
 
-  private async assertExists(table: 'agent_classes' | 'agents' | 'aggregators', id: string, label: string): Promise<void> {
-    const rows: Array<{ id: string }> = await this.dataSource.query(`SELECT id FROM ${table} WHERE id = $1 AND deleted_at IS NULL`, [id]);
+  private async assertExists(
+    table: 'agent_classes' | 'agents' | 'aggregators',
+    id: string,
+    label: string,
+  ): Promise<void> {
+    const rows: Array<{ id: string }> = await this.dataSource.query(
+      `SELECT id FROM ${table} WHERE id = $1 AND deleted_at IS NULL`,
+      [id],
+    );
     if (rows.length === 0) throw new NotFoundException(`${label} ${id} does not exist`);
   }
 
   private normalizeId(id: unknown): string {
-    if (typeof id !== 'string' || !UUID_PATTERN.test(id.trim())) throw new BadRequestException('id must be a UUID');
+    if (typeof id !== 'string' || !UUID_PATTERN.test(id.trim()))
+      throw new BadRequestException('id must be a UUID');
     return id.trim().toLowerCase();
   }
 
   private normalizeProductCode(code: unknown): string {
-    if (typeof code !== 'string' || !code.trim()) throw new BadRequestException('productCode is required');
+    if (typeof code !== 'string' || !code.trim())
+      throw new BadRequestException('productCode is required');
     const normalized = code.trim().toUpperCase();
-    if (!/^[A-Z0-9_]{3,80}$/.test(normalized)) throw new BadRequestException('productCode must match ^[A-Z0-9_]{3,80}$');
+    if (!/^[A-Z0-9_]{3,80}$/.test(normalized))
+      throw new BadRequestException('productCode must match ^[A-Z0-9_]{3,80}$');
     return normalized;
   }
 
@@ -435,7 +594,8 @@ export class CommissionRuleRegistryService {
     if (value === undefined || value === null) return null;
     let big: bigint;
     if (typeof value === 'number') {
-      if (!Number.isSafeInteger(value)) throw new BadRequestException(`${field} must be an integer`);
+      if (!Number.isSafeInteger(value))
+        throw new BadRequestException(`${field} must be an integer`);
       big = BigInt(value);
     } else if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
       big = BigInt(value.trim());
@@ -443,7 +603,8 @@ export class CommissionRuleRegistryService {
       throw new BadRequestException(`${field} must be a non-negative integer in minor units`);
     }
     if (big < 0n) throw new BadRequestException(`${field} cannot be negative`);
-    if (big > MAX_MINOR_UNITS) throw new BadRequestException(`${field} must fit in a PostgreSQL BIGINT`);
+    if (big > MAX_MINOR_UNITS)
+      throw new BadRequestException(`${field} must fit in a PostgreSQL BIGINT`);
     return big.toString();
   }
 
@@ -453,7 +614,8 @@ export class CommissionRuleRegistryService {
       throw new BadRequestException(`${field} must be an integer number of basis points`);
     }
     if (value < 0) throw new BadRequestException(`${field} cannot be negative`);
-    if (value > MAX_BPS) throw new BadRequestException(`${field} cannot exceed ${MAX_BPS} basis points (100%)`);
+    if (value > MAX_BPS)
+      throw new BadRequestException(`${field} cannot exceed ${MAX_BPS} basis points (100%)`);
     return value;
   }
 
@@ -472,7 +634,8 @@ export class CommissionRuleRegistryService {
 
   private parseDate(value: unknown, field: string): Date {
     const date = value instanceof Date ? value : new Date(String(value));
-    if (Number.isNaN(date.getTime())) throw new BadRequestException(`${field} must be a valid date`);
+    if (Number.isNaN(date.getTime()))
+      throw new BadRequestException(`${field} must be a valid date`);
     return date;
   }
 
@@ -482,22 +645,28 @@ export class CommissionRuleRegistryService {
 
   private normalizePage(page?: number): number {
     const p = page ?? 1;
-    if (!Number.isSafeInteger(p) || p < 1) throw new BadRequestException('page must be a positive integer');
+    if (!Number.isSafeInteger(p) || p < 1)
+      throw new BadRequestException('page must be a positive integer');
     return p;
   }
 
   private normalizeLimit(limit?: number): number {
     const l = limit ?? 20;
-    if (!Number.isSafeInteger(l) || l < 1 || l > 100) throw new BadRequestException('limit must be between 1 and 100');
+    if (!Number.isSafeInteger(l) || l < 1 || l > 100)
+      throw new BadRequestException('limit must be between 1 and 100');
     return l;
   }
 
   private isUniqueViolation(error: unknown): boolean {
-    return error instanceof QueryFailedError && (error as unknown as { code?: string }).code === '23505';
+    return (
+      error instanceof QueryFailedError && (error as unknown as { code?: string }).code === '23505'
+    );
   }
 
   private isCheckViolation(error: unknown): boolean {
-    return error instanceof QueryFailedError && (error as unknown as { code?: string }).code === '23514';
+    return (
+      error instanceof QueryFailedError && (error as unknown as { code?: string }).code === '23514'
+    );
   }
 
   private isVersionConflict(error: unknown): boolean {

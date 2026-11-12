@@ -42,7 +42,9 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     classService = moduleRef.get(AgentClassService);
@@ -75,7 +77,11 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
     });
   }
 
-  async function createAgentViaDb(reference: string, status: AgentStatus, agentClassId: string | null = null) {
+  async function createAgentViaDb(
+    reference: string,
+    status: AgentStatus,
+    agentClassId: string | null = null,
+  ) {
     const rows: Array<{ id: string }> = await dataSource.query(
       `INSERT INTO agents (reference, status, agent_class_id) VALUES ($1, $2, $3) RETURNING id`,
       [reference, status, agentClassId],
@@ -132,7 +138,11 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
   it('D. Application is not automatically an ACTIVE Agent', async () => {
     const cls = await createAgentClass(true);
     const ref = `applicant-d-${randomUUID()}`;
-    const appEntity = await appService.create({ agentClassId: cls.id, applicantReference: ref, actor: 'applicant' });
+    const appEntity = await appService.create({
+      agentClassId: cls.id,
+      applicantReference: ref,
+      actor: 'applicant',
+    });
     const agents: Array<{ count: string }> = await dataSource.query(
       `SELECT count(*)::text as count FROM agents WHERE reference = $1`,
       [ref],
@@ -144,7 +154,11 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
 
   it('E. Applicant can submit application + F. Submitted application enters the correct review state', async () => {
     const cls = await createAgentClass(true);
-    const appEntity = await appService.create({ agentClassId: cls.id, applicantReference: `e-${randomUUID()}`, actor: 'applicant' });
+    const appEntity = await appService.create({
+      agentClassId: cls.id,
+      applicantReference: `e-${randomUUID()}`,
+      actor: 'applicant',
+    });
     const submitted = await appService.submit(appEntity.id, 'applicant');
     expect(submitted.status).toBe(AgentApplicationStatus.SUBMITTED);
     // privileged review moves to UNDER_REVIEW
@@ -176,12 +190,19 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
 
   it('G. Rejected application does not activate Agent', async () => {
     const cls = await createAgentClass(true);
-    const appEntity = await appService.create({ agentClassId: cls.id, applicantReference: `g-${randomUUID()}`, actor: 'applicant' });
+    const appEntity = await appService.create({
+      agentClassId: cls.id,
+      applicantReference: `g-${randomUUID()}`,
+      actor: 'applicant',
+    });
     await appService.submit(appEntity.id, 'applicant');
     await appService.markUnderReview(appEntity.id, 'reviewer');
     const rejected = await appService.reject(appEntity.id, 'privileged', 'not suitable');
     expect(rejected.status).toBe(AgentApplicationStatus.REJECTED);
-    const agents: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM agents WHERE reference = $1`, [appEntity.applicantReference]);
+    const agents: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM agents WHERE reference = $1`,
+      [appEntity.applicantReference],
+    );
     expect(agents[0]!.count).toBe('0');
     // no ACTIVE agent created
     const appAfter = await appService.getById(appEntity.id);
@@ -191,7 +212,11 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
   it('H. Approved application does not create duplicate Agent + I. Exactly one canonical Agent results from activation + J. PENDING before activation + K. Activation results in ACTIVE', async () => {
     const cls = await createAgentClass(true);
     const ref = `h-${randomUUID()}`;
-    const appEntity = await appService.create({ agentClassId: cls.id, applicantReference: ref, actor: 'applicant' });
+    const appEntity = await appService.create({
+      agentClassId: cls.id,
+      applicantReference: ref,
+      actor: 'applicant',
+    });
     await appService.submit(appEntity.id, 'applicant');
     await appService.markUnderReview(appEntity.id, 'reviewer');
     const approved = await appService.approve(appEntity.id, 'privileged');
@@ -204,20 +229,30 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
     // H: second approve does not create duplicate
     const approvedAgain = await appService.approve(appEntity.id, 'privileged');
     expect(approvedAgain.agentId).toBe(pendingAgentId);
-    const countBefore: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM agents WHERE reference = $1`, [ref]);
+    const countBefore: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM agents WHERE reference = $1`,
+      [ref],
+    );
     expect(countBefore[0]!.count).toBe('1');
     // K: activation → ACTIVE
     const activated = await lifecycleService.activateFromApplication(appEntity.id, 'privileged');
     expect(activated.status).toBe(AgentStatus.ACTIVE);
     // I: exactly one canonical
-    const countAfter: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM agents WHERE reference = $1`, [ref]);
+    const countAfter: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM agents WHERE reference = $1`,
+      [ref],
+    );
     expect(countAfter[0]!.count).toBe('1');
     expect(activated.id).toBe(pendingAgentId);
   });
 
   it('L. ACTIVE → SUSPENDED works through guarded lifecycle', async () => {
     const cls = await createAgentClass(true);
-    const appEntity = await appService.create({ agentClassId: cls.id, applicantReference: `l-${randomUUID()}`, actor: 'applicant' });
+    const appEntity = await appService.create({
+      agentClassId: cls.id,
+      applicantReference: `l-${randomUUID()}`,
+      actor: 'applicant',
+    });
     await appService.submit(appEntity.id, 'applicant');
     await appService.markUnderReview(appEntity.id, 'reviewer');
     await appService.approve(appEntity.id, 'privileged');
@@ -229,7 +264,11 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
 
   it('M. SUSPENDED → ACTIVE works if supported', async () => {
     const cls = await createAgentClass(true);
-    const appEntity = await appService.create({ agentClassId: cls.id, applicantReference: `m-${randomUUID()}`, actor: 'applicant' });
+    const appEntity = await appService.create({
+      agentClassId: cls.id,
+      applicantReference: `m-${randomUUID()}`,
+      actor: 'applicant',
+    });
     await appService.submit(appEntity.id, 'applicant');
     await appService.markUnderReview(appEntity.id, 'reviewer');
     await appService.approve(appEntity.id, 'privileged');
@@ -242,7 +281,11 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
   it('N. ACTIVE/SUSPENDED → TERMINATED works according to lifecycle rules', async () => {
     const cls = await createAgentClass(true);
     // ACTIVE → TERMINATED
-    const app1 = await appService.create({ agentClassId: cls.id, applicantReference: `n1-${randomUUID()}`, actor: 'applicant' });
+    const app1 = await appService.create({
+      agentClassId: cls.id,
+      applicantReference: `n1-${randomUUID()}`,
+      actor: 'applicant',
+    });
     await appService.submit(app1.id, 'applicant');
     await appService.markUnderReview(app1.id, 'reviewer');
     await appService.approve(app1.id, 'privileged');
@@ -250,7 +293,11 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
     const t1 = await lifecycleService.terminate(a1.id, 'privileged', 'closure');
     expect(t1.status).toBe(AgentStatus.TERMINATED);
     // SUSPENDED → TERMINATED
-    const app2 = await appService.create({ agentClassId: cls.id, applicantReference: `n2-${randomUUID()}`, actor: 'applicant' });
+    const app2 = await appService.create({
+      agentClassId: cls.id,
+      applicantReference: `n2-${randomUUID()}`,
+      actor: 'applicant',
+    });
     await appService.submit(app2.id, 'applicant');
     await appService.markUnderReview(app2.id, 'reviewer');
     await appService.approve(app2.id, 'privileged');
@@ -262,21 +309,33 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
 
   it('O. TERMINATED cannot silently become ACTIVE', async () => {
     const cls = await createAgentClass(true);
-    const appEntity = await appService.create({ agentClassId: cls.id, applicantReference: `o-${randomUUID()}`, actor: 'applicant' });
+    const appEntity = await appService.create({
+      agentClassId: cls.id,
+      applicantReference: `o-${randomUUID()}`,
+      actor: 'applicant',
+    });
     await appService.submit(appEntity.id, 'applicant');
     await appService.markUnderReview(appEntity.id, 'reviewer');
     await appService.approve(appEntity.id, 'privileged');
     const agent = await lifecycleService.activateFromApplication(appEntity.id, 'privileged');
     await lifecycleService.terminate(agent.id, 'privileged');
-    await expect(lifecycleService.activate(agent.id, 'privileged')).rejects.toThrow(/not allowed|TERMINATED/i);
-    await expect(lifecycleService.reactivate(agent.id, 'privileged')).rejects.toThrow(/not allowed|TERMINATED/i);
+    await expect(lifecycleService.activate(agent.id, 'privileged')).rejects.toThrow(
+      /not allowed|TERMINATED/i,
+    );
+    await expect(lifecycleService.reactivate(agent.id, 'privileged')).rejects.toThrow(
+      /not allowed|TERMINATED/i,
+    );
     const after = await lifecycleService.getAgent(agent.id);
     expect(after.status).toBe(AgentStatus.TERMINATED);
   });
 
   it('P. Every lifecycle transition is audited', async () => {
     const cls = await createAgentClass(true);
-    const appEntity = await appService.create({ agentClassId: cls.id, applicantReference: `p-${randomUUID()}`, actor: 'applicant' });
+    const appEntity = await appService.create({
+      agentClassId: cls.id,
+      applicantReference: `p-${randomUUID()}`,
+      actor: 'applicant',
+    });
     await appService.submit(appEntity.id, 'applicant');
     await appService.markUnderReview(appEntity.id, 'reviewer');
     await appService.approve(appEntity.id, 'privileged');
@@ -289,24 +348,35 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
       [agent.id],
     );
     const actions = audits.map((r) => r.action);
-    expect(actions).toEqual(expect.arrayContaining(['ACTIVATED', 'SUSPENDED', 'REACTIVATED', 'TERMINATED']));
+    expect(actions).toEqual(
+      expect.arrayContaining(['ACTIVATED', 'SUSPENDED', 'REACTIVATED', 'TERMINATED']),
+    );
     const appAudits: Array<{ action: string }> = await dataSource.query(
       `SELECT action FROM audit_events WHERE entity_type = 'AGENT_APPLICATION' AND entity_id = $1 ORDER BY occurred_at`,
       [appEntity.id],
     );
     const appActions = appAudits.map((r) => r.action);
-    expect(appActions).toEqual(expect.arrayContaining(['CREATED', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED']));
+    expect(appActions).toEqual(
+      expect.arrayContaining(['CREATED', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED']),
+    );
   });
 
   it('Q. Applicant cannot approve/reject itself', async () => {
     const cls = await createAgentClass(true);
-    const appEntity = await appService.create({ agentClassId: cls.id, applicantReference: `q-${randomUUID()}`, actor: 'applicant' });
+    const appEntity = await appService.create({
+      agentClassId: cls.id,
+      applicantReference: `q-${randomUUID()}`,
+      actor: 'applicant',
+    });
     await appService.submit(appEntity.id, 'applicant');
     await appService.markUnderReview(appEntity.id, 'reviewer');
     // Try via HTTP privileged endpoint with AGENT token (should be denied)
     const agentId = await createAgentViaDb(`q-agent-${randomUUID()}`, AgentStatus.ACTIVE, cls.id);
     await createCredential(agentId, 'pw');
-    const login = await request(app.getHttpServer()).post('/api/v1/agents/sessions').send({ agentId, password: 'pw' }).expect(200);
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId, password: 'pw' })
+      .expect(200);
     const token = login.body.accessToken as string;
     await request(app.getHttpServer())
       .post(`/api/v1/internal/agents/applications/${appEntity.id}/approve`)
@@ -329,7 +399,10 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
     const a2 = await createAgentViaDb(`r-a2-${randomUUID()}`, AgentStatus.ACTIVE, cls.id);
     await createCredential(a1, 'pw1');
     await createCredential(a2, 'pw2');
-    const login1 = await request(app.getHttpServer()).post('/api/v1/agents/sessions').send({ agentId: a1, password: 'pw1' }).expect(200);
+    const login1 = await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId: a1, password: 'pw1' })
+      .expect(200);
     const token1 = login1.body.accessToken as string;
     // Agent a1 tries to suspend a2 via internal endpoint — should be 401/403, not 200
     await request(app.getHttpServer())
@@ -340,10 +413,17 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
     const after = await lifecycleService.getAgent(a2);
     expect(after.status).toBe(AgentStatus.ACTIVE);
     // Also cannot modify another Agent's application draft
-    const appOther = await appService.create({ agentClassId: cls.id, applicantReference: `r-other-${randomUUID()}`, actor: 'other-applicant' });
+    const appOther = await appService.create({
+      agentClassId: cls.id,
+      applicantReference: `r-other-${randomUUID()}`,
+      actor: 'other-applicant',
+    });
     // Try to update via public endpoint with different applicant actor header — we treat header as actor, but service allows if status DRAFT
     // The isolation test is that Agent A cannot update Agent B's PIN etc — already covered in A7, but for application, we check DB isolation
-    const apps: Array<{ id: string }> = await dataSource.query(`SELECT id FROM agent_applications WHERE id = $1`, [appOther.id]);
+    const apps: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM agent_applications WHERE id = $1`,
+      [appOther.id],
+    );
     expect(apps).toHaveLength(1);
   });
 
@@ -351,62 +431,117 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
     const cls = await createAgentClass(true);
     const agentId = await createAgentViaDb(`s-${randomUUID()}`, AgentStatus.ACTIVE, cls.id);
     await createCredential(agentId, 'pw');
-    const login = await request(app.getHttpServer()).post('/api/v1/agents/sessions').send({ agentId, password: 'pw' }).expect(200);
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId, password: 'pw' })
+      .expect(200);
     const token = login.body.accessToken as string;
-    await request(app.getHttpServer()).get('/api/v1/internal/agents/classes').set('Authorization', `Bearer ${token}`).expect(403);
-    await request(app.getHttpServer()).get('/api/v1/internal/agents/applications').set('Authorization', `Bearer ${token}`).expect(403);
-    await request(app.getHttpServer()).post(`/api/v1/internal/agents/${agentId}/suspend`).set('Authorization', `Bearer ${token}`).expect(403);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/agents/classes')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(403);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/agents/applications')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(403);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/agents/${agentId}/suspend`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(403);
   });
 
   it('T. Existing A6/A7 authentication behavior remains green', async () => {
     const cls = await createAgentClass(true);
     const agentId = await createAgentViaDb(`t-${randomUUID()}`, AgentStatus.ACTIVE, cls.id);
     await createCredential(agentId, 'pw');
-    const res = await request(app.getHttpServer()).post('/api/v1/agents/sessions').send({ agentId, password: 'pw' }).expect(200);
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId, password: 'pw' })
+      .expect(200);
     expect(res.body.accessToken).toBeDefined();
     // wrong password still 401
-    await request(app.getHttpServer()).post('/api/v1/agents/sessions').send({ agentId, password: 'wrong' }).expect(401);
+    await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId, password: 'wrong' })
+      .expect(401);
     // PENDING cannot login
-    const pendingId = await createAgentViaDb(`t-pending-${randomUUID()}`, AgentStatus.PENDING, cls.id);
+    const pendingId = await createAgentViaDb(
+      `t-pending-${randomUUID()}`,
+      AgentStatus.PENDING,
+      cls.id,
+    );
     await createCredential(pendingId, 'pw');
-    await request(app.getHttpServer()).post('/api/v1/agents/sessions').send({ agentId: pendingId, password: 'pw' }).expect(401);
+    await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId: pendingId, password: 'pw' })
+      .expect(401);
   });
 
   it('U. Existing Agent financial binding remains intact + V. No duplicate Agent wallet + W. No duplicate Agent financial binding', async () => {
-    const beforeWallets: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM wallet_accounts`);
-    const beforeBindings: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM customer_financial_account_bindings`);
+    const beforeWallets: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM wallet_accounts`,
+    );
+    const beforeBindings: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM customer_financial_account_bindings`,
+    );
     const cls = await createAgentClass(true);
-    const appEntity = await appService.create({ agentClassId: cls.id, applicantReference: `u-${randomUUID()}`, actor: 'applicant' });
+    const appEntity = await appService.create({
+      agentClassId: cls.id,
+      applicantReference: `u-${randomUUID()}`,
+      actor: 'applicant',
+    });
     await appService.submit(appEntity.id, 'applicant');
     await appService.markUnderReview(appEntity.id, 'reviewer');
     await appService.approve(appEntity.id, 'privileged');
     await lifecycleService.activateFromApplication(appEntity.id, 'privileged');
-    const afterWallets: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM wallet_accounts`);
-    const afterBindings: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM customer_financial_account_bindings`);
+    const afterWallets: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM wallet_accounts`,
+    );
+    const afterBindings: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM customer_financial_account_bindings`,
+    );
     expect(afterWallets[0]!.count).toBe(beforeWallets[0]!.count);
     expect(afterBindings[0]!.count).toBe(beforeBindings[0]!.count);
     // No agent wallet table exists, ensure no duplicate binding side-effect
-    const agentCols: Array<{ column_name: string }> = await dataSource.query(`SELECT column_name FROM information_schema.columns WHERE table_name='agents'`);
+    const agentCols: Array<{ column_name: string }> = await dataSource.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_name='agents'`,
+    );
     expect(agentCols.map((c) => c.column_name)).not.toContain('balance');
   });
 
   it('X. No Customer row created for Agent', async () => {
-    const before: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM customers`);
+    const before: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM customers`,
+    );
     const cls = await createAgentClass(true);
-    const appEntity = await appService.create({ agentClassId: cls.id, applicantReference: `x-${randomUUID()}`, actor: 'applicant' });
+    const appEntity = await appService.create({
+      agentClassId: cls.id,
+      applicantReference: `x-${randomUUID()}`,
+      actor: 'applicant',
+    });
     await appService.submit(appEntity.id, 'applicant');
     await appService.markUnderReview(appEntity.id, 'reviewer');
     await appService.approve(appEntity.id, 'privileged');
     await lifecycleService.activateFromApplication(appEntity.id, 'privileged');
-    const after: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM customers`);
+    const after: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM customers`,
+    );
     expect(after[0]!.count).toBe(before[0]!.count);
   });
 
   it('Y. No journal/ledger line created by application/lifecycle alone', async () => {
-    const beforeJ: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
-    const beforeL: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_lines`);
+    const beforeJ: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM ledger_journals`,
+    );
+    const beforeL: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM ledger_lines`,
+    );
     const cls = await createAgentClass(true);
-    const appEntity = await appService.create({ agentClassId: cls.id, applicantReference: `y-${randomUUID()}`, actor: 'applicant' });
+    const appEntity = await appService.create({
+      agentClassId: cls.id,
+      applicantReference: `y-${randomUUID()}`,
+      actor: 'applicant',
+    });
     await appService.submit(appEntity.id, 'applicant');
     await appService.markUnderReview(appEntity.id, 'reviewer');
     await appService.approve(appEntity.id, 'privileged');
@@ -414,8 +549,12 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
     await lifecycleService.suspend(agent.id, 'privileged');
     await lifecycleService.reactivate(agent.id, 'privileged');
     await lifecycleService.terminate(agent.id, 'privileged');
-    const afterJ: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
-    const afterL: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_lines`);
+    const afterJ: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM ledger_journals`,
+    );
+    const afterL: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM ledger_lines`,
+    );
     expect(afterJ[0]!.count).toBe(beforeJ[0]!.count);
     expect(afterL[0]!.count).toBe(beforeL[0]!.count);
   });
@@ -441,17 +580,43 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
   it('AA. Owner-aware reconciliation remains green', async () => {
     // This test ensures the reconciliation service can still run without error
     // We verify that the underlying tables exist and a simple query succeeds
-    const reconRows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_accounts`);
+    const reconRows: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM ledger_accounts`,
+    );
     expect(Number(reconRows[0]!.count)).toBeGreaterThanOrEqual(0);
   });
 
   it('AB. Migration chain remains green', async () => {
-    const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
+    const rows: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM typeorm_migrations`,
+    );
     expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(
       `SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
     );
-    expect(['1785753600095', '1785753600096', '1785753600097', '1785753600098', '1785753600099', '1785753600100', '1785753600101']).toContain(latest[0]!.timestamp);
-    expect(['SecureAgentApplicationAccess1785753600095', 'CreateCashToCashLocators1785753600096', 'AddEmailNotificationChannel1785753600097', 'CreateNotificationTemplateRegistry1785753600098', 'AllowPhoneNotificationRecipients1785753600099', 'CreateNotificationProviderConfiguration1785753600100', 'NotificationReliability1785753600101']).toContain(latest[0]!.name);
+    expect([
+      '1785753600095',
+      '1785753600096',
+      '1785753600097',
+      '1785753600098',
+      '1785753600099',
+      '1785753600100',
+      '1785753600101',
+      '1785753600102',
+      '1785753600103',
+      '1785753600116',
+    ]).toContain(latest[0]!.timestamp);
+    expect([
+      'SecureAgentApplicationAccess1785753600095',
+      'CreateCashToCashLocators1785753600096',
+      'AddEmailNotificationChannel1785753600097',
+      'CreateNotificationTemplateRegistry1785753600098',
+      'AllowPhoneNotificationRecipients1785753600099',
+      'CreateNotificationProviderConfiguration1785753600100',
+      'NotificationReliability1785753600101',
+      'AddNotificationCredentialBinding1785753600102',
+      'ConfigureTransactionNotificationEvents1785753600103',
+      'WalletOwnerClassification1785753600116',
+    ]).toContain(latest[0]!.name);
   });
 });

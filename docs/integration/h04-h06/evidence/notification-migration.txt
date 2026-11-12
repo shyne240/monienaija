@@ -1,0 +1,13 @@
+Implementation commit: 377b1207905909867dbce75cf78717fa5015b90a
+Run: notification-migration
+Kind: pg
+Exit: 0
+Duration seconds: 68.07
+Suites: {'total': 6, 'passed': 6, 'failed': 0, 'skipped': 0, 'runtime_errors': 0}
+Tests: {'total': 52, 'passed': 52, 'failed': 0, 'skipped': 0, 'todo': 0}
+PASSED test/h04-h06-cash-to-cash-channels.integration.spec.ts ({'passed': 1, 'failed': 0, 'pending': 0, 'todo': 0})
+PASSED test/h04-h06-notification-upgrade.integration.spec.ts ({'passed': 1, 'failed': 0, 'pending': 0, 'todo': 0})
+PASSED test/migration-chain.integration.spec.ts ({'passed': 17, 'failed': 0, 'pending': 0, 'todo': 0})
+PASSED test/notification-migration-upgrade-01.integration.spec.ts ({'passed': 2, 'failed': 0, 'pending': 0, 'todo': 0})
+PASSED test/notification-registry.integration.spec.ts ({'passed': 10, 'failed': 0, 'pending': 0, 'todo': 0})
+PASSED test/notification-reliability.integration.spec.ts ({'passed': 21, 'failed': 0, 'pending': 0, 'todo': 0})

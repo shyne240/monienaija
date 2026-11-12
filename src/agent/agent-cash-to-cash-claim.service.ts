@@ -1,4 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars */
+import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars */
 import { setTimeout as delay } from 'node:timers/promises';
 import { createHash, pbkdf2Sync, randomUUID, timingSafeEqual } from 'node:crypto';
 
@@ -39,7 +40,10 @@ import { WalletService } from '../wallet/wallet.service';
 import { WalletStatus } from '../wallet/wallet.enums';
 import { LedgerAccount } from '../ledger/ledger-account.entity';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
-import { isRetryableTransactionError, MAX_SERIALIZABLE_ATTEMPTS } from '../common/serializable-transaction';
+import {
+  isRetryableTransactionError,
+  MAX_SERIALIZABLE_ATTEMPTS,
+} from '../common/serializable-transaction';
 import { AgentReceivingNumberService } from './agent-receiving-number.service';
 import { AgentTransactionAuthorizationService } from './agent-transaction-authorization.service';
 import { AgentService, normalizeAgentService } from './agent-service.enum';
@@ -82,6 +86,7 @@ export class AgentCashToCashClaimService {
     private readonly auditService: AuditService,
     private readonly agentAuthorizationService: AgentTransactionAuthorizationService,
     private readonly mfaExecutionService: MfaExecutionService,
+    private readonly financialEligibility: CustomerFinancialEligibilityService,
     @Optional()
     private readonly limitEnforcementService?: LimitEnforcementService,
     // V1-COMMERCIAL-DECISION-03C — CASH_TO_CASH CLAIM commercial snapshot wiring.
@@ -99,19 +104,30 @@ export class AgentCashToCashClaimService {
   /** Authenticated command, never a public UUID lookup. All transfer-specific failures
    * share one envelope; the canonical service alone verifies credentials and posts funds. */
   async executeByLocator(
-    input: Omit<AgentCashToCashClaimInput, 'transferId'> & { senderPhone: string; transferNumber: string },
+    input: Omit<AgentCashToCashClaimInput, 'transferId'> & {
+      senderPhone: string;
+      transferNumber: string;
+    },
   ): Promise<AgentCashToCashClaimResult> {
     const started = Date.now();
     try {
       const principal = input.claimantPrincipal;
-      const id = await this.resolveProtectedLocator(input.senderPhone, input.transferNumber, principal);
+      const id = await this.resolveProtectedLocator(
+        input.senderPhone,
+        input.transferNumber,
+        principal,
+      );
       if (!id) throw this.locatorUnavailable();
       const { senderPhone: _phone, transferNumber: _number, ...claim } = input;
       try {
         return await this.execute({ ...claim, transferId: id });
       } catch (error) {
-        if (error instanceof HttpException && error.getStatus() < 500) throw this.locatorUnavailable();
-        throw new ServiceUnavailableException({ code: 'C2C_RETRY_REQUIRED', message: 'Claim outcome unavailable; recover before retrying' });
+        if (error instanceof HttpException && error.getStatus() < 500)
+          throw this.locatorUnavailable();
+        throw new ServiceUnavailableException({
+          code: 'C2C_RETRY_REQUIRED',
+          message: 'Claim outcome unavailable; recover before retrying',
+        });
       }
     } finally {
       // Equalize cheap unknown-locator and invalid-code failures below a common floor.
@@ -121,7 +137,10 @@ export class AgentCashToCashClaimService {
   }
 
   async recoverByLocator(
-    senderPhone: string, transferNumber: string, idempotencyKey: string, principal: AuthorizationPrincipal,
+    senderPhone: string,
+    transferNumber: string,
+    idempotencyKey: string,
+    principal: AuthorizationPrincipal,
   ): Promise<AgentCashToCashClaimResult> {
     const id = await this.resolveProtectedLocator(senderPhone, transferNumber, principal);
     if (!id) throw this.locatorUnavailable();
@@ -130,28 +149,45 @@ export class AgentCashToCashClaimService {
       if (result.idempotencyKey !== idempotencyKey) throw this.locatorUnavailable();
       return result;
     } catch (error) {
-      if (error instanceof HttpException && error.getStatus() < 500) throw this.locatorUnavailable();
-      throw new ServiceUnavailableException({ code: 'C2C_RETRY_REQUIRED', message: 'Claim outcome unavailable; recover before retrying' });
+      if (error instanceof HttpException && error.getStatus() < 500)
+        throw this.locatorUnavailable();
+      throw new ServiceUnavailableException({
+        code: 'C2C_RETRY_REQUIRED',
+        message: 'Claim outcome unavailable; recover before retrying',
+      });
     }
   }
 
   private locatorUnavailable(): NotFoundException {
-    return new NotFoundException({ code: 'C2C_CLAIM_NOT_AVAILABLE', message: 'Claim not available' });
+    return new NotFoundException({
+      code: 'C2C_CLAIM_NOT_AVAILABLE',
+      message: 'Claim not available',
+    });
   }
 
   private async resolveProtectedLocator(
-    phone: string, number: string, principal?: AuthorizationPrincipal,
+    phone: string,
+    number: string,
+    principal?: AuthorizationPrincipal,
   ): Promise<string | undefined> {
-    if (!principal || principal.type !== 'AGENT' || !principal.agentId ||
-        principal.agentId.toLowerCase() !== principal.principalId.toLowerCase()) {
+    if (
+      !principal ||
+      principal.type !== 'AGENT' ||
+      !principal.agentId ||
+      principal.agentId.toLowerCase() !== principal.principalId.toLowerCase()
+    ) {
       throw new UnauthorizedException('Agent authentication required');
     }
-    await this.dataSource.transaction((manager) => this.assertAgentSessionWithManager(manager, principal));
+    await this.dataSource.transaction((manager) =>
+      this.assertAgentSessionWithManager(manager, principal),
+    );
     // Charge the Agent before parsing or querying a locator. Unknown and known locators
     // consume identical persistent budgets. Hash keys to avoid raw phone storage here.
     await this.chargeLocatorBudget(`agent:${principal.agentId.toLowerCase()}`, 20);
-    const canonicalPhone = typeof phone === 'string' ? AgentReceivingNumberService.canonicalizeTo10(phone.trim()) : null;
-    if (!canonicalPhone || typeof number !== 'string' || !/^[0-9]{6}$/.test(number)) throw this.locatorUnavailable();
+    const canonicalPhone =
+      typeof phone === 'string' ? AgentReceivingNumberService.canonicalizeTo10(phone.trim()) : null;
+    if (!canonicalPhone || typeof number !== 'string' || !/^[0-9]{6}$/.test(number))
+      throw this.locatorUnavailable();
     await this.chargeLocatorBudget(`sender:${canonicalPhone}`, 100);
     await this.chargeLocatorBudget(`pair:${canonicalPhone}:${number}`, 10);
     const rows: Array<{ transfer_id: string }> = await this.dataSource.query(
@@ -174,7 +210,10 @@ export class AgentCashToCashClaimService {
       [createHash('sha256').update(key).digest('hex')],
     );
     if (!rows[0] || rows[0].attempts > maximum) {
-      throw new HttpException({ code: 'C2C_LOCATOR_RATE_LIMITED', message: 'Too many locator requests; retry later' }, 429);
+      throw new HttpException(
+        { code: 'C2C_LOCATOR_RATE_LIMITED', message: 'Too many locator requests; retry later' },
+        429,
+      );
     }
   }
 
@@ -186,24 +225,32 @@ export class AgentCashToCashClaimService {
     const rawPhone = input.beneficiaryPhone?.trim();
     if (!rawPhone) throw new BadRequestException('beneficiaryPhone is required');
     const canonicalPhone = AgentReceivingNumberService.canonicalizeTo10(rawPhone);
-    if (!canonicalPhone) throw new BadRequestException('beneficiaryPhone must be a valid Nigerian 10-digit number');
+    if (!canonicalPhone)
+      throw new BadRequestException('beneficiaryPhone must be a valid Nigerian 10-digit number');
 
     const transferCode = input.transferCode?.trim();
-    if (!transferCode || !/^\d+$/.test(transferCode)) throw new BadRequestException('transferCode is required');
+    if (!transferCode || !/^\d+$/.test(transferCode))
+      throw new BadRequestException('transferCode is required');
     if (transferCode.length > 20) throw new BadRequestException('transferCode too long');
 
     const customerId = input.customerId?.trim().toLowerCase();
-    if (!customerId || !UUID_PATTERN.test(customerId)) throw new BadRequestException('customerId must be a UUID');
+    if (!customerId || !UUID_PATTERN.test(customerId))
+      throw new BadRequestException('customerId must be a UUID');
 
     const mfaChallengeId = input.mfaChallengeId?.trim().toLowerCase();
-    if (!mfaChallengeId || !UUID_PATTERN.test(mfaChallengeId)) throw new BadRequestException('mfaChallengeId must be a UUID');
+    if (!mfaChallengeId || !UUID_PATTERN.test(mfaChallengeId))
+      throw new BadRequestException('mfaChallengeId must be a UUID');
     const otp = input.otp?.trim();
     if (!otp || otp.length > 512 || /\s/.test(otp)) throw new BadRequestException('otp is invalid');
 
     const idempotencyKey = input.idempotencyKey?.trim();
-    if (!idempotencyKey || idempotencyKey.length > 255) throw new BadRequestException('idempotencyKey is required and must be at most 255 characters');
+    if (!idempotencyKey || idempotencyKey.length > 255)
+      throw new BadRequestException(
+        'idempotencyKey is required and must be at most 255 characters',
+      );
 
-    const redemptionMethod: AgentCashToCashRedemptionMethod = input.redemptionMethod ?? 'CUSTOMER_WALLET';
+    const redemptionMethod: AgentCashToCashRedemptionMethod =
+      input.redemptionMethod ?? 'CUSTOMER_WALLET';
     if (redemptionMethod !== 'CUSTOMER_WALLET' && redemptionMethod !== 'AGENT_CASH') {
       throw new BadRequestException('redemptionMethod must be CUSTOMER_WALLET or AGENT_CASH');
     }
@@ -228,7 +275,15 @@ export class AgentCashToCashClaimService {
       claimantActor = principal.principalId.toLowerCase();
     }
 
-    let authorizedPin: { id: string; pin_hash: string; hash_algorithm: string; pin_version: number; last_changed_at: string } | undefined;
+    let authorizedPin:
+      | {
+          id: string;
+          pin_hash: string;
+          hash_algorithm: string;
+          pin_version: number;
+          last_changed_at: string;
+        }
+      | undefined;
     if (redemptionMethod === 'AGENT_CASH') {
       if (!claimantAgentId || !input.claimantPrincipal) {
         throw new ForbiddenException('An authenticated Agent is required for cash redemption');
@@ -239,7 +294,8 @@ export class AgentCashToCashClaimService {
       // Capture before authorization; an intervening rotation must not grant a stale proof.
       [authorizedPin] = await this.dataSource.query(
         `SELECT id, pin_hash, hash_algorithm, pin_version, last_changed_at::text AS last_changed_at FROM agent_transaction_pins
-         WHERE agent_id=$1 AND deleted_at IS NULL`, [claimantAgentId],
+         WHERE agent_id=$1 AND deleted_at IS NULL`,
+        [claimantAgentId],
       );
       await this.assertAgentCashRedemptionAuthorization(
         claimantAgentId,
@@ -250,11 +306,16 @@ export class AgentCashToCashClaimService {
       throw new BadRequestException('agentPin is accepted only for Agent cash redemption');
     }
     if (input.claimantPrincipal) {
-      await this.dataSource.transaction((manager) => this.assertAgentSessionWithManager(manager, input.claimantPrincipal!));
+      await this.dataSource.transaction((manager) =>
+        this.assertAgentSessionWithManager(manager, input.claimantPrincipal!),
+      );
     }
-    const settlementWalletOwnerId = redemptionMethod === 'AGENT_CASH' ? claimantAgentId! : customerId;
+    const settlementWalletOwnerId =
+      redemptionMethod === 'AGENT_CASH' ? claimantAgentId! : customerId;
 
-    const reference = input.reference?.trim() ? input.reference.trim() : `CASH_TO_CASH_CLAIM-${idempotencyKey}`;
+    const reference = input.reference?.trim()
+      ? input.reference.trim()
+      : `CASH_TO_CASH_CLAIM-${idempotencyKey}`;
     const description = input.description?.trim()
       ? input.description.trim()
       : redemptionMethod === 'AGENT_CASH'
@@ -265,7 +326,8 @@ export class AgentCashToCashClaimService {
     const correlationId = sanitizeDiagnosticIdentifier(input.correlationId);
 
     const unclaimedAccount = await this.getUnclaimedAccount();
-    if (!unclaimedAccount) throw new BadRequestException('Unclaimed ledger account not provisioned');
+    if (!unclaimedAccount)
+      throw new BadRequestException('Unclaimed ledger account not provisioned');
 
     // Pre-checks outside SERIALIZABLE to avoid wasting OTP and to handle code lockout persistence cleanly.
     // 1. Fetch transfer (without lock) for phone/code/identity pre-checks.
@@ -279,19 +341,28 @@ export class AgentCashToCashClaimService {
       failed_attempts: number;
       is_locked: boolean;
       is_expired: boolean;
-    }> = await this.dataSource.query(`SELECT id, beneficiary_phone, principal_minor, currency, status, transfer_code_hash, failed_attempts, is_locked, expires_at <= clock_timestamp() AS is_expired FROM cash_to_cash_transfers WHERE id=$1 LIMIT 1`, [transferId]);
+    }> = await this.dataSource.query(
+      `SELECT id, beneficiary_phone, principal_minor, currency, status, transfer_code_hash, failed_attempts, is_locked, expires_at <= clock_timestamp() AS is_expired FROM cash_to_cash_transfers WHERE id=$1 LIMIT 1`,
+      [transferId],
+    );
     const preTransfer = preTransferRows[0];
     if (!preTransfer) throw new NotFoundException(`Cash→Cash transfer ${transferId} not found`);
-    if (preTransfer.status === 'EXPIRED' || (preTransfer.status === 'UNCLAIMED' && preTransfer.is_expired)) {
+    if (
+      preTransfer.status === 'EXPIRED' ||
+      (preTransfer.status === 'UNCLAIMED' && preTransfer.is_expired)
+    ) {
       throw new ConflictException('Transfer has expired and cannot be claimed');
     }
     if (preTransfer.status === 'CLAIMED') {
       // For already claimed, we still need to handle idempotency properly inside transaction (replay vs conflict).
       // We will let the transaction handle it, but we can early return if this is a replay with same key? We'll just continue to OTP+transaction.
     } else {
-      if (preTransfer.status !== 'UNCLAIMED') throw new ConflictException(`Transfer status ${preTransfer.status} cannot be claimed`);
-      if (preTransfer.is_locked) throw new ForbiddenException('Transfer code is locked due to too many failed attempts');
-      if (preTransfer.beneficiary_phone !== canonicalPhone) throw new BadRequestException('Beneficiary phone does not match transfer');
+      if (preTransfer.status !== 'UNCLAIMED')
+        throw new ConflictException(`Transfer status ${preTransfer.status} cannot be claimed`);
+      if (preTransfer.is_locked)
+        throw new ForbiddenException('Transfer code is locked due to too many failed attempts');
+      if (preTransfer.beneficiary_phone !== canonicalPhone)
+        throw new BadRequestException('Beneficiary phone does not match transfer');
       // V1-SYSTEM-01: the caller-supplied `beneficiaryPhone` string matching the transfer's
       // stored value only proves the caller *typed* the right number — it does not prove the
       // claiming `customerId` actually *owns* that phone. Without this check, any customer who
@@ -305,13 +376,20 @@ export class AgentCashToCashClaimService {
       if (redemptionMethod === 'AGENT_CASH') {
         await this.assertCurrentApprovedKyc(this.dataSource, customerId);
       } else {
-        const custRows: Array<{ id: string; status: string; kyc_status: string; deleted_at: string | null }> = await this.dataSource.query(
+        const custRows: Array<{
+          id: string;
+          status: string;
+          kyc_status: string;
+          deleted_at: string | null;
+        }> = await this.dataSource.query(
           `SELECT id, status, kyc_status, deleted_at FROM customers WHERE id=$1 LIMIT 1`,
           [customerId],
         );
         const customer = custRows[0];
-        if (!customer || customer.deleted_at !== null) throw new NotFoundException(`Customer ${customerId} not found`);
-        if (customer.status !== 'ACTIVE') throw new NotFoundException(`Customer ${customerId} not found`);
+        if (!customer || customer.deleted_at !== null)
+          throw new NotFoundException(`Customer ${customerId} not found`);
+        if (customer.status !== 'ACTIVE')
+          throw new NotFoundException(`Customer ${customerId} not found`);
         if (customer.kyc_status !== 'APPROVED') {
           throw new ForbiddenException('Claimant identity not verified (KYC not APPROVED)');
         }
@@ -321,20 +399,23 @@ export class AgentCashToCashClaimService {
       const codeValidPre = this.verifyTransferCode(transferCode, preTransfer.transfer_code_hash);
       if (!codeValidPre) {
         const locked = await this.recordFailedCode(transferId, preTransfer.transfer_code_hash);
-        if (locked) throw new ForbiddenException('Transfer code is locked due to too many failed attempts');
+        if (locked)
+          throw new ForbiddenException('Transfer code is locked due to too many failed attempts');
         throw new UnauthorizedException('Transfer code invalid');
       }
     }
 
     // 2. OTP verification via canonical MfaExecutionService (outside SERIALIZABLE, before financial)
     // Fetch challenge meta to build principal
-    const challengeMetaPre: Array<{ customer_id: string; session_id: string }> = await this.dataSource.query(
-      `SELECT customer_id, session_id FROM mfa_challenges WHERE id=$1 LIMIT 1`,
-      [mfaChallengeId],
-    );
+    const challengeMetaPre: Array<{ customer_id: string; session_id: string }> =
+      await this.dataSource.query(
+        `SELECT customer_id, session_id FROM mfa_challenges WHERE id=$1 LIMIT 1`,
+        [mfaChallengeId],
+      );
     const metaPre = challengeMetaPre[0];
     if (!metaPre) throw new BadRequestException('Invalid OTP challenge');
-    if (metaPre.customer_id !== customerId) throw new BadRequestException('OTP challenge does not belong to this Customer');
+    if (metaPre.customer_id !== customerId)
+      throw new BadRequestException('OTP challenge does not belong to this Customer');
     const sessionRowsPre: Array<{ credential_id: string }> = await this.dataSource.query(
       `SELECT credential_id FROM authentication_sessions WHERE id=$1 LIMIT 1`,
       [metaPre.session_id],
@@ -346,7 +427,8 @@ export class AgentCashToCashClaimService {
         [customerId],
       );
       credentialIdPre = credRows[0]?.id ?? '';
-      if (!credentialIdPre || !UUID_PATTERN.test(credentialIdPre)) throw new BadRequestException('OTP verification unavailable - no credential');
+      if (!credentialIdPre || !UUID_PATTERN.test(credentialIdPre))
+        throw new BadRequestException('OTP verification unavailable - no credential');
     }
     const principalForMfaPre: any = {
       principalType: 'CUSTOMER',
@@ -365,11 +447,15 @@ export class AgentCashToCashClaimService {
       const reason = verifyResultPre.failureReason;
       if (reason === 'REPLAYED') {
         // Check if this is an idempotent replay (same transferId + same idempotencyKey already completed)
-        const existingIdem: Array<{ status: string; response_body: any; request_hash: string }> = await this.dataSource.query(
-          `SELECT status, response_body, request_hash FROM idempotency_records WHERE scope=$1 AND idempotency_key=$2 LIMIT 1`,
-          [`${CLAIM_IDEMPOTENCY_PREFIX}${transferId}`, idempotencyKey],
-        );
-        if (existingIdem[0] && (existingIdem[0].status === 'COMPLETED' || existingIdem[0].status === 'IN_PROGRESS')) {
+        const existingIdem: Array<{ status: string; response_body: any; request_hash: string }> =
+          await this.dataSource.query(
+            `SELECT status, response_body, request_hash FROM idempotency_records WHERE scope=$1 AND idempotency_key=$2 LIMIT 1`,
+            [`${CLAIM_IDEMPOTENCY_PREFIX}${transferId}`, idempotencyKey],
+          );
+        if (
+          existingIdem[0] &&
+          (existingIdem[0].status === 'COMPLETED' || existingIdem[0].status === 'IN_PROGRESS')
+        ) {
           // A consumed OTP may only recover the exact completed destination, request, and Agent.
           const claimed: Array<{
             claim_journal_id: string | null;
@@ -390,18 +476,25 @@ export class AgentCashToCashClaimService {
                LIMIT 1`,
               [claimedTransfer.claim_journal_id],
             );
-            if (!actorRows[0]?.actor || actorRows[0].actor.toLowerCase() !== claimantActor.toLowerCase()) {
+            if (
+              !actorRows[0]?.actor ||
+              actorRows[0].actor.toLowerCase() !== claimantActor.toLowerCase()
+            ) {
               throw new ConflictException('Idempotency key belongs to a different claimant Agent');
             }
-            const body = existingIdem[0].response_body as unknown as AgentCashToCashClaimResult | null;
+            const body = existingIdem[0]
+              .response_body as unknown as AgentCashToCashClaimResult | null;
             const recordedMethod = body?.redemptionMethod ?? 'CUSTOMER_WALLET';
             if (recordedMethod !== redemptionMethod) {
-              throw new ConflictException('Idempotency key already used with a different redemption method');
+              throw new ConflictException(
+                'Idempotency key already used with a different redemption method',
+              );
             }
             const settlementWallet = await this.dataSource.getRepository(WalletAccount).findOne({
               where: { customerId: settlementWalletOwnerId, currency: 'NGN' },
             });
-            if (!settlementWallet) throw new ConflictException('Prior claim destination cannot be verified for replay');
+            if (!settlementWallet)
+              throw new ConflictException('Prior claim destination cannot be verified for replay');
             const fingerprintInput: ClaimRequestFingerprintInput = {
               transferId,
               beneficiaryPhone: canonicalPhone,
@@ -417,14 +510,17 @@ export class AgentCashToCashClaimService {
               metadata: input.metadata ?? {},
             };
             const expectedHash = this.computeClaimRequestHash(fingerprintInput);
-            const legacyWalletHash = redemptionMethod === 'CUSTOMER_WALLET'
-              ? this.computeLegacyWalletClaimRequestHash(fingerprintInput)
-              : null;
+            const legacyWalletHash =
+              redemptionMethod === 'CUSTOMER_WALLET'
+                ? this.computeLegacyWalletClaimRequestHash(fingerprintInput)
+                : null;
             if (
               existingIdem[0].request_hash !== expectedHash &&
               existingIdem[0].request_hash !== legacyWalletHash
             ) {
-              throw new ConflictException('Idempotency key already used with different financial parameters');
+              throw new ConflictException(
+                'Idempotency key already used with different financial parameters',
+              );
             }
             if (body && body.journalId) {
               return { ...body, redemptionMethod, status: 'REPLAYED' as const, replayed: true };
@@ -501,9 +597,16 @@ export class AgentCashToCashClaimService {
               [claimantAgentId],
             );
             const pin = pins[0];
-            if (!authorizedPin || !pin || pin.account_locked || pin.id !== authorizedPin.id ||
-                pin.pin_hash !== authorizedPin.pin_hash || pin.hash_algorithm !== authorizedPin.hash_algorithm || pin.pin_version !== authorizedPin.pin_version ||
-                pin.last_changed_at !== authorizedPin.last_changed_at) {
+            if (
+              !authorizedPin ||
+              !pin ||
+              pin.account_locked ||
+              pin.id !== authorizedPin.id ||
+              pin.pin_hash !== authorizedPin.pin_hash ||
+              pin.hash_algorithm !== authorizedPin.hash_algorithm ||
+              pin.pin_version !== authorizedPin.pin_version ||
+              pin.last_changed_at !== authorizedPin.last_changed_at
+            ) {
               throw new UnauthorizedException('Agent PIN changed or was revoked during claim');
             }
           }
@@ -515,7 +618,10 @@ export class AgentCashToCashClaimService {
 
           if (transfer.status === 'CLAIMED') {
             if (transfer.claim_idempotency_key === idempotencyKey && transfer.claim_journal_id) {
-              const settlementWalletForHash = await this.resolveWalletAccount(manager, settlementWalletOwnerId);
+              const settlementWalletForHash = await this.resolveWalletAccount(
+                manager,
+                settlementWalletOwnerId,
+              );
               const fingerprintInput: ClaimRequestFingerprintInput = {
                 transferId,
                 beneficiaryPhone: canonicalPhone,
@@ -531,20 +637,20 @@ export class AgentCashToCashClaimService {
                 metadata: input.metadata ?? {},
               };
               const expectedHash = this.computeClaimRequestHash(fingerprintInput);
-              const legacyWalletHash = redemptionMethod === 'CUSTOMER_WALLET'
-                ? this.computeLegacyWalletClaimRequestHash(fingerprintInput)
-                : null;
-              const idemRows: Array<{ request_hash: string; response_body: any }> = await manager.query(
-                `SELECT request_hash, response_body FROM idempotency_records WHERE scope=$1 AND idempotency_key=$2 LIMIT 1`,
-                [scope, idempotencyKey],
-              );
+              const legacyWalletHash =
+                redemptionMethod === 'CUSTOMER_WALLET'
+                  ? this.computeLegacyWalletClaimRequestHash(fingerprintInput)
+                  : null;
+              const idemRows: Array<{ request_hash: string; response_body: any }> =
+                await manager.query(
+                  `SELECT request_hash, response_body FROM idempotency_records WHERE scope=$1 AND idempotency_key=$2 LIMIT 1`,
+                  [scope, idempotencyKey],
+                );
               const storedHash = idemRows[0]?.request_hash;
-              if (
-                storedHash &&
-                storedHash !== expectedHash &&
-                storedHash !== legacyWalletHash
-              ) {
-                throw new ConflictException('Idempotency key already used with different financial parameters');
+              if (storedHash && storedHash !== expectedHash && storedHash !== legacyWalletHash) {
+                throw new ConflictException(
+                  'Idempotency key already used with different financial parameters',
+                );
               }
               const result: AgentCashToCashClaimResult = {
                 status: 'REPLAYED',
@@ -561,7 +667,15 @@ export class AgentCashToCashClaimService {
                 replayed: true,
                 correlationId,
                 reference: transfer.claim_journal_id ? reference : undefined,
-                claimedAt: new Date(transfer.claim_journal_id ? (await manager.query(`SELECT created_at FROM ledger_journals WHERE id=$1`, [transfer.claim_journal_id]))[0]?.created_at ?? new Date() : new Date()),
+                claimedAt: new Date(
+                  transfer.claim_journal_id
+                    ? ((
+                        await manager.query(`SELECT created_at FROM ledger_journals WHERE id=$1`, [
+                          transfer.claim_journal_id,
+                        ])
+                      )[0]?.created_at ?? new Date())
+                    : new Date(),
+                ),
               };
               return result;
             }
@@ -588,9 +702,10 @@ export class AgentCashToCashClaimService {
           // Re-check Agent lifecycle, class status, and CASH_TO_CASH permission under the same
           // transaction that will post the cash-payout ledger entry. The earlier PIN check alone
           // is not sufficient if the Agent/class is disabled while the Customer verifies OTP.
-          const claimantAgentClassId = redemptionMethod === 'AGENT_CASH'
-            ? await this.assertAgentCashCapabilityWithManager(manager, claimantAgentId!)
-            : null;
+          const claimantAgentClassId =
+            redemptionMethod === 'AGENT_CASH'
+              ? await this.assertAgentCashCapabilityWithManager(manager, claimantAgentId!)
+              : null;
 
           if (transfer.is_locked) {
             throw new ForbiddenException('Transfer code is locked due to too many failed attempts');
@@ -600,23 +715,30 @@ export class AgentCashToCashClaimService {
             throw new BadRequestException('Beneficiary phone does not match transfer');
           }
 
+          // Cash payout has no customer wallet ledger line, so it must also gate the
+          // claimant directly inside the settlement transaction.
+          await this.financialEligibility.require(manager, customerId);
+
           // V1-SYSTEM-01: re-check inside the SERIALIZABLE transaction in case the claimant's
           // own contact methods changed between the pre-check and the lock (mirrors how every
           // other pre-check in this flow is duplicated here).
           await this.assertClaimantOwnsBeneficiaryPhone(manager, customerId, canonicalPhone);
 
-          // Freeze customer and current assessment evidence through financial commit.
-          await manager.query(`SELECT id FROM customers WHERE id=$1 FOR SHARE`, [customerId]);
-          await manager.query(`SELECT id FROM customer_kyc_assessments WHERE customer_id=$1 AND is_current=TRUE FOR SHARE`, [customerId]);
-
           // Identity already verified outside, but re-check inside for consistency (in case customer changed)
-          const custRows2: Array<{ id: string; status: string; kyc_status: string; deleted_at: string | null }> = await manager.query(
+          const custRows2: Array<{
+            id: string;
+            status: string;
+            kyc_status: string;
+            deleted_at: string | null;
+          }> = await manager.query(
             `SELECT id, status, kyc_status, deleted_at FROM customers WHERE id=$1 LIMIT 1`,
             [customerId],
           );
           const customer2 = custRows2[0];
-          if (!customer2 || customer2.deleted_at !== null) throw new NotFoundException(`Customer ${customerId} not found`);
-          if (customer2.status !== 'ACTIVE') throw new NotFoundException(`Customer ${customerId} not found`);
+          if (!customer2 || customer2.deleted_at !== null)
+            throw new NotFoundException(`Customer ${customerId} not found`);
+          if (customer2.status !== 'ACTIVE')
+            throw new NotFoundException(`Customer ${customerId} not found`);
           let kycApprovalEvidence: { assessmentId: string; assessedBy: string } | null = null;
           if (redemptionMethod === 'AGENT_CASH') {
             kycApprovalEvidence = await this.assertCurrentApprovedKyc(manager, customerId);
@@ -643,7 +765,10 @@ export class AgentCashToCashClaimService {
 
           // Resolve only the server-owned destination selected by the mode: beneficiary Customer
           // wallet or authenticated Agent B float. No client-provided account id is accepted.
-          const settlementWallet = await this.resolveWalletAccount(manager, settlementWalletOwnerId);
+          const settlementWallet = await this.resolveWalletAccount(
+            manager,
+            settlementWalletOwnerId,
+          );
 
           // V1-LIMIT-04: enforce the incoming side for the destination owner. Wallet mode applies
           // Customer limits; Agent-cash mode applies Agent B's assigned class/profile limits.
@@ -651,7 +776,8 @@ export class AgentCashToCashClaimService {
           let claimRequestHashForLimit: string | null = null;
           let limitOutcome: EnforceResult | null = null;
           const limitPrincipalType = redemptionMethod === 'AGENT_CASH' ? 'AGENT' : 'CUSTOMER';
-          const limitPrincipalId = redemptionMethod === 'AGENT_CASH' ? claimantAgentId! : customerId;
+          const limitPrincipalId =
+            redemptionMethod === 'AGENT_CASH' ? claimantAgentId! : customerId;
           const claimRequestHashEarly = this.computeClaimRequestHash({
             transferId,
             beneficiaryPhone: canonicalPhone,
@@ -727,11 +853,19 @@ export class AgentCashToCashClaimService {
             }
             const body = existing.responseBody as unknown as AgentCashToCashClaimResult | null;
             if (body && (body as any).journalId) {
-              const claimed = await manager.query(`SELECT claim_journal_id, claimant_customer_id FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+              const claimed = await manager.query(
+                `SELECT claim_journal_id, claimant_customer_id FROM cash_to_cash_transfers WHERE id=$1`,
+                [transferId],
+              );
               if (claimed[0]?.claim_journal_id === (body as any).journalId) {
                 return { ...(body as any), status: 'REPLAYED' as const, replayed: true };
               }
-              return { ...(body as any), status: 'REPLAYED' as const, replayed: true, journalId: existing.resourceId ?? (body as any).journalId } as AgentCashToCashClaimResult;
+              return {
+                ...(body as any),
+                status: 'REPLAYED' as const,
+                replayed: true,
+                journalId: existing.resourceId ?? (body as any).journalId,
+              } as AgentCashToCashClaimResult;
             }
             if (existing.resourceId) {
               return {
@@ -759,8 +893,16 @@ export class AgentCashToCashClaimService {
           // Agent-cash mode credits Agent B's float against the physical cash handover.
           const principal = transfer.principal_minor;
           const lines = [
-            { accountId: unclaimedAccount.id, direction: LedgerEntryDirection.DEBIT as const, amountMinor: principal },
-            { accountId: settlementWallet.ledgerAccountId, direction: LedgerEntryDirection.CREDIT as const, amountMinor: principal },
+            {
+              accountId: unclaimedAccount.id,
+              direction: LedgerEntryDirection.DEBIT as const,
+              amountMinor: principal,
+            },
+            {
+              accountId: settlementWallet.ledgerAccountId,
+              direction: LedgerEntryDirection.CREDIT as const,
+              amountMinor: principal,
+            },
           ];
 
           const ledgerIdempotencyKey = `claim:${transferId}:${idempotencyKey}`;
@@ -782,9 +924,8 @@ export class AgentCashToCashClaimService {
                 claimantCustomerId: customerId,
                 claimantAgentId,
                 destinationOwnerId: settlementWalletOwnerId,
-                identityVerificationMethod: redemptionMethod === 'AGENT_CASH'
-                  ? 'CURRENT_APPROVED_KYC_ASSESSMENT'
-                  : null,
+                identityVerificationMethod:
+                  redemptionMethod === 'AGENT_CASH' ? 'CURRENT_APPROVED_KYC_ASSESSMENT' : null,
                 kycAssessmentId: kycApprovalEvidence?.assessmentId ?? null,
                 kycAssessedBy: kycApprovalEvidence?.assessedBy ?? null,
                 agentClassId: claimantAgentClassId,
@@ -802,8 +943,13 @@ export class AgentCashToCashClaimService {
           } catch (error) {
             if (limitIdempotencyKeyForClaim && this.limitEnforcementService) {
               try {
-                await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKeyForClaim);
-              } catch {}
+                await this.limitEnforcementService.releaseReservationsWithManager(
+                  manager,
+                  limitIdempotencyKeyForClaim,
+                );
+              } catch {
+                // Preserve the original error; the enclosing transaction will roll back.
+              }
             }
             throw error;
           }
@@ -811,7 +957,10 @@ export class AgentCashToCashClaimService {
           if (limitIdempotencyKeyForClaim && this.limitEnforcementService) {
             // Limit usage and settlement must commit together. A failed usage update must
             // roll back the journal, not silently permit a payout with unaccounted limits.
-            await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKeyForClaim);
+            await this.limitEnforcementService.commitReservationsWithManager(
+              manager,
+              limitIdempotencyKeyForClaim,
+            );
           }
 
           // Re-evaluate wall-clock expiry after potentially slow ledger/limit work. Row
@@ -902,9 +1051,8 @@ export class AgentCashToCashClaimService {
               claimantCustomerId: customerId,
               claimantAgentId,
               destinationOwnerId: settlementWalletOwnerId,
-              identityVerificationMethod: redemptionMethod === 'AGENT_CASH'
-                ? 'CURRENT_APPROVED_KYC_ASSESSMENT'
-                : null,
+              identityVerificationMethod:
+                redemptionMethod === 'AGENT_CASH' ? 'CURRENT_APPROVED_KYC_ASSESSMENT' : null,
               kycAssessmentId: kycApprovalEvidence?.assessmentId ?? null,
               kycAssessedBy: kycApprovalEvidence?.assessedBy ?? null,
               agentClassId: claimantAgentClassId,
@@ -1034,7 +1182,8 @@ export class AgentCashToCashClaimService {
       `SELECT id FROM agents WHERE id=$1 AND status='ACTIVE' AND deleted_at IS NULL FOR SHARE`,
       [principal.agentId],
     );
-    if (agents.length !== 1) throw new UnauthorizedException('Agent session expired or revoked during claim');
+    if (agents.length !== 1)
+      throw new UnauthorizedException('Agent session expired or revoked during claim');
     // Lock credential and session evidence until commit so logout, credential reissue,
     // account locking and lifecycle revocation serialize with posting.
     const rows = await manager.query(
@@ -1170,8 +1319,8 @@ export class AgentCashToCashClaimService {
           principalAmountMinor: ctx.amountMinor,
           currency: ctx.currency,
         }),
-      // flow evidence (allowed by the snapshot's jsonb contract) — transfer identity of the claim
-      transferId: ctx.transferId,
+        // flow evidence (allowed by the snapshot's jsonb contract) — transfer identity of the claim
+        transferId: ctx.transferId,
       };
     } else {
       feeDecision = {
@@ -1190,7 +1339,10 @@ export class AgentCashToCashClaimService {
             maximumFeeMinor: resolution.rule.maximumFeeMinor,
             vatBps: resolution.rule.vatBps,
             effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
-            effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
+            effectiveTo:
+              resolution.rule.effectiveTo === null
+                ? null
+                : resolution.rule.effectiveTo.toISOString(),
             priority: resolution.rule.priority,
           },
         ];
@@ -1271,7 +1423,9 @@ export class AgentCashToCashClaimService {
       [customerId],
     );
     const ownPhoneRaw = rows[0]?.value;
-    const ownPhoneCanonical = ownPhoneRaw ? AgentReceivingNumberService.canonicalizeTo10(ownPhoneRaw) : null;
+    const ownPhoneCanonical = ownPhoneRaw
+      ? AgentReceivingNumberService.canonicalizeTo10(ownPhoneRaw)
+      : null;
     if (!ownPhoneCanonical || ownPhoneCanonical !== canonicalPhone) {
       throw new NotFoundException(`Cash→Cash transfer not found`);
     }
@@ -1314,7 +1468,10 @@ export class AgentCashToCashClaimService {
     if (!agentClass || agentClass.deleted_at !== null || !agentClass.is_active) {
       throw new ForbiddenException('Agent class is not active for Cash-to-Cash cash redemption');
     }
-    if (!Array.isArray(agentClass.applicable_services) || agentClass.applicable_services.length === 0) {
+    if (
+      !Array.isArray(agentClass.applicable_services) ||
+      agentClass.applicable_services.length === 0
+    ) {
       throw new ForbiddenException('Agent class does not permit Cash-to-Cash cash redemption');
     }
     const services = agentClass.applicable_services.map((entry) =>
@@ -1343,7 +1500,9 @@ export class AgentCashToCashClaimService {
       [customerId],
     );
     if (rows.some((row) => row.eligible !== true)) {
-      throw new ForbiddenException('Wallet redemption KYC assessment is not approved or has expired');
+      throw new ForbiddenException(
+        'Wallet redemption KYC assessment is not approved or has expired',
+      );
     }
   }
 
@@ -1394,7 +1553,9 @@ export class AgentCashToCashClaimService {
       row.assessment_unexpired !== true ||
       !row.assessed_by?.trim()
     ) {
-      throw new ForbiddenException('Cash payout requires a current approved Customer KYC assessment');
+      throw new ForbiddenException(
+        'Cash payout requires a current approved Customer KYC assessment',
+      );
     }
     return { assessmentId: row.assessment_id, assessedBy: row.assessed_by };
   }
@@ -1415,7 +1576,10 @@ export class AgentCashToCashClaimService {
       [transferId, expectedHash, MAX_FAILED_ATTEMPTS],
     );
     if (rows[0]) return rows[0].is_locked;
-    const current = await this.dataSource.query(`SELECT is_locked FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const current = await this.dataSource.query(
+      `SELECT is_locked FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
     return current[0]?.is_locked === true;
   }
 
@@ -1439,11 +1603,15 @@ export class AgentCashToCashClaimService {
   }
 
   private async getUnclaimedAccount(): Promise<LedgerAccount | null> {
-    return this.dataSource.getRepository(LedgerAccount).findOne({ where: { code: UNCLAIMED_CODE } });
+    return this.dataSource
+      .getRepository(LedgerAccount)
+      .findOne({ where: { code: UNCLAIMED_CODE } });
   }
 
   private async ensureWalletAccountExists(ownerId: string): Promise<void> {
-    const existing = await this.dataSource.getRepository(WalletAccount).findOne({ where: { customerId: ownerId, currency: 'NGN' } });
+    const existing = await this.dataSource
+      .getRepository(WalletAccount)
+      .findOne({ where: { customerId: ownerId, currency: 'NGN' } });
     if (existing) return;
     try {
       await this.walletService.createWallet({
@@ -1452,13 +1620,18 @@ export class AgentCashToCashClaimService {
         idempotencyKey: `claim-wallet-${ownerId}-NGN-${randomUUID()}`,
       });
     } catch (e) {
-      const still = await this.dataSource.getRepository(WalletAccount).findOne({ where: { customerId: ownerId, currency: 'NGN' } });
+      const still = await this.dataSource
+        .getRepository(WalletAccount)
+        .findOne({ where: { customerId: ownerId, currency: 'NGN' } });
       if (still) return;
       throw e;
     }
   }
 
-  private async resolveWalletAccount(manager: EntityManager, ownerId: string): Promise<WalletAccount> {
+  private async resolveWalletAccount(
+    manager: EntityManager,
+    ownerId: string,
+  ): Promise<WalletAccount> {
     const repo = manager.getRepository(WalletAccount);
     const wallet: WalletAccount | null = await repo.findOne({
       where: { customerId: ownerId, currency: 'NGN' },
@@ -1472,7 +1645,9 @@ export class AgentCashToCashClaimService {
     }
     // Fallback only for a snapshot race; the ledger still validates account existence/activity
     // under its own locks before posting. The server never accepts a client-selected account.
-    const fallback = await this.dataSource.getRepository(WalletAccount).findOne({ where: { customerId: ownerId, currency: 'NGN' } });
+    const fallback = await this.dataSource
+      .getRepository(WalletAccount)
+      .findOne({ where: { customerId: ownerId, currency: 'NGN' } });
     if (fallback) {
       if (fallback.status !== WalletStatus.ACTIVE) {
         throw new ConflictException('Destination wallet is not active');

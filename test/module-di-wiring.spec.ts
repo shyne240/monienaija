@@ -41,9 +41,9 @@ const stubDataSource = {
   // Shape expected by @nestjs/typeorm's repository factory + nothing else in this test.
   options: { type: 'postgres' },
   entityMetadatas: [] as Array<{ target: unknown; treeType?: unknown }>,
-  getRepository: () => ({} as unknown as Repository<ObjectLiteral>),
-  getTreeRepository: () => ({} as unknown as Repository<ObjectLiteral>),
-  getMongoRepository: () => ({} as unknown as Repository<ObjectLiteral>),
+  getRepository: () => ({}) as unknown as Repository<ObjectLiteral>,
+  getTreeRepository: () => ({}) as unknown as Repository<ObjectLiteral>,
+  getMongoRepository: () => ({}) as unknown as Repository<ObjectLiteral>,
   createQueryRunner: () => {
     throw new Error('stub DataSource must not run queries in this wiring test');
   },
@@ -100,7 +100,7 @@ describe('P0-A module wiring (registry controllers vs AuthorizationModule export
   it('AppModule boots: every controller in the application graph resolves', async () => {
     // Lazy require: AppModule evaluates ConfigModule.forRoot() at import time and must see the
     // DB_* environment defaults set above.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { AppModule } = require('../src/app.module') as { AppModule: unknown };
     const moduleRef = await Test.createTestingModule({ imports: [AppModule as never] })
       .overrideProvider(DataSource)

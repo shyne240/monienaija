@@ -115,15 +115,15 @@ const SECTION_KEYS: Record<string, readonly NavKey[]> = {
 };
 
 const SCREEN_MARKERS: Record<NavKey, RegExp> = {
-  dashboard: /System Administration Dashboard/i,
+  dashboard: /Welcome back/i,
   dashboardSettings: /Dashboard Settings/i,
   customers: /Customer Directory/i,
   agents: /Agent Network Management/i,
   agentClasses: /Agent Classes & Service Eligibility/i,
   support: /Support Tickets/i,
-  transfers: /In-House Transaction & Fee Operations/i,
-  cashIn: /In-House Transaction & Fee Operations/i,
-  cashOut: /In-House Transaction & Fee Operations/i,
+  transfers: /Transaction trace & fee simulation/i,
+  cashIn: /Transaction trace & fee simulation/i,
+  cashOut: /Transaction trace & fee simulation/i,
   cashToCashOps: /Cash-to-Cash Operations/i,
   ledgerExplorer: /Ledger Core & Reversals Desk/i,
   reconciliation: /Independent Reconciliation & Breaks Desk/i,
@@ -226,7 +226,9 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
         fireEvent.click(getByTestId(`nav-${key}`));
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      expect(container.textContent).toMatch(SCREEN_MARKERS[key]);
+      const marker = key === 'agents' && !ROLE_PRINCIPALS[roleKey].scopes.includes('agent.view' as never) ? /Agent directory and Agent receiving-number lookup require/ : SCREEN_MARKERS[key];
+      if (!marker.test(container.textContent ?? '')) throw new Error(`Missing screen marker for ${key} (${roleKey})`);
+      expect(container.textContent).toMatch(marker);
     }
   });
 
@@ -317,11 +319,11 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
     });
     (ApiClient.get as jest.Mock).mockImplementation(() => new Promise(() => {}));
     const screen = render(<CommercialRulesScreen initialTab="fees" />);
-    expect(screen.getByText('Fees')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Fees' })).toBeTruthy();
     expect(screen.queryByText('Commissions')).toBeNull();
     expect(screen.queryByText('Products')).toBeNull();
-    await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith('/internal/fee-rules'));
-    expect(ApiClient.get).not.toHaveBeenCalledWith('/internal/commission-rules');
+    await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith('/internal/fee-rules?page=1&limit=20'));
+    expect(ApiClient.get).not.toHaveBeenCalledWith('/internal/commission-rules?page=1&limit=20');
   });
 
   test('ledger read screen does not use SUPER_ADMIN role alone as a substitute for ledger.view', () => {

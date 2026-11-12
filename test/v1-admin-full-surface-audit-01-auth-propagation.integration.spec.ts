@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 /**
  * V1-ADMIN-FULL-SURFACE-AUDIT-01 Part A — regression for the "Authentication required" defect
  * reported against Admin Web's Customer & KYC Servicing screen (real PostgreSQL + real HTTP,
@@ -38,7 +38,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { LocalAdminAuthenticationService } from '../src/local-admin-authentication/local-admin-authentication.service';
@@ -70,7 +70,9 @@ describe('V1-ADMIN-FULL-SURFACE-AUDIT-01 Part A — customer API auth propagatio
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
 
@@ -141,7 +143,11 @@ describe('V1-ADMIN-FULL-SURFACE-AUDIT-01 Part A — customer API auth propagatio
     const created = await request(app.getHttpServer())
       .post('/api/v1/customers')
       .set(AUTH)
-      .send({ reference: `audit-regression-${Date.now()}`, type: 'INDIVIDUAL', actor: 'finance-admin-audit' });
+      .send({
+        reference: `audit-regression-${Date.now()}`,
+        type: 'INDIVIDUAL',
+        actor: 'finance-admin-audit',
+      });
     expect(created.status).toBe(201);
     expect(typeof created.body.id).toBe('string');
     const customerId = created.body.id as string;
@@ -220,7 +226,11 @@ describe('V1-ADMIN-FULL-SURFACE-AUDIT-01 Part A — customer API auth propagatio
     const created = await request(app.getHttpServer())
       .post('/api/v1/customers')
       .set('Authorization', `Bearer ${financeAdminToken}`)
-      .send({ reference: `support-boundary-${Date.now()}`, type: 'INDIVIDUAL', actor: 'finance-admin-audit' });
+      .send({
+        reference: `support-boundary-${Date.now()}`,
+        type: 'INDIVIDUAL',
+        actor: 'finance-admin-audit',
+      });
     expect(created.status).toBe(201);
     const customerId = created.body.id as string;
 

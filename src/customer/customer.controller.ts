@@ -1,3 +1,4 @@
+import { KycTierTransitionService } from '../kyc-verification/kyc-tier-transition.service';
 import {
   Body,
   Controller,
@@ -78,6 +79,7 @@ export class CustomerController {
   constructor(
     private readonly customerService: CustomerService,
     private readonly auth: AuthorizationService,
+    private readonly tierTransitions: KycTierTransitionService,
   ) {}
 
   @Post()
@@ -262,7 +264,11 @@ export class CustomerController {
       req,
       KYC_ASSESSMENT_FUNCTION_BY_STATUS[dto.status],
     );
-    return this.customerService.createKycAssessment(id, { ...dto, assessedBy: actor });
+    return this.tierTransitions.administrativeAssessment(
+      id,
+      { ...dto, assessedBy: actor },
+      req.authorizationPrincipal,
+    );
   }
 
   // V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01: `customer.view`'s own catalogue name/description
@@ -455,6 +461,7 @@ export class CustomerController {
       reference: maskCustomerReference(customer.reference),
       type: customer.type,
       status: customer.status,
+      isSynthetic: customer.isSynthetic,
       kycLevel: customer.kycLevel,
       kycStatus: customer.kycStatus,
       version: customer.version,

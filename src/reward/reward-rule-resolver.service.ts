@@ -178,7 +178,14 @@ export class RewardRuleResolverService {
     }
 
     if (grants.length === 0) {
-      return { status: 'NOT_CONFIGURED', productCode, currency, evaluatedAt: at, grants: [], ruleRefs: [] };
+      return {
+        status: 'NOT_CONFIGURED',
+        productCode,
+        currency,
+        evaluatedAt: at,
+        grants: [],
+        ruleRefs: [],
+      };
     }
 
     // No cross-beneficiary sum constraint is imposed: rules may carry different bases
@@ -187,7 +194,10 @@ export class RewardRuleResolverService {
   }
 
   /** Convenience wrapper for non-transactional diagnostics (workforce read-only). */
-  async resolve(context: RewardResolveContext, baseEvidence: RewardBaseEvidence): Promise<RewardResolution> {
+  async resolve(
+    context: RewardResolveContext,
+    baseEvidence: RewardBaseEvidence,
+  ): Promise<RewardResolution> {
     return this.resolveWithManager(this.dataSource.manager, context, baseEvidence);
   }
 
@@ -211,7 +221,10 @@ export class RewardRuleResolverService {
       agentId: (row['agent_id'] as string | null) ?? null,
       campaignCode: (row['campaign_code'] as string | null) ?? null,
       effectiveFrom: new Date(row['effective_from'] as string),
-      effectiveTo: row['effective_to'] === null || row['effective_to'] === undefined ? null : new Date(row['effective_to'] as string),
+      effectiveTo:
+        row['effective_to'] === null || row['effective_to'] === undefined
+          ? null
+          : new Date(row['effective_to'] as string),
       priority: Number(row['priority']),
       isActive: true,
       createdBy: '',
@@ -240,7 +253,9 @@ export class RewardRuleResolverService {
   private normalizeKycLevel(level: RewardCustomerKycLevel | null): RewardCustomerKycLevel | null {
     if (level === null || level === undefined) return null;
     if (!REWARD_CUSTOMER_KYC_LEVELS.includes(level)) {
-      throw new BadRequestException(`customerKycLevel must be one of: ${REWARD_CUSTOMER_KYC_LEVELS.join(', ')}`);
+      throw new BadRequestException(
+        `customerKycLevel must be one of: ${REWARD_CUSTOMER_KYC_LEVELS.join(', ')}`,
+      );
     }
     return level;
   }
@@ -249,7 +264,9 @@ export class RewardRuleResolverService {
     if (code === null || code === undefined) return null;
     const trimmed = code.trim().toUpperCase();
     if (!/^[A-Z0-9][A-Z0-9_-]{0,79}$/.test(trimmed)) {
-      throw new BadRequestException('campaignCode must match ^[A-Z0-9][A-Z0-9_\\-]{0,79}$ (configuration-only promotion identity)');
+      throw new BadRequestException(
+        'campaignCode must match ^[A-Z0-9][A-Z0-9_\\-]{0,79}$ (configuration-only promotion identity)',
+      );
     }
     return trimmed;
   }

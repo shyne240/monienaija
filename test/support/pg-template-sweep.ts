@@ -21,6 +21,7 @@ import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import { migrationTemplateDatabaseName } from './pg-harness';
 import { assertOwnRunDatabaseName } from './pg-run-namespace';
+import { assertDisposablePgTestEnvironment } from './pg-test-safety';
 
 function adminConfig() {
   const host = process.env.DB_HOST ?? '127.0.0.1';
@@ -34,6 +35,7 @@ function adminConfig() {
 }
 
 export default async function dropOwnMigrationTemplateDatabase(): Promise<void> {
+  assertDisposablePgTestEnvironment(); // Fail before creating a connection, even on direct Jest invocation.
   const cfg = adminConfig();
   const ds = new DataSource({
     type: 'postgres',

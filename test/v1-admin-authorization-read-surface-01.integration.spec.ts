@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
 /**
  * V1-ADMIN-AUTHORIZATION-READ-SURFACE-01 — dedicated real-PostgreSQL, real-HTTP proof suite.
  *
@@ -39,7 +39,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID, pbkdf2Sync } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { LocalAdminAuthenticationService } from '../src/local-admin-authentication/local-admin-authentication.service';
@@ -77,7 +77,9 @@ describe('V1-ADMIN-AUTHORIZATION-READ-SURFACE-01 — read surface + 401/403 auth
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
 
@@ -220,34 +222,75 @@ describe('V1-ADMIN-AUTHORIZATION-READ-SURFACE-01 — read surface + 401/403 auth
   describe('A. /internal/metrics, /internal/diagnostics, /internal/outbox require metrics.view/diagnostics.view/outbox.view', () => {
     it('A1. SUPER_ADMIN can read all three (holds every function)', async () => {
       const token = await loginSuperAdmin();
-      await request(app.getHttpServer()).get('/api/v1/internal/metrics').set(auth(token)).expect(200);
-      await request(app.getHttpServer()).get('/api/v1/internal/diagnostics').set(auth(token)).expect(200);
-      await request(app.getHttpServer()).get('/api/v1/internal/outbox').set(auth(token)).expect(200);
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/metrics')
+        .set(auth(token))
+        .expect(200);
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/diagnostics')
+        .set(auth(token))
+        .expect(200);
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/outbox')
+        .set(auth(token))
+        .expect(200);
     });
 
     it('A2. FINANCE_AUDITOR can read all three (holds metrics.view/diagnostics.view/outbox.view)', async () => {
       const token = await tokenForRole('FINANCE_AUDITOR');
-      await request(app.getHttpServer()).get('/api/v1/internal/metrics').set(auth(token)).expect(200);
-      await request(app.getHttpServer()).get('/api/v1/internal/diagnostics').set(auth(token)).expect(200);
-      await request(app.getHttpServer()).get('/api/v1/internal/outbox').set(auth(token)).expect(200);
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/metrics')
+        .set(auth(token))
+        .expect(200);
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/diagnostics')
+        .set(auth(token))
+        .expect(200);
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/outbox')
+        .set(auth(token))
+        .expect(200);
     });
 
     it('A3. OPERATIONS can read all three (holds metrics.view/diagnostics.view/outbox.view)', async () => {
       const token = await tokenForRole('OPERATIONS');
-      await request(app.getHttpServer()).get('/api/v1/internal/metrics').set(auth(token)).expect(200);
-      await request(app.getHttpServer()).get('/api/v1/internal/diagnostics').set(auth(token)).expect(200);
-      await request(app.getHttpServer()).get('/api/v1/internal/outbox').set(auth(token)).expect(200);
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/metrics')
+        .set(auth(token))
+        .expect(200);
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/diagnostics')
+        .set(auth(token))
+        .expect(200);
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/outbox')
+        .set(auth(token))
+        .expect(200);
     });
 
-    it.each(['FINANCE_PREPARER', 'FINANCE_CONTROLLER', 'AGENT_NETWORK_MANAGER', 'COMPLIANCE', 'RISK_FRAUD', 'CUSTOMER_SERVICE', 'TREASURY'])(
+    it.each([
+      'FINANCE_PREPARER',
+      'FINANCE_CONTROLLER',
+      'AGENT_NETWORK_MANAGER',
+      'COMPLIANCE',
+      'RISK_FRAUD',
+      'CUSTOMER_SERVICE',
+      'TREASURY',
+    ])(
       'A4. %s is denied all three (holds none of metrics.view/diagnostics.view/outbox.view)',
       async (roleKey) => {
         const token = await tokenForRole(roleKey);
-        const metrics = await request(app.getHttpServer()).get('/api/v1/internal/metrics').set(auth(token));
+        const metrics = await request(app.getHttpServer())
+          .get('/api/v1/internal/metrics')
+          .set(auth(token));
         expect(metrics.status).toBe(403);
-        const diagnostics = await request(app.getHttpServer()).get('/api/v1/internal/diagnostics').set(auth(token));
+        const diagnostics = await request(app.getHttpServer())
+          .get('/api/v1/internal/diagnostics')
+          .set(auth(token));
         expect(diagnostics.status).toBe(403);
-        const outbox = await request(app.getHttpServer()).get('/api/v1/internal/outbox').set(auth(token));
+        const outbox = await request(app.getHttpServer())
+          .get('/api/v1/internal/outbox')
+          .set(auth(token));
         expect(outbox.status).toBe(403);
       },
     );
@@ -297,7 +340,9 @@ describe('V1-ADMIN-AUTHORIZATION-READ-SURFACE-01 — read surface + 401/403 auth
       expect(unauthenticated.status).toBe(401);
 
       const token = await tokenForRole('TREASURY');
-      const underEntitled = await request(app.getHttpServer()).get('/api/v1/internal/metrics').set(auth(token));
+      const underEntitled = await request(app.getHttpServer())
+        .get('/api/v1/internal/metrics')
+        .set(auth(token));
       expect(underEntitled.status).toBe(403);
     });
   });
@@ -311,7 +356,9 @@ describe('V1-ADMIN-AUTHORIZATION-READ-SURFACE-01 — read surface + 401/403 auth
       const token = await tokenForRole('FINANCE_AUDITOR');
       const customerId = await createActiveCustomer();
 
-      const metrics = await request(app.getHttpServer()).get('/api/v1/internal/metrics').set(auth(token));
+      const metrics = await request(app.getHttpServer())
+        .get('/api/v1/internal/metrics')
+        .set(auth(token));
       expect(metrics.status).toBe(200);
 
       const suspendCustomer = await request(app.getHttpServer())

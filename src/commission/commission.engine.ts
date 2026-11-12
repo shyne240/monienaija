@@ -2,14 +2,20 @@ import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import type { EntityManager } from 'typeorm';
 
-import { commissionAllocated, commissionNone } from '../commercial-decision/commercial-decision.defaults';
+import {
+  commissionAllocated,
+  commissionNone,
+} from '../commercial-decision/commercial-decision.defaults';
 import type {
   CommissionAllocationSnapshot,
   CommissionDecisionSnapshot,
 } from '../commercial-decision/commercial-decision-snapshot.entity';
 
 import type { CommissionBaseEvidence } from './commission.calculator';
-import { CommissionRuleResolverService, type CommissionResolveContext } from './commission-rule-resolver.service';
+import {
+  CommissionRuleResolverService,
+  type CommissionResolveContext,
+} from './commission-rule-resolver.service';
 
 /**
  * V1-COMMISSION-01 — Commission Engine facade.
@@ -64,7 +70,10 @@ export class CommissionEngine {
   }
 
   /** Non-transactional evaluation (workforce diagnostics/tests). Identical mechanics. */
-  async decide(context: CommissionResolveContext, baseEvidence: CommissionBaseEvidence): Promise<CommissionDecisionSnapshot> {
+  async decide(
+    context: CommissionResolveContext,
+    baseEvidence: CommissionBaseEvidence,
+  ): Promise<CommissionDecisionSnapshot> {
     return this.decideWithManager(this.dataSource.manager, context, baseEvidence);
   }
 }

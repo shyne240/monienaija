@@ -3,13 +3,13 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository, QueryFailedError } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import { LimitProfile } from './limit-profile.entity';
+import { limitProfileAuditEntityId } from './limit-audit-identity';
 import { LimitRule } from './limit-rule.entity';
 import {
   LIMIT_AMOUNT_DIMENSIONS,
@@ -40,12 +40,15 @@ export class LimitCatalogService {
     @InjectRepository(LimitRule)
     private readonly ruleRepo: Repository<LimitRule>,
     private readonly dataSource: DataSource,
-    @Optional() private readonly auditService?: AuditService,
+    private readonly auditService: AuditService,
   ) {}
 
   // ── Profiles ──
 
-  async createProfile(input: LimitProfileCreateInput, actor: string): Promise<LimitProfileSafeProjection> {
+  async createProfile(
+    input: LimitProfileCreateInput,
+    actor: string,
+  ): Promise<LimitProfileSafeProjection> {
     this.validateProfileCreate(input);
     const code = input.code.trim().toUpperCase();
     const exists = await this.profileRepo.findOne({ where: { code } as never });
@@ -58,37 +61,53 @@ export class LimitCatalogService {
       kind: input.kind,
       status: input.status ?? LimitProfileStatus.ACTIVE,
       enabled: input.enabled ?? true,
-      configurationStatus: input.configurationStatus ?? LimitProfileConfigurationStatus.NOT_CONFIGURED,
+      configurationStatus:
+        input.configurationStatus ?? LimitProfileConfigurationStatus.NOT_CONFIGURED,
       createdBy: actor,
       updatedBy: actor,
       version: 1,
-    } as never);
+    } as never) as unknown as LimitProfile;
 
-    const saved = await this.profileRepo.save(entity as never) as unknown as LimitProfile;
-    if (this.auditService) {
-      try {
-        await this.dataSource.transaction(async (m) => {
-          await this.auditService!.record(m, {
-            entityType: 'LIMIT_PROFILE',
-            entityId: saved.code, // code is PK, but entityId expects uuid per audit table; use code as string via entityType
-            action: 'CREATED',
-            actor,
-            newValues: this.profileValues(saved),
-          } as never);
+    let saved: LimitProfile;
+    try {
+      saved = await this.dataSource.transaction(async (manager) => {
+        const persisted = await manager.getRepository(LimitProfile).save(entity);
+        await this.auditService.record(manager, {
+          entityType: 'LIMIT_PROFILE',
+          entityId: limitProfileAuditEntityId(persisted.code),
+          action: 'CREATED',
+          actor,
+          newValues: this.profileValues(persisted),
         });
-      } catch {}
+        return persisted;
+      });
+    } catch (error) {
+      if (this.isUniqueViolation(error, 'limit_profiles_pkey'))
+        throw new ConflictException(`Limit profile ${code} already exists`);
+      throw error;
     }
     return this.toProfileSafe(saved);
   }
 
-  async updateProfile(code: string, input: LimitProfileUpdateInput, actor: string): Promise<LimitProfileSafeProjection> {
+  async updateProfile(
+    code: string,
+    input: LimitProfileUpdateInput,
+    actor: string,
+  ): Promise<LimitProfileSafeProjection> {
     const normalizedCode = code.trim().toUpperCase();
-    if (!PROFILE_CODE_PATTERN.test(normalizedCode)) throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
+    if (!PROFILE_CODE_PATTERN.test(normalizedCode))
+      throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
     // validate inputs that do not depend on the current row state
     if (input.kind !== undefined) this.assertEnum(input.kind, LimitProfileKind, 'kind');
     if (input.status !== undefined) this.assertEnum(input.status, LimitProfileStatus, 'status');
-    if (input.configurationStatus !== undefined) this.assertEnum(input.configurationStatus, LimitProfileConfigurationStatus, 'configurationStatus');
-    if (input.name !== undefined && (!input.name || !input.name.trim())) throw new BadRequestException('name is required');
+    if (input.configurationStatus !== undefined)
+      this.assertEnum(
+        input.configurationStatus,
+        LimitProfileConfigurationStatus,
+        'configurationStatus',
+      );
+    if (input.name !== undefined && (!input.name || !input.name.trim()))
+      throw new BadRequestException('name is required');
 
     // V1-TEST-02: a plain `this.profileRepo.findOne()` followed later by `this.profileRepo.save()`
     // gives @VersionColumn no actual DB-level compare-and-swap — identical defect to the one
@@ -101,50 +120,37 @@ export class LimitCatalogService {
     // elsewhere in this codebase for row-level contention: `SELECT ... FOR UPDATE` inside an
     // explicit transaction, so a second concurrent caller blocks until the first commits, then
     // reads the POST-update version and correctly hits the existing assertVersion conflict path.
-    let saved: LimitProfile;
-    let previous: Record<string, unknown>;
-    try {
-      ({ saved, previous } = await this.dataSource.transaction(async (manager) => {
-        const repository = manager.getRepository(LimitProfile);
-        const profile = await repository
-          .createQueryBuilder('profile')
-          .where('profile.code = :code', { code: normalizedCode })
-          .setLock('pessimistic_write')
-          .getOne();
-        if (!profile) throw new NotFoundException(`Limit profile ${normalizedCode} not found`);
-        this.assertVersion(profile.version, input.version);
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const repository = manager.getRepository(LimitProfile);
+      const profile = await repository
+        .createQueryBuilder('profile')
+        .where('profile.code = :code', { code: normalizedCode })
+        .setLock('pessimistic_write')
+        .getOne();
+      if (!profile) throw new NotFoundException(`Limit profile ${normalizedCode} not found`);
+      this.assertVersion(profile.version, input.version);
 
-        const previousValues = this.profileValues(profile);
-        if (input.name !== undefined) profile.name = input.name.trim();
-        if (input.description !== undefined) profile.description = input.description?.trim() ?? null;
-        if (input.kind !== undefined) profile.kind = input.kind;
-        if (input.status !== undefined) profile.status = input.status;
-        if (input.enabled !== undefined) profile.enabled = input.enabled;
-        if (input.configurationStatus !== undefined) profile.configurationStatus = input.configurationStatus;
-        profile.updatedBy = actor;
-
-        const savedProfile = (await repository.save(profile as never)) as unknown as LimitProfile;
-        return { saved: savedProfile, previous: previousValues };
-      }));
-    } catch (e) {
-      if (this.isUniqueViolation(e)) throw new ConflictException('Profile version conflict');
-      throw e;
-    }
-
-    if (this.auditService) {
-      try {
-        await this.dataSource.transaction(async (m) => {
-          await this.auditService!.record(m, {
-            entityType: 'LIMIT_PROFILE',
-            entityId: saved.code as never,
-            action: 'UPDATED',
-            actor,
-            previousValues: previous,
-            newValues: this.profileValues(saved),
-          } as never);
-        });
-      } catch {}
-    }
+      const previousValues = this.profileValues(profile);
+      if (input.name !== undefined) profile.name = input.name.trim();
+      if (input.description !== undefined) profile.description = input.description?.trim() ?? null;
+      if (input.kind !== undefined) profile.kind = input.kind;
+      if (input.status !== undefined) profile.status = input.status;
+      if (input.enabled !== undefined) profile.enabled = input.enabled;
+      if (input.configurationStatus !== undefined)
+        profile.configurationStatus = input.configurationStatus;
+      profile.updatedBy = actor;
+      profile.version += 1;
+      const persisted = await repository.save(profile);
+      await this.auditService.record(manager, {
+        entityType: 'LIMIT_PROFILE',
+        entityId: limitProfileAuditEntityId(persisted.code),
+        action: 'UPDATED',
+        actor,
+        previousValues,
+        newValues: this.profileValues(persisted),
+      });
+      return persisted;
+    });
     return this.toProfileSafe(saved);
   }
 
@@ -162,7 +168,14 @@ export class LimitCatalogService {
     configurationStatus?: string;
     page?: number;
     limit?: number;
-  }): Promise<{ data: LimitProfileSafeProjection[]; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean }> {
+  }): Promise<{
+    data: LimitProfileSafeProjection[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  }> {
     const page = this.normalizePage(params.page);
     const limit = this.normalizeLimit(params.limit);
     const skip = (page - 1) * limit;
@@ -201,17 +214,26 @@ export class LimitCatalogService {
     const direction = input.direction ? input.direction.trim().toUpperCase() : null;
     const channel = input.channel ? input.channel.trim() : null;
 
-    const effectiveFrom = input.effectiveFrom ? new Date(input.effectiveFrom as string) : new Date();
-    if (isNaN(effectiveFrom.getTime())) throw new BadRequestException('effectiveFrom must be valid ISO date');
+    const effectiveFrom = input.effectiveFrom
+      ? new Date(input.effectiveFrom as string)
+      : new Date();
+    if (isNaN(effectiveFrom.getTime()))
+      throw new BadRequestException('effectiveFrom must be valid ISO date');
     let effectiveTo: Date | null = null;
     if (input.effectiveTo) {
       effectiveTo = new Date(input.effectiveTo as string);
-      if (isNaN(effectiveTo.getTime())) throw new BadRequestException('effectiveTo must be valid ISO date');
-      if (effectiveTo <= effectiveFrom) throw new BadRequestException('effectiveTo must be after effectiveFrom');
+      if (isNaN(effectiveTo.getTime()))
+        throw new BadRequestException('effectiveTo must be valid ISO date');
+      if (effectiveTo <= effectiveFrom)
+        throw new BadRequestException('effectiveTo must be after effectiveFrom');
     }
 
     // Validate amount vs count exclusive
-    this.validateDimensionValue(dimension, input.limitValueMinor ?? null, input.limitValueCount ?? null);
+    this.validateDimensionValue(
+      dimension,
+      input.limitValueMinor ?? null,
+      input.limitValueCount ?? null,
+    );
 
     const entity = this.ruleRepo.create({
       limitProfileCode: profileCode,
@@ -229,26 +251,47 @@ export class LimitCatalogService {
       priority: input.priority ?? 0,
       createdBy: actor,
       updatedBy: actor,
-    } as never);
+    } as never) as unknown as LimitRule;
 
     try {
-      const saved = await this.ruleRepo.save(entity as never) as unknown as LimitRule;
+      const saved = await this.dataSource.transaction(async (manager) => {
+        const persisted = await manager.getRepository(LimitRule).save(entity);
+        await this.auditService.record(manager, {
+          entityType: 'LIMIT_RULE',
+          entityId: persisted.id,
+          action: 'CREATED',
+          actor,
+          newValues: this.ruleValues(persisted),
+        });
+        return persisted;
+      });
       return this.toRuleSafe(saved);
     } catch (e) {
-      if (this.isUniqueViolation(e)) throw new ConflictException('Limit rule with same profile/product/direction/channel/currency/dimension/effectiveFrom already exists');
+      if (this.isUniqueViolation(e, 'uq_limit_rules_active_key'))
+        throw new ConflictException(
+          'Limit rule with same profile/product/direction/channel/currency/dimension/effectiveFrom already exists',
+        );
       throw e;
     }
   }
 
-  async updateRule(id: string, input: LimitRuleUpdateInput, actor: string): Promise<LimitRuleSafeProjection> {
+  async updateRule(
+    id: string,
+    input: LimitRuleUpdateInput,
+    actor: string,
+  ): Promise<LimitRuleSafeProjection> {
     // validate inputs that do not depend on the current row state
     if (input.product !== undefined && !PRODUCT_PATTERN.test(input.product.trim().toUpperCase())) {
       throw new BadRequestException('product must match ^[A-Z0-9_][A-Z0-9_.-]{1,79}$');
     }
-    if (input.currency !== undefined && !CURRENCY_PATTERN.test(input.currency.trim().toUpperCase())) {
+    if (
+      input.currency !== undefined &&
+      !CURRENCY_PATTERN.test(input.currency.trim().toUpperCase())
+    ) {
       throw new BadRequestException('currency must be 3-letter');
     }
-    if (input.dimension !== undefined) this.assertEnum(input.dimension, LimitDimension, 'dimension');
+    if (input.dimension !== undefined)
+      this.assertEnum(input.dimension, LimitDimension, 'dimension');
     let parsedEffectiveFrom: Date | null | undefined;
     if (input.effectiveFrom !== undefined) {
       parsedEffectiveFrom = input.effectiveFrom ? new Date(input.effectiveFrom as string) : null;
@@ -281,9 +324,11 @@ export class LimitCatalogService {
           .getOne();
         if (!r) throw new NotFoundException(`Limit rule ${id} not found`);
         this.assertVersion(r.version, input.version);
+        const previousValues = this.ruleValues(r);
 
         if (input.product !== undefined) r.product = input.product.trim().toUpperCase();
-        if (input.direction !== undefined) r.direction = input.direction ? input.direction.trim().toUpperCase() : null;
+        if (input.direction !== undefined)
+          r.direction = input.direction ? input.direction.trim().toUpperCase() : null;
         if (input.channel !== undefined) r.channel = input.channel ? input.channel.trim() : null;
         if (input.currency !== undefined) r.currency = input.currency.trim().toUpperCase();
         if (input.dimension !== undefined) r.dimension = input.dimension;
@@ -291,9 +336,11 @@ export class LimitCatalogService {
         if (input.limitValueMinor !== undefined) r.limitValueMinor = input.limitValueMinor ?? null;
         if (input.limitValueCount !== undefined) r.limitValueCount = input.limitValueCount ?? null;
 
-        if (parsedEffectiveFrom !== undefined && parsedEffectiveFrom) r.effectiveFrom = parsedEffectiveFrom;
+        if (parsedEffectiveFrom !== undefined && parsedEffectiveFrom)
+          r.effectiveFrom = parsedEffectiveFrom;
         if (parsedEffectiveTo !== undefined) r.effectiveTo = parsedEffectiveTo;
-        if (r.effectiveTo && r.effectiveTo <= r.effectiveFrom) throw new BadRequestException('effectiveTo must be after effectiveFrom');
+        if (r.effectiveTo && r.effectiveTo <= r.effectiveFrom)
+          throw new BadRequestException('effectiveTo must be after effectiveFrom');
         if (input.isActive !== undefined) r.isActive = input.isActive;
         if (input.priority !== undefined) r.priority = input.priority;
         r.updatedBy = actor;
@@ -301,10 +348,21 @@ export class LimitCatalogService {
         // validate amount vs count exclusive for final state
         this.validateDimensionValue(r.dimension, r.limitValueMinor, r.limitValueCount);
 
-        return (await repository.save(r as never)) as unknown as LimitRule;
+        r.version += 1;
+        const persisted = await repository.save(r);
+        await this.auditService.record(manager, {
+          entityType: 'LIMIT_RULE',
+          entityId: persisted.id,
+          action: 'UPDATED',
+          actor,
+          previousValues,
+          newValues: this.ruleValues(persisted),
+        });
+        return persisted;
       });
     } catch (e) {
-      if (this.isUniqueViolation(e)) throw new ConflictException('Limit rule unique constraint violation');
+      if (this.isUniqueViolation(e, 'uq_limit_rules_active_key'))
+        throw new ConflictException('Limit rule unique constraint violation');
       throw e;
     }
     return this.toRuleSafe(saved);
@@ -324,12 +382,20 @@ export class LimitCatalogService {
     isActive?: boolean;
     page?: number;
     limit?: number;
-  }): Promise<{ data: LimitRuleSafeProjection[]; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean }> {
+  }): Promise<{
+    data: LimitRuleSafeProjection[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  }> {
     const page = this.normalizePage(params.page);
     const limit = this.normalizeLimit(params.limit);
     const skip = (page - 1) * limit;
     const where: Record<string, unknown> = {};
-    if (params.limitProfileCode) where['limitProfileCode'] = params.limitProfileCode.trim().toUpperCase();
+    if (params.limitProfileCode)
+      where['limitProfileCode'] = params.limitProfileCode.trim().toUpperCase();
     if (params.product) where['product'] = params.product.trim().toUpperCase();
     if (params.dimension) where['dimension'] = params.dimension.trim().toUpperCase();
     if (params.currency) where['currency'] = params.currency.trim().toUpperCase();
@@ -346,8 +412,22 @@ export class LimitCatalogService {
     return { data, total, page, limit, totalPages, hasNextPage: page < totalPages };
   }
 
-  async listRulesByProfile(profileCode: string, params: { page?: number; limit?: number }): Promise<{ data: LimitRuleSafeProjection[]; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean }> {
-    return this.listRules({ limitProfileCode: profileCode, page: params.page, limit: params.limit });
+  async listRulesByProfile(
+    profileCode: string,
+    params: { page?: number; limit?: number },
+  ): Promise<{
+    data: LimitRuleSafeProjection[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  }> {
+    return this.listRules({
+      limitProfileCode: profileCode,
+      page: params.page,
+      limit: params.limit,
+    });
   }
 
   async countRules(): Promise<number> {
@@ -357,22 +437,42 @@ export class LimitCatalogService {
   // ── validation helpers ──
 
   private validateProfileCreate(input: LimitProfileCreateInput): void {
-    if (!PROFILE_CODE_PATTERN.test(input.code)) throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
+    if (!PROFILE_CODE_PATTERN.test(input.code))
+      throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
     if (!input.name || !input.name.trim()) throw new BadRequestException('name is required');
     this.assertEnum(input.kind, LimitProfileKind, 'kind');
     if (input.status !== undefined) this.assertEnum(input.status, LimitProfileStatus, 'status');
-    if (input.configurationStatus !== undefined) this.assertEnum(input.configurationStatus, LimitProfileConfigurationStatus, 'configurationStatus');
+    if (input.configurationStatus !== undefined)
+      this.assertEnum(
+        input.configurationStatus,
+        LimitProfileConfigurationStatus,
+        'configurationStatus',
+      );
   }
 
   private validateRuleCreate(input: LimitRuleCreateInput): void {
-    if (!PROFILE_CODE_PATTERN.test(input.limitProfileCode.trim().toUpperCase())) throw new BadRequestException('limitProfileCode must match ^[A-Z0-9_]{3,80}$');
-    if (!PRODUCT_PATTERN.test(input.product.trim().toUpperCase())) throw new BadRequestException('product must match ^[A-Z0-9_][A-Z0-9_.-]{1,79}$');
-    if (!CURRENCY_PATTERN.test(input.currency.trim().toUpperCase())) throw new BadRequestException('currency must be 3-letter');
+    if (!PROFILE_CODE_PATTERN.test(input.limitProfileCode.trim().toUpperCase()))
+      throw new BadRequestException('limitProfileCode must match ^[A-Z0-9_]{3,80}$');
+    if (!PRODUCT_PATTERN.test(input.product.trim().toUpperCase()))
+      throw new BadRequestException('product must match ^[A-Z0-9_][A-Z0-9_.-]{1,79}$');
+    if (!CURRENCY_PATTERN.test(input.currency.trim().toUpperCase()))
+      throw new BadRequestException('currency must be 3-letter');
     this.assertEnum(input.dimension, LimitDimension, 'dimension');
-    if (input.direction !== undefined && input.direction !== null) this.assertEnum(input.direction, { INCOMING: 'INCOMING', OUTGOING: 'OUTGOING', BOTH: 'BOTH' } as Record<string, string>, 'direction');
-    this.validateDimensionValue(input.dimension, input.limitValueMinor ?? null, input.limitValueCount ?? null);
-    if (input.effectiveFrom && isNaN(new Date(input.effectiveFrom as string).getTime())) throw new BadRequestException('effectiveFrom must be valid ISO date');
-    if (input.effectiveTo && isNaN(new Date(input.effectiveTo as string).getTime())) throw new BadRequestException('effectiveTo must be valid ISO date');
+    if (input.direction !== undefined && input.direction !== null)
+      this.assertEnum(
+        input.direction,
+        { INCOMING: 'INCOMING', OUTGOING: 'OUTGOING', BOTH: 'BOTH' } as Record<string, string>,
+        'direction',
+      );
+    this.validateDimensionValue(
+      input.dimension,
+      input.limitValueMinor ?? null,
+      input.limitValueCount ?? null,
+    );
+    if (input.effectiveFrom && isNaN(new Date(input.effectiveFrom as string).getTime()))
+      throw new BadRequestException('effectiveFrom must be valid ISO date');
+    if (input.effectiveTo && isNaN(new Date(input.effectiveTo as string).getTime()))
+      throw new BadRequestException('effectiveTo must be valid ISO date');
     if (input.effectiveFrom && input.effectiveTo) {
       const from = new Date(input.effectiveFrom as string);
       const to = new Date(input.effectiveTo as string);
@@ -380,20 +480,32 @@ export class LimitCatalogService {
     }
   }
 
-  private validateDimensionValue(dimension: string, minor: string | null, count: number | null): void {
+  private validateDimensionValue(
+    dimension: string,
+    minor: string | null,
+    count: number | null,
+  ): void {
     const dim = dimension.toUpperCase();
     const isAmount = (LIMIT_AMOUNT_DIMENSIONS as readonly string[]).includes(dim);
     const isCount = (LIMIT_COUNT_DIMENSIONS as readonly string[]).includes(dim);
     if (isAmount) {
-      if (minor === null || minor === undefined || minor === '') throw new BadRequestException(`dimension ${dim} requires limitValueMinor`);
-      if (!/^\d+$/.test(minor)) throw new BadRequestException('limitValueMinor must be non-negative integer in minor units');
+      if (minor === null || minor === undefined || minor === '')
+        throw new BadRequestException(`dimension ${dim} requires limitValueMinor`);
+      if (!/^\d+$/.test(minor))
+        throw new BadRequestException(
+          'limitValueMinor must be non-negative integer in minor units',
+        );
       if (BigInt(minor) < 0n) throw new BadRequestException('limitValueMinor must be >=0');
-      if (count !== null && count !== undefined) throw new BadRequestException(`dimension ${dim} must not have limitValueCount`);
+      if (count !== null && count !== undefined)
+        throw new BadRequestException(`dimension ${dim} must not have limitValueCount`);
       // MIN_AMOUNT_PER_TX distinct from fee minimum is enforced by dimension naming, not by exclusive check with fee engine
     } else if (isCount) {
-      if (count === null || count === undefined) throw new BadRequestException(`dimension ${dim} requires limitValueCount`);
-      if (!Number.isSafeInteger(count) || count < 0) throw new BadRequestException('limitValueCount must be >=0 integer');
-      if (minor !== null && minor !== undefined) throw new BadRequestException(`dimension ${dim} must not have limitValueMinor`);
+      if (count === null || count === undefined)
+        throw new BadRequestException(`dimension ${dim} requires limitValueCount`);
+      if (!Number.isSafeInteger(count) || count < 0)
+        throw new BadRequestException('limitValueCount must be >=0 integer');
+      if (minor !== null && minor !== undefined)
+        throw new BadRequestException(`dimension ${dim} must not have limitValueMinor`);
     } else {
       throw new BadRequestException(`unknown dimension ${dim}`);
     }
@@ -411,22 +523,41 @@ export class LimitCatalogService {
 
   private normalizePage(page?: number): number {
     const p = page ?? 1;
-    if (!Number.isSafeInteger(p) || p < 1) throw new BadRequestException('page must be a positive integer');
+    if (!Number.isSafeInteger(p) || p < 1)
+      throw new BadRequestException('page must be a positive integer');
     return p;
   }
 
   private normalizeLimit(limit?: number): number {
     const l = limit ?? 20;
-    if (!Number.isSafeInteger(l) || l < 1 || l > 100) throw new BadRequestException('limit must be between 1 and 100');
+    if (!Number.isSafeInteger(l) || l < 1 || l > 100)
+      throw new BadRequestException('limit must be between 1 and 100');
     return l;
   }
 
-  private isUniqueViolation(error: unknown): boolean {
-    return error instanceof QueryFailedError && (error as unknown as { code?: string }).code === '23505';
+  private isUniqueViolation(error: unknown, constraint: string): boolean {
+    return (
+      error instanceof QueryFailedError &&
+      (error as unknown as { code?: string }).code === '23505' &&
+      (error as unknown as { constraint?: string }).constraint === constraint
+    );
   }
 
   private profileValues(p: LimitProfile): Record<string, unknown> {
-    return { code: p.code, name: p.name, kind: p.kind, status: p.status, enabled: p.enabled, configurationStatus: p.configurationStatus, version: p.version };
+    return {
+      limitProfileCode: p.code,
+      name: p.name,
+      description: p.description,
+      kind: p.kind,
+      status: p.status,
+      enabled: p.enabled,
+      configurationStatus: p.configurationStatus,
+      version: p.version,
+    };
+  }
+
+  private ruleValues(row: LimitRule): Record<string, unknown> {
+    return { ...this.toRuleSafe(row) };
   }
 
   private toProfileSafe(row: LimitProfile): LimitProfileSafeProjection {

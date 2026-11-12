@@ -28,11 +28,28 @@ const bigintTransformer: ValueTransformer = {
 @Index('idx_limit_usages_window_key', ['windowKey'])
 @Index('idx_limit_usages_window_start', ['windowStart'])
 @Index('idx_limit_usages_profile_product', ['limitProfileCode', 'product'])
-@Index('uq_limit_usages_window', ['principalType', 'principalId', 'limitProfileCode', 'product', 'direction', 'channel', 'dimension', 'currency', 'windowKey'], {
-  unique: true,
-})
+@Index(
+  'uq_limit_usages_window',
+  [
+    'principalType',
+    'principalId',
+    'limitProfileCode',
+    'product',
+    'direction',
+    'channel',
+    'dimension',
+    'currency',
+    'windowKey',
+  ],
+  {
+    unique: true,
+  },
+)
 @Check('chk_limit_usages_window_type', "window_type IN ('DAILY','WEEKLY','MONTHLY','YEARLY')")
-@Check('chk_limit_usages_dimension', "dimension IN ('DAILY_AMOUNT','WEEKLY_AMOUNT','MONTHLY_AMOUNT','YEARLY_AMOUNT','DAILY_COUNT','WEEKLY_COUNT','MONTHLY_COUNT','YEARLY_COUNT')")
+@Check(
+  'chk_limit_usages_dimension',
+  "dimension IN ('DAILY_AMOUNT','WEEKLY_AMOUNT','MONTHLY_AMOUNT','YEARLY_AMOUNT','DAILY_COUNT','WEEKLY_COUNT','MONTHLY_COUNT','YEARLY_COUNT')",
+)
 @Check('chk_limit_usages_currency', "currency ~ '^[A-Z]{3}$'")
 @Check('chk_limit_usages_window', 'window_end > window_start')
 @Check('chk_limit_usages_used_amount', 'used_amount_minor >= 0')
@@ -91,13 +108,23 @@ export class LimitUsage {
   @Column({ name: 'window_end', type: 'timestamptz' })
   windowEnd!: Date;
 
-  @Column({ name: 'used_amount_minor', type: 'bigint', transformer: bigintTransformer, default: '0' })
+  @Column({
+    name: 'used_amount_minor',
+    type: 'bigint',
+    transformer: bigintTransformer,
+    default: '0',
+  })
   usedAmountMinor!: string;
 
   @Column({ name: 'used_count', type: 'integer', default: 0 })
   usedCount!: number;
 
-  @Column({ name: 'reserved_amount_minor', type: 'bigint', transformer: bigintTransformer, default: '0' })
+  @Column({
+    name: 'reserved_amount_minor',
+    type: 'bigint',
+    transformer: bigintTransformer,
+    default: '0',
+  })
   reservedAmountMinor!: string;
 
   @Column({ name: 'reserved_count', type: 'integer', default: 0 })

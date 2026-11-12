@@ -236,6 +236,17 @@ function stripApplicantToken(
   return rest;
 }
 
+function verifyApplicationReceipt(value: AgentApplicationDraftResponse, expected: { id?: string; status: 'DRAFT' | 'SUBMITTED'; applicantReference?: string; agentClassId?: string }): void {
+  if (!value || typeof value !== 'object' || typeof value.id !== 'string' || !value.id.trim() ||
+      typeof value.reference !== 'string' || !value.reference.trim() || value.status !== expected.status ||
+      !Number.isSafeInteger(value.version) || (value.version ?? 0) < 1 ||
+      (expected.id !== undefined && value.id !== expected.id) ||
+      (expected.applicantReference !== undefined && value.applicantReference !== expected.applicantReference) ||
+      (expected.agentClassId !== undefined && value.agentClassId !== expected.agentClassId)) {
+    throw new Error('Application receipt could not be verified.');
+  }
+}
+
 export async function createAgentApplicationDraft(
   input: CreateAgentApplicationInput,
 ): Promise<Omit<AgentApplicationDraftResponse, 'applicantAccessToken'>> {
@@ -255,6 +266,7 @@ export async function createAgentApplicationDraft(
   }
 
   const created = await ApiClient.post<AgentApplicationDraftResponse>('/agents/applications', body);
+  verifyApplicationReceipt(created, { status: 'DRAFT', applicantReference: input.applicantReference.trim(), agentClassId: input.agentClassId?.trim() || undefined });
   return stripApplicantToken(created);
 }
 
@@ -273,6 +285,7 @@ export async function updateAgentApplicationDraft(
     `/agents/applications/${encodeURIComponent(applicationId)}`,
     body,
   );
+  verifyApplicationReceipt(updated, { id: applicationId, status: 'DRAFT', agentClassId: input.agentClassId?.trim() || undefined });
   return stripApplicantToken(updated);
 }
 
@@ -282,6 +295,7 @@ export async function submitAgentApplicationDraft(
   const submitted = await ApiClient.post<AgentApplicationDraftResponse>(
     `/agents/applications/${encodeURIComponent(applicationId)}/submit`,
   );
+  verifyApplicationReceipt(submitted, { id: applicationId, status: 'SUBMITTED' });
   return stripApplicantToken(submitted);
 }
 
@@ -334,7 +348,7 @@ async function callArena1Boundary<T>(
         method,
         endpoint,
         httpStatus,
-        message: `${description} awaits Arena 1 backend endpoint (${method} ${endpoint}, HTTP ${httpStatus}). No state was modified.`,
+        message: `${description} is unavailable or the resource was not found (${method} ${endpoint}, HTTP ${httpStatus}). No successful receipt was returned.`,
       };
     }
     throw error;
@@ -435,7 +449,12 @@ export async function revokeAgentActiveSessions(
         : ApiClient.post<Record<string, unknown> | null>(endpoint),
   );
 
-  if (result.status === 'BLOCKED') return result;
+  if (result.status === 'BLOCKED') return {
+    ...result,
+    message: result.httpStatus === 404
+      ? `Session revocation endpoint or Agent was not found (POST ${endpoint}, HTTP 404). Revocation was not confirmed.`
+      : result.message,
+  };
 
   const raw = result.data && typeof result.data === 'object' ? result.data : {};
   // Arena 1 returns `{ agentId, revokedSessionCount }` (admin-agent-credentials.controller.ts).

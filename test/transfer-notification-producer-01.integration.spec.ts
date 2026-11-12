@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument, @typescript-eslint/require-await */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/require-await */
 /**
  * Arena 3 producer-contract correction — transfer.completed / transfer.failed events
  * emitted by the audited TransferService must carry the versioned (schema v1) recipient
@@ -34,12 +34,21 @@ import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { LedgerAccountType, LedgerNormalBalance, LedgerEntryDirection } from '../src/ledger/ledger.enums';
+import {
+  LedgerAccountType,
+  LedgerNormalBalance,
+  LedgerEntryDirection,
+} from '../src/ledger/ledger.enums';
 import { NotificationDispatcherService } from '../src/notification/notification-dispatcher.service';
 import { NotificationWorkerService } from '../src/notification/notification-worker.service';
 import { ConfigurableSmsNotificationProvider } from '../src/notification/notification-provider-config.service';
 import { seedNotificationDefaultsV1 } from '../src/notification/notification-defaults-v1';
-import type { NotificationProvider, NotificationSendRequest, NotificationSendResult } from '../src/notification/notification.types';
+import { seedNotificationDefaultsV2 } from '../src/notification/notification-defaults-v2';
+import type {
+  NotificationProvider,
+  NotificationSendRequest,
+  NotificationSendResult,
+} from '../src/notification/notification.types';
 import { TransferService } from '../src/transfer/transfer.service';
 import { TransferStatus } from '../src/transfer/transfer.enums';
 import {
@@ -70,17 +79,33 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
   let fundingAccountId: string;
 
   const workforceConfig = {
-    enabled: true, oidcIssuer: 'https://workforce.test', oidcJwksUri: 'https://workforce.test/jwks',
-    oidcAudience: 'workforce', oidcClientId: 'test-client', internalAudience: 'workforce-admin',
-    sessionTtlSeconds: 900, jwksJson: [], financeRoles: [], makerCheckerRules: [], rateLimits: [],
+    enabled: true,
+    oidcIssuer: 'https://workforce.test',
+    oidcJwksUri: 'https://workforce.test/jwks',
+    oidcAudience: 'workforce',
+    oidcClientId: 'test-client',
+    internalAudience: 'workforce-admin',
+    sessionTtlSeconds: 900,
+    jwksJson: [],
+    financeRoles: [],
+    makerCheckerRules: [],
+    rateLimits: [],
     trustedProxies: ['127.0.0.1'],
   };
   const workforceSessions = {
     validate: async (token: string, audience: string) => {
       if (!token.startsWith('workforce-')) throw new UnauthorizedException('invalid');
       const type = token.replace('workforce-', '').toUpperCase();
-      return { type, principalId: `test-${type}`, audience, roles: [],
-        scopes: ['notification.view_deliveries'], customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE' };
+      return {
+        type,
+        principalId: `test-${type}`,
+        audience,
+        roles: [],
+        scopes: ['notification.view_deliveries'],
+        customerAccess: 'NONE',
+        agentAccess: 'NONE',
+        aggregatorAccess: 'NONE',
+      };
     },
   };
 
@@ -88,13 +113,18 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
     ds = await createIntegrationDataSource('trnotprod1');
     provider = new RecordingSmsProvider();
     const module = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(DataSource).useValue(ds)
-      .overrideProvider(A2WorkforceSessionService).useValue(workforceSessions)
-      .overrideProvider(A2_WORKFORCE_CONFIG).useValue(workforceConfig)
+      .overrideProvider(DataSource)
+      .useValue(ds)
+      .overrideProvider(A2WorkforceSessionService)
+      .useValue(workforceSessions)
+      .overrideProvider(A2_WORKFORCE_CONFIG)
+      .useValue(workforceConfig)
       // Override the CONFIGURABLE SMS delegate, not NOTIFICATION_PROVIDER_TOKEN, so
       // Arena 1's NormalizingSmsNotificationProvider boundary stays in the dispatch path
       // and Nigerian E.164 convergence is exercised end-to-end.
-      .overrideProvider(ConfigurableSmsNotificationProvider).useValue(provider).compile();
+      .overrideProvider(ConfigurableSmsNotificationProvider)
+      .useValue(provider)
+      .compile();
     app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
@@ -118,8 +148,12 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
     const rows: Array<{ tablename: string }> = await ds.query(
       `SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename NOT IN ('typeorm_migrations','ledger_accounts')`,
     );
-    if (rows.length) await ds.query(`TRUNCATE ${rows.map((r) => `"${r.tablename}"`).join(', ')} RESTART IDENTITY CASCADE`);
+    if (rows.length)
+      await ds.query(
+        `TRUNCATE ${rows.map((r) => `"${r.tablename}"`).join(', ')} RESTART IDENTITY CASCADE`,
+      );
     await seedNotificationDefaultsV1(ds.manager);
+    await seedNotificationDefaultsV2(ds.manager);
     const funding = await ledger.createAccount({
       code: `TEST-FUNDING-${randomUUID().slice(0, 8)}`,
       name: 'Seed funding source',
@@ -139,7 +173,10 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
     phone: string;
   }
 
-  async function seedWalletPair(label: string, fundMinor = '100000'): Promise<{ source: SeededWallet; destination: SeededWallet }> {
+  async function seedWalletPair(
+    label: string,
+    fundMinor = '100000',
+  ): Promise<{ source: SeededWallet; destination: SeededWallet }> {
     const seed = async (side: string, phone: string): Promise<SeededWallet> => {
       const account = await ledger.createAccount({
         code: `WALLET-${label}-${side}-${randomUUID().slice(0, 8)}`,
@@ -173,13 +210,25 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
         reference: `fund-${randomUUID().slice(0, 8)}`,
         description: 'Seed wallet balance',
         lines: [
-          { accountId: fundingAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: fundMinor },
+          {
+            accountId: fundingAccountId,
+            direction: LedgerEntryDirection.DEBIT,
+            amountMinor: fundMinor,
+          },
           { accountId: account.id, direction: LedgerEntryDirection.CREDIT, amountMinor: fundMinor },
         ],
       });
-      return { customerId: participant.customerId, walletAccountId: participant.walletAccountId, ledgerAccountId: account.id, phone };
+      return {
+        customerId: participant.customerId,
+        walletAccountId: participant.walletAccountId,
+        ledgerAccountId: account.id,
+        phone,
+      };
     };
-    return { source: await seed('src', '8030000001'), destination: await seed('dst', '8030000002') };
+    return {
+      source: await seed('src', '8030000001'),
+      destination: await seed('dst', '8030000002'),
+    };
   }
 
   async function outboxRows(eventType: string): Promise<Array<Record<string, any>>> {
@@ -208,7 +257,11 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
       // binding. This suite drives TransferService directly with no HTTP principal, so an INTERNAL
       // binding is used — `assertWalletOwnership` deliberately does not restrict it — leaving every
       // assertion in this file unchanged.
-      ownership: { kind: 'INTERNAL' as const, principalId: 'integration-spec', principalType: 'SERVICE' as const },
+      ownership: {
+        kind: 'INTERNAL' as const,
+        principalId: 'integration-spec',
+        principalType: 'SERVICE' as const,
+      },
       sourceWalletId: source.walletAccountId,
       destinationWalletId: destination.walletAccountId,
       amountMinor: '12000',
@@ -250,30 +303,47 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
 
     // --- Accounting invariants: exactly one balanced journal, correct direction/amounts ---
     const journals: Array<{ id: string }> = await ds.query(
-      `SELECT id FROM ledger_journals WHERE idempotency_key = $1`, [`transfer:${view.id}`]);
+      `SELECT id FROM ledger_journals WHERE idempotency_key = $1`,
+      [`transfer:${view.id}`],
+    );
     expect(journals).toHaveLength(1);
-    const lines: Array<{ ledger_account_id: string; direction: string; amount_minor: string }> = await ds.query(
-      `SELECT ledger_account_id, direction, amount_minor FROM ledger_lines WHERE journal_id = $1`, [view.journalId]);
+    const lines: Array<{ ledger_account_id: string; direction: string; amount_minor: string }> =
+      await ds.query(
+        `SELECT ledger_account_id, direction, amount_minor FROM ledger_lines WHERE journal_id = $1`,
+        [view.journalId],
+      );
     expect(lines).toHaveLength(2);
-    expect(lines).toEqual(expect.arrayContaining([
-      { ledger_account_id: source.ledgerAccountId, direction: 'DEBIT', amount_minor: '12000' },
-      { ledger_account_id: destination.ledgerAccountId, direction: 'CREDIT', amount_minor: '12000' },
-    ]));
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        { ledger_account_id: source.ledgerAccountId, direction: 'DEBIT', amount_minor: '12000' },
+        {
+          ledger_account_id: destination.ledgerAccountId,
+          direction: 'CREDIT',
+          amount_minor: '12000',
+        },
+      ]),
+    );
 
     // --- Shared-outbox isolation: snapshot before the notification consumer runs ---
     const before = await ds.query(
-      `SELECT status, attempts, published_at, last_error, available_at FROM outbox_events WHERE id = $1`, [row.id]);
+      `SELECT status, attempts, published_at, last_error, available_at FROM outbox_events WHERE id = $1`,
+      [row.id],
+    );
 
     // --- Consumer: one tick materializes AND sends (worker drains outbox, then processor) ---
     const tick = await worker.tick();
     expect(tick.outboxProcessed).toBe(1);
 
     const after = await ds.query(
-      `SELECT status, attempts, published_at, last_error, available_at FROM outbox_events WHERE id = $1`, [row.id]);
+      `SELECT status, attempts, published_at, last_error, available_at FROM outbox_events WHERE id = $1`,
+      [row.id],
+    );
     expect(after).toEqual(before); // the notification consumer never acknowledges/mutates shared outbox state
 
     const receipts = await ds.query(
-      `SELECT consumer_name, status FROM notification_outbox_receipts WHERE outbox_event_id = $1`, [row.id]);
+      `SELECT consumer_name, status FROM notification_outbox_receipts WHERE outbox_event_id = $1`,
+      [row.id],
+    );
     expect(receipts).toEqual([{ consumer_name: 'notification.v1', status: 'MATERIALIZED' }]);
 
     const sent = await deliveries();
@@ -295,8 +365,14 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
       // rendered reference is UUID-prefix dependent by design — assert the real contract.
       expect(d.message).toMatch(/Ref (?:[0-9a-f]{8}|your request)\./);
       // Privacy: no journal id, payment reference, request hash, narration prose, or PIN.
-      for (const forbidden of [String(view.journalId), 'transfer-ref', String(payload.requestHash),
-        'sentinel-narration', '123456', 'integration transfer']) {
+      for (const forbidden of [
+        String(view.journalId),
+        'transfer-ref',
+        String(payload.requestHash),
+        'sentinel-narration',
+        '123456',
+        'integration transfer',
+      ]) {
         expect(d.message).not.toContain(forbidden);
         expect(JSON.stringify(d.payload)).not.toContain(forbidden);
       }
@@ -327,34 +403,48 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
     const replayView = await transfers.createTransfer(command as any);
     expect(replayView.id).toBe(view.id);
     expect(await outboxRows('transfer.completed')).toHaveLength(1);
-    expect((await ds.query(`SELECT id FROM ledger_journals WHERE idempotency_key = $1`, [`transfer:${view.id}`])).length).toBe(1);
+    expect(
+      (
+        await ds.query(`SELECT id FROM ledger_journals WHERE idempotency_key = $1`, [
+          `transfer:${view.id}`,
+        ])
+      ).length,
+    ).toBe(1);
     expect(await deliveries()).toHaveLength(2);
   }, 120_000);
 
   it('2. failed transfer: the audited producer emits a v1 transfer.failed event with authoritative recipient identity, only the source audience is notified, no journal exists, failure prose never renders, and replay does not duplicate', async () => {
     const { source, destination } = await seedWalletPair('tr-fail');
-    await ds.query(`UPDATE wallet_accounts SET status = 'SUSPENDED' WHERE id = $1`, [destination.walletAccountId]);
+    await ds.query(`UPDATE wallet_accounts SET status = 'SUSPENDED' WHERE id = $1`, [
+      destination.walletAccountId,
+    ]);
 
-    const failure = await transfers.createTransfer({
-// INTEGRATION (integration/main-backend-frontend-20261030): main's required
-                                                   // `ownership` binding (src/wallet/wallet-ownership.ts). This suite drives the service
-                                                   // directly with no HTTP principal, so an INTERNAL binding is used — which
-                                                   // `assertWalletOwnership` deliberately does not restrict — leaving behaviour unchanged.
-      ownership: { kind: 'INTERNAL', principalId: 'integration-spec', principalType: 'SERVICE' },
-      sourceWalletId: source.walletAccountId,
-      destinationWalletId: destination.walletAccountId,
-      amountMinor: '12000',
-      currency: 'NGN',
-      idempotencyKey: `tr-${randomUUID()}`,
-      reference: 'transfer-ref',
-      narration: 'failure-path narration',
-    } as any).then(() => null, (error: unknown) => error);
+    const failure = await transfers
+      .createTransfer({
+        // INTEGRATION (integration/main-backend-frontend-20261030): main's required
+        // `ownership` binding (src/wallet/wallet-ownership.ts). This suite drives the service
+        // directly with no HTTP principal, so an INTERNAL binding is used — which
+        // `assertWalletOwnership` deliberately does not restrict — leaving behaviour unchanged.
+        ownership: { kind: 'INTERNAL', principalId: 'integration-spec', principalType: 'SERVICE' },
+        sourceWalletId: source.walletAccountId,
+        destinationWalletId: destination.walletAccountId,
+        amountMinor: '12000',
+        currency: 'NGN',
+        idempotencyKey: `tr-${randomUUID()}`,
+        reference: 'transfer-ref',
+        narration: 'failure-path narration',
+      } as any)
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
     expect(failure).toBeInstanceOf(HttpException);
     expect((failure as HttpException).getStatus()).toBe(409);
     {
       // capture the machine failure code from the persisted row instead of prose
       const failedRows: Array<{ id: string; failure_code: string }> = await ds.query(
-        `SELECT id, failure_code FROM transfers WHERE status = 'FAILED'`);
+        `SELECT id, failure_code FROM transfers WHERE status = 'FAILED'`,
+      );
       expect(failedRows).toHaveLength(1);
       expect(failedRows[0]!.failure_code).toBe('WALLET_NOT_ACTIVE');
 
@@ -378,19 +468,26 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
       // Accounting: no value moved.
       const lines: Array<{ ledger_account_id: string }> = await ds.query(
         `SELECT ledger_account_id FROM ledger_lines WHERE ledger_account_id IN ($1, $2)`,
-        [source.ledgerAccountId, destination.ledgerAccountId]);
+        [source.ledgerAccountId, destination.ledgerAccountId],
+      );
       // (funding seed lines exist only on the funding->wallet journals; the transfer posted none)
       const transferJournals = await ds.query(
-        `SELECT id FROM ledger_journals WHERE idempotency_key = $1`, [`transfer:${failedRows[0]!.id}`]);
+        `SELECT id FROM ledger_journals WHERE idempotency_key = $1`,
+        [`transfer:${failedRows[0]!.id}`],
+      );
       expect(transferJournals).toHaveLength(0);
       expect(lines.length).toBe(2); // exactly the two seed funding credits, one per wallet
 
       const before = await ds.query(
-        `SELECT status, attempts, published_at, last_error FROM outbox_events WHERE id = $1`, [row.id]);
+        `SELECT status, attempts, published_at, last_error FROM outbox_events WHERE id = $1`,
+        [row.id],
+      );
       const tick = await worker.tick();
       expect(tick.outboxProcessed).toBe(1);
       const after = await ds.query(
-        `SELECT status, attempts, published_at, last_error FROM outbox_events WHERE id = $1`, [row.id]);
+        `SELECT status, attempts, published_at, last_error FROM outbox_events WHERE id = $1`,
+        [row.id],
+      );
       expect(after).toEqual(before);
 
       const sent = await deliveries();
@@ -417,12 +514,17 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
       `INSERT INTO outbox_events
          (id, event_type, event_key, aggregate_type, aggregate_id, payload, status, schema_version, attempts, available_at)
        VALUES ($1, 'transfer.completed', $2, 'TRANSFER', $3, $4::jsonb, 'PENDING', 1, 0, NOW())`,
-      [randomUUID(), `transfer.completed:${transferId}:v1`, transferId,
-        JSON.stringify({ transferId, journalId: randomUUID(), paymentReference: 'PR-1' })],
+      [
+        randomUUID(),
+        `transfer.completed:${transferId}:v1`,
+        transferId,
+        JSON.stringify({ transferId, journalId: randomUUID(), paymentReference: 'PR-1' }),
+      ],
     );
     expect(await dispatcher.processPendingOutboxEvents(10)).toBe(1);
     const receipts = await ds.query(
-      `SELECT status, reason FROM notification_outbox_receipts WHERE consumer_name = 'notification.v1'`);
+      `SELECT status, reason FROM notification_outbox_receipts WHERE consumer_name = 'notification.v1'`,
+    );
     expect(receipts).toEqual([{ status: 'QUARANTINED', reason: 'NO_NOTIFICATION_INTENTS' }]);
     expect(await deliveries()).toHaveLength(0);
     expect(provider.sent).toHaveLength(0);
@@ -442,7 +544,11 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
     try {
       await expect(
         transfers.createTransfer({
-          ownership: { kind: 'INTERNAL', principalId: 'integration-spec', principalType: 'SERVICE' },
+          ownership: {
+            kind: 'INTERNAL',
+            principalId: 'integration-spec',
+            principalType: 'SERVICE',
+          },
           sourceWalletId: source.walletAccountId,
           destinationWalletId: destination.walletAccountId,
           amountMinor: '12000',
@@ -459,7 +565,8 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
     const completed = await ds.query(`SELECT id FROM transfers WHERE status = 'COMPLETED'`);
     expect(completed).toHaveLength(0);
     const journals = await ds.query(
-      `SELECT id FROM ledger_journals WHERE idempotency_key LIKE 'transfer:%'`);
+      `SELECT id FROM ledger_journals WHERE idempotency_key LIKE 'transfer:%'`,
+    );
     expect(journals).toHaveLength(0);
     const consumerRan = await dispatcher.processPendingOutboxEvents(10);
     expect(consumerRan).toBe(0);

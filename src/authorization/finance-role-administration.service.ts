@@ -234,7 +234,8 @@ export class A2FinanceRoleAdministrationService {
       );
     }
     const def = this.config.roles.find((r) => r.roleKey === 'SUPER_ADMIN' && r.enabled);
-    if (!def) throw new ForbiddenException('SUPER_ADMIN role is disabled or undefined in configuration');
+    if (!def)
+      throw new ForbiddenException('SUPER_ADMIN role is disabled or undefined in configuration');
 
     const ref = this.reference(principalId, 'SUPER_ADMIN'),
       r = this.ds.getRepository(A2FinanceRoleAssignment),
@@ -356,12 +357,7 @@ export class A2FinanceRoleAdministrationService {
       throw new ForbiddenException('Role is not administrator-assignable');
     if (!c.principal.roles.includes('ADMINISTRATOR') && !c.principal.roles.includes('SUPER_ADMIN'))
       throw new ForbiddenException('Operational role assignment initiator denied');
-    return this.persist(
-      c,
-      'WORKFORCE_ROLE_ASSIGN_OPERATIONAL',
-      [],
-      'ADMINISTRATOR_SCOPE',
-    );
+    return this.persist(c, 'WORKFORCE_ROLE_ASSIGN_OPERATIONAL', [], 'ADMINISTRATOR_SCOPE');
   }
   private async revokeOperational(c: A2RoleAssignmentCommandV1) {
     if (!ADMINISTRATOR_OPERATIONAL_ROLE_KEYS.has(c.roleKey))

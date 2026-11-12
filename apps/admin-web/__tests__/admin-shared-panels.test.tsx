@@ -48,16 +48,16 @@ describe('Admin Web shared-screen improvements', () => {
   test('Limit registry reads use the existing profile and rule endpoints and render structured rows', async () => {
     setPrincipal(['SUPER_ADMIN'], ['limit.view']);
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-      if (path === '/internal/limit-profiles') return Promise.resolve([{ code: 'AGENT_STANDARD', name: 'Agent Standard', kind: 'AGENT', status: 'ACTIVE', enabled: true }]);
-      if (path === '/internal/limit-rules') return Promise.resolve({ data: [{ id: 'rule-1', limitProfileCode: 'AGENT_STANDARD', product: 'CASH_IN', currency: 'NGN', dimension: 'PER_DAY', limitValueMinor: '2500000', isActive: true }] });
+      if (path === '/internal/limit-profiles?page=1&limit=20') return Promise.resolve([{ code: 'AGENT_STANDARD', name: 'Agent Standard', kind: 'AGENT', status: 'ACTIVE', enabled: true, configurationStatus: 'CONFIGURED', version: 1 }]);
+      if (path === '/internal/limit-rules?page=1&limit=20') return Promise.resolve({ data: [{ id: 'd9f831b1-3166-4e9c-b812-955fc6b0818e', limitProfileCode: 'AGENT_STANDARD', product: 'CASH_IN', direction: null, channel: null, currency: 'NGN', dimension: 'DAILY_AMOUNT', limitValueMinor: '2500000', limitValueCount: null, version: 1, effectiveFrom: '2026-01-01T00:00:00Z', effectiveTo: null, isActive: true, priority: 0 }], total: 1, page: 1, limit: 20, totalPages: 1, hasNextPage: false });
       return Promise.resolve([]);
     });
 
     const view = render(<CommercialRulesScreen initialTab="limits" />);
     expect((await view.findAllByText('AGENT_STANDARD')).length).toBeGreaterThan(0);
     expect((await view.findAllByText('CASH_IN')).length).toBeGreaterThan(0);
-    expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-profiles');
-    expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-rules');
+    expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-profiles?page=1&limit=20');
+    expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-rules?page=1&limit=20');
     expect(ApiClient.get).not.toHaveBeenCalledWith('/internal/limit-catalogue');
     expect(view.container.querySelector('pre')).toBeNull();
   });
@@ -68,7 +68,7 @@ describe('Admin Web shared-screen improvements', () => {
       if (path === '/internal/metrics') return Promise.resolve({ generatedAt: '2026-10-23T10:00:00.000Z', metrics: { jobs_completed: '8' } });
       if (path === '/internal/diagnostics') return Promise.resolve({ status: 'PASS', database: { status: 'connected' }, pendingOutbox: 0 });
       if (path === '/internal/outbox') return Promise.resolve([{ id: 'outbox-1', eventType: 'customer.created', status: 'PENDING', attempts: 0, payload: { customerId: 'cust-1' } }]);
-      if (path.startsWith('/internal/notifications/deliveries?')) return Promise.resolve({ data: [{ id: 'delivery-1', eventType: 'KYC_APPROVED', channel: 'SMS', recipientType: 'CUSTOMER', recipientId: 'cust-1', status: 'FAILED', attempts: 2, errorCode: 'UNCLASSIFIED' }], total: 1, page: 1, limit: 20, hasNextPage: false });
+      if (path.startsWith('/internal/notifications/deliveries?')) return Promise.resolve({ data: [{ id: 'delivery-1', eventType: 'KYC_APPROVED', eventKey: 'synthetic', createdAt: '2026-11-01T00:00:00Z', channel: 'SMS', recipientType: 'CUSTOMER', recipientId: 'cust-1', status: 'FAILED', attempts: 2, errorCode: 'UNCLASSIFIED' }], total: 1, page: 1, limit: 20, totalPages: 1, hasNextPage: false });
       return Promise.resolve([]);
     });
 
@@ -103,6 +103,7 @@ describe('Admin Web shared-screen improvements', () => {
   test('Workforce overview maps the current API shape and SUPPORT disable uses its guarded endpoint', async () => {
     setPrincipal(['ADMINISTRATOR'], ['workforce.dashboard.view', 'workforce.user.suspend']);
     (ApiClient.get as jest.Mock).mockResolvedValue({ activeWorkforceHeadcount: 7, roleDistribution: [{ roleKey: 'OPERATIONS', count: 3 }], activeSessionCount: 2 });
+    (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'support-user-42', status: 'DISABLED' });
 
     const view = render(<WorkforceAdminScreen />);
     expect(await view.findByText('Active workforce headcount')).toBeTruthy();
@@ -114,6 +115,7 @@ describe('Admin Web shared-screen improvements', () => {
     fireEvent.change(view.getByPlaceholderText('SUPPORT user ID'), { target: { value: 'support-user-42' } });
     fireEvent.change(view.getByPlaceholderText('Reason for disabling access'), { target: { value: 'Access no longer required' } });
     fireEvent.click(view.getByRole('button', { name: 'Disable SUPPORT User' }));
+    fireEvent.click(view.getByRole('button', { name: 'Confirm disable' }));
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenCalledWith('/internal/admin/support/workforce-users/support-user-42/disable', { reason: 'Access no longer required' });
       expect(view.getByText('Support user support-user-42 disabled.')).toBeTruthy();
@@ -129,7 +131,7 @@ describe('Admin Web shared-screen improvements', () => {
       if (path.endsWith('/onboarding-readiness')) return Promise.resolve({ status: 'NOT_READY', onboardingStatus: null, missing: [] });
       if (path.endsWith('/eligibility')) return Promise.resolve({ status: 'PENDING', statusChangedAt: '2026-10-23T10:00:00.000Z' });
       if (path.endsWith('/transactions?page=1&limit=5')) return Promise.resolve({ items: [] });
-      if (path.endsWith('/wallets')) return Promise.resolve({ data: [] });
+      if (path.endsWith('/wallets')) return Promise.resolve({ data: [], total: 0 });
       if (path.endsWith('/profile')) return Promise.resolve({ displayName: 'Synthetic Customer', legalName: null, dateOfBirth: null, nationality: null });
       if (path.endsWith('/addresses')) return Promise.resolve([]);
       if (path.endsWith('/contact-methods')) return Promise.resolve([{ id: 'contact-1', type: 'EMAIL', value: 'synthetic@example.test', isPrimary: true, verifiedAt: null }]);
@@ -169,11 +171,13 @@ describe('Admin Web shared-screen improvements', () => {
 
   test('Super-Admin recovery displays named result fields instead of a raw JSON string', async () => {
     setPrincipal(['ADMINISTRATOR'], ['workforce.super_admin.recover']);
-    (ApiClient.post as jest.Mock).mockResolvedValue({ recoveryReference: 'a2-recovery-123', operation: 'REVOKE_SUPER_ADMIN', targetPrincipalId: 'issuer:ceo', revokedSessionCount: 1, auditReference: 'audit-1' });
+    (ApiClient.post as jest.Mock).mockResolvedValue({ recoveryReference: 'a2-recovery-123', operation: 'REVOKE_SUPER_ADMIN', targetPrincipalId: 'issuer:ceo', targetAssignmentReference:'assignment', reason:'test reason', consumedBy:'issuer:ADMINISTRATOR', consumedAt:'2026-10-23T10:00:00Z', revokedSessionCount: 1, auditReference: 'audit-1' });
+    const statement = `e30.${btoa(JSON.stringify({operation:'REVOKE_SUPER_ADMIN',targetPrincipalId:'issuer:ceo',targetAssignmentReference:'assignment',reason:'test reason'})).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_')}.signature`;
 
     const view = render(<SuperAdminRecoveryScreen />);
-    fireEvent.change(view.getByPlaceholderText('Paste RS256-signed recovery statement…'), { target: { value: 'signed.statement.value' } });
+    fireEvent.change(view.getByPlaceholderText('Paste RS256-signed recovery statement…'), { target: { value: statement } });
     fireEvent.click(view.getByRole('button', { name: 'Execute Recovery' }));
+    fireEvent.click(view.getByRole('button', { name: 'Confirm recovery' }));
     expect(await view.findByText('a2-recovery-123')).toBeTruthy();
     expect(view.container.querySelector('pre')).toBeNull();
   });

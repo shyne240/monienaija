@@ -11,7 +11,11 @@ import { SupportAgentController } from './support-agent.controller';
 import { SupportInternalController } from './support-internal.controller';
 
 @Module({
-  imports: [forwardRef(() => AuthorizationModule), OperationsModule, TypeOrmModule.forFeature([SupportTicket, SupportTicketMessage])],
+  imports: [
+    forwardRef(() => AuthorizationModule),
+    OperationsModule,
+    TypeOrmModule.forFeature([SupportTicket, SupportTicketMessage]),
+  ],
   controllers: [SupportCustomerController, SupportAgentController, SupportInternalController],
   providers: [SupportService],
   exports: [SupportService],

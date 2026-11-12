@@ -14,7 +14,6 @@ import {
 
 import type { ValueTransformer } from 'typeorm';
 
-import { LimitDirection, LimitDimension } from './limit-catalog.enums';
 import { LimitProfile } from './limit-profile.entity';
 
 const nullableBigintTransformer: ValueTransformer = {
@@ -29,17 +28,29 @@ const nullableBigintTransformer: ValueTransformer = {
 @Index('idx_limit_rules_profile_product', ['limitProfileCode', 'product'])
 @Index('idx_limit_rules_dimension', ['dimension'])
 @Index('idx_limit_rules_effective', ['effectiveFrom', 'effectiveTo'])
-@Index('uq_limit_rules_active_key', ['limitProfileCode', 'product', 'direction', 'channel', 'currency', 'dimension', 'effectiveFrom'], {
-  unique: true,
-  where: 'deleted_at IS NULL',
-})
+@Index(
+  'uq_limit_rules_active_key',
+  ['limitProfileCode', 'product', 'direction', 'channel', 'currency', 'dimension', 'effectiveFrom'],
+  {
+    unique: true,
+    where: 'deleted_at IS NULL',
+  },
+)
 @Check('chk_limit_rules_currency', "currency ~ '^[A-Z]{3}$'")
 @Check('chk_limit_rules_product', "product ~ '^[A-Z0-9_][A-Z0-9_.-]{1,79}$'")
-@Check('chk_limit_rules_direction', "direction IS NULL OR direction IN ('INCOMING','OUTGOING','BOTH')")
-@Check('chk_limit_rules_dimension', "dimension IN ('MIN_AMOUNT_PER_TX','MAX_AMOUNT_PER_TX','DAILY_AMOUNT','WEEKLY_AMOUNT','MONTHLY_AMOUNT','YEARLY_AMOUNT','DAILY_COUNT','WEEKLY_COUNT','MONTHLY_COUNT','YEARLY_COUNT','WALLET_BALANCE_MAX')")
+@Check(
+  'chk_limit_rules_direction',
+  "direction IS NULL OR direction IN ('INCOMING','OUTGOING','BOTH')",
+)
+@Check(
+  'chk_limit_rules_dimension',
+  "dimension IN ('MIN_AMOUNT_PER_TX','MAX_AMOUNT_PER_TX','DAILY_AMOUNT','WEEKLY_AMOUNT','MONTHLY_AMOUNT','YEARLY_AMOUNT','DAILY_COUNT','WEEKLY_COUNT','MONTHLY_COUNT','YEARLY_COUNT','WALLET_BALANCE_MAX')",
+)
 @Check('chk_limit_rules_version', 'version > 0')
 @Check('chk_limit_rules_effective', 'effective_to IS NULL OR effective_to > effective_from')
-@Check('chk_limit_rules_amount_count_exclusive', `
+@Check(
+  'chk_limit_rules_amount_count_exclusive',
+  `
   (
     dimension IN ('MIN_AMOUNT_PER_TX','MAX_AMOUNT_PER_TX','DAILY_AMOUNT','WEEKLY_AMOUNT','MONTHLY_AMOUNT','YEARLY_AMOUNT','WALLET_BALANCE_MAX')
     AND limit_value_minor IS NOT NULL AND limit_value_minor >= 0 AND limit_value_count IS NULL
@@ -49,7 +60,8 @@ const nullableBigintTransformer: ValueTransformer = {
     dimension IN ('DAILY_COUNT','WEEKLY_COUNT','MONTHLY_COUNT','YEARLY_COUNT')
     AND limit_value_count IS NOT NULL AND limit_value_count >= 0 AND limit_value_minor IS NULL
   )
-`)
+`,
+)
 @Check('chk_limit_rules_min_not_fee', "dimension <> 'MIN_AMOUNT_PER_TX' OR limit_value_minor >= 0")
 export class LimitRule {
   @PrimaryGeneratedColumn('uuid')
@@ -77,7 +89,12 @@ export class LimitRule {
   @Column({ type: 'varchar', length: 40 })
   dimension!: string; // LimitDimension
 
-  @Column({ name: 'limit_value_minor', type: 'bigint', transformer: nullableBigintTransformer, nullable: true })
+  @Column({
+    name: 'limit_value_minor',
+    type: 'bigint',
+    transformer: nullableBigintTransformer,
+    nullable: true,
+  })
   limitValueMinor!: string | null;
 
   @Column({ name: 'limit_value_count', type: 'integer', nullable: true })

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-require-imports */
 /**
  * V1-SPRINT2-AUTHZ-01 (ARENA 3) — HTTP-level authorization coverage for the two Agent
  * receiving-number read endpoints, which previously had NO effective authorization:

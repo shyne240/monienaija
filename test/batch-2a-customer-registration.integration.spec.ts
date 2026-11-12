@@ -1,12 +1,12 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
-// @ts-nocheck
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any */
+
 /** Batch 2A: real PostgreSQL + authenticated HTTP proof for Admin customer registration and corrections. */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
@@ -26,7 +26,6 @@ process.env.DB_HOST ??= postgresConfig.host;
 process.env.DB_NAME ??= postgresConfig.adminDatabase;
 process.env.DB_USER ??= postgresConfig.username;
 process.env.DB_PASSWORD ??= postgresConfig.password;
-const { AppModule } = require('../src/app.module');
 
 const workforceConfig: A2WorkforceConfigurationV1 = {
   enabled: true,
@@ -64,6 +63,7 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
     dataSource = await createIntegrationDataSource('batch2acustomer');
+    const { AppModule } = await import('../src/app.module');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
@@ -75,7 +75,9 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     sessionService = moduleRef.get(A2WorkforceSessionService);
@@ -85,7 +87,9 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
     process.env.NODE_ENV = originalNodeEnv;
     if (app) await app.close().catch(() => undefined);
     if (dataSource) {
-      await destroyIntegrationDataSource(dataSource).catch(() => dataSource.destroy().catch(() => undefined));
+      await destroyIntegrationDataSource(dataSource).catch(() =>
+        dataSource.destroy().catch(() => undefined),
+      );
     }
   }, 60_000);
 
@@ -234,7 +238,11 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
     const duplicateIdentity = await request(app.getHttpServer())
       .post(`/api/v1/customers/${customerId}/identity-document`)
       .set(auth(superAdmin.token))
-      .send({ type: 'NIN', documentNumber: syntheticIdentityNumber.toLowerCase(), issuingCountry: 'NG' })
+      .send({
+        type: 'NIN',
+        documentNumber: syntheticIdentityNumber.toLowerCase(),
+        issuingCountry: 'NG',
+      })
       .expect(409);
     expect(JSON.stringify(duplicateIdentity.body)).not.toContain(syntheticIdentityNumber);
 
@@ -247,7 +255,11 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
       .get(`/api/v1/customers/${customerId}`)
       .set(auth(superAdmin.token))
       .expect(200);
-    expect(stillDraft.body).toMatchObject({ status: 'DRAFT', kycLevel: 'NONE', kycStatus: 'NOT_STARTED' });
+    expect(stillDraft.body).toMatchObject({
+      status: 'DRAFT',
+      kycLevel: 'NONE',
+      kycStatus: 'NOT_STARTED',
+    });
 
     const walletCountBefore = await dataSource.query(
       'SELECT COUNT(*)::int AS count FROM wallet_accounts WHERE customer_id = $1',
@@ -307,7 +319,11 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
     const updatedProfile = await request(app.getHttpServer())
       .patch(`/api/v1/customers/${customerId}/profile`)
       .set(auth(superAdmin.token))
-      .send({ displayName: 'Synthetic Batch 2A Revised', firstName: 'Revised', legalName: 'Synthetic Revised Customer' })
+      .send({
+        displayName: 'Synthetic Batch 2A Revised',
+        firstName: 'Revised',
+        legalName: 'Synthetic Revised Customer',
+      })
       .expect(200);
     expect(updatedProfile.body).toMatchObject({
       displayName: 'Synthetic Batch 2A Revised',
@@ -323,7 +339,14 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
     const secondAddress = await request(app.getHttpServer())
       .post(`/api/v1/customers/${customerId}/address`)
       .set(auth(superAdmin.token))
-      .send({ type: 'MAILING', lineOne: '3 Synthetic Crescent', city: 'Abuja', state: 'FCT', country: 'NG', isPrimary: true })
+      .send({
+        type: 'MAILING',
+        lineOne: '3 Synthetic Crescent',
+        city: 'Abuja',
+        state: 'FCT',
+        country: 'NG',
+        isPrimary: true,
+      })
       .expect(201);
 
     await request(app.getHttpServer())
@@ -355,24 +378,39 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
       .get(`/api/v1/customers/${customerId}/addresses`)
       .set(auth(superAdmin.token))
       .expect(200);
-    expect(storedAddresses.body.find((item: any) => item.id === address.body.id).lineOne).toBe('2 Synthetic Crescent');
-    expect(storedAddresses.body.find((item: any) => item.id === address.body.id).isPrimary).toBe(false);
-    expect(storedAddresses.body.find((item: any) => item.id === secondAddress.body.id).isPrimary).toBe(true);
+    expect(storedAddresses.body.find((item: any) => item.id === address.body.id).lineOne).toBe(
+      '2 Synthetic Crescent',
+    );
+    expect(storedAddresses.body.find((item: any) => item.id === address.body.id).isPrimary).toBe(
+      false,
+    );
+    expect(
+      storedAddresses.body.find((item: any) => item.id === secondAddress.body.id).isPrimary,
+    ).toBe(true);
 
     const storedContacts = await request(app.getHttpServer())
       .get(`/api/v1/customers/${customerId}/contact-methods`)
       .set(auth(superAdmin.token))
       .expect(200);
-    expect(storedContacts.body.find((item: any) => item.id === contact.body.id).isPrimary).toBe(false);
-    expect(storedContacts.body.find((item: any) => item.id === alternateContact.body.id).isPrimary).toBe(true);
+    expect(storedContacts.body.find((item: any) => item.id === contact.body.id).isPrimary).toBe(
+      false,
+    );
+    expect(
+      storedContacts.body.find((item: any) => item.id === alternateContact.body.id).isPrimary,
+    ).toBe(true);
 
     const storedIdentity = await request(app.getHttpServer())
       .get(`/api/v1/customers/${customerId}/identity-documents`)
       .set(auth(superAdmin.token))
       .expect(200);
     expect(storedIdentity.body).toHaveLength(2);
-    expect(storedIdentity.body.find((item: any) => item.id === identity.body.id).maskedDocumentNumber).toContain('0003');
-    expect(storedIdentity.body.find((item: any) => item.id === secondIdentity.body.id).maskedDocumentNumber).toContain('0002');
+    expect(
+      storedIdentity.body.find((item: any) => item.id === identity.body.id).maskedDocumentNumber,
+    ).toContain('0003');
+    expect(
+      storedIdentity.body.find((item: any) => item.id === secondIdentity.body.id)
+        .maskedDocumentNumber,
+    ).toContain('0002');
     expect(JSON.stringify(storedIdentity.body)).not.toContain('00000000003');
     expect(JSON.stringify(storedIdentity.body)).not.toContain('00000000002');
 
@@ -494,11 +532,13 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
         .get('/api/v1/internal/customers?search=Synthetic%20Individual')
         .set(auth(superAdmin.token))
         .expect(200);
-      expect(directory.body.data.find((item: any) => item.id === individual.body.id)).toMatchObject({
-        status: 'DRAFT',
-        displayName: 'Synthetic Individual',
-        legalName: 'Synthetic Individual',
-      });
+      expect(directory.body.data.find((item: any) => item.id === individual.body.id)).toMatchObject(
+        {
+          status: 'DRAFT',
+          displayName: 'Synthetic Individual',
+          legalName: 'Synthetic Individual',
+        },
+      );
     }
 
     const businessDirectory = await request(app.getHttpServer())

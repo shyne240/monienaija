@@ -1,10 +1,7 @@
 import { Transform } from 'class-transformer';
 import { IsOptional, IsString, Validate } from 'class-validator';
 
-import {
-  normalizeCustomerText,
-  normalizeIsoCountryCode,
-} from '../customer-validation';
+import { normalizeCustomerText, normalizeIsoCountryCode } from '../customer-validation';
 import { CustomerFieldPolicyConstraint } from '../customer-validation.constraints';
 
 function trimText(value: unknown): unknown {

@@ -116,9 +116,9 @@ describe('Sprint 1 F-01 — Historical & Cross-Boundary Provider Reference Sanit
       sanitizeProviderRefForBoundary('xkeysib-HISTORICAL_SENTINEL_TX_NGN_750000_ACCT_1234567890'),
     ).toThrow(/Durable notification secret material is required in production/);
 
-    expect(() =>
-      deriveSafeVendorProviderRef('robase', 'msg_12345'),
-    ).toThrow(/Durable notification secret material is required in production/);
+    expect(() => deriveSafeVendorProviderRef('robase', 'msg_12345')).toThrow(
+      /Durable notification secret material is required in production/,
+    );
 
     // Already-safe opaque tokens still pass through without error
     const alreadySafe = 'pvr1:robase:0123456789abcdef0123456789abcdef';
@@ -131,9 +131,7 @@ describe('Sprint 1 F-01 — Historical & Cross-Boundary Provider Reference Sanit
     );
     expect(prodFromRobase).toMatch(SAFE_PROVIDER_REF_PATTERN);
     expect(
-      sanitizeProviderRefForBoundary(
-        'xkeysib-HISTORICAL_SENTINEL_TX_NGN_750000_ACCT_1234567890',
-      ),
+      sanitizeProviderRefForBoundary('xkeysib-HISTORICAL_SENTINEL_TX_NGN_750000_ACCT_1234567890'),
     ).toBe(prodFromRobase);
     expect(deriveSafeVendorProviderRef('robase', 'msg_12345')).toBe(
       deriveSafeVendorProviderRef('robase', 'msg_12345', process.env['ROBASE_API_KEY']),
@@ -290,7 +288,9 @@ describe('Sprint 1 F-01 — Historical & Cross-Boundary Provider Reference Sanit
     expect(legacyView?.previousValues?.['last_tested_provider_ref']).toMatch(
       /^pvr1:external:[0-9a-f]{32}$/,
     );
-    const nestedDeliveries = legacyView?.newValues?.['deliveries'] as Array<Record<string, unknown>>;
+    const nestedDeliveries = legacyView?.newValues?.['deliveries'] as Array<
+      Record<string, unknown>
+    >;
     expect(nestedDeliveries[0]?.['provider_ref']).toMatch(/^pvr1:brevo:[0-9a-f]{32}$/);
 
     // 3. Exception/log text redaction preserves pvr1:* while redacting raw providerRef=...
@@ -320,11 +320,20 @@ describe('Sprint 1 F-01 — Historical & Cross-Boundary Provider Reference Sanit
     const digest = '0123456789abcdef0123456789abcdef';
     const cases: Array<[string, string]> = [
       // The exact audit finding: valid token + colon suffix carrying a financial sentinel.
-      [`providerRef=pvr1:brevo:${digest}:F01_SUFFIX_SENTINEL_TX_NGN_999000`, 'F01_SUFFIX_SENTINEL_TX_NGN_999000'],
+      [
+        `providerRef=pvr1:brevo:${digest}:F01_SUFFIX_SENTINEL_TX_NGN_999000`,
+        'F01_SUFFIX_SENTINEL_TX_NGN_999000',
+      ],
       // Appended credential material directly after the digest (no separator).
-      [`provider_ref=pvr1:robase:${digest}xkeysib-APPENDED_CREDENTIAL_123456`, 'APPENDED_CREDENTIAL_123456'],
+      [
+        `provider_ref=pvr1:robase:${digest}xkeysib-APPENDED_CREDENTIAL_123456`,
+        'APPENDED_CREDENTIAL_123456',
+      ],
       // Appended financial prose/sentinel after a non-canonical separator.
-      [`lastTestProviderRef=pvr1:external:${digest}-NGN_999000_JOURNAL_LEAK`, 'NGN_999000_JOURNAL_LEAK'],
+      [
+        `lastTestProviderRef=pvr1:external:${digest}-NGN_999000_JOURNAL_LEAK`,
+        'NGN_999000_JOURNAL_LEAK',
+      ],
       [`last_test_provider_ref=pvr1:resend:${digest}:SUFFIX`, 'SUFFIX'],
       [`last_tested_provider_ref=pvr1:brevo:${digest};TRAILING_SECRET_777`, 'TRAILING_SECRET_777'],
     ];
@@ -360,8 +369,12 @@ describe('Sprint 1 F-01 — Historical & Cross-Boundary Provider Reference Sanit
     // through the next hard delimiter fails safe and is redacted — the old expectation that
     // `token and more text` stays unchanged was the exact gap report 14 rejected. Hard
     // boundaries (comma/brace/quote/end-of-string) remain unambiguous and are preserved.
-    expect(redactSensitiveText(`providerRef = ${token} and more text`)).toBe(`providerRef = ${REDACTED_VALUE}`);
-    expect(redactSensitiveText(`providerRef=${token}, status=SENT`)).toBe(`providerRef=${token}, status=SENT`);
+    expect(redactSensitiveText(`providerRef = ${token} and more text`)).toBe(
+      `providerRef = ${REDACTED_VALUE}`,
+    );
+    expect(redactSensitiveText(`providerRef=${token}, status=SENT`)).toBe(
+      `providerRef=${token}, status=SENT`,
+    );
     expect(redactSensitiveText(`{"providerRef":"${token}"}`)).toBe(`{"providerRef":"${token}"}`);
     expect(redactSensitiveText(`providerRef=${token}`)).toBe(`providerRef=${token}`);
     // A malicious value whose suffix contains whitespace still loses everything up to the boundary.

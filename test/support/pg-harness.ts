@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { seedNotificationDefaultsV1 } from '../../src/notification/notification-defaults-v1';
+import { seedNotificationDefaultsV2 } from '../../src/notification/notification-defaults-v2';
 import {
   AUTHORIZATION_FUNCTION_SEED,
   AUTHORIZATION_ROLE_FUNCTION_SEED,
@@ -11,10 +12,8 @@ import {
   DASHBOARD_TEMPLATE_SEED,
   ROLE_DASHBOARD_ASSIGNMENT_SEED,
 } from '../../src/dashboard/dashboard-templates.seed';
-import {
-  assertOwnRunDatabaseName,
-  resolveRunIdentifier,
-} from './pg-run-namespace';
+import { assertOwnRunDatabaseName, resolveRunIdentifier } from './pg-run-namespace';
+import { assertDisposablePgTestEnvironment } from './pg-test-safety';
 
 /**
  * Real-PostgreSQL integration harness.
@@ -35,6 +34,7 @@ export interface PostgresAdminConfig {
 }
 
 export function postgresAdminConfig(): PostgresAdminConfig {
+  assertDisposablePgTestEnvironment();
   const host = process.env.DB_HOST ?? '127.0.0.1';
   return {
     host: host === 'localhost' ? '127.0.0.1' : host,
@@ -281,7 +281,13 @@ export async function truncateAllTables(dataSource: DataSource): Promise<void> {
   const registry: Array<{ present: boolean }> = await dataSource.query(
     `SELECT to_regclass('public.notification_templates') IS NOT NULL AS present`,
   );
-  if (registry[0]?.present) await seedNotificationDefaultsV1(dataSource.manager);
+  if (registry[0]?.present) {
+    await seedNotificationDefaultsV1(dataSource.manager);
+    const v2: Array<{ applied: boolean }> = await dataSource.query(
+      `SELECT EXISTS (SELECT 1 FROM typeorm_migrations WHERE timestamp=1785753600103) AS applied`,
+    );
+    if (v2[0]?.applied) await seedNotificationDefaultsV2(dataSource.manager);
+  }
 }
 
 /**
@@ -390,7 +396,14 @@ async function reseedDashboardPlatform(dataSource: DataSource): Promise<void> {
          (template_key, display_name, description, operational_area, layout, is_active, metadata, created_at, updated_at)
        VALUES ($1,$2,$3,$4,$5,true,NULL,$6,$6)
        ON CONFLICT (template_key) DO NOTHING`,
-      [item.templateKey, item.displayName, item.description, item.operationalArea, JSON.stringify({ widgets: item.widgets }), now],
+      [
+        item.templateKey,
+        item.displayName,
+        item.description,
+        item.operationalArea,
+        JSON.stringify({ widgets: item.widgets }),
+        now,
+      ],
     );
   }
   for (const item of ROLE_DASHBOARD_ASSIGNMENT_SEED) {

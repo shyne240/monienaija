@@ -1,0 +1,794 @@
+{
+  "scope": "all final feature-changed TS/TSX files; parent comparison uses per-file/rule/severity counts",
+  "backend_current": {
+    "files": 34,
+    "errors": 132,
+    "warnings": 8,
+    "per_file": [
+      {
+        "file": "src/migrations/1785753600103-ConfigureTransactionNotificationEvents.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-defaults-v2.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-delivery-processor.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-dispatcher.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-event-map.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-inbox.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-registry.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-security.constants.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-template.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification.types.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/production/production-readiness.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/a19-agent-funding.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/a20-outlets-terminals.integration.spec.ts",
+        "errors": 0,
+        "warnings": 2,
+        "rules": {
+          "eslint-directive:1": 2
+        }
+      },
+      {
+        "file": "test/a8-agent-lifecycle.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/h04-h06-cash-to-cash-channels.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/h04-h06-event-map.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/h04-h06-notification-upgrade.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/migration-chain.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/mission-25o-credential-binding-upgrade.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/notification-migration-upgrade-01.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/notification-registry.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/notification-reliability.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/notification-template-engine.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/sms-v1-01.integration.spec.ts",
+        "errors": 0,
+        "warnings": 1,
+        "rules": {
+          "eslint-directive:1": 1
+        }
+      },
+      {
+        "file": "test/support/pg-harness.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/transfer-notification-producer-01.integration.spec.ts",
+        "errors": 0,
+        "warnings": 1,
+        "rules": {
+          "eslint-directive:1": 1
+        }
+      },
+      {
+        "file": "test/v1-003-admin-operational-writes.integration.spec.ts",
+        "errors": 16,
+        "warnings": 1,
+        "rules": {
+          "@typescript-eslint/ban-ts-comment:2": 1,
+          "@typescript-eslint/no-explicit-any:2": 6,
+          "@typescript-eslint/no-require-imports:2": 1,
+          "@typescript-eslint/no-unused-vars:2": 7,
+          "@typescript-eslint/require-await:2": 1,
+          "eslint-directive:1": 1
+        }
+      },
+      {
+        "file": "test/v1-005-notification-delivery.integration.spec.ts",
+        "errors": 26,
+        "warnings": 1,
+        "rules": {
+          "@typescript-eslint/ban-ts-comment:2": 1,
+          "@typescript-eslint/no-explicit-any:2": 13,
+          "@typescript-eslint/no-require-imports:2": 1,
+          "@typescript-eslint/no-unused-vars:2": 7,
+          "@typescript-eslint/require-await:2": 3,
+          "eslint-directive:1": 1,
+          "no-empty:2": 1
+        }
+      },
+      {
+        "file": "test/v1-006-customer-notification-inbox.integration.spec.ts",
+        "errors": 36,
+        "warnings": 0,
+        "rules": {
+          "@typescript-eslint/ban-ts-comment:2": 1,
+          "@typescript-eslint/no-explicit-any:2": 18,
+          "@typescript-eslint/no-require-imports:2": 1,
+          "@typescript-eslint/no-unsafe-argument:2": 2,
+          "@typescript-eslint/no-unused-vars:2": 11,
+          "@typescript-eslint/require-await:2": 2,
+          "no-empty:2": 1
+        }
+      },
+      {
+        "file": "test/v1-007-support-ticket.integration.spec.ts",
+        "errors": 12,
+        "warnings": 0,
+        "rules": {
+          "@typescript-eslint/no-require-imports:2": 1,
+          "@typescript-eslint/no-unsafe-call:2": 6,
+          "@typescript-eslint/no-unsafe-return:2": 1,
+          "@typescript-eslint/no-unused-vars:2": 4
+        }
+      },
+      {
+        "file": "test/v1-email-notification-01.integration.spec.ts",
+        "errors": 6,
+        "warnings": 2,
+        "rules": {
+          "@typescript-eslint/ban-ts-comment:2": 1,
+          "@typescript-eslint/no-explicit-any:2": 2,
+          "@typescript-eslint/no-require-imports:2": 1,
+          "@typescript-eslint/no-unnecessary-type-assertion:2": 1,
+          "eslint-directive:1": 2,
+          "no-empty:2": 1
+        }
+      },
+      {
+        "file": "test/v1-hardening-09-admin-notification-delivery-diagnostics.integration.spec.ts",
+        "errors": 27,
+        "warnings": 0,
+        "rules": {
+          "@typescript-eslint/ban-ts-comment:2": 1,
+          "@typescript-eslint/no-explicit-any:2": 22,
+          "@typescript-eslint/no-require-imports:2": 1,
+          "@typescript-eslint/no-unused-vars:2": 1,
+          "@typescript-eslint/require-await:2": 1,
+          "no-empty:2": 1
+        }
+      },
+      {
+        "file": "test/v1-limit-02-limit-assignment.integration.spec.ts",
+        "errors": 9,
+        "warnings": 0,
+        "rules": {
+          "@typescript-eslint/ban-ts-comment:2": 2,
+          "@typescript-eslint/no-require-imports:2": 3,
+          "@typescript-eslint/no-unsafe-argument:2": 1,
+          "@typescript-eslint/no-unused-vars:2": 1,
+          "@typescript-eslint/require-await:2": 1,
+          "prefer-const:2": 1
+        }
+      },
+      {
+        "file": "test/v1-sprint1-f01-historical-delivery-disclosure.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      }
+    ],
+    "exit_code": 1
+  },
+  "backend_parent_modified_files": {
+    "files": 29,
+    "errors": 132,
+    "warnings": 8,
+    "per_file": [
+      {
+        "file": "src/notification/notification-delivery-processor.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-dispatcher.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-event-map.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-inbox.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-registry.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-security.constants.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-template.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification.types.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/production/production-readiness.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/a19-agent-funding.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/a20-outlets-terminals.integration.spec.ts",
+        "errors": 0,
+        "warnings": 2,
+        "rules": {
+          "eslint-directive:1": 2
+        }
+      },
+      {
+        "file": "test/a8-agent-lifecycle.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/migration-chain.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/mission-25o-credential-binding-upgrade.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/notification-migration-upgrade-01.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/notification-registry.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/notification-reliability.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/notification-template-engine.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/sms-v1-01.integration.spec.ts",
+        "errors": 0,
+        "warnings": 1,
+        "rules": {
+          "eslint-directive:1": 1
+        }
+      },
+      {
+        "file": "test/support/pg-harness.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/transfer-notification-producer-01.integration.spec.ts",
+        "errors": 0,
+        "warnings": 1,
+        "rules": {
+          "eslint-directive:1": 1
+        }
+      },
+      {
+        "file": "test/v1-003-admin-operational-writes.integration.spec.ts",
+        "errors": 16,
+        "warnings": 1,
+        "rules": {
+          "@typescript-eslint/ban-ts-comment:2": 1,
+          "@typescript-eslint/no-explicit-any:2": 6,
+          "@typescript-eslint/no-require-imports:2": 1,
+          "@typescript-eslint/no-unused-vars:2": 7,
+          "@typescript-eslint/require-await:2": 1,
+          "eslint-directive:1": 1
+        }
+      },
+      {
+        "file": "test/v1-005-notification-delivery.integration.spec.ts",
+        "errors": 26,
+        "warnings": 1,
+        "rules": {
+          "@typescript-eslint/ban-ts-comment:2": 1,
+          "@typescript-eslint/no-explicit-any:2": 13,
+          "@typescript-eslint/no-require-imports:2": 1,
+          "@typescript-eslint/no-unused-vars:2": 7,
+          "@typescript-eslint/require-await:2": 3,
+          "eslint-directive:1": 1,
+          "no-empty:2": 1
+        }
+      },
+      {
+        "file": "test/v1-006-customer-notification-inbox.integration.spec.ts",
+        "errors": 36,
+        "warnings": 0,
+        "rules": {
+          "@typescript-eslint/ban-ts-comment:2": 1,
+          "@typescript-eslint/no-explicit-any:2": 18,
+          "@typescript-eslint/no-require-imports:2": 1,
+          "@typescript-eslint/no-unsafe-argument:2": 2,
+          "@typescript-eslint/no-unused-vars:2": 11,
+          "@typescript-eslint/require-await:2": 2,
+          "no-empty:2": 1
+        }
+      },
+      {
+        "file": "test/v1-007-support-ticket.integration.spec.ts",
+        "errors": 12,
+        "warnings": 0,
+        "rules": {
+          "@typescript-eslint/no-require-imports:2": 1,
+          "@typescript-eslint/no-unsafe-call:2": 6,
+          "@typescript-eslint/no-unsafe-return:2": 1,
+          "@typescript-eslint/no-unused-vars:2": 4
+        }
+      },
+      {
+        "file": "test/v1-email-notification-01.integration.spec.ts",
+        "errors": 6,
+        "warnings": 2,
+        "rules": {
+          "@typescript-eslint/ban-ts-comment:2": 1,
+          "@typescript-eslint/no-explicit-any:2": 2,
+          "@typescript-eslint/no-require-imports:2": 1,
+          "@typescript-eslint/no-unnecessary-type-assertion:2": 1,
+          "eslint-directive:1": 2,
+          "no-empty:2": 1
+        }
+      },
+      {
+        "file": "test/v1-hardening-09-admin-notification-delivery-diagnostics.integration.spec.ts",
+        "errors": 27,
+        "warnings": 0,
+        "rules": {
+          "@typescript-eslint/ban-ts-comment:2": 1,
+          "@typescript-eslint/no-explicit-any:2": 22,
+          "@typescript-eslint/no-require-imports:2": 1,
+          "@typescript-eslint/no-unused-vars:2": 1,
+          "@typescript-eslint/require-await:2": 1,
+          "no-empty:2": 1
+        }
+      },
+      {
+        "file": "test/v1-limit-02-limit-assignment.integration.spec.ts",
+        "errors": 9,
+        "warnings": 0,
+        "rules": {
+          "@typescript-eslint/ban-ts-comment:2": 2,
+          "@typescript-eslint/no-require-imports:2": 3,
+          "@typescript-eslint/no-unsafe-argument:2": 1,
+          "@typescript-eslint/no-unused-vars:2": 1,
+          "@typescript-eslint/require-await:2": 1,
+          "prefer-const:2": 1
+        }
+      },
+      {
+        "file": "test/v1-sprint1-f01-historical-delivery-disclosure.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      }
+    ],
+    "exit_code": 1
+  },
+  "admin_adapted_current": {
+    "files": 4,
+    "errors": 112,
+    "warnings": 0,
+    "per_file": [
+      {
+        "file": "apps/admin-web/__tests__/notification-management.test.tsx",
+        "errors": 27,
+        "warnings": 0,
+        "rules": {
+          "@typescript-eslint/consistent-type-imports:2": 1,
+          "@typescript-eslint/no-explicit-any:2": 2,
+          "@typescript-eslint/no-unsafe-argument:2": 2,
+          "@typescript-eslint/no-unsafe-assignment:2": 9,
+          "@typescript-eslint/no-unsafe-member-access:2": 12,
+          "@typescript-eslint/no-unused-vars:2": 1
+        }
+      },
+      {
+        "file": "apps/admin-web/src/screens/authenticated/NotificationManagementScreen.tsx",
+        "errors": 60,
+        "warnings": 0,
+        "rules": {
+          "@typescript-eslint/consistent-type-imports:2": 2,
+          "@typescript-eslint/no-base-to-string:2": 6,
+          "@typescript-eslint/no-explicit-any:2": 15,
+          "@typescript-eslint/no-misused-promises:2": 2,
+          "@typescript-eslint/no-unsafe-argument:2": 3,
+          "@typescript-eslint/no-unsafe-assignment:2": 12,
+          "@typescript-eslint/no-unsafe-member-access:2": 20
+        }
+      },
+      {
+        "file": "apps/admin-web/src/services/notification-domain.ts",
+        "errors": 4,
+        "warnings": 0,
+        "rules": {
+          "@typescript-eslint/no-redundant-type-constituents:2": 3,
+          "@typescript-eslint/no-unsafe-return:2": 1
+        }
+      },
+      {
+        "file": "apps/admin-web/src/services/notification-management-api.ts",
+        "errors": 21,
+        "warnings": 0,
+        "rules": {
+          "@typescript-eslint/consistent-type-imports:2": 1,
+          "@typescript-eslint/no-base-to-string:2": 3,
+          "@typescript-eslint/no-explicit-any:2": 2,
+          "@typescript-eslint/no-unnecessary-type-assertion:2": 4,
+          "@typescript-eslint/no-unsafe-assignment:2": 1,
+          "@typescript-eslint/no-unsafe-call:2": 1,
+          "@typescript-eslint/no-unsafe-member-access:2": 4,
+          "@typescript-eslint/no-unsafe-return:2": 1,
+          "@typescript-eslint/restrict-template-expressions:2": 4
+        }
+      }
+    ],
+    "exit_code": 1
+  },
+  "admin_adapted_parent": {
+    "files": 4,
+    "errors": 112,
+    "warnings": 0,
+    "per_file": [
+      {
+        "file": "apps/admin-web/__tests__/notification-management.test.tsx",
+        "errors": 27,
+        "warnings": 0,
+        "rules": {
+          "@typescript-eslint/consistent-type-imports:2": 1,
+          "@typescript-eslint/no-explicit-any:2": 2,
+          "@typescript-eslint/no-unsafe-argument:2": 2,
+          "@typescript-eslint/no-unsafe-assignment:2": 9,
+          "@typescript-eslint/no-unsafe-member-access:2": 12,
+          "@typescript-eslint/no-unused-vars:2": 1
+        }
+      },
+      {
+        "file": "apps/admin-web/src/screens/authenticated/NotificationManagementScreen.tsx",
+        "errors": 60,
+        "warnings": 0,
+        "rules": {
+          "@typescript-eslint/consistent-type-imports:2": 2,
+          "@typescript-eslint/no-base-to-string:2": 6,
+          "@typescript-eslint/no-explicit-any:2": 15,
+          "@typescript-eslint/no-misused-promises:2": 2,
+          "@typescript-eslint/no-unsafe-argument:2": 3,
+          "@typescript-eslint/no-unsafe-assignment:2": 12,
+          "@typescript-eslint/no-unsafe-member-access:2": 20
+        }
+      },
+      {
+        "file": "apps/admin-web/src/services/notification-domain.ts",
+        "errors": 4,
+        "warnings": 0,
+        "rules": {
+          "@typescript-eslint/no-redundant-type-constituents:2": 3,
+          "@typescript-eslint/no-unsafe-return:2": 1
+        }
+      },
+      {
+        "file": "apps/admin-web/src/services/notification-management-api.ts",
+        "errors": 21,
+        "warnings": 0,
+        "rules": {
+          "@typescript-eslint/consistent-type-imports:2": 1,
+          "@typescript-eslint/no-base-to-string:2": 3,
+          "@typescript-eslint/no-explicit-any:2": 2,
+          "@typescript-eslint/no-unnecessary-type-assertion:2": 4,
+          "@typescript-eslint/no-unsafe-assignment:2": 1,
+          "@typescript-eslint/no-unsafe-call:2": 1,
+          "@typescript-eslint/no-unsafe-member-access:2": 4,
+          "@typescript-eslint/no-unsafe-return:2": 1,
+          "@typescript-eslint/restrict-template-expressions:2": 4
+        }
+      }
+    ],
+    "exit_code": 1
+  },
+  "backend_clean_scope": {
+    "files": 24,
+    "errors": 0,
+    "warnings": 0,
+    "per_file": [
+      {
+        "file": "src/migrations/1785753600103-ConfigureTransactionNotificationEvents.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-defaults-v2.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-delivery-processor.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-dispatcher.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-event-map.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-inbox.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-registry.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-security.constants.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification-template.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/notification/notification.types.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "src/production/production-readiness.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/a19-agent-funding.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/a8-agent-lifecycle.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/h04-h06-cash-to-cash-channels.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/h04-h06-event-map.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/h04-h06-notification-upgrade.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/migration-chain.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/mission-25o-credential-binding-upgrade.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/notification-migration-upgrade-01.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/notification-registry.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/notification-reliability.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/notification-template-engine.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/support/pg-harness.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      },
+      {
+        "file": "test/v1-sprint1-f01-historical-delivery-disclosure.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "rules": {}
+      }
+    ],
+    "exit_code": 0
+  },
+  "backend_profile_comparison": {
+    "current_errors": 132,
+    "current_warnings": 8,
+    "baseline_errors": 132,
+    "baseline_warnings": 8,
+    "differences": {}
+  },
+  "admin_profile_comparison": {
+    "current_errors": 112,
+    "current_warnings": 0,
+    "baseline_errors": 112,
+    "baseline_warnings": 0,
+    "differences": {}
+  },
+  "limitations": "Admin Web has no native lint script. Its run applies the backend ESLint rule set with Admin Web projectService. Count profiles do not prove diagnostic text/locations are identical; no repository-wide lint was run."
+}

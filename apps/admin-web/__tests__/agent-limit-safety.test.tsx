@@ -1,0 +1,73 @@
+import React from 'react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { AgentNetworkScreen } from '../src/screens/authenticated/AgentNetworkScreen';
+import { useAuthStore } from '../src/store/auth-store';
+import { ApiClient } from '../src/services/api-client';
+jest.mock('../src/services/api-client',()=>({ApiClient:{get:jest.fn(),post:jest.fn(),patch:jest.fn()}}));
+const agent=(id='agent')=>({id,reference:`AG-${id}`,status:'ACTIVE',agentClassId:null,createdAt:'2026-01-01',updatedAt:'2026-01-01'});
+const row=(agentId='agent')=>({id:'limit',subjectType:'AGENT',subjectId:agentId,limitProfileCode:'AGENT_STD',isActive:true,version:2});
+const page=(rows:any[],p=1,total=rows.length)=>({data:rows,page:p,limit:20,total,totalPages:Math.ceil(total/20),hasNextPage:p<Math.ceil(total/20)});
+function principal(view=true){useAuthStore.setState({principal:{type:'OPERATOR',principalId:'manager',sessionId:'session',audience:'workforce-admin',roles:[],scopes:['agent.view','agent.assign_limit',...(view?['limit.view']:[])],customerAccess:'NONE',assuranceLevel:'MFA'}});}
+beforeEach(()=>{jest.resetAllMocks();principal();(ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.startsWith('/internal/agents?')?Promise.resolve({data:[agent()],total:1}):path.includes('/limit-assignments/agent/')?Promise.resolve(page([row()])):Promise.resolve([]));});
+async function open(view=true){principal(view);render(<AgentNetworkScreen/>);await screen.findByText('AG-agent');fireEvent.click(screen.getByRole('button',{name:'View'}));const section=screen.getByLabelText('Agent limit assignments');if(view){fireEvent.click(within(section).getByRole('button',{name:'Load agent limits'}));await within(section).findByText('AGENT_STD');}return section;}
+
+test('uncertain assignment retains entry and blocks retry until a validated read and independent review',async()=>{
+ (ApiClient.post as jest.Mock).mockResolvedValue({...row('other'),limitProfileCode:'NEW_PROFILE'});const section=await open();
+ fireEvent.change(within(section).getByLabelText('Agent limit profile code'),{target:{value:'new_profile'}});fireEvent.click(within(section).getByRole('button',{name:'Assign limit profile'}));
+ await within(section).findByText(/Limit assignment outcome is unconfirmed/);expect((within(section).getByLabelText('Agent limit profile code') as HTMLInputElement).value).toBe('new_profile');expect((within(section).getByRole('button',{name:'Assign limit profile'}) as HTMLButtonElement).disabled).toBe(true);expect((within(section).getByRole('button',{name:'Deactivate limit'}) as HTMLButtonElement).disabled).toBe(true);
+ (ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.includes('/limit-assignments/agent/')?Promise.resolve(page([row('other')])):Promise.resolve([]));fireEvent.click(within(section).getByRole('button',{name:'Refresh agent limits'}));await within(section).findByText(/Invalid or cross-Agent limit assignment page/);expect(within(section).queryByRole('button',{name:'I reviewed assignments and audit history'})).toBeNull();
+ (ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.includes('/limit-assignments/agent/')?Promise.resolve(page([row()])):Promise.resolve([]));fireEvent.click(within(section).getByRole('button',{name:'Load agent limits'}));await within(section).findByRole('button',{name:'I reviewed assignments and audit history'});fireEvent.click(within(section).getByRole('button',{name:'I reviewed assignments and audit history'}));expect((within(section).getByRole('button',{name:'Assign limit profile'}) as HTMLButtonElement).disabled).toBe(false);expect(ApiClient.post).toHaveBeenCalledTimes(1);
+});
+
+test('conflicted versioned toggle blocks repeat and requires a fresh read and explicit review',async()=>{
+ (ApiClient.patch as jest.Mock).mockRejectedValue({status:409,message:'version conflict'});const section=await open();fireEvent.click(within(section).getByRole('button',{name:'Deactivate limit'}));await within(section).findByText(/Limit update outcome is unconfirmed/);expect((within(section).getByRole('button',{name:'Deactivate limit'}) as HTMLButtonElement).disabled).toBe(true);const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);
+ fireEvent.click(within(section).getByRole('button',{name:'Refresh agent limits'}));await within(section).findByRole('button',{name:'I reviewed assignments and audit history'});expect((within(section).getByRole('button',{name:'Deactivate limit'}) as HTMLButtonElement).disabled).toBe(true);fireEvent.click(within(section).getByRole('button',{name:'I reviewed assignments and audit history'}));expect((within(section).getByRole('button',{name:'Deactivate limit'}) as HTMLButtonElement).disabled).toBe(false);expect(ApiClient.patch).toHaveBeenCalledTimes(1);
+});
+
+test('write-only Agent limit principal is not granted a read; uncertain assignment requires external review',async()=>{
+ (ApiClient.post as jest.Mock).mockRejectedValue(new Error('network lost'));const section=await open(false);fireEvent.change(within(section).getByLabelText('Agent limit profile code'),{target:{value:'NEW_PROFILE'}});fireEvent.click(within(section).getByRole('button',{name:'Assign limit profile'}));await within(section).findByText(/Limit assignment outcome is unconfirmed/);expect(within(section).getByText(/This session cannot load assignments/)).toBeTruthy();expect((within(section).getByRole('button',{name:'Assign limit profile'}) as HTMLButtonElement).disabled).toBe(true);expect((ApiClient.get as jest.Mock).mock.calls.some(([url])=>String(url).includes('limit-assignments'))).toBe(false);fireEvent.click(within(section).getByRole('button',{name:'I reviewed assignments and audit history'}));expect((within(section).getByRole('button',{name:'Assign limit profile'}) as HTMLButtonElement).disabled).toBe(false);
+});
+
+test('limit pagination distinguishes empty later pages and validates page metadata',async()=>{
+ (ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.startsWith('/internal/agents?')?Promise.resolve({data:[agent()],total:1}):path.includes('page=2&limit=20')?Promise.resolve(page([],2,21)):path.includes('/limit-assignments/agent/')?Promise.resolve(page([row()],1,21)):Promise.resolve([]));const section=await open();fireEvent.click(within(section).getByRole('button',{name:'Next limit page'}));await within(section).findByText('No limit assignments on this page.');expect(within(section).getByText(/Page 2/)).toBeTruthy();fireEvent.click(within(section).getByRole('button',{name:'Previous limit page'}));await within(section).findByText('AGENT_STD');
+});
+
+test('limit draft warns before closing and can only be cleared explicitly',async()=>{
+ const confirm=jest.spyOn(window,'confirm').mockReturnValue(false);const section=await open();fireEvent.change(within(section).getByLabelText('Agent limit profile code'),{target:{value:'NEW_PROFILE'}});fireEvent.click(within(section).getByRole('button',{name:'Clear limit entry'}));expect((within(section).getByLabelText('Agent limit profile code') as HTMLInputElement).value).toBe('NEW_PROFILE');fireEvent.click(screen.getByRole('button',{name:'Close'}));expect(screen.getByLabelText('Agent limit assignments')).toBeTruthy();confirm.mockReturnValue(true);fireEvent.click(within(section).getByRole('button',{name:'Clear limit entry'}));expect((within(section).getByLabelText('Agent limit profile code') as HTMLInputElement).value).toBe('');confirm.mockRestore();
+});
+
+test('assignment workspace labels manual input and keeps catalogue selection consistent',async()=>{
+ (ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.startsWith('/internal/agents?')?Promise.resolve({data:[agent()],total:1}):path.includes('/limit-assignments/agent/')?Promise.resolve(page([row()])):path==='/internal/limit-profiles?page=1&limit=20'?Promise.resolve({data:[{code:'AGENT_STD',name:'Standard'}],page:1,limit:20,total:1,totalPages:1,hasNextPage:false}):Promise.resolve([]));
+ const section=await open();
+ expect(within(section).getByRole('heading',{name:'Agent limit assignments'})).toBeTruthy();
+ expect(within(section).getByRole('region',{name:'Agent assignment records'})).toBeTruthy();
+ const input=within(section).getByLabelText('Agent limit profile code') as HTMLInputElement;
+ expect(input.closest('label')?.textContent).toMatch(/Profile code \(required\)/);
+ fireEvent.change(input,{target:{value:'OTHER_PROFILE'}});
+ fireEvent.click(within(section).getByRole('button',{name:'Load limit catalog'}));
+ const select=await within(section).findByLabelText('Select catalog limit profile') as HTMLSelectElement;
+ expect(select.value).toBe('');expect(input.value).toBe('OTHER_PROFILE');
+ fireEvent.change(select,{target:{value:'AGENT_STD'}});expect(input.value).toBe('AGENT_STD');
+ expect(ApiClient.post).not.toHaveBeenCalled();expect(ApiClient.patch).not.toHaveBeenCalled();
+});
+
+test('catalogue navigation preserves the entered code and exposes page boundaries',async()=>{
+ (ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.startsWith('/internal/agents?')?Promise.resolve({data:[agent()],total:1}):path.includes('/limit-assignments/agent/')?Promise.resolve(page([row()])):path.includes('/limit-profiles?page=1')?Promise.resolve({data:[{code:'FIRST',name:'First'}],page:1,limit:20,total:21,totalPages:2,hasNextPage:true}):path.includes('/limit-profiles?page=2')?Promise.resolve({data:[{code:'SECOND',name:'Second'}],page:2,limit:20,total:21,totalPages:2,hasNextPage:false}):Promise.resolve([]));
+ const section=await open();fireEvent.click(within(section).getByRole('button',{name:'Load limit catalog'}));await within(section).findByText(/Catalogue page 1/);
+ fireEvent.change(within(section).getByLabelText('Select catalog limit profile'),{target:{value:'FIRST'}});fireEvent.click(within(section).getByRole('button',{name:'Next catalogue page'}));await within(section).findByText(/Catalogue page 2/);
+ expect((within(section).getByLabelText('Agent limit profile code') as HTMLInputElement).value).toBe('FIRST');expect((within(section).getByLabelText('Select catalog limit profile') as HTMLSelectElement).value).toBe('');expect((within(section).getByRole('button',{name:'Next catalogue page'}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(within(section).getByRole('button',{name:'Previous catalogue page'}));await within(section).findByText(/Catalogue page 1/);expect((within(section).getByLabelText('Select catalog limit profile') as HTMLSelectElement).value).toBe('FIRST');expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('invalid catalogue page is an error, not an empty catalogue',async()=>{
+ (ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.startsWith('/internal/agents?')?Promise.resolve({data:[agent()],total:1}):path.includes('/limit-assignments/agent/')?Promise.resolve(page([row()])):path.includes('/limit-profiles?')?Promise.resolve({data:[null],page:1,limit:20,total:1,totalPages:1,hasNextPage:false}):Promise.resolve([]));
+ const section=await open();fireEvent.click(within(section).getByRole('button',{name:'Load limit catalog'}));expect(await within(section).findByText('Invalid limit catalogue page.')).toBeTruthy();expect(within(section).queryByText(/Catalogue page/)).toBeNull();
+});
+
+test('late catalogue response from another Agent cannot replace the current workspace',async()=>{
+ let resolve!:(value:any)=>void;const delayed=new Promise<any>(r=>{resolve=r});let requests=0;
+ (ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.startsWith('/internal/agents?')?Promise.resolve({data:[agent('one'),agent('two')],total:2}):path.includes('/limit-assignments/agent/one')?Promise.resolve(page([row('one')])):path.includes('/limit-assignments/agent/two')?Promise.resolve(page([row('two')])):path.includes('/limit-profiles?')?(++requests===1?delayed:Promise.resolve({data:[{code:'CURRENT',name:'Current'}],page:1,limit:20,total:1,totalPages:1,hasNextPage:false})):Promise.resolve([]));
+ principal();render(<AgentNetworkScreen/>);await screen.findByText('AG-one');fireEvent.click(screen.getAllByRole('button',{name:'View'})[0]);fireEvent.click(screen.getByRole('button',{name:'Load agent limits'}));await screen.findByText('AGENT_STD');fireEvent.click(screen.getByRole('button',{name:'Load limit catalog'}));
+ fireEvent.click(screen.getAllByRole('button',{name:'View'})[1]);fireEvent.click(screen.getByRole('button',{name:'Load agent limits'}));await screen.findByText('AGENT_STD');fireEvent.click(screen.getByRole('button',{name:'Load limit catalog'}));await screen.findByText('CURRENT — Current');
+ await act(async()=>{resolve({data:[{code:'STALE',name:'Stale'}],page:1,limit:20,total:1,totalPages:1,hasNextPage:false});await delayed;});expect(screen.queryByText('STALE — Stale')).toBeNull();expect(screen.getByText('CURRENT — Current')).toBeTruthy();
+});

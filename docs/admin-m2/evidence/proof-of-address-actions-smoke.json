@@ -1,0 +1,90 @@
+[
+  {
+    "width": 320,
+    "workspace": "proof of address actions",
+    "synthetic": true,
+    "keyboard": true,
+    "uploadMismatchRejected": true,
+    "withdrawMismatchRejected": true,
+    "confirmed": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "workspace": "proof of address actions",
+    "synthetic": true,
+    "keyboard": true,
+    "uploadMismatchRejected": true,
+    "withdrawMismatchRejected": true,
+    "confirmed": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "workspace": "proof of address actions",
+    "synthetic": true,
+    "keyboard": true,
+    "uploadMismatchRejected": true,
+    "withdrawMismatchRejected": true,
+    "confirmed": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "workspace": "proof of address actions",
+    "synthetic": true,
+    "keyboard": true,
+    "uploadMismatchRejected": true,
+    "withdrawMismatchRejected": true,
+    "confirmed": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "workspace": "proof of address actions",
+    "synthetic": true,
+    "keyboard": true,
+    "uploadMismatchRejected": true,
+    "withdrawMismatchRejected": true,
+    "confirmed": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "workspace": "proof of address actions",
+    "synthetic": true,
+    "keyboard": true,
+    "uploadMismatchRejected": true,
+    "withdrawMismatchRejected": true,
+    "confirmed": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "workspace": "proof of address actions",
+    "synthetic": true,
+    "keyboard": true,
+    "uploadMismatchRejected": true,
+    "withdrawMismatchRejected": true,
+    "confirmed": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "workspace": "proof of address actions",
+    "synthetic": true,
+    "keyboard": true,
+    "uploadMismatchRejected": true,
+    "withdrawMismatchRejected": true,
+    "confirmed": true,
+    "page": 1440,
+    "view": 1440
+  }
+]

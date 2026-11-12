@@ -21,7 +21,10 @@ import {
   where: 'deleted_at IS NULL',
 })
 @Index('idx_agent_authentication_credentials_agent_status', ['agentId', 'status'])
-@Check('chk_agent_authentication_credentials_status', "status IN ('PENDING', 'ACTIVE', 'SUSPENDED', 'REVOKED')")
+@Check(
+  'chk_agent_authentication_credentials_status',
+  "status IN ('PENDING', 'ACTIVE', 'SUSPENDED', 'REVOKED')",
+)
 @Check(
   'chk_agent_authentication_credentials_algorithm',
   "hash_algorithm IN ('ARGON2ID', 'BCRYPT', 'SCRYPT', 'PBKDF2')",

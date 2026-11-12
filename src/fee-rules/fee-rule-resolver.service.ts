@@ -122,7 +122,11 @@ export class FeeRuleResolverService {
    */
   async resolve(input: FeeRuleResolveInput): Promise<FeeRuleResolution> {
     const { productCode, currency, at } = this.normalize(input);
-    const rows: CandidateRow[] = await this.dataSource.query(CANDIDATES_SQL, [productCode, currency, at]);
+    const rows: CandidateRow[] = await this.dataSource.query(CANDIDATES_SQL, [
+      productCode,
+      currency,
+      at,
+    ]);
     return this.select({ productCode, currency, at }, rows);
   }
 
@@ -131,7 +135,10 @@ export class FeeRuleResolverService {
    * SERIALIZABLE transaction (same convention LimitProfileResolverService exposes).
    * Still strictly read-only.
    */
-  async resolveWithManager(manager: EntityManager, input: FeeRuleResolveInput): Promise<FeeRuleResolution> {
+  async resolveWithManager(
+    manager: EntityManager,
+    input: FeeRuleResolveInput,
+  ): Promise<FeeRuleResolution> {
     const { productCode, currency, at } = this.normalize(input);
     const rows: CandidateRow[] = await manager.query(CANDIDATES_SQL, [productCode, currency, at]);
     return this.select({ productCode, currency, at }, rows);
@@ -139,7 +146,11 @@ export class FeeRuleResolverService {
 
   // ── internals ──
 
-  private normalize(input: FeeRuleResolveInput): { productCode: string; currency: string; at: Date } {
+  private normalize(input: FeeRuleResolveInput): {
+    productCode: string;
+    currency: string;
+    at: Date;
+  } {
     if (typeof input?.productCode !== 'string' || !input.productCode.trim()) {
       throw new BadRequestException('productCode is required');
     }
@@ -148,7 +159,10 @@ export class FeeRuleResolverService {
       throw new BadRequestException('productCode must match ^[A-Z0-9_]{3,80}$');
     }
     const currencyRaw = input.currency ?? 'NGN';
-    if (typeof currencyRaw !== 'string' || !CURRENCY_PATTERN.test(currencyRaw.trim().toUpperCase())) {
+    if (
+      typeof currencyRaw !== 'string' ||
+      !CURRENCY_PATTERN.test(currencyRaw.trim().toUpperCase())
+    ) {
       throw new BadRequestException('currency must be a 3-letter uppercase ISO code');
     }
     const currency = currencyRaw.trim().toUpperCase();
@@ -168,7 +182,11 @@ export class FeeRuleResolverService {
     input: { productCode: string; currency: string; at: Date },
     rows: CandidateRow[],
   ): FeeRuleResolution {
-    const base = { productCode: input.productCode, currency: input.currency, evaluatedAt: input.at };
+    const base = {
+      productCode: input.productCode,
+      currency: input.currency,
+      evaluatedAt: input.at,
+    };
     if (rows.length === 0) {
       return { status: 'NOT_CONFIGURED', ...base };
     }

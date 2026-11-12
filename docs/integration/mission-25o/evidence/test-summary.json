@@ -1,0 +1,141 @@
+{
+  "label": "Mission 25O final verification against preserved implementation",
+  "recordedAtUtc": "2026-11-02T14:40:22.502Z",
+  "branch": "arena/92fd33dd-monienaija",
+  "implementationCommit": "3a0f87eafe86b455e1906d7779f83ca3152b9d00",
+  "implementationParent": "587c3763944368b9260c9299d18bce1189ca5919",
+  "implementationTree": "9f048856dd72617a17e013a893e03ffc9a6462b1",
+  "environment": {
+    "database": "disposable PostgreSQL 18.4 on loopback",
+    "providerTransport": "synthetic/fake",
+    "network": "Node test guard blocked non-loopback egress",
+    "realCredentialsOrProductionDatabase": false,
+    "remainingTestDatabases": 0
+  },
+  "commands": {
+    "typescript": {
+      "exitCode": 0,
+      "evidence": "typecheck.txt"
+    },
+    "build": {
+      "exitCode": 0,
+      "evidence": "build.txt"
+    },
+    "fullUnit": {
+      "exitCode": 0,
+      "suites": {
+        "total": 230,
+        "passed": 230,
+        "failed": 0,
+        "skipped": 0,
+        "runtimeErrors": 0
+      },
+      "tests": {
+        "total": 2728,
+        "passed": 2728,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "evidence": [
+        "unit.txt",
+        "unit-summary.json"
+      ]
+    },
+    "fullPostgres": {
+      "exitCode": 0,
+      "suites": {
+        "total": 134,
+        "passed": 134,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0,
+        "summaries": 23
+      },
+      "tests": {
+        "total": 2475,
+        "passed": 2475,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0,
+        "summaries": 23
+      },
+      "discoveredFiles": 134,
+      "batches": {
+        "started": 23,
+        "finished": 23
+      },
+      "evidence": [
+        "postgres-matrix.txt",
+        "postgres-matrix-summary.json",
+        "postgres-cleanup.txt"
+      ]
+    },
+    "focusedProviderAndReadiness": {
+      "exitCode": 0,
+      "suites": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "runtimeErrors": 0
+      },
+      "tests": {
+        "total": 42,
+        "passed": 42,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "evidence": [
+        "h07-provider-readiness.txt",
+        "h07-provider-readiness-summary.json"
+      ]
+    },
+    "focusedSecurityFinancialAgent": {
+      "exitCodes": [
+        0,
+        0
+      ],
+      "passedSuites": 12,
+      "passedTests": 182,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "evidence": [
+        "security-finance-agent-a.txt",
+        "security-finance-agent-a-summary.json",
+        "security-finance-agent-b.txt",
+        "security-finance-agent-b-summary.json"
+      ]
+    },
+    "focusedLint": {
+      "exitCode": 0,
+      "files": 19,
+      "errors": 0,
+      "warnings": 0,
+      "evidence": "eslint-focused.txt"
+    },
+    "changedFileLint": {
+      "exitCode": 1,
+      "files": 23,
+      "errors": 37,
+      "warnings": 3,
+      "parentExitCode": 1,
+      "parentErrors": 37,
+      "parentWarnings": 3,
+      "modifiedFileRuleCountProfilesMatchParent": true,
+      "newlyAddedFilesHaveNoDiagnostics": true,
+      "evidence": [
+        "eslint-comparison.txt",
+        "eslint-summary.json"
+      ]
+    }
+  },
+  "focusedRunsAreRerunsOfFullSuites": true,
+  "exclusionsAndHistory": [
+    "Original raw Mission 25O logs were unavailable after checkout restoration; new final results above replace them as evidence.",
+    "An earlier full PostgreSQL pass preceded the final TTL/cancellation test and is not evidence for this implementation.",
+    "The bad-config unit preflight executed zero suites and failed; the PostgreSQL preflight was intentionally interrupted to complete its synthetic fixture. Neither is counted as a pass.",
+    "No production deployment, provider activation, real vendor calls, live sends or main merge were performed."
+  ]
+}

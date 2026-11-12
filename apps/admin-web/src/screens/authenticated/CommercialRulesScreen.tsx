@@ -1,217 +1,248 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Button, PageHeader } from '../../design-system/primitives';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
-import { extractRecords, StructuredColumn, StructuredRecordTable, DataRecord } from '../../components/StructuredData';
+import { StructuredColumn, StructuredRecordTable, StructuredKeyValueList, DataRecord } from '../../components/StructuredData';
+import { WorkspaceDrawer } from '../../design-system/WorkspaceDrawer';
+import './operational-surfaces.css';
+import './commercial-catalogue.css';
 
 type Tab = 'fees' | 'commissions' | 'rewards' | 'products' | 'limits';
-
 const TAB_FUNCTIONS: Record<Tab, string> = {
-  fees: 'fee_rule.view',
-  commissions: 'commission_rule.view',
-  rewards: 'reward_rule.view',
-  products: 'product.view',
-  limits: 'limit.view',
+  fees: 'fee_rule.view', commissions: 'commission_rule.view', rewards: 'reward_rule.view',
+  products: 'product.view', limits: 'limit.view',
 };
-
 const TAB_LABELS: Record<Tab, string> = {
-  fees: 'Fees',
-  commissions: 'Commissions',
-  rewards: 'Rewards',
-  products: 'Products',
-  limits: 'Limits',
+  fees: 'Fees', commissions: 'Commissions', rewards: 'Rewards', products: 'Products', limits: 'Limits',
 };
-
 const TAB_ORDER: Tab[] = ['fees', 'commissions', 'rewards', 'products', 'limits'];
-
-const TAB_ENDPOINTS: Record<Exclude<Tab, 'limits'>, string> = {
-  fees: '/internal/fee-rules',
-  commissions: '/internal/commission-rules',
-  rewards: '/internal/reward-rules',
-  products: '/internal/products',
+const TAB_DESCRIPTION: Record<Tab, string> = {
+  fees: 'Review configured fee rules, their currency, rate and effective dates.',
+  commissions: 'Review configured commission rules and who may receive them.',
+  rewards: 'Review configured reward rules and their beneficiary and calculation model.',
+  products: 'Review product configuration, status and scope across the catalogue.',
+  limits: 'Review limit profiles and rules independently. Assignment and usage are separate workflows.',
 };
-
-const COLUMNS: Record<Tab, StructuredColumn[]> = {
+const COLUMNS: Record<Exclude<Tab, 'limits'>, StructuredColumn[]> = {
   fees: [
-    { key: 'code', label: 'Code' }, { key: 'productCode', label: 'Product' },
+    { key: 'id', label: 'Rule ID' }, { key: 'productCode', label: 'Product' },
     { key: 'currency', label: 'Currency' }, { key: 'flatFeeMinor', label: 'Flat fee (minor)' },
     { key: 'percentageBps', label: 'Rate (bps)' }, { key: 'vatBps', label: 'VAT (bps)' },
-    { key: 'status', label: 'Status' }, { key: 'version', label: 'Version' },
+    { key: 'isActive', label: 'Active' }, { key: 'effectiveFrom', label: 'Effective from' },
+    { key: 'version', label: 'Version' },
   ],
   commissions: [
-    { key: 'code', label: 'Code' }, { key: 'productCode', label: 'Product' },
+    { key: 'id', label: 'Rule ID' }, { key: 'productCode', label: 'Product' },
     { key: 'recipientType', label: 'Recipient' }, { key: 'currency', label: 'Currency' },
     { key: 'calculationModel', label: 'Model' }, { key: 'calculationBasis', label: 'Basis' },
-    { key: 'status', label: 'Status' }, { key: 'version', label: 'Version' },
+    { key: 'isActive', label: 'Active' }, { key: 'effectiveFrom', label: 'Effective from' },
+    { key: 'version', label: 'Version' },
   ],
   rewards: [
-    { key: 'code', label: 'Code' }, { key: 'productCode', label: 'Product' },
+    { key: 'id', label: 'Rule ID' }, { key: 'productCode', label: 'Product' },
     { key: 'beneficiaryType', label: 'Beneficiary' }, { key: 'rewardType', label: 'Reward type' },
     { key: 'currency', label: 'Currency' }, { key: 'calculationModel', label: 'Model' },
-    { key: 'status', label: 'Status' }, { key: 'version', label: 'Version' },
+    { key: 'isActive', label: 'Active' }, { key: 'effectiveFrom', label: 'Effective from' },
+    { key: 'version', label: 'Version' },
   ],
   products: [
     { key: 'code', label: 'Code' }, { key: 'name', label: 'Name' },
     { key: 'domain', label: 'Domain' }, { key: 'currency', label: 'Currency' },
-    { key: 'status', label: 'Status' }, { key: 'configurationStatus', label: 'Configuration' },
+    { key: 'productScope', label: 'Scope' }, { key: 'status', label: 'Status' },
+    { key: 'enabled', label: 'Enabled' }, { key: 'configurationStatus', label: 'Configuration' },
     { key: 'version', label: 'Version' },
   ],
-  limits: [],
 };
-
-interface LimitRegistryData {
-  profiles: DataRecord[];
-  rules: DataRecord[];
-}
-
+const ENDPOINTS: Record<Exclude<Tab, 'limits'>, string> = {
+  fees: '/internal/fee-rules', commissions: '/internal/commission-rules',
+  rewards: '/internal/reward-rules', products: '/internal/products',
+};
 const PROFILE_COLUMNS: StructuredColumn[] = [
   { key: 'code', label: 'Profile code' }, { key: 'name', label: 'Name' },
   { key: 'kind', label: 'Kind' }, { key: 'status', label: 'Status' },
   { key: 'enabled', label: 'Enabled' }, { key: 'configurationStatus', label: 'Configuration' },
   { key: 'version', label: 'Version' },
 ];
-
 const LIMIT_RULE_COLUMNS: StructuredColumn[] = [
-  { key: 'limitProfileCode', label: 'Profile' }, { key: 'product', label: 'Product' },
-  { key: 'direction', label: 'Direction' }, { key: 'channel', label: 'Channel' },
-  { key: 'currency', label: 'Currency' }, { key: 'dimension', label: 'Dimension' },
-  { key: 'limitValueMinor', label: 'Limit (minor)' }, { key: 'limitValueCount', label: 'Count limit' },
-  { key: 'isActive', label: 'Active' }, { key: 'priority', label: 'Priority' },
+  { key: 'id', label: 'Rule ID' }, { key: 'limitProfileCode', label: 'Profile' },
+  { key: 'product', label: 'Product' }, { key: 'direction', label: 'Direction' },
+  { key: 'channel', label: 'Channel' }, { key: 'currency', label: 'Currency' },
+  { key: 'dimension', label: 'Dimension' }, { key: 'limitValueMinor', label: 'Limit (minor)' },
+  { key: 'limitValueCount', label: 'Count limit' }, { key: 'isActive', label: 'Active' },
+  { key: 'priority', label: 'Priority' },
 ];
 
-export const CommercialRulesScreen: React.FC<{ initialTab?: Tab }> = ({ initialTab }) => {
-  const { principal } = useAuthStore();
-  const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
-  const canViewTab = (candidate: Tab) => hasFn(TAB_FUNCTIONS[candidate]);
-  const availableTabs = TAB_ORDER.filter(canViewTab);
-  const canView = availableTabs.length > 0;
-  const [tab, setTab] = useState<Tab>(() =>
-    initialTab && canViewTab(initialTab) ? initialTab : availableTabs[0] ?? 'fees',
-  );
-  const [data, setData] = useState<unknown>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+interface Page { rows: DataRecord[]; page: number; total: number | null; totalPages: number | null; hasNextPage: boolean }
+const PAGE_SIZE = 20;
+const PROFILE_CODE = /^[A-Z0-9_]{3,80}$/;
+const RULE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const AMOUNT_DIMENSIONS = ['MIN_AMOUNT_PER_TX', 'MAX_AMOUNT_PER_TX', 'DAILY_AMOUNT', 'WEEKLY_AMOUNT', 'MONTHLY_AMOUNT', 'YEARLY_AMOUNT', 'WALLET_BALANCE_MAX'];
+const COUNT_DIMENSIONS = ['DAILY_COUNT', 'WEEKLY_COUNT', 'MONTHLY_COUNT', 'YEARLY_COUNT'];
+const optionalText = (value: unknown) => value === undefined || value === null || typeof value === 'string';
+const optionalDate = (value: unknown) => value === undefined || value === null || (typeof value === 'string' && Number.isFinite(Date.parse(value)));
+const text = (value: unknown): value is string => typeof value === 'string' && !!value.trim();
 
-  useEffect(() => {
-    if (initialTab && canViewTab(initialTab)) setTab(initialTab);
-    else if (!canViewTab(tab) && availableTabs[0]) setTab(availableTabs[0]);
-  }, [initialTab]);
-
-  const fetchTab = async (selectedTab: Tab) => {
-    if (!canViewTab(selectedTab)) return;
-    setLoading(true);
-    setError('');
-    setData(null);
-    try {
-      if (selectedTab === 'limits') {
-        // These are the actual read routes. There is no /internal/limit-catalogue controller.
-        const [profiles, rules] = await Promise.all([
-          ApiClient.get('/internal/limit-profiles'),
-          ApiClient.get('/internal/limit-rules'),
-        ]);
-        setData({ profiles: extractRecords(profiles), rules: extractRecords(rules) } satisfies LimitRegistryData);
-      } else {
-        setData(await ApiClient.get(TAB_ENDPOINTS[selectedTab]));
-      }
-    } catch (err: any) {
-      setError(err?.message || `Failed to load ${TAB_LABELS[selectedTab].toLowerCase()}`);
-    } finally {
-      setLoading(false);
+// The catalogue is read-only, but malformed thresholds or surprise nested fields must not
+// masquerade as configuration. Keep only documented safe projection fields in Details.
+function limitRows(rows: DataRecord[], endpoint: string): DataRecord[] | null {
+  const profiles = endpoint === '/internal/limit-profiles';
+  if (!profiles && endpoint !== '/internal/limit-rules') return rows;
+  const seen = new Set<string>();
+  const projected: DataRecord[] = [];
+  for (const row of rows) {
+    const id = profiles ? row.code : row.id;
+    if (!text(id) || !(profiles ? PROFILE_CODE : RULE_ID).test(id) || seen.has(id.toUpperCase())) return null;
+    seen.add(id.toUpperCase());
+    if (!Number.isSafeInteger(row.version) || (row.version as number) < 1 ||
+        !optionalText(row.createdBy) || !optionalText(row.updatedBy) || !optionalDate(row.createdAt) || !optionalDate(row.updatedAt)) return null;
+    let keys: string[];
+    if (profiles) {
+      if (!text(row.name) || !['CUSTOMER','AGENT','SYSTEM','UNIVERSAL'].includes(row.kind as string) ||
+          !['ACTIVE','DISABLED','DEPRECATED'].includes(row.status as string) || typeof row.enabled !== 'boolean' ||
+          !['CONFIGURED','NOT_CONFIGURED','DISABLED'].includes(row.configurationStatus as string) || !optionalText(row.description)) return null;
+      keys = ['code','name','description','kind','status','enabled','configurationStatus','version','createdBy','updatedBy','createdAt','updatedAt'];
+    } else {
+      const amount = AMOUNT_DIMENSIONS.includes(row.dimension as string);
+      const count = COUNT_DIMENSIONS.includes(row.dimension as string);
+      if (!text(row.limitProfileCode) || !PROFILE_CODE.test(row.limitProfileCode) || !text(row.product) ||
+          !text(row.currency) || !/^[A-Z]{3}$/.test(row.currency) || (!amount && !count) ||
+          (row.direction !== null && !['INCOMING','OUTGOING','BOTH'].includes(row.direction as string)) ||
+          !(row.channel === null || typeof row.channel === 'string') || typeof row.isActive !== 'boolean' ||
+          !Number.isSafeInteger(row.priority) || typeof row.effectiveFrom !== 'string' || !Number.isFinite(Date.parse(row.effectiveFrom)) ||
+          !optionalDate(row.effectiveTo) || (row.effectiveTo != null && Date.parse(row.effectiveTo as string) <= Date.parse(row.effectiveFrom)) ||
+          (amount && (typeof row.limitValueMinor !== 'string' || !/^\d+$/.test(row.limitValueMinor) || row.limitValueCount !== null)) ||
+          (count && (!Number.isSafeInteger(row.limitValueCount) || (row.limitValueCount as number) < 0 || row.limitValueMinor !== null))) return null;
+      keys = ['id','limitProfileCode','product','direction','channel','currency','dimension','limitValueMinor','limitValueCount','version','effectiveFrom','effectiveTo','isActive','priority','createdBy','updatedBy','createdAt','updatedAt'];
     }
-  };
-
-  useEffect(() => {
-    if (canViewTab(tab)) void fetchTab(tab);
-  }, [tab]);
-
-  if (!canView) {
-    return (
-      <div style={wrap} role="alert">
-        <div style={denied}>
-          This screen requires at least one matching read function: <code>fee_rule.view</code>, <code>commission_rule.view</code>, <code>reward_rule.view</code>, <code>product.view</code>, or <code>limit.view</code>.
-        </div>
-      </div>
-    );
+    projected.push(Object.fromEntries(keys.filter(key => Object.prototype.hasOwnProperty.call(row, key)).map(key => [key, row[key]])));
   }
+  return projected;
+}
+function parsePage(value: unknown, requestedPage: number, endpoint: string): Page | null {
+  // Retain compatibility with legacy unpaginated responses without inventing totals or further pages.
+  if (Array.isArray(value)) {
+    if (requestedPage !== 1 || !value.every(row => row && typeof row === 'object' && !Array.isArray(row))) return null;
+    const rows = limitRows(value, endpoint);
+    return rows ? { rows, page: 1, total: null, totalPages: null, hasNextPage: false } : null;
+  }
+  if (!value || typeof value !== 'object') return null;
+  const p = value as Record<string, unknown>;
+  const rows = p.data;
+  if (!Array.isArray(rows) || !rows.every(row => row && typeof row === 'object' && !Array.isArray(row)) ||
+      !Number.isSafeInteger(p.total) || (p.total as number) < 0 ||
+      p.page !== requestedPage || p.limit !== PAGE_SIZE || !Number.isSafeInteger(p.totalPages) ||
+      p.totalPages !== Math.ceil((p.total as number) / PAGE_SIZE) || typeof p.hasNextPage !== 'boolean' ||
+      p.hasNextPage !== (requestedPage < (p.totalPages as number)) ||
+      rows.length > PAGE_SIZE || rows.length > (p.total as number)) return null;
+  const safeRows = limitRows(rows, endpoint);
+  return safeRows ? { rows: safeRows, page: requestedPage, total: p.total as number, totalPages: p.totalPages as number, hasNextPage: p.hasNextPage } : null;
+}
 
-  const limitData = data as LimitRegistryData | null;
-  const rows = tab !== 'limits' && data !== null ? extractRecords(data) : [];
-
+/** Each registry owns its request, paging and error state; a failed rules read does not hide profiles. */
+const RegistrySection: React.FC<{ title: string; endpoint: string; columns: StructuredColumn[]; description: string }> = ({ title, endpoint, columns, description }) => {
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState<Page | null>(null);
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [selected, setSelected] = useState<DataRecord | null>(null);
+  const requestId = useRef(0);
+  const load = async () => {
+    const id = ++requestId.current;
+    setLoading(true); setError(''); setData(null); setSelected(null);
+    try {
+      const result = await ApiClient.get(`${endpoint}?page=${page}&limit=${PAGE_SIZE}`);
+      const parsed = parsePage(result, page, endpoint);
+      if (!parsed) throw new Error(`${title} returned an invalid page.`);
+      if (id === requestId.current) setData(parsed);
+    } catch (err: any) {
+      if (id === requestId.current) setError(err?.message || `Could not load ${title.toLowerCase()}.`);
+    } finally { if (id === requestId.current) setLoading(false); }
+  };
+  useEffect(() => { void load(); return () => { requestId.current += 1; }; }, [endpoint, page]);
+  const search = query.trim().toLocaleLowerCase();
+  const rows = data?.rows.filter(row => !search || columns.some(column => {
+    const value = row[column.key];
+    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') return false;
+    const variants = [String(value)];
+    if (typeof value === 'boolean') variants.push(value ? 'Yes' : 'No');
+    if (typeof value === 'number' && Number.isFinite(value)) variants.push(value.toLocaleString());
+    if (typeof value === 'string' && /(?:At|Date|Timestamp)$/i.test(column.key)) {
+      const date = new Date(value);
+      if (!Number.isNaN(date.getTime())) variants.push(date.toLocaleString());
+    }
+    return variants.some(item => item.toLocaleLowerCase().includes(search));
+  })) ?? [];
+  const headingId = `registry-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
   return (
-    <div style={wrap}>
-      <h2 style={h2}>🏷️ Commercial Rule Registries</h2>
-      <p style={sub}>Read-only registry views. Each tab requires its matching read function; this screen does not create, approve, execute, or modify registry entries.</p>
-      <div style={tabRow} role="tablist" aria-label="Commercial registries">
-        {availableTabs.map((candidate) => (
-          <button
-            key={candidate}
-            type="button"
-            role="tab"
-            aria-selected={tab === candidate}
-            onClick={() => setTab(candidate)}
-            style={tab === candidate ? activeTab : tabBtn}
-          >
-            {TAB_LABELS[candidate]}
-          </button>
-        ))}
-        <button type="button" onClick={() => void fetchTab(tab)} style={btn} disabled={loading}>
-          {loading ? 'Loading…' : 'Refresh'}
-        </button>
+    <section className="commercial-registry" aria-labelledby={headingId}>
+      <div className="commercial-registry__heading">
+        <div><p className="commercial-kicker">READ-ONLY REGISTRY</p><h2 id={headingId}>{title}</h2><p>{description}</p></div>
+        <Button size="sm" onClick={() => void load()} disabled={loading} aria-label={`${loading ? 'Loading' : 'Refresh'} ${title}`}>{loading ? 'Loading…' : 'Refresh'}</Button>
       </div>
-
-      {error && <div style={errBox} role="alert">{error}</div>}
-      {loading ? <div style={loadingBox}>Loading {TAB_LABELS[tab].toLowerCase()}…</div> : data !== null ? (
-        tab === 'limits' ? (
-          <div style={limitSections}>
-            <section style={card} aria-label="Limit profiles">
-              <h3 style={sectionTitle}>Profiles ({limitData?.profiles?.length ?? 0})</h3>
-              <StructuredRecordTable
-                rows={limitData?.profiles ?? []}
-                columns={PROFILE_COLUMNS}
-                emptyMessage="No limit profiles were returned by the API."
-              />
-            </section>
-            <section style={card} aria-label="Limit rules">
-              <h3 style={sectionTitle}>Rules ({limitData?.rules?.length ?? 0})</h3>
-              <StructuredRecordTable
-                rows={limitData?.rules ?? []}
-                columns={LIMIT_RULE_COLUMNS}
-                emptyMessage="No limit rules were returned by the API."
-              />
-            </section>
-          </div>
-        ) : (
-          <section style={card} aria-label={`${TAB_LABELS[tab]} registry`}>
-            <h3 style={sectionTitle}>{TAB_LABELS[tab]} ({rows.length})</h3>
-            <StructuredRecordTable
-              rows={rows}
-              columns={COLUMNS[tab]}
-              emptyMessage={`No ${TAB_LABELS[tab].toLowerCase()} records were returned by the API.`}
-            />
-          </section>
-        )
-      ) : (
-        <div style={empty}>No {TAB_LABELS[tab].toLowerCase()} data loaded yet. Use Refresh to query the existing registry API.</div>
-      )}
-
-      <div style={note}>
-        Commercial decision snapshots are not part of these registry tables. Fee calculation and any future governed configuration changes remain separate existing workflows.
+      <div className="commercial-registry__toolbar">
+        <label className="commercial-search">Search this page <input type="search" value={query} onChange={event => { setQuery(event.target.value); setSelected(null); }} aria-label={`Search ${title} on this page`} placeholder="Search visible columns" /></label>
+        <p>Search applies only to the current page and visible columns.</p>
       </div>
-    </div>
+      {error && <div className="commercial-state commercial-state--error" role="alert">{error} Use Refresh to try again.</div>}
+      {loading ? <div className="commercial-state" role="status">Loading {title.toLowerCase()}…</div> : data && <>
+        <div className="commercial-registry__summary" role="status">
+          {data.total === null ? `${data.rows.length} record${data.rows.length === 1 ? '' : 's'} returned · Total and pagination unavailable` : `${data.total} total records · Page ${data.page} of ${Math.max(1, data.totalPages ?? 0)}`}
+          {search && ` · ${rows.length} matching on this page`}
+        </div>
+        <StructuredRecordTable rows={rows} columns={columns} onViewDetails={setSelected} emptyMessage={search ? 'No records match this search on the current page.' : `No ${title.toLowerCase()} were returned by the API.`} />
+        {data.total !== null && <div className="commercial-registry__pager" aria-label={`${title} pagination`}>
+          <span>Showing {data.rows.length} on this page</span>
+          <div><Button size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)} aria-label={`Previous ${title} page`}>Previous</Button>
+            <Button size="sm" disabled={!data.hasNextPage} onClick={() => setPage(p => p + 1)} aria-label={`Next ${title} page`}>Next</Button></div>
+        </div>}
+      </>}
+      {selected && <WorkspaceDrawer label={`${title} record details`} className="commercial-detail" onDismiss={() => setSelected(null)}>
+        <header className="commercial-detail__header"><div><p className="commercial-kicker">READ-ONLY REGISTRY</p><h2>{title} details</h2></div><Button size="sm" onClick={() => setSelected(null)}>Close</Button></header>
+        <div className="commercial-detail__body"><p>Values returned by the registry for this record.</p><StructuredKeyValueList data={selected} /></div>
+      </WorkspaceDrawer>}
+    </section>
   );
 };
 
-const wrap: React.CSSProperties = { padding: '24px', maxWidth: 1100 };
-const h2: React.CSSProperties = { margin: '0 0 8px', color: '#032B14' };
-const sub: React.CSSProperties = { color: '#64748B', fontSize: 13, marginBottom: 12 };
-const tabRow: React.CSSProperties = { display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' };
-const tabBtn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer' };
-const activeTab: React.CSSProperties = { ...tabBtn, background: '#032B14', color: '#fff', border: '1px solid #032B14' };
-const btn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer', marginLeft: 'auto' };
-const errBox: React.CSSProperties = { background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#991B1B', padding: 10, borderRadius: 6, marginBottom: 12, fontSize: 13 };
-const loadingBox: React.CSSProperties = { padding: 20, textAlign: 'center', color: '#64748B' };
-const empty: React.CSSProperties = { padding: 20, textAlign: 'center', color: '#64748B', background: '#fff', borderRadius: 8, border: '1px dashed #E2E8F0' };
-const denied: React.CSSProperties = { background: '#FFF7ED', border: '1px solid #FDBA74', color: '#92400E', padding: 12, borderRadius: 8, fontSize: 13 };
-const card: React.CSSProperties = { padding: 16, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8, marginBottom: 12 };
-const sectionTitle: React.CSSProperties = { margin: '0 0 12px', color: '#334155', fontSize: 14 };
-const limitSections: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr', gap: 4 };
-const note: React.CSSProperties = { marginTop: 16, fontSize: 12, color: '#64748B', background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' };
+export const CommercialRulesScreen: React.FC<{ initialTab?: Tab }> = (props) => {
+  const principal = useAuthStore(state => state.principal);
+  const key = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  return <CommercialRulesWorkspace key={key} {...props} />;
+};
+const CommercialRulesWorkspace: React.FC<{ initialTab?: Tab }> = ({ initialTab }) => {
+  const { principal } = useAuthStore();
+  const availableTabs = TAB_ORDER.filter(candidate => principal?.scopes.includes(TAB_FUNCTIONS[candidate]));
+  const [tab, setTab] = useState<Tab>(() => initialTab && availableTabs.includes(initialTab) ? initialTab : availableTabs[0] ?? 'fees');
+  const tabRefs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
+  useEffect(() => {
+    if (initialTab && availableTabs.includes(initialTab)) setTab(initialTab);
+    else if (!availableTabs.includes(tab) && availableTabs[0]) setTab(availableTabs[0]);
+  }, [initialTab]);
+  if (!availableTabs.length) return <div className="commercial-workspace"><div className="commercial-state commercial-state--error" role="alert">This screen requires at least one matching read function: <code>fee_rule.view</code>, <code>commission_rule.view</code>, <code>reward_rule.view</code>, <code>product.view</code>, or <code>limit.view</code>.</div></div>;
+  return (
+    <div className="mn-operational commercial-workspace">
+      <PageHeader eyebrow="Commercial administration" title="Commercial Rule Registries" description="Explore the fee, commission, reward, product and limit catalogues available to your role." />
+      <div className="commercial-boundary" role="note"><strong>Read-only workspace</strong><span>These registries show configuration, not transaction decisions. No rule, product or limit changes can be made here.</span></div>
+      <div className="commercial-tabs" role="tablist" aria-label="Commercial registries">
+        {availableTabs.map(candidate => <button key={candidate} type="button" role="tab" id={`commercial-tab-${candidate}`} aria-controls="commercial-panel" aria-selected={tab === candidate} tabIndex={tab === candidate ? 0 : -1} ref={element => { tabRefs.current[candidate] = element; }}
+          onKeyDown={event => {
+            const index = availableTabs.indexOf(candidate); let next = index;
+            if (event.key === 'ArrowRight') next = (index + 1) % availableTabs.length;
+            else if (event.key === 'ArrowLeft') next = (index - 1 + availableTabs.length) % availableTabs.length;
+            else if (event.key === 'Home') next = 0;
+            else if (event.key === 'End') next = availableTabs.length - 1;
+            else return;
+            event.preventDefault(); setTab(availableTabs[next]); tabRefs.current[availableTabs[next]]?.focus();
+          }} onClick={() => setTab(candidate)}>{TAB_LABELS[candidate]}</button>)}
+      </div>
+      <div id="commercial-panel" role="tabpanel" aria-labelledby={`commercial-tab-${tab}`} className="commercial-panel">
+        {tab === 'limits' ? <div className="commercial-sections">
+          <RegistrySection title="Limit profiles" endpoint="/internal/limit-profiles" columns={PROFILE_COLUMNS} description="Profile configuration and availability. Profiles are not assignments." />
+          <RegistrySection title="Limit rules" endpoint="/internal/limit-rules" columns={LIMIT_RULE_COLUMNS} description="Configured thresholds and dimensions. Rules are not current usage." />
+        </div> : <RegistrySection key={tab} title={TAB_LABELS[tab]} endpoint={ENDPOINTS[tab]} columns={COLUMNS[tab]} description={TAB_DESCRIPTION[tab]} />}
+      </div>
+      <p className="commercial-footnote">Amounts are displayed in the returned currency's minor units; rates remain in basis points. Effective dates and active flags are distinct from a live transaction decision.</p>
+    </div>
+  );
+};

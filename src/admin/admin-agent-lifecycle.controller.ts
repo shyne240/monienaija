@@ -88,16 +88,37 @@ export class AdminAgentLifecycleController {
   }
 
   private requireFunction(req: AuthenticatedRequest, functionCode: string): Promise<string> {
-    return this.auth.requireFunction(req.authorizationPrincipal, functionCode, 'admin-agent-lifecycle', [
-      'OPERATOR',
-      'SERVICE',
-      'PRIVILEGED',
-    ]);
+    return this.auth.requireFunction(
+      req.authorizationPrincipal,
+      functionCode,
+      'admin-agent-lifecycle',
+      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
   }
 
   private sanitize(agent: Agent) {
     // Safe projection — reuse Agent entity fields only (no credentials, no secrets).
-    const { id, reference, status, agentClassId, originApplicationId, version, createdAt, updatedAt, deletedAt } = agent;
-    return { id, reference, status, agentClassId, originApplicationId, version, createdAt, updatedAt, deletedAt };
+    const {
+      id,
+      reference,
+      status,
+      agentClassId,
+      originApplicationId,
+      version,
+      createdAt,
+      updatedAt,
+      deletedAt,
+    } = agent;
+    return {
+      id,
+      reference,
+      status,
+      agentClassId,
+      originApplicationId,
+      version,
+      createdAt,
+      updatedAt,
+      deletedAt,
+    };
   }
 }

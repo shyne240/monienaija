@@ -16,7 +16,11 @@ import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-au
 import { AgentStatus } from '../src/agent/agent.enums';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { LedgerAccountType, LedgerEntryDirection, LedgerNormalBalance } from '../src/ledger/ledger.enums';
+import {
+  LedgerAccountType,
+  LedgerEntryDirection,
+  LedgerNormalBalance,
+} from '../src/ledger/ledger.enums';
 import { CustomerTransactionPinService } from '../src/customer/customer-transaction-pin.service';
 import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
@@ -49,7 +53,9 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     cashOutService = moduleRef.get(AgentCashOutService);
@@ -103,7 +109,10 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
       actor: 'applicant-hard',
     });
     await appService.submit(appEntity.id, 'applicant-hard');
-    await dataSource.query(`UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`, [appEntity.id]);
+    await dataSource.query(
+      `UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`,
+      [appEntity.id],
+    );
     const agent = await lifecycleService.activateFromApplication(appEntity.id, 'test-actor');
     expect(agent.status).toBe(AgentStatus.ACTIVE);
     if (pin !== null) {
@@ -114,12 +123,24 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
         actor: agent.id,
       });
     }
-    await walletService.createWallet({ customerId: agent.id, currency: 'NGN', idempotencyKey: `hard-agent-wallet-${agent.id}-${randomUUID()}` });
+    await walletService.createWallet({
+      customerId: agent.id,
+      currency: 'NGN',
+      idempotencyKey: `hard-agent-wallet-${agent.id}-${randomUUID()}`,
+    });
     return { cls, agent, appEntity };
   }
 
   function agentPrincipal(agentId: string) {
-    return { type: 'AGENT' as const, agentId, principalId: agentId, roles: [], scopes: [], customerAccess: 'NONE' as const, agentAccess: 'SELF' as const };
+    return {
+      type: 'AGENT' as const,
+      agentId,
+      principalId: agentId,
+      roles: [],
+      scopes: [],
+      customerAccess: 'NONE' as const,
+      agentAccess: 'SELF' as const,
+    };
   }
 
   async function createCustomerWithPin(phone: string, pin: string) {
@@ -128,43 +149,98 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
       [`cust-hard-${randomUUID().slice(0, 8)}`],
     );
     const customerId = rows[0]!.id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, `Hard ${phone}`]);
-    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`, [customerId, phone]);
-    await customerPinService.setTransactionPin(customerId, { pinHash: hashPin(pin), hashAlgorithm: 'PBKDF2', pinVersion: 1, actor: customerId });
-    const wallet = await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `hard-cust-wallet-${customerId}-${randomUUID()}` });
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`,
+      [customerId, `Hard ${phone}`],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`,
+      [customerId, phone],
+    );
+    await customerPinService.setTransactionPin(customerId, {
+      pinHash: hashPin(pin),
+      hashAlgorithm: 'PBKDF2',
+      pinVersion: 1,
+      actor: customerId,
+    });
+    const wallet = await walletService.createWallet({
+      customerId,
+      currency: 'NGN',
+      idempotencyKey: `hard-cust-wallet-${customerId}-${randomUUID()}`,
+    });
     return { customerId, wallet };
   }
 
   async function createMfaChallenge(customerId: string, otp: string, ttlSeconds = 300) {
     let enrollmentId: string;
     let methodId: string;
-    const enrollRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM mfa_enrollments WHERE customer_id=$1 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`, [customerId]);
+    const enrollRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM mfa_enrollments WHERE customer_id=$1 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
+      [customerId],
+    );
     if (enrollRows[0]) {
       enrollmentId = enrollRows[0]!.id;
-      const methodRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM mfa_methods WHERE enrollment_id=$1 AND customer_id=$2 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`, [enrollmentId, customerId]);
+      const methodRows: Array<{ id: string }> = await dataSource.query(
+        `SELECT id FROM mfa_methods WHERE enrollment_id=$1 AND customer_id=$2 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
+        [enrollmentId, customerId],
+      );
       if (methodRows[0]) methodId = methodRows[0]!.id;
       else {
-        const mRows: Array<{ id: string }> = await dataSource.query(`INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`, [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`]);
+        const mRows: Array<{ id: string }> = await dataSource.query(
+          `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
+          [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`],
+        );
         methodId = mRows[0]!.id;
       }
     } else {
-      const eRows: Array<{ id: string }> = await dataSource.query(`INSERT INTO mfa_enrollments (id, customer_id, reference, status) VALUES ($1,$2,$3,'ENABLED') RETURNING id`, [randomUUID(), customerId, `mfa-enroll-${randomUUID().slice(0, 6)}`]);
+      const eRows: Array<{ id: string }> = await dataSource.query(
+        `INSERT INTO mfa_enrollments (id, customer_id, reference, status) VALUES ($1,$2,$3,'ENABLED') RETURNING id`,
+        [randomUUID(), customerId, `mfa-enroll-${randomUUID().slice(0, 6)}`],
+      );
       enrollmentId = eRows[0]!.id;
-      const mRows: Array<{ id: string }> = await dataSource.query(`INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`, [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`]);
+      const mRows: Array<{ id: string }> = await dataSource.query(
+        `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
+        [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`],
+      );
       methodId = mRows[0]!.id;
     }
-    const credRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`, [customerId]);
+    const credRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`,
+      [customerId],
+    );
     let credentialId = credRows[0]?.id;
     if (!credentialId) {
-      const cRows: Array<{ id: string }> = await dataSource.query(`INSERT INTO customer_authentication_credentials (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`, [randomUUID(), customerId]);
+      const cRows: Array<{ id: string }> = await dataSource.query(
+        `INSERT INTO customer_authentication_credentials (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
+        [randomUUID(), customerId],
+      );
       credentialId = cRows[0]!.id;
     }
     const sessionId = randomUUID();
     const tokenHash = randomBytes(32).toString('hex');
-    await dataSource.query(`INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`, [sessionId, customerId, credentialId, tokenHash]).catch(() => {});
+    await dataSource
+      .query(
+        `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
+        [sessionId, customerId, credentialId, tokenHash],
+      )
+      .catch(() => {});
     const principal: any = { principalType: 'CUSTOMER', customerId, credentialId, sessionId };
-    const challenge = await mfaService.issueChallenge({ principal, enrollmentId, methodId, challengeHash: otp, ttlSeconds, actor: customerId } as any);
-    return { challengeId: (challenge as any).id ?? (challenge as any).challengeId, otp, enrollmentId, methodId, sessionId, credentialId };
+    const challenge = await mfaService.issueChallenge({
+      principal,
+      enrollmentId,
+      methodId,
+      challengeHash: otp,
+      ttlSeconds,
+      actor: customerId,
+    } as any);
+    return {
+      challengeId: (challenge as any).id ?? (challenge as any).challengeId,
+      otp,
+      enrollmentId,
+      methodId,
+      sessionId,
+      credentialId,
+    };
   }
 
   async function fundCustomer(ledgerId: string, amount: string) {
@@ -173,7 +249,11 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
       lines: [
-        { accountId: systemLedgerAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: amount },
+        {
+          accountId: systemLedgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: amount,
+        },
         { accountId: ledgerId, direction: LedgerEntryDirection.CREDIT, amountMinor: amount },
       ],
     });
@@ -208,16 +288,35 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet } = await createCustomerWithPin(phone, '1234');
     await fundCustomer(wallet.ledgerAccountId, '5000');
-    const { challengeId, sessionId: originalSession } = await createMfaChallenge(customerId, 'otp-session');
+    const { challengeId, sessionId: originalSession } = await createMfaChallenge(
+      customerId,
+      'otp-session',
+    );
     // Create a second session for same customer
-    const credRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`, [customerId]);
+    const credRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`,
+      [customerId],
+    );
     const credentialId = credRows[0]!.id;
     const otherSessionId = randomUUID();
     const otherToken = randomBytes(32).toString('hex');
-    await dataSource.query(`INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`, [otherSessionId, customerId, credentialId, otherToken]);
+    await dataSource.query(
+      `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
+      [otherSessionId, customerId, credentialId, otherToken],
+    );
     // Directly test canonical MFA with wrong session — should be WRONG_SESSION
-    const wrongPrincipal: any = { principalType: 'CUSTOMER', customerId, credentialId, sessionId: otherSessionId };
-    const direct = await mfaService.verifyChallenge({ principal: wrongPrincipal, challengeId, providedHash: 'otp-session', actor: customerId } as any);
+    const wrongPrincipal: any = {
+      principalType: 'CUSTOMER',
+      customerId,
+      credentialId,
+      sessionId: otherSessionId,
+    };
+    const direct = await mfaService.verifyChallenge({
+      principal: wrongPrincipal,
+      challengeId,
+      providedHash: 'otp-session',
+      actor: customerId,
+    } as any);
     expect(direct.verified).toBe(false);
     expect(direct.failureReason).toBe('WRONG_SESSION');
     // Now test Wallet→Cash with a challenge that is bound to originalSession, but we will not use Wallet→Cash's wrong session path
@@ -236,7 +335,10 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPin(phone, '1234');
     const { challengeId } = await createMfaChallenge(customerId, 'otp-expire', 30);
-    await dataSource.query(`UPDATE mfa_challenges SET expires_at=NOW() - INTERVAL '1 hour' WHERE id=$1`, [challengeId]);
+    await dataSource.query(
+      `UPDATE mfa_challenges SET expires_at=NOW() - INTERVAL '1 hour' WHERE id=$1`,
+      [challengeId],
+    );
     await expect(
       cashOutService.execute({
         agentId: agent.id,
@@ -315,7 +417,10 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const { customerId, wallet } = await createCustomerWithPin(phone, '1234');
     await fundCustomer(wallet.ledgerAccountId, '5000');
     const { challengeId } = await createMfaChallenge(customerId, 'otp-once');
-    const before: Array<{ status: string }> = await dataSource.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challengeId]);
+    const before: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM mfa_challenges WHERE id=$1`,
+      [challengeId],
+    );
     expect(before[0]!.status).toBe('ACTIVE');
     await cashOutService.execute({
       agentId: agent.id,
@@ -329,16 +434,41 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `hard-F-${randomUUID()}`,
     });
-    const after: Array<{ status: string; verified_at: string | null }> = await dataSource.query(`SELECT status, verified_at FROM mfa_challenges WHERE id=$1`, [challengeId]);
+    const after: Array<{ status: string; verified_at: string | null }> = await dataSource.query(
+      `SELECT status, verified_at FROM mfa_challenges WHERE id=$1`,
+      [challengeId],
+    );
     expect(after[0]!.status).toBe('VERIFIED');
     expect(after[0]!.verified_at).not.toBeNull();
     // Second verification via canonical service should be REPLAYED
-    const credRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`, [customerId]);
-    const sessRows: Array<{ id: string }> = await dataSource.query(`SELECT session_id FROM mfa_challenges WHERE id=$1`, [challengeId]);
-    const sessId = sessRows[0]!.id ?? (await dataSource.query(`SELECT session_id FROM mfa_challenges WHERE id=$1`, [challengeId]))[0].session_id;
+    const credRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`,
+      [customerId],
+    );
+    const sessRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT session_id FROM mfa_challenges WHERE id=$1`,
+      [challengeId],
+    );
+    const sessId =
+      sessRows[0]!.id ??
+      (
+        await dataSource.query(`SELECT session_id FROM mfa_challenges WHERE id=$1`, [challengeId])
+      )[0].session_id;
     // Use the same challengeId with same OTP via direct MFA — should be REPLAYED
-    const principal: any = { principalType: 'CUSTOMER', customerId, credentialId: credRows[0]!.id, sessionId: (await dataSource.query(`SELECT session_id FROM mfa_challenges WHERE id=$1`, [challengeId]))[0].session_id };
-    const replay = await mfaService.verifyChallenge({ principal, challengeId, providedHash: 'otp-once', actor: customerId } as any);
+    const principal: any = {
+      principalType: 'CUSTOMER',
+      customerId,
+      credentialId: credRows[0]!.id,
+      sessionId: (
+        await dataSource.query(`SELECT session_id FROM mfa_challenges WHERE id=$1`, [challengeId])
+      )[0].session_id,
+    };
+    const replay = await mfaService.verifyChallenge({
+      principal,
+      challengeId,
+      providedHash: 'otp-once',
+      actor: customerId,
+    } as any);
     expect(replay.verified).toBe(false);
     expect(replay.failureReason).toBe('REPLAYED');
   });
@@ -350,7 +480,10 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     await fundCustomer(wallet.ledgerAccountId, '5000');
     const { challengeId } = await createMfaChallenge(customerId, 'otp-manual');
     // Manually set to VERIFIED without canonical verification
-    await dataSource.query(`UPDATE mfa_challenges SET status='VERIFIED', verified_at=NOW() WHERE id=$1`, [challengeId]);
+    await dataSource.query(
+      `UPDATE mfa_challenges SET status='VERIFIED', verified_at=NOW() WHERE id=$1`,
+      [challengeId],
+    );
     // Now try to use it for Wallet→Cash with same OTP — should be denied as already used, not treated as valid
     await expect(
       cashOutService.execute({
@@ -367,7 +500,10 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
       }),
     ).rejects.toThrow(/already used/i);
     // Ensure no financial was created for that idempotencyKey
-    const journals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals WHERE reference=$1`, [`CASH_OUT-hard-G-${challengeId}`]);
+    const journals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals WHERE reference=$1`,
+      [`CASH_OUT-hard-G-${challengeId}`],
+    );
     // Not checking exact, just ensure no balance mutation
     const bal = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     expect(bal.balanceMinor).toBe('5000');
@@ -380,7 +516,9 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     await fundCustomer(wallet.ledgerAccountId, '5000');
     const { challengeId } = await createMfaChallenge(customerId, 'otp-original');
     // Attacker tries to change challenge_hash to match an attacker OTP
-    await dataSource.query(`UPDATE mfa_challenges SET challenge_hash='attacker-otp' WHERE id=$1`, [challengeId]);
+    await dataSource.query(`UPDATE mfa_challenges SET challenge_hash='attacker-otp' WHERE id=$1`, [
+      challengeId,
+    ]);
     // Now try Wallet→Cash with attacker-otp — but the challenge is still ACTIVE, so canonical will check hash and should fail if we provide original otp, succeed if we provide attacker-otp
     // The point is that direct manipulation is visible, but the canonical path still checks hash via timingSafeEqual, so providing attacker-otp will succeed (as if attacker changed hash to their own)
     // However, the security requirement is that Wallet→Cash must not have its own direct hash comparison that bypasses canonical; we have removed that, so this test ensures that Wallet→Cash still goes through canonical and does not bypass
@@ -435,10 +573,19 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     await fundCustomer(wallet.ledgerAccountId, '5000');
     const { challengeId } = await createMfaChallenge(customerId, 'otp-fail-mutation');
     const beforeCust = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
-    const agentWallet = await walletService.createWallet({ customerId: agent.id, currency: 'NGN', idempotencyKey: `hard-K-agent-${agent.id}-${randomUUID()}` }).catch(async () => {
-      const w = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`, [agent.id]);
-      return { ledgerAccountId: w[0].ledger_account_id } as any;
-    });
+    const agentWallet = await walletService
+      .createWallet({
+        customerId: agent.id,
+        currency: 'NGN',
+        idempotencyKey: `hard-K-agent-${agent.id}-${randomUUID()}`,
+      })
+      .catch(async () => {
+        const w = await dataSource.query(
+          `SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
+          [agent.id],
+        );
+        return { ledgerAccountId: w[0].ledger_account_id } as any;
+      });
     const beforeAgent = await ledgerService.getAccountBalance(agentWallet.ledgerAccountId);
     await expect(
       cashOutService.execute({
@@ -466,7 +613,9 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const { customerId, wallet } = await createCustomerWithPin(phone, '1234');
     await fundCustomer(wallet.ledgerAccountId, '5000');
     const { challengeId } = await createMfaChallenge(customerId, 'otp-once-effect');
-    const beforeJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
+    const beforeJournals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
     const res = await cashOutService.execute({
       agentId: agent.id,
       agentPrincipal: agentPrincipal(agent.id) as any,
@@ -480,7 +629,9 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
       idempotencyKey: `hard-L-${randomUUID()}`,
     });
     expect(res.status).toBe('COMPLETED');
-    const afterJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
+    const afterJournals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
     expect(BigInt(afterJournals[0]!.cnt)).toBe(BigInt(beforeJournals[0]!.cnt) + 1n);
     const journal = await ledgerService.getJournal(res.journalId);
     expect(journal!.lines.length).toBe(2);
@@ -506,14 +657,20 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     });
     expect(JSON.stringify(res).toLowerCase()).not.toContain('otp');
     expect(JSON.stringify(res).toLowerCase()).not.toContain('challenge');
-    const audits: Array<{ new_values: any }> = await dataSource.query(`SELECT new_values FROM audit_events WHERE entity_id=$1 AND entity_type='AGENT_CASH_OUT'`, [res.journalId]);
+    const audits: Array<{ new_values: any }> = await dataSource.query(
+      `SELECT new_values FROM audit_events WHERE entity_id=$1 AND entity_type='AGENT_CASH_OUT'`,
+      [res.journalId],
+    );
     expect(audits.length).toBe(1);
     const serial = JSON.stringify(audits[0]!.new_values).toLowerCase();
     expect(serial).not.toContain('otp');
     expect(serial).not.toContain('challenge_hash');
     expect(serial).not.toContain('secret');
     // Financial audit also should not contain OTP
-    const finAudits: Array<{ new_values: any }> = await dataSource.query(`SELECT new_values FROM audit_events WHERE entity_id=$1 AND entity_type='AGENT_FINANCIAL_EXECUTION'`, [res.journalId]);
+    const finAudits: Array<{ new_values: any }> = await dataSource.query(
+      `SELECT new_values FROM audit_events WHERE entity_id=$1 AND entity_type='AGENT_FINANCIAL_EXECUTION'`,
+      [res.journalId],
+    );
     expect(JSON.stringify(finAudits[0]!.new_values).toLowerCase()).not.toContain('otp');
   });
 
@@ -525,25 +682,40 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     expect(stored!.pinHash.length).toBeGreaterThan(20);
     // Failed attempts increment
     for (let i = 0; i < 4; i++) {
-      const r = await customerPinService.verifyTransactionPin(customerId, { pin: '0000', actor: customerId }, { verify: (p: string) => ({ verified: p === '1234' }) } as any);
+      const r = await customerPinService.verifyTransactionPin(
+        customerId,
+        { pin: '0000', actor: customerId },
+        { verify: (p: string) => ({ verified: p === '1234' }) } as any,
+      );
       expect(r.verified).toBe(false);
     }
     const after4 = await customerPinService.getTransactionPin(customerId);
     expect(after4!.failedCount).toBe(4);
     expect(after4!.accountLocked).toBe(false);
     // 5th fail locks
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const r5 = await customerPinService.verifyTransactionPin(customerId, { pin: '0000', actor: customerId }, { verify: (_p: string, _a: string, _h: string) => ({ verified: false }) } as any);
+
+    const r5 = await customerPinService.verifyTransactionPin(
+      customerId,
+      { pin: '0000', actor: customerId },
+      { verify: (_p: string, _a: string, _h: string) => ({ verified: false }) } as any,
+    );
     expect(r5.locked).toBe(true);
     const locked = await customerPinService.getTransactionPin(customerId);
     expect(locked!.accountLocked).toBe(true);
     // Locked cannot be used even with correct PIN
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const rLocked = await customerPinService.verifyTransactionPin(customerId, { pin: '1234', actor: customerId }, { verify: (_p: string, _a: string, _h: string) => ({ verified: true }) } as any);
+
+    const rLocked = await customerPinService.verifyTransactionPin(
+      customerId,
+      { pin: '1234', actor: customerId },
+      { verify: (_p: string, _a: string, _h: string) => ({ verified: true }) } as any,
+    );
     expect(rLocked.verified).toBe(false);
     expect(rLocked.failureReason).toBe('PIN_LOCKED');
     // Audit does not contain pin
-    const audits: Array<{ new_values: any; previous_values: any }> = await dataSource.query(`SELECT new_values, previous_values FROM audit_events WHERE entity_type='CUSTOMER_TRANSACTION_PIN' AND entity_id=$1 ORDER BY created_at DESC`, [stored!.id]);
+    const audits: Array<{ new_values: any; previous_values: any }> = await dataSource.query(
+      `SELECT new_values, previous_values FROM audit_events WHERE entity_type='CUSTOMER_TRANSACTION_PIN' AND entity_id=$1 ORDER BY created_at DESC`,
+      [stored!.id],
+    );
     for (const a of audits) {
       const s = JSON.stringify({ ...a.new_values, ...a.previous_values }).toLowerCase();
       expect(s).not.toContain('1234');

@@ -59,13 +59,25 @@ export class NotificationDeliveryProcessor {
 
   constructor(private readonly options: DeliveryProcessorOptions) {
     this.maxAttempts = Math.max(1, Math.min(20, Math.floor(Number(options.maxAttempts) || 3)));
-    this.baseDelaySeconds = Math.max(1, Math.min(86400, Math.floor(Number(options.baseDelaySeconds) || 60)));
-    this.leaseSeconds = Math.max(1, Math.min(3600, Math.floor(Number(options.leaseSeconds) || 120)));
+    this.baseDelaySeconds = Math.max(
+      1,
+      Math.min(86400, Math.floor(Number(options.baseDelaySeconds) || 60)),
+    );
+    this.leaseSeconds = Math.max(
+      1,
+      Math.min(3600, Math.floor(Number(options.leaseSeconds) || 120)),
+    );
   }
 
   async processBatch(limit: number): Promise<DeliveryBatchResult> {
     await this.recoverExpiredLeases(Math.max(1, Math.min(500, limit * 2)));
-    const summary: DeliveryBatchResult = { claimed: 0, sent: 0, failed: 0, optedOut: 0, suppressed: 0 };
+    const summary: DeliveryBatchResult = {
+      claimed: 0,
+      sent: 0,
+      failed: 0,
+      optedOut: 0,
+      suppressed: 0,
+    };
     for (let i = 0; i < Math.max(0, Math.min(500, limit)); i += 1) {
       const row = await this.claim();
       if (!row) break;
@@ -74,7 +86,8 @@ export class NotificationDeliveryProcessor {
       if (outcome === 'SENT') summary.sent += 1;
       else if (outcome === 'SKIPPED') {
         const rows = await this.options.dataSource.query<Array<{ last_error: string | null }>>(
-          `SELECT last_error FROM notification_deliveries WHERE id=$1`, [row.id],
+          `SELECT last_error FROM notification_deliveries WHERE id=$1`,
+          [row.id],
         );
         if (rows[0]?.last_error?.endsWith('_OPT_OUT')) summary.optedOut += 1;
         else summary.suppressed += 1;
@@ -92,7 +105,9 @@ export class NotificationDeliveryProcessor {
   /** Public for deterministic operational recovery/testing; no provider is invoked here. */
   async recoverExpiredLeases(limit = 100): Promise<number> {
     return this.options.dataSource.transaction(async (manager) => {
-      const expired = await manager.query<Array<{ id: string; attempts: number; lease_token: string }>>(
+      const expired = await manager.query<
+        Array<{ id: string; attempts: number; lease_token: string }>
+      >(
         `SELECT id, attempts, lease_token FROM notification_deliveries
           WHERE lease_token IS NOT NULL AND lease_expires_at <= NOW()
           ORDER BY lease_expires_at, id LIMIT $1 FOR UPDATE SKIP LOCKED`,
@@ -155,31 +170,41 @@ export class NotificationDeliveryProcessor {
       );
       await manager.query(
         `INSERT INTO notification_delivery_attempts (delivery_id, attempt_number, lease_token, status)
-         VALUES ($1,$2,$3,'CLAIMED')`, [row.id, number, token],
+         VALUES ($1,$2,$3,'CLAIMED')`,
+        [row.id, number, token],
       );
       return { ...row, attempts: number, lease_token: token };
     });
   }
 
-  private async markStarted(row: DeliveryRow): Promise<boolean> {
+  private async markStarted(row: DeliveryRow): Promise<'STARTED' | 'DISABLED' | 'LOST'> {
     return this.options.dataSource.transaction(async (manager) => {
       const locked = await manager.query<Array<{ id: string }>>(
         `SELECT id FROM notification_deliveries WHERE id=$1 AND lease_token=$2
           AND lease_expires_at > NOW() AND status IN ('PENDING','FAILED') FOR UPDATE`,
         [row.id, row.lease_token],
       );
-      if (!locked[0]) return false;
+      if (!locked[0]) return 'LOST';
       const attempt = await manager.query<Array<{ id: string }>>(
         `SELECT id FROM notification_delivery_attempts WHERE delivery_id=$1 AND lease_token=$2
-          AND status='CLAIMED' FOR UPDATE`, [row.id, row.lease_token],
+          AND status='CLAIMED' FOR UPDATE`,
+        [row.id, row.lease_token],
       );
-      if (!attempt[0]) return false;
+      if (!attempt[0]) return 'LOST';
+      // Serialize the final local pre-send decision with governed event/channel changes.
+      // A request already STARTED may still complete and requires operational egress fencing.
+      if (
+        (row.channel === 'SMS' || row.channel === 'EMAIL') &&
+        !(await this.options.templates.isEventEnabled(manager, row.event_type, row.channel, true))
+      ) {
+        return 'DISABLED';
+      }
       await manager.query(
         `UPDATE notification_delivery_attempts SET status='STARTED', started_at=NOW()
           WHERE delivery_id=$1 AND lease_token=$2 AND status='CLAIMED'`,
         [row.id, row.lease_token],
       );
-      return true;
+      return 'STARTED';
     });
   }
 
@@ -195,8 +220,14 @@ export class NotificationDeliveryProcessor {
         [row.id, row.lease_token],
       );
       if (!locked[0]) return false; // a later owner/recovery has fenced this worker
-      const attemptStatus = outcome === 'SENT' ? 'ACCEPTED' : outcome === 'UNKNOWN' ? 'UNKNOWN' :
-        outcome === 'SKIPPED' ? 'SUPPRESSED' : 'FAILED';
+      const attemptStatus =
+        outcome === 'SENT'
+          ? 'ACCEPTED'
+          : outcome === 'UNKNOWN'
+            ? 'UNKNOWN'
+            : outcome === 'SKIPPED'
+              ? 'SUPPRESSED'
+              : 'FAILED';
       await manager.query(
         `UPDATE notification_delivery_attempts SET status=$1, reason=$2, finished_at=NOW()
           WHERE delivery_id=$3 AND lease_token=$4`,
@@ -214,10 +245,14 @@ export class NotificationDeliveryProcessor {
     });
   }
 
-  private failureOutcome(result: NotificationSendResult, attempt: number): 'FAILED' | 'DEAD' | 'UNKNOWN' {
+  private failureOutcome(
+    result: NotificationSendResult,
+    attempt: number,
+  ): 'FAILED' | 'DEAD' | 'UNKNOWN' {
     if (result.failureDisposition === 'UNKNOWN') return 'UNKNOWN';
     if (result.failureDisposition === 'PERMANENT') return 'DEAD';
-    if (result.failureDisposition === 'RETRYABLE') return attempt >= this.maxAttempts ? 'DEAD' : 'FAILED';
+    if (result.failureDisposition === 'RETRYABLE')
+      return attempt >= this.maxAttempts ? 'DEAD' : 'FAILED';
     // Only an explicit non-ambiguous HTTP client rejection can be retried without assuming
     // provider idempotency. 408 and 409 may represent an accepted/in-flight request.
     const http = /^(?:ROBASE|BREVO|RESEND)_HTTP_(4\d\d)(?::|$)/.exec(result.error ?? '');
@@ -233,34 +268,55 @@ export class NotificationDeliveryProcessor {
     try {
       let suppression: string | null = null;
       if (isSecurityCriticalNotificationEvent(row.event_type)) suppression = 'SECURITY_DIRECT_ONLY';
-      else if ((row.channel === 'SMS' || row.channel === 'EMAIL') &&
-        !(await this.options.templates.isEventEnabled(this.options.dataSource, row.event_type, row.channel))) {
+      else if (
+        (row.channel === 'SMS' || row.channel === 'EMAIL') &&
+        !(await this.options.templates.isEventEnabled(
+          this.options.dataSource,
+          row.event_type,
+          row.channel,
+        ))
+      ) {
         suppression = 'EVENT_DISABLED';
       }
       try {
         this.options.templates.assertSafe(row.message ?? '');
         if (row.rendered_subject) this.options.templates.assertSafe(row.rendered_subject);
-        if (canonicalNotificationEvent(row.event_type) === 'cash_to_cash.created' &&
-          /\b\d{6}\b/.test(row.message ?? '') && /\b[789]\d{9}\b/.test(row.message ?? '')) {
+        if (
+          canonicalNotificationEvent(row.event_type) === 'cash_to_cash.created' &&
+          /\b\d{6}\b/.test(row.message ?? '') &&
+          /\b[789]\d{9}\b/.test(row.message ?? '')
+        ) {
           suppression = 'UNSAFE_MESSAGE';
         }
-      } catch { suppression = 'UNSAFE_MESSAGE'; }
+      } catch {
+        suppression = 'UNSAFE_MESSAGE';
+      }
 
       if (!suppression) {
         const destination = await this.options.resolver.resolve(
-          row.recipient_type, row.recipient_id, row.channel, this.options.dataSource, row.event_type,
+          row.recipient_type,
+          row.recipient_id,
+          row.channel,
+          this.options.dataSource,
+          row.event_type,
         );
         if (!destination.destination) suppression = destination.reason ?? 'DESTINATION_UNAVAILABLE';
         else if (destination.destination !== row.destination) suppression = 'DESTINATION_CHANGED';
       }
       if (suppression) return (await this.finish(row, 'SKIPPED', suppression)) ? 'SKIPPED' : 'LOST';
 
-      const provider = row.channel === 'EMAIL' ? this.options.emailProvider : this.options.smsProvider;
+      const provider =
+        row.channel === 'EMAIL' ? this.options.emailProvider : this.options.smsProvider;
       if (!provider || (row.channel === 'EMAIL' && (!row.rendered_subject || !row.rendered_html))) {
         const status = row.attempts >= this.maxAttempts ? 'DEAD' : 'FAILED';
-        return (await this.finish(row, status, 'PROVIDER_OR_CONTENT_UNAVAILABLE')) ? status : 'LOST';
+        return (await this.finish(row, status, 'PROVIDER_OR_CONTENT_UNAVAILABLE'))
+          ? status
+          : 'LOST';
       }
-      if (!(await this.markStarted(row))) return 'LOST';
+      const start = await this.markStarted(row);
+      if (start === 'LOST') return 'LOST';
+      if (start === 'DISABLED')
+        return (await this.finish(row, 'SKIPPED', 'EVENT_DISABLED')) ? 'SKIPPED' : 'LOST';
       started = true;
       let result: NotificationSendResult;
       try {
@@ -274,14 +330,22 @@ export class NotificationDeliveryProcessor {
           eventKey: row.event_key,
           recipientType: row.recipient_type,
           recipientId: row.recipient_id,
-          ...(row.channel === 'EMAIL' ? { subject: row.rendered_subject!, html: row.rendered_html! } : {}),
+          ...(row.channel === 'EMAIL'
+            ? { subject: row.rendered_subject!, html: row.rendered_html! }
+            : {}),
         });
       } catch {
         result = { success: false, failureDisposition: 'UNKNOWN' };
       }
       const outcome = result.success ? 'SENT' : this.failureOutcome(result, row.attempts);
-      const reason = outcome === 'SENT' ? null : outcome === 'UNKNOWN' ? 'PROVIDER_OUTCOME_UNKNOWN' :
-        outcome === 'DEAD' ? 'PROVIDER_REJECTED_OR_EXHAUSTED' : 'PROVIDER_REJECTED_RETRYABLE';
+      const reason =
+        outcome === 'SENT'
+          ? null
+          : outcome === 'UNKNOWN'
+            ? 'PROVIDER_OUTCOME_UNKNOWN'
+            : outcome === 'DEAD'
+              ? 'PROVIDER_REJECTED_OR_EXHAUSTED'
+              : 'PROVIDER_REJECTED_RETRYABLE';
       // F-01 boundary sanitization: never persist a raw provider-controlled success
       // identifier; store only the opaque keyed-HMAC reference (idempotent pass-through
       // for already-opaque pvr1: tokens and safe local harness refs).

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-argument, @typescript-eslint/await-thenable, no-empty */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars */
 import { ConflictException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -6,6 +6,8 @@ import { DataSource } from 'typeorm';
 import { randomUUID, pbkdf2Sync, randomBytes } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { TrustedTierFixture } from './support/trusted-tier-fixture';
 import { AgentService } from '../src/agent/agent-service.enum';
 import { AgentCashToCashService } from '../src/agent/agent-cash-to-cash.service';
 import { AgentCashInService } from '../src/agent/agent-cash-in.service';
@@ -18,7 +20,11 @@ import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-au
 import { AgentStatus } from '../src/agent/agent.enums';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { LedgerAccountType, LedgerEntryDirection, LedgerNormalBalance } from '../src/ledger/ledger.enums';
+import {
+  LedgerAccountType,
+  LedgerEntryDirection,
+  LedgerNormalBalance,
+} from '../src/ledger/ledger.enums';
 
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 
@@ -30,6 +36,7 @@ function hashPin(pin: string): string {
 
 describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
   let dataSource: DataSource;
+  const evidence = new TrustedTierFixture();
   let app: NestFastifyApplication;
   let cashToCashService: AgentCashToCashService;
   let cashInService: AgentCashInService;
@@ -46,13 +53,18 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a15cashtocash');
+    await evidence.seedPolicy(dataSource);
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(evidence)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     cashToCashService = moduleRef.get(AgentCashToCashService);
@@ -75,7 +87,9 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
       allowNegativeBalance: true,
     });
     systemLedgerAccountId = sys.id;
-    const unclaimedRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='CASH_TO_CASH-UNCLAIMED-NGN' LIMIT 1`);
+    const unclaimedRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='CASH_TO_CASH-UNCLAIMED-NGN' LIMIT 1`,
+    );
     if (unclaimedRows[0]) {
       unclaimedLedgerAccountId = unclaimedRows[0]!.id;
     } else {
@@ -107,7 +121,11 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
     }
   }, 60000);
 
-  async function createActiveAgentWithServicesAndPin(services: unknown, pin: string | null, isActive = true) {
+  async function createActiveAgentWithServicesAndPin(
+    services: unknown,
+    pin: string | null,
+    isActive = true,
+  ) {
     const cls = await classService.create({
       reference: `cls-a15-${randomUUID().slice(0, 8)}`,
       code: `A15-${randomUUID().slice(0, 6)}`,
@@ -124,7 +142,10 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
       actor: 'applicant-a15',
     });
     await appService.submit(appEntity.id, 'applicant-a15');
-    await dataSource.query(`UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`, [appEntity.id]);
+    await dataSource.query(
+      `UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`,
+      [appEntity.id],
+    );
     const agent = await lifecycleService.activateFromApplication(appEntity.id, 'test-actor');
     expect(agent.status).toBe(AgentStatus.ACTIVE);
     if (pin !== null) {
@@ -161,8 +182,15 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
       [`cust-a15-${randomUUID().slice(0, 8)}`],
     );
     const customerId = custRows[0]!.id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, `Customer A15 ${randomUUID().slice(0,4)}`]);
-    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`, [customerId, phoneCanonical]);
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`,
+      [customerId, `Customer A15 ${randomUUID().slice(0, 4)}`],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$2,true,clock_timestamp())`,
+      [customerId, phoneCanonical],
+    );
+    await evidence.approveLevelOne(dataSource, customerId);
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',
@@ -177,15 +205,26 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
       lines: [
-        { accountId: systemLedgerAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: amount },
-        { accountId: agentWalletLedgerId, direction: LedgerEntryDirection.CREDIT, amountMinor: amount },
+        {
+          accountId: systemLedgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: amount,
+        },
+        {
+          accountId: agentWalletLedgerId,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: amount,
+        },
       ],
     });
   }
 
   // 1. valid Cash→Cash initiation succeeds
   it('1. valid Cash→Cash initiation succeeds', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '10000');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const res = await cashToCashService.execute({
@@ -200,7 +239,13 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
     expect(res.status).toBe('COMPLETED');
     expect(res.transferId).toBeDefined();
     expect(res.journalId).toBeDefined();
-    expect(res.beneficiaryPhone).toBe(phone.replace(/^0/, '').replace(/^234/, '').replace(/^\+234/, '').slice(-10));
+    expect(res.beneficiaryPhone).toBe(
+      phone
+        .replace(/^0/, '')
+        .replace(/^234/, '')
+        .replace(/^\+234/, '')
+        .slice(-10),
+    );
     expect(res.transferCode).toBeDefined();
     expect(res.transferCode!).toMatch(/^\d{8}$/);
     expect(res.replayed).toBe(false);
@@ -208,11 +253,17 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
 
   // 2. unregistered beneficiary phone is accepted
   it('2. unregistered beneficiary phone is accepted', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '5000');
     const unregisteredPhone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     // ensure no customer has this phone
-    const exists: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM customer_contact_methods WHERE normalized_value=$1`, [unregisteredPhone]);
+    const exists: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM customer_contact_methods WHERE normalized_value=$1`,
+      [unregisteredPhone],
+    );
     expect(exists[0]!.cnt).toBe('0');
     const res = await cashToCashService.execute({
       agentId: agent.id,
@@ -225,13 +276,19 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
     });
     expect(res.status).toBe('COMPLETED');
     expect(res.beneficiaryPhone).toBe(unregisteredPhone);
-    const transferRows: Array<{ beneficiary_phone: string }> = await dataSource.query(`SELECT beneficiary_phone FROM cash_to_cash_transfers WHERE id=$1`, [res.transferId]);
+    const transferRows: Array<{ beneficiary_phone: string }> = await dataSource.query(
+      `SELECT beneficiary_phone FROM cash_to_cash_transfers WHERE id=$1`,
+      [res.transferId],
+    );
     expect(transferRows[0]!.beneficiary_phone).toBe(unregisteredPhone);
   });
 
   // 3. registered Customer beneficiary phone does NOT become a Customer wallet credit through A15
   it('3. registered Customer phone does NOT credit wallet via A15', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(agentWallet.ledgerAccountId, '10000');
     const phone = `81${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhone(phone);
@@ -250,19 +307,25 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
     expect(afterCust.balanceMinor).toBe(beforeCust.balanceMinor);
     // ensure no customer wallet credit via unclaimed instead
     const journal = await ledgerService.getJournal(res.journalId);
-    const creditLine = journal!.lines.find(l => l.direction === LedgerEntryDirection.CREDIT)!;
+    const creditLine = journal!.lines.find((l) => l.direction === LedgerEntryDirection.CREDIT)!;
     expect(creditLine.accountId).toBe(unclaimedLedgerAccountId);
     expect(creditLine.accountId).not.toBe(custWallet.ledgerAccountId);
   });
 
   // 4. exact beneficiary phone is persisted canonically
   it('4. exact beneficiary phone is persisted canonically', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '5000');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const variants = [`0${phone}`, `+234${phone}`];
     for (const variant of variants) {
-      const canonical = variant.replace(/^\+234/, '').replace(/^234/, '').replace(/^0/, '');
+      const canonical = variant
+        .replace(/^\+234/, '')
+        .replace(/^234/, '')
+        .replace(/^0/, '');
       const res = await cashToCashService.execute({
         agentId: agent.id,
         agentPrincipal: agentPrincipal(agent.id) as any,
@@ -273,14 +336,20 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
         idempotencyKey: `4-${randomUUID()}`,
       });
       expect(res.beneficiaryPhone).toBe(canonical);
-      const row: Array<{ beneficiary_phone: string }> = await dataSource.query(`SELECT beneficiary_phone FROM cash_to_cash_transfers WHERE id=$1`, [res.transferId]);
+      const row: Array<{ beneficiary_phone: string }> = await dataSource.query(
+        `SELECT beneficiary_phone FROM cash_to_cash_transfers WHERE id=$1`,
+        [res.transferId],
+      );
       expect(row[0]!.beneficiary_phone).toBe(canonical);
     }
   });
 
   // 5. transfer code is not stored plaintext
   it('5. transfer code is not stored plaintext', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '5000');
     const phone = `82${Math.floor(10000000 + Math.random() * 89999999)}`;
     const res = await cashToCashService.execute({
@@ -293,19 +362,32 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
       idempotencyKey: `5-${randomUUID()}`,
     });
     const code = res.transferCode!;
-    const rows: Array<{ transfer_code_hash: string; beneficiary_phone: string }> = await dataSource.query(`SELECT transfer_code_hash, beneficiary_phone FROM cash_to_cash_transfers WHERE id=$1`, [res.transferId]);
+    const rows: Array<{ transfer_code_hash: string; beneficiary_phone: string }> =
+      await dataSource.query(
+        `SELECT transfer_code_hash, beneficiary_phone FROM cash_to_cash_transfers WHERE id=$1`,
+        [res.transferId],
+      );
     expect(rows[0]!.transfer_code_hash).not.toContain(code);
     expect(rows[0]!.transfer_code_hash).toMatch(/^PBKDF2\$sha256\$\d+\$.+\$.+/);
     // also check idempotency record does not contain plaintext
-    const idem: Array<{ response_body: any }> = await dataSource.query(`SELECT response_body FROM idempotency_records WHERE scope=$1 AND idempotency_key=$2`, [`agent-financial.v1:${agent.id}`, res.idempotencyKey]);
+    const idem: Array<{ response_body: any }> = await dataSource.query(
+      `SELECT response_body FROM idempotency_records WHERE scope=$1 AND idempotency_key=$2`,
+      [`agent-financial.v1:${agent.id}`, res.idempotencyKey],
+    );
     expect(JSON.stringify(idem[0]!.response_body).toLowerCase()).not.toContain(code.toLowerCase());
-    const audit: Array<{ new_values: any }> = await dataSource.query(`SELECT new_values FROM audit_events WHERE entity_type='AGENT_CASH_TO_CASH' AND entity_id=$1`, [res.journalId]);
+    const audit: Array<{ new_values: any }> = await dataSource.query(
+      `SELECT new_values FROM audit_events WHERE entity_type='AGENT_CASH_TO_CASH' AND entity_id=$1`,
+      [res.journalId],
+    );
     expect(JSON.stringify(audit[0]!.new_values).toLowerCase()).not.toContain(code.toLowerCase());
   });
 
   // 6. transfer-code hash is present and bound to beneficiary phone
   it('6. transfer-code hash is present and bound to beneficiary phone', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '5000');
     const phone = `83${Math.floor(10000000 + Math.random() * 89999999)}`;
     const res = await cashToCashService.execute({
@@ -317,7 +399,14 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `6-${randomUUID()}`,
     });
-    const rows: Array<{ transfer_code_hash: string; beneficiary_phone: string; hash_algorithm: string }> = await dataSource.query(`SELECT transfer_code_hash, beneficiary_phone, hash_algorithm FROM cash_to_cash_transfers WHERE id=$1`, [res.transferId]);
+    const rows: Array<{
+      transfer_code_hash: string;
+      beneficiary_phone: string;
+      hash_algorithm: string;
+    }> = await dataSource.query(
+      `SELECT transfer_code_hash, beneficiary_phone, hash_algorithm FROM cash_to_cash_transfers WHERE id=$1`,
+      [res.transferId],
+    );
     expect(rows[0]!.transfer_code_hash).toBeDefined();
     expect(rows[0]!.hash_algorithm).toBe('PBKDF2');
     expect(rows[0]!.beneficiary_phone).toBe(phone);
@@ -326,7 +415,10 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
 
   // 7. Agent balance decreases correctly
   it('7. Agent balance decreases correctly', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '8000');
     const before = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     const phone = `84${Math.floor(10000000 + Math.random() * 89999999)}`;
@@ -345,7 +437,10 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
 
   // 8. reserved/unclaimed principal is identifiable
   it('8. reserved/unclaimed principal is identifiable', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '5000');
     const phone = `85${Math.floor(10000000 + Math.random() * 89999999)}`;
     const res = await cashToCashService.execute({
@@ -357,18 +452,32 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `8-${randomUUID()}`,
     });
-    const transfer: Array<{ status: string; principal_minor: string; total_minor: string }> = await dataSource.query(`SELECT status, principal_minor, total_minor FROM cash_to_cash_transfers WHERE id=$1`, [res.transferId]);
+    const transfer: Array<{ status: string; principal_minor: string; total_minor: string }> =
+      await dataSource.query(
+        `SELECT status, principal_minor, total_minor FROM cash_to_cash_transfers WHERE id=$1`,
+        [res.transferId],
+      );
     expect(transfer[0]!.status).toBe('UNCLAIMED');
     expect(transfer[0]!.principal_minor).toBe('1800');
     const journal = await ledgerService.getJournal(res.journalId);
-    expect(journal!.lines.some(l => l.accountId === unclaimedLedgerAccountId && l.direction === LedgerEntryDirection.CREDIT && l.amountMinor === '1800')).toBe(true);
+    expect(
+      journal!.lines.some(
+        (l) =>
+          l.accountId === unclaimedLedgerAccountId &&
+          l.direction === LedgerEntryDirection.CREDIT &&
+          l.amountMinor === '1800',
+      ),
+    ).toBe(true);
     const unclaimedBal = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     expect(BigInt(unclaimedBal.balanceMinor) >= 1800n).toBe(true);
   });
 
   // 9. applicable fee is separated correctly if fee infrastructure is enabled
   it('9. fee separated correctly (V1 fee 0)', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '5000');
     const phone = `86${Math.floor(10000000 + Math.random() * 89999999)}`;
     const res = await cashToCashService.execute({
@@ -380,7 +489,15 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `9-${randomUUID()}`,
     });
-    const rows: Array<{ fee_minor: string; vat_minor: string; total_minor: string; principal_minor: string }> = await dataSource.query(`SELECT fee_minor, vat_minor, total_minor, principal_minor FROM cash_to_cash_transfers WHERE id=$1`, [res.transferId]);
+    const rows: Array<{
+      fee_minor: string;
+      vat_minor: string;
+      total_minor: string;
+      principal_minor: string;
+    }> = await dataSource.query(
+      `SELECT fee_minor, vat_minor, total_minor, principal_minor FROM cash_to_cash_transfers WHERE id=$1`,
+      [res.transferId],
+    );
     expect(rows[0]!.fee_minor).toBe('0');
     expect(rows[0]!.vat_minor).toBe('0');
     expect(rows[0]!.total_minor).toBe(rows[0]!.principal_minor);
@@ -388,54 +505,75 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
 
   // 10. insufficient Agent balance produces no financial mutation
   it('10. insufficient Agent balance produces no financial mutation', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     // no funding, balance 0
     const beforeAgent = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     expect(beforeAgent.balanceMinor).toBe('0');
     const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const phone = `87${Math.floor(10000000 + Math.random() * 89999999)}`;
-    const beforeJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
-    const beforeTransfers: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM cash_to_cash_transfers`);
-    await expect(cashToCashService.execute({
-      agentId: agent.id,
-      agentPrincipal: agentPrincipal(agent.id) as any,
-      agentPin: '1234',
-      beneficiaryPhone: phone,
-      amountMinor: '5000',
-      currency: 'NGN',
-      idempotencyKey: `10-${randomUUID()}`,
-    })).rejects.toThrow(/sufficient|insufficient/i);
+    const beforeJournals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
+    const beforeTransfers: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM cash_to_cash_transfers`,
+    );
+    await expect(
+      cashToCashService.execute({
+        agentId: agent.id,
+        agentPrincipal: agentPrincipal(agent.id) as any,
+        agentPin: '1234',
+        beneficiaryPhone: phone,
+        amountMinor: '5000',
+        currency: 'NGN',
+        idempotencyKey: `10-${randomUUID()}`,
+      }),
+    ).rejects.toThrow(/sufficient|insufficient/i);
     const afterAgent = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     const afterUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     expect(afterAgent.balanceMinor).toBe(beforeAgent.balanceMinor);
     expect(afterUnclaimed.balanceMinor).toBe(beforeUnclaimed.balanceMinor);
-    const afterJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
+    const afterJournals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
     expect(afterJournals[0]!.cnt).toBe(beforeJournals[0]!.cnt);
-    const afterTransfers: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM cash_to_cash_transfers`);
+    const afterTransfers: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM cash_to_cash_transfers`,
+    );
     expect(afterTransfers[0]!.cnt).toBe(beforeTransfers[0]!.cnt);
   });
 
   // 11. no Agent overdraft
   it('11. no Agent overdraft', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '1000');
     const phone = `88${Math.floor(10000000 + Math.random() * 89999999)}`;
-    await expect(cashToCashService.execute({
-      agentId: agent.id,
-      agentPrincipal: agentPrincipal(agent.id) as any,
-      agentPin: '1234',
-      beneficiaryPhone: phone,
-      amountMinor: '2000',
-      currency: 'NGN',
-      idempotencyKey: `11-${randomUUID()}`,
-    })).rejects.toThrow();
+    await expect(
+      cashToCashService.execute({
+        agentId: agent.id,
+        agentPrincipal: agentPrincipal(agent.id) as any,
+        agentPin: '1234',
+        beneficiaryPhone: phone,
+        amountMinor: '2000',
+        currency: 'NGN',
+        idempotencyKey: `11-${randomUUID()}`,
+      }),
+    ).rejects.toThrow();
     const bal = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     expect(bal.balanceMinor).toBe('1000');
   });
 
   // 12. duplicate same idempotency key does not double-debit
   it('12. duplicate same idempotency key does not double-debit', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '10000');
     const phone = `89${Math.floor(10000000 + Math.random() * 89999999)}`;
     const key = `12-${randomUUID()}`;
@@ -467,7 +605,10 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
     expect(r2.transferCode).toBeUndefined();
     const afterBal = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     expect(afterBal.balanceMinor).toBe(beforeBal.balanceMinor);
-    const journals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals WHERE idempotency_key LIKE $1`, [`agent:${agent.id}:${key}`]);
+    const journals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals WHERE idempotency_key LIKE $1`,
+      [`agent:${agent.id}:${key}`],
+    );
     expect(journals[0]!.cnt).toBe('1');
     // ARENA 3 INTEGRATION (Phase 4): an idempotent replay must also add NO duplicate
     // notification event — exactly one cash_to_cash.created outbox row per initiation.
@@ -480,12 +621,19 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
 
   // 13. concurrent same idempotency key produces exactly one financial effect
   it('13. concurrent same idempotency key produces exactly one financial effect', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '10000');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const key = `13-${randomUUID()}`;
-    const beforeJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
-    const beforeTransfers: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM cash_to_cash_transfers`);
+    const beforeJournals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
+    const beforeTransfers: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM cash_to_cash_transfers`,
+    );
     // V1-TEST-01: execute() retries its own SERIALIZABLE transaction up to
     // MAX_SERIALIZABLE_ATTEMPTS times on a genuine PostgreSQL serialization failure
     // (40001/40P01) before giving up — see src/agent/agent-cash-to-cash.service.ts. Under
@@ -517,8 +665,15 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
         idempotencyKey: key,
       }),
     ]);
-    const fulfilled = results.filter((r) => r.status === 'fulfilled').map((r) => (r as PromiseFulfilledResult<any>).value);
-    const rejected = results.filter((r) => r.status === 'rejected').map((r) => (r as PromiseRejectedResult).reason);
+    const fulfilled = results
+      .filter(
+        (r): r is PromiseFulfilledResult<Awaited<ReturnType<AgentCashToCashService['execute']>>> =>
+          r.status === 'fulfilled',
+      )
+      .map((r) => r.value);
+    const rejected = results
+      .filter((r) => r.status === 'rejected')
+      .map((r) => (r as PromiseRejectedResult).reason as unknown);
     for (const reason of rejected) {
       // Any rejection must be the clean, bounded-retry-exhaustion conflict — never an
       // unrecognized/raw error — and the common case (both fulfilled) is the expected one.
@@ -531,17 +686,24 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
       expect(statuses).toEqual(['COMPLETED', 'REPLAYED']);
     } else {
       expect(fulfilled).toHaveLength(1);
-      expect(fulfilled[0].status).toBe('COMPLETED');
+      expect(fulfilled[0]!.status).toBe('COMPLETED');
     }
-    const afterJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
+    const afterJournals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
     expect(BigInt(afterJournals[0]!.cnt)).toBe(BigInt(beforeJournals[0]!.cnt) + 1n);
-    const afterTransfers: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM cash_to_cash_transfers`);
+    const afterTransfers: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM cash_to_cash_transfers`,
+    );
     expect(BigInt(afterTransfers[0]!.cnt)).toBe(BigInt(beforeTransfers[0]!.cnt) + 1n);
   });
 
   // 14. different idempotency keys create distinct valid operations
   it('14. different idempotency keys create distinct valid operations', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '10000');
     const phone1 = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const phone2 = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
@@ -571,102 +733,137 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
 
   // 15. invalid Agent status/service/PIN cannot initiate
   it('15. invalid Agent status/service/PIN cannot initiate', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '5000');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     // wrong PIN
-    await expect(cashToCashService.execute({
-      agentId: agent.id,
-      agentPrincipal: agentPrincipal(agent.id) as any,
-      agentPin: '9999',
-      beneficiaryPhone: phone,
-      amountMinor: '1000',
-      currency: 'NGN',
-      idempotencyKey: `15a-${randomUUID()}`,
-    })).rejects.toThrow(/PIN/i);
+    await expect(
+      cashToCashService.execute({
+        agentId: agent.id,
+        agentPrincipal: agentPrincipal(agent.id) as any,
+        agentPin: '9999',
+        beneficiaryPhone: phone,
+        amountMinor: '1000',
+        currency: 'NGN',
+        idempotencyKey: `15a-${randomUUID()}`,
+      }),
+    ).rejects.toThrow(/PIN/i);
     // missing service
-    const { agent: agent2, wallet: w2 } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
+    const { agent: agent2, wallet: w2 } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_IN],
+      '1234',
+    );
     await fundAgent(w2.ledgerAccountId, '5000');
-    await expect(cashToCashService.execute({
-      agentId: agent2.id,
-      agentPrincipal: agentPrincipal(agent2.id) as any,
-      agentPin: '1234',
-      beneficiaryPhone: phone,
-      amountMinor: '1000',
-      currency: 'NGN',
-      idempotencyKey: `15b-${randomUUID()}`,
-    })).rejects.toThrow(/CASH_TO_CASH|capability/i);
+    await expect(
+      cashToCashService.execute({
+        agentId: agent2.id,
+        agentPrincipal: agentPrincipal(agent2.id) as any,
+        agentPin: '1234',
+        beneficiaryPhone: phone,
+        amountMinor: '1000',
+        currency: 'NGN',
+        idempotencyKey: `15b-${randomUUID()}`,
+      }),
+    ).rejects.toThrow(/CASH_TO_CASH|capability/i);
     // suspended
     await lifecycleService.suspend(agent.id, 'test-actor');
-    await expect(cashToCashService.execute({
-      agentId: agent.id,
-      agentPrincipal: agentPrincipal(agent.id) as any,
-      agentPin: '1234',
-      beneficiaryPhone: phone,
-      amountMinor: '1000',
-      currency: 'NGN',
-      idempotencyKey: `15c-${randomUUID()}`,
-    })).rejects.toThrow(/SUSPENDED/i);
+    await expect(
+      cashToCashService.execute({
+        agentId: agent.id,
+        agentPrincipal: agentPrincipal(agent.id) as any,
+        agentPin: '1234',
+        beneficiaryPhone: phone,
+        amountMinor: '1000',
+        currency: 'NGN',
+        idempotencyKey: `15c-${randomUUID()}`,
+      }),
+    ).rejects.toThrow(/SUSPENDED/i);
   });
 
   // 16. failed authorization causes no ledger mutation
   it('16. failed authorization causes no ledger mutation', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '5000');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const beforeAgent = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
-    const beforeJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
-    await expect(cashToCashService.execute({
-      agentId: agent.id,
-      agentPrincipal: agentPrincipal(agent.id) as any,
-      agentPin: '0000',
-      beneficiaryPhone: phone,
-      amountMinor: '1000',
-      currency: 'NGN',
-      idempotencyKey: `16-${randomUUID()}`,
-    })).rejects.toThrow();
+    const beforeJournals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
+    await expect(
+      cashToCashService.execute({
+        agentId: agent.id,
+        agentPrincipal: agentPrincipal(agent.id) as any,
+        agentPin: '0000',
+        beneficiaryPhone: phone,
+        amountMinor: '1000',
+        currency: 'NGN',
+        idempotencyKey: `16-${randomUUID()}`,
+      }),
+    ).rejects.toThrow();
     const afterAgent = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     const afterUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     expect(afterAgent.balanceMinor).toBe(beforeAgent.balanceMinor);
     expect(afterUnclaimed.balanceMinor).toBe(beforeUnclaimed.balanceMinor);
-    const afterJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
+    const afterJournals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
     expect(afterJournals[0]!.cnt).toBe(beforeJournals[0]!.cnt);
   });
 
   // 17. failed validation causes no ledger mutation
   it('17. failed validation causes no ledger mutation', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '5000');
     const beforeAgent = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
-    const beforeJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
-    await expect(cashToCashService.execute({
-      agentId: agent.id,
-      agentPrincipal: agentPrincipal(agent.id) as any,
-      agentPin: '1234',
-      beneficiaryPhone: '12345', // invalid
-      amountMinor: '1000',
-      currency: 'NGN',
-      idempotencyKey: `17-${randomUUID()}`,
-    })).rejects.toThrow(/Nigerian/i);
+    const beforeJournals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
+    await expect(
+      cashToCashService.execute({
+        agentId: agent.id,
+        agentPrincipal: agentPrincipal(agent.id) as any,
+        agentPin: '1234',
+        beneficiaryPhone: '12345', // invalid
+        amountMinor: '1000',
+        currency: 'NGN',
+        idempotencyKey: `17-${randomUUID()}`,
+      }),
+    ).rejects.toThrow(/Nigerian/i);
     const afterAgent = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     expect(afterAgent.balanceMinor).toBe(beforeAgent.balanceMinor);
-    const afterJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
+    const afterJournals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
     expect(afterJournals[0]!.cnt).toBe(beforeJournals[0]!.cnt);
-    await expect(cashToCashService.execute({
-      agentId: agent.id,
-      agentPrincipal: agentPrincipal(agent.id) as any,
-      agentPin: '1234',
-      beneficiaryPhone: `80${Math.floor(10000000 + Math.random()*89999999)}`,
-      amountMinor: '0',
-      currency: 'NGN',
-      idempotencyKey: `17b-${randomUUID()}`,
-    })).rejects.toThrow();
+    await expect(
+      cashToCashService.execute({
+        agentId: agent.id,
+        agentPrincipal: agentPrincipal(agent.id) as any,
+        agentPin: '1234',
+        beneficiaryPhone: `80${Math.floor(10000000 + Math.random() * 89999999)}`,
+        amountMinor: '0',
+        currency: 'NGN',
+        idempotencyKey: `17b-${randomUUID()}`,
+      }),
+    ).rejects.toThrow();
   });
 
   // 18. audit trail contains the required initiation event without secrets
   it('18. audit trail contains initiation without secrets', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '5000');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const res = await cashToCashService.execute({
@@ -678,7 +875,10 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `18-${randomUUID()}`,
     });
-    const audits: Array<{ new_values: any }> = await dataSource.query(`SELECT new_values FROM audit_events WHERE entity_type='AGENT_CASH_TO_CASH' AND entity_id=$1`, [res.journalId]);
+    const audits: Array<{ new_values: any }> = await dataSource.query(
+      `SELECT new_values FROM audit_events WHERE entity_type='AGENT_CASH_TO_CASH' AND entity_id=$1`,
+      [res.journalId],
+    );
     expect(audits.length).toBe(1);
     const serial = JSON.stringify(audits[0]!.new_values).toLowerCase();
     expect(serial).toContain(phone);
@@ -693,7 +893,10 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
 
   // 19. journal is balanced
   it('19. journal is balanced', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '5000');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const res = await cashToCashService.execute({
@@ -707,8 +910,12 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
     });
     const journal = await ledgerService.getJournal(res.journalId);
     expect(journal).toBeDefined();
-    const debit = journal!.lines.filter(l => l.direction === LedgerEntryDirection.DEBIT).reduce((s, l) => s + BigInt(l.amountMinor), 0n);
-    const credit = journal!.lines.filter(l => l.direction === LedgerEntryDirection.CREDIT).reduce((s, l) => s + BigInt(l.amountMinor), 0n);
+    const debit = journal!.lines
+      .filter((l) => l.direction === LedgerEntryDirection.DEBIT)
+      .reduce((s, l) => s + BigInt(l.amountMinor), 0n);
+    const credit = journal!.lines
+      .filter((l) => l.direction === LedgerEntryDirection.CREDIT)
+      .reduce((s, l) => s + BigInt(l.amountMinor), 0n);
     expect(debit).toBe(credit);
     expect(debit.toString()).toBe('1900');
     expect(journal!.lines.length).toBe(2);
@@ -716,53 +923,84 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
 
   // 20. transaction is atomic under failure (insufficient balance already covers, but also test that no partial transfer exists)
   it('20. transaction is atomic under failure', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '1000');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
-    const beforeTransfers: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM cash_to_cash_transfers WHERE agent_id=$1`, [agent.id]);
-    await expect(cashToCashService.execute({
-      agentId: agent.id,
-      agentPrincipal: agentPrincipal(agent.id) as any,
-      agentPin: '1234',
-      beneficiaryPhone: phone,
-      amountMinor: '5000',
-      currency: 'NGN',
-      idempotencyKey: `20-${randomUUID()}`,
-    })).rejects.toThrow();
-    const afterTransfers: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM cash_to_cash_transfers WHERE agent_id=$1`, [agent.id]);
+    const beforeTransfers: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM cash_to_cash_transfers WHERE agent_id=$1`,
+      [agent.id],
+    );
+    await expect(
+      cashToCashService.execute({
+        agentId: agent.id,
+        agentPrincipal: agentPrincipal(agent.id) as any,
+        agentPin: '1234',
+        beneficiaryPhone: phone,
+        amountMinor: '5000',
+        currency: 'NGN',
+        idempotencyKey: `20-${randomUUID()}`,
+      }),
+    ).rejects.toThrow();
+    const afterTransfers: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM cash_to_cash_transfers WHERE agent_id=$1`,
+      [agent.id],
+    );
     expect(afterTransfers[0]!.cnt).toBe(beforeTransfers[0]!.cnt);
-    const beforeJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
+    const beforeJournals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
     // journal count should not have increased for failed
-    const afterJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
+    const afterJournals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
     expect(afterJournals[0]!.cnt).toBe(beforeJournals[0]!.cnt);
   });
 
   // Additional: ensure no Agent recipient allowed
   it('21. Agent recipient not allowed', async () => {
-    const { agent: agent1, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent: agent1, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '5000');
-    const { agent: agent2 } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent: agent2 } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     // get agent2 receiving number
-    const recv: Array<{ receiving_number: string }> = await dataSource.query(`SELECT receiving_number FROM agent_receiving_numbers WHERE agent_id=$1`, [agent2.id]);
+    const recv: Array<{ receiving_number: string }> = await dataSource.query(
+      `SELECT receiving_number FROM agent_receiving_numbers WHERE agent_id=$1`,
+      [agent2.id],
+    );
     expect(recv[0]).toBeDefined();
     const agentPhone = recv[0]!.receiving_number;
-    await expect(cashToCashService.execute({
-      agentId: agent1.id,
-      agentPrincipal: agentPrincipal(agent1.id) as any,
-      agentPin: '1234',
-      beneficiaryPhone: agentPhone,
-      amountMinor: '1000',
-      currency: 'NGN',
-      idempotencyKey: `21-${randomUUID()}`,
-    })).rejects.toThrow(/Agent recipient/i);
+    await expect(
+      cashToCashService.execute({
+        agentId: agent1.id,
+        agentPrincipal: agentPrincipal(agent1.id) as any,
+        agentPin: '1234',
+        beneficiaryPhone: agentPhone,
+        amountMinor: '1000',
+        currency: 'NGN',
+        idempotencyKey: `21-${randomUUID()}`,
+      }),
+    ).rejects.toThrow(/Agent recipient/i);
   });
 
   // Ensure no Customer wallet created via A15
   it('22. no Customer wallet created via A15', async () => {
-    const beforeWallets: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM wallet_accounts`);
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const beforeWallets: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM wallet_accounts`,
+    );
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '5000');
-    const unregisteredPhone = `80${Math.floor(10000000 + Math.random()*89999999)}`;
+    const unregisteredPhone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     await cashToCashService.execute({
       agentId: agent.id,
       agentPrincipal: agentPrincipal(agent.id) as any,
@@ -772,17 +1010,28 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `22-${randomUUID()}`,
     });
-    const afterWallets: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM wallet_accounts`);
+    const afterWallets: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM wallet_accounts`,
+    );
     // Only agent wallet exists, no new wallet for unregistered beneficiary
     expect(BigInt(afterWallets[0]!.cnt)).toBe(BigInt(beforeWallets[0]!.cnt) + 1n); // +1 for agent wallet created in this test
-    const contact: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM customer_contact_methods WHERE normalized_value=$1`, [unregisteredPhone]);
+    const contact: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM customer_contact_methods WHERE normalized_value=$1`,
+      [unregisteredPhone],
+    );
     expect(contact[0]!.cnt).toBe('0');
-    const custWallets: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM wallet_accounts WHERE customer_id::text IN (SELECT customer_id::text FROM customer_contact_methods WHERE normalized_value=$1)`, [unregisteredPhone]);
+    const custWallets: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM wallet_accounts WHERE customer_id::text IN (SELECT customer_id::text FROM customer_contact_methods WHERE normalized_value=$1)`,
+      [unregisteredPhone],
+    );
     expect(custWallets[0]!.cnt).toBe('0');
   });
 
   it('23. API authorization via HTTP', async () => {
-    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
     await fundAgent(wallet.ledgerAccountId, '5000');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const resNoToken = await app.inject({

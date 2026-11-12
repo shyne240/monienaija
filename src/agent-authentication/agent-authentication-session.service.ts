@@ -1,6 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto';
 
-import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, type EntityManager, Repository } from 'typeorm';
 
@@ -269,7 +274,11 @@ export class AgentAuthenticationSessionService {
       // Do not overwrite a concurrent lifecycle/admin revocation with a stale snapshot.
       const updated = await manager.getRepository(AgentAuthenticationSession).update(
         { id: session.id, status: AgentAuthenticationSessionStatus.ACTIVE },
-        { status: AgentAuthenticationSessionStatus.REVOKED, revokedAt: now, revokeReason: reason },
+        {
+          status: AgentAuthenticationSessionStatus.REVOKED,
+          revokedAt: now,
+          revokeReason: reason,
+        },
       );
       if (!updated.affected) return;
       await this.audit(manager, session, 'SESSION_REVOKED', actor, {
@@ -334,7 +343,10 @@ export class AgentAuthenticationSessionService {
       });
       if (!agent) throw new NotFoundException('Agent not found');
       const revokedSessionCount = await this.revokeAllForAgentInManager(
-        manager, agent.id, normalizedActor, 'ADMINISTRATIVE',
+        manager,
+        agent.id,
+        normalizedActor,
+        'ADMINISTRATIVE',
       );
       // Record the command even when there were no active sessions, in the same transaction.
       await this.auditService.record(manager, {
@@ -355,24 +367,32 @@ export class AgentAuthenticationSessionService {
     actor: string,
     cause: 'SUSPENDED' | 'TERMINATED' | 'ADMINISTRATIVE',
   ): Promise<number> {
-    const reason = cause === 'ADMINISTRATIVE' ? 'Administrative session revocation' : `Agent ${cause}`;
-    const rows: Array<{ id: string; credential_id: string; audience: string }> = await manager.query(
-      `WITH revoked AS (
+    const reason =
+      cause === 'ADMINISTRATIVE' ? 'Administrative session revocation' : `Agent ${cause}`;
+    const rows: Array<{ id: string; credential_id: string; audience: string }> =
+      await manager.query(
+        `WITH revoked AS (
          UPDATE agent_authentication_sessions
             SET status = 'REVOKED', revoked_at = clock_timestamp(), revoke_reason = $2,
                 version = version + 1, updated_at = clock_timestamp()
           WHERE agent_id = $1 AND status = 'ACTIVE'
           RETURNING id, credential_id, audience
        ) SELECT id, credential_id, audience FROM revoked`,
-      [agentId, reason],
-    );
+        [agentId, reason],
+      );
     for (const row of rows) {
       await this.auditService.record(manager, {
         entityType: 'AGENT_AUTHENTICATION_SESSION',
         entityId: row.id,
         action: 'SESSION_REVOKED',
         actor,
-        newValues: { agentId, credentialId: row.credential_id, audience: row.audience, revokeReason: reason, cause },
+        newValues: {
+          agentId,
+          credentialId: row.credential_id,
+          audience: row.audience,
+          revokeReason: reason,
+          cause,
+        },
       });
     }
     return rows.length;
@@ -391,7 +411,11 @@ export class AgentAuthenticationSessionService {
       // A stale validation must never replace an already-committed revocation.
       const updated = await manager.getRepository(AgentAuthenticationSession).update(
         { id: session.id, status: AgentAuthenticationSessionStatus.ACTIVE },
-        { status: AgentAuthenticationSessionStatus.EXPIRED, revokedAt: now, revokeReason: 'Session expired' },
+        {
+          status: AgentAuthenticationSessionStatus.EXPIRED,
+          revokedAt: now,
+          revokeReason: 'Session expired',
+        },
       );
       if (!updated.affected) return;
       await this.audit(manager, session, 'SESSION_EXPIRED', 'system', {

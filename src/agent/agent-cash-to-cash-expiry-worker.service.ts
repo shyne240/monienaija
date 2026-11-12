@@ -30,9 +30,12 @@ export class AgentCashToCashExpiryWorker implements OnModuleInit, OnModuleDestro
       this.logger.log({ event: 'c2c_expiry_worker_disabled' });
       return;
     }
-    const intervalMs = this.config.get<number>('CASH_TO_CASH_EXPIRY_WORKER_POLL_INTERVAL_MS') ?? 60_000;
+    const intervalMs =
+      this.config.get<number>('CASH_TO_CASH_EXPIRY_WORKER_POLL_INTERVAL_MS') ?? 60_000;
     this.logger.log({ event: 'c2c_expiry_worker_started', intervalMs });
-    this.timer = setInterval(() => { void this.tick(); }, intervalMs);
+    this.timer = setInterval(() => {
+      void this.tick();
+    }, intervalMs);
     this.timer.unref();
     void this.tick(); // Catch up persisted due work immediately on startup/restart.
   }
@@ -51,7 +54,8 @@ export class AgentCashToCashExpiryWorker implements OnModuleInit, OnModuleDestro
       configuredEnabled: this.config.get<boolean>('CASH_TO_CASH_EXPIRY_WORKER_ENABLED') === true,
       schedulerRunning: this.timer !== null && !this.stopping,
       tickInProgress: this.active !== null,
-      pollIntervalMs: this.config.get<number>('CASH_TO_CASH_EXPIRY_WORKER_POLL_INTERVAL_MS') ?? 60_000,
+      pollIntervalMs:
+        this.config.get<number>('CASH_TO_CASH_EXPIRY_WORKER_POLL_INTERVAL_MS') ?? 60_000,
       batchSize: this.config.get<number>('CASH_TO_CASH_EXPIRY_WORKER_BATCH_SIZE') ?? 100,
     };
   }
@@ -61,7 +65,9 @@ export class AgentCashToCashExpiryWorker implements OnModuleInit, OnModuleDestro
       return Promise.resolve({ status: 'DISABLED', expiredCount: 0 });
     }
     if (this.active) return Promise.resolve({ status: 'SKIPPED', expiredCount: 0 });
-    this.active = this.run().finally(() => { this.active = null; });
+    this.active = this.run().finally(() => {
+      this.active = null;
+    });
     return this.active;
   }
 
@@ -73,13 +79,17 @@ export class AgentCashToCashExpiryWorker implements OnModuleInit, OnModuleDestro
     try {
       const result = await this.expiry.expireDueTransfers({
         limit,
-        statementTimeoutMs: this.config.get<number>('CASH_TO_CASH_EXPIRY_WORKER_STATEMENT_TIMEOUT_MS') ?? 10_000,
+        statementTimeoutMs:
+          this.config.get<number>('CASH_TO_CASH_EXPIRY_WORKER_STATEMENT_TIMEOUT_MS') ?? 10_000,
         correlationId,
         actor: 'system-c2c-expiry-worker',
       });
       this.logger.log({
-        event: 'c2c_expiry_tick_completed', correlationId,
-        expiredCount: result.expiredCount, limit, batchFull: result.expiredCount === limit,
+        event: 'c2c_expiry_tick_completed',
+        correlationId,
+        expiredCount: result.expiredCount,
+        limit,
+        batchFull: result.expiredCount === limit,
         durationMs: Date.now() - started,
       });
       return { status: 'COMPLETED', expiredCount: result.expiredCount };
@@ -87,8 +97,14 @@ export class AgentCashToCashExpiryWorker implements OnModuleInit, OnModuleDestro
       // Allow only a bounded SQLSTATE, never arbitrary driver text or parameters.
       const candidate = error as { code?: unknown; driverError?: { code?: unknown } } | null;
       const code = candidate?.driverError?.code ?? candidate?.code;
-      const errorCode = typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : 'EXPIRY_SWEEP_FAILED';
-      this.logger.error({ event: 'c2c_expiry_tick_failed', correlationId, errorCode, durationMs: Date.now() - started });
+      const errorCode =
+        typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : 'EXPIRY_SWEEP_FAILED';
+      this.logger.error({
+        event: 'c2c_expiry_tick_failed',
+        correlationId,
+        errorCode,
+        durationMs: Date.now() - started,
+      });
       return { status: 'FAILED', expiredCount: 0 };
     }
   }

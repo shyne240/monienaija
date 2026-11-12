@@ -429,3 +429,5 @@
     flex: 1 1 auto;
   }
 }
+
+.mn-dir-registration-notice { max-width: 1440px; margin: 0 auto 10px; color: var(--mn-text-secondary, #52655f); font-size: 13px; line-height: 1.5; }

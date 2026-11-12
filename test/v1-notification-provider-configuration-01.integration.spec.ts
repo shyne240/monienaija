@@ -33,6 +33,7 @@ const STATUS_PATH = '/api/v1/internal/notifications/provider-status';
 const TEST_SEND_PATH = '/api/v1/internal/notifications/test-send';
 
 const ENCRYPTION_KEY_V1 = randomBytes(32).toString('base64');
+const BINDING_KEY_V1 = randomBytes(32).toString('base64');
 const LIVE_ROBASE_KEY_1 = 'robe_' + '1a2b3c4d5e6f7081'.repeat(4);
 const LIVE_ROBASE_KEY_2 = 'robe_' + '9988776655443322'.repeat(4);
 const LIVE_BREVO_KEY_1 = 'xkeysib-' + 'abcdef0123456789'.repeat(4) + '-Key1';
@@ -149,6 +150,8 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
       v1: ENCRYPTION_KEY_V1,
     });
     process.env.NOTIFICATION_PROVIDER_ENCRYPTION_ACTIVE_KEY_VERSION = 'v1';
+    process.env.NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON = JSON.stringify({ v1: BINDING_KEY_V1 });
+    process.env.NOTIFICATION_PROVIDER_BINDING_ACTIVE_KEY_VERSION = 'v1';
     process.env.NOTIFICATION_WORKER_ENABLED = 'true';
     process.env.NOTIFICATION_WORKER_POLL_INTERVAL_MS = '60000';
 
@@ -324,7 +327,10 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
     // OPERATIONS and FINANCE_AUDITOR can GET non-secret overview, but CANNOT propose changes (403)
     const ops = await provisionRole('OPERATIONS');
     const auditor = await provisionRole('FINANCE_AUDITOR');
-    const opsGet = await request(app.getHttpServer()).get(CFG_BASE).set(auth(ops.token)).expect(200);
+    const opsGet = await request(app.getHttpServer())
+      .get(CFG_BASE)
+      .set(auth(ops.token))
+      .expect(200);
     expect(opsGet.body.sms.lifecycleState).toBe('CONSOLE_ONLY');
     expect(opsGet.body.email.lifecycleState).toBe('NOT_CONFIGURED');
 
@@ -717,9 +723,7 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
       .get(`${CFG_BASE}/proposals`)
       .set(auth(ops.token))
       .expect(200);
-    const dbConfigs = await dataSource.query(
-      `SELECT * FROM notification_provider_configurations`,
-    );
+    const dbConfigs = await dataSource.query(`SELECT * FROM notification_provider_configurations`);
     const dbProposals = await dataSource.query(
       `SELECT * FROM notification_provider_config_proposals`,
     );
@@ -869,7 +873,11 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
     );
 
     // Seed two customers: custOptIn (email enabled) and custOptOut (email opted out)
-    async function seedCustomer(phone: string, email: string, emailEnabled: boolean): Promise<string> {
+    async function seedCustomer(
+      phone: string,
+      email: string,
+      emailEnabled: boolean,
+    ): Promise<string> {
       const cid = randomUUID();
       await dataSource.query(
         `INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status)
@@ -967,7 +975,8 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
     brevoSendNextStatus = 503;
     const ambiguousKey = `customer.funding.approved:${randomUUID()}`;
     const ambiguousDispatch = await dispatcher.dispatch({
-      eventType: 'customer.funding.approved', eventKey: ambiguousKey,
+      eventType: 'customer.funding.approved',
+      eventKey: ambiguousKey,
       payload: { customerId: custOptIn, amountMinor: '75000', reference: 'REF-PROV-3' },
     });
     expect(ambiguousDispatch.failed).toBe(2);
@@ -991,7 +1000,8 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
     brevoSendNextStatus = 429;
     const retryKey = `customer.funding.approved:${randomUUID()}`;
     const failedDispatch = await dispatcher.dispatch({
-      eventType: 'customer.funding.approved', eventKey: retryKey,
+      eventType: 'customer.funding.approved',
+      eventKey: retryKey,
       payload: { customerId: custOptIn, amountMinor: '75000', reference: 'REF-PROV-4' },
     });
     expect(failedDispatch.failed).toBe(2);
@@ -1062,7 +1072,9 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
         .send({ comment: 'Approved SMS status sentinel config' })
         .expect(200);
       await request(app.getHttpServer())
-        .post(`/api/v1/internal/notifications/provider-config/proposals/${smsProp.body.id}/activate`)
+        .post(
+          `/api/v1/internal/notifications/provider-config/proposals/${smsProp.body.id}/activate`,
+        )
         .set(auth(controller.token))
         .expect(200);
 
@@ -1086,12 +1098,16 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
         })
         .expect(201);
       await request(app.getHttpServer())
-        .post(`/api/v1/internal/notifications/provider-config/proposals/${emailProp.body.id}/approve`)
+        .post(
+          `/api/v1/internal/notifications/provider-config/proposals/${emailProp.body.id}/approve`,
+        )
         .set(auth(controller.token))
         .send({ comment: 'Approved EMAIL status sentinel config' })
         .expect(200);
       await request(app.getHttpServer())
-        .post(`/api/v1/internal/notifications/provider-config/proposals/${emailProp.body.id}/activate`)
+        .post(
+          `/api/v1/internal/notifications/provider-config/proposals/${emailProp.body.id}/activate`,
+        )
         .set(auth(controller.token))
         .expect(200);
 
@@ -1243,10 +1259,9 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
         expect(rawFull).not.toContain('MNNPS1:');
       }
     } finally {
-      await dataSource.query(
-        `DELETE FROM authorization_role_functions WHERE role_id = $1`,
-        [deliveryViewerRoleId],
-      );
+      await dataSource.query(`DELETE FROM authorization_role_functions WHERE role_id = $1`, [
+        deliveryViewerRoleId,
+      ]);
       await dataSource.query(`DELETE FROM authorization_roles WHERE id = $1`, [
         deliveryViewerRoleId,
       ]);
@@ -1537,9 +1552,7 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
       await dataSource.query(
         `DROP TRIGGER IF EXISTS trg_test_fail_notif_provider_proposal ON notification_provider_config_proposals`,
       );
-      await dataSource.query(
-        `DROP FUNCTION IF EXISTS test_fail_notif_provider_proposal_insert()`,
-      );
+      await dataSource.query(`DROP FUNCTION IF EXISTS test_fail_notif_provider_proposal_insert()`);
     }
   });
 
@@ -1713,9 +1726,7 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
 
   it('10. F-02: rejects unpinned public hosts, lookalikes, custom ports, IP literals, redirects, DNS rebinding, and tampered DB base_url values without sending credentials', async () => {
     const http = await import('node:http');
-    const { createPinnedProviderHttpFetch } = await import(
-      '../src/notification/provider-security'
-    );
+    const { createPinnedProviderHttpFetch } = await import('../src/notification/provider-security');
     const superAdminToken = await loginSuperAdmin();
     const controller = await provisionRole('FINANCE_CONTROLLER', 'MFA');
     const operations = await provisionRole('OPERATIONS', 'MFA');
@@ -1827,9 +1838,7 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
     try {
       for (const reboundIp of ['127.0.0.1', '10.0.0.9', '169.254.169.254', '::1']) {
         const pinnedFetch = createPinnedProviderHttpFetch({
-          lookupImpl: async () => [
-            { address: reboundIp, family: reboundIp.includes(':') ? 6 : 4 },
-          ],
+          lookupImpl: async () => [{ address: reboundIp, family: reboundIp.includes(':') ? 6 : 4 }],
         });
         await expect(
           pinnedFetch('https://api.robase.dev/v1/sms/send', {
@@ -2089,9 +2098,7 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
 
     const capturedLogs: string[] = [];
     const recordLog = (...args: unknown[]) => {
-      capturedLogs.push(
-        args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '),
-      );
+      capturedLogs.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '));
     };
     const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(recordLog);
     const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(recordLog);
@@ -2226,9 +2233,7 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
         .get(OVERVIEW_PATH)
         .set(auth(superAdminToken))
         .expect(200);
-      expect(overviewAfterBrevo.body.sms.lastTest.providerRef).toBe(
-        robaseTestRes.body.providerRef,
-      );
+      expect(overviewAfterBrevo.body.sms.lastTest.providerRef).toBe(robaseTestRes.body.providerRef);
       expect(overviewAfterBrevo.body.email.lastTest.providerRef).toBe(
         brevoBatchTestRes.body.providerRef,
       );
@@ -2498,9 +2503,7 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
         (item) => item.id === historicalAuditId,
       );
       expect(projectedHistoricalAudit).toBeDefined();
-      expect(projectedHistoricalAudit.newValues.providerRef).toMatch(
-        /^pvr1:brevo:[0-9a-f]{32}$/,
-      );
+      expect(projectedHistoricalAudit.newValues.providerRef).toMatch(/^pvr1:brevo:[0-9a-f]{32}$/);
       expect(projectedHistoricalAudit.newValues.unrelatedEvidenceField).toBe(
         'PRESERVE_HISTORICAL_EVIDENCE_99',
       );
@@ -2597,7 +2600,19 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
 
     // 2. Non-boolean types for every single DNS field (strings, numbers, null, arrays, objects)
     for (const field of ['spfConfigured', 'dkimConfigured', 'dmarcConfigured'] as const) {
-      for (const badType of ['true', 'false', '0', '1', '', 0, 1, null, [], [true], { value: true }]) {
+      for (const badType of [
+        'true',
+        'false',
+        '0',
+        '1',
+        '',
+        0,
+        1,
+        null,
+        [],
+        [true],
+        { value: true },
+      ]) {
         await request(app.getHttpServer())
           .post(PROPOSALS_PATH)
           .set(auth(superAdminToken))

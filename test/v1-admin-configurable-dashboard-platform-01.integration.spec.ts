@@ -31,13 +31,13 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { LocalAdminAuthenticationService } from '../src/local-admin-authentication/local-admin-authentication.service';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { A2FinanceRoleAssignment } from '../src/authorization/workforce-authentication.entity';
-import { DashboardTemplate } from '../src/dashboard/dashboard-template.entity';
+
 import { RoleDashboardAssignment } from '../src/dashboard/role-dashboard-assignment.entity';
 import { DASHBOARD_WIDGET_REGISTRY } from '../src/dashboard/dashboard-widget-registry';
 import {
@@ -81,7 +81,9 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
 
@@ -191,9 +193,13 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
       const token = await loginSuperAdmin();
       const res = await request(app.getHttpServer()).get(`${DASH}/assignments`).set(auth(token));
       expect(res.status).toBe(200);
-      const byRole = new Map<string, any>(res.body.map((a: any) => [a.roleKey, a]));
+      const byRole = new Map(
+        (res.body as Array<{ roleKey: string; templateKey: string }>).map(
+          (a) => [a.roleKey, a] as const,
+        ),
+      );
       for (const roleKey of ALL_V1_ROLES) {
-        const assignment = byRole.get(roleKey);
+        const assignment = byRole.get(roleKey)!;
         expect(assignment).toBeDefined();
         const templateRes = await request(app.getHttpServer())
           .get(`${DASH}/templates/${assignment.templateKey}`)
@@ -209,7 +215,9 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
       expect(res.status).toBe(200);
       expect(res.body.length).toBe(12);
       const registryKeys = new Set(DASHBOARD_WIDGET_REGISTRY.map((w) => w.widgetKey));
-      for (const template of res.body) {
+      for (const template of res.body as Array<{
+        layout: { widgets: Array<{ widgetKey: string }> };
+      }>) {
         for (const w of template.layout.widgets) {
           expect(registryKeys.has(w.widgetKey)).toBe(true);
         }
@@ -221,10 +229,15 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
       const changeRes = await request(app.getHttpServer())
         .put(`${DASH}/assignments/TREASURY`)
         .set(auth(token))
-        .send({ templateKey: 'RECONCILIATION_VISIBILITY', reason: 'no-op re-assignment for persistence check' });
+        .send({
+          templateKey: 'RECONCILIATION_VISIBILITY',
+          reason: 'no-op re-assignment for persistence check',
+        });
       expect(changeRes.status).toBe(200);
 
-      const refetch = await request(app.getHttpServer()).get(`${DASH}/assignments`).set(auth(token));
+      const refetch = await request(app.getHttpServer())
+        .get(`${DASH}/assignments`)
+        .set(auth(token));
       const treasury = refetch.body.find((a: any) => a.roleKey === 'TREASURY');
       expect(treasury.templateKey).toBe('RECONCILIATION_VISIBILITY');
 
@@ -273,7 +286,9 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
       // The new role's resolved dashboard uses the SAME template/widget set as CUSTOMER_SERVICE —
       // no new widget, template, or frontend component was created.
       const { token: newRoleToken } = await provisionRole('JUNIOR_SUPPORT_AGENT');
-      const mine = await request(app.getHttpServer()).get(`${DASH}/my-dashboard`).set(auth(newRoleToken));
+      const mine = await request(app.getHttpServer())
+        .get(`${DASH}/my-dashboard`)
+        .set(auth(newRoleToken));
       expect(mine.status).toBe(200);
       expect(mine.body.templateKey).toBe('CUSTOMER_SERVICING');
       expect(mine.body.widgets.map((w: any) => w.widgetKey)).toEqual(
@@ -286,14 +301,17 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
   // 4. Assignment change never changes permissions
   // =====================================================================================
   describe('4. assignment change is not a permission change', () => {
-    it('4a. changing TREASURY\'s dashboard template does not alter its function grants', async () => {
+    it("4a. changing TREASURY's dashboard template does not alter its function grants", async () => {
       const token = await loginSuperAdmin();
       const before = await grantedFunctionsFor('TREASURY');
 
       const res = await request(app.getHttpServer())
         .put(`${DASH}/assignments/TREASURY`)
         .set(auth(token))
-        .send({ templateKey: 'EXECUTIVE_GOVERNANCE', reason: 'test: swap to a template with far more widgets' });
+        .send({
+          templateKey: 'EXECUTIVE_GOVERNANCE',
+          reason: 'test: swap to a template with far more widgets',
+        });
       expect(res.status).toBe(200);
 
       const after = await grantedFunctionsFor('TREASURY');
@@ -304,13 +322,19 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
       // widgets than it is entitled to), its resolved dashboard still marks every widget it does
       // not hold the function for as unauthorized, and only reconciliation-status as authorized.
       const { token: treasuryToken } = await provisionRole('TREASURY');
-      const mine = await request(app.getHttpServer()).get(`${DASH}/my-dashboard`).set(auth(treasuryToken));
+      const mine = await request(app.getHttpServer())
+        .get(`${DASH}/my-dashboard`)
+        .set(auth(treasuryToken));
       expect(mine.body.templateKey).toBe('EXECUTIVE_GOVERNANCE');
-      const byKey = new Map<string, any>(mine.body.widgets.map((w: any) => [w.widgetKey, w]));
-      expect(byKey.get('reconciliation-status').authorized).toBe(true);
-      expect(byKey.get('transaction-summary').authorized).toBe(false);
-      expect(byKey.get('workforce-overview').authorized).toBe(false);
-      expect(byKey.get('role-governance-queue').authorized).toBe(false);
+      const byKey = new Map(
+        (mine.body.widgets as Array<{ widgetKey: string; authorized: boolean }>).map(
+          (w) => [w.widgetKey, w] as const,
+        ),
+      );
+      expect(byKey.get('reconciliation-status')!.authorized).toBe(true);
+      expect(byKey.get('transaction-summary')!.authorized).toBe(false);
+      expect(byKey.get('workforce-overview')!.authorized).toBe(false);
+      expect(byKey.get('role-governance-queue')!.authorized).toBe(false);
     });
   });
 
@@ -319,19 +343,31 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
   // =====================================================================================
   describe('5. configuration surface authorization', () => {
     it('5a. no bearer token returns 401 on every dashboard configuration route', async () => {
-      await expect(request(app.getHttpServer()).get(`${DASH}/templates`)).resolves.toMatchObject({ status: 401 });
-      await expect(request(app.getHttpServer()).get(`${DASH}/assignments`)).resolves.toMatchObject({ status: 401 });
-      await expect(request(app.getHttpServer()).get(`${DASH}/my-dashboard`)).resolves.toMatchObject({ status: 401 });
+      await expect(request(app.getHttpServer()).get(`${DASH}/templates`)).resolves.toMatchObject({
+        status: 401,
+      });
+      await expect(request(app.getHttpServer()).get(`${DASH}/assignments`)).resolves.toMatchObject({
+        status: 401,
+      });
+      await expect(request(app.getHttpServer()).get(`${DASH}/my-dashboard`)).resolves.toMatchObject(
+        { status: 401 },
+      );
       await expect(
-        request(app.getHttpServer()).put(`${DASH}/assignments/TREASURY`).send({ templateKey: 'RECONCILIATION_VISIBILITY' }),
+        request(app.getHttpServer())
+          .put(`${DASH}/assignments/TREASURY`)
+          .send({ templateKey: 'RECONCILIATION_VISIBILITY' }),
       ).resolves.toMatchObject({ status: 401 });
     });
 
     it('5b. a role without workforce.dashboard.view (TREASURY) is denied listing templates/assignments', async () => {
       const { token } = await provisionRole('TREASURY');
-      const templates = await request(app.getHttpServer()).get(`${DASH}/templates`).set(auth(token));
+      const templates = await request(app.getHttpServer())
+        .get(`${DASH}/templates`)
+        .set(auth(token));
       expect(templates.status).toBe(403);
-      const assignments = await request(app.getHttpServer()).get(`${DASH}/assignments`).set(auth(token));
+      const assignments = await request(app.getHttpServer())
+        .get(`${DASH}/assignments`)
+        .set(auth(token));
       expect(assignments.status).toBe(403);
     });
 
@@ -343,7 +379,9 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
         .send({ templateKey: 'EXECUTIVE_GOVERNANCE' });
       expect(res.status).toBe(403);
       // and the assignment is provably unchanged
-      const row = await dataSource.getRepository(RoleDashboardAssignment).findOne({ where: { roleKey: 'TREASURY' } as never });
+      const row = await dataSource
+        .getRepository(RoleDashboardAssignment)
+        .findOne({ where: { roleKey: 'TREASURY' } as never });
       expect(row?.templateKey).toBe('RECONCILIATION_VISIBILITY');
     });
 
@@ -370,8 +408,12 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
       const { token } = await provisionRole('CUSTOMER_SERVICE');
       const mine = await request(app.getHttpServer()).get(`${DASH}/my-dashboard`).set(auth(token));
       expect(mine.body.templateKey).toBe('EXECUTIVE_GOVERNANCE');
-      const byKey = new Map<string, any>(mine.body.widgets.map((w: any) => [w.widgetKey, w]));
-      expect(byKey.get('transaction-summary').authorized).toBe(false);
+      const byKey = new Map(
+        (mine.body.widgets as Array<{ widgetKey: string; authorized: boolean }>).map(
+          (w) => [w.widgetKey, w] as const,
+        ),
+      );
+      expect(byKey.get('transaction-summary')!.authorized).toBe(false);
 
       // Even if the frontend ignored `authorized: false` and called the widget endpoint anyway:
       const widgetRes = await request(app.getHttpServer())
@@ -379,7 +421,9 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
         .set(auth(token));
       expect(widgetRes.status).toBe(403);
 
-      const ledgerRes = await request(app.getHttpServer()).get(`${DASH}/widgets/ledger-summary`).set(auth(token));
+      const ledgerRes = await request(app.getHttpServer())
+        .get(`${DASH}/widgets/ledger-summary`)
+        .set(auth(token));
       expect(ledgerRes.status).toBe(403);
     });
   });
@@ -389,17 +433,24 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
   // =====================================================================================
   describe('7. safe fallback behaviour', () => {
     it('7a. a role with no assignment row at all falls back to DEFAULT_FALLBACK', async () => {
-      await dataSource.query(`DELETE FROM role_dashboard_assignments WHERE role_key = 'OPERATIONS'`);
+      await dataSource.query(
+        `DELETE FROM role_dashboard_assignments WHERE role_key = 'OPERATIONS'`,
+      );
       const { token } = await provisionRole('OPERATIONS');
       const mine = await request(app.getHttpServer()).get(`${DASH}/my-dashboard`).set(auth(token));
       expect(mine.status).toBe(200);
       expect(mine.body.templateKey).toBe('DEFAULT_FALLBACK');
       expect(mine.body.isFallback).toBe(true);
-      expect(mine.body.widgets.map((w: any) => w.widgetKey)).toEqual(['identity-session', 'entitlements-scopes']);
+      expect(mine.body.widgets.map((w: any) => w.widgetKey)).toEqual([
+        'identity-session',
+        'entitlements-scopes',
+      ]);
     });
 
     it('7b. a role assigned to a since-deactivated template falls back to DEFAULT_FALLBACK', async () => {
-      await dataSource.query(`UPDATE dashboard_templates SET is_active = FALSE WHERE template_key = 'FRAUD_CASE_MONITORING'`);
+      await dataSource.query(
+        `UPDATE dashboard_templates SET is_active = FALSE WHERE template_key = 'FRAUD_CASE_MONITORING'`,
+      );
       const { token } = await provisionRole('RISK_FRAUD');
       const mine = await request(app.getHttpServer()).get(`${DASH}/my-dashboard`).set(auth(token));
       expect(mine.status).toBe(200);
@@ -434,7 +485,9 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
         .send({ templateKey: 'NOT_A_REAL_TEMPLATE' });
       expect(unknown.status).toBe(400);
 
-      await dataSource.query(`UPDATE dashboard_templates SET is_active = FALSE WHERE template_key = 'COMPLIANCE_KYC'`);
+      await dataSource.query(
+        `UPDATE dashboard_templates SET is_active = FALSE WHERE template_key = 'COMPLIANCE_KYC'`,
+      );
       const inactive = await request(app.getHttpServer())
         .put(`${DASH}/assignments/TREASURY`)
         .set(auth(token))
@@ -449,25 +502,33 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
   describe('8. per-widget server-side authorization', () => {
     it('8a. CUSTOMER_SERVICE cannot fetch fraud-case-summary even though it is a valid registered widget', async () => {
       const { token } = await provisionRole('CUSTOMER_SERVICE');
-      const res = await request(app.getHttpServer()).get(`${DASH}/widgets/fraud-case-summary`).set(auth(token));
+      const res = await request(app.getHttpServer())
+        .get(`${DASH}/widgets/fraud-case-summary`)
+        .set(auth(token));
       expect(res.status).toBe(403);
     });
 
     it('8b. AGENT_NETWORK_MANAGER cannot fetch kyc-queue-summary', async () => {
       const { token } = await provisionRole('AGENT_NETWORK_MANAGER');
-      const res = await request(app.getHttpServer()).get(`${DASH}/widgets/kyc-queue-summary`).set(auth(token));
+      const res = await request(app.getHttpServer())
+        .get(`${DASH}/widgets/kyc-queue-summary`)
+        .set(auth(token));
       expect(res.status).toBe(403);
     });
 
     it('8c. a request for a non-existent widget key returns 404', async () => {
       const { token } = await provisionRole('SUPER_ADMIN');
-      const res = await request(app.getHttpServer()).get(`${DASH}/widgets/not-a-real-widget`).set(auth(token));
+      const res = await request(app.getHttpServer())
+        .get(`${DASH}/widgets/not-a-real-widget`)
+        .set(auth(token));
       expect(res.status).toBe(404);
     });
 
     it('8d. a "direct"-fetchMode widget cannot be pulled through the generic proxy route', async () => {
       const { token } = await provisionRole('SUPER_ADMIN');
-      const res = await request(app.getHttpServer()).get(`${DASH}/widgets/system-health`).set(auth(token));
+      const res = await request(app.getHttpServer())
+        .get(`${DASH}/widgets/system-health`)
+        .set(auth(token));
       expect(res.status).toBe(400);
     });
   });
@@ -484,16 +545,25 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
           .set(auth(token));
         expect(res.status).toBe(200);
         expect(res.body.period).toBe(period);
-        expect(new Date(res.body.from).getTime()).toBeLessThanOrEqual(new Date(res.body.to).getTime());
+        expect(new Date(res.body.from as string).getTime()).toBeLessThanOrEqual(
+          new Date(res.body.to as string).getTime(),
+        );
         expect(res.body.currency).toBe('NGN');
         expect(Array.isArray(res.body.byType)).toBe(true);
-        expect(res.body.byType.map((t: any) => t.type).sort()).toEqual(['C2C', 'C2W', 'W2C', 'W2W']);
+        expect(res.body.byType.map((t: any) => t.type).sort()).toEqual([
+          'C2C',
+          'C2W',
+          'W2C',
+          'W2W',
+        ]);
       }
     });
 
     it('9b. period=custom without from/to is rejected with 400', async () => {
       const { token } = await provisionRole('OPERATIONS');
-      const res = await request(app.getHttpServer()).get(`${DASH}/widgets/transaction-summary?period=custom`).set(auth(token));
+      const res = await request(app.getHttpServer())
+        .get(`${DASH}/widgets/transaction-summary?period=custom`)
+        .set(auth(token));
       expect(res.status).toBe(400);
     });
 
@@ -509,11 +579,15 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
           .get(`${DASH}/widgets/transaction-summary?period=${period}`)
           .set(auth(token));
         expect(res.status).toBe(200);
-        const byType = new Map<string, any>(res.body.byType.map((t: any) => [t.type, t]));
-        expect(byType.get('W2W').feeRevenueMinor).toEqual(expect.any(String));
-        expect(byType.get('C2C').feeRevenueMinor).toEqual(expect.any(String));
-        expect(byType.get('C2W').feeRevenueMinor).toBeNull();
-        expect(byType.get('W2C').feeRevenueMinor).toBeNull();
+        const byType = new Map(
+          (res.body.byType as Array<{ type: string; feeRevenueMinor: string | null }>).map(
+            (t) => [t.type, t] as const,
+          ),
+        );
+        expect(byType.get('W2W')!.feeRevenueMinor).toEqual(expect.any(String));
+        expect(byType.get('C2C')!.feeRevenueMinor).toEqual(expect.any(String));
+        expect(byType.get('C2W')!.feeRevenueMinor).toBeNull();
+        expect(byType.get('W2C')!.feeRevenueMinor).toBeNull();
       }
     });
 
@@ -524,7 +598,9 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
         .set(auth(token));
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('previousPeriod');
-      expect(new Date(res.body.previousPeriod.to).getTime()).toBe(new Date(res.body.from).getTime());
+      expect(new Date(res.body.previousPeriod.to as string).getTime()).toBe(
+        new Date(res.body.from as string).getTime(),
+      );
       expect(res.body).toHaveProperty('comparison');
       expect(res.body.comparison).toHaveProperty('definition');
       // With an empty, freshly-truncated database both periods have zero completed transactions,
@@ -535,7 +611,9 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
 
     it('9g. compare is omitted by default (no previousPeriod/comparison keys) — opt-in only, never a behaviour change for existing callers', async () => {
       const { token } = await provisionRole('SUPER_ADMIN');
-      const res = await request(app.getHttpServer()).get(`${DASH}/widgets/transaction-summary?period=7d`).set(auth(token));
+      const res = await request(app.getHttpServer())
+        .get(`${DASH}/widgets/transaction-summary?period=7d`)
+        .set(auth(token));
       expect(res.status).toBe(200);
       expect(res.body.previousPeriod).toBeUndefined();
       expect(res.body.comparison).toBeUndefined();
@@ -570,7 +648,9 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
       // UNION ALL branch, which Postgres rejects outright ("syntax error at or near UNION") on
       // every single call, unconditionally. This is the direct regression guard for that fix.
       const { token } = await provisionRole('SUPER_ADMIN');
-      const res = await request(app.getHttpServer()).get(`${DASH}/widgets/recent-transactions`).set(auth(token));
+      const res = await request(app.getHttpServer())
+        .get(`${DASH}/widgets/recent-transactions`)
+        .set(auth(token));
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
       for (const row of res.body) {
@@ -587,14 +667,18 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
       // structurally by the 200 assertion above; this test additionally pins the exact defect
       // description so a future regression surfaces with a clear, specific failure message.
       const { token } = await provisionRole('SUPER_ADMIN');
-      const res = await request(app.getHttpServer()).get(`${DASH}/widgets/recent-transactions?limit=50`).set(auth(token));
+      const res = await request(app.getHttpServer())
+        .get(`${DASH}/widgets/recent-transactions?limit=50`)
+        .set(auth(token));
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
     });
 
     it('recent-transactions clamps an invalid/non-numeric limit to a safe default rather than emitting "LIMIT NaN"', async () => {
       const { token } = await provisionRole('SUPER_ADMIN');
-      const res = await request(app.getHttpServer()).get(`${DASH}/widgets/recent-transactions?limit=not-a-number`).set(auth(token));
+      const res = await request(app.getHttpServer())
+        .get(`${DASH}/widgets/recent-transactions?limit=not-a-number`)
+        .set(auth(token));
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
     });
@@ -631,7 +715,9 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
 
     it('transaction-trend is still enforced per-widget authorization (a role without reporting.transaction_summary.view is rejected)', async () => {
       const { token } = await provisionRole('TREASURY');
-      const res = await request(app.getHttpServer()).get(`${DASH}/widgets/transaction-trend`).set(auth(token));
+      const res = await request(app.getHttpServer())
+        .get(`${DASH}/widgets/transaction-trend`)
+        .set(auth(token));
       expect(res.status).toBe(403);
     });
   });
@@ -642,13 +728,18 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
   describe('10. error-state correctness', () => {
     it('10a. GET a non-existent template key returns 404', async () => {
       const token = await loginSuperAdmin();
-      const res = await request(app.getHttpServer()).get(`${DASH}/templates/NOT_REAL`).set(auth(token));
+      const res = await request(app.getHttpServer())
+        .get(`${DASH}/templates/NOT_REAL`)
+        .set(auth(token));
       expect(res.status).toBe(404);
     });
 
     it('10b. PUT an assignment without templateKey in the body returns 400', async () => {
       const token = await loginSuperAdmin();
-      const res = await request(app.getHttpServer()).put(`${DASH}/assignments/TREASURY`).set(auth(token)).send({});
+      const res = await request(app.getHttpServer())
+        .put(`${DASH}/assignments/TREASURY`)
+        .set(auth(token))
+        .send({});
       expect(res.status).toBe(400);
     });
   });
@@ -657,44 +748,61 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
   // 11. Every role's resolved dashboard is correct, complete, and leak-free
   // =====================================================================================
   describe('11. full per-role dashboard correctness (no unauthorized widget/data leakage)', () => {
-    it.each(ALL_V1_ROLES)('11.%s resolves a dashboard whose authorized flags exactly match its real catalogue grants, and every authorized proxy widget is fetchable', async (roleKey) => {
-      const granted = await grantedFunctionsFor(roleKey);
-      const { token } = await provisionRole(roleKey);
+    it.each(ALL_V1_ROLES)(
+      '11.%s resolves a dashboard whose authorized flags exactly match its real catalogue grants, and every authorized proxy widget is fetchable',
+      async (roleKey) => {
+        const granted = await grantedFunctionsFor(roleKey);
+        const { token } = await provisionRole(roleKey);
 
-      const mine = await request(app.getHttpServer()).get(`${DASH}/my-dashboard`).set(auth(token));
-      expect(mine.status).toBe(200);
-      expect(mine.body.isFallback).toBe(false);
+        const mine = await request(app.getHttpServer())
+          .get(`${DASH}/my-dashboard`)
+          .set(auth(token));
+        expect(mine.status).toBe(200);
+        expect(mine.body.isFallback).toBe(false);
 
-      for (const widget of mine.body.widgets) {
-        const def = DASHBOARD_WIDGET_REGISTRY.find((w) => w.widgetKey === widget.widgetKey);
-        expect(def).toBeDefined();
-        const expectedAuthorized = def!.requiredFunctions.every((fn) => granted.has(fn));
-        expect(widget.authorized).toBe(expectedAuthorized);
+        for (const widget of mine.body.widgets) {
+          const def = DASHBOARD_WIDGET_REGISTRY.find((w) => w.widgetKey === widget.widgetKey);
+          expect(def).toBeDefined();
+          const expectedAuthorized = def!.requiredFunctions.every((fn) => granted.has(fn));
+          expect(widget.authorized).toBe(expectedAuthorized);
 
-        if (widget.authorized && widget.fetchMode === 'proxy') {
-          const widgetRes = await request(app.getHttpServer()).get(`${DASH}/widgets/${widget.widgetKey}`).set(auth(token));
-          expect(widgetRes.status).toBe(200);
+          if (widget.authorized && widget.fetchMode === 'proxy') {
+            const widgetRes = await request(app.getHttpServer())
+              .get(`${DASH}/widgets/${widget.widgetKey}`)
+              .set(auth(token));
+            expect(widgetRes.status).toBe(200);
+          }
+          if (!widget.authorized && widget.fetchMode === 'proxy') {
+            const widgetRes = await request(app.getHttpServer())
+              .get(`${DASH}/widgets/${widget.widgetKey}`)
+              .set(auth(token));
+            expect(widgetRes.status).toBe(403);
+          }
         }
-        if (!widget.authorized && widget.fetchMode === 'proxy') {
-          const widgetRes = await request(app.getHttpServer()).get(`${DASH}/widgets/${widget.widgetKey}`).set(auth(token));
-          expect(widgetRes.status).toBe(403);
-        }
-      }
 
-      // self-widgets always present and always authorized (no function required)
-      const byKey = new Map<string, any>(mine.body.widgets.map((w: any) => [w.widgetKey, w]));
-      expect(byKey.get('identity-session')?.authorized).toBe(true);
-      expect(byKey.get('entitlements-scopes')?.authorized).toBe(true);
-    });
+        // self-widgets always present and always authorized (no function required)
+        const byKey = new Map(
+          (mine.body.widgets as Array<{ widgetKey: string; authorized: boolean }>).map(
+            (w) => [w.widgetKey, w] as const,
+          ),
+        );
+        expect(byKey.get('identity-session')?.authorized).toBe(true);
+        expect(byKey.get('entitlements-scopes')?.authorized).toBe(true);
+      },
+    );
 
     it('11z. RISK_FRAUD never sees AML/KYC/SANCTIONS compliance-case data (category boundary)', async () => {
       const { token } = await provisionRole('RISK_FRAUD');
-      const res = await request(app.getHttpServer()).get(`${DASH}/widgets/fraud-case-summary`).set(auth(token));
+      const res = await request(app.getHttpServer())
+        .get(`${DASH}/widgets/fraud-case-summary`)
+        .set(auth(token));
       expect(res.status).toBe(200);
       // fraud-case-summary itself is category='FRAUD'-only by construction (see widget data
       // service SQL); this assertion guards the boundary without asserting invented data counts.
       expect(res.body).toHaveProperty('byStatus');
-      const complianceAttempt = await request(app.getHttpServer()).get(`${DASH}/widgets/compliance-case-summary`).set(auth(token));
+      const complianceAttempt = await request(app.getHttpServer())
+        .get(`${DASH}/widgets/compliance-case-summary`)
+        .set(auth(token));
       expect(complianceAttempt.status).toBe(403);
     });
 
@@ -702,7 +810,9 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
       const granted = await grantedFunctionsFor('TREASURY');
       expect([...granted]).toEqual(['reconciliation.view']);
       const { token } = await provisionRole('TREASURY');
-      const ok = await request(app.getHttpServer()).get(`${DASH}/widgets/reconciliation-status`).set(auth(token));
+      const ok = await request(app.getHttpServer())
+        .get(`${DASH}/widgets/reconciliation-status`)
+        .set(auth(token));
       expect(ok.status).toBe(200);
       expect(ok.body).toHaveProperty('report');
       expect(ok.body).toHaveProperty('trialBalance');

@@ -42,17 +42,29 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
   const supportMaker: any = {
     type: 'SUPPORT',
     principalId: `support-maker-${randomUUID().slice(0, 6)}`,
-    roles: [], scopes: [], customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
+    roles: [],
+    scopes: [],
+    customerAccess: 'NONE',
+    agentAccess: 'NONE',
+    aggregatorAccess: 'NONE',
   };
   const operatorChecker: any = {
     type: 'OPERATOR',
     principalId: `operator-checker-${randomUUID().slice(0, 6)}`,
-    roles: [], scopes: [], customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
+    roles: [],
+    scopes: [],
+    customerAccess: 'NONE',
+    agentAccess: 'NONE',
+    aggregatorAccess: 'NONE',
   };
   const supportChecker: any = {
     type: 'SUPPORT',
     principalId: `support-checker-${randomUUID().slice(0, 6)}`,
-    roles: [], scopes: [], customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
+    roles: [],
+    scopes: [],
+    customerAccess: 'NONE',
+    agentAccess: 'NONE',
+    aggregatorAccess: 'NONE',
   };
 
   const workforceConfig: A2WorkforceConfigurationV1 = {
@@ -72,15 +84,28 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
 
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
+      if (!token || !token.startsWith('workforce-'))
+        throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
+      const allowed = [
+        'SUPPORT',
+        'OPERATOR',
+        'SERVICE',
+        'PRIVILEGED',
+        'AGENT',
+        'CUSTOMER',
+        'AGGREGATOR',
+      ];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
       return {
         type,
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
-        roles: [], scopes: [], customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
+        roles: [],
+        scopes: [],
+        customerAccess: 'NONE',
+        agentAccess: 'NONE',
+        aggregatorAccess: 'NONE',
       } as any;
     },
   };
@@ -97,7 +122,9 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await (app.getHttpAdapter().getInstance() as any).ready();
     fundingService = moduleRef.get(CustomerFundingService);
@@ -107,7 +134,9 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
     await moduleRef.get(ProductCatalogSeedService).seedIfEmpty();
 
     // Authoritative settlement control account (migration-seeded; provision defensively like v1-001)
-    const rows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
+    );
     if (rows[0]) {
       settlementAccountId = rows[0].id;
     } else {
@@ -116,7 +145,9 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
         VALUES ('00000000-0000-4000-8000-000000000201','PAYMENT-SETTLEMENT_ASSET-NGN','Payment settlement asset NGN','ASSET','DEBIT','NGN','CUSTOMER_FUNDS',FALSE,TRUE)
         ON CONFLICT (code) DO NOTHING
       `);
-      const again: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
+      const again: Array<{ id: string }> = await dataSource.query(
+        `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
+      );
       settlementAccountId = again[0].id;
     }
   }, 180_000);
@@ -134,7 +165,10 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
       [`cust-03d-${randomUUID().slice(0, 8)}`],
     );
     const customerId = custRows[0].id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,'Customer 03D',true)`, [customerId]);
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,'Customer 03D',true)`,
+      [customerId],
+    );
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',
@@ -165,7 +199,11 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
     );
   }
 
-  async function seedLimitRule(profileCode: string, dimension: string, limitMinor: string): Promise<string> {
+  async function seedLimitRule(
+    profileCode: string,
+    dimension: string,
+    limitMinor: string,
+  ): Promise<string> {
     const id = randomUUID();
     await dataSource.query(
       `INSERT INTO limit_rules (id, limit_profile_code, product, direction, channel, currency, dimension, limit_value_minor, limit_value_count, effective_from, effective_to, is_active, created_by)
@@ -175,13 +213,30 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
     return id;
   }
 
-  async function snapshotsFor(key: { journalId?: string; idempotencyKey?: string; product?: string; principalId?: string }): Promise<any[]> {
+  async function snapshotsFor(key: {
+    journalId?: string;
+    idempotencyKey?: string;
+    product?: string;
+    principalId?: string;
+  }): Promise<any[]> {
     const clauses: string[] = [];
     const params: unknown[] = [];
-    if (key.journalId) { params.push(key.journalId); clauses.push(`journal_id = $${params.length}`); }
-    if (key.idempotencyKey) { params.push(key.idempotencyKey); clauses.push(`idempotency_key = $${params.length}`); }
-    if (key.product) { params.push(key.product); clauses.push(`product = $${params.length}`); }
-    if (key.principalId) { params.push(key.principalId); clauses.push(`principal_id = $${params.length}`); }
+    if (key.journalId) {
+      params.push(key.journalId);
+      clauses.push(`journal_id = $${params.length}`);
+    }
+    if (key.idempotencyKey) {
+      params.push(key.idempotencyKey);
+      clauses.push(`idempotency_key = $${params.length}`);
+    }
+    if (key.product) {
+      params.push(key.product);
+      clauses.push(`product = $${params.length}`);
+    }
+    if (key.principalId) {
+      params.push(key.principalId);
+      clauses.push(`principal_id = $${params.length}`);
+    }
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
     return dataSource.query(`SELECT * FROM commercial_decision_snapshots ${where}`, params);
   }
@@ -198,9 +253,14 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
     expect(created.status).toBe('PENDING');
     expect(created.journalId).toBeNull();
     // request creation alone never snapshots
-    expect(await snapshotsFor({ product: 'CUSTOMER_FUNDING', principalId: customerId })).toHaveLength(0);
+    expect(
+      await snapshotsFor({ product: 'CUSTOMER_FUNDING', principalId: customerId }),
+    ).toHaveLength(0);
 
-    const approved = await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
+    const approved = await fundingService.approve({
+      fundingRequestId: created.id,
+      principal: operatorChecker,
+    });
     expect(approved.status).toBe('APPROVED');
     expect(approved.journalId).toBeDefined();
 
@@ -216,8 +276,13 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
     expect(debit.ledger_account_id).toBe(settlementAccountId);
     expect(credit.amount_minor).toBe('30000');
     expect(credit.ledger_account_id).toBe(wallet.ledgerAccountId);
-    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('30000');
-    const reqRows: Array<any> = await dataSource.query(`SELECT status, journal_id, checker_id FROM customer_funding_requests WHERE id=$1`, [created.id]);
+    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe(
+      '30000',
+    );
+    const reqRows: Array<any> = await dataSource.query(
+      `SELECT status, journal_id, checker_id FROM customer_funding_requests WHERE id=$1`,
+      [created.id],
+    );
     expect(reqRows[0].status).toBe('APPROVED');
     expect(reqRows[0].journal_id).toBe(approved.journalId);
     expect(reqRows[0].checker_id).toBe(operatorChecker.principalId);
@@ -251,7 +316,10 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
     expect(snap.limit_decision.status).toBe('APPROVED');
     expect(snap.limit_decision.profileCode).toBe(profile);
     expect(snap.limit_decision.ruleRefs.map((r: any) => r.ruleId)).toEqual([dailyRule]);
-    const reservations: Array<any> = await dataSource.query(`SELECT id, limit_usage_id FROM limit_reservations WHERE idempotency_key=$1 ORDER BY id`, [`customer-funding-approve:${created.id}`]);
+    const reservations: Array<any> = await dataSource.query(
+      `SELECT id, limit_usage_id FROM limit_reservations WHERE idempotency_key=$1 ORDER BY id`,
+      [`customer-funding-approve:${created.id}`],
+    );
     expect(reservations.length).toBe(1);
     expect(snap.limit_decision.reservationIds).toEqual(reservations.map((r) => r.id));
     expect(snap.limit_decision.usageIds).toEqual(reservations.map((r) => r.limit_usage_id));
@@ -261,8 +329,12 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
       .get('/api/v1/internal/commercial-decision-snapshots?product=CUSTOMER_FUNDING')
       .set('Authorization', 'Bearer workforce-operator')
       .expect(200);
-    const items = Array.isArray(list.body) ? list.body : list.body.data ?? [];
-    expect(items.some((s: any) => (s.transactionReference ?? s.transaction_reference) === approved.journalId)).toBe(true);
+    const items = Array.isArray(list.body) ? list.body : (list.body.data ?? []);
+    expect(
+      items.some(
+        (s: any) => (s.transactionReference ?? s.transaction_reference) === approved.journalId,
+      ),
+    ).toBe(true);
   });
 
   // ── 2. zero-fee financial proof ──
@@ -270,17 +342,29 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
   it('02. principal-only funding credit: exactly two journal lines, no fee/revenue accounts created', async () => {
     const { customerId, wallet } = await createCustomerWithWallet();
     const created = await createPendingRequest(customerId, '22000');
-    const accountsBefore: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ledger_accounts`);
+    const accountsBefore: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ledger_accounts`,
+    );
 
-    const approved = await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
+    const approved = await fundingService.approve({
+      fundingRequestId: created.id,
+      principal: operatorChecker,
+    });
     expect(approved.status).toBe('APPROVED');
 
-    const lines: Array<any> = await dataSource.query(`SELECT direction, amount_minor::text AS amount_minor FROM ledger_lines WHERE journal_id=$1`, [approved.journalId]);
+    const lines: Array<any> = await dataSource.query(
+      `SELECT direction, amount_minor::text AS amount_minor FROM ledger_lines WHERE journal_id=$1`,
+      [approved.journalId],
+    );
     expect(lines).toHaveLength(2); // principal movement only — no fee/revenue/commission/reward lines
     for (const l of lines) expect(l.amount_minor).toBe('22000');
-    const accountsAfter: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ledger_accounts`);
+    const accountsAfter: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ledger_accounts`,
+    );
     expect(accountsAfter[0].cnt).toBe(accountsBefore[0].cnt);
-    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('22000');
+    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe(
+      '22000',
+    );
   });
 
   // ── 3. approve convergence (replay) ──
@@ -288,16 +372,27 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
   it('03. approving an already-APPROVED request converges: 409, snapshot count stays ONE, no double credit', async () => {
     const { customerId, wallet } = await createCustomerWithWallet();
     const created = await createPendingRequest(customerId, '15000');
-    const approved = await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
+    const approved = await fundingService.approve({
+      fundingRequestId: created.id,
+      principal: operatorChecker,
+    });
     expect(approved.status).toBe('APPROVED');
-    const journalsAfterFirst: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ledger_journals`);
+    const journalsAfterFirst: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ledger_journals`,
+    );
 
-    await expect(fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker })).rejects.toMatchObject({ status: 409 });
+    await expect(
+      fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker }),
+    ).rejects.toMatchObject({ status: 409 });
 
     expect(await snapshotsFor({ journalId: approved.journalId })).toHaveLength(1); // NOT duplicated
-    const journalsAfterSecond: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ledger_journals`);
+    const journalsAfterSecond: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ledger_journals`,
+    );
     expect(journalsAfterSecond[0].cnt).toBe(journalsAfterFirst[0].cnt);
-    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('15000'); // credited once
+    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe(
+      '15000',
+    ); // credited once
   });
 
   // ── 4. maker/checker separation ──
@@ -306,15 +401,30 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
     const { customerId } = await createCustomerWithWallet();
     const created = await createPendingRequest(customerId, '9000');
 
-    await expect(fundingService.approve({ fundingRequestId: created.id, principal: supportMaker })).rejects.toMatchObject({ status: 403 });
-    await expect(fundingService.approve({ fundingRequestId: created.id, principal: supportChecker })).rejects.toMatchObject({ status: 403 });
+    await expect(
+      fundingService.approve({ fundingRequestId: created.id, principal: supportMaker }),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      fundingService.approve({ fundingRequestId: created.id, principal: supportChecker }),
+    ).rejects.toMatchObject({ status: 403 });
 
-    expect(await snapshotsFor({ idempotencyKey: `customer-funding:${created.id}` })).toHaveLength(0);
-    const reqRows: Array<any> = await dataSource.query(`SELECT status, journal_id FROM customer_funding_requests WHERE id=$1`, [created.id]);
+    expect(await snapshotsFor({ idempotencyKey: `customer-funding:${created.id}` })).toHaveLength(
+      0,
+    );
+    const reqRows: Array<any> = await dataSource.query(
+      `SELECT status, journal_id FROM customer_funding_requests WHERE id=$1`,
+      [created.id],
+    );
     expect(reqRows[0].status).toBe('PENDING');
     expect(reqRows[0].journal_id).toBeNull();
     // nothing posted by the denied reviews
-    expect((await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`, [`customer-funding:${created.id}`])).length).toBe(0);
+    expect(
+      (
+        await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`, [
+          `customer-funding:${created.id}`,
+        ])
+      ).length,
+    ).toBe(0);
   });
 
   // ── 5. creation idempotency ──
@@ -326,9 +436,13 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
     const replayed = await createPendingRequest(customerId, '7000', idem);
     expect(replayed.id).toBe(first.id); // converged on the same request
     expect(replayed.status).toBe('PENDING');
-    await expect(createPendingRequest(customerId, '7001', idem)).rejects.toMatchObject({ status: 409 });
+    await expect(createPendingRequest(customerId, '7001', idem)).rejects.toMatchObject({
+      status: 409,
+    });
     // creation never snapshots (this customer is fresh; no approval happened)
-    expect(await snapshotsFor({ product: 'CUSTOMER_FUNDING', principalId: customerId })).toHaveLength(0);
+    expect(
+      await snapshotsFor({ product: 'CUSTOMER_FUNDING', principalId: customerId }),
+    ).toHaveLength(0);
   });
 
   // ── 6. rejection path ──
@@ -342,11 +456,21 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
       rejectionReason: 'duplicate request',
     });
     expect(rejected.status).toBe('REJECTED');
-    expect(await snapshotsFor({ idempotencyKey: `customer-funding:${created.id}` })).toHaveLength(0);
+    expect(await snapshotsFor({ idempotencyKey: `customer-funding:${created.id}` })).toHaveLength(
+      0,
+    );
     expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('0');
-    expect((await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`, [`customer-funding:${created.id}`])).length).toBe(0);
+    expect(
+      (
+        await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`, [
+          `customer-funding:${created.id}`,
+        ])
+      ).length,
+    ).toBe(0);
     // rejected request cannot be approved afterwards
-    await expect(fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker })).rejects.toMatchObject({ status: 409 });
+    await expect(
+      fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker }),
+    ).rejects.toMatchObject({ status: 409 });
   });
 
   // ── 7. rollback atomicity ──
@@ -358,7 +482,9 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
     await seedLimitRule(profile, 'DAILY_AMOUNT', '5000000');
 
     const created = await createPendingRequest(customerId, '25000');
-    const journalsBefore: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ledger_journals`);
+    const journalsBefore: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ledger_journals`,
+    );
 
     await expect(
       fundingService.approve({
@@ -369,21 +495,48 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
     ).rejects.toThrow('Simulated failure after journal');
 
     // everything rolled back together
-    expect(await snapshotsFor({ idempotencyKey: `customer-funding:${created.id}` })).toHaveLength(0); // snapshot gone
-    expect((await dataSource.query(`SELECT id FROM limit_reservations WHERE idempotency_key=$1`, [`customer-funding-approve:${created.id}`])).length).toBe(0);
-    expect((await dataSource.query(`SELECT id FROM limit_usages WHERE principal_id=$1 AND product='CUSTOMER_FUNDING'`, [customerId])).length).toBe(0);
-    const journalsAfterFail: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ledger_journals`);
+    expect(await snapshotsFor({ idempotencyKey: `customer-funding:${created.id}` })).toHaveLength(
+      0,
+    ); // snapshot gone
+    expect(
+      (
+        await dataSource.query(`SELECT id FROM limit_reservations WHERE idempotency_key=$1`, [
+          `customer-funding-approve:${created.id}`,
+        ])
+      ).length,
+    ).toBe(0);
+    expect(
+      (
+        await dataSource.query(
+          `SELECT id FROM limit_usages WHERE principal_id=$1 AND product='CUSTOMER_FUNDING'`,
+          [customerId],
+        )
+      ).length,
+    ).toBe(0);
+    const journalsAfterFail: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ledger_journals`,
+    );
     expect(journalsAfterFail[0].cnt).toBe(journalsBefore[0].cnt); // journal gone
     expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('0'); // balance unchanged
-    const reqRows: Array<any> = await dataSource.query(`SELECT status, journal_id FROM customer_funding_requests WHERE id=$1`, [created.id]);
+    const reqRows: Array<any> = await dataSource.query(
+      `SELECT status, journal_id FROM customer_funding_requests WHERE id=$1`,
+      [created.id],
+    );
     expect(reqRows[0].status).toBe('PENDING'); // funding state rolled back
     expect(reqRows[0].journal_id).toBeNull();
 
     // clean retry succeeds — no stranded side effects from the rolled-back attempt
-    const approved = await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
+    const approved = await fundingService.approve({
+      fundingRequestId: created.id,
+      principal: operatorChecker,
+    });
     expect(approved.status).toBe('APPROVED');
-    expect(await snapshotsFor({ idempotencyKey: `customer-funding:${created.id}` })).toHaveLength(1); // exactly one
-    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('25000');
+    expect(await snapshotsFor({ idempotencyKey: `customer-funding:${created.id}` })).toHaveLength(
+      1,
+    ); // exactly one
+    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe(
+      '25000',
+    );
   });
 
   // ── 8. limit rejection ──
@@ -395,19 +548,34 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
     await seedLimitRule(profile, 'DAILY_AMOUNT', '20000'); // tighter than the requested amount
 
     const created = await createPendingRequest(customerId, '30000');
-    await expect(fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker })).rejects.toMatchObject({ status: 422 });
+    await expect(
+      fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker }),
+    ).rejects.toMatchObject({ status: 422 });
 
-    expect(await snapshotsFor({ idempotencyKey: `customer-funding:${created.id}` })).toHaveLength(0);
-    expect((await dataSource.query(`SELECT id FROM limit_reservations WHERE idempotency_key=$1`, [`customer-funding-approve:${created.id}`])).length).toBe(0);
+    expect(await snapshotsFor({ idempotencyKey: `customer-funding:${created.id}` })).toHaveLength(
+      0,
+    );
+    expect(
+      (
+        await dataSource.query(`SELECT id FROM limit_reservations WHERE idempotency_key=$1`, [
+          `customer-funding-approve:${created.id}`,
+        ])
+      ).length,
+    ).toBe(0);
     expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('0');
-    const reqRows: Array<any> = await dataSource.query(`SELECT status FROM customer_funding_requests WHERE id=$1`, [created.id]);
+    const reqRows: Array<any> = await dataSource.query(
+      `SELECT status FROM customer_funding_requests WHERE id=$1`,
+      [created.id],
+    );
     expect(reqRows[0].status).toBe('PENDING');
   });
 
   // ── 9. synthetic fee rule evidence ──
 
   it('09. TEST-ONLY synthetic fee rule: approval captures ruleId/version/parameters without charging; zero production rules beforehand', async () => {
-    const before: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM fee_rules`);
+    const before: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM fee_rules`,
+    );
     expect(before[0].cnt).toBe('0'); // NO production fee rules exist
 
     const rule = await feeRuleRegistry.createRule(
@@ -428,7 +596,10 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
 
     const { customerId, wallet } = await createCustomerWithWallet();
     const created = await createPendingRequest(customerId, '18000');
-    const approved = await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
+    const approved = await fundingService.approve({
+      fundingRequestId: created.id,
+      principal: operatorChecker,
+    });
     expect(approved.status).toBe('APPROVED');
 
     const snapshots = await snapshotsFor({ journalId: approved.journalId });
@@ -452,10 +623,15 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
     expect(fee.ruleRefs[0].percentageBps).toBe(20);
 
     // money flow UNCHANGED: principal-only journal, exact funding credit
-    const lines: Array<any> = await dataSource.query(`SELECT amount_minor::text AS amount_minor FROM ledger_lines WHERE journal_id=$1`, [approved.journalId]);
+    const lines: Array<any> = await dataSource.query(
+      `SELECT amount_minor::text AS amount_minor FROM ledger_lines WHERE journal_id=$1`,
+      [approved.journalId],
+    );
     expect(lines).toHaveLength(2);
     for (const l of lines) expect(l.amount_minor).toBe('18000');
-    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('18000');
+    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe(
+      '18000',
+    );
   });
 
   // ── 10. immutability + wiring boundary ──
@@ -463,19 +639,27 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
   it('10. snapshot immutable + exact wiring boundary (approve boundary wired; agent funding same pattern since 03E)', async () => {
     const { customerId } = await createCustomerWithWallet();
     const created = await createPendingRequest(customerId, '8000');
-    const approved = await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
+    const approved = await fundingService.approve({
+      fundingRequestId: created.id,
+      principal: operatorChecker,
+    });
     const snapshots = await snapshotsFor({ journalId: approved.journalId });
     expect(snapshots).toHaveLength(1);
-    await expect(dataSource.query(`UPDATE commercial_decision_snapshots SET product='X' WHERE id=$1`, [snapshots[0].id])).rejects.toThrow(
-      /commercial_decision_snapshots is immutable/,
-    );
-    await expect(dataSource.query(`DELETE FROM commercial_decision_snapshots WHERE id=$1`, [snapshots[0].id])).rejects.toThrow(
-      /commercial_decision_snapshots is immutable/,
-    );
+    await expect(
+      dataSource.query(`UPDATE commercial_decision_snapshots SET product='X' WHERE id=$1`, [
+        snapshots[0].id,
+      ]),
+    ).rejects.toThrow(/commercial_decision_snapshots is immutable/);
+    await expect(
+      dataSource.query(`DELETE FROM commercial_decision_snapshots WHERE id=$1`, [snapshots[0].id]),
+    ).rejects.toThrow(/commercial_decision_snapshots is immutable/);
 
     const { readFileSync } = require('node:fs');
     const { join } = require('node:path');
-    const fundingSource = readFileSync(join(__dirname, '../src/customer-funding/customer-funding.service.ts'), 'utf8');
+    const fundingSource = readFileSync(
+      join(__dirname, '../src/customer-funding/customer-funding.service.ts'),
+      'utf8',
+    );
     expect(fundingSource).toContain('resolveWithManager'); // read-only resolution inside the approve tx
     expect(fundingSource).toContain('recordDecisionWithManager'); // snapshot joins the SAME tx
     expect(fundingSource).not.toMatch(/\.recordDecision\(/); // never the second-transaction variant
@@ -483,13 +667,18 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
     expect(fundingSource).toContain(`productCode = 'CUSTOMER_FUNDING'`); // canonical product identity
     // 03D left AGENT_FUNDING/DEFUNDING unwired; V1-COMMERCIAL-DECISION-03E subsequently wired them
     // with the SAME pattern (justified guard update, not a weakening — see the 03E suite):
-    const agentFundingSource = readFileSync(join(__dirname, '../src/agent/agent-funding.service.ts'), 'utf8');
+    const agentFundingSource = readFileSync(
+      join(__dirname, '../src/agent/agent-funding.service.ts'),
+      'utf8',
+    );
     expect(agentFundingSource).toContain('resolveWithManager');
     expect(agentFundingSource).toContain('recordDecisionWithManager');
     expect(agentFundingSource).not.toMatch(/\.recordDecision\(/);
     expect(agentFundingSource).not.toContain('feeEngine');
     // no duplicate product identities invented
-    const products: Array<{ code: string }> = await dataSource.query(`SELECT code FROM products WHERE code LIKE 'CUSTOMER_FUNDING%'`);
+    const products: Array<{ code: string }> = await dataSource.query(
+      `SELECT code FROM products WHERE code LIKE 'CUSTOMER_FUNDING%'`,
+    );
     expect(products.map((p) => p.code)).toEqual(['CUSTOMER_FUNDING']);
   });
 });

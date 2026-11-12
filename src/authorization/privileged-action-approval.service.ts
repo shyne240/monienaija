@@ -241,7 +241,10 @@ export class PrivilegedActionApprovalService {
       };
     }
     const registeredAction = governedAction(command.actionType);
-    if (registeredAction && !['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(command.principal.type)) {
+    if (
+      registeredAction &&
+      !['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(command.principal.type)
+    ) {
       return { approved: false, approval: this.toView(approval), reason: 'PRINCIPAL_TYPE_DENIED' };
     }
     if (registeredAction && this.isAgentFundingAction(command.actionType)) {
@@ -249,7 +252,11 @@ export class PrivilegedActionApprovalService {
       // the independent FINANCE_CONTROLLER who approved the request may execute it. In
       // particular, SUPER_ADMIN can never substitute for the checker.
       if (command.principal.roles.includes('SUPER_ADMIN')) {
-        return { approved: false, approval: this.toView(approval), reason: 'SUPER_ADMIN_NOT_ALLOWED' };
+        return {
+          approved: false,
+          approval: this.toView(approval),
+          reason: 'SUPER_ADMIN_NOT_ALLOWED',
+        };
       }
       if (!registeredAction.approvingRoles.some((role) => command.principal.roles.includes(role))) {
         return { approved: false, approval: this.toView(approval), reason: 'ROLE_MISSING' };
@@ -262,7 +269,11 @@ export class PrivilegedActionApprovalService {
         return { approved: false, approval: this.toView(approval), reason: 'FUNCTION_MISSING' };
       }
       if (approval.approvedBy !== command.principal.principalId) {
-        return { approved: false, approval: this.toView(approval), reason: 'APPROVAL_SCOPE_MISSING' };
+        return {
+          approved: false,
+          approval: this.toView(approval),
+          reason: 'APPROVAL_SCOPE_MISSING',
+        };
       }
     } else if (
       approval.approvedBy !== command.principal.principalId &&
@@ -446,6 +457,14 @@ export class PrivilegedActionApprovalService {
     return this.decideInTransaction(manager, command, false);
   }
 
+  /** Commit a domain-specific approval and its checked proposal in one transaction. */
+  async approveInTransaction(
+    manager: EntityManager,
+    command: DecidePrivilegedActionCommand,
+  ): Promise<PrivilegedActionDecision> {
+    return this.decideInTransaction(manager, command, true);
+  }
+
   private async decideInTransaction(
     manager: EntityManager,
     command: DecidePrivilegedActionCommand,
@@ -474,13 +493,21 @@ export class PrivilegedActionApprovalService {
     const registeredAction = governedAction(approval.actionType);
     if (registeredAction) {
       if (!['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(command.principal.type)) {
-        return { approved: false, approval: this.toView(approval), reason: 'PRINCIPAL_TYPE_DENIED' };
+        return {
+          approved: false,
+          approval: this.toView(approval),
+          reason: 'PRINCIPAL_TYPE_DENIED',
+        };
       }
       if (
         this.isAgentFundingAction(approval.actionType) &&
         command.principal.roles.includes('SUPER_ADMIN')
       ) {
-        return { approved: false, approval: this.toView(approval), reason: 'SUPER_ADMIN_NOT_ALLOWED' };
+        return {
+          approved: false,
+          approval: this.toView(approval),
+          reason: 'SUPER_ADMIN_NOT_ALLOWED',
+        };
       }
       if (!registeredAction.approvingRoles.some((role) => command.principal.roles.includes(role))) {
         return { approved: false, approval: this.toView(approval), reason: 'ROLE_MISSING' };
@@ -493,7 +520,11 @@ export class PrivilegedActionApprovalService {
         return { approved: false, approval: this.toView(approval), reason: 'FUNCTION_MISSING' };
       }
       if (approval.resourceType !== registeredAction.resourceType) {
-        return { approved: false, approval: this.toView(approval), reason: 'RESOURCE_TYPE_MISMATCH' };
+        return {
+          approved: false,
+          approval: this.toView(approval),
+          reason: 'RESOURCE_TYPE_MISMATCH',
+        };
       }
     }
     if (!command.principal.scopes.includes(approval.approvalScope)) {

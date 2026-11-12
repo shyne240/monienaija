@@ -10,12 +10,16 @@ import {
   NOTIFICATION_PROVIDER_TOKEN,
 } from './notification.constants';
 import { NotificationChannelResolverService } from './notification-channel-resolver.service';
+import { NEW_PAYMENT_NOTIFICATION_EVENTS } from './notification-defaults-v2';
 import { NotificationDeliveryProcessor } from './notification-delivery-processor';
 import { appendCustomerEmailIntents, mapEventToIntents } from './notification-event-map';
 import { CodeNotificationEmailTemplateService } from './notification-email-template.service';
 import { NoneEmailProvider } from './email-provider.interface';
 import { ConsoleNotificationProvider } from './notification-provider.interface';
-import { NotificationTemplateService, canonicalNotificationEvent } from './notification-template.service';
+import {
+  NotificationTemplateService,
+  canonicalNotificationEvent,
+} from './notification-template.service';
 import { NotificationProviderConfigService } from './notification-provider-config.service';
 import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
 import {
@@ -23,7 +27,12 @@ import {
   sanitizeDeliveryErrorCode,
   sanitizeProviderRefForBoundary,
 } from './provider-security';
-import type { NotificationEmailTemplateLookup, NotificationIntent, NotificationProvider, NotificationTemplateKey } from './notification.types';
+import type {
+  NotificationEmailTemplateLookup,
+  NotificationIntent,
+  NotificationProvider,
+  NotificationTemplateKey,
+} from './notification.types';
 
 export interface DispatchCommand {
   eventType: string;
@@ -76,17 +85,29 @@ export class NotificationDispatcherService {
     private readonly dataSource: DataSource,
     private readonly channelResolver: NotificationChannelResolverService,
     private readonly templateService: NotificationTemplateService,
-    @Inject(NOTIFICATION_PROVIDER_TOKEN) @Optional() private readonly injectedProvider: NotificationProvider | null,
-    @Inject(NOTIFICATION_EMAIL_PROVIDER_TOKEN) @Optional() private readonly injectedEmailProvider: NotificationProvider | null,
-    @Inject(NOTIFICATION_EMAIL_TEMPLATE_TOKEN) @Optional() private readonly injectedEmailTemplates: NotificationEmailTemplateLookup | null,
+    @Inject(NOTIFICATION_PROVIDER_TOKEN)
+    @Optional()
+    private readonly injectedProvider: NotificationProvider | null,
+    @Inject(NOTIFICATION_EMAIL_PROVIDER_TOKEN)
+    @Optional()
+    private readonly injectedEmailProvider: NotificationProvider | null,
+    @Inject(NOTIFICATION_EMAIL_TEMPLATE_TOKEN)
+    @Optional()
+    private readonly injectedEmailTemplates: NotificationEmailTemplateLookup | null,
     @Optional() private readonly providerConfig?: NotificationProviderConfigService,
     @Optional() private readonly config?: ConfigService,
   ) {}
 
-  private get provider(): NotificationProvider { return this.injectedProvider ?? new ConsoleNotificationProvider(); }
-  private get emailProvider(): NotificationProvider { return this.injectedEmailProvider ?? new NoneEmailProvider(); }
+  private get provider(): NotificationProvider {
+    return this.injectedProvider ?? new ConsoleNotificationProvider();
+  }
+  private get emailProvider(): NotificationProvider {
+    return this.injectedEmailProvider ?? new NoneEmailProvider();
+  }
   private get emailTemplates(): NotificationEmailTemplateLookup {
-    return this.injectedEmailTemplates ?? new CodeNotificationEmailTemplateService(this.templateService);
+    return (
+      this.injectedEmailTemplates ?? new CodeNotificationEmailTemplateService(this.templateService)
+    );
   }
 
   /**
@@ -115,9 +136,9 @@ export class NotificationDispatcherService {
     for (const delivery of result.deliveries) {
       if (delivery.status !== 'PENDING' || !(delivery as { inserted?: boolean }).inserted) continue;
       await processor.processOne(delivery.id);
-      const rows = await this.dataSource.query<Array<{ status: string; provider_ref: string | null }>>(
-        `SELECT status, provider_ref FROM notification_deliveries WHERE id=$1`, [delivery.id],
-      );
+      const rows = await this.dataSource.query<
+        Array<{ status: string; provider_ref: string | null }>
+      >(`SELECT status, provider_ref FROM notification_deliveries WHERE id=$1`, [delivery.id]);
       if (rows[0]) {
         delivery.status = rows[0].status;
         delivery.providerRef = sanitizeProviderRefForBoundary(rows[0].provider_ref);
@@ -130,19 +151,42 @@ export class NotificationDispatcherService {
     return result;
   }
 
-  private async materialize(command: DispatchCommand, manager: EntityManager): Promise<DispatchResult> {
+  private async materialize(
+    command: DispatchCommand,
+    manager: EntityManager,
+  ): Promise<DispatchResult> {
     const eventType = command.eventType?.trim();
     if (!eventType) throw new Error('eventType is required');
-    if (isSecurityCriticalNotificationEvent(eventType)) throw new Error('Security notifications cannot use the outbox dispatcher');
+    if (isSecurityCriticalNotificationEvent(eventType))
+      throw new Error('Security notifications cannot use the outbox dispatcher');
     const payload = command.payload ?? {};
-    // A support message has one identity even if a duplicate outbox fact supplies a
-    // different key. The committed message is verified below before any insertion.
-    const eventKey = eventType === 'support.ticket.message_added' &&
-      typeof payload.messageId === 'string' && UUID_PATTERN.test(payload.messageId)
-      ? `support.ticket.message_added:${payload.messageId}`
-      : command.eventKey?.trim() ||
-        (command.occurredAt ? `${eventType}:${command.aggregateId ?? 'no-agg'}:${command.occurredAt.toISOString()}` : '');
-    if (!eventKey || eventKey.length > 180) throw new Error('A stable eventKey or occurredAt is required');
+    const result: DispatchResult = {
+      generated: 0,
+      dispatched: 0,
+      skipped: 0,
+      failed: 0,
+      deliveries: [],
+    };
+    // H-04: trust the committed payment/wallet owner, never a supplied customerId,
+    // journal id or failure text. Invalid/mismatched facts remain quarantined.
+    const payment = NEW_PAYMENT_NOTIFICATION_EVENTS.has(eventType)
+      ? await this.paymentRecipient(manager, command, eventType)
+      : null;
+    if (NEW_PAYMENT_NOTIFICATION_EVENTS.has(eventType) && !payment) return result;
+    // A payment outcome or support message has one identity even if a duplicate
+    // outbox fact supplies a different key. Neither can cause a second delivery.
+    const eventKey = payment
+      ? `${eventType}:${payment.paymentId}:v1`
+      : eventType === 'support.ticket.message_added' &&
+          typeof payload.messageId === 'string' &&
+          UUID_PATTERN.test(payload.messageId)
+        ? `support.ticket.message_added:${payload.messageId}`
+        : command.eventKey?.trim() ||
+          (command.occurredAt
+            ? `${eventType}:${command.aggregateId ?? 'no-agg'}:${command.occurredAt.toISOString()}`
+            : '');
+    if (!eventKey || eventKey.length > 180)
+      throw new Error('A stable eventKey or occurredAt is required');
     const safePayload = this.templateService.redactPayload(payload, eventType);
     // Report 26 (N-02): the caller/outbox-supplied correlation id is sanitized
     // ONCE here, before it reaches intent mapping and the delivery-row INSERT;
@@ -150,30 +194,42 @@ export class NotificationDispatcherService {
     // normalization when their events are (re)dispatched.
     const correlationId = sanitizeDiagnosticIdentifier(command.correlationId) ?? null;
     const causationId = sanitizeDiagnosticIdentifier(command.causationId) ?? null;
-    const result: DispatchResult = { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
 
     // A completed internal transfer needs both sides; a producer missing either side is
     // quarantined for the Arena 3 producer handoff rather than partially acknowledged.
-    if (eventType === 'transfer.completed' && (!payload.sourceCustomerId || !payload.destinationCustomerId)) return result;
+    if (
+      eventType === 'transfer.completed' &&
+      (!payload.sourceCustomerId || !payload.destinationCustomerId)
+    )
+      return result;
     // An event marker alone is not authority to publish a support message. Verify the
     // committed message, its author and ticket binding, and derive recipients only from
     // the ticket. This also protects the legacy direct-dispatch entry point.
-    let mappingPayload = payload;
+    let mappingPayload = payment ? { customerId: payment.customerId } : payload;
     if (eventType === 'support.ticket.message_added') {
       const recipients = await this.publicSupportMessageRecipients(manager, command);
       if (!recipients) return result;
-      mappingPayload = { ...payload, customerId: recipients.customer_id, agentId: recipients.agent_id };
+      mappingPayload = {
+        ...payload,
+        customerId: recipients.customer_id,
+        agentId: recipients.agent_id,
+      };
     }
     let intents = mapEventToIntents(eventType, mappingPayload, {
       correlationId,
       causationId,
     });
-    if (intents.length === 0 && eventType.startsWith('support.ticket.') && this.templateService.definition(eventType)) {
-      const ticketId = typeof payload.ticketId === 'string' ? payload.ticketId : command.aggregateId;
+    if (
+      intents.length === 0 &&
+      eventType.startsWith('support.ticket.') &&
+      this.templateService.definition(eventType)
+    ) {
+      const ticketId =
+        typeof payload.ticketId === 'string' ? payload.ticketId : command.aggregateId;
       if (ticketId && UUID_PATTERN.test(ticketId)) {
-        const rows = await manager.query<Array<{ customer_id: string | null; agent_id: string | null }>>(
-          `SELECT customer_id, agent_id FROM support_tickets WHERE id=$1 LIMIT 1`, [ticketId],
-        );
+        const rows = await manager.query<
+          Array<{ customer_id: string | null; agent_id: string | null }>
+        >(`SELECT customer_id, agent_id FROM support_tickets WHERE id=$1 LIMIT 1`, [ticketId]);
         const row = rows[0];
         let templateKey = eventType;
         if (eventType === 'support.ticket.status_changed') {
@@ -182,27 +238,65 @@ export class NotificationDispatcherService {
           else if (status === 'CLOSED') templateKey = 'support.ticket.closed';
         }
         const fallback: NotificationIntent[] = [];
-        if (row?.customer_id) fallback.push({ recipientType: 'CUSTOMER', recipientId: row.customer_id, channel: 'SMS', templateKey });
-        if (row?.agent_id) fallback.push({ recipientType: 'AGENT', recipientId: row.agent_id, channel: 'SMS', templateKey });
+        if (row?.customer_id)
+          fallback.push({
+            recipientType: 'CUSTOMER',
+            recipientId: row.customer_id,
+            channel: 'SMS',
+            templateKey,
+          });
+        if (row?.agent_id)
+          fallback.push({
+            recipientType: 'AGENT',
+            recipientId: row.agent_id,
+            channel: 'SMS',
+            templateKey,
+          });
         intents = fallback;
       }
     }
-    if (this.emailProvider.name !== 'none') intents = appendCustomerEmailIntents(eventType, intents);
+    if (this.emailProvider.name !== 'none')
+      intents = appendCustomerEmailIntents(eventType, intents);
 
     for (const intent of intents) {
       if (intent.recipientType !== 'PHONE' && !UUID_PATTERN.test(intent.recipientId)) {
         throw new Error('Invalid notification recipient');
       }
-      const enabled = intent.channel === 'SMS' || intent.channel === 'EMAIL'
-        ? await this.templateService.isEventEnabled(manager, eventType, intent.channel) : true;
+      const enabled =
+        intent.channel === 'SMS' || intent.channel === 'EMAIL'
+          ? await this.templateService.isEventEnabled(manager, eventType, intent.channel)
+          : true;
       const resolved = enabled
-        ? await this.channelResolver.resolve(intent.recipientType, intent.recipientId, intent.channel, manager, eventType)
+        ? await this.channelResolver.resolve(
+            intent.recipientType,
+            intent.recipientId,
+            intent.channel,
+            manager,
+            eventType,
+          )
         : { destination: null, reason: 'EVENT_DISABLED' };
-      const email = enabled && intent.channel === 'EMAIL'
-        ? await this.emailTemplates.buildEmail(intent.templateKey as NotificationTemplateKey, safePayload, manager) : null;
-      const message = !enabled ? 'Notification disabled.' : intent.channel === 'SMS'
-        ? (await this.templateService.renderActive(manager, intent.templateKey, 'SMS', safePayload)).body
-        : email ? email.text : this.templateService.buildMessage(intent.templateKey, safePayload);
+      const email =
+        enabled && intent.channel === 'EMAIL'
+          ? await this.emailTemplates.buildEmail(
+              intent.templateKey as NotificationTemplateKey,
+              safePayload,
+              manager,
+            )
+          : null;
+      const message = !enabled
+        ? 'Notification disabled.'
+        : intent.channel === 'SMS'
+          ? (
+              await this.templateService.renderActive(
+                manager,
+                intent.templateKey,
+                'SMS',
+                safePayload,
+              )
+            ).body
+          : email
+            ? email.text
+            : this.templateService.buildMessage(intent.templateKey, safePayload);
       const destination = resolved.destination ?? `SKIPPED:${resolved.reason ?? 'UNKNOWN'}`;
       const status = resolved.destination ? 'PENDING' : 'SKIPPED';
       const inserted = await manager.query<Array<{ id: string }>>(
@@ -212,32 +306,95 @@ export class NotificationDispatcherService {
            attempts, last_error, correlation_id, causation_id, created_at, updated_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,0,$14,$15,$16,NOW(),NOW())
          ON CONFLICT (event_key, recipient_id, channel) DO NOTHING RETURNING id`,
-        [eventType, eventKey, command.aggregateType ?? null, command.aggregateId ?? null,
-          intent.recipientType, intent.recipientId, intent.channel, destination,
-          JSON.stringify({ ...safePayload, _templateKey: intent.templateKey }), message,
-          email?.subject ?? null, email?.html ?? null, status, resolved.reason ?? null,
-          correlationId, causationId],
+        [
+          eventType,
+          eventKey,
+          command.aggregateType ?? null,
+          command.aggregateId ?? null,
+          intent.recipientType,
+          intent.recipientId,
+          intent.channel,
+          destination,
+          JSON.stringify({ ...safePayload, _templateKey: intent.templateKey }),
+          message,
+          email?.subject ?? null,
+          email?.html ?? null,
+          status,
+          resolved.reason ?? null,
+          correlationId,
+          causationId,
+        ],
       );
       let delivery: DispatchResult['deliveries'][number] & { inserted?: boolean };
       if (inserted[0]) {
         result.generated += 1;
         if (status === 'SKIPPED') result.skipped += 1;
-        delivery = { id: inserted[0].id, recipientType: intent.recipientType, recipientId: intent.recipientId,
-          channel: intent.channel, destination, status, providerRef: null, inserted: true };
+        delivery = {
+          id: inserted[0].id,
+          recipientType: intent.recipientType,
+          recipientId: intent.recipientId,
+          channel: intent.channel,
+          destination,
+          status,
+          providerRef: null,
+          inserted: true,
+        };
       } else {
-        const existing = await manager.query<Array<{ id: string; status: string; provider_ref: string | null; destination: string }>>(
+        const existing = await manager.query<
+          Array<{ id: string; status: string; provider_ref: string | null; destination: string }>
+        >(
           `SELECT id, status, provider_ref, destination FROM notification_deliveries
             WHERE event_key=$1 AND recipient_id=$2 AND channel=$3 LIMIT 1`,
           [eventKey, intent.recipientId, intent.channel],
         );
         if (!existing[0]) throw new Error('Notification idempotency conflict unavailable');
-        delivery = { id: existing[0].id, recipientType: intent.recipientType, recipientId: intent.recipientId,
-          channel: intent.channel, destination: existing[0].destination, status: existing[0].status,
-          providerRef: sanitizeProviderRefForBoundary(existing[0].provider_ref) };
+        delivery = {
+          id: existing[0].id,
+          recipientType: intent.recipientType,
+          recipientId: intent.recipientId,
+          channel: intent.channel,
+          destination: existing[0].destination,
+          status: existing[0].status,
+          providerRef: sanitizeProviderRefForBoundary(existing[0].provider_ref),
+        };
       }
       result.deliveries.push(delivery);
     }
     return result;
+  }
+
+  private async paymentRecipient(
+    manager: EntityManager,
+    command: DispatchCommand,
+    eventType: string,
+  ): Promise<{ paymentId: string; customerId: string } | null> {
+    const deposit = eventType.startsWith('deposit.');
+    const expectedAggregate = deposit ? 'DEPOSIT' : 'WITHDRAWAL';
+    const table = deposit ? 'deposits' : 'withdrawals';
+    const field = deposit ? 'depositId' : 'withdrawalId';
+    const paymentId = command.payload?.[field];
+    if (
+      typeof paymentId !== 'string' ||
+      !UUID_PATTERN.test(paymentId) ||
+      command.aggregateType !== expectedAggregate ||
+      typeof command.aggregateId !== 'string' ||
+      command.aggregateId.toLowerCase() !== paymentId.toLowerCase()
+    )
+      return null;
+    const expectedStatus = eventType.endsWith('.completed') ? 'COMPLETED' : 'FAILED';
+    const rows = await manager.query<Array<{ customer_id: string }>>(
+      `SELECT c.id::text AS customer_id FROM ${table} p
+        JOIN wallet_accounts w ON w.id=p.wallet_id
+        JOIN customers c ON c.id::text=lower(w.customer_id) AND c.deleted_at IS NULL
+       WHERE p.id=$1 AND p.status=$2 FOR SHARE OF p, w, c`,
+      [paymentId, expectedStatus],
+    );
+    const customerId = rows[0]?.customer_id;
+    if (rows.length !== 1 || !customerId || !UUID_PATTERN.test(customerId)) return null;
+    // A conflicting explicit identity claim is evidence of a tampered fact.
+    if (command.payload.customerId !== undefined && command.payload.customerId !== customerId)
+      return null;
+    return { paymentId: paymentId.toLowerCase(), customerId };
   }
 
   private async publicSupportMessageRecipients(
@@ -245,29 +402,50 @@ export class NotificationDispatcherService {
     command: DispatchCommand,
   ): Promise<{ customer_id: string | null; agent_id: string | null } | null> {
     const payload = command.payload;
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
-        payload.isInternal !== false || command.aggregateType !== 'SUPPORT_TICKET' ||
-        typeof command.aggregateId !== 'string' || !UUID_PATTERN.test(command.aggregateId) ||
-        typeof payload.ticketId !== 'string' || payload.ticketId !== command.aggregateId ||
-        typeof payload.messageId !== 'string' || !UUID_PATTERN.test(payload.messageId) ||
-        typeof payload.authorType !== 'string' || typeof payload.authorId !== 'string') return null;
+    if (
+      !payload ||
+      typeof payload !== 'object' ||
+      Array.isArray(payload) ||
+      payload.isInternal !== false ||
+      command.aggregateType !== 'SUPPORT_TICKET' ||
+      typeof command.aggregateId !== 'string' ||
+      !UUID_PATTERN.test(command.aggregateId) ||
+      typeof payload.ticketId !== 'string' ||
+      payload.ticketId !== command.aggregateId ||
+      typeof payload.messageId !== 'string' ||
+      !UUID_PATTERN.test(payload.messageId) ||
+      typeof payload.authorType !== 'string' ||
+      typeof payload.authorId !== 'string'
+    )
+      return null;
 
     // No message body is selected or persisted in a notification. Share locks keep the
     // authoritative visibility and recipient binding stable through materialization.
-    const rows = await manager.query<Array<{
-      customer_id: string | null; agent_id: string | null; author_type: string; author_id: string;
-      is_internal: boolean;
-    }>>(
+    const rows = await manager.query<
+      Array<{
+        customer_id: string | null;
+        agent_id: string | null;
+        author_type: string;
+        author_id: string;
+        is_internal: boolean;
+      }>
+    >(
       `SELECT t.customer_id, t.agent_id, m.author_type, m.author_id, m.is_internal
          FROM support_tickets t JOIN support_ticket_messages m ON m.ticket_id=t.id
         WHERE t.id=$1 AND m.id=$2 FOR SHARE OF t, m`,
       [payload.ticketId, payload.messageId],
     );
     const row = rows[0];
-    if (rows.length !== 1 || !row || row.is_internal !== false ||
-        row.author_type !== payload.authorType || row.author_id !== payload.authorId ||
-        (payload.customerId !== undefined && payload.customerId !== row.customer_id) ||
-        (payload.agentId !== undefined && payload.agentId !== row.agent_id)) return null;
+    if (
+      rows.length !== 1 ||
+      !row ||
+      row.is_internal !== false ||
+      row.author_type !== payload.authorType ||
+      row.author_id !== payload.authorId ||
+      (payload.customerId !== undefined && payload.customerId !== row.customer_id) ||
+      (payload.agentId !== undefined && payload.agentId !== row.agent_id)
+    )
+      return null;
     return { customer_id: row.customer_id, agent_id: row.agent_id };
   }
 
@@ -286,7 +464,8 @@ export class NotificationDispatcherService {
                  ON r.outbox_event_id=o.id AND r.consumer_name=$1
               WHERE r.outbox_event_id IS NULL OR
                     (r.status='FAILED' AND r.next_attempt_at <= NOW())
-              ORDER BY o.created_at, o.id LIMIT 1 FOR UPDATE OF o SKIP LOCKED`, [CONSUMER],
+              ORDER BY o.created_at, o.id LIMIT 1 FOR UPDATE OF o SKIP LOCKED`,
+            [CONSUMER],
           );
           const event = events[0];
           if (!event) return false;
@@ -295,25 +474,52 @@ export class NotificationDispatcherService {
           let reason: string | null = null;
           const canonical = canonicalNotificationEvent(event.event_type);
           if (isSecurityCriticalNotificationEvent(event.event_type)) {
-            status = 'QUARANTINED'; reason = 'SECURITY_DIRECT_ONLY';
+            status = 'QUARANTINED';
+            reason = 'SECURITY_DIRECT_ONLY';
           } else if (!this.templateService.definition(canonical)) {
-            status = 'QUARANTINED'; reason = 'EVENT_TYPE_UNSUPPORTED';
+            status = 'QUARANTINED';
+            reason = 'EVENT_TYPE_UNSUPPORTED';
           } else if (event.schema_version !== 1) {
-            status = 'QUARANTINED'; reason = 'UNSUPPORTED_SCHEMA_VERSION';
-          } else if (event.event_type === 'support.ticket.message_added' && event.payload?.isInternal === true) {
-            status = 'SUPPRESSED'; reason = 'INTERNAL_SUPPORT_MESSAGE';
-          } else if (event.event_type === 'support.ticket.message_added' && event.payload?.isInternal !== false) {
-            status = 'QUARANTINED'; reason = 'SUPPORT_VISIBILITY_UNKNOWN';
-          } else if (event.event_type === 'support.ticket.message_added' &&
+            status = 'QUARANTINED';
+            reason = 'UNSUPPORTED_SCHEMA_VERSION';
+          } else if (
+            event.event_type === 'support.ticket.message_added' &&
+            event.payload?.isInternal === true
+          ) {
+            status = 'SUPPRESSED';
+            reason = 'INTERNAL_SUPPORT_MESSAGE';
+          } else if (
+            event.event_type === 'support.ticket.message_added' &&
+            event.payload?.isInternal !== false
+          ) {
+            status = 'QUARANTINED';
+            reason = 'SUPPORT_VISIBILITY_UNKNOWN';
+          } else if (
+            event.event_type === 'support.ticket.message_added' &&
             !(await this.publicSupportMessageRecipients(manager, {
-              eventType: event.event_type, eventKey: event.event_key, aggregateType: event.aggregate_type,
-              aggregateId: event.aggregate_id, payload: event.payload ?? {},
-            }))) {
-            status = 'QUARANTINED'; reason = 'SUPPORT_VISIBILITY_UNKNOWN';
+              eventType: event.event_type,
+              eventKey: event.event_key,
+              aggregateType: event.aggregate_type,
+              aggregateId: event.aggregate_id,
+              payload: event.payload ?? {},
+            }))
+          ) {
+            status = 'QUARANTINED';
+            reason = 'SUPPORT_VISIBILITY_UNKNOWN';
           } else {
-            const result = await this.dispatch({ eventType: event.event_type, eventKey: event.event_key,
-              aggregateType: event.aggregate_type, aggregateId: event.aggregate_id, payload: event.payload ?? {},
-              correlationId: event.correlation_id, causationId: event.causation_id, occurredAt: event.occurred_at }, manager);
+            const result = await this.dispatch(
+              {
+                eventType: event.event_type,
+                eventKey: event.event_key,
+                aggregateType: event.aggregate_type,
+                aggregateId: event.aggregate_id,
+                payload: event.payload ?? {},
+                correlationId: event.correlation_id,
+                causationId: event.causation_id,
+                occurredAt: event.occurred_at,
+              },
+              manager,
+            );
             status = result.deliveries.length > 0 ? 'MATERIALIZED' : 'QUARANTINED';
             if (status === 'QUARANTINED') reason = 'NO_NOTIFICATION_INTENTS';
           }
@@ -345,9 +551,12 @@ export class NotificationDispatcherService {
                reason=CASE WHEN notification_outbox_receipts.attempts+1 >= 5 THEN 'MATERIALIZATION_EXHAUSTED' ELSE 'MATERIALIZATION_FAILED' END,
                next_attempt_at=CASE WHEN notification_outbox_receipts.attempts+1 >= 5 THEN NULL ELSE NOW()+INTERVAL '60 seconds' END,
                updated_at=NOW()
-             WHERE notification_outbox_receipts.status='FAILED'`, [CONSUMER, selectedId],
+             WHERE notification_outbox_receipts.status='FAILED'`,
+            [CONSUMER, selectedId],
           );
-        } catch { break; }
+        } catch {
+          break;
+        }
       }
     }
     return processed;

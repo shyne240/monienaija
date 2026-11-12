@@ -4,9 +4,8 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  UnauthorizedException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 
 import { AuditService } from '../operations/audit.service';
@@ -57,9 +56,11 @@ export class OutletService {
     const code = input.code ? this.normalizeReference(input.code, 'code').toUpperCase() : null;
     const name = this.normalizeName(input.name, 'name');
     const displayName = input.displayName?.trim() ? input.displayName.trim() : null;
-    if (displayName && displayName.length > 160) throw new BadRequestException('displayName too long');
+    if (displayName && displayName.length > 160)
+      throw new BadRequestException('displayName too long');
     const addressLine = input.addressLine?.trim() ? input.addressLine.trim() : null;
-    if (addressLine && addressLine.length > 500) throw new BadRequestException('addressLine too long');
+    if (addressLine && addressLine.length > 500)
+      throw new BadRequestException('addressLine too long');
     const city = input.city?.trim() ? input.city.trim() : null;
     if (city && city.length > 100) throw new BadRequestException('city too long');
     const state = input.state?.trim() ? input.state.trim() : null;
@@ -67,37 +68,44 @@ export class OutletService {
     const country = input.country?.trim() ? input.country.trim() : 'NG';
     if (country && country.length > 100) throw new BadRequestException('country too long');
     const actor = this.normalizeActor(input.actor);
-    const aggregatorId = input.aggregatorId ? this.assertUuid(input.aggregatorId, 'aggregatorId') : undefined;
+    const aggregatorId = input.aggregatorId
+      ? this.assertUuid(input.aggregatorId, 'aggregatorId')
+      : undefined;
     const principal = input.principal;
 
     if (principal) {
       const type = String(principal.type ?? '').toUpperCase();
-      if (type === 'CUSTOMER') throw new ForbiddenException('Customer principal cannot manage outlets');
+      if (type === 'CUSTOMER')
+        throw new ForbiddenException('Customer principal cannot manage outlets');
       if (type === 'AGENT') throw new ForbiddenException('Agent principal cannot manage outlets');
       if (type === 'AGGREGATOR') {
-        if (!aggregatorId) throw new BadRequestException('aggregatorId is required for Aggregator principal');
-        if ((principal as any).aggregatorId !== aggregatorId) throw new ForbiddenException('Aggregator principal mismatch');
+        if (!aggregatorId)
+          throw new BadRequestException('aggregatorId is required for Aggregator principal');
+        if (principal.aggregatorId !== aggregatorId)
+          throw new ForbiddenException('Aggregator principal mismatch');
       }
     }
 
-    // Verify Agent exists and is ACTIVE (creation requires operational agent)
-    await this.assertAgentOperable(agentId, 'create');
-
-    // If aggregator context supplied, verify aggregator ACTIVE and relationship ACTIVE
-    if (aggregatorId) {
-      await this.assertAggregatorRelationship(aggregatorId, agentId);
-    }
-
     return this.dataSource.transaction(async (manager) => {
+      // Serialize the parent state check with lifecycle writes until this mutation commits.
+      await this.assertAgentOperable(manager, agentId, 'create');
+      if (aggregatorId) await this.assertAggregatorRelationship(manager, aggregatorId, agentId);
       const repo = manager.getRepository(AgentOutlet);
 
       // Pre-check uniqueness for clearer error (DB constraint is source of truth for race)
-      const existingRef = await repo.findOne({ where: { reference } as any });
+      await repo.findOne({ where: { reference } });
       // Need to check soft delete: findOne without deleted_at may include deleted; we query raw for non-deleted
-      const refRows: Array<{ id: string }> = await manager.query(`SELECT id FROM agent_outlets WHERE reference=$1 AND deleted_at IS NULL LIMIT 1`, [reference]);
-      if (refRows.length > 0) throw new ConflictException(`Outlet reference ${reference} already exists`);
+      const refRows: Array<{ id: string }> = await manager.query(
+        `SELECT id FROM agent_outlets WHERE reference=$1 AND deleted_at IS NULL LIMIT 1`,
+        [reference],
+      );
+      if (refRows.length > 0)
+        throw new ConflictException(`Outlet reference ${reference} already exists`);
       if (code) {
-        const codeRows: Array<{ id: string }> = await manager.query(`SELECT id FROM agent_outlets WHERE code=$1 AND deleted_at IS NULL LIMIT 1`, [code]);
+        const codeRows: Array<{ id: string }> = await manager.query(
+          `SELECT id FROM agent_outlets WHERE code=$1 AND deleted_at IS NULL LIMIT 1`,
+          [code],
+        );
         if (codeRows.length > 0) throw new ConflictException(`Outlet code ${code} already exists`);
       }
 
@@ -128,7 +136,7 @@ export class OutletService {
           newValues: this.toValues(saved),
         });
         return saved;
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (this.isUniqueViolation(e)) {
           throw new ConflictException('Outlet reference or code already exists');
         }
@@ -139,89 +147,156 @@ export class OutletService {
 
   async getById(id: string): Promise<AgentOutlet> {
     this.assertUuid(id, 'id');
-    const outlet = await this.dataSource.getRepository(AgentOutlet).findOne({ where: { id } as any });
-    if (!outlet || (outlet as any).deletedAt !== null) throw new NotFoundException(`Outlet ${id} not found`);
+    const outlet = await this.dataSource.getRepository(AgentOutlet).findOne({ where: { id } });
+    if (!outlet || outlet.deletedAt !== null) throw new NotFoundException(`Outlet ${id} not found`);
     return outlet;
   }
 
   async listByAgent(agentId: string): Promise<AgentOutlet[]> {
     this.assertUuid(agentId, 'agentId');
     // Ensure agent exists
-    const agentRows: Array<{ id: string }> = await this.dataSource.query(`SELECT id FROM agents WHERE id=$1 AND deleted_at IS NULL LIMIT 1`, [agentId]);
+    const agentRows: Array<{ id: string }> = await this.dataSource.query(
+      `SELECT id FROM agents WHERE id=$1 AND deleted_at IS NULL LIMIT 1`,
+      [agentId],
+    );
     if (agentRows.length === 0) throw new NotFoundException(`Agent ${agentId} not found`);
-    return this.dataSource.getRepository(AgentOutlet).find({ where: { agentId } as any, order: { createdAt: 'ASC' } as any });
+    return this.dataSource
+      .getRepository(AgentOutlet)
+      .find({ where: { agentId }, order: { createdAt: 'ASC' } });
   }
 
-  async updateMetadata(id: string, input: {
-    expectedVersion: number;
-    name?: string;
-    displayName?: string | null;
-    addressLine?: string | null;
-    city?: string | null;
-    state?: string | null;
-    country?: string | null;
-    actor: string;
-  }): Promise<AgentOutlet> {
+  async updateMetadata(
+    id: string,
+    input: {
+      expectedVersion: number;
+      name?: string;
+      displayName?: string | null;
+      addressLine?: string | null;
+      city?: string | null;
+      state?: string | null;
+      country?: string | null;
+      actor: string;
+    },
+  ): Promise<AgentOutlet> {
     this.assertUuid(id, 'id');
     const actor = this.normalizeActor(input.actor);
     if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) {
       throw new BadRequestException('expectedVersion must be a positive integer');
     }
-    if ([input.name, input.displayName, input.addressLine, input.city, input.state, input.country].every((value) => value === undefined)) {
+    if (
+      [
+        input.name,
+        input.displayName,
+        input.addressLine,
+        input.city,
+        input.state,
+        input.country,
+      ].every((value) => value === undefined)
+    ) {
       throw new BadRequestException('At least one metadata field is required');
     }
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(AgentOutlet);
       const outlet = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
-      if (!outlet || outlet.deletedAt !== null) throw new NotFoundException(`Outlet ${id} not found`);
-      if (outlet.version !== input.expectedVersion) throw new ConflictException('Outlet version is stale');
+      if (!outlet || outlet.deletedAt !== null)
+        throw new NotFoundException(`Outlet ${id} not found`);
+      if (outlet.version !== input.expectedVersion)
+        throw new ConflictException('Outlet version is stale');
       const previous = this.toValues(outlet);
       if (input.name !== undefined) {
-        if (typeof input.name !== 'string' || containsControlCharacters(input.name)) throw new BadRequestException('name is invalid');
+        if (typeof input.name !== 'string' || containsControlCharacters(input.name))
+          throw new BadRequestException('name is invalid');
         outlet.name = this.normalizeName(input.name, 'name');
       }
-      if (input.displayName !== undefined) outlet.displayName = this.normalizeMetadata(input.displayName, 'displayName', 160);
-      if (input.addressLine !== undefined) outlet.addressLine = this.normalizeMetadata(input.addressLine, 'addressLine', 500);
+      if (input.displayName !== undefined)
+        outlet.displayName = this.normalizeMetadata(input.displayName, 'displayName', 160);
+      if (input.addressLine !== undefined)
+        outlet.addressLine = this.normalizeMetadata(input.addressLine, 'addressLine', 500);
       if (input.city !== undefined) outlet.city = this.normalizeMetadata(input.city, 'city', 100);
-      if (input.state !== undefined) outlet.state = this.normalizeMetadata(input.state, 'state', 100);
-      if (input.country !== undefined) outlet.country = this.normalizeMetadata(input.country, 'country', 100);
+      if (input.state !== undefined)
+        outlet.state = this.normalizeMetadata(input.state, 'state', 100);
+      if (input.country !== undefined)
+        outlet.country = this.normalizeMetadata(input.country, 'country', 100);
       outlet.updatedBy = actor;
       // Even an identical accepted PATCH consumes the version. Otherwise TypeORM may
       // skip UPDATE for a no-op and two callers holding the same version could both win.
       outlet.version += 1;
       const saved = await repo.save(outlet);
       await this.auditService.record(manager, {
-        entityType: 'AGENT_OUTLET', entityId: saved.id, action: 'AGENT_OUTLET_UPDATED', actor,
-        previousValues: previous, newValues: this.toValues(saved),
+        entityType: 'AGENT_OUTLET',
+        entityId: saved.id,
+        action: 'AGENT_OUTLET_UPDATED',
+        actor,
+        previousValues: previous,
+        newValues: this.toValues(saved),
       });
       return saved;
     });
   }
 
-  async suspend(id: string, actor: string): Promise<AgentOutlet> {
-    return this.transition(id, OutletStatus.SUSPENDED, actor, 'AGENT_OUTLET_SUSPENDED');
+  async suspend(id: string, actor: string, expectedVersion?: number): Promise<AgentOutlet> {
+    return this.transition(
+      id,
+      OutletStatus.SUSPENDED,
+      actor,
+      'AGENT_OUTLET_SUSPENDED',
+      undefined,
+      expectedVersion,
+    );
   }
 
-  async reactivate(id: string, actor: string): Promise<AgentOutlet> {
+  async reactivate(id: string, actor: string, expectedVersion?: number): Promise<AgentOutlet> {
     // Reactivation requires Agent still operable
     const outlet = await this.getById(id);
-    await this.assertAgentOperable(outlet.agentId, 'activate');
-    return this.transition(id, OutletStatus.ACTIVE, actor, 'AGENT_OUTLET_REACTIVATED');
+    return this.transition(
+      id,
+      OutletStatus.ACTIVE,
+      actor,
+      'AGENT_OUTLET_REACTIVATED',
+      outlet.agentId,
+      expectedVersion,
+    );
   }
 
-  async terminate(id: string, actor: string): Promise<AgentOutlet> {
-    return this.transition(id, OutletStatus.TERMINATED, actor, 'AGENT_OUTLET_TERMINATED');
+  async terminate(id: string, actor: string, expectedVersion?: number): Promise<AgentOutlet> {
+    return this.transition(
+      id,
+      OutletStatus.TERMINATED,
+      actor,
+      'AGENT_OUTLET_TERMINATED',
+      undefined,
+      expectedVersion,
+    );
   }
 
-  private async transition(id: string, target: OutletStatus, actor: string, action: string): Promise<AgentOutlet> {
+  private async transition(
+    id: string,
+    target: OutletStatus,
+    actor: string,
+    action: string,
+    activeAgentId?: string,
+    expectedVersion?: number,
+  ): Promise<AgentOutlet> {
     this.assertUuid(id, 'id');
     const normalizedActor = this.normalizeActor(actor);
-    if (!Object.values(OutletStatus).includes(target)) throw new BadRequestException(`Invalid status ${target}`);
+    if (
+      expectedVersion !== undefined &&
+      (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1)
+    )
+      throw new BadRequestException('expectedVersion must be a positive integer');
+    if (!Object.values(OutletStatus).includes(target))
+      throw new BadRequestException(`Invalid status ${target}`);
     return this.dataSource.transaction(async (manager) => {
+      if (activeAgentId) await this.assertAgentOperable(manager, activeAgentId, 'activate');
       const repo = manager.getRepository(AgentOutlet);
       const outlet = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
-      if (!outlet || outlet.deletedAt !== null) throw new NotFoundException(`Outlet ${id} not found`);
-      const allowed = ALLOWED_OUTLET_TRANSITIONS[outlet.status as OutletStatus] ?? [];
+      if (!outlet || outlet.deletedAt !== null)
+        throw new NotFoundException(`Outlet ${id} not found`);
+      if (expectedVersion !== undefined && outlet.version !== expectedVersion)
+        throw new ConflictException('Outlet version is stale');
+      if (activeAgentId && outlet.agentId !== activeAgentId)
+        throw new ConflictException('Outlet Agent changed; reload before reactivation');
+      const allowed = ALLOWED_OUTLET_TRANSITIONS[outlet.status] ?? [];
       if (!allowed.includes(target)) {
         throw new ConflictException(`Transition ${outlet.status} → ${target} is not allowed`);
       }
@@ -244,31 +319,49 @@ export class OutletService {
     });
   }
 
-  private async assertAgentOperable(agentId: string, operation: string): Promise<void> {
-    const rows: Array<{ id: string; status: string; deleted_at: string | null }> = await this.dataSource.query(
-      `SELECT id, status, deleted_at FROM agents WHERE id=$1 LIMIT 1`,
-      [agentId],
-    );
+  private async assertAgentOperable(
+    manager: EntityManager,
+    agentId: string,
+    operation: string,
+  ): Promise<void> {
+    const rows: Array<{ id: string; status: string; deleted_at: string | null }> =
+      await manager.query(
+        `SELECT id, status, deleted_at FROM agents WHERE id=$1 LIMIT 1 FOR UPDATE`,
+        [agentId],
+      );
     const agent = rows[0];
-    if (!agent || agent.deleted_at !== null) throw new NotFoundException(`Agent ${agentId} not found`);
-    if (agent.status !== AgentStatus.ACTIVE) {
-      throw new ConflictException(`Agent ${agentId} is ${agent.status} and cannot ${operation} outlet`);
+    if (!agent || agent.deleted_at !== null)
+      throw new NotFoundException(`Agent ${agentId} not found`);
+    if (agent.status !== (AgentStatus.ACTIVE as string)) {
+      throw new ConflictException(
+        `Agent ${agentId} is ${agent.status} and cannot ${operation} outlet`,
+      );
     }
   }
 
-  private async assertAggregatorRelationship(aggregatorId: string, agentId: string): Promise<void> {
-    const aggRows: Array<{ id: string; status: string; deleted_at: string | null }> = await this.dataSource.query(
-      `SELECT id, status, deleted_at FROM aggregators WHERE id=$1 LIMIT 1`,
-      [aggregatorId],
-    );
+  private async assertAggregatorRelationship(
+    manager: EntityManager,
+    aggregatorId: string,
+    agentId: string,
+  ): Promise<void> {
+    const aggRows: Array<{ id: string; status: string; deleted_at: string | null }> =
+      await manager.query(
+        `SELECT id, status, deleted_at FROM aggregators WHERE id=$1 LIMIT 1 FOR UPDATE`,
+        [aggregatorId],
+      );
     const agg = aggRows[0];
-    if (!agg || agg.deleted_at !== null) throw new NotFoundException(`Aggregator ${aggregatorId} not found`);
-    if (agg.status !== AggregatorStatus.ACTIVE) throw new ConflictException(`Aggregator ${aggregatorId} is ${agg.status}`);
-    const relRows: Array<{ id: string; status: string }> = await this.dataSource.query(
-      `SELECT id, status FROM aggregator_agent_assignments WHERE aggregator_id=$1 AND agent_id=$2 AND status='ACTIVE' LIMIT 1`,
+    if (!agg || agg.deleted_at !== null)
+      throw new NotFoundException(`Aggregator ${aggregatorId} not found`);
+    if (agg.status !== (AggregatorStatus.ACTIVE as string))
+      throw new ConflictException(`Aggregator ${aggregatorId} is ${agg.status}`);
+    const relRows: Array<{ id: string; status: string }> = await manager.query(
+      `SELECT id, status FROM aggregator_agent_assignments WHERE aggregator_id=$1 AND agent_id=$2 AND status='ACTIVE' LIMIT 1 FOR UPDATE`,
       [aggregatorId, agentId],
     );
-    if (relRows.length === 0) throw new ConflictException(`No ACTIVE Aggregator-Agent relationship for ${aggregatorId} → ${agentId}`);
+    if (relRows.length === 0)
+      throw new ConflictException(
+        `No ACTIVE Aggregator-Agent relationship for ${aggregatorId} → ${agentId}`,
+      );
   }
 
   async listPublicCashToCashOutlets(
@@ -408,20 +501,24 @@ export class OutletService {
   private normalizeMetadata(value: string | null, field: string, max: number): string | null {
     if (value === null) return null;
     if (typeof value !== 'string' || value.length > max || containsControlCharacters(value)) {
-      throw new BadRequestException(`${field} must be at most ${max} characters without control characters`);
+      throw new BadRequestException(
+        `${field} must be at most ${max} characters without control characters`,
+      );
     }
     return value.trim() || null;
   }
 
   private normalizeReference(v: string, field: string): string {
     const trimmed = v?.trim();
-    if (!trimmed || trimmed.length < 3 || trimmed.length > 80) throw new BadRequestException(`${field} must be 3-80 chars`);
+    if (!trimmed || trimmed.length < 3 || trimmed.length > 80)
+      throw new BadRequestException(`${field} must be 3-80 chars`);
     return trimmed;
   }
 
   private normalizeName(v: string, field: string): string {
     const trimmed = v?.trim();
-    if (!trimmed || trimmed.length < 2 || trimmed.length > 320) throw new BadRequestException(`${field} must be 2-320 chars`);
+    if (!trimmed || trimmed.length < 2 || trimmed.length > 320)
+      throw new BadRequestException(`${field} must be 2-320 chars`);
     return trimmed;
   }
 
@@ -433,13 +530,19 @@ export class OutletService {
   }
 
   private assertUuid(value: string, field: string): string {
-    if (!value || !UUID_PATTERN.test(value)) throw new BadRequestException(`${field} must be a UUID`);
+    if (!value || !UUID_PATTERN.test(value))
+      throw new BadRequestException(`${field} must be a UUID`);
     return value;
   }
 
-  private isUniqueViolation(e: any): boolean {
-    const msg = String(e?.message ?? '').toLowerCase();
-    const code = String(e?.code ?? '');
-    return code === '23505' || msg.includes('duplicate') || msg.includes('uq_agent_outlets');
+  private isUniqueViolation(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) return false;
+    const databaseError = error as unknown as { code?: string; constraint?: string };
+    return (
+      databaseError.code === '23505' &&
+      ['uq_agent_outlets_reference', 'uq_agent_outlets_code'].includes(
+        databaseError.constraint ?? '',
+      )
+    );
   }
 }

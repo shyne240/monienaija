@@ -1,4 +1,4 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
  * ARENA3-NOTIFICATION-EMAIL — widen notification_deliveries.channel to accept 'EMAIL'.

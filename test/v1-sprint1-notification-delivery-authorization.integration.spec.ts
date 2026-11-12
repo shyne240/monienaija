@@ -152,7 +152,9 @@ describe('SPRINT-1 Notification Delivery Authorization Hardening — F-02 / P0-0
     return { accessToken: login.accessToken, supportUserId: provisioned.user.id };
   }
 
-  async function createCustomerSession(phone10: string): Promise<{ customerId: string; accessToken: string }> {
+  async function createCustomerSession(
+    phone10: string,
+  ): Promise<{ customerId: string; accessToken: string }> {
     const password = 'CustomerPassword!123';
     const custRows: Array<{ id: string }> = await dataSource.query(
       `INSERT INTO customers (reference, customer_type, status, kyc_level, kyc_status)
@@ -382,9 +384,7 @@ describe('SPRINT-1 Notification Delivery Authorization Hardening — F-02 / P0-0
   // Section B — Unauthorized principal types & missing/invalid authentication
   // -------------------------------------------------------------------------
   it('B1: missing, malformed, and unknown bearer tokens -> 401 Unauthorized', async () => {
-    await request(app.getHttpServer())
-      .get('/api/v1/internal/notifications/deliveries')
-      .expect(401);
+    await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries').expect(401);
 
     await request(app.getHttpServer())
       .get('/api/v1/internal/notifications/deliveries')
@@ -451,7 +451,8 @@ describe('SPRINT-1 Notification Delivery Authorization Hardening — F-02 / P0-0
   it('C1: query parameters (including own recipientId or malformed filters) cannot bypass authorization', async () => {
     const { customerId, accessToken: customerToken } = await createCustomerSession('8051112222');
     const { accessToken: complianceToken } = await establishRoleSession('COMPLIANCE');
-    const { accessToken: financeControllerToken } = await establishRoleSession('FINANCE_CONTROLLER');
+    const { accessToken: financeControllerToken } =
+      await establishRoleSession('FINANCE_CONTROLLER');
     const { accessToken: supportToken } = await createSupportToken();
 
     await insertDeliveryRow({
@@ -547,7 +548,9 @@ describe('SPRINT-1 Notification Delivery Authorization Hardening — F-02 / P0-0
     expect(failedAgentRes.body.data[0].id).toBe(agentSmsId);
 
     const phoneRes = await request(app.getHttpServer())
-      .get('/api/v1/internal/notifications/deliveries?recipientType=PHONE&eventType=cash_to_cash.created')
+      .get(
+        '/api/v1/internal/notifications/deliveries?recipientType=PHONE&eventType=cash_to_cash.created',
+      )
       .set('Authorization', `Bearer ${opsToken}`)
       .expect(200);
     expect(phoneRes.body.total).toBe(1);
@@ -674,30 +677,46 @@ describe('SPRINT-1 Notification Delivery Authorization Hardening — F-02 / P0-0
 
     // SMS SENT row — rendered financial message + sensitive payload value.
     await insertDeliveryRow({
-      recipientType: 'CUSTOMER', recipientId: customerId, channel: 'SMS',
-      destination: '8073334444', status: 'SENT',
-      message: sentinels.smsMessage, payload: { secret: sentinels.payloadSecret },
+      recipientType: 'CUSTOMER',
+      recipientId: customerId,
+      channel: 'SMS',
+      destination: '8073334444',
+      status: 'SENT',
+      message: sentinels.smsMessage,
+      payload: { secret: sentinels.payloadSecret },
     });
     // EMAIL FAILED row — arbitrary provider-secret-like error text in last_error.
     await insertDeliveryRow({
-      recipientType: 'CUSTOMER', recipientId: customerId, channel: 'EMAIL',
-      destination: sentinels.emailDestination, status: 'FAILED',
+      recipientType: 'CUSTOMER',
+      recipientId: customerId,
+      channel: 'EMAIL',
+      destination: sentinels.emailDestination,
+      status: 'FAILED',
       eventType: 'customer.funding.rejected',
-      message: sentinels.emailMessage, lastError: sentinels.providerSecret,
+      message: sentinels.emailMessage,
+      lastError: sentinels.providerSecret,
       payload: { apiKey: sentinels.payloadSecret },
     });
     // PHONE-recipient SKIPPED row — unclassified internal reason.
     await insertDeliveryRow({
-      recipientType: 'PHONE', recipientId: sentinels.phoneRecipient, channel: 'SMS',
-      destination: sentinels.phoneRecipient, status: 'SKIPPED',
+      recipientType: 'PHONE',
+      recipientId: sentinels.phoneRecipient,
+      channel: 'SMS',
+      destination: sentinels.phoneRecipient,
+      status: 'SKIPPED',
       eventType: 'cash_to_cash.created',
-      message: sentinels.c2cMessage, lastError: sentinels.unknownReason,
+      message: sentinels.c2cMessage,
+      lastError: sentinels.unknownReason,
     });
     // Allowlisted skip-code row.
     await insertDeliveryRow({
-      recipientType: 'CUSTOMER', recipientId: customerId, channel: 'SMS',
-      destination: '8073334444', status: 'SKIPPED',
-      lastError: 'SMS_OPT_OUT', message: sentinels.optOutMessage,
+      recipientType: 'CUSTOMER',
+      recipientId: customerId,
+      channel: 'SMS',
+      destination: '8073334444',
+      status: 'SKIPPED',
+      lastError: 'SMS_OPT_OUT',
+      message: sentinels.optOutMessage,
     });
 
     const res = await request(app.getHttpServer())
@@ -710,7 +729,10 @@ describe('SPRINT-1 Notification Delivery Authorization Hardening — F-02 / P0-0
 
     // No sentinel appears anywhere in the JSON response (nested objects included).
     for (const [name, value] of Object.entries(sentinels)) {
-      expect({ sentinel: name, leaked: bodyText.includes(value) }).toEqual({ sentinel: name, leaked: false });
+      expect({ sentinel: name, leaked: bodyText.includes(value) }).toEqual({
+        sentinel: name,
+        leaked: false,
+      });
     }
     // Raw fragments of the provider error and financial/OTP content never leak.
     expect(bodyText).not.toContain('sk_live');
@@ -732,7 +754,7 @@ describe('SPRINT-1 Notification Delivery Authorization Hardening — F-02 / P0-0
     expect(failed.errorCode).toBe('UNCLASSIFIED');
     const skippedCodes = res.body.data
       .filter((d: any) => d.status === 'SKIPPED')
-      .map((d: any) => d.errorCode)
+      .map((d: any) => d.errorCode as string)
       .sort();
     expect(skippedCodes).toEqual(['SMS_OPT_OUT', 'UNCLASSIFIED']);
     const sent = res.body.data.find((d: any) => d.status === 'SENT');

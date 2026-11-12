@@ -1,3 +1,4 @@
+import { testWalletFinancialBoundary } from './support/test-wallet-financial-boundary';
 import { randomUUID } from 'node:crypto';
 import type { DataSource } from 'typeorm';
 
@@ -130,6 +131,7 @@ describe('A5T11 / B2F03 convergence (real PostgreSQL)', () => {
         dataSource.getRepository(LedgerJournal),
         dataSource.getRepository(LedgerLine),
         dataSource,
+        testWalletFinancialBoundary,
       ),
       idempotency,
       approvals,
