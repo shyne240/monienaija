@@ -175,6 +175,13 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     expect(last!.name).toBe(
       /^\d+-(.*)\.ts$/.exec(repositoryHeads[repositoryHeads.length - 1]!)![1] + newestHead,
     );
+    // The assignment write validates that the referenced limit profile exists, so create it first.
+    // (This test is about the migration chain and the assignment contract, not about profiles.)
+    expect((await createProfile('ASSIGN_A')).status).toBe(201);
+    expect((await createProfile('ASSIGN_B')).status).toBe(201);
+    await createProfile('ASSIGN_C');
+    await createProfile('ASSIGN_D');
+
     const custId = await seedCustomer();
     const agentClassId = await seedAgentClass();
     const agentId = await seedAgent(agentClassId);
