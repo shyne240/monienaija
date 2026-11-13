@@ -1287,6 +1287,18 @@ export class A7ProductFinancialEffectService {
         checkWithFailed('requestHash', 'FAIL'),
       );
     }
+    // These capabilities describe assignment or inbound funding, while the
+    // historical A6 mapping is an outbound debit. Do not confuse a verified
+    // inbound outcome with authority to spend a customer's reserved funds.
+    if (
+      command.outcome === A7_PRODUCT_FINANCIAL_EFFECT_OUTCOME_VERIFIED &&
+      (command.capabilityKey === CAPABILITY_ASSIGN ||
+        command.capabilityKey === CAPABILITY_INBOUND_FUNDING)
+    ) {
+      throw new ServiceUnavailableException(
+        'Virtual-account settlement cannot use the outbound withdrawal boundary',
+      );
+    }
     let reservation: {
       readonly kind: A7ProductFinancialEffectReservationKind;
       readonly record: { id: string; responseBody: Record<string, unknown> | null } | null;

@@ -717,6 +717,27 @@ function serviceWithFakeRepository(fakeRepository: FakeRepository) {
 }
 
 describe('A7T08 A7 product financial effect service', () => {
+  it.each([
+    { capabilityKey: 'virtual-account.assign', action: 'assign' },
+    { capabilityKey: 'virtual-account.inbound-funding', action: 'lifecycle' },
+  ])(
+    'does not route $capabilityKey through outbound withdrawal settlement',
+    async ({ capabilityKey, action }) => {
+      const fakeRepo = new FakeRepository();
+      fakeRepo.a7T04Response = { ...fakeRepo.a7T04Response!, capabilityKey, action };
+      fakeRepo.a7T05Response = { ...fakeRepo.a7T05Response!, capabilityKey, action };
+      fakeRepo.a7T07Response = { ...fakeRepo.a7T07Response!, capabilityKey, action };
+      const ports = fakeRepo.getConsumerPorts();
+      jest.spyOn(fakeRepo, 'getConsumerPorts').mockReturnValue(ports);
+      const service = serviceWithFakeRepository(fakeRepo);
+      await expect(
+        service.postProductFinancialEffect(makeInputWithCanonicalHash({ capabilityKey, action })),
+      ).rejects.toThrow('cannot use the outbound withdrawal boundary');
+      expect(ports.a6T08SettleVerifiedOutcome).not.toHaveBeenCalled();
+      expect(ports.operationsIdempotencyReserve).not.toHaveBeenCalled();
+    },
+  );
+
   it('exposes the A7 product financial effect contract name and version', () => {
     const fakeRepo = new FakeRepository();
     const service = serviceWithFakeRepository(fakeRepo);
