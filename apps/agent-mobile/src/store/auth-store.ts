@@ -142,9 +142,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // (`pending_agent_operation:<agentId>:<type>`, see storageKeyFor() in
       // pending-operation.ts), so a DIFFERENT Agent signing into this device can never read or
       // collide with this record regardless of whether logout clears it — clearing on logout
-      // was removing real retry-safety for no actual isolation benefit. The 24-hour staleness
-      // window (MAX_PENDING_AGE_MS) still bounds how long an unresolved record can ever be
-      // resumed, logout or not. See docs/V1/V1-MOBILE-REAL-WORLD-VALIDATION-01.md Part 16.
+      // was removing real retry-safety for no actual isolation benefit. Cash-Out and
+      // Cash-to-Cash funding remain durable without an elapsed-time expiry.
       set({
         isAuthenticated: false,
         isLoading: false,

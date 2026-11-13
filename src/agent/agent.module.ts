@@ -36,6 +36,8 @@ import { AgentCashOutController } from './agent-cash-out.controller';
 import { AgentCashToCashService, CashToCashFundingAuthority } from './agent-cash-to-cash.service';
 import { AgentCashToCashController } from './agent-cash-to-cash.controller';
 import { AgentCashToCashClaimService } from './agent-cash-to-cash-claim.service';
+import { AgentCashToCashRecoveryService } from './agent-cash-to-cash-recovery.service';
+import { AgentCashToCashRecoveryController } from './agent-cash-to-cash-recovery.controller';
 import { AgentCashToCashCancellationService } from './agent-cash-to-cash-cancellation.service';
 import { AgentCashToCashCancellationController } from './agent-cash-to-cash-cancellation.controller';
 import { AgentCashToCashClaimController } from './agent-cash-to-cash-claim.controller';
@@ -111,6 +113,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     AgentCashToCashController,
     AgentCashToCashClaimController,
     AgentCashToCashCancellationController,
+    AgentCashToCashRecoveryController,
     AgentCashToCashOperationsController,
     AgentCashToCashExpiryStatusController,
     AgentFundingController,
@@ -135,6 +138,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     CashToCashFundingAuthority,
     AgentCashToCashClaimService,
     AgentCashToCashCancellationService,
+    AgentCashToCashRecoveryService,
     AgentCashToCashExpiryService,
     AgentCashToCashExpiryWorker,
     AgentLifecycleService,

@@ -98,3 +98,22 @@ unauthenticated denial, and repeat expiry. A claim-versus-expiry race uses `expi
 an explicit future test clock; exactly one terminal outcome is observed. This is not a
 production-clock worker race test. The full isolated suite passed 14/14. Production identity,
 institution and disposition policy remain unavailable; no real financial execution occurs.
+
+### Funding recovery safety checkpoint
+
+Authenticated funding recovery now accepts the original idempotency key, scopes lookup to
+current agent/session, requires a resolved matching institutional affiliation, and checks
+the immutable funding evidence against original ledger lines. No record returns UNKNOWN,
+not proof of non-execution; insufficient evidence returns EVIDENCE_REVIEW. The registered
+institution resolver remains fail-closed in production. The mobile funding confirm screen
+now uses native-compatible durable storage without a 24-hour expiry, blocks overwriting an
+unresolved operation, and uses the read-only recovery endpoint instead of resubmitting after
+restart. It does not persist PINs or assume a missing result is a failure. Storage or recovery
+failure blocks another submission. Existing volatile/invalid-key legacy pending records cannot
+be reliably reconstructed after process death and need operational review.
+
+This is not full mobile lifecycle recovery: operation-key handoff without transfer ID,
+durable receipt UI, claim recovery, cancellation/expiry presentation and authenticated workforce
+institution-scoped acceptance remain outstanding. Current recovery deliberately holds even
+first-attempt definitive errors pending support, rather than risk discarding an earlier
+ambiguous operation; an approved resolution path is needed for usability.

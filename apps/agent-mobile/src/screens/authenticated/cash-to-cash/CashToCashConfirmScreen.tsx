@@ -11,7 +11,7 @@ import { Input } from '../../../components/Input';
 import {
   agentCashToCash,
   describeCashToCashError,
-  isAmbiguousOperationOutcome,
+  recoverCashToCashFunding,
   setPendingTransferCode,
   type AgentCashToCashResult,
   type SafeCashToCashResult,
@@ -41,15 +41,9 @@ import type { RootStackParamList } from '../../../navigation/types';
  *   (NEVER in navigation params).
  * - Navigation resets to CashToCashSuccess with the safe result.
  *
- * V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01: the Idempotency-Key minted on the Amount
- * screen is durably persisted (SecureStorage, Agent-scoped) immediately before the request
- * is sent. If the app process is killed before a response arrives and the Agent restarts the
- * flow for what they believe is the same Cash→Cash send, the persisted key is recognized
- * (same beneficiary phone + amount) and reused instead of a fresh key being minted — so a
- * resumed attempt safely replays against the backend's idempotency boundary rather than
- * debiting the Agent's float a second time for an independent pending transfer. On a
- * definitive rejection (4xx) or success the pending record is cleared; on an ambiguous
- * outcome (network error / 5xx) it is deliberately left in place.
+ * A durable agent-scoped operation is recorded before submission. Once an outcome is
+ * ambiguous, subsequent attempts perform read-only recovery and never submit a second
+ * funding request. Missing evidence remains unresolved; no secrets are persisted.
  */
 export const CashToCashConfirmScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -93,16 +87,10 @@ export const CashToCashConfirmScreen: React.FC = () => {
         routes: [{ name: 'CashToCashSuccess', params: { result: safeParams, amountMinor } }],
       });
     },
-    onError: async (err) => {
+    onError: async () => {
+      // A response alone cannot establish that a previous ambiguous attempt did not commit.
+      // Keep the key until authoritative recovery or reconciliation can resolve it.
       setPin('');
-      const isLocatorRetryable =
-        err instanceof Error &&
-        err.name === 'ApiError' &&
-        ((err as Error & { code?: string }).code === 'C2C_LOCATOR_UNAVAILABLE' ||
-          /Unable to allocate transfer number/i.test(err.message));
-      if (agentId && !isAmbiguousOperationOutcome(err) && !isLocatorRetryable) {
-        await clearPendingAgentOperation(agentId, 'CASH_TO_CASH_SEND');
-      }
     },
   });
 
@@ -124,30 +112,41 @@ export const CashToCashConfirmScreen: React.FC = () => {
       currency: 'NGN',
     };
 
-    let effectiveKey = idempotencyKey;
-    if (agentId) {
+    if (!agentId) {
+      setPin('');
+      setClientError('Sign in again to continue.');
+      submitInFlightRef.current = false;
+      return;
+    }
+    let submitted = false;
+    try {
       const existing = await loadPendingAgentOperation(agentId, 'CASH_TO_CASH_SEND');
-      if (existing && matchesPendingAgentOperation(existing, candidateParams)) {
-        effectiveKey = existing.idempotencyKey;
+      if (existing) {
+        setPin('');
+        if (!matchesPendingAgentOperation(existing, candidateParams)) {
+          setClientError('A previous transfer is unresolved. Recover it before starting another transfer.');
+          return;
+        }
+        const recovery = await recoverCashToCashFunding(existing.idempotencyKey);
+        if (recovery.status === 'FOUND') {
+          setClientError(`Transfer ${recovery.transferId}: ${recovery.lifecycleStatus}. ${recovery.disposition === 'PENDING' ? 'Funds remain an outstanding obligation; this is not a refund.' : 'Contact support for receipt recovery.'}`);
+        } else {
+          setClientError('The previous transfer is unresolved. Contact support; do not submit a new transfer.');
+        }
+        return;
       }
+      effectiveKeyRef.current = idempotencyKey;
+      await savePendingAgentOperation({agentId,operationType:'CASH_TO_CASH_SEND',idempotencyKey,...candidateParams,createdAt:new Date().toISOString()});
+      submitted = true;
+      cashToCashMutation.mutate(undefined, { onSettled: () => { submitInFlightRef.current = false; } });
+      return;
+    } catch {
+      setPin('');
+      setClientError('Recovery or secure storage is unavailable. Do not submit another transfer; contact support.');
+    } finally {
+      // mutate's in-flight guard remains set until its callback.
+      if (!submitted) submitInFlightRef.current = false;
     }
-    effectiveKeyRef.current = effectiveKey;
-
-    if (agentId) {
-      await savePendingAgentOperation({
-        agentId,
-        operationType: 'CASH_TO_CASH_SEND',
-        idempotencyKey: effectiveKey,
-        ...candidateParams,
-        createdAt: new Date().toISOString(),
-      });
-    }
-
-    cashToCashMutation.mutate(undefined, {
-      onSettled: () => {
-        submitInFlightRef.current = false;
-      },
-    });
   };
 
   const failureText = clientError
