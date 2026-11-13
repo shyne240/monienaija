@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any */
 /**
  * Governed wallet ownership resolution — real PostgreSQL + real HTTP acceptance suite.
  *
@@ -971,7 +971,7 @@ describe('Governed wallet ownership resolution — real PostgreSQL + real HTTP',
       }),
     ]);
     expect(results.map((result) => result.status)).toEqual([201, 201]);
-    expect(results[0]!.body.executedAt).toBe(results[1]!.body.executedAt);
+    expect(results[0].body.executedAt).toBe(results[1].body.executedAt);
     expect(await resolutionRows()).toHaveLength(1);
   });
 
