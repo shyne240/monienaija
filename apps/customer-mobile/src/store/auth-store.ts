@@ -3,6 +3,9 @@ import { create } from 'zustand';
 import { ApiClient, onCustomerSessionExpired } from '../services/api-client';
 import { SecureStorage } from '../services/secure-storage';
 
+export const ORDINARY_CUSTOMER_AUDIENCE = 'customer-api';
+export const ONBOARDING_TOKEN_STORAGE_KEY = 'synthetic_onboarding_token_v1';
+
 export interface UserSession {
   accessToken: string;
   sessionId: string;
@@ -19,6 +22,7 @@ interface AuthState {
   error: string | null;
   rotationRequired: boolean;
   login: (identifier: string, password: string) => Promise<void>;
+  acceptSession: (session: UserSession) => Promise<void>;
   logout: () => Promise<void>;
   restoreSession: () => Promise<void>;
   clearError: () => void;
@@ -77,12 +81,13 @@ export const useAuthStore = create<AuthState>((set) => ({
         sessionId: response.sessionId ?? '',
         expiresAt: response.expiresAt ?? new Date(Date.now() + 3600 * 1000).toISOString(),
         customerId: response.customerId,
-        audience: 'customer-api',
+        audience: ORDINARY_CUSTOMER_AUDIENCE,
       };
 
       await SecureStorage.set('auth_session_token', sessionData.accessToken);
       await SecureStorage.set('auth_customer_id', sessionData.customerId);
       await SecureStorage.set('auth_session_data', JSON.stringify(sessionData));
+      await SecureStorage.remove(ONBOARDING_TOKEN_STORAGE_KEY);
 
       set({
         isAuthenticated: true,
@@ -101,6 +106,34 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
       throw err;
     }
+  },
+
+  acceptSession: async (sessionData: UserSession) => {
+    const expiresAt = new Date(sessionData.expiresAt);
+    if (
+      sessionData.audience !== ORDINARY_CUSTOMER_AUDIENCE ||
+      !sessionData.accessToken ||
+      !sessionData.customerId ||
+      !sessionData.sessionId ||
+      !Number.isFinite(expiresAt.getTime()) ||
+      expiresAt.getTime() <= Date.now()
+    ) {
+      throw new Error('Invalid ordinary customer session handoff');
+    }
+
+    await SecureStorage.set('auth_session_token', sessionData.accessToken);
+    await SecureStorage.set('auth_customer_id', sessionData.customerId);
+    await SecureStorage.set('auth_session_data', JSON.stringify(sessionData));
+    await SecureStorage.remove(ONBOARDING_TOKEN_STORAGE_KEY);
+
+    set({
+      isAuthenticated: true,
+      isLoading: false,
+      session: sessionData,
+      customerId: sessionData.customerId,
+      error: null,
+      rotationRequired: false,
+    });
   },
 
   logout: async () => {
@@ -155,16 +188,22 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (token && customerId && sessionDataStr) {
         const sessionData = JSON.parse(sessionDataStr) as UserSession;
 
-        // Verify expiration
+        // Verify expiration, identity consistency, and ordinary customer-api audience.
         const expiresAt = new Date(sessionData.expiresAt);
-        if (expiresAt.getTime() > Date.now()) {
+        if (
+          sessionData.audience === ORDINARY_CUSTOMER_AUDIENCE &&
+          sessionData.accessToken === token &&
+          sessionData.customerId === customerId &&
+          Number.isFinite(expiresAt.getTime()) &&
+          expiresAt.getTime() > Date.now()
+        ) {
           set({
             isAuthenticated: true,
             session: sessionData,
             customerId: sessionData.customerId,
           });
         } else {
-          // Token expired
+          // Token expired or invalid scope/state
           await SecureStorage.remove('auth_session_token');
           await SecureStorage.remove('auth_customer_id');
           await SecureStorage.remove('auth_session_data');

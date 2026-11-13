@@ -355,7 +355,13 @@ export class RuntimeAccessGuard implements CanActivate {
         assuranceLevel: 'PASSWORD',
       };
     } else {
-      const validation = await this.sessionService.validate({ token });
+      const rawPath = request.url.split('?', 1)[0] ?? '';
+      const selfLogoutRoute = this.isCustomerSelfLogoutRoute(request.method, rawPath);
+      const validationMode = this.isSafeReadMethod(request.method) ? 'READ' : 'MUTATION';
+      const validation =
+        selfLogoutRoute && typeof this.sessionService.validateForLogout === 'function'
+          ? await this.sessionService.validateForLogout({ token })
+          : await this.sessionService.validate({ token, mode: validationMode });
       if (validation.valid && validation.principal) {
         principal = {
           type: 'CUSTOMER',
@@ -462,5 +468,22 @@ export class RuntimeAccessGuard implements CanActivate {
     const token = this.optionalBearerToken(header);
     if (!token) throw new UnauthorizedException('Authentication required');
     return token;
+  }
+
+  private isSafeReadMethod(method: string): boolean {
+    return SAFE_HTTP_METHODS.has(method.toUpperCase());
+  }
+
+  private isCustomerSelfLogoutRoute(method: string, rawPath: string): boolean {
+    const upper = method.toUpperCase();
+    if (upper === 'POST') {
+      return rawPath === '/api/v1/customers/sessions/logout' || rawPath === '/api/v1/customers/logout';
+    }
+    if (upper === 'DELETE') {
+      return /^\/api\/v1\/customers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/sessions(?:\/current)?$/i.test(
+        rawPath,
+      );
+    }
+    return false;
   }
 }

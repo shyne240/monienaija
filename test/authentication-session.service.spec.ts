@@ -246,4 +246,87 @@ describe('AuthenticationSessionService', () => {
       reason: 'CUSTOMER_STATUS_INELIGIBLE',
     });
   });
+
+  it('prevents silent session reactivation after eligibility withdrawal while permitting one-time self-logout', async () => {
+    let currentStatus = 'SUSPENDED';
+    const repository = new MemoryRepository<AuthenticationSession>();
+    const auditService = { record: jest.fn().mockResolvedValue({}) };
+    const customerRepository = {
+      findOne: jest.fn(() =>
+        Promise.resolve({
+          id: authentication.customerId,
+          status: currentStatus,
+          deletedAt: null,
+        } as unknown as Customer),
+      ),
+    };
+    const service = new AuthenticationSessionService(
+      repository as unknown as Repository<AuthenticationSession>,
+      new MemoryDataSource(new MemoryManager(repository)) as unknown as DataSource,
+      auditService as unknown as AuditService,
+      customerRepository as unknown as Repository<Customer>,
+      { require: jest.fn().mockResolvedValue(undefined) } as unknown as CustomerFinancialEligibilityService,
+    );
+
+    const issued = await service.issue({ authentication, actor: 'a2-session' });
+    await expect(service.validate({ token: issued.accessToken })).resolves.toEqual({
+      valid: false,
+      reason: 'CUSTOMER_STATUS_INELIGIBLE',
+    });
+
+    // Lifting suspension later must NOT reactivate the pre-suspension session.
+    currentStatus = 'ACTIVE';
+    await expect(service.validate({ token: issued.accessToken })).resolves.toEqual({
+      valid: false,
+      reason: 'REVOKED',
+    });
+
+    // Self-logout is still permitted once to acknowledge and clear the withdrawn session, then rejected on replay.
+    await expect(service.validateForLogout({ token: issued.accessToken })).resolves.toMatchObject({
+      valid: true,
+    });
+    await expect(
+      service.revoke({ token: issued.accessToken, actor: authentication.customerId, reason: 'Customer logout' }),
+    ).resolves.toMatchObject({ valid: false, reason: 'REVOKED' });
+    await expect(service.validateForLogout({ token: issued.accessToken })).resolves.toEqual({
+      valid: false,
+      reason: 'REVOKED',
+    });
+  });
+
+  it('uses shared lock mode for READ validation and exclusive lock mode for MUTATION validation', async () => {
+    const requireEligibility = jest.fn().mockResolvedValue(undefined);
+    const repository = new MemoryRepository<AuthenticationSession>();
+    const service = new AuthenticationSessionService(
+      repository as unknown as Repository<AuthenticationSession>,
+      new MemoryDataSource(new MemoryManager(repository)) as unknown as DataSource,
+      { record: jest.fn().mockResolvedValue({}) } as unknown as AuditService,
+      {
+        findOne: jest.fn().mockResolvedValue({
+          id: authentication.customerId,
+          status: 'ACTIVE',
+          deletedAt: null,
+        } as unknown as Customer),
+      } as unknown as Repository<Customer>,
+      { require: requireEligibility } as unknown as CustomerFinancialEligibilityService,
+    );
+
+    const issued = await service.issue({ authentication, actor: 'a2-session' });
+    requireEligibility.mockClear();
+
+    await expect(service.validate({ token: issued.accessToken, mode: 'READ' })).resolves.toMatchObject({
+      valid: true,
+    });
+    expect(requireEligibility).toHaveBeenCalledWith(expect.anything(), authentication.customerId, {
+      lockMode: 'SHARE',
+    });
+
+    requireEligibility.mockClear();
+    await expect(
+      service.validate({ token: issued.accessToken, mode: 'MUTATION' }),
+    ).resolves.toMatchObject({ valid: true });
+    expect(requireEligibility).toHaveBeenCalledWith(expect.anything(), authentication.customerId, {
+      lockMode: 'UPDATE',
+    });
+  });
 });

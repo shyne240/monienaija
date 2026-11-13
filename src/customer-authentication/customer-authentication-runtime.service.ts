@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 
@@ -73,17 +73,38 @@ export class CustomerAuthenticationRuntimeService {
     // V1-CUSTOMER-CREDENTIALS-01 — a rotation-pending temporary credential must never be
     // exchanged for a session here either; rotation must complete first.
     if (authentication.rotationRequired === true) {
+      if (
+        typeof this.authenticationSessionService.isFinanciallyEligible === 'function' &&
+        !(await this.authenticationSessionService.isFinanciallyEligible(authentication.customerId))
+      ) {
+        return {
+          authenticated: false,
+          customerId,
+          failureReason: 'INVALID_CREDENTIALS',
+        };
+      }
       return { authenticated: true, customerId, rotationRequired: true };
     }
 
-    const session = await this.authenticationSessionService.issue({
-      authentication,
-      actor: command.actor,
-      audience: command.audience,
-      ttlSeconds: command.ttlSeconds,
-      now: command.now,
-    });
-    return { authenticated: true, customerId, session };
+    try {
+      const session = await this.authenticationSessionService.issue({
+        authentication,
+        actor: command.actor,
+        audience: command.audience,
+        ttlSeconds: command.ttlSeconds,
+        now: command.now,
+      });
+      return { authenticated: true, customerId, session };
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        return {
+          authenticated: false,
+          customerId,
+          failureReason: 'INVALID_CREDENTIALS',
+        };
+      }
+      throw error;
+    }
   }
 
   async completePasswordReset(
@@ -272,25 +293,41 @@ export class CustomerAuthenticationRuntimeService {
         actor,
         { requestId: savedRequest.id, status: savedRequest.status },
       );
+      const inManagerRevoke =
+        typeof this.authenticationSessionService.revokeAllForCredentialInManager === 'function'
+          ? await this.authenticationSessionService.revokeAllForCredentialInManager(
+              manager,
+              savedCredential.id,
+              actor,
+              'Password reset completed',
+              now,
+            )
+          : null;
       return {
-        completed: true,
-        customerId,
-        requestId,
-        credentialId: savedCredential.id,
-        sessionsInvalidated: 0,
+        result: {
+          completed: true as const,
+          customerId,
+          requestId,
+          credentialId: savedCredential.id,
+          sessionsInvalidated: inManagerRevoke ?? 0,
+        },
+        revokedInTransaction: inManagerRevoke !== null,
       };
     });
 
-    if (!completion.completed || !('credentialId' in completion) || !completion.credentialId) {
+    if (!('result' in completion)) {
       return completion;
     }
+    if (completion.revokedInTransaction) {
+      return completion.result;
+    }
     const sessionsInvalidated = await this.authenticationSessionService.revokeAllForCredential(
-      completion.credentialId,
+      completion.result.credentialId,
       actor,
       'Password reset completed',
       now,
     );
-    return { ...completion, sessionsInvalidated };
+    return { ...completion.result, sessionsInvalidated };
   }
 
   private async audit(

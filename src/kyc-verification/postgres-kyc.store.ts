@@ -1,5 +1,7 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { DataSource, EntityManager } from 'typeorm';
+import { DEFAULT_SESSION_AUDIENCE } from '../customer-authentication/authentication-session.service';
+import type { CustomerSessionValidator } from '../customer-authentication/authentication-session.types';
 import { constantTimeMacEqual, identityBindingMac, UUID } from './kyc-orchestrator';
 import {
   KycFoundationError,
@@ -45,7 +47,10 @@ const project = (r: AttemptRow): Attempt => ({
 
 /** Private internal storage. No routes/module registration; caller must enforce authorization. */
 export class PostgresKycStore implements KycStore {
-  constructor(private readonly db: DataSource) {}
+  constructor(
+    private readonly db: DataSource,
+    private readonly sessions: CustomerSessionValidator,
+  ) {}
   private async lockCustomer(m: EntityManager, customerId: string): Promise<void> {
     const rows = await m.query<Array<{ id: string }>>(
       'SELECT id FROM customers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',
@@ -60,15 +65,19 @@ export class PostgresKycStore implements KycStore {
   ): Promise<string> {
     if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token))
       throw new KycFoundationError('BLOCKED');
-    const hash = createHash('sha256').update(token).digest('hex');
-    const sessions = await m.query<Array<{ id: string }>>(
-      `SELECT s.id FROM authentication_sessions s JOIN customers c ON c.id=s.customer_id
-      WHERE s.token_hash=$1 AND s.customer_id=$2 AND s.audience='customer-api' AND s.status='ACTIVE'
-      AND s.expires_at > clock_timestamp() AND c.status='ACTIVE' AND c.deleted_at IS NULL FOR SHARE OF s`,
-      [hash, customerId],
-    );
-    if (!sessions[0]) throw new KycFoundationError('BLOCKED');
-    return sessions[0].id;
+    const validation = await this.sessions.validateInManager(m, {
+      token,
+      audience: DEFAULT_SESSION_AUDIENCE,
+      mode: 'READ',
+    });
+    if (
+      !validation.valid ||
+      !validation.principal ||
+      validation.principal.customerId !== customerId
+    ) {
+      throw new KycFoundationError('BLOCKED');
+    }
+    return validation.principal.sessionId;
   }
   private async audit(
     m: EntityManager,

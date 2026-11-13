@@ -2,6 +2,10 @@ import { randomUUID } from 'node:crypto';
 import type { DataSource } from 'typeorm';
 import type { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import {
+  DEFAULT_SESSION_AUDIENCE,
+  type AuthenticationSessionService,
+} from '../customer-authentication/authentication-session.service';
 import { UUID } from './kyc-orchestrator';
 import { KycFoundationError } from './kyc.types';
 
@@ -10,6 +14,10 @@ export class KycExceptionReviewService {
   constructor(
     private readonly db: DataSource,
     private readonly authorization: AuthorizationService,
+    private readonly sessions?: Pick<
+      AuthenticationSessionService,
+      'revokeAllForCustomerInManager'
+    >,
   ) {}
   async hold(
     principal: AuthorizationPrincipal | undefined,
@@ -57,6 +65,13 @@ export class KycExceptionReviewService {
       await m.query("UPDATE kyc_identity_conflicts SET status='REVIEWED_HOLD' WHERE id=$1", [
         conflictId,
       ]);
+      await this.sessions?.revokeAllForCustomerInManager(
+        m,
+        rows[0].requester_customer_id,
+        principal.principalId,
+        `KYC exception hold: ${reason}`,
+        { audiences: [DEFAULT_SESSION_AUDIENCE], preserveSelfLogout: true },
+      );
       await m.query(
         "INSERT INTO kyc_private_audit(id,customer_id,resource_id,action,actor_id,outcome) VALUES($1,$2,$3,'OWNERSHIP_REVIEWED',$4,NULL)",
         [randomUUID(), rows[0].requester_customer_id, id, principal.principalId],

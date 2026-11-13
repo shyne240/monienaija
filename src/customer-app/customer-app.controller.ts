@@ -104,23 +104,36 @@ export class CustomerAppController {
     // V1-CUSTOMER-CREDENTIALS-01 — workforce-issued temporary credentials must be rotated
     // before any session exists. Verification succeeded, but NO session is issued.
     if (result.rotationRequired === true) {
+      if (
+        typeof this.sessionService.isFinanciallyEligible === 'function' &&
+        !(await this.sessionService.isFinanciallyEligible(result.customerId))
+      ) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
       return {
         rotationRequired: true,
         customerId: result.customerId,
       };
     }
-    const session = await this.sessionService.issue({
-      authentication: result,
-      actor: result.customerId,
-      audience: DEFAULT_SESSION_AUDIENCE,
-    });
-    return {
-      accessToken: session.accessToken,
-      tokenType: session.tokenType,
-      expiresAt: session.expiresAt,
-      customerId: session.principal.customerId,
-      sessionId: session.sessionId,
-    };
+    try {
+      const session = await this.sessionService.issue({
+        authentication: result,
+        actor: result.customerId,
+        audience: DEFAULT_SESSION_AUDIENCE,
+      });
+      return {
+        accessToken: session.accessToken,
+        tokenType: session.tokenType,
+        expiresAt: session.expiresAt,
+        customerId: session.principal.customerId,
+        sessionId: session.sessionId,
+      };
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+      throw error;
+    }
   }
 
   @Post('customers/credentials/rotate')
@@ -137,6 +150,12 @@ export class CustomerAppController {
     if (!auth.authenticated || !auth.credentialId) {
       throw new UnauthorizedException('Invalid credentials');
     }
+    if (
+      typeof this.sessionService.isFinanciallyEligible === 'function' &&
+      !(await this.sessionService.isFinanciallyEligible(auth.customerId))
+    ) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
     if (auth.rotationRequired !== true) {
       // Rotation is only for workforce-issued temporary credentials; normal credentials
       // are not rotated through this surface (no second password-management path invented).
@@ -147,40 +166,54 @@ export class CustomerAppController {
     }
     // Hash server-side with the module's established PBKDF2 convention.
     const newHash = this.pbkdf2PasswordHash(dto.newPassword);
-    const credential = await this.customerAuthService.rotateInitialPassword(
-      dto.customerId,
-      auth.credentialId,
-      {
-        passwordHash: newHash,
-        hashAlgorithm: PasswordHashAlgorithm.PBKDF2,
-        actor: dto.customerId,
-      },
-    );
-    // Established rotation/revocation convention: all sessions of the rotated credential die.
-    await this.sessionService.revokeAllForCredential(
-      credential.id,
-      dto.customerId,
-      'Credential rotated after first login',
-    );
-    // Post-rotation, issue the customer's first real session (login completes here).
-    const session = await this.sessionService.issue({
-      authentication: {
-        authenticated: true,
-        customerId: dto.customerId,
-        credentialId: credential.id,
-        passwordVersion: credential.passwordVersion,
-      },
-      actor: dto.customerId,
-      audience: DEFAULT_SESSION_AUDIENCE,
-    });
-    // Return the same minimal safe payload as login — no hashes, no raw credential.
-    return {
-      accessToken: session.accessToken,
-      tokenType: session.tokenType,
-      expiresAt: session.expiresAt,
-      customerId: session.principal.customerId,
-      sessionId: session.sessionId,
-    };
+    const credentialId = auth.credentialId;
+    const customerId = auth.customerId;
+    // CD-12: Rotate the initial credential, revoke any pre-existing sessions, and issue the
+    // customer's first session inside ONE atomic database transaction so a failure during
+    // session issuance rolls back rotation_required=false and never strands the customer.
+    try {
+      const session = await this.dataSource.transaction(async (manager) => {
+        const credential = await this.customerAuthService.rotateInitialPasswordInManager(
+          manager,
+          customerId,
+          credentialId,
+          {
+            passwordHash: newHash,
+            hashAlgorithm: PasswordHashAlgorithm.PBKDF2,
+            actor: customerId,
+          },
+        );
+        await this.sessionService.revokeAllForCredentialInManager(
+          manager,
+          credential.id,
+          customerId,
+          'Credential rotated after first login',
+        );
+        return this.sessionService.issueInManager(manager, {
+          authentication: {
+            authenticated: true,
+            customerId,
+            credentialId: credential.id,
+            passwordVersion: credential.passwordVersion,
+          },
+          actor: customerId,
+          audience: DEFAULT_SESSION_AUDIENCE,
+        });
+      });
+      // Return the same minimal safe payload as login — no hashes, no raw credential.
+      return {
+        accessToken: session.accessToken,
+        tokenType: session.tokenType,
+        expiresAt: session.expiresAt,
+        customerId: session.principal.customerId,
+        sessionId: session.sessionId,
+      };
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+      throw error;
+    }
   }
 
   @Post('customers/login')
@@ -485,15 +518,42 @@ export class CustomerAppController {
       const derived = pbkdf2Sync(newPassword, salt, iterations, 32, 'sha256');
       return `PBKDF2$sha256$${iterations}$${salt.toString('base64url')}$${derived.toString('base64url')}`;
     })();
-    await this.customerAuthService.rotatePassword(principal.customerId!, credentialId, {
-      passwordHash: newHash,
-      hashAlgorithm: PasswordHashAlgorithm.PBKDF2,
-      passwordVersion: (credentialView.passwordVersion ?? 1) + 1,
-      actor: principal.customerId!,
+    const nextVersion = (credentialView.passwordVersion ?? 1) + 1;
+    const customerId = principal.customerId!;
+    const currentSessionId = principal.sessionId;
+    await this.dataSource.transaction(async (manager) => {
+      await this.customerAuthService.rotatePasswordInManager(
+        manager,
+        customerId,
+        credentialId,
+        {
+          passwordHash: newHash,
+          hashAlgorithm: PasswordHashAlgorithm.PBKDF2,
+          passwordVersion: nextVersion,
+          actor: customerId,
+        },
+        { revokeSessions: false },
+      );
+      if (currentSessionId) {
+        await this.sessionService.rebindSessionPasswordVersionInManager(
+          manager,
+          currentSessionId,
+          customerId,
+          credentialId,
+          nextVersion,
+          customerId,
+        );
+      }
+      await this.sessionService.revokeAllForCredentialInManager(
+        manager,
+        credentialId,
+        customerId,
+        'Password changed',
+        new Date(),
+        currentSessionId ? { exceptSessionId: currentSessionId } : undefined,
+      );
     });
-    // Audit already done in rotatePassword (no secrets, uses credentialValues without passwordHash)
-    // Session revocation: preserve current session (established policy is to keep current, revoke others would be disruptive). Document that we do NOT auto-revoke.
-    return { changed: true, passwordVersion: (credentialView.passwordVersion ?? 1) + 1 };
+    return { changed: true, passwordVersion: nextVersion };
   }
 
   // ──────────────────────────────────────────────

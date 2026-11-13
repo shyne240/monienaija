@@ -6,6 +6,10 @@ import { CustomerKycLevel, CustomerKycStatus } from '../customer/customer.enums'
 import type { CreateKycAssessmentCommand } from '../customer/customer.types';
 import type { DataSource, EntityManager } from 'typeorm';
 import type { AuditService } from '../operations/audit.service';
+import {
+  DEFAULT_SESSION_AUDIENCE,
+  type AuthenticationSessionService,
+} from '../customer-authentication/authentication-session.service';
 import type { KycTierEvidenceReader } from './kyc-tier-evidence.reader';
 import type { KycTierPolicyService } from './kyc-tier-policy.service';
 import { decideTier, planTierTransition, type TierLevel } from './kyc-tier-decision';
@@ -26,6 +30,10 @@ export class KycTierTransitionService {
     private readonly reader: KycTierEvidenceReader,
     private readonly audit: AuditService,
     private readonly authorization: AuthorizationService,
+    private readonly sessions?: Pick<
+      AuthenticationSessionService,
+      'revokeAllForCustomerInManager'
+    >,
   ) {}
   async reviews(principal: AuthorizationPrincipal | undefined) {
     if (!principal || !principal.sessionId || !UUID.test(principal.sessionId))
@@ -166,6 +174,13 @@ export class KycTierTransitionService {
         `INSERT INTO kyc_tier_manual_holds(customer_id,actor,reason) VALUES($1,$2,$3) ON CONFLICT(customer_id) DO UPDATE SET actor=EXCLUDED.actor,reason=EXCLUDED.reason,created_at=clock_timestamp()`,
         [customerId, principal.principalId, reason],
       );
+      await this.sessions?.revokeAllForCustomerInManager(
+        m,
+        customerId,
+        principal.principalId,
+        `KYC manual hold: ${reason}`,
+        { audiences: [DEFAULT_SESSION_AUDIENCE], preserveSelfLogout: true },
+      );
       await this.audit.record(m, {
         entityType: 'CUSTOMER_KYC_TRANSITION',
         entityId: id,
@@ -261,8 +276,18 @@ export class KycTierTransitionService {
         throw new ConflictException('Evidence requirements are not satisfied');
       if (context.allowLegacy && c.kyc_level === 'LEVEL_3')
         throw new ConflictException('Level 3 is outside this workflow');
-      if (context.allowLegacy)
+      if (context.allowLegacy) {
+        if (holds.length > 0 || c.kyc_status !== 'APPROVED' || c.kyc_level === 'NONE') {
+          await this.sessions?.revokeAllForCustomerInManager(
+            m,
+            customerId,
+            context.actor,
+            'KYC hold cleared; fresh authentication required',
+            { audiences: [DEFAULT_SESSION_AUDIENCE], preserveSelfLogout: false },
+          );
+        }
         await m.query('DELETE FROM kyc_tier_manual_holds WHERE customer_id=$1', [customerId]);
+      }
       let assessmentId: string | null = null,
         newLevel: string | null = null;
       let candidate =
@@ -345,6 +370,15 @@ export class KycTierTransitionService {
             `INSERT INTO kyc_tier_manual_holds(customer_id,actor,reason) VALUES($1,$2,'MANUAL_REVIEW') ON CONFLICT(customer_id) DO NOTHING`,
             [customerId, context.actor],
           );
+        if (candidate === 'NONE') {
+          await this.sessions?.revokeAllForCustomerInManager(
+            m,
+            customerId,
+            context.actor,
+            `KYC eligibility withdrawn: ${transitionReason}`,
+            { audiences: [DEFAULT_SESSION_AUDIENCE], preserveSelfLogout: true },
+          );
+        }
         await this.audit.record(m, {
           entityType: 'CUSTOMER_KYC_TRANSITION',
           entityId: assessmentId,

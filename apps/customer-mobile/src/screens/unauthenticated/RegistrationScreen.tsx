@@ -110,12 +110,44 @@ export const RegistrationScreen: React.FC = () => {
         const priorToken = await SecureStorage.get(ONBOARDING_TOKEN_KEY);
         if (priorToken) {
           try {
-            await post('onboarding-session', {}, priorToken);
-            if (live) {
-              setOnboardingToken(priorToken);
-              setStep('ONBOARDING_AUTHENTICATED');
+            const current = await post<{
+              audience?: string;
+              customerId?: string;
+              sessionId?: string;
+              expiresAt?: string;
+              financialEligible?: boolean;
+            }>('onboarding-session', {}, priorToken);
+            if (current.audience === 'customer-api') {
+              if (!current.customerId || !current.sessionId || !current.expiresAt) {
+                await SecureStorage.remove(ONBOARDING_TOKEN_KEY);
+              } else {
+                await useAuthStore.getState().acceptSession({
+                  accessToken: priorToken,
+                  customerId: current.customerId,
+                  sessionId: current.sessionId,
+                  expiresAt: current.expiresAt,
+                  audience: 'customer-api',
+                });
+                await SecureStorage.remove(STORAGE_KEY);
+                return;
+              }
+            } else if (current.financialEligible === true) {
+              await post('onboarding-logout', {}, priorToken).catch(() => undefined);
+              await SecureStorage.remove(ONBOARDING_TOKEN_KEY);
+              if (live) {
+                setStep('PHONE');
+                setError(
+                  'Your account is now verified for full access. Verify your phone and passcode to sign in.',
+                );
+              }
+              return;
+            } else {
+              if (live) {
+                setOnboardingToken(priorToken);
+                setStep('ONBOARDING_AUTHENTICATED');
+              }
+              return;
             }
-            return;
           } catch (e) {
             if (!(e instanceof ApiError) || e.status !== 401) throw e;
             await SecureStorage.remove(ONBOARDING_TOKEN_KEY);
@@ -399,19 +431,8 @@ export const RegistrationScreen: React.FC = () => {
             expiresAt: login.expiresAt,
             audience: login.audience,
           };
-          await SecureStorage.set('auth_session_token', financialSession.accessToken);
-          await SecureStorage.set('auth_customer_id', financialSession.customerId);
-          await SecureStorage.set('auth_session_data', JSON.stringify(financialSession));
-          await SecureStorage.remove(ONBOARDING_TOKEN_KEY);
+          await useAuthStore.getState().acceptSession(financialSession);
           await SecureStorage.remove(STORAGE_KEY);
-          useAuthStore.setState({
-            isAuthenticated: true,
-            isLoading: false,
-            session: financialSession,
-            customerId: financialSession.customerId,
-            error: null,
-            rotationRequired: false,
-          });
           setSession(null);
           return;
         }

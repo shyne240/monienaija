@@ -5,6 +5,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
@@ -13,6 +14,7 @@ import { Customer } from '../customer/customer.entity';
 import { CustomerStatus } from '../customer/customer.enums';
 import { redactRecord } from '../common/sensitive-data-redaction';
 import { AuditService } from '../operations/audit.service';
+import { AuthenticationSessionService } from './authentication-session.service';
 import { CustomerAuthenticationCredential } from './customer-authentication-credential.entity';
 import {
   AuthenticationCredentialStatus,
@@ -85,6 +87,8 @@ export class CustomerAuthenticationService {
     private readonly customerRepository: Repository<Customer>,
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
+    @Optional()
+    private readonly sessionService?: AuthenticationSessionService,
   ) {}
 
   async createCredential(
@@ -234,6 +238,15 @@ export class CustomerAuthenticationService {
         actor,
         { statusChanged, expiryChanged },
       );
+      if (statusChanged && saved.status !== AuthenticationCredentialStatus.ACTIVE) {
+        await this.sessionService?.revokeAllForCustomerInManager(
+          manager,
+          customerId,
+          actor,
+          `Credential status changed to ${saved.status}`,
+          { preserveSelfLogout: true },
+        );
+      }
       return this.toCredentialView(saved);
     });
   }
@@ -243,6 +256,20 @@ export class CustomerAuthenticationService {
     credentialId: string,
     command: RotatePasswordCommand,
   ): Promise<AuthenticationCredentialView> {
+    return this.dataSource.transaction((manager) =>
+      this.rotatePasswordInManager(manager, customerId, credentialId, command, {
+        revokeSessions: true,
+      }),
+    );
+  }
+
+  async rotatePasswordInManager(
+    manager: EntityManager,
+    customerId: string,
+    credentialId: string,
+    command: RotatePasswordCommand,
+    options?: { revokeSessions?: boolean },
+  ): Promise<AuthenticationCredentialView> {
     this.assertUuid(customerId, 'customerId');
     this.assertUuid(credentialId, 'credentialId');
     const actor = this.normalizeActor(command.actor);
@@ -251,40 +278,46 @@ export class CustomerAuthenticationService {
       command.passwordExpiresAt,
       'passwordExpiresAt',
     );
-    return this.dataSource.transaction(async (manager) => {
-      await this.requireCustomer(manager.getRepository(Customer), customerId);
-      const repository = manager.getRepository(CustomerAuthenticationCredential);
-      const credential = await this.requireCredential(repository, customerId, credentialId);
-      if (credential.status === AuthenticationCredentialStatus.REVOKED) {
-        throw new ConflictException('Revoked credentials cannot rotate passwords');
-      }
-      const previous = this.credentialValues(credential);
-      credential.passwordHash = passwordHash;
-      credential.hashAlgorithm = command.hashAlgorithm;
-      credential.passwordVersion = command.passwordVersion;
-      credential.passwordChangedAt = new Date();
-      credential.passwordExpiresAt = passwordExpiresAt;
-      const saved = await repository.save(credential);
-      await this.audit(
+    await this.requireCustomer(manager.getRepository(Customer), customerId);
+    const repository = manager.getRepository(CustomerAuthenticationCredential);
+    const credential = await this.requireCredential(repository, customerId, credentialId);
+    if (credential.status === AuthenticationCredentialStatus.REVOKED) {
+      throw new ConflictException('Revoked credentials cannot rotate passwords');
+    }
+    const previous = this.credentialValues(credential);
+    credential.passwordHash = passwordHash;
+    credential.hashAlgorithm = command.hashAlgorithm;
+    credential.passwordVersion = command.passwordVersion;
+    credential.passwordChangedAt = new Date();
+    credential.passwordExpiresAt = passwordExpiresAt;
+    const saved = await repository.save(credential);
+    await this.audit(
+      manager,
+      'CUSTOMER_AUTHENTICATION_CREDENTIAL',
+      saved.id,
+      'PASSWORD_ROTATED',
+      actor,
+      previous,
+      this.credentialValues(saved),
+    );
+    await this.appendPasswordHistory(manager, saved, PasswordHistoryAction.ROTATED, actor);
+    await this.recordSecurityEvent(
+      manager,
+      customerId,
+      saved.id,
+      SecurityEventType.PASSWORD_ROTATED,
+      actor,
+      { passwordVersion: saved.passwordVersion, hashAlgorithm: saved.hashAlgorithm },
+    );
+    if (options?.revokeSessions) {
+      await this.sessionService?.revokeAllForCredentialInManager(
         manager,
-        'CUSTOMER_AUTHENTICATION_CREDENTIAL',
         saved.id,
-        'PASSWORD_ROTATED',
         actor,
-        previous,
-        this.credentialValues(saved),
+        'Password rotated',
       );
-      await this.appendPasswordHistory(manager, saved, PasswordHistoryAction.ROTATED, actor);
-      await this.recordSecurityEvent(
-        manager,
-        customerId,
-        saved.id,
-        SecurityEventType.PASSWORD_ROTATED,
-        actor,
-        { passwordVersion: saved.passwordVersion, hashAlgorithm: saved.hashAlgorithm },
-      );
-      return this.toCredentialView(saved);
-    });
+    }
+    return this.toCredentialView(saved);
   }
 
   /**
@@ -400,6 +433,12 @@ export class CustomerAuthenticationService {
         previousValues,
         this.credentialValues(previous),
       );
+      await this.sessionService?.revokeAllForCredentialInManager(
+        manager,
+        previous.id,
+        actor,
+        'Initial credential reissued',
+      );
       const credential = await this.persistIssuedCredential(
         manager,
         customerId,
@@ -442,6 +481,17 @@ export class CustomerAuthenticationService {
     credentialId: string,
     command: RotateInitialCustomerPasswordCommand,
   ): Promise<CustomerAuthenticationCredential> {
+    return this.dataSource.transaction((manager) =>
+      this.rotateInitialPasswordInManager(manager, customerId, credentialId, command),
+    );
+  }
+
+  async rotateInitialPasswordInManager(
+    manager: EntityManager,
+    customerId: string,
+    credentialId: string,
+    command: RotateInitialCustomerPasswordCommand,
+  ): Promise<CustomerAuthenticationCredential> {
     this.assertUuid(customerId, 'customerId');
     this.assertUuid(credentialId, 'credentialId');
     const actor = this.normalizeActor(command.actor);
@@ -449,49 +499,47 @@ export class CustomerAuthenticationService {
     if (!Object.values(PasswordHashAlgorithm).includes(command.hashAlgorithm)) {
       throw new BadRequestException('hashAlgorithm is invalid');
     }
-    return this.dataSource.transaction(async (manager) => {
-      const customer = await this.requireCustomer(manager.getRepository(Customer), customerId);
-      this.requireActiveCustomer(customer);
-      const repository = manager.getRepository(CustomerAuthenticationCredential);
-      const credential = await this.requireCredential(repository, customerId, credentialId);
-      if (
-        credential.status !== AuthenticationCredentialStatus.ACTIVE ||
-        credential.rotationRequired !== true
-      ) {
-        throw new ConflictException('Credential rotation is not pending');
-      }
-      const previousValues = this.credentialValues(credential);
-      credential.passwordHash = passwordHash;
-      credential.hashAlgorithm = command.hashAlgorithm;
-      credential.passwordVersion = credential.passwordVersion + 1;
-      credential.passwordChangedAt = new Date();
-      credential.passwordExpiresAt = null;
-      credential.rotationRequired = false;
-      credential.failedAuthenticationCount = 0;
-      credential.accountLocked = false;
-      credential.lockedAt = null;
-      credential.lockReason = null;
-      const saved = await repository.save(credential);
-      await this.audit(
-        manager,
-        'CUSTOMER_AUTHENTICATION_CREDENTIAL',
-        saved.id,
-        'PASSWORD_ROTATED',
-        actor,
-        previousValues,
-        this.credentialValues(saved),
-      );
-      await this.appendPasswordHistory(manager, saved, PasswordHistoryAction.ROTATED, actor);
-      await this.recordSecurityEvent(
-        manager,
-        customerId,
-        saved.id,
-        SecurityEventType.PASSWORD_ROTATED,
-        actor,
-        { passwordVersion: saved.passwordVersion, hashAlgorithm: saved.hashAlgorithm },
-      );
-      return saved;
-    });
+    const customer = await this.requireCustomer(manager.getRepository(Customer), customerId);
+    this.requireActiveCustomer(customer);
+    const repository = manager.getRepository(CustomerAuthenticationCredential);
+    const credential = await this.requireCredential(repository, customerId, credentialId);
+    if (
+      credential.status !== AuthenticationCredentialStatus.ACTIVE ||
+      credential.rotationRequired !== true
+    ) {
+      throw new ConflictException('Credential rotation is not pending');
+    }
+    const previousValues = this.credentialValues(credential);
+    credential.passwordHash = passwordHash;
+    credential.hashAlgorithm = command.hashAlgorithm;
+    credential.passwordVersion = credential.passwordVersion + 1;
+    credential.passwordChangedAt = new Date();
+    credential.passwordExpiresAt = null;
+    credential.rotationRequired = false;
+    credential.failedAuthenticationCount = 0;
+    credential.accountLocked = false;
+    credential.lockedAt = null;
+    credential.lockReason = null;
+    const saved = await repository.save(credential);
+    await this.audit(
+      manager,
+      'CUSTOMER_AUTHENTICATION_CREDENTIAL',
+      saved.id,
+      'PASSWORD_ROTATED',
+      actor,
+      previousValues,
+      this.credentialValues(saved),
+    );
+    await this.appendPasswordHistory(manager, saved, PasswordHistoryAction.ROTATED, actor);
+    await this.recordSecurityEvent(
+      manager,
+      customerId,
+      saved.id,
+      SecurityEventType.PASSWORD_ROTATED,
+      actor,
+      { passwordVersion: saved.passwordVersion, hashAlgorithm: saved.hashAlgorithm },
+    );
+    return saved;
   }
 
   async listPasswordHistory(customerId: string, credentialId: string): Promise<PasswordHistory[]> {
@@ -549,6 +597,13 @@ export class CustomerAuthenticationService {
         { reason, failedAuthenticationCount: saved.failedAuthenticationCount },
       );
       if (shouldLock && !previous.accountLocked) {
+        await this.sessionService?.revokeAllForCustomerInManager(
+          manager,
+          customerId,
+          actor,
+          'Credential locked after failed authentication attempts',
+          { preserveSelfLogout: true },
+        );
         await this.recordSecurityEvent(
           manager,
           customerId,
@@ -591,6 +646,13 @@ export class CustomerAuthenticationService {
         actor,
         previous,
         this.credentialValues(saved),
+      );
+      await this.sessionService?.revokeAllForCustomerInManager(
+        manager,
+        customerId,
+        actor,
+        'Credential unlocked after lockout',
+        { preserveSelfLogout: true },
       );
       await this.recordSecurityEvent(
         manager,

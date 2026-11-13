@@ -270,4 +270,55 @@ describe('Auth Store real-authentication guarantees', () => {
     expect(ApiClient.post).toHaveBeenCalledWith('/customers/sessions/logout');
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
+
+  test('acceptSession stores an ordinary customer-api session, clears onboarding tokens, and rejects onboarding audience', async () => {
+    const future = new Date(Date.now() + 3600_000).toISOString();
+
+    await expect(
+      useAuthStore.getState().acceptSession({
+        accessToken: 'onboarding-only-token',
+        sessionId: 'sess-onb-1',
+        expiresAt: future,
+        customerId: 'cust-id-888',
+        audience: 'customer-onboarding',
+      }),
+    ).rejects.toThrow('Invalid ordinary customer session handoff');
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+
+    await useAuthStore.getState().acceptSession({
+      accessToken: 'ordinary-token',
+      sessionId: 'sess-ord-1',
+      expiresAt: future,
+      customerId: 'cust-id-888',
+      audience: 'customer-api',
+    });
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+    expect(useAuthStore.getState().session?.audience).toBe('customer-api');
+    expect(SecureStorage.remove).toHaveBeenCalledWith('synthetic_onboarding_token_v1');
+  });
+
+  test('restoreSession rejects and purges stored sessions whose audience is not customer-api', async () => {
+    const onboardingSession = {
+      accessToken: 'wrong-scope-token',
+      sessionId: 'session-onb',
+      expiresAt: new Date(Date.now() + 100_000).toISOString(),
+      customerId: 'cust-id-888',
+      audience: 'customer-onboarding',
+    };
+
+    (SecureStorage.get as jest.Mock).mockImplementation((key) => {
+      if (key === 'auth_session_token') return Promise.resolve('wrong-scope-token');
+      if (key === 'auth_customer_id') return Promise.resolve('cust-id-888');
+      if (key === 'auth_session_data') return Promise.resolve(JSON.stringify(onboardingSession));
+      return Promise.resolve(null);
+    });
+
+    await useAuthStore.getState().restoreSession();
+
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(useAuthStore.getState().session).toBeNull();
+    expect(SecureStorage.remove).toHaveBeenCalledWith('auth_session_token');
+    expect(SecureStorage.remove).toHaveBeenCalledWith('auth_customer_id');
+    expect(SecureStorage.remove).toHaveBeenCalledWith('auth_session_data');
+  });
 });

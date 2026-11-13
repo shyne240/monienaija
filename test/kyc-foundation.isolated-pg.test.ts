@@ -1,9 +1,14 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest assertions inspect mock functions without invoking them. */
 import { createHash, createHmac, randomUUID } from 'node:crypto';
-import { DataSource } from 'typeorm';
+import { ConflictException } from '@nestjs/common';
+import { DataSource, type EntityManager, type Repository } from 'typeorm';
 import { assertIsolatedKycCluster, isolatedKycCluster } from './support/kyc-isolated-cluster';
 import { AuthorizationService } from '../src/authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
+import type { AuthenticationSession } from '../src/customer-authentication/authentication-session.entity';
+import { AuthenticationSessionService } from '../src/customer-authentication/authentication-session.service';
+import type { Customer } from '../src/customer/customer.entity';
+import type { CustomerFinancialEligibilityService } from '../src/kyc-verification/customer-financial-eligibility.service';
 import type { AuditService } from '../src/operations/audit.service';
 import { KycExceptionReviewService } from '../src/kyc-verification/kyc-exception-review.service';
 import { KycReconciliationReview1785753600106 } from '../src/migrations/1785753600106-KycReconciliationReview';
@@ -86,7 +91,6 @@ const makeProvider = (verify: KycProvider['verify'], code = 'SYNTHETIC'): KycPro
 
 beforeAll(async () => {
   await db.initialize();
-  await assertIsolatedKycCluster(db, cluster);
   // Cluster provenance is asserted by the shared helper (marker + manifest + socket-only +
   // minimum server version). It used to be re-implemented here against a hardcoded path.
   await assertIsolatedKycCluster(db, cluster);
@@ -96,13 +100,21 @@ beforeAll(async () => {
     "CREATE TABLE customers (id uuid PRIMARY KEY, deleted_at timestamptz, status text NOT NULL DEFAULT 'ACTIVE')",
   );
   await db.query(
-    'CREATE TABLE authentication_sessions (id uuid PRIMARY KEY, customer_id uuid NOT NULL REFERENCES customers(id), token_hash char(64) NOT NULL, audience text NOT NULL, status text NOT NULL, expires_at timestamptz NOT NULL)',
+    "CREATE TABLE customer_authentication_credentials (id uuid PRIMARY KEY, customer_id uuid NOT NULL REFERENCES customers(id), deleted_at timestamptz, status text NOT NULL DEFAULT 'ACTIVE', account_locked boolean NOT NULL DEFAULT false, rotation_required boolean NOT NULL DEFAULT false, password_version integer NOT NULL DEFAULT 1, password_expires_at timestamptz)",
+  );
+  await db.query(
+    'CREATE TABLE authentication_sessions (id uuid PRIMARY KEY, customer_id uuid NOT NULL REFERENCES customers(id), credential_id uuid NOT NULL REFERENCES customer_authentication_credentials(id), token_hash char(64) NOT NULL, audience text NOT NULL, onboarding_password_version integer, status text NOT NULL, issued_at timestamptz NOT NULL DEFAULT clock_timestamp(), expires_at timestamptz NOT NULL, last_seen_at timestamptz NOT NULL DEFAULT clock_timestamp(), revoked_at timestamptz, revoke_reason text, version integer NOT NULL DEFAULT 1, updated_at timestamptz NOT NULL DEFAULT clock_timestamp())',
   );
   for (const id of customers) {
+    const credentialId = randomUUID();
     await db.query('INSERT INTO customers(id) VALUES($1)', [id]);
     await db.query(
-      "INSERT INTO authentication_sessions(id,customer_id,token_hash,audience,status,expires_at) VALUES($1,$2,$3,'customer-api','ACTIVE',clock_timestamp()+interval '1 hour')",
-      [randomUUID(), id, createHash('sha256').update(tokenFor(id)).digest('hex')],
+      'INSERT INTO customer_authentication_credentials(id, customer_id, password_version) VALUES($1, $2, 1)',
+      [credentialId, id],
+    );
+    await db.query(
+      "INSERT INTO authentication_sessions(id,customer_id,credential_id,token_hash,audience,onboarding_password_version,status,expires_at) VALUES($1,$2,$3,$4,'customer-api',1,'ACTIVE',clock_timestamp()+interval '1 hour')",
+      [randomUUID(), id, credentialId, createHash('sha256').update(tokenFor(id)).digest('hex')],
     );
   }
   const runner = db.createQueryRunner();
@@ -110,7 +122,25 @@ beforeAll(async () => {
   await new KycSessionAndOwnership1785753600105().up(runner);
   await new KycReconciliationReview1785753600106().up(runner);
   await runner.release();
-  store = new PostgresKycStore(db);
+  const foundationEligibility: Pick<CustomerFinancialEligibilityService, 'require'> = {
+    async require(m: EntityManager, customerId: string) {
+      const rows = await m.query<Array<{ id: string }>>(
+        "SELECT id FROM customers WHERE id=$1 AND status='ACTIVE' AND deleted_at IS NULL FOR SHARE",
+        [customerId],
+      );
+      if (!rows[0]) {
+        throw new ConflictException('Customer is not eligible for financial access');
+      }
+    },
+  };
+  const sessionService = new AuthenticationSessionService(
+    {} as Repository<AuthenticationSession>,
+    db,
+    { record: () => Promise.resolve() } as unknown as AuditService,
+    {} as Repository<Customer>,
+    foundationEligibility as CustomerFinancialEligibilityService,
+  );
+  store = new PostgresKycStore(db, sessionService);
 });
 afterAll(async () => {
   if (db.isInitialized) {

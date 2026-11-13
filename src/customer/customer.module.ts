@@ -1,8 +1,9 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { KycTierModule } from '../kyc-verification/kyc-tier.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { OperationsModule } from '../operations/operations.module';
+import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { CustomerRegistrationPhoneChallenge } from '../customer-registration/customer-registration-phone-challenge.entity';
 import { Customer } from './customer.entity';
 import { CustomerAddress } from './customer-address.entity';
@@ -20,6 +21,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
   imports: [
     OperationsModule,
     KycTierModule,
+    forwardRef(() => CustomerAuthenticationModule),
     // V1-ADMIN-AUTHORIZATION-HARDENING-01: CustomerController's PATCH :id lifecycle handler
     // calls AuthorizationService.requireFunction() (customer.suspend/.activate/.close, derived
     // from the request body per Decision 4).
