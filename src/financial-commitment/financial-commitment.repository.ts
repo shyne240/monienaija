@@ -104,8 +104,8 @@ export class FinancialCommitmentRepository {
     journalId: string,
   ): Promise<void> {
     const rows = await manager.query<Array<{ id: string }>>(
-      `UPDATE financial_commitments SET state=$2, resolution_journal_id=$3, resolved_at=clock_timestamp()
-       WHERE id=$1 AND state='RESERVED' RETURNING id`,
+      `WITH changed AS (UPDATE financial_commitments SET state=$2, resolution_journal_id=$3, resolved_at=clock_timestamp()
+       WHERE id=$1 AND state='RESERVED' RETURNING id) SELECT id FROM changed`,
       [id, state, journalId],
     );
     if (rows.length !== 1) throw new Error('Financial commitment is not reserved');

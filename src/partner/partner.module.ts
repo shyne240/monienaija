@@ -6,6 +6,7 @@ import { BankModule } from '../bank/bank.module';
 import { CustomerBeneficiaryModule } from '../customer-beneficiary/customer-beneficiary.module';
 import { CustomerFundingInstrumentModule } from '../customer-funding-instrument/customer-funding-instrument.module';
 import { LedgerModule } from '../ledger/ledger.module';
+import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 import { OperationsModule } from '../operations/operations.module';
 import { PaymentModule } from '../payment/payment.module';
 import { WalletModule } from '../wallet/wallet.module';
@@ -56,6 +57,7 @@ import {
     CustomerBeneficiaryModule,
     CustomerFundingInstrumentModule,
     forwardRef(() => LedgerModule),
+    forwardRef(() => LimitCatalogModule),
     forwardRef(() => OperationsModule),
     PaymentModule,
     TypeOrmModule.forFeature([
