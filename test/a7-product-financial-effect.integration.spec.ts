@@ -1,7 +1,7 @@
 import { testWalletFinancialBoundary } from './support/test-wallet-financial-boundary';
 /* eslint-disable */
 import { createHash, randomUUID } from 'node:crypto';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { DataSource, EntityManager } from 'typeorm';
 
@@ -814,6 +814,33 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
   // 5. OUTCOME_VERIFIED / SETTLE
   // =======================================================================================
   describe('OUTCOME_VERIFIED / SETTLE', () => {
+    it('rolls back the A7 reservation when settlement reports a temporary dependency outage', async () => {
+      await seedExternalOperation();
+      const envelope = buildEnvelope('OUTCOME_VERIFIED');
+      const failure = jest
+        .spyOn(externalSettlement, 'settleVerifiedOutcome')
+        .mockRejectedValue(new ServiceUnavailableException('Trusted KYC evidence is unavailable'));
+      try {
+        for (let i = 0; i < 2; i++) {
+          await expect(a7Service.postProductFinancialEffect(envelope)).rejects.toMatchObject({
+            status: 503,
+          });
+          const records = await dataSource.query(
+            'SELECT id FROM idempotency_records WHERE idempotency_key = $1',
+            [envelope.idempotencyKey],
+          );
+          expect(records).toHaveLength(0);
+          expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
+        }
+        expect(failure).toHaveBeenCalledTimes(2);
+      } finally {
+        failure.mockRestore();
+      }
+      const recovered = await a7Service.postProductFinancialEffect(envelope);
+      expect(recovered.valid).toBe(true);
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
+    });
+
     it('successfully posts a verified product financial effect mapping to A5 balanced journal', async () => {
       await seedExternalOperation();
       const envelope = buildEnvelope('OUTCOME_VERIFIED');
