@@ -620,4 +620,64 @@ describe('ARENA 4 customer journey (real backend + PostgreSQL)', () => {
       process.env.CUSTOMER_CREDENTIAL_RECOVERY_ENABLED = 'true';
     }
   }, 120000);
+
+  // Durable attempt limits and request expiry: neither can be side-stepped by retrying.
+  it('locks a recovery challenge after the durable attempt limit and refuses an expired request', async () => {
+    const { customerId, phone: storedPhone } = await enrolCustomer();
+    const [before]: Array<{ password_hash: string }> = await dataSource.query(
+      `SELECT password_hash FROM customer_authentication_credentials WHERE customer_id=$1`,
+      [customerId],
+    );
+
+    const issued = await request(server())
+      .post('/api/v1/customers/credential-recovery/challenges')
+      .send({ phone: storedPhone, purpose: 'LOGIN_PASSCODE' })
+      .expect(202);
+    const challengeId = issued.body.challengeId as string;
+
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      const rejection = await request(server())
+        .post('/api/v1/customers/credential-recovery/challenges/verify')
+        .send({ challengeId, code: '000000' });
+      expect([401, 423, 429]).toContain(rejection.status);
+    }
+
+    const [locked]: Array<{ status: string; attempt_count: number; token_hash: string | null }> =
+      await dataSource.query(
+        `SELECT status, attempt_count, token_hash FROM customer_credential_recovery_challenges WHERE id=$1`,
+        [challengeId],
+      );
+    expect(locked!.status).toBe('REVOKED');
+    expect(Number(locked!.attempt_count)).toBe(5);
+    expect(locked!.token_hash).toBeNull();
+
+    // Even the correct code cannot revive a challenge that has been locked.
+    await request(server())
+      .post('/api/v1/customers/credential-recovery/challenges/verify')
+      .send({ challengeId, code: sms.lastCodeFor('recovery') })
+      .expect(401);
+
+    // Expiry is enforced by the stored timestamp, not by the client.
+    const expiring = await request(server())
+      .post('/api/v1/customers/credential-recovery/challenges')
+      .send({ phone: storedPhone, purpose: 'LOGIN_PASSCODE' })
+      .expect(202);
+    await dataSource.query(
+      `UPDATE customer_credential_recovery_challenges
+          SET expires_at = clock_timestamp() - interval '1 minute'
+        WHERE id = $1`,
+      [expiring.body.challengeId],
+    );
+    await request(server())
+      .post('/api/v1/customers/credential-recovery/challenges/verify')
+      .send({ challengeId: expiring.body.challengeId, code: sms.lastCodeFor('recovery') })
+      .expect(401);
+
+    // No credential was touched by any of the failed or expired attempts.
+    const [after]: Array<{ password_hash: string }> = await dataSource.query(
+      `SELECT password_hash FROM customer_authentication_credentials WHERE customer_id=$1`,
+      [customerId],
+    );
+    expect(after!.password_hash).toBe(before!.password_hash);
+  }, 120000);
 });
