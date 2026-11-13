@@ -34,8 +34,8 @@ export interface InitiateFinancialCommitment {
   walletAccountId: string;
   amountMinor: string;
   currency: string;
-  /** Correlation with a target resolved by the caller's trusted target boundary, not authorization. */
-  targetMappingReference: string;
+  /** Customer-owned bank beneficiary selected by the authenticated principal. */
+  beneficiaryId: string;
   idempotencyKey: string;
 }
 
@@ -68,9 +68,13 @@ export class FinancialCommitmentService {
     const amountMinor = parsePositiveMinorUnits(input.amountMinor).toString();
     const currency = normalizeCurrency(input.currency);
     if (currency !== 'NGN') throw new BadRequestException('Only NGN withdrawals are supported');
-    const target = input.targetMappingReference.trim();
-    if (!/^a6-target:[a-f0-9]{64}$/.test(target))
-      throw new BadRequestException('Target reference is invalid');
+    const beneficiaryId = input.beneficiaryId.trim().toLowerCase();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(beneficiaryId))
+      throw new BadRequestException('beneficiaryId must be a UUID');
+    const destination = await this.dataSource.transaction((manager) =>
+      this.resolveDestination(manager, principal.customerId, beneficiaryId),
+    );
+    const target = destination.targetReference;
     const key = input.idempotencyKey.trim();
     if (!key || key.length > 255) throw new BadRequestException('Idempotency key is required');
     const scopedKey = `withdrawal-commitment:${this.hash(`${principal.customerId}:${key}`)}`;
@@ -104,6 +108,7 @@ export class FinancialCommitmentService {
             amountMinor,
             currency,
             target,
+            beneficiaryId,
             scopedKey,
             requestHash,
           }),
@@ -125,6 +130,7 @@ export class FinancialCommitmentService {
       amountMinor: string;
       currency: string;
       target: string;
+      beneficiaryId: string;
       scopedKey: string;
       requestHash: string;
     },
@@ -139,6 +145,13 @@ export class FinancialCommitmentService {
         throw new ConflictException('Idempotency key was already used');
       return { commitment: existing[0], replayed: true };
     }
+    const destination = await this.resolveDestination(
+      manager,
+      input.customerId,
+      input.beneficiaryId,
+    );
+    if (destination.targetReference !== input.target)
+      throw new ConflictException('Beneficiary changed after customer authorization');
     const sessions = await manager.query<Array<{ id: string }>>(
       `SELECT id FROM authentication_sessions WHERE id=$1 AND customer_id=$2 AND status='ACTIVE'
        AND audience='customer-api' AND expires_at>clock_timestamp() FOR SHARE`,
@@ -205,7 +218,7 @@ export class FinancialCommitmentService {
       currency: input.currency,
       requestHash: input.requestHash,
       principalId: input.customerId,
-      institution: 'MONIENAIJA',
+      institution: null,
     });
     const withdrawalId = await this.withdrawals.createWithdrawalInTransaction(manager, {
       walletId: input.walletId,
@@ -279,12 +292,64 @@ export class FinancialCommitmentService {
       idempotencyKey: input.scopedKey,
       requestHash: input.requestHash,
     });
+    await manager.query(
+      `INSERT INTO financial_commitment_destinations
+       (commitment_id,beneficiary_id,beneficiary_version,bank_id,bank_code,target_reference)
+       VALUES($1,$2,$3,$4,$5,$6)`,
+      [
+        commitmentId,
+        input.beneficiaryId,
+        destination.version,
+        destination.bankId,
+        destination.bankCode,
+        input.target,
+      ],
+    );
     const commitment = await this.commitments.lockByOperation(
       manager,
       operation.externalOperationId,
     );
     if (!commitment) throw new ConflictException('Financial commitment was not persisted');
     return { commitment, replayed: false };
+  }
+
+  /** Resolve from locked customer-owned records. A beneficiary verification flag is
+   * not proof of provider account ownership, and never enables production submission. */
+  private async resolveDestination(
+    manager: EntityManager,
+    customerId: string,
+    beneficiaryId: string,
+  ): Promise<{
+    version: number;
+    bankId: string;
+    bankCode: string;
+    targetReference: string;
+  }> {
+    const rows = await manager.query<
+      Array<{
+        id: string;
+        customer_id: string;
+        version: number;
+        destination_identifier: string;
+        bank_id: string;
+        bank_code: string;
+      }>
+    >(
+      `SELECT b.id,b.customer_id,b.version,b.destination_identifier,k.id AS bank_id,k.bank_code
+       FROM customer_beneficiaries b
+       JOIN beneficiary_ownerships bo ON bo.beneficiary_id=b.id AND bo.customer_id=b.customer_id AND bo.deleted_at IS NULL
+       JOIN banks k ON k.bank_code=b.destination_institution
+       WHERE b.id=$1 AND b.customer_id=$2 AND b.beneficiary_type='BANK_ACCOUNT'
+         AND b.status='ACTIVE' AND b.verified AND b.deleted_at IS NULL
+         AND b.destination_identifier ~ '^[0-9]{4,32}$' AND k.status='ACTIVE' AND k.nip_supported
+       FOR SHARE OF b,bo,k`,
+      [beneficiaryId, customerId],
+    );
+    const row = rows[0];
+    if (rows.length !== 1 || !row)
+      throw new ConflictException('Customer bank beneficiary is not available');
+    const targetReference = `a6-target:${this.hash(`v1|${row.id}|${row.customer_id}|${row.version}|${row.bank_code}|${row.destination_identifier}`)}`;
+    return { version: row.version, bankId: row.bank_id, bankCode: row.bank_code, targetReference };
   }
 
   private hash(value: string): string {

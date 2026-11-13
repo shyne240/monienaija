@@ -54,7 +54,7 @@ describe('financial commitment schema (real PostgreSQL)', () => {
           currency: 'NGN',
           requestHash: 'a'.repeat(64),
           principalId: randomUUID(),
-          institution: 'MONIENAIJA',
+          institution: null,
         }),
       ),
     ).rejects.toThrow('Financial authorization evidence is not bound');

@@ -13,7 +13,7 @@ export interface NewFinancialAuthorization {
   currency: string;
   requestHash: string;
   principalId: string;
-  institution: string;
+  institution: string | null;
 }
 
 export interface NewFinancialCommitment {

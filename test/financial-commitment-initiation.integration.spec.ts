@@ -44,6 +44,11 @@ import { SettlementAccountService } from '../src/payment/settlement-account.serv
 import { LimitUsageService } from '../src/limit-catalog/limit-usage.service';
 import { WalletFinancialBoundaryService } from '../src/wallet/wallet-financial-boundary.service';
 import { WithdrawalService } from '../src/withdrawal/withdrawal.service';
+import { CustomerBeneficiaryService } from '../src/customer-beneficiary/customer-beneficiary.service';
+import {
+  CustomerBeneficiaryStatus,
+  CustomerBeneficiaryType,
+} from '../src/customer-beneficiary/customer-beneficiary.enums';
 import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
@@ -71,7 +76,6 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
   };
   const snapshots = new Map<string, TierEvidenceSnapshot>();
   const context = {
-    targetMappingReference: `a6-target:${'a'.repeat(64)}`,
     currency: 'NGN',
     pin: '1234',
   };
@@ -168,6 +172,11 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
       [proposal, JSON.stringify(definition)],
     );
     await db.query('UPDATE kyc_tier_policy_head SET version=1');
+    await db.query(
+      `INSERT INTO banks(id,bank_code,bank_name,short_name,nip_supported,status)
+      VALUES($1,'FCBANK','Financial Commitment Test Bank','FC Bank',true,'ACTIVE')`,
+      [randomUUID()],
+    );
   }, 180000);
   beforeEach(() => {
     verificationState = 'VERIFIED_SETTLED';
@@ -254,10 +263,33 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
     const session = await app
       .get(AuthenticationSessionService)
       .issue({ authentication, actor: participant.customerId });
-    return { ...participant, token: session.accessToken, sourceId: source.id, assetId: asset };
+    const beneficiaryService = app.get(CustomerBeneficiaryService);
+    const beneficiary = await beneficiaryService.createBeneficiary(participant.customerId, {
+      type: CustomerBeneficiaryType.BANK_ACCOUNT,
+      displayName: 'Test beneficiary',
+      reference: `fc-${randomUUID()}`,
+      destinationIdentifier: '1234567890',
+      destinationInstitution: 'FCBANK',
+      actor: participant.customerId,
+    });
+    await beneficiaryService.verifyBeneficiary(participant.customerId, beneficiary.id, {
+      verifiedBy: 'test',
+      verificationMethod: 'controlled-test',
+    });
+    await beneficiaryService.updateBeneficiary(participant.customerId, beneficiary.id, {
+      status: CustomerBeneficiaryStatus.ACTIVE,
+      actor: participant.customerId,
+    });
+    return {
+      ...participant,
+      beneficiaryId: beneficiary.id,
+      token: session.accessToken,
+      sourceId: source.id,
+      assetId: asset,
+    };
   }
   function command(
-    subject: { token: string; walletAccountId: string },
+    subject: { token: string; walletAccountId: string; beneficiaryId: string },
     key: string,
     amountMinor = '700',
   ) {
@@ -265,6 +297,7 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
       ...context,
       token: subject.token,
       walletAccountId: subject.walletAccountId,
+      beneficiaryId: subject.beneficiaryId,
       amountMinor,
       idempotencyKey: key,
     };
@@ -292,7 +325,10 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
     );
   }
 
-  async function pending(s: { token: string; walletAccountId: string }, key = randomUUID()) {
+  async function pending(
+    s: { token: string; walletAccountId: string; beneficiaryId: string },
+    key = randomUUID(),
+  ) {
     const initiated = await service.initiate(command(s, key));
     const id = initiated.commitment.external_operation_id;
     const lifecycle = app.get(ExternalOperationLifecycleService);
@@ -396,6 +432,89 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
     ).rejects.toThrow('reserve account is restricted');
   });
 
+  it('binds an owned bank beneficiary to the authenticated request and immutable operation', async () => {
+    const s = await subject();
+    const other = await subject();
+    await expect(
+      service.initiate({ ...command(s, randomUUID()), beneficiaryId: other.beneficiaryId }),
+    ).rejects.toThrow('beneficiary is not available');
+    const key = randomUUID();
+    const result = await service.initiate(command(s, key));
+    const rows = await db.query<
+      Array<{
+        beneficiary_id: string;
+        target_reference: string;
+        target_mapping_reference: string;
+        institution: string | null;
+      }>
+    >(
+      `SELECT d.beneficiary_id,d.target_reference,o.target_mapping_reference,a.institution
+       FROM financial_commitment_destinations d JOIN financial_commitments c ON c.id=d.commitment_id
+       JOIN financial_authorizations a ON a.id=c.authorization_id JOIN external_operations o ON o.id=c.external_operation_id
+       WHERE c.id=$1`,
+      [result.commitment.id],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ beneficiary_id: s.beneficiaryId, institution: null });
+    expect(rows[0]!.target_reference).toBe(rows[0]!.target_mapping_reference);
+    await expect(
+      db.query('UPDATE financial_commitment_destinations SET bank_code=$2 WHERE commitment_id=$1', [
+        result.commitment.id,
+        'OTHER',
+      ]),
+    ).rejects.toThrow();
+    await expect(
+      db.query('UPDATE external_operations SET target_mapping_reference=$2 WHERE id=$1', [
+        result.commitment.external_operation_id,
+        `a6-target:${'b'.repeat(64)}`,
+      ]),
+    ).rejects.toThrow();
+    await expect(
+      service.initiate({ ...command(s, key), beneficiaryId: other.beneficiaryId }),
+    ).rejects.toThrow();
+    expect(await balance(s.sourceId)).toBe('300');
+  });
+
+  it('rejects a destination changed between customer PIN authorization and reservation', async () => {
+    const s = await subject();
+    const pins = app.get(CustomerTransactionPinService);
+    const original = pins.verifyTransactionPin.bind(pins);
+    const spy = jest.spyOn(pins, 'verifyTransactionPin').mockImplementationOnce(async (...args) => {
+      const result = await original(...args);
+      await db.query(
+        `UPDATE customer_beneficiaries SET destination_identifier='9999999999', version=version+1 WHERE id=$1`,
+        [s.beneficiaryId],
+      );
+      return result;
+    });
+    try {
+      await expect(service.initiate(command(s, randomUUID()))).rejects.toThrow(
+        'Beneficiary changed after customer authorization',
+      );
+      expect(await balance(s.sourceId)).toBe('1000');
+      expect(
+        await db.query('SELECT id FROM financial_authorizations WHERE customer_id=$1', [
+          s.customerId,
+        ]),
+      ).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('keeps the original obligation bound after a beneficiary changes', async () => {
+    const s = await subject();
+    const op = await pending(s);
+    await db.query(
+      `UPDATE customer_beneficiaries SET destination_identifier='9999999999', version=version+1 WHERE id=$1`,
+      [s.beneficiaryId],
+    );
+    expect((await settlement.settleVerifiedOutcome(settleCommand(op))).settlement.status).toBe(
+      'POSTED',
+    );
+    expect(await balance(s.sourceId)).toBe('300');
+  });
+
   it('settles the reserved obligation exactly once after ordinary eligibility withdrawal', async () => {
     const s = await subject();
     const op = await pending(s);
@@ -482,7 +601,7 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
       customerId: s.customerId,
       walletAccountId: s.walletAccountId,
       ledgerAccountId: s.sourceId,
-      targetMappingReference: context.targetMappingReference,
+      targetMappingReference: `a6-target:${'a'.repeat(64)}`,
       amountMinor: '100',
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',

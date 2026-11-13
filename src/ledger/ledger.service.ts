@@ -315,6 +315,7 @@ export class LedgerService {
        JOIN external_operations o ON o.id=c.external_operation_id
        JOIN withdrawals w ON w.id=c.withdrawal_id
        JOIN wallet_accounts wa ON wa.id=a.wallet_account_id
+       JOIN financial_commitment_destinations d ON d.commitment_id=c.id AND d.target_reference=o.target_mapping_reference
        WHERE c.external_operation_id=$1 AND c.state='RESERVED' AND c.request_hash=a.request_hash
          AND o.resource_type='WITHDRAWAL' AND o.resource_id=w.id AND o.internal_command_id=c.id
          AND o.customer_id=a.customer_id AND o.wallet_account_id=a.wallet_account_id
