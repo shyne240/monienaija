@@ -16,6 +16,7 @@ import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.serv
 
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
+import { IdempotencyRecord } from '../operations/idempotency-record.entity';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { normalizeCurrency } from '../common/money';
@@ -94,7 +95,10 @@ export class AgentFinancialExecutionService {
    *  - Double-entry balanced journal via LedgerService (authoritative)
    *  - Audit without PIN/secrets
    */
-  async execute(rawInput: AgentFinancialExecutionInput): Promise<AgentFinancialExecutionResult> {
+  async execute(
+    rawInput: AgentFinancialExecutionInput,
+    authorization?: (manager: EntityManager, replay: boolean) => Promise<string | null>,
+  ): Promise<AgentFinancialExecutionResult> {
     // Report 26 (N-02): normalize the caller-supplied correlation identifier ONCE at the
     // execution boundary so every downstream sink (journal, limit decisions, commercial
     // accounting, policy decisions, metadata) can only persist sanitized values.
@@ -163,7 +167,7 @@ export class AgentFinancialExecutionService {
     // Run with SERIALIZABLE retry (bounded 3)
     for (let attempt = 0; attempt < MAX_SERIALIZABLE_ATTEMPTS; attempt += 1) {
       try {
-        return await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+        const outcome = await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
           // 1. Idempotency reservation (pessimistic_write, scope+key unique)
           const reservation = await this.idempotencyService.reserve(manager, {
             scope,
@@ -171,6 +175,18 @@ export class AgentFinancialExecutionService {
             requestHash,
             retentionSeconds: RETENTION_SECONDS,
           });
+
+          // For a denied proof, commit the verifier's failure counter while removing
+          // the new reservation. No journal or success result can commit in this branch.
+          if (authorization) {
+            const denied = await authorization(manager, reservation.kind === 'REPLAY');
+            if (denied) {
+              if (reservation.kind === 'NEW') {
+                await manager.getRepository(IdempotencyRecord).remove(reservation.record);
+              }
+              return { authorizationDenied: denied } as const;
+            }
+          }
 
           if (reservation.kind === 'REPLAY') {
             const existing = reservation.record;
@@ -379,6 +395,10 @@ export class AgentFinancialExecutionService {
 
           return result;
         });
+        if ('authorizationDenied' in outcome) {
+          throw new BadRequestException(outcome.authorizationDenied);
+        }
+        return outcome;
       } catch (error) {
         if (isRetryableTransactionError(error)) {
           if (attempt < MAX_SERIALIZABLE_ATTEMPTS - 1) {

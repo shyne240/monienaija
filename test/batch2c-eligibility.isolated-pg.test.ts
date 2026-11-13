@@ -620,3 +620,179 @@ test('concurrent incorrect desk OTPs persist a challenge attempt limit', async (
     failureReason: 'MFA_UNAVAILABLE',
   });
 });
+
+test('cash-out rolls back OTP on ledger failure and retries through the real financial boundary', async () => {
+  const { pbkdf2Sync, randomBytes } = await import('node:crypto');
+  const { AgentDeskOtpService } = await import('../src/agent/agent-desk-otp.service');
+  const { AgentCashOutService } = await import('../src/agent/agent-cash-out.service');
+  const { AgentClassService } = await import('../src/agent/agent-class.service');
+  const { AgentApplicationService } = await import('../src/agent/agent-application.service');
+  const { AgentLifecycleService } = await import('../src/agent/agent-lifecycle.service');
+  const { AgentAuthenticationService } = await import(
+    '../src/agent-authentication/agent-authentication.service'
+  );
+  const { CustomerTransactionPinService } = await import(
+    '../src/customer/customer-transaction-pin.service'
+  );
+  const { AgentService } = await import('../src/agent/agent-service.enum');
+  const { AgentPasswordHashAlgorithm } = await import(
+    '../src/agent-authentication/agent-authentication.enums'
+  );
+  const { LedgerService } = await import('../src/ledger/ledger.service');
+  const { LedgerAccountType, LedgerEntryDirection, LedgerNormalBalance } = await import(
+    '../src/ledger/ledger.enums'
+  );
+  const hash = (pin: string) => {
+    const salt = randomBytes(16);
+    return `PBKDF2$sha256$10000$${salt.toString('base64url')}$${pbkdf2Sync(pin, salt, 10000, 32, 'sha256').toString('base64url')}`;
+  };
+  const customerId = await subject('LEVEL_1', ['BVN']);
+  await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [customerId]);
+  await db.query(
+    `INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE')`,
+    [randomUUID(), customerId],
+  );
+  await app.get(CustomerTransactionPinService).setTransactionPin(customerId, {
+    pinHash: hash('1234'),
+    hashAlgorithm: 'PBKDF2',
+    pinVersion: 1,
+    actor: customerId,
+  });
+  const classes = app.get(AgentClassService);
+  const cls = await classes.create({
+    reference: randomUUID(),
+    code: `T${randomUUID().slice(0, 8)}`,
+    name: 'Test class',
+    isActive: true,
+    applicableServices: [AgentService.CASH_OUT],
+    actor: 'fixture',
+  });
+  const applications = app.get(AgentApplicationService);
+  const application = await applications.create({
+    agentClassId: cls.id,
+    applicantReference: randomUUID(),
+    businessName: 'Cashout fixture',
+    contactEmail: `${randomUUID()}@test.invalid`,
+    actor: 'fixture',
+  });
+  await applications.submit(application.id, 'fixture');
+  await db.query(
+    `UPDATE agent_applications SET status='APPROVED',reviewed_at=NOW(),approved_at=NOW() WHERE id=$1`,
+    [application.id],
+  );
+  const agent = await app
+    .get(AgentLifecycleService)
+    .activateFromApplication(application.id, 'fixture');
+  await app.get(AgentAuthenticationService).setTransactionPin(agent.id, {
+    pinHash: hash('1234'),
+    hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2,
+    pinVersion: 1,
+    actor: agent.id,
+  });
+  const wallets = app.get(WalletService);
+  const customerWallet = await wallets.createWallet({
+    customerId,
+    currency: 'NGN',
+    idempotencyKey: randomUUID(),
+  });
+  const agentWallet = await wallets.createWallet({
+    customerId: agent.id,
+    currency: 'NGN',
+    idempotencyKey: randomUUID(),
+  });
+  sms.clear();
+  const challenge = await app
+    .get(AgentDeskOtpService)
+    .issue({ agentId: agent.id, customerId, purpose: 'WALLET_TO_CASH' });
+  const code = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+  const input = {
+    agentId: agent.id,
+    agentPrincipal: {
+      type: 'AGENT' as const,
+      agentId: agent.id,
+      principalId: agent.id,
+      roles: [],
+      scopes: [],
+      customerAccess: 'NONE' as const,
+      agentAccess: 'SELF' as const,
+    },
+    customerId,
+    customerPin: '1234',
+    agentPin: '1234',
+    mfaChallengeId: challenge.challengeId,
+    otp: code,
+    amountMinor: '1000',
+    currency: 'NGN',
+    idempotencyKey: randomUUID(),
+  };
+  const service = app.get(AgentCashOutService);
+  const snapshot = snapshots.get(customerId)!;
+  snapshots.delete(customerId);
+  await expect(service.execute(input)).rejects.toThrow('Trusted KYC evidence is unavailable');
+  snapshots.set(customerId, snapshot);
+  snapshot.evidence[0]!.status = 'REVOKED';
+  await expect(service.execute(input)).rejects.toThrow();
+  snapshot.evidence[0]!.status = 'VERIFIED';
+  const wrong = code === '000000' ? '000001' : '000000';
+  await expect(service.execute({ ...input, otp: wrong })).rejects.toThrow('OTP invalid');
+  expect(
+    await db.query(`SELECT status,failed_attempts FROM mfa_challenges WHERE id=$1`, [
+      challenge.challengeId,
+    ]),
+  ).toEqual([{ status: 'ACTIVE', failed_attempts: 1 }]);
+  expect(
+    await db.query(`SELECT id FROM idempotency_records WHERE scope=$1 AND idempotency_key=$2`, [
+      `agent-financial.v1:${agent.id}`,
+      input.idempotencyKey,
+    ]),
+  ).toEqual([]);
+  await expect(service.execute(input)).rejects.toThrow();
+  expect(
+    await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challenge.challengeId]),
+  ).toEqual([{ status: 'ACTIVE' }]);
+  const ledger = app.get(LedgerService);
+  const source = await ledger.createAccount({
+    code: `SYS-${randomUUID()}`,
+    name: 'Synthetic source',
+    accountType: LedgerAccountType.ASSET,
+    normalBalance: LedgerNormalBalance.DEBIT,
+    currency: 'NGN',
+    accountingUnit: 'CUSTOMER_FUNDS',
+    allowNegativeBalance: true,
+  });
+  await ledger.postJournal({
+    idempotencyKey: randomUUID(),
+    currency: 'NGN',
+    accountingUnit: 'CUSTOMER_FUNDS',
+    lines: [
+      { accountId: source.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '1000' },
+      {
+        accountId: customerWallet.ledgerAccountId,
+        direction: LedgerEntryDirection.CREDIT,
+        amountMinor: '1000',
+      },
+    ],
+  });
+  const attempts = await Promise.allSettled([service.execute(input), service.execute(input)]);
+  const completed = attempts.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+  expect(completed.some((result) => result.status === 'COMPLETED')).toBe(true);
+  const result = completed.find((r) => r.status === 'COMPLETED')!;
+  expect(new Set(completed.map((r) => r.journalId))).toEqual(new Set([result.journalId]));
+  expect(
+    await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challenge.challengeId]),
+  ).toEqual([{ status: 'VERIFIED' }]);
+  expect((await ledger.getAccountBalance(customerWallet.ledgerAccountId)).balanceMinor).toBe('0');
+  expect((await ledger.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe('1000');
+  const replay = await service.execute(input);
+  expect(replay).toMatchObject({ status: 'REPLAYED', journalId: result.journalId });
+  await expect(service.execute({ ...input, amountMinor: '999' })).rejects.toThrow();
+  snapshot.evidence[0]!.status = 'REVOKED';
+  await expect(service.execute(input)).rejects.toThrow();
+  snapshot.evidence[0]!.status = 'VERIFIED';
+  expect(
+    await db.query(`SELECT count(*)::int AS n FROM ledger_lines WHERE journal_id=$1`, [
+      result.journalId,
+    ]),
+  ).toEqual([{ n: 2 }]);
+  expect((await ledger.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe('1000');
+});

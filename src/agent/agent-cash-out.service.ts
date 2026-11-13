@@ -23,6 +23,7 @@ import { AgentFinancialExecutionService } from './agent-financial-execution.serv
 import { AgentService } from './agent-service.enum';
 import { CustomerTransactionPinService } from '../customer/customer-transaction-pin.service';
 import { MfaExecutionService } from '../customer-authentication/mfa-execution.service';
+import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { AgentPasswordHashVerificationService } from '../agent-authentication/agent-password-hash-verification.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import type { AgentCashOutInput, AgentCashOutResult } from './agent-cash-out.types';
@@ -40,6 +41,7 @@ export class AgentCashOutService {
     private readonly walletService: WalletService,
     private readonly auditService: AuditService,
     private readonly verificationService: AgentPasswordHashVerificationService,
+    private readonly financialEligibility: CustomerFinancialEligibilityService,
   ) {}
 
   async execute(input: AgentCashOutInput): Promise<AgentCashOutResult> {
@@ -197,52 +199,6 @@ export class AgentCashOutService {
       credentialId,
     };
 
-    const verifyResult = await this.mfaExecutionService.verifyChallenge({
-      expectedPurpose: AGENT_DESK_OTP_PURPOSE_WALLET_TO_CASH,
-      principal: principalForMfa,
-      challengeId,
-      providedHash: otp,
-      actor: customerId,
-    } as any);
-
-    if (!verifyResult.verified) {
-      const reason = verifyResult.failureReason;
-      if (reason === 'REPLAYED') {
-        // OTP is one-time. For a true idempotent retry (same Agent+idempotencyKey
-        // that already completed), the challenge will be VERIFIED from the first
-        // successful call. In that case the financial layer will return REPLAYED
-        // with no new journal. We allow REPLAYED to proceed only if the
-        // idempotency record for this Agent+key already exists as COMPLETED;
-        // otherwise it is a genuine replay attempt for a new operation and must
-        // be denied.
-        const scope = `agent-financial.v1:${agentId}`;
-        const existing: Array<{ status: string }> = await this.dataSource.query(
-          `SELECT status FROM idempotency_records WHERE scope = $1 AND idempotency_key = $2 LIMIT 1`,
-          [scope, idempotencyKey],
-        );
-        if (
-          !existing[0] ||
-          (existing[0].status !== 'COMPLETED' && existing[0].status !== 'IN_PROGRESS')
-        ) {
-          throw new BadRequestException('OTP already used');
-        }
-        // Allow to proceed — financial execution will return REPLAYED
-      } else if (reason === 'EXPIRED') {
-        throw new BadRequestException('OTP expired');
-      } else if (reason === 'MISMATCH') {
-        throw new BadRequestException('OTP invalid');
-      } else if (
-        reason === 'INVALID_CHALLENGE' ||
-        reason === 'MFA_UNAVAILABLE' ||
-        reason === 'WRONG_CUSTOMER' ||
-        reason === 'WRONG_SESSION'
-      ) {
-        throw new BadRequestException(`OTP invalid: ${reason}`);
-      } else {
-        throw new BadRequestException(`OTP verification failed: ${reason}`);
-      }
-    }
-
     // 5. Agent authorization via A11 — CASH_OUT + agentPin + agentPrincipal
     const authResult = await this.agentAuthorizationService.authorize({
       agentId,
@@ -302,46 +258,65 @@ export class AgentCashOutService {
     // business correlation id (legitimate ids preserved byte-for-byte).
     const correlationId = sanitizeDiagnosticIdentifier(input.correlationId);
 
-    const executionResult = await this.financialExecutionService.execute({
-      authorizedContext,
-      idempotencyKey,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [
-        {
-          accountId: customerWallet.ledgerAccountId,
-          direction: LedgerEntryDirection.DEBIT,
-          amountMinor: amountString,
-        },
-        {
-          accountId: agentWallet.ledgerAccountId,
-          direction: LedgerEntryDirection.CREDIT,
-          amountMinor: amountString,
-        },
-      ],
-      reference,
-      description,
-      correlationId,
-      metadata: {
-        operation: 'CASH_OUT',
-        agentId,
-        customerId,
-        amountMinor: amountString,
+    const executionResult = await this.financialExecutionService.execute(
+      {
+        authorizedContext,
+        idempotencyKey,
         currency: 'NGN',
-        ...(input.metadata ?? {}),
+        accountingUnit: 'CUSTOMER_FUNDS',
+        lines: [
+          {
+            accountId: customerWallet.ledgerAccountId,
+            direction: LedgerEntryDirection.DEBIT,
+            amountMinor: amountString,
+          },
+          {
+            accountId: agentWallet.ledgerAccountId,
+            direction: LedgerEntryDirection.CREDIT,
+            amountMinor: amountString,
+          },
+        ],
+        reference,
+        description,
+        correlationId,
+        metadata: {
+          operation: 'CASH_OUT',
+          agentId,
+          customerId,
+          amountMinor: amountString,
+          currency: 'NGN',
+          ...(input.metadata ?? {}),
+          mfaChallengeId: challengeId,
+        },
+        limit: {
+          product: 'WALLET_TO_CASH',
+          principalType: 'CUSTOMER',
+          principalId: customerId,
+          direction: 'OUTGOING',
+          channel: null,
+          amountMinor: amountString,
+          currency: 'NGN',
+          walletLedgerAccountId: customerWallet.ledgerAccountId,
+          principalWalletCustomerId: customerId,
+        },
       },
-      limit: {
-        product: 'WALLET_TO_CASH',
-        principalType: 'CUSTOMER',
-        principalId: customerId,
-        direction: 'OUTGOING',
-        channel: null,
-        amountMinor: amountString,
-        currency: 'NGN',
-        walletLedgerAccountId: customerWallet.ledgerAccountId,
-        principalWalletCustomerId: customerId,
+      async (manager, replay) => {
+        await this.financialEligibility.require(manager, customerId, { lockMode: 'SHARE' });
+        if (replay) return null;
+        const result = await this.mfaExecutionService.verifyChallengeInManager(manager, {
+          expectedPurpose: AGENT_DESK_OTP_PURPOSE_WALLET_TO_CASH,
+          principal: principalForMfa,
+          challengeId,
+          providedHash: otp,
+          actor: customerId,
+        } as any);
+        if (result.verified) return null;
+        if (result.failureReason === 'EXPIRED') return 'OTP expired';
+        if (result.failureReason === 'MISMATCH') return 'OTP invalid';
+        if (result.failureReason === 'REPLAYED') return 'OTP already used';
+        return `OTP verification failed: ${result.failureReason}`;
       },
-    });
+    );
 
     // 8. Audit business flow — transactional if possible, but financial audit is already inside A12
     // For Wallet→Cash, we make the business audit part of a separate transaction that is not best-effort alone:
