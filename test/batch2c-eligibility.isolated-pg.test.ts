@@ -2,6 +2,7 @@
 jest.mock('react-native', () => ({ Platform: { OS: 'test' } }), { virtual: true });
 jest.mock('expo-secure-store', () => ({}), { virtual: true });
 import { CashOutInstitutionResolver } from '../src/agent/cash-out-institution.resolver';
+import { CashToCashClaimFinancialContext } from '../src/agent/cash-to-cash-claim-authorization';
 import { CustomerFinancialEligibilityService } from '../src/kyc-verification/customer-financial-eligibility.service';
 import type { TierEvidenceSnapshot } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
@@ -82,6 +83,14 @@ beforeAll(async () => {
           institutionStatus: 'APPROVED',
           resolvedAt: new Date().toISOString(),
           evidenceFingerprint: 'fixture',
+        }),
+    })
+    .overrideProvider(CashToCashClaimFinancialContext)
+    .useValue({
+      resolve: () =>
+        Promise.resolve({
+          institutionId: '11111111-1111-4111-8111-111111111111',
+          evidenceFingerprint: 'a'.repeat(64),
         }),
     })
     .overrideProvider(KycTierEvidenceReader)
@@ -498,6 +507,88 @@ test('legacy classification preserves rows and leaves unknown or colliding refer
   }
 });
 
+async function claimOtpFixture(customerId: string) {
+  const { AgentClassService } = await import('../src/agent/agent-class.service');
+  const { AgentService } = await import('../src/agent/agent-service.enum');
+  const { LedgerService } = await import('../src/ledger/ledger.service');
+  const { LedgerAccountType, LedgerEntryDirection } = await import('../src/ledger/ledger.enums');
+  const phone = `8${randomUUID().replace(/\D/g, '').padEnd(9, '1').slice(0, 9)}`;
+  await db.query(
+    `UPDATE customer_contact_methods SET value=$2,normalized_value=$2 WHERE customer_id=$1`,
+    [customerId, phone],
+  );
+  await app
+    .get(WalletService)
+    .createWallet({ customerId, currency: 'NGN', idempotencyKey: randomUUID() });
+  const agentId = randomUUID(),
+    agentSessionId = randomUUID(),
+    credential = randomUUID();
+  const cls = await app
+    .get(AgentClassService)
+    .create({
+      reference: randomUUID(),
+      code: `F${randomUUID().slice(0, 8)}`,
+      name: 'claim fixture',
+      isActive: true,
+      applicableServices: [AgentService.CASH_TO_CASH],
+      actor: 'fixture',
+    });
+  await db.query(
+    `INSERT INTO agents(id,reference,status,agent_class_id) VALUES($1,$3,'ACTIVE',$2)`,
+    [agentId, cls.id, agentId],
+  );
+  await db.query(
+    `INSERT INTO agent_authentication_credentials(id,agent_id,password_hash,hash_algorithm,password_version,status,password_changed_at) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE',clock_timestamp()-interval '1 minute')`,
+    [credential, agentId],
+  );
+  await db.query(
+    `INSERT INTO agent_authentication_sessions(id,agent_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at) VALUES($1,$2,$3,$4,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp())`,
+    [agentSessionId, agentId, credential, randomUUID().replace(/-/g, '').repeat(2)],
+  );
+  const ledger = app.get(LedgerService);
+  const source = await ledger.createAccount({
+    code: `claim-fixture-${randomUUID()}`,
+    name: 'fixture',
+    currency: 'NGN',
+    accountType: LedgerAccountType.ASSET,
+    allowNegativeBalance: true,
+  });
+  let accounts = await db.query<Array<{ id: string }>>(
+    `SELECT id FROM ledger_accounts WHERE code='CASH_TO_CASH-UNCLAIMED-NGN'`,
+  );
+  if (!accounts.length) {
+    const account = await ledger.createAccount({
+      code: 'CASH_TO_CASH-UNCLAIMED-NGN',
+      name: 'unclaimed',
+      currency: 'NGN',
+      accountType: LedgerAccountType.LIABILITY,
+      allowNegativeBalance: false,
+    });
+    accounts = [{ id: account.id }];
+  }
+  const journal = await ledger.postJournal({
+    idempotencyKey: randomUUID(),
+    currency: 'NGN',
+    lines: [
+      { accountId: source.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '100' },
+      { accountId: accounts[0]!.id, direction: LedgerEntryDirection.CREDIT, amountMinor: '100' },
+    ],
+  });
+  const transferId = randomUUID();
+  await db.query(
+    `INSERT INTO cash_to_cash_transfers(id,agent_id,beneficiary_phone,principal_minor,total_minor,currency,status,transfer_code_hash,hash_algorithm,journal_id,idempotency_key,expires_at) VALUES($1,$2,$3,100,100,'NGN','UNCLAIMED','fixture','PBKDF2',$4,$5,clock_timestamp()+interval '1 hour')`,
+    [transferId, agentId, phone, journal.id, randomUUID()],
+  );
+  return {
+    agentId,
+    agentSessionId,
+    customerId,
+    transferId,
+    redemptionMethod: 'CUSTOMER_WALLET' as const,
+    purpose: 'CASH_TO_CASH_CLAIM' as const,
+  };
+}
+
 test('desk OTP preflight denies withdrawn and unavailable evidence before challenge or delivery', async () => {
   const { AgentDeskOtpService } = await import('../src/agent/agent-desk-otp.service');
   const customerId = await subject('LEVEL_1', ['BVN']);
@@ -507,7 +598,7 @@ test('desk OTP preflight denies withdrawn and unavailable evidence before challe
     [randomUUID(), customerId],
   );
   const otp = app.get(AgentDeskOtpService);
-  const command = { agentId: randomUUID(), customerId, purpose: 'CASH_TO_CASH_CLAIM' as const };
+  const command = await claimOtpFixture(customerId);
   sms.clear();
   snapshots.get(customerId)!.evidence[0]!.status = 'REVOKED';
   await expect(otp.issue(command)).rejects.toThrow();
@@ -540,12 +631,9 @@ test('MFA transaction primitive rolls back with its caller and serializes concur
     `INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE')`,
     [credentialId, customerId],
   );
+  const claimContext = await claimOtpFixture(customerId);
   sms.clear();
-  const issued = await app.get(AgentDeskOtpService).issue({
-    agentId: randomUUID(),
-    customerId,
-    purpose: 'CASH_TO_CASH_CLAIM',
-  });
+  const issued = await app.get(AgentDeskOtpService).issue(claimContext);
   const code = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
   const [row] = await db.query<Array<{ session_id: string }>>(
     `SELECT session_id FROM mfa_challenges WHERE id=$1`,
@@ -596,10 +684,9 @@ test('concurrent incorrect desk OTPs persist a challenge attempt limit', async (
     `INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE')`,
     [credentialId, customerId],
   );
+  const claimContext = await claimOtpFixture(customerId);
   sms.clear();
-  const issued = await app
-    .get(AgentDeskOtpService)
-    .issue({ agentId: randomUUID(), customerId, purpose: 'CASH_TO_CASH_CLAIM' });
+  const issued = await app.get(AgentDeskOtpService).issue(claimContext);
   const code = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
   const incorrect = code === '000000' ? '000001' : '000000';
   const [row] = await db.query<Array<{ session_id: string }>>(
@@ -1744,7 +1831,7 @@ test('concurrent cash-out challenge issuance cannot reset the persisted issuance
   await expect(service.issue(command)).rejects.toThrow('temporarily unavailable');
 });
 
-test('contained claim wiring rolls back OTP with a failed posting and serializes funded claims', async () => {
+test('bound wallet-redemption claim wiring rolls back OTP with a failed posting and serializes funded claims', async () => {
   const { AgentCashToCashClaimService } = await import(
     '../src/agent/agent-cash-to-cash-claim.service'
   );
@@ -1771,6 +1858,39 @@ test('contained claim wiring rolls back OTP with a failed posting and serializes
     agentId,
     agentId,
   ]);
+  const { AgentClassService } = await import('../src/agent/agent-class.service');
+  const { AgentService } = await import('../src/agent/agent-service.enum');
+  const cls = await app
+    .get(AgentClassService)
+    .create({
+      reference: randomUUID(),
+      code: `W${randomUUID().slice(0, 8)}`,
+      name: 'claim fixture',
+      isActive: true,
+      applicableServices: [AgentService.CASH_TO_CASH],
+      actor: 'fixture',
+    });
+  await db.query(`UPDATE agents SET agent_class_id=$2 WHERE id=$1`, [agentId, cls.id]);
+  const agentSessionId = randomUUID(),
+    agentCredential = randomUUID();
+  await db.query(
+    `INSERT INTO agent_authentication_credentials(id,agent_id,password_hash,hash_algorithm,password_version,status,password_changed_at) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE',clock_timestamp()-interval '1 minute')`,
+    [agentCredential, agentId],
+  );
+  await db.query(
+    `INSERT INTO agent_authentication_sessions(id,agent_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at) VALUES($1,$2,$3,$4,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp())`,
+    [agentSessionId, agentId, agentCredential, randomBytes(32).toString('hex')],
+  );
+  const principal = {
+    type: 'AGENT' as const,
+    agentId,
+    principalId: agentId,
+    sessionId: agentSessionId,
+    roles: [],
+    scopes: [],
+    customerAccess: 'NONE' as const,
+    agentAccess: 'SELF' as const,
+  };
   const ledger = app.get(LedgerService);
   const source = await ledger.createAccount({
     code: `claim-source-${randomUUID()}`,
@@ -1811,13 +1931,16 @@ test('contained claim wiring rolls back OTP with a failed posting and serializes
   sms.clear();
   const challenge = await app
     .get(AgentDeskOtpService)
-    .issue({ agentId, customerId, purpose: 'CASH_TO_CASH_CLAIM' });
+    .issue({
+      agentId,
+      agentSessionId,
+      customerId,
+      transferId,
+      redemptionMethod: 'CUSTOMER_WALLET',
+      purpose: 'CASH_TO_CASH_CLAIM',
+    });
   const otp = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
   const claim = app.get(AgentCashToCashClaimService);
-  // The bypass is confined to this fixture. Production remains disabled until bound challenges exist.
-  const bypass = jest
-    .spyOn(claim as never, 'requireSafeClaimExecution' as never)
-    .mockImplementation(() => undefined as never);
   const postJournal = ledger.postJournalInTransaction.bind(ledger);
   const ledgerSpy = jest.spyOn(ledger, 'postJournalInTransaction');
   const input = {
@@ -1829,6 +1952,7 @@ test('contained claim wiring rolls back OTP with a failed posting and serializes
     otp,
     idempotencyKey: randomUUID(),
     redemptionMethod: 'CUSTOMER_WALLET' as const,
+    claimantPrincipal: principal,
   };
   try {
     const wrong = otp === '000000' ? '000001' : '000000';
@@ -1873,18 +1997,21 @@ test('contained claim wiring rolls back OTP with a failed posting and serializes
     ).toEqual([{ n: 2 }]);
   } finally {
     ledgerSpy.mockRestore();
-    bypass.mockRestore();
   }
 }, 120_000);
 
-test('contained agent-cash claim keeps authorization atomic and recovers the original receipt', async () => {
+test('bound agent-cash claim keeps authorization atomic and recovers the original receipt', async () => {
+  const head = await db.query<Array<{ version: number }>>(
+    `SELECT version FROM kyc_tier_policy_head`,
+  );
+  if (!head[0]?.version) await setPolicy();
   const { AgentCashToCashClaimService } = await import(
     '../src/agent/agent-cash-to-cash-claim.service'
   );
   const { AgentDeskOtpService } = await import('../src/agent/agent-desk-otp.service');
   const { LedgerService } = await import('../src/ledger/ledger.service');
   const { LedgerAccountType, LedgerEntryDirection } = await import('../src/ledger/ledger.enums');
-  const { randomBytes, pbkdf2Sync } = await import('node:crypto');
+  const { randomBytes, pbkdf2Sync, createHash } = await import('node:crypto');
   const customerId = await subject('LEVEL_1', ['BVN']);
   await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [customerId]);
   const phone = `8${randomUUID().replace(/\D/g, '').padEnd(9, '1').slice(0, 9)}`;
@@ -1912,27 +2039,23 @@ test('contained agent-cash claim keeps authorization atomic and recovers the ori
   const { AgentPasswordHashAlgorithm } = await import(
     '../src/agent-authentication/agent-authentication.enums'
   );
-  const cls = await app
-    .get(AgentClassService)
-    .create({
-      reference: randomUUID(),
-      code: `C${randomUUID().slice(0, 8)}`,
-      name: 'claim agent',
-      isActive: true,
-      applicableServices: [AgentService.CASH_TO_CASH],
-      actor: 'fixture',
-    });
+  const cls = await app.get(AgentClassService).create({
+    reference: randomUUID(),
+    code: `C${randomUUID().slice(0, 8)}`,
+    name: 'claim agent',
+    isActive: true,
+    applicableServices: [AgentService.CASH_TO_CASH],
+    actor: 'fixture',
+  });
   await db.query(`UPDATE agents SET agent_class_id=$2 WHERE id=$1`, [agentId, cls.id]);
   const pinSalt = randomBytes(16);
   const pinHash = `PBKDF2$sha256$10000$${pinSalt.toString('base64url')}$${pbkdf2Sync('1234', pinSalt, 10000, 32, 'sha256').toString('base64url')}`;
-  await app
-    .get(AgentAuthenticationService)
-    .setTransactionPin(agentId, {
-      pinHash,
-      hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2,
-      pinVersion: 1,
-      actor: agentId,
-    });
+  await app.get(AgentAuthenticationService).setTransactionPin(agentId, {
+    pinHash,
+    hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2,
+    pinVersion: 1,
+    actor: agentId,
+  });
   await app
     .get(WalletService)
     .createWallet({ customerId: agentId, currency: 'NGN', idempotencyKey: randomUUID() });
@@ -1942,9 +2065,10 @@ test('contained agent-cash claim keeps authorization atomic and recovers the ori
     `INSERT INTO agent_authentication_credentials(id,agent_id,password_hash,hash_algorithm,password_version,status,password_changed_at) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE',clock_timestamp()-interval '1 minute')`,
     [agentCredential, agentId],
   );
+  const token = randomBytes(32).toString('base64url');
   await db.query(
     `INSERT INTO agent_authentication_sessions(id,agent_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at) VALUES($1,$2,$3,$4,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp())`,
-    [deskSession, agentId, agentCredential, randomBytes(32).toString('hex')],
+    [deskSession, agentId, agentCredential, createHash('sha256').update(token).digest('hex')],
   );
   const principal = {
     type: 'AGENT' as const,
@@ -1994,15 +2118,30 @@ test('contained agent-cash claim keeps authorization atomic and recovers the ori
     [transferId, agentId, phone, codeHash, funding.id, randomUUID()],
   );
   sms.clear();
-  const challenge = await app
-    .get(AgentDeskOtpService)
-    .issue({ agentId, customerId, purpose: 'CASH_TO_CASH_CLAIM' });
-  const otp = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+  const server = app.getHttpAdapter().getInstance();
+  const issuePayload = {
+    customerId,
+    transferId,
+    redemptionMethod: 'AGENT_CASH',
+    purpose: 'CASH_TO_CASH_CLAIM',
+  };
+  const unauthIssue = await server.inject({
+    method: 'POST',
+    url: '/api/v1/agents/me/mfa-challenges',
+    payload: issuePayload,
+  });
+  expect([401, 403]).toContain(unauthIssue.statusCode);
+  const issued = await server.inject({
+    method: 'POST',
+    url: '/api/v1/agents/me/mfa-challenges',
+    headers: { authorization: `Bearer ${token}` },
+    payload: issuePayload,
+  });
+  expect(issued.statusCode).toBe(201);
+  let challenge: { challengeId: string } = issued.json();
+  let otp = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
   const claim = app.get(AgentCashToCashClaimService);
-  // The bypass is confined to this fixture. Production remains disabled until bound challenges exist.
-  const bypass = jest
-    .spyOn(claim as never, 'requireSafeClaimExecution' as never)
-    .mockImplementation(() => undefined as never);
+  // Only the institutional authority is controlled; claim guards remain active.
   const postJournal = ledger.postJournalInTransaction.bind(ledger);
   const ledgerSpy = jest.spyOn(ledger, 'postJournalInTransaction');
   const input = {
@@ -2018,6 +2157,48 @@ test('contained agent-cash claim keeps authorization atomic and recovers the ori
     agentPin: '1234',
   };
   try {
+    const fundingOther = await ledger.postJournal({
+      idempotencyKey: randomUUID(),
+      currency: 'NGN',
+      lines: [
+        { accountId: source.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '100' },
+        { accountId: unclaimed[0]!.id, direction: LedgerEntryDirection.CREDIT, amountMinor: '100' },
+      ],
+    });
+    const otherTransferId = randomUUID();
+    await db.query(
+      `INSERT INTO cash_to_cash_transfers(id,agent_id,beneficiary_phone,principal_minor,total_minor,currency,status,transfer_code_hash,hash_algorithm,journal_id,idempotency_key,expires_at) VALUES($1,$2,$3,100,100,'NGN','UNCLAIMED',$4,'PBKDF2',$5,$6,clock_timestamp()+interval '1 hour')`,
+      [otherTransferId, agentId, phone, codeHash, fundingOther.id, randomUUID()],
+    );
+    await expect(claim.execute({ ...input, transferId: otherTransferId })).rejects.toThrow(
+      'authorization context',
+    );
+    expect(
+      await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challenge.challengeId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
+    const institution = app.get(CashToCashClaimFinancialContext);
+    const contextSpy = jest.spyOn(institution, 'resolve');
+    contextSpy.mockResolvedValueOnce({
+      institutionId: randomUUID(),
+      evidenceFingerprint: 'b'.repeat(64),
+    });
+    await expect(claim.execute(input)).rejects.toThrow('authorization context');
+    contextSpy.mockRejectedValueOnce(new Error('institution suspended'));
+    await expect(claim.execute(input)).rejects.toThrow('institution suspended');
+    contextSpy.mockRestore();
+    const snapshot = snapshots.get(customerId)!;
+    snapshot.evidence[0]!.status = 'REVOKED';
+    await expect(claim.execute(input)).rejects.toThrow();
+    snapshot.evidence[0]!.status = 'VERIFIED';
+    await db.query(`INSERT INTO kyc_tier_manual_holds(customer_id,actor,reason) VALUES($1,'fixture','MANUAL_REVIEW')`,[customerId]);
+    const {claimantPrincipal: ignoredPrincipal, ...holdRequest} = input;
+    void ignoredPrincipal;
+    const held = await server.inject({method:'POST',url:'/api/v1/agents/cash-to-cash/claim',headers:{authorization:`Bearer ${token}`},payload:holdRequest});
+    expect(held.statusCode).toBeGreaterThanOrEqual(400);
+    await db.query(`DELETE FROM kyc_tier_manual_holds WHERE customer_id=$1`,[customerId]);
+    expect(
+      await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challenge.challengeId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
     const wrong = otp === '000000' ? '000001' : '000000';
     await expect(claim.execute({ ...input, otp: wrong })).rejects.toThrow('MISMATCH');
     expect(
@@ -2025,6 +2206,73 @@ test('contained agent-cash claim keeps authorization atomic and recovers the ori
         challenge.challengeId,
       ]),
     ).toEqual([{ status: 'ACTIVE', failed_attempts: 1 }]);
+    const previousChallengeId = challenge.challengeId;
+    sms.clear();
+    challenge = await app
+      .get(AgentDeskOtpService)
+      .issue({
+        agentId,
+        agentSessionId: deskSession,
+        customerId,
+        transferId,
+        redemptionMethod: 'AGENT_CASH',
+        purpose: 'CASH_TO_CASH_CLAIM',
+      });
+    otp = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+    input.mfaChallengeId = challenge.challengeId;
+    input.otp = otp;
+    expect(
+      await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [previousChallengeId]),
+    ).toEqual([{ status: 'REVOKED' }]);
+    expect(
+      await db.query(
+        `SELECT issuance_count,failed_attempts FROM cash_out_otp_budgets WHERE budget_key=$1`,
+        [`customer:${customerId}`],
+      ),
+    ).toEqual([{ issuance_count: 2, failed_attempts: 1 }]);
+    await expect(
+      claim.execute({ ...input, mfaChallengeId: previousChallengeId }),
+    ).rejects.toThrow();
+    await db.query(
+      `UPDATE mfa_challenges SET expires_at=clock_timestamp()-interval '1 second' WHERE id=$1`,
+      [challenge.challengeId],
+    );
+    await expect(claim.execute(input)).rejects.toThrow('EXPIRED');
+    sms.clear();
+    challenge = await app
+      .get(AgentDeskOtpService)
+      .issue({
+        agentId,
+        agentSessionId: deskSession,
+        customerId,
+        transferId,
+        redemptionMethod: 'AGENT_CASH',
+        purpose: 'CASH_TO_CASH_CLAIM',
+      });
+    otp = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+    input.mfaChallengeId = challenge.challengeId;
+    input.otp = otp;
+    sms.clear();
+    await expect(
+      app
+        .get(AgentDeskOtpService)
+        .issue({
+          agentId,
+          agentSessionId: deskSession,
+          customerId,
+          transferId,
+          redemptionMethod: 'AGENT_CASH',
+          purpose: 'CASH_TO_CASH_CLAIM',
+        }),
+    ).rejects.toThrow('temporarily unavailable');
+    expect(sms.sent).toHaveLength(0);
+    expect(
+      await db.query(
+        `SELECT issuance_count,failed_attempts FROM cash_out_otp_budgets WHERE budget_key=$1`,
+        [`customer:${customerId}`],
+      ),
+    ).toEqual([{ issuance_count: 3, failed_attempts: 1 }]);
+
     ledgerSpy.mockImplementationOnce(async (manager, command) => {
       await postJournal(manager, command);
       throw new Error('injected settlement failure after journal');
@@ -2043,8 +2291,25 @@ test('contained agent-cash claim keeps authorization atomic and recovers the ori
         transferId,
       ]),
     ).toEqual([{ status: 'UNCLAIMED', claim_journal_id: null }]);
-    const results = await Promise.allSettled([claim.execute(input), claim.execute(input)]);
-    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const { claimantPrincipal: _principal, ...httpClaim } = input;
+    void _principal;
+    const unauthClaim = await server.inject({
+      method: 'POST',
+      url: '/api/v1/agents/cash-to-cash/claim',
+      payload: httpClaim,
+    });
+    expect([401, 403]).toContain(unauthClaim.statusCode);
+    const results = await Promise.all(
+      [1, 2].map(() =>
+        server.inject({
+          method: 'POST',
+          url: '/api/v1/agents/cash-to-cash/claim',
+          headers: { authorization: `Bearer ${token}` },
+          payload: httpClaim,
+        }),
+      ),
+    );
+    expect(results.filter((r) => r.statusCode === 200)).toHaveLength(1);
     expect(
       await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challenge.challengeId]),
     ).toEqual([{ status: 'VERIFIED' }]);
@@ -2053,6 +2318,16 @@ test('contained agent-cash claim keeps authorization atomic and recovers the ori
       [transferId],
     );
     expect(rows[0]?.status).toBe('CLAIMED');
+    const httpReceipt = await server.inject({
+      method: 'GET',
+      url: `/api/v1/agents/cash-to-cash/claims/${transferId}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(httpReceipt.statusCode).toBe(200);
+    expect(httpReceipt.json()).toMatchObject({
+      journalId: rows[0]!.claim_journal_id,
+      redemptionMethod: 'AGENT_CASH',
+    });
     const receipt = await claim.recoverClaimForAgent(transferId, principal);
     expect(receipt).toMatchObject({
       journalId: rows[0]!.claim_journal_id,
@@ -2082,6 +2357,5 @@ test('contained agent-cash claim keeps authorization atomic and recovers the ori
     ).toEqual([{ n: 2 }]);
   } finally {
     ledgerSpy.mockRestore();
-    bypass.mockRestore();
   }
 }, 120_000);

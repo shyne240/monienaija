@@ -36,6 +36,8 @@ export class AgentDeskOtpController {
       currency: dto.currency,
       operationKey: dto.operationKey,
       supersedesOperationKey: dto.supersedesOperationKey,
+      transferId: dto.transferId,
+      redemptionMethod: dto.redemptionMethod,
       customerId: dto.customerId,
       purpose: dto.purpose,
       ttlSeconds: dto.ttlSeconds,

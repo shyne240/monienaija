@@ -18,6 +18,11 @@ import { DataSource, EntityManager } from 'typeorm';
 
 import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { AGENT_DESK_OTP_PURPOSE_CASH_TO_CASH_CLAIM } from './agent-desk-otp.constants';
+import {
+  CashToCashClaimFinancialContext,
+  requireClaimChallenge,
+  recordCashOutOtpFailure,
+} from './cash-to-cash-claim-authorization';
 
 import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
 import type { EnforceResult } from '../limit-catalog/limit-enforcement.service';
@@ -99,6 +104,7 @@ export class AgentCashToCashClaimService {
     // legacy evidence shape for manual-construction unit tests).
     @Optional()
     private readonly feeRuleCalculatorService?: FeeRuleCalculatorService,
+    @Optional() private readonly claimFinancialContext?: CashToCashClaimFinancialContext,
   ) {}
 
   /** Authenticated command, never a public UUID lookup. All transfer-specific failures
@@ -233,7 +239,8 @@ export class AgentCashToCashClaimService {
   }
 
   async execute(input: AgentCashToCashClaimInput): Promise<AgentCashToCashClaimResult> {
-    this.requireSafeClaimExecution();
+    if (!this.claimFinancialContext)
+      throw new ServiceUnavailableException('Claim authorization unavailable');
     const transferId = input.transferId?.trim().toLowerCase();
     if (!transferId || !UUID_PATTERN.test(transferId)) {
       throw new BadRequestException('transferId must be a UUID');
@@ -602,6 +609,23 @@ export class AgentCashToCashClaimService {
             throw err;
           }
 
+          if (!claimantAgentId || !input.claimantPrincipal?.sessionId)
+            throw new UnauthorizedException('A current Agent session is required for claim');
+          const bindings = await manager.query<Array<{ destination_hash: string }>>(
+            `SELECT destination_hash FROM cash_to_cash_claim_challenge_bindings WHERE challenge_id=$1`,
+            [mfaChallengeId],
+          );
+          if (!bindings[0]) throw new ConflictException('Claim authorization context unavailable');
+          const budgetKeys = await requireClaimChallenge(manager, this.claimFinancialContext!, {
+            challengeId: mfaChallengeId,
+            transferId,
+            customerId,
+            agentId: claimantAgentId,
+            agentSessionId: input.claimantPrincipal.sessionId,
+            redemptionMethod,
+            destinationHash: bindings[0].destination_hash,
+          });
+
           // The verifier locks the challenge and writes the successful consumption in the
           // same transaction as the ledger. Failure is returned rather than thrown here so
           // wrong-code attempt counters and audit records commit without any financial effect.
@@ -613,6 +637,8 @@ export class AgentCashToCashClaimService {
             expectedPurpose: AGENT_DESK_OTP_PURPOSE_CASH_TO_CASH_CLAIM,
           });
           if (!verification.verified) {
+            if (verification.failureReason === 'MISMATCH')
+              await recordCashOutOtpFailure(manager, budgetKeys);
             return { otpFailure: verification.failureReason ?? 'MFA_UNAVAILABLE' } as const;
           }
 
@@ -630,7 +656,7 @@ export class AgentCashToCashClaimService {
           let limitOutcome: EnforceResult | null = null;
           const limitPrincipalType = redemptionMethod === 'AGENT_CASH' ? 'AGENT' : 'CUSTOMER';
           const limitPrincipalId =
-            redemptionMethod === 'AGENT_CASH' ? claimantAgentId! : customerId;
+            redemptionMethod === 'AGENT_CASH' ? claimantAgentId : customerId;
           const claimRequestHashEarly = this.computeClaimRequestHash({
             transferId,
             beneficiaryPhone: canonicalPhone,
@@ -813,7 +839,7 @@ export class AgentCashToCashClaimService {
           await this.recordCommercialDecisionSnapshot(manager, {
             customerId,
             principalType: redemptionMethod === 'AGENT_CASH' ? 'AGENT' : 'CUSTOMER',
-            principalId: redemptionMethod === 'AGENT_CASH' ? claimantAgentId! : customerId,
+            principalId: redemptionMethod === 'AGENT_CASH' ? claimantAgentId : customerId,
             transferId,
             amountMinor: principal,
             currency: transfer.currency,
@@ -906,15 +932,6 @@ export class AgentCashToCashClaimService {
       }
     }
     throw this.transactionContentionExhaustedException();
-  }
-
-  // Remove this containment only when transfer-bound OTP consumption and the financial
-  // effect are atomic and validated against real PostgreSQL. Receipt recovery is separate.
-  private requireSafeClaimExecution(): void {
-    throw new ServiceUnavailableException({
-      code: 'C2C_CLAIM_EXECUTION_UNAVAILABLE',
-      message: 'Claim execution temporarily unavailable; existing funds remain held',
-    });
   }
 
   /**
