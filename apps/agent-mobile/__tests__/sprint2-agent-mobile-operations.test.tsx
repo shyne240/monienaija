@@ -144,7 +144,7 @@ describe('Sprint 2 — Agent Mobile operational hardening', () => {
     ).toBe('Incorrect transaction PIN. Check the PIN and try again.');
   });
 
-  test('Cash-to-Cash Claim locks redemptionMethod & idempotencyKey after post-OTP rollback and resets MFA challenge cleanly', async () => {
+  test('Cash-to-Cash Claim holds an uncertain post-OTP outcome without resubmitting', async () => {
     mockRoute = {
       key: 'claim-confirm',
       name: 'CashToCashClaimConfirm',
@@ -223,36 +223,11 @@ describe('Sprint 2 — Agent Mobile operational hardening', () => {
     fireEvent.changeText(view.getByTestId('c2c-claim-agent-pin-input'), '1234');
     fireEvent.press(view.getByTestId('c2c-claim-submit'));
 
-    // Wait for rollback notice + MFA consumed notice + payout method lock
-    await waitFor(() => {
-      expect(view.getByTestId('c2c-claim-method-locked-notice')).toBeTruthy();
-      expect(view.getByTestId('c2c-claim-rollback-retry-notice')).toBeTruthy();
-      expect(view.getByTestId('mfa-consumed-notice')).toBeTruthy();
-    });
-
-    const firstIdempotencyKey = mockApi.agentCashToCashClaim.mock.calls[0][0].idempotencyKey;
-
-    // Attempting to click CUSTOMER_WALLET radio while locked does NOT switch away from AGENT_CASH
-    fireEvent.press(view.getByTestId('c2c-claim-method-wallet'));
-    expect(view.getByTestId('c2c-claim-agent-pin-input')).toBeTruthy();
-
-    // Request fresh OTP (mfa-2) and retry — preserves exact same idempotencyKey and AGENT_CASH method
-    fireEvent.press(view.getByTestId('mfa-request-button'));
-    await waitFor(() => expect(view.getByTestId('mfa-ready-title')).toBeTruthy());
-
-    fireEvent.changeText(view.getByTestId('c2c-claim-code-input'), '87654321');
-    fireEvent.changeText(view.getByTestId('c2c-claim-otp-input'), '654321');
-    fireEvent.changeText(view.getByTestId('c2c-claim-agent-pin-input'), '1234');
-    fireEvent.press(view.getByTestId('c2c-claim-submit'));
-
-    await waitFor(() => expect(mockReset).toHaveBeenCalled());
-    expect(mockApi.agentCashToCashClaim).toHaveBeenCalledTimes(2);
-    expect(mockApi.agentCashToCashClaim.mock.calls[1][0]).toMatchObject({
-      idempotencyKey: firstIdempotencyKey,
-      redemptionMethod: 'AGENT_CASH',
-      mfaChallengeId: 'mfa-2',
-      otp: '654321',
-    });
+    // A missing receipt does not prove the earlier claim cannot still commit.
+    await waitFor(() => expect(view.getByTestId('c2c-claim-method-locked-notice')).toBeTruthy());
+    expect(view.queryByTestId('c2c-claim-rollback-retry-notice')).toBeNull();
+    expect(mockApi.agentCashToCashClaim).toHaveBeenCalledTimes(1);
+    expect(mockReset).not.toHaveBeenCalled();
     view.unmount();
     queryClient.clear();
   });

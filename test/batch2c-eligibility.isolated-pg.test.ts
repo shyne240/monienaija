@@ -1,3 +1,7 @@
+import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
+import { workforceConfiguration } from '../src/authorization/workforce-configuration';
+import { CashToCashWorkforceScope } from '../src/agent/cash-to-cash-workforce-scope';
+import { NotFoundException } from '@nestjs/common';
 // Mobile client uses these native adapters; requests below are bridged to the real Fastify app.
 jest.mock('react-native', () => ({ Platform: { OS: 'test' } }), { virtual: true });
 jest.mock('expo-secure-store', () => ({}), { virtual: true });
@@ -48,6 +52,7 @@ const sms = new TestNotificationProvider();
 const snapshots = new Map<string, TierEvidenceSnapshot>();
 // Only explicitly provisioned synthetic subjects are authorized. Client inputs are lookup
 // values; these server-side fixtures represent independently verified policy and identity.
+const workforceInstitutions = new Map<string, string>();
 const fundingSubjects = new Map<string, { senderPhone: string; recipient: string }>();
 
 beforeAll(async () => {
@@ -81,6 +86,8 @@ beforeAll(async () => {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(DataSource)
     .useValue(db)
+    .overrideProvider(A2_WORKFORCE_CONFIG)
+    .useValue({ ...workforceConfiguration({}), enabled: true })
     .overrideProvider(CashOutInstitutionResolver)
     .useValue({
       resolve: (_manager: unknown, agentId: string) =>
@@ -118,6 +125,14 @@ beforeAll(async () => {
           fundingAuthorizationFingerprint: 'c'.repeat(64),
           institutionEvidenceFingerprint: 'd'.repeat(64),
         };
+      },
+    })
+    .overrideProvider(CashToCashWorkforceScope)
+    .useValue({
+      assertCanAccessInstitution: (principal: { principalId: string }, institutionId: string) => {
+        if (workforceInstitutions.get(principal.principalId) !== institutionId)
+          throw new NotFoundException('Institution not found');
+        return Promise.resolve();
       },
     })
     .overrideProvider(CashToCashClaimFinancialContext)
@@ -2275,7 +2290,9 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     (await server.inject({ method: 'POST', url: operationHandoffUrl, payload: absentPayload }))
       .statusCode,
   ).toBe(401);
-  const beforeJournals = await db.query<Array<{ n: number }>>(`SELECT count(*)::int AS n FROM ledger_journals`);
+  const beforeJournals = await db.query<Array<{ n: number }>>(
+    `SELECT count(*)::int AS n FROM ledger_journals`,
+  );
   const pendingHandoffs = await Promise.all(
     [1, 2].map(() =>
       server.inject({
@@ -2328,6 +2345,73 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
       })
     ).statusCode,
   ).toBe(409);
+  // A real persisted workforce session and catalogue role; only the institution assignment is controlled.
+  const { A2WorkforceSessionService } = await import(
+    '../src/authorization/workforce-session.service'
+  );
+  const { A2FinanceRoleAssignment } = await import(
+    '../src/authorization/workforce-authentication.entity'
+  );
+  const workforceId = `reconciliation-${randomUUID()}`;
+  const now = new Date();
+  await db.getRepository(A2FinanceRoleAssignment).save({
+    id: randomUUID(),
+    assignmentReference: workforceId,
+    assignmentVersion: 1,
+    principalId: workforceId,
+    roleKey: 'TREASURY',
+    scopes: [],
+    status: 'ACTIVE',
+    interim: true,
+    effectiveFrom: new Date(now.getTime() - 60000),
+    effectiveTo: new Date(now.getTime() + 86400000),
+    assignedBy: 'fixture',
+    assignedAt: now,
+    revokedBy: null,
+    revokedAt: null,
+    bootstrapReference: null,
+    approvalIds: [],
+    auditReferences: [],
+  } as never);
+  const workforceSession = await app.get(A2WorkforceSessionService).establish({
+    issuer: 'https://local-dev-identity.monienaija.invalid',
+    subject: workforceId,
+    principalId: workforceId,
+    audience: ['workforce-admin'],
+    issuedAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + 3600000).toISOString(),
+    authenticatedAt: now.toISOString(),
+    assuranceLevel: 'MFA',
+    amr: ['pwd', 'otp'],
+    acr: null,
+    signingKeyId: 'fixture',
+  });
+  workforceInstitutions.set(workforceId, affiliation.institutionId);
+  const operationLookupUrl = `/api/v1/internal/reconciliation/cash-to-cash/operation/${pendingId}`;
+  expect((await server.inject({ method: 'GET', url: operationLookupUrl })).statusCode).toBe(401);
+  const authorizedLookup = await server.inject({
+    method: 'GET',
+    url: operationLookupUrl,
+    headers: { authorization: `Bearer ${workforceSession.accessToken}` },
+  });
+  expect(authorizedLookup.statusCode).toBe(200);
+  expect(authorizedLookup.json()).toMatchObject({
+    id: pendingId,
+    status: 'UNRESOLVED',
+    evidence: { status: 'UNKNOWN' },
+  });
+  workforceInstitutions.set(workforceId, randomUUID());
+  expect(
+    (
+      await server.inject({
+        method: 'GET',
+        url: operationLookupUrl,
+        headers: { authorization: `Bearer ${workforceSession.accessToken}` },
+      })
+    ).statusCode,
+  ).toBe(404);
+  workforceInstitutions.set(workforceId, affiliation.institutionId);
+  expect(await db.query(`SELECT count(*)::int AS n FROM ledger_journals`)).toEqual(beforeJournals);
   recoveryResolver.mockRestore();
   const duplicateFunding = await server.inject({
     method: 'POST',
@@ -2464,6 +2548,27 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
       })
     ).statusCode,
   ).toBe(401);
+  const workforceTransferUrl = `/api/v1/internal/reconciliation/cash-to-cash/${handoffId}`;
+  const visibleTransfer = await server.inject({
+    method: 'GET',
+    url: workforceTransferUrl,
+    headers: { authorization: `Bearer ${workforceSession.accessToken}` },
+  });
+  expect(visibleTransfer.statusCode).toBe(200);
+  expect(visibleTransfer.json()).toMatchObject({
+    current: { classification: 'CANCELLED_DISPOSITION_PENDING', outstandingLiabilityMinor: '600' },
+  });
+  workforceInstitutions.set(workforceId, randomUUID());
+  expect(
+    (
+      await server.inject({
+        method: 'GET',
+        url: workforceTransferUrl,
+        headers: { authorization: `Bearer ${workforceSession.accessToken}` },
+      })
+    ).statusCode,
+  ).toBe(404);
+  workforceInstitutions.set(workforceId, affiliation.institutionId);
   const { CashToCashReconciliationService } = await import(
     '../src/agent/cash-to-cash-reconciliation.service'
   );

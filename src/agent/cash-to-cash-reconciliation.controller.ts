@@ -1,15 +1,7 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  Req,
-  UnauthorizedException,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UnauthorizedException } from '@nestjs/common';
 import { IsIn, IsUUID } from 'class-validator';
 import { AuthorizationService } from '../authorization/authorization.service';
+import { CashToCashWorkforceScope } from './cash-to-cash-workforce-scope';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import {
   CashToCashReconciliationService,
@@ -25,6 +17,7 @@ export class CashToCashReconciliationController {
   constructor(
     private readonly service: CashToCashReconciliationService,
     private readonly auth: AuthorizationService,
+    private readonly scope: CashToCashWorkforceScope,
   ) {}
   @Post('agents/cash-to-cash/reconciliation-handoff')
   handoff(
@@ -46,9 +39,24 @@ export class CashToCashReconciliationController {
       'internal-reconciliation',
       ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
     );
-    // A function grant alone does not establish institution-scoped entitlement.
-    // Do not expose a cross-institution handoff until authoritative workforce scope exists.
-    void id;
-    throw new ServiceUnavailableException('Institutional reconciliation authorization unavailable');
+    const institutionId = await this.service.transferHandoffInstitution(id);
+    await this.scope.assertCanAccessInstitution(req.authorizationPrincipal, institutionId);
+    return this.service.lookup(id);
+  }
+
+  @Get('internal/reconciliation/cash-to-cash/operation/:handoffId')
+  async lookupOperation(
+    @Req() req: { authorizationPrincipal?: AuthorizationPrincipal },
+    @Param('handoffId') id: string,
+  ) {
+    await this.auth.requireFunction(
+      req.authorizationPrincipal,
+      'reconciliation.view',
+      'internal-reconciliation',
+      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
+    return this.service.operationHandoff(id, (institutionId) =>
+      this.scope.assertCanAccessInstitution(req.authorizationPrincipal, institutionId),
+    );
   }
 }
