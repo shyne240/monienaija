@@ -734,9 +734,26 @@ describe('A7T08 A7 product financial effect service', () => {
         service.postProductFinancialEffect(makeInputWithCanonicalHash({ capabilityKey, action })),
       ).rejects.toThrow('cannot use the outbound withdrawal boundary');
       expect(ports.a6T08SettleVerifiedOutcome).not.toHaveBeenCalled();
-      expect(ports.operationsIdempotencyReserve).not.toHaveBeenCalled();
+      expect(ports.operationsIdempotencyReserve).toHaveBeenCalledTimes(1);
     },
   );
+
+  it('does not fabricate historical success from an empty replay record', async () => {
+    const fakeRepo = new FakeRepository();
+    const ports = fakeRepo.getConsumerPorts();
+    jest
+      .spyOn(ports, 'operationsIdempotencyReserve')
+      .mockResolvedValue({
+        kind: 'REPLAY',
+        record: { id: 'historic', responseBody: null },
+      } as never);
+    jest.spyOn(fakeRepo, 'getConsumerPorts').mockReturnValue(ports);
+    const service = serviceWithFakeRepository(fakeRepo);
+    await expect(service.postProductFinancialEffect(makeInputWithCanonicalHash())).rejects.toThrow(
+      'replay evidence is incomplete or mismatched',
+    );
+    expect(ports.a6T08SettleVerifiedOutcome).not.toHaveBeenCalled();
+  });
 
   it('exposes the A7 product financial effect contract name and version', () => {
     const fakeRepo = new FakeRepository();

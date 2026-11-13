@@ -6,7 +6,7 @@ Status: work in progress, not an approval to deploy or submit financial transact
 
 * A6 `ExternalOperation` is constrained by its database schema to resource `WITHDRAWAL`, capability `external.wallet.withdrawal.settlement`, and operation `OUTBOUND_BANK_SETTLEMENT`. Its successful settlement debits customer funds and is an outbound financial obligation. New settlement must consume the exact reservation; direct ordinary wallet debits do not establish the required financial commitment.
 * A6 suspense and reference records are evidence/reconciliation paths, not authorizations to spend or to release an uncertain reservation. Rejection release requires independent outcome verification and the exact reserved commitment. Existing post-settlement compensation is a recovery path, not a new payment; commitment-linked settlements currently fail closed there until governed commitment recovery is implemented.
-* A7 product financial effect accepts `virtual-account.assign` and `virtual-account.inbound-funding`, yet its current implementation maps its SETTLE decision to the outbound A6 withdrawal settlement. Assignment is not a withdrawal; inbound funding should credit the customer, not debit a wallet or require an outbound withdrawal reservation. The existing mapping is not an authoritative inbound settlement implementation. New verified A7 settlement attempts now fail closed before idempotency reservation or outbound posting; no inbound payment processor is implemented here. A dedicated independently verified inbound financial boundary is a dependency, not part of the withdrawal reservation mechanism.
+* A7 product financial effect accepts `virtual-account.assign` and `virtual-account.inbound-funding`, yet its current implementation maps its SETTLE decision to the outbound A6 withdrawal settlement. Assignment is not a withdrawal; inbound funding should credit the customer, not debit a wallet or require an outbound withdrawal reservation. The existing mapping is not an authoritative inbound settlement implementation. New verified A7 settlement attempts now fail closed before outbound posting; its temporary idempotency reservation rolls back with the transaction; no inbound payment processor is implemented here. A dedicated independently verified inbound financial boundary is a dependency, not part of the withdrawal reservation mechanism.
 * Virtual account assignment in `src/virtual-account/virtual-account.service.ts` is account lifecycle metadata, not inbound payment settlement. Customer funding has its own financial approval and ledger boundary; it is not the A6 outbound withdrawal flow.
 * The generic withdrawal HTTP initiation and production partner submission remain disabled. The internal commitment initiation service is deliberately not registered as a production API.
 
@@ -30,8 +30,24 @@ After the direction guard, the complete backend run has 236 passing and two fail
 suites (18 failing tests). The original 15 A6 fake-fixture failures remain; three
 additional A7 unit tests still assert that virtual-account effects post outbound
 withdrawals. The complete targeted A6/A7 + commitment/schema/readiness PostgreSQL run
-has three passing and two failing suites (35 passing, 24 failing tests). The failing
+has three passing and two failing suites (36 passing, 24 failing tests). The failing
 legacy assertions have not been deleted or skipped. They require genuine outbound
 commitment fixtures, historical recovery fixtures, or a separately authorized inbound
 financial implementation as appropriate. Two governed ledger reversal PostgreSQL
 regression suites passed 29 tests; this does not prove commitment recovery.
+
+A7 replay handling now rejects missing or mismatched stored effect bodies rather than
+constructing a synthetic SETTLEMENT_POSTED result. An exact existing replay is
+read before the new direction guard, but other existing authority and duplicate checks
+may still prevent particular historical replays; preservation of rows is not a claim
+that every legacy retry path is operational.
+
+A settled commitment is deliberately not automatically refunded by the current code.
+The verifier contract distinguishes settlement and rejection but does not establish
+that a previously settled provider payment was later returned or that external funds
+are available for restoration. Maker-checker alone is not evidence of such a return.
+A safe integration needs a separately authenticated, operation- and amount-bound return
+or recovery outcome and an approved accounting policy, composed atomically with the
+existing approval, ledger reversal, reserve release, settlement/suspense and execution
+records. Until that boundary exists, generic reversals and A6 compensation reject
+commitment-linked settled journals rather than restoring funds twice or minting value.
