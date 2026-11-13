@@ -1743,3 +1743,136 @@ test('concurrent cash-out challenge issuance cannot reset the persisted issuance
   ).toEqual([{ issuance_count: 3, failed_attempts: 0 }]);
   await expect(service.issue(command)).rejects.toThrow('temporarily unavailable');
 });
+
+test('contained claim wiring rolls back OTP with a failed posting and serializes funded claims', async () => {
+  const { AgentCashToCashClaimService } = await import(
+    '../src/agent/agent-cash-to-cash-claim.service'
+  );
+  const { AgentDeskOtpService } = await import('../src/agent/agent-desk-otp.service');
+  const { LedgerService } = await import('../src/ledger/ledger.service');
+  const { LedgerAccountType, LedgerEntryDirection } = await import('../src/ledger/ledger.enums');
+  const { randomBytes, pbkdf2Sync } = await import('node:crypto');
+  const customerId = await subject('LEVEL_1', ['BVN']);
+  await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [customerId]);
+  const phone = `8${randomUUID().replace(/\D/g, '').padEnd(9, '1').slice(0, 9)}`;
+  await db.query(
+    `UPDATE customer_contact_methods SET value=$2,normalized_value=$2 WHERE customer_id=$1`,
+    [customerId, phone],
+  );
+  await db.query(
+    `INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE')`,
+    [randomUUID(), customerId],
+  );
+  await app
+    .get(WalletService)
+    .createWallet({ customerId, currency: 'NGN', idempotencyKey: randomUUID() });
+  const agentId = randomUUID();
+  await db.query(`INSERT INTO agents(id,reference,status) VALUES($1,$2,'ACTIVE')`, [
+    agentId,
+    agentId,
+  ]);
+  const ledger = app.get(LedgerService);
+  const source = await ledger.createAccount({
+    code: `claim-source-${randomUUID()}`,
+    name: 'fixture source',
+    currency: 'NGN',
+    accountType: LedgerAccountType.ASSET,
+    allowNegativeBalance: true,
+  });
+  let unclaimed = await db.query<Array<{ id: string }>>(
+    `SELECT id FROM ledger_accounts WHERE code='CASH_TO_CASH-UNCLAIMED-NGN'`,
+  );
+  if (!unclaimed.length) {
+    const account = await ledger.createAccount({
+      code: 'CASH_TO_CASH-UNCLAIMED-NGN',
+      name: 'fixture unclaimed',
+      currency: 'NGN',
+      accountType: LedgerAccountType.LIABILITY,
+      allowNegativeBalance: false,
+    });
+    unclaimed = [{ id: account.id }];
+  }
+  const funding = await ledger.postJournal({
+    idempotencyKey: randomUUID(),
+    currency: 'NGN',
+    lines: [
+      { accountId: source.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '100' },
+      { accountId: unclaimed[0]!.id, direction: LedgerEntryDirection.CREDIT, amountMinor: '100' },
+    ],
+  });
+  const transferId = randomUUID();
+  const transferCode = '12345678';
+  const salt = randomBytes(16);
+  const codeHash = `PBKDF2$sha256$10000$${salt.toString('base64url')}$${pbkdf2Sync(transferCode, salt, 10000, 32, 'sha256').toString('base64url')}`;
+  await db.query(
+    `INSERT INTO cash_to_cash_transfers(id,agent_id,beneficiary_phone,principal_minor,total_minor,currency,status,transfer_code_hash,hash_algorithm,journal_id,idempotency_key,expires_at) VALUES($1,$2,$3,100,100,'NGN','UNCLAIMED',$4,'PBKDF2',$5,$6,clock_timestamp()+interval '1 hour')`,
+    [transferId, agentId, phone, codeHash, funding.id, randomUUID()],
+  );
+  sms.clear();
+  const challenge = await app
+    .get(AgentDeskOtpService)
+    .issue({ agentId, customerId, purpose: 'CASH_TO_CASH_CLAIM' });
+  const otp = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+  const claim = app.get(AgentCashToCashClaimService);
+  // The bypass is confined to this fixture. Production remains disabled until bound challenges exist.
+  const bypass = jest
+    .spyOn(claim as never, 'requireSafeClaimExecution' as never)
+    .mockImplementation(() => undefined as never);
+  const postJournal = ledger.postJournalInTransaction.bind(ledger);
+  const ledgerSpy = jest.spyOn(ledger, 'postJournalInTransaction');
+  const input = {
+    transferId,
+    beneficiaryPhone: phone,
+    transferCode,
+    customerId,
+    mfaChallengeId: challenge.challengeId,
+    otp,
+    idempotencyKey: randomUUID(),
+    redemptionMethod: 'CUSTOMER_WALLET' as const,
+  };
+  try {
+    const wrong = otp === '000000' ? '000001' : '000000';
+    await expect(claim.execute({ ...input, otp: wrong })).rejects.toThrow('MISMATCH');
+    expect(
+      await db.query(`SELECT status,failed_attempts FROM mfa_challenges WHERE id=$1`, [
+        challenge.challengeId,
+      ]),
+    ).toEqual([{ status: 'ACTIVE', failed_attempts: 1 }]);
+    ledgerSpy.mockImplementationOnce(async (manager, command) => {
+      await postJournal(manager, command);
+      throw new Error('injected settlement failure after journal');
+    });
+    await expect(claim.execute(input)).rejects.toThrow('injected settlement failure after journal');
+    expect(
+      await db.query(`SELECT count(*)::int AS n FROM ledger_journals WHERE idempotency_key=$1`, [
+        `claim:${transferId}:${input.idempotencyKey}`,
+      ]),
+    ).toEqual([{ n: 0 }]);
+    expect(
+      await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challenge.challengeId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
+    expect(
+      await db.query(`SELECT status,claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`, [
+        transferId,
+      ]),
+    ).toEqual([{ status: 'UNCLAIMED', claim_journal_id: null }]);
+    const results = await Promise.allSettled([claim.execute(input), claim.execute(input)]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(
+      await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challenge.challengeId]),
+    ).toEqual([{ status: 'VERIFIED' }]);
+    const rows = await db.query<Array<{ status: string; claim_journal_id: string }>>(
+      `SELECT status,claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
+    expect(rows[0]?.status).toBe('CLAIMED');
+    expect(
+      await db.query(`SELECT count(*)::int AS n FROM ledger_lines WHERE journal_id=$1`, [
+        rows[0]!.claim_journal_id,
+      ]),
+    ).toEqual([{ n: 2 }]);
+  } finally {
+    ledgerSpy.mockRestore();
+    bypass.mockRestore();
+  }
+}, 120_000);
