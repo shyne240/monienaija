@@ -6,6 +6,8 @@ import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm
 
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { LedgerService } from '../ledger/ledger.service';
+import { LedgerLine } from '../ledger/ledger-line.entity';
+import { LimitUsageService } from '../limit-catalog/limit-usage.service';
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
 import { OutboxService } from '../operations/outbox.service';
@@ -134,6 +136,7 @@ export class ExternalSettlementService {
     @Optional()
     @Inject(EXTERNAL_OPERATION_STATUS_VERIFIER)
     private readonly statusVerifier?: ExternalOperationStatusVerifier,
+    @Optional() private readonly limitUsageService?: LimitUsageService,
   ) {}
 
   async settleVerifiedOutcome(
@@ -184,6 +187,180 @@ export class ExternalSettlementService {
     command: RecordCompensatingEntryCommand,
   ): Promise<ExternalSettlementCompensatingResult> {
     return this.compensateWithinTransaction(manager, this.normalizeCompensatingCommand(command));
+  }
+
+  /** Release an actual reservation only after an independently verified rejection.
+   * This is an internal recovery boundary, not a generic withdrawal endpoint. */
+  async releaseReservedWithdrawal(command: {
+    externalOperationId: string;
+    expectedVersion: number;
+    requestContext: RequestContext;
+  }): Promise<{ commitmentId: string; journalId: string; replayed: boolean }> {
+    const operationId = this.normalizeUuid(command.externalOperationId, 'externalOperationId');
+    const context = this.normalizeRequestContext(command.requestContext);
+    if (!Number.isSafeInteger(command.expectedVersion) || command.expectedVersion < 1)
+      throw new ExternalSettlementException(
+        'STALE_OPERATION_VERSION',
+        'expectedVersion must be positive',
+      );
+    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+      const operation = await this.lockOperation(manager, operationId);
+      if (!operation)
+        throw new ExternalSettlementException(
+          'EXTERNAL_OPERATION_NOT_FOUND',
+          'External operation not found',
+        );
+      if (operation.version !== command.expectedVersion)
+        throw new ExternalSettlementException(
+          'STALE_OPERATION_VERSION',
+          'The external operation version is stale',
+        );
+      const rows = await manager.query<
+        Array<{
+          id: string;
+          state: string;
+          reservation_journal_id: string;
+          resolution_journal_id: string | null;
+          idempotency_key: string;
+          withdrawal_id: string;
+        }>
+      >(
+        `SELECT id,state,reservation_journal_id,resolution_journal_id,idempotency_key,withdrawal_id
+           FROM financial_commitments WHERE external_operation_id=$1 FOR UPDATE`,
+        [operation.id],
+      );
+      const commitment = rows[0];
+      if (!commitment)
+        throw new ExternalSettlementException(
+          'COMPENSATING_NOT_PERMITTED',
+          'A reserved financial commitment is required',
+        );
+      if (commitment.state === 'RELEASED' && commitment.resolution_journal_id)
+        return {
+          commitmentId: commitment.id,
+          journalId: commitment.resolution_journal_id,
+          replayed: true,
+        };
+      if (
+        commitment.state !== 'RESERVED' ||
+        ['CREATED', 'CANCELLED'].includes(operation.lifecycleState)
+      )
+        throw new ExternalSettlementException(
+          'COMPENSATING_NOT_PERMITTED',
+          'This commitment cannot be released',
+        );
+      const existingSettlement = await manager
+        .getRepository(ExternalSettlement)
+        .findOne({ where: { externalOperationId: operation.id } });
+      if (existingSettlement)
+        throw new ExternalSettlementException(
+          'COMPENSATING_NOT_PERMITTED',
+          'An existing settlement requires governed review',
+        );
+      if (!this.statusVerifier)
+        throw new ServiceUnavailableException('Provider outcome verification is unavailable');
+      const operationView = await this.externalOperationService.getInTransaction(
+        manager,
+        operation.id,
+      );
+      let verification;
+      try {
+        verification = await this.statusVerifier.verify({
+          operation: operationView,
+          requestedAt: new Date().toISOString(),
+          correlationId: context.correlationId,
+        });
+      } catch {
+        throw new ServiceUnavailableException('Provider outcome verification is unavailable');
+      }
+      if (verification.state === 'UNAVAILABLE')
+        throw new ServiceUnavailableException('Provider outcome verification is unavailable');
+      const matched = operationView.providerReferences.some(
+        (reference) =>
+          ['STATUS_QUERY', 'CALLBACK', 'STATEMENT', 'REPORT'].includes(reference.source) &&
+          this.sha256(reference.referenceValue) === verification.providerReferenceHash,
+      );
+      if (
+        verification.state !== 'VERIFIED_REJECTED' ||
+        !matched ||
+        !Number.isFinite(Date.parse(verification.observedAt))
+      )
+        throw new ExternalSettlementException(
+          'COMPENSATING_NOT_PERMITTED',
+          'Provider rejection is not verified for this operation',
+        );
+      const lines = await manager.getRepository(LedgerLine).find({
+        where: { journalId: commitment.reservation_journal_id },
+        order: { lineNumber: 'ASC' },
+      });
+      const journalId = await this.ledgerService.postWithdrawalReleaseInTransaction(
+        manager,
+        {
+          idempotencyKey: `withdrawal-release:${commitment.id}`,
+          currency: operation.currency,
+          accountingUnit: operation.accountingUnit,
+          reference: commitment.id,
+          description: 'Release verified rejected withdrawal reservation',
+          correlationId: context.correlationId,
+          reversalOfJournalId: commitment.reservation_journal_id,
+          metadata: {
+            commitmentId: commitment.id,
+            externalOperationId: operation.id,
+            verifiedProviderReferenceHash: verification.providerReferenceHash,
+          },
+          lines: lines.map((line) => ({
+            accountId: line.ledgerAccountId,
+            amountMinor: line.amountMinor,
+            direction:
+              line.direction === LedgerEntryDirection.DEBIT
+                ? LedgerEntryDirection.CREDIT
+                : LedgerEntryDirection.DEBIT,
+          })),
+        },
+        operation.id,
+      );
+      await this.resolveCommitmentLimits(manager, commitment.idempotency_key, 'RELEASE');
+      const updatedCommitment = await manager.query<Array<{ id: string }>>(
+        `WITH changed AS (UPDATE financial_commitments SET state='RELEASED', resolution_journal_id=$2, resolved_at=clock_timestamp()
+         WHERE id=$1 AND state='RESERVED' RETURNING id) SELECT id FROM changed`,
+        [commitment.id, journalId],
+      );
+      const updatedWithdrawal = await manager.query<Array<{ id: string }>>(
+        `WITH changed AS (UPDATE withdrawals SET status='FAILED', failure_code='SETTLEMENT_REJECTED',
+         failure_message='Verified provider rejection', failure_status_code=409
+         WHERE id=$1 AND status IN ('PENDING','PROCESSING') RETURNING id) SELECT id FROM changed`,
+        [commitment.withdrawal_id],
+      );
+      if (updatedCommitment.length !== 1 || updatedWithdrawal.length !== 1)
+        throw new ExternalSettlementException(
+          'COMPENSATING_NOT_PERMITTED',
+          'Commitment release lost its binding',
+        );
+      await this.auditService.record(manager, {
+        entityType: 'FINANCIAL_COMMITMENT',
+        entityId: commitment.id,
+        action: 'RESERVATION_RELEASED',
+        actor: EXTERNAL_SETTLEMENT_INTERNAL_COMMAND_ACTOR,
+        correlationId: context.correlationId,
+        requestId: context.requestId,
+        newValues: {
+          externalOperationId: operation.id,
+          reservationJournalId: commitment.reservation_journal_id,
+          releaseJournalId: journalId,
+          providerReferenceHash: verification.providerReferenceHash,
+          providerObservedAt: verification.observedAt,
+        },
+      });
+      await this.recordOutboxFact({
+        manager,
+        eventType: 'A6_WITHDRAWAL_RESERVATION_RELEASED',
+        aggregateId: commitment.id,
+        payload: { commitmentId: commitment.id, externalOperationId: operation.id, journalId },
+        correlationId: context.correlationId,
+        requestContext: context,
+      });
+      return { commitmentId: commitment.id, journalId, replayed: false };
+    });
   }
 
   async getByOperation(externalOperationId: string): Promise<ExternalSettlementView | null> {
@@ -294,7 +471,42 @@ export class ExternalSettlementService {
       );
     }
 
+    const commitments = await manager.query<
+      Array<{
+        id: string;
+        reserve_account_id: string;
+        idempotency_key: string;
+        state: string;
+        withdrawal_id: string;
+      }>
+    >(
+      `SELECT id, reserve_account_id, idempotency_key, state, withdrawal_id FROM financial_commitments
+       WHERE external_operation_id=$1 FOR UPDATE`,
+      [operation.id],
+    );
+    const commitment = commitments[0];
+    if (command.decision === ExternalSettlementDecision.REJECT && commitment)
+      throw new ExternalSettlementException(
+        'INVALID_SETTLEMENT_STATE',
+        'Reserved withdrawals require independently verified rejection and release',
+      );
+    if (
+      command.decision === ExternalSettlementDecision.SETTLE &&
+      (!commitment || commitment.state !== 'RESERVED')
+    )
+      throw new ExternalSettlementException(
+        'INVALID_SETTLEMENT_STATE',
+        'An exact reserved financial commitment is required',
+      );
     const evidence = await this.resolveEvidence(manager, command.evidence, operation.id);
+    if (!evidence && commitment) {
+      // Do not create a terminal rejected settlement for an outstanding obligation:
+      // an authenticated provider reference may arrive later and must be retryable.
+      throw new ExternalSettlementException(
+        'EVIDENCE_REFERENCE_MISSING',
+        'Provider evidence is missing',
+      );
+    }
     if (!evidence) {
       const settlement = await this.persistSettlementRow(manager, {
         command,
@@ -397,7 +609,24 @@ export class ExternalSettlementService {
         command,
         operation,
         command.evidenceHash,
+        commitment!.reserve_account_id,
       );
+      await this.resolveCommitmentLimits(manager, commitment!.idempotency_key, 'COMMIT');
+      const updatedCommitment = await manager.query<Array<{ id: string }>>(
+        `WITH changed AS (UPDATE financial_commitments SET state='SETTLED', resolution_journal_id=$2,
+         resolved_at=clock_timestamp() WHERE id=$1 AND state='RESERVED' RETURNING id) SELECT id FROM changed`,
+        [commitment!.id, settlement.journalId],
+      );
+      const updatedWithdrawal = await manager.query<Array<{ id: string }>>(
+        `WITH changed AS (UPDATE withdrawals SET status='COMPLETED', journal_id=$2, completed_at=clock_timestamp()
+         WHERE id=$1 AND status IN ('PENDING','PROCESSING') RETURNING id) SELECT id FROM changed`,
+        [commitment!.withdrawal_id, settlement.journalId],
+      );
+      if (updatedCommitment.length !== 1 || updatedWithdrawal.length !== 1)
+        throw new ExternalSettlementException(
+          'INVALID_SETTLEMENT_STATE',
+          'Commitment resolution lost its binding',
+        );
       await this.auditSettlement(manager, {
         action: 'SETTLEMENT_POSTED',
         entityId: settlement.settlementId,
@@ -652,6 +881,16 @@ export class ExternalSettlementService {
       );
     }
 
+    const committed = await manager.query<Array<{ id: string }>>(
+      'SELECT id FROM financial_commitments WHERE external_operation_id=$1 FOR UPDATE',
+      [operation.id],
+    );
+    if (committed.length)
+      throw new ExternalSettlementException(
+        'COMPENSATING_NOT_PERMITTED',
+        'Commitment settlement compensation requires governed commitment recovery',
+      );
+
     const settlement = await manager
       .getRepository(ExternalSettlement)
       .createQueryBuilder('settlement')
@@ -872,6 +1111,7 @@ export class ExternalSettlementService {
     command: NormalizedSettleCommand,
     operation: ExternalOperation,
     evidenceHash: string,
+    reserveAccountId: string,
   ): Promise<ExternalSettlementView> {
     let settlementAssetAccountId: string;
     try {
@@ -893,38 +1133,42 @@ export class ExternalSettlementService {
 
     let journalId: string;
     try {
-      journalId = await this.ledgerService.postJournalInTransaction(manager, {
-        idempotencyKey: command.settlementKey,
-        currency: operation.currency,
-        accountingUnit: operation.accountingUnit,
-        reference: operation.id,
-        description: `a6-settlement:${operation.partnerKey}:${operation.capabilityKey}:${operation.operationType}`,
-        correlationId: command.requestContext.correlationId,
-        metadata: {
-          externalOperationId: operation.id,
-          externalOperationReference: this.externalOperationReference(operation.id),
-          partnerKey: operation.partnerKey,
-          capabilityKey: operation.capabilityKey,
-          operationType: operation.operationType,
-          verifiedProviderReferenceHash: evidenceHash,
-          verifiedProviderReferenceType: command.evidence.referenceType,
-          verifiedProviderReferenceValue: command.evidence.referenceValue,
-          verifiedProviderReferenceNamespace: command.evidence.namespace,
-          verifiedProviderSource: command.evidence.source,
+      journalId = await this.ledgerService.postWithdrawalSettlementInTransaction(
+        manager,
+        {
+          idempotencyKey: command.settlementKey,
+          currency: operation.currency,
+          accountingUnit: operation.accountingUnit,
+          reference: operation.id,
+          description: `a6-settlement:${operation.partnerKey}:${operation.capabilityKey}:${operation.operationType}`,
+          correlationId: command.requestContext.correlationId,
+          metadata: {
+            externalOperationId: operation.id,
+            externalOperationReference: this.externalOperationReference(operation.id),
+            partnerKey: operation.partnerKey,
+            capabilityKey: operation.capabilityKey,
+            operationType: operation.operationType,
+            verifiedProviderReferenceHash: evidenceHash,
+            verifiedProviderReferenceType: command.evidence.referenceType,
+            verifiedProviderReferenceValue: command.evidence.referenceValue,
+            verifiedProviderReferenceNamespace: command.evidence.namespace,
+            verifiedProviderSource: command.evidence.source,
+          },
+          lines: [
+            {
+              accountId: reserveAccountId,
+              direction: LedgerEntryDirection.DEBIT,
+              amountMinor: operation.amountMinor,
+            },
+            {
+              accountId: settlementAssetAccountId,
+              direction: LedgerEntryDirection.CREDIT,
+              amountMinor: operation.amountMinor,
+            },
+          ],
         },
-        lines: [
-          {
-            accountId: operation.ledgerAccountId,
-            direction: LedgerEntryDirection.DEBIT,
-            amountMinor: operation.amountMinor,
-          },
-          {
-            accountId: settlementAssetAccountId,
-            direction: LedgerEntryDirection.CREDIT,
-            amountMinor: operation.amountMinor,
-          },
-        ],
-      });
+        operation.id,
+      );
     } catch (error) {
       if (error instanceof ServiceUnavailableException) throw error;
       const code = this.ledgerFailureCode(error);
@@ -950,6 +1194,28 @@ export class ExternalSettlementService {
       decision: ExternalSettlementDecision.SETTLE,
       settlementAssetAccountId,
     });
+  }
+
+  private async resolveCommitmentLimits(
+    manager: EntityManager,
+    key: string,
+    action: 'COMMIT' | 'RELEASE',
+  ): Promise<void> {
+    const reservations = await manager.query<Array<{ status: string }>>(
+      'SELECT status FROM limit_reservations WHERE idempotency_key=$1 FOR UPDATE',
+      [key],
+    );
+    if (!reservations.length) return;
+    if (reservations.some((row) => row.status !== 'RESERVED'))
+      throw new ExternalSettlementException(
+        'INVALID_SETTLEMENT_STATE',
+        'Commitment limit reservations are not reserved',
+      );
+    if (!this.limitUsageService)
+      throw new ServiceUnavailableException('Limit recovery is unavailable');
+    if (action === 'COMMIT')
+      await this.limitUsageService.commitWithManager(manager, { idempotencyKey: key });
+    else await this.limitUsageService.releaseWithManager(manager, { idempotencyKey: key });
   }
 
   private async persistSettlementRow(

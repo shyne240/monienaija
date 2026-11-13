@@ -234,6 +234,116 @@ export class LedgerService {
     return this.postWithinTransaction(manager, normalized, false, false, true);
   }
 
+  /** Consume only the exact, still-reserved obligation. Provider verification is
+   * performed by the settlement domain before entering this internal boundary. */
+  async postWithdrawalSettlementInTransaction(
+    manager: EntityManager,
+    command: PostJournalCommand,
+    operationId: string,
+  ): Promise<string> {
+    const binding = await this.lockWithdrawalCommitment(manager, operationId);
+    const normalized = this.normalizeJournal(command);
+    const assets = await manager.query<Array<{ id: string }>>(
+      `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' AND is_active=true`,
+    );
+    if (
+      assets.length !== 1 ||
+      normalized.reversalOfJournalId ||
+      normalized.lines.length !== 2 ||
+      normalized.currency !== binding.currency ||
+      normalized.accountingUnit !== 'CUSTOMER_FUNDS' ||
+      !normalized.lines.some(
+        (line) =>
+          line.accountId === binding.reserve_id &&
+          line.direction === LedgerEntryDirection.DEBIT &&
+          line.amountMinor.toString() === binding.amount_minor,
+      ) ||
+      !normalized.lines.some(
+        (line) =>
+          line.accountId === assets[0]!.id &&
+          line.direction === LedgerEntryDirection.CREDIT &&
+          line.amountMinor.toString() === binding.amount_minor,
+      )
+    )
+      throw new ConflictException('Settlement does not match the reserved obligation');
+    await this.requireGovernedReversalCompliance(manager, [binding.source_id]);
+    return this.postWithinTransaction(manager, normalized, false, false, true);
+  }
+
+  /** Release only by the exact inversion of a still-reserved journal. Provider
+   * rejection must be independently verified by the calling recovery domain. */
+  async postWithdrawalReleaseInTransaction(
+    manager: EntityManager,
+    command: PostJournalCommand,
+    operationId: string,
+  ): Promise<string> {
+    const binding = await this.lockWithdrawalCommitment(manager, operationId);
+    const normalized = this.normalizeJournal(command);
+    if (normalized.reversalOfJournalId !== binding.reservation_journal_id)
+      throw new ConflictException('Release does not reverse the reserved obligation');
+    await this.requireGovernedReversalCompliance(manager, [binding.source_id]);
+    return this.postWithinTransaction(manager, normalized, true, false, true);
+  }
+
+  private async lockWithdrawalCommitment(
+    manager: EntityManager,
+    operationId: string,
+  ): Promise<{
+    source_id: string;
+    reserve_id: string;
+    amount_minor: string;
+    currency: string;
+    reservation_journal_id: string;
+  }> {
+    const rows = await manager.query<
+      Array<{
+        source_id: string;
+        reserve_id: string;
+        amount_minor: string;
+        currency: string;
+        reservation_journal_id: string;
+        customer_id: string;
+        wallet_id: string;
+        target_mapping_reference: string;
+        request_hash: string;
+      }>
+    >(
+      `SELECT a.ledger_account_id::text AS source_id, c.reserve_account_id::text AS reserve_id,
+              a.amount_minor::text, a.currency, c.reservation_journal_id::text,
+              a.customer_id::text, a.wallet_account_id::text AS wallet_id, o.target_mapping_reference, a.request_hash
+       FROM financial_commitments c JOIN financial_authorizations a ON a.id=c.authorization_id
+       JOIN external_operations o ON o.id=c.external_operation_id
+       JOIN withdrawals w ON w.id=c.withdrawal_id
+       JOIN wallet_accounts wa ON wa.id=a.wallet_account_id
+       WHERE c.external_operation_id=$1 AND c.state='RESERVED' AND c.request_hash=a.request_hash
+         AND o.resource_type='WITHDRAWAL' AND o.resource_id=w.id AND o.internal_command_id=c.id
+         AND o.customer_id=a.customer_id AND o.wallet_account_id=a.wallet_account_id
+         AND o.ledger_account_id=a.ledger_account_id AND o.amount_minor=a.amount_minor AND o.currency=a.currency
+         AND w.wallet_id=a.wallet_account_id AND w.amount_minor=a.amount_minor AND w.currency=a.currency
+         AND w.status IN ('PENDING','PROCESSING')
+         AND wa.customer_id=a.customer_id::text AND wa.ledger_account_id=a.ledger_account_id
+         AND wa.owner_class='CUSTOMER' AND wallet_owner_class(wa.customer_id)='CUSTOMER'
+       FOR UPDATE OF c,w`,
+      [operationId],
+    );
+    const binding = rows[0];
+    if (!binding) throw new ConflictException('An exact reserved financial commitment is required');
+    const requestHash = createHash('sha256')
+      .update(
+        JSON.stringify({
+          customerId: binding.customer_id,
+          walletId: binding.wallet_id,
+          amountMinor: binding.amount_minor,
+          currency: binding.currency,
+          target: binding.target_mapping_reference,
+        }),
+      )
+      .digest('hex');
+    if (requestHash !== binding.request_hash)
+      throw new ConflictException('Financial commitment authorization binding does not match');
+    return binding;
+  }
+
   /** For an already-authorized settlement compensation, in its owning transaction.
    * Callers must enforce their own approval and settlement controls; exact inversion is
    * independently verified against the immutable original journal below. */

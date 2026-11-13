@@ -30,7 +30,7 @@ import { LimitUsageService } from './limit-usage.service';
       LimitUsage,
       LimitReservation,
     ]),
-    OperationsModule,
+    forwardRef(() => OperationsModule),
     forwardRef(() => AuthorizationModule),
   ],
   controllers: [LimitCatalogController, LimitAssignmentController, LimitOperationsController],
