@@ -617,6 +617,54 @@ describe('Institutional foundation (ARENA 4 Phase 1) — real PostgreSQL + real 
     expect(governed[0]!.count).toBe('1');
   });
 
+  it('matches application and PostgreSQL digests for escaped and Unicode affiliation payloads', async () => {
+    const institutionId = await approvedInstitution();
+    const agent = await createAgent();
+    const body = affiliationBody(institutionId, 'ASSIGN', {
+      evidenceReference: 'Reference \"quoted\" \\ slash café 東京 💳',
+      reason: 'Reviewed: ₦10; line one\nline two\t✓ and \"quotes\"',
+    });
+    const result = await governedAffiliation(agent.id, body);
+    expect(result.executed.status).toBe(201);
+    const { controller } = await roles();
+    const replay = await executeAffiliation(controller.token, agent.id, {
+      ...body,
+      approvalId: result.created.body.approvalId,
+    });
+    expect(replay.status).toBe(201);
+    expect(replay.body).toEqual(result.executed.body);
+    const tampered = await executeAffiliation(controller.token, agent.id, {
+      ...body,
+      reason: `${body.reason} changed`,
+      approvalId: result.created.body.approvalId,
+    });
+    expect(tampered.status).toBe(409);
+  });
+
+  it('replays the original affiliation snapshot after a later governed transfer', async () => {
+    const firstInstitution = await approvedInstitution();
+    const secondInstitution = await approvedInstitution();
+    const agent = await createAgent();
+    const body = affiliationBody(firstInstitution, 'ASSIGN');
+    const assigned = await governedAffiliation(agent.id, body);
+    expect(assigned.executed.status).toBe(201);
+    const transferred = await governedAffiliation(
+      agent.id,
+      affiliationBody(secondInstitution, 'TRANSFER'),
+    );
+    expect(transferred.executed.status).toBe(201);
+    const { controller } = await roles();
+    const replay = await executeAffiliation(controller.token, agent.id, {
+      ...body,
+      approvalId: assigned.created.body.approvalId,
+    });
+    expect(replay.status).toBe(201);
+    expect(replay.body).toEqual(assigned.executed.body);
+    const rows = await affiliationRows(agent.id);
+    expect(rows.filter((r) => r.status === 'ACTIVE')).toHaveLength(1);
+    expect(rows.find((r) => r.status === 'ACTIVE')!.institution_id).toBe(secondInstitution);
+  });
+
   it('rejects a consumed affiliation approval replay with a changed target or evidence', async () => {
     const institutionId = await approvedInstitution();
     const agent = await createAgent();
@@ -830,6 +878,66 @@ describe('Institutional foundation (ARENA 4 Phase 1) — real PostgreSQL + real 
         [created.body.approvalId],
       ),
     ).rejects.toThrow();
+  });
+
+  it('rejects direct SQL forging of checker approval and institutional execution by the application connection', async () => {
+    const institutionId = await approvedInstitution();
+    const { operator } = await roles();
+    const reason = 'Review institutional regulatory status';
+    const created = await requestLifecycle(operator.token, institutionId, 'SUSPENDED', reason);
+    expect(created.status).toBe(201);
+    await expect(
+      dataSource.transaction(async (manager) => {
+        await manager.query(
+          `UPDATE privileged_action_approvals SET status='APPROVED', approved_by='forged-checker', approved_at=now() WHERE id=$1`,
+          [created.body.approvalId],
+        );
+        await manager.query(
+          `UPDATE privileged_action_approvals SET status='CONSUMED', consumed_at=now() WHERE id=$1`,
+          [created.body.approvalId],
+        );
+        await manager.query(
+          `UPDATE financial_institutions SET status='SUSPENDED', status_reason=$3, suspended_at=now(), suspended_by='forged-checker', lifecycle_approval_id=$2 WHERE id=$1`,
+          [institutionId, created.body.approvalId, reason],
+        );
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects checker forgery by a non-owner SQL role with application DML privileges', async () => {
+    const institutionId = await approvedInstitution();
+    const { operator } = await roles();
+    const reason = 'Review institutional regulatory status';
+    const created = await requestLifecycle(operator.token, institutionId, 'SUSPENDED', reason);
+    expect(created.status).toBe(201);
+    const role = `inst_app_${randomUUID().replace(/-/g, '')}`;
+    await dataSource.query(`CREATE ROLE ${role} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE`);
+    try {
+      await dataSource.query(`GRANT USAGE ON SCHEMA public TO ${role}`);
+      await dataSource.query(
+        `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${role}`,
+      );
+      await expect(
+        dataSource.transaction(async (manager) => {
+          await manager.query(`SET LOCAL ROLE ${role}`);
+          await manager.query(
+            `UPDATE privileged_action_approvals SET status='APPROVED', approved_by='forged-checker', approved_at=now() WHERE id=$1`,
+            [created.body.approvalId],
+          );
+          await manager.query(
+            `UPDATE privileged_action_approvals SET status='CONSUMED', consumed_at=now() WHERE id=$1`,
+            [created.body.approvalId],
+          );
+          await manager.query(
+            `UPDATE financial_institutions SET status='SUSPENDED', status_reason=$3, suspended_at=now(), suspended_by='forged-checker', lifecycle_approval_id=$2 WHERE id=$1`,
+            [institutionId, created.body.approvalId, reason],
+          );
+        }),
+      ).rejects.toThrow();
+    } finally {
+      await dataSource.query(`DROP OWNED BY ${role}`);
+      await dataSource.query(`DROP ROLE ${role}`);
+    }
   });
 
   it('rejects changing approved lifecycle payload metadata with direct SQL', async () => {

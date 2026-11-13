@@ -1,0 +1,31 @@
+import { CreateInstitutionalFinancialOwnership1785753600401 } from './support/temporary-phase2-0401';
+import { createEmptyIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
+
+describe('temporary source-pinned 0401/0500 migration ordering probe', () => {
+  it.each(['0401-before-0500', '0500-before-0401'])('runs schema ordering %s', async (order) => {
+    const db = await createEmptyIntegrationDataSource(order === '0401-before-0500' ? 'instp2first' : 'instfixfirst');
+    try {
+      await db.initialize();
+      const initial = [...db.migrations];
+      const old = initial.filter((m) => Number(m.name?.slice(-13)) <= 1785753600400);
+      const fix = initial.find((m) => m.name === 'InstitutionGovernanceExecutionIntegrity1785753600500')!;
+      const phase2 = new CreateInstitutionalFinancialOwnership1785753600401();
+      db.migrations.splice(0, db.migrations.length, ...old);
+      await db.runMigrations({ transaction: 'all' });
+      if (order === '0500-before-0401') {
+        db.migrations.splice(0, db.migrations.length, ...old, fix);
+        expect((await db.runMigrations({ transaction: 'all' })).map(m => m.name)).toEqual([fix.name]);
+        db.migrations.splice(0, db.migrations.length, ...old, phase2, fix);
+        expect((await db.runMigrations({ transaction: 'all' })).map(m => m.name)).toEqual([phase2.name]);
+      } else {
+        db.migrations.splice(0, db.migrations.length, ...old, phase2, fix);
+        expect((await db.runMigrations({ transaction: 'all' })).map(m => m.name)).toEqual([phase2.name, fix.name]);
+      }
+      expect(await db.showMigrations()).toBe(false);
+      const tables = await db.query<Array<{name:string}>>(`SELECT table_name AS name FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('customer_institution_enrolments','governed_institution_lifecycle_executions') ORDER BY table_name`);
+      expect(tables.map(r => r.name)).toEqual(['customer_institution_enrolments', 'governed_institution_lifecycle_executions']);
+    } finally {
+      await destroyIntegrationDataSource(db);
+    }
+  }, 180000);
+});
