@@ -122,7 +122,11 @@ export class AgentCashToCashClaimService {
       try {
         return await this.execute({ ...claim, transferId: id });
       } catch (error) {
-        if (error instanceof HttpException && error.getStatus() < 500)
+        if (
+          error instanceof HttpException &&
+          error.getStatus() < 500 &&
+          !this.isRetryableClaimError(error)
+        )
           throw this.locatorUnavailable();
         throw new ServiceUnavailableException({
           code: 'C2C_RETRY_REQUIRED',
@@ -156,6 +160,17 @@ export class AgentCashToCashClaimService {
         message: 'Claim outcome unavailable; recover before retrying',
       });
     }
+  }
+
+  private isRetryableClaimError(error: HttpException): boolean {
+    // Keep customer-specific eligibility failures indistinguishable from an unknown
+    // locator. Evidence-reader outages and exhausted transaction retries are not
+    // eligibility decisions and require recovery, not a misleading 404.
+    if (error.message === 'Trusted KYC evidence is unavailable') return true;
+    const response = error.getResponse();
+    if (typeof response !== 'object' || response === null) return false;
+    const code = (response as { code?: unknown }).code;
+    return code === 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED';
   }
 
   private locatorUnavailable(): NotFoundException {

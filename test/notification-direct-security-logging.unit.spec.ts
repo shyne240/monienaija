@@ -53,7 +53,11 @@ describe('direct security notification diagnostics', () => {
         .mockResolvedValueOnce([]);
       const issuedAt = new Date();
       const service = new AgentDeskOtpService(
-        { query, manager: {} } as never,
+        {
+          query,
+          manager: {},
+          transaction: async (fn: (m: unknown) => Promise<void>) => fn({}),
+        } as never,
         {
           issueChallenge: async () => ({
             id: 'challenge',
@@ -62,6 +66,7 @@ describe('direct security notification diagnostics', () => {
           }),
         } as never,
         { record: async () => undefined } as never,
+        { require: async () => undefined } as never,
         failingProvider(throws),
       );
       const warn = jest.spyOn((service as any).logger, 'warn').mockImplementation(() => undefined);
