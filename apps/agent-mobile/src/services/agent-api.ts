@@ -489,6 +489,13 @@ export async function agentCashOut(request: AgentCashOutRequest): Promise<AgentC
   );
 }
 
+/** Cancels only an uncompleted intent; completed outcomes must be recovered. */
+export async function cancelPendingAgentCashOut(
+  idempotencyKey: string,
+): Promise<{ status: 'CANCELLED' }> {
+  return ApiClient.post('api/v1/agents/cash-out/cancel-pending', { idempotencyKey });
+}
+
 /** Read-only recovery. The server derives all transaction details from the receipt. */
 export async function recoverAgentCashOut(idempotencyKey: string): Promise<AgentCashOutResult> {
   return ApiClient.post<AgentCashOutResult>('api/v1/agents/cash-out/recover', { idempotencyKey });

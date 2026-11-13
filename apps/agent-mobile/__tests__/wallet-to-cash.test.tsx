@@ -27,6 +27,7 @@ jest.mock('../src/services/agent-api', () => ({
   requestAgentMfaChallenge: jest.fn(),
   agentCashOut: jest.fn(),
   recoverAgentCashOut: jest.fn(),
+  cancelPendingAgentCashOut: jest.fn(),
   describeApiError: jest.requireActual('../src/services/agent-api').describeApiError,
   describeCashOutError: jest.requireActual('../src/services/agent-api').describeCashOutError,
   isAmbiguousOperationOutcome: jest.requireActual('../src/services/agent-api').isAmbiguousOperationOutcome,
@@ -37,6 +38,7 @@ const mockApi = jest.requireMock('../src/services/agent-api') as {
   requestAgentMfaChallenge: jest.Mock;
   agentCashOut: jest.Mock;
   recoverAgentCashOut: jest.Mock;
+  cancelPendingAgentCashOut: jest.Mock;
 };
 
 const mockNavigate = jest.fn();
@@ -248,8 +250,10 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     idempotencyKey: 'w2c-test-idemp-1',
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    useAuthStore.setState({ agentId: 'internal-agent-uuid-1' });
+    await clearPendingAgentOperation('internal-agent-uuid-1', 'CASH_OUT');
     mockRoute = { key: 'k', name: 'WalletToCashConfirm', params };
   });
 
@@ -263,6 +267,7 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
 
   test('client-side validation: blocks submit if MFA challenge has not been requested', async () => {
     const { getByTestId, getByText } = wrap(<WalletToCashConfirmScreen />);
+    await waitFor(() => expect(getByTestId('w2c-confirm-submit').props.accessibilityState.disabled).toBe(false));
 
     fireEvent.changeText(getByTestId('w2c-otp-input'), '123456');
     fireEvent.changeText(getByTestId('w2c-customer-pin-input'), '1111');
@@ -763,6 +768,52 @@ describe('Wallet→Cash — Idempotency-Key durability across a simulated proces
     expect(mockApi.agentCashOut).not.toHaveBeenCalled();
     expect(mockApi.requestAgentMfaChallenge).not.toHaveBeenCalled();
     expect(await loadPendingAgentOperation(agentId, 'CASH_OUT')).toBeNull();
+  });
+
+  test('unresolved operation only clears after server-confirmed cancellation', async () => {
+    await savePendingAgentOperation({agentId,operationType:'CASH_OUT',idempotencyKey:'pending-cancel',counterpartyId:customer.customerId,amountMinor:'300000',currency:'NGN',createdAt:new Date().toISOString()});
+    mockRoute={key:'k',name:'WalletToCashConfirm',params:{customer,amountMinor:'300000',idempotencyKey:'fresh'}};
+    const screen = wrap(<WalletToCashConfirmScreen />);
+    await waitFor(() => expect(screen.getByTestId('w2c-cancel-pending')).toBeTruthy());
+    mockApi.cancelPendingAgentCashOut.mockRejectedValueOnce(new Error('completed'));
+    fireEvent.press(screen.getByTestId('w2c-cancel-pending'));
+    await waitFor(() => expect(screen.getByTestId('w2c-recovery-error')).toBeTruthy());
+    expect(await loadPendingAgentOperation(agentId,'CASH_OUT')).not.toBeNull();
+    mockApi.cancelPendingAgentCashOut.mockResolvedValueOnce({status:'CANCELLED'});
+    fireEvent.press(screen.getByTestId('w2c-cancel-pending'));
+    await waitFor(() => expect(mockReset).toHaveBeenCalled());
+    expect(await loadPendingAgentOperation(agentId,'CASH_OUT')).toBeNull();
+  });
+
+  test('lost response then remount and reauthentication recovers without a second submission', async () => {
+    mockRoute={key:'first',name:'WalletToCashConfirm',params:{customer,amountMinor:'300000',idempotencyKey:'lost-response'}};
+    const networkErr = new Error('lost response'); networkErr.name = 'NetworkError';
+    mockApi.agentCashOut.mockRejectedValueOnce(networkErr);
+    const first = wrap(<WalletToCashConfirmScreen />);
+    await fillAndSubmit(first);
+    await waitFor(() => expect(first.getByTestId('w2c-recovery-card')).toBeTruthy());
+    first.unmount();
+    useAuthStore.setState({agentId:null});
+    useAuthStore.setState({agentId});
+    mockRoute={key:'restart',name:'WalletToCashConfirm',params:{customer,amountMinor:'300000',idempotencyKey:'new-key'}};
+    mockApi.recoverAgentCashOut.mockResolvedValueOnce({...cashOutResult,agentId,idempotencyKey:'lost-response',status:'REPLAYED',replayed:true});
+    const restarted = wrap(<WalletToCashConfirmScreen />);
+    await waitFor(() => expect(restarted.getByTestId('w2c-recover-button')).toBeTruthy());
+    fireEvent.press(restarted.getByTestId('w2c-recover-button'));
+    await waitFor(() => expect(mockReset).toHaveBeenCalled());
+    expect(mockApi.agentCashOut).toHaveBeenCalledTimes(1);
+    expect(mockApi.requestAgentMfaChallenge).toHaveBeenCalledTimes(1);
+    expect(mockApi.recoverAgentCashOut).toHaveBeenCalledWith('lost-response');
+  });
+
+  test('durable storage failure prevents submission', async () => {
+    mockRoute={key:'k',name:'WalletToCashConfirm',params:{customer,amountMinor:'300000',idempotencyKey:'storage-failure'}};
+    const screen = wrap(<WalletToCashConfirmScreen />);
+    const storage = jest.spyOn(SecureStorage, 'setDurable').mockRejectedValueOnce(new Error('disk unavailable'));
+    await fillAndSubmit(screen);
+    await waitFor(() => expect(screen.getByTestId('w2c-confirm-error').props.children).toMatch(/storage unavailable/i));
+    expect(mockApi.agentCashOut).not.toHaveBeenCalled();
+    storage.mockRestore();
   });
 
   test('3. success clears the persisted operation', async () => {
