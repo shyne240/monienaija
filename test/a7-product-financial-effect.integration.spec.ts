@@ -880,7 +880,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
     });
 
-    it('does not treat an uncommitted operation as an eligibility exception', async () => {
+    it('never settles an uncommitted withdrawal, even after the customer is active', async () => {
       const op = await seedExternalOperation();
       const cmd = {
         externalOperationId: op.opId,
@@ -906,10 +906,11 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
       expect(await externalSettlement.getByOperation(op.opId)).toBeNull();
       await dataSource.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [op.customerId]);
-      expect((await externalSettlement.settleVerifiedOutcome(cmd)).settlement.status).toBe(
-        'POSTED',
+      await expect(externalSettlement.settleVerifiedOutcome(cmd)).rejects.toThrow(
+        'An exact reserved financial commitment is required',
       );
-      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
+      expect(await externalSettlement.getByOperation(op.opId)).toBeNull();
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
     });
 
     it('concurrent settlement creates exactly one journal and replays it', async () => {

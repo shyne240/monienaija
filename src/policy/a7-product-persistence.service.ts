@@ -599,6 +599,13 @@ export class A7ProductPersistenceService {
       );
       const obs = observations[0];
       if (!obs) throw new ConflictException('A7 verified observation does not match obligation');
+      const auth = await this.recordAuthorization(
+        manager,
+        principal.customerId,
+        principal.sessionId,
+        current.command_id,
+        'execute',
+      );
       let authority: Awaited<ReturnType<A7InboundExecutionAuthority['authorize']>>;
       try {
         authority = await this.executionAuthority.authorize(manager, {
@@ -642,13 +649,6 @@ export class A7ProductPersistenceService {
       });
       if (result.status !== 'CREDITED' || result.replayed)
         throw new ConflictException('Inbound receipt already used or requires review');
-      const auth = await this.recordAuthorization(
-        manager,
-        principal.customerId,
-        principal.sessionId,
-        current.command_id,
-        'transition',
-      );
       await manager.query(
         `INSERT INTO a7_product_lifecycle_transitions(id,lifecycle_id,from_state,to_state,from_version,to_version,authorization_event_id,idempotency_key_hash,request_hash) VALUES($1,$2,$3,'LIFECYCLE_CREDITED',$4,$5,$6,$7,$8)`,
         [
@@ -706,7 +706,7 @@ export class A7ProductPersistenceService {
     customerId: string,
     sessionId: string,
     commandId: string,
-    action: 'create' | 'transition',
+    action: 'create' | 'transition' | 'execute',
   ) {
     const decision = this.authorization.evaluate(
       {

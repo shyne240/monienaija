@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { ValidationPipe } from '@nestjs/common';
 import { AuditService } from '../src/operations/audit.service';
+import { ReconciliationService } from '../src/reconciliation/reconciliation.service';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
 import { isDeepStrictEqual } from 'node:util';
@@ -1423,6 +1424,54 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
         )
       )[0]?.n,
     ).toBe('0');
+  });
+
+  it('retains later contradictory verified evidence in the unresolved reconciliation queue', async () => {
+    const f = await inboundFixture(true);
+    await service.transition({
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 1,
+      nextState: 'LIFECYCLE_ADMITTED',
+      idempotencyKey: 'admit',
+    });
+    await service.executeInbound({
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 2,
+      idempotencyKey: 'execute',
+    });
+    const rows = await db.query<Array<{ provider_reference: string }>>(
+      'SELECT provider_reference FROM inbound_funding_observations WHERE id=$1',
+      [f.observationId],
+    );
+    const reference = rows[0]!.provider_reference;
+    const evidence = providerEvidence.get(reference)!;
+    if (evidence.state !== 'RECEIVED') throw new Error('missing test evidence');
+    providerEvidence.set(reference, { ...evidence, amountMinor: '101' });
+    await app
+      .get(InboundFundingService)
+      .observe({
+        providerKey: 'TESTPROVIDER',
+        providerReference: reference,
+        correlationId: 'late-conflict',
+      });
+    const unresolved = await app.get(ReconciliationService).getUnresolvedInboundObservations();
+    expect(
+      unresolved.some(
+        (x) =>
+          x.provider_reference_hash === createHash('sha256').update(reference).digest('hex') &&
+          x.amount_minor === '101',
+      ),
+    ).toBe(true);
+    expect(
+      (
+        await db.query<Array<{ n: string }>>(
+          'SELECT count(*) n FROM inbound_funding_receipts WHERE virtual_account_id=$1',
+          [f.routeId],
+        )
+      )[0]?.n,
+    ).toBe('1');
   });
   it('rejects a retired inbound policy profile', async () => {
     const f = await inboundFixture();
