@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { ConflictException, ValidationPipe } from '@nestjs/common';
 import { AuditService } from '../src/operations/audit.service';
 import { OutboxService } from '../src/operations/outbox.service';
+import { LedgerService } from '../src/ledger/ledger.service';
 import { ReconciliationService } from '../src/reconciliation/reconciliation.service';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
@@ -9,7 +10,9 @@ import { isDeepStrictEqual } from 'node:util';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { DataSource } from 'typeorm';
+import { DataSource, type DeepPartial } from 'typeorm';
+import { A2FinanceRoleAssignment } from '../src/authorization/workforce-authentication.entity';
+import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import type { EntityManager } from 'typeorm';
 import {
   A7_INBOUND_ADMISSION_AUTHORITY,
@@ -23,7 +26,10 @@ import {
   INBOUND_FUNDING_VERIFIER,
   type InboundVerification,
 } from '../src/virtual-account/inbound-funding-verifier';
-import { INBOUND_INSTITUTION_AUTHORITY } from '../src/virtual-account/inbound-institution-authority';
+import {
+  INBOUND_INSTITUTION_AUTHORITY,
+  type InboundInstitutionAuthority,
+} from '../src/virtual-account/inbound-institution-authority';
 import { InboundFundingService } from '../src/virtual-account/inbound-funding.service';
 import { A7_INBOUND_ADMISSION_PROFILE } from '../src/policy/a7-inbound-admission.profile';
 import { TypeOrmPolicyProfileVersionRepository } from '../src/policy/capability-policy-persistence.repositories';
@@ -124,8 +130,27 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
             used_minor: string;
           }>
         >(
-          'SELECT id,approved,held,max_minor,used_minor FROM test_a7_execution_authority WHERE command_id=$1 AND observation_id=$2 FOR UPDATE',
-          [input.commandId, input.observationId],
+          `SELECT t.id,t.approved,t.held,t.max_minor,t.used_minor FROM test_a7_execution_authority t
+          JOIN a7_product_commands c ON c.id=t.command_id
+          JOIN inbound_funding_observations o ON o.id=t.observation_id
+          WHERE t.command_id=$1 AND t.observation_id=$2 AND c.customer_id=$3 AND c.binding_id=$4
+            AND c.virtual_account_id=$5 AND c.wallet_account_id=$6 AND c.inbound_observation_id=o.id
+            AND o.provider_key=$7 AND o.provider_reference_hash=$8 AND o.evidence_hash=$9
+            AND o.amount_minor=$10 AND o.currency=$11 AND c.policy_decision_reference=$12 FOR UPDATE OF t`,
+          [
+            input.commandId,
+            input.observationId,
+            input.customerId,
+            input.bindingId,
+            input.virtualAccountId,
+            input.walletAccountId,
+            input.providerKey,
+            input.providerReferenceHash,
+            input.evidenceHash,
+            input.amountMinor,
+            input.currency,
+            input.admissionPolicyReference,
+          ],
         );
         const row = rows[0];
         if (
@@ -205,11 +230,23 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
       .useValue({
         authorize: async (
           manager: EntityManager,
-          input: { virtualAccountId: string | null; walletAccountId: string | null },
+          input: Parameters<InboundInstitutionAuthority['authorize']>[1],
         ) => {
           const rows = await manager.query<Array<{ id: string }>>(
-            `SELECT a.id FROM test_a7_inbound_authority a JOIN virtual_accounts v ON v.id=a.route_id AND v.wallet_id=$2 WHERE a.route_id=$1 AND a.approved AND NOT a.held FOR SHARE OF a,v`,
-            [input.virtualAccountId, input.walletAccountId],
+            `SELECT a.id FROM test_a7_inbound_authority a JOIN virtual_accounts v ON v.id=a.route_id AND v.wallet_id=$2
+             JOIN inbound_funding_observations o ON o.provider_key=v.provider AND o.bank_code=v.bank_code AND o.account_number=v.account_number
+             WHERE a.route_id=$1 AND a.approved AND NOT a.held AND v.provider=$3 AND v.bank_code=$4 AND v.account_number=$5
+             AND o.currency=$6 AND o.amount_minor=$7 AND o.provider_reference_hash=$8 FOR SHARE OF a,v,o`,
+            [
+              input.virtualAccountId,
+              input.walletAccountId,
+              input.providerKey,
+              input.bankCode,
+              input.accountNumber,
+              input.currency,
+              input.amountMinor,
+              input.providerReferenceHash,
+            ],
           );
           return rows.length ? 'AUTHORIZED' : 'DENIED';
         },
@@ -328,7 +365,7 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
     );
     return { ...p, token, sessionId };
   }
-  async function inboundFixture(withObservation = false) {
+  async function inboundFixture(withObservation = false, createByHttp = false) {
     const p = await subject();
     const routeId = randomUUID();
     const evidenceId = randomUUID();
@@ -514,16 +551,37 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
       );
       observationId = rows[0]!.id;
     }
-    const created = await service.create({
+    const commandInput = {
       token: p.token,
       inboundObservationId: observationId,
-      operationType: 'INBOUND_FUNDING',
+      operationType: 'INBOUND_FUNDING' as const,
       bindingId: p.bindingId,
       virtualAccountId: routeId,
       intendedAmountMinor: '100',
       policyDecisionReference: decision.decisionReference,
       idempotencyKey: 'inbound',
-    });
+    };
+    let created: Awaited<ReturnType<typeof service.create>>;
+    if (createByHttp) {
+      const response = await http.inject({
+        method: 'POST',
+        url: '/api/v1/customers/me/inbound-funding/commands',
+        headers: { authorization: `Bearer ${p.token}`, 'idempotency-key': 'inbound' },
+        payload: {
+          bindingId: p.bindingId,
+          virtualAccountId: routeId,
+          inboundObservationId: observationId,
+          intendedAmountMinor: '100',
+          policyDecisionReference: decision.decisionReference,
+        },
+      });
+      expect(response.statusCode).toBe(200);
+      const body = response.json<{ commandReference: string; lifecycleReference: string }>();
+      const command = await service.findCommand(body.commandReference);
+      const lifecycle = await service.findLifecycle(body.lifecycleReference);
+      if (!command || !lifecycle) throw new Error('HTTP did not persist the command and lifecycle');
+      created = { command, lifecycle, replayed: false };
+    } else created = await service.create(commandInput);
     const executionId = randomUUID();
     if (observationId)
       await db.query(
@@ -1139,7 +1197,7 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
   });
 
   it('executes a verified inbound observation atomically through authenticated HTTP exactly once', async () => {
-    const f = await inboundFixture(true);
+    const f = await inboundFixture(true, true);
     const admit = await http.inject({
       method: 'POST',
       url: `/api/v1/customers/me/inbound-funding/lifecycles/${f.created.lifecycle.id}/admission`,
@@ -1161,6 +1219,51 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
     ]);
     const result = outcomes[0].json<{ state: string; receiptId: string }>();
     expect(result.state).toBe('LIFECYCLE_CREDITED');
+    const replayResult = outcomes[1].json<{
+      state: string;
+      receiptId: string;
+      lifecycleId: string;
+      version: number;
+    }>();
+    expect(replayResult).toMatchObject({
+      state: result.state,
+      receiptId: result.receiptId,
+      lifecycleId: f.created.lifecycle.id,
+      version: 3,
+    });
+    const observation = await db.query<
+      Array<{
+        provider_key: string;
+        provider_reference_hash: string;
+        evidence_hash: string;
+        amount_minor: string;
+        currency: string;
+      }>
+    >(
+      'SELECT provider_key,provider_reference_hash,evidence_hash,amount_minor::text,currency FROM inbound_funding_observations WHERE id=$1',
+      [f.observationId],
+    );
+    const receipt = await db.query<
+      Array<{
+        provider_key: string;
+        provider_reference_hash: string;
+        evidence_hash: string;
+        virtual_account_id: string;
+        wallet_account_id: string;
+        amount_minor: string;
+        currency: string;
+      }>
+    >(
+      'SELECT provider_key,provider_reference_hash,evidence_hash,virtual_account_id,wallet_account_id,amount_minor::text,currency FROM inbound_funding_receipts WHERE id=$1',
+      [result.receiptId],
+    );
+    expect(receipt[0]).toMatchObject({
+      ...observation[0],
+      virtual_account_id: f.routeId,
+      wallet_account_id: f.walletAccountId,
+    });
+    expect(f.created.command.inbound_observation_id).toBe(f.observationId);
+
     const rows = await db.query<
       Array<{
         status: string;
@@ -1683,6 +1786,202 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
       )[0]?.n,
     ).toBe('0');
     expect((await service.executeInbound(command)).lifecycle.state).toBe('LIFECYCLE_CREDITED');
+  });
+
+  it('deduplicates a verified observation and rejects linking it to another customer route over HTTP', async () => {
+    const f = await inboundFixture(true, true);
+    const obs = (
+      await db.query<Array<{ provider_reference: string }>>(
+        'SELECT provider_reference FROM inbound_funding_observations WHERE id=$1',
+        [f.observationId],
+      )
+    )[0]!;
+    await app.get(InboundFundingService).observe({
+      providerKey: 'TESTPROVIDER',
+      providerReference: obs.provider_reference,
+      correlationId: 'duplicate',
+    });
+    expect(
+      (
+        await db.query<Array<{ n: string }>>(
+          'SELECT count(*) n FROM inbound_funding_observations WHERE provider_reference=$1',
+          [obs.provider_reference],
+        )
+      )[0]?.n,
+    ).toBe('1');
+    const other = await inboundFixture();
+    const attempt = await http.inject({
+      method: 'POST',
+      url: '/api/v1/customers/me/inbound-funding/commands',
+      headers: { authorization: `Bearer ${other.token}`, 'idempotency-key': 'foreign-observation' },
+      payload: {
+        bindingId: other.bindingId,
+        virtualAccountId: other.routeId,
+        inboundObservationId: f.observationId,
+        intendedAmountMinor: '100',
+        policyDecisionReference: other.decision.decisionReference,
+      },
+    });
+    expect(attempt.statusCode).toBe(409);
+    expect(
+      (
+        await db.query<Array<{ n: string }>>(
+          'SELECT count(*) n FROM a7_product_commands WHERE inbound_observation_id=$1',
+          [f.observationId],
+        )
+      )[0]?.n,
+    ).toBe('1');
+  });
+  it('rolls back execution when current institution authorization is withdrawn', async () => {
+    const f = await inboundFixture(true, true);
+    await service.transition({
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 1,
+      nextState: 'LIFECYCLE_ADMITTED',
+      idempotencyKey: 'admit',
+    });
+    await db.query('UPDATE test_a7_inbound_authority SET approved=false WHERE id=$1', [
+      f.evidenceId,
+    ]);
+    await expect(
+      service.executeInbound({
+        token: f.token,
+        lifecycleId: f.created.lifecycle.id,
+        expectedVersion: 2,
+        idempotencyKey: 'execute',
+      }),
+    ).rejects.toThrow('institution does not authorize');
+    expect(
+      (
+        await db.query<Array<{ used_minor: string }>>(
+          'SELECT used_minor::text FROM test_a7_execution_authority WHERE id=$1',
+          [f.executionId],
+        )
+      )[0]?.used_minor,
+    ).toBe('0');
+    expect(
+      (
+        await db.query<Array<{ n: string }>>(
+          'SELECT count(*) n FROM inbound_funding_receipts WHERE virtual_account_id=$1',
+          [f.routeId],
+        )
+      )[0]?.n,
+    ).toBe('0');
+    expect(
+      (
+        await db.query<Array<{ n: string }>>(
+          'SELECT count(*) n FROM inbound_funding_observations WHERE id=$1',
+          [f.observationId],
+        )
+      )[0]?.n,
+    ).toBe('1');
+  });
+  it('does not reverse a genuinely credited inbound receipt even with generic maker-checker approval', async () => {
+    const f = await inboundFixture(true, true);
+    await service.transition({
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 1,
+      nextState: 'LIFECYCLE_ADMITTED',
+      idempotencyKey: 'admit',
+    });
+    const executed = await service.executeInbound({
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 2,
+      idempotencyKey: 'execute',
+    });
+    const receipt = (
+      await db.query<Array<{ journal_id: string }>>(
+        'SELECT journal_id FROM inbound_funding_receipts WHERE id=$1',
+        [executed.lifecycle.execution_receipt_id],
+      )
+    )[0]!;
+    const provision = async (roleKey: string) => {
+      const principalId = `a7-inbound-recovery-test:${roleKey}:${randomUUID()}`;
+      const now = new Date();
+      await db.getRepository(A2FinanceRoleAssignment).save({
+        id: randomUUID(),
+        assignmentReference: `a7-inbound-test:${principalId}`,
+        assignmentVersion: 1,
+        principalId,
+        roleKey,
+        scopes: [],
+        status: 'ACTIVE',
+        initiatedScope: 'SUPER_ADMIN_SCOPE',
+        interim: true,
+        effectiveFrom: new Date(now.getTime() - 60000),
+        effectiveTo: new Date(now.getTime() + 3600000),
+        assignedBy: 'test-harness',
+        assignedAt: now,
+        revokedBy: null,
+        revokedAt: null,
+        bootstrapReference: null,
+        approvalIds: [],
+        auditReferences: [],
+      } as DeepPartial<A2FinanceRoleAssignment>);
+      const session = await app.get(A2WorkforceSessionService).establish({
+        issuer: 'https://local-dev-identity.monienaija.invalid',
+        subject: principalId,
+        principalId,
+        audience: ['workforce-admin'],
+        issuedAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + 3600000).toISOString(),
+        authenticatedAt: now.toISOString(),
+        assuranceLevel: 'MFA',
+        amr: ['pwd', 'otp'],
+        acr: null,
+        signingKeyId: 'test-harness-key',
+      });
+      return session.accessToken;
+    };
+    const maker = await provision('FINANCE_PREPARER');
+    const checker = await provision('FINANCE_CONTROLLER');
+    const reason = 'Test unsupported inbound receipt recovery';
+    const created = await request(app.getHttpServer())
+      .post(`/api/v1/ledger/journals/${receipt.journal_id}/reversal-request`)
+      .set('Authorization', `Bearer ${maker}`)
+      .send({ reason });
+    expect(created.status).toBe(201);
+    const approvalId = (created.body as { approvalId: string }).approvalId;
+    const approval = await request(app.getHttpServer())
+      .post(`/api/v1/internal/a2/workforce/approvals/${approvalId}/approve`)
+      .set('Authorization', `Bearer ${checker}`)
+      .send({ comment: 'controlled test' });
+    expect(approval.status).toBe(201);
+    const before = (
+      await db.query<Array<{ n: string }>>('SELECT count(*) n FROM ledger_journals')
+    )[0]!.n;
+    const attempt = () =>
+      request(app.getHttpServer())
+        .post(`/api/v1/ledger/journals/${receipt.journal_id}/reversal`)
+        .set('Authorization', `Bearer ${checker}`)
+        .send({ reason, approvalId, idempotencyKey: 'inbound-reversal-not-permitted' });
+    for (let n = 0; n < 2; n++) {
+      const denied = await attempt();
+      expect(denied.status).toBe(409);
+      expect((denied.body as { message: string }).message).toBe(
+        'Inbound funding reversal requires governed receipt recovery',
+      );
+    }
+    await expect(
+      app.get(LedgerService).reverseJournal(receipt.journal_id, randomUUID()),
+    ).rejects.toThrow('Inbound funding reversal requires a governed receipt recovery');
+    expect(
+      (await db.query<Array<{ n: string }>>('SELECT count(*) n FROM ledger_journals'))[0]!.n,
+    ).toBe(before);
+    expect(
+      await db.query('SELECT id FROM ledger_journals WHERE reversal_of_journal_id=$1', [
+        receipt.journal_id,
+      ]),
+    ).toHaveLength(0);
+    expect(
+      await db.query('SELECT status FROM privileged_action_approvals WHERE id=$1', [approvalId]),
+    ).toEqual([{ status: 'APPROVED' }]);
+    expect(
+      (await service.findLifecycle(f.created.lifecycle.lifecycle_reference))?.execution_receipt_id,
+    ).toBe(executed.lifecycle.execution_receipt_id);
   });
   it('rejects a retired inbound policy profile', async () => {
     const f = await inboundFixture();

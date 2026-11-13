@@ -7,6 +7,10 @@ import { randomUUID } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
 import { TransferService } from '../src/transfer/transfer.service';
+import {
+  KycTierEvidenceReader,
+  type TierEvidenceSnapshot,
+} from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { CustomerFundingService } from '../src/customer-funding/customer-funding.service';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
@@ -35,6 +39,7 @@ describe('V1-SYSTEM-01 suspended-customer financial boundary (real PostgreSQL)',
   let fundingService: CustomerFundingService;
   let walletService: WalletService;
   let ledgerService: LedgerService;
+  const snapshots = new Map<string, TierEvidenceSnapshot>();
 
   const operatorChecker: any = {
     type: 'OPERATOR',
@@ -60,6 +65,10 @@ describe('V1-SYSTEM-01 suspended-customer financial boundary (real PostgreSQL)',
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue({
+        read: (_manager: unknown, id: string) => Promise.resolve(snapshots.get(id) ?? null),
+      })
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -72,6 +81,33 @@ describe('V1-SYSTEM-01 suspended-customer financial boundary (real PostgreSQL)',
     fundingService = moduleRef.get(CustomerFundingService);
     walletService = moduleRef.get(WalletService);
     ledgerService = moduleRef.get(LedgerService);
+    // Controlled local policy and synthetic trusted reader: exercise the real
+    // eligibility gate without activating or asserting a production policy.
+    const proposal = randomUUID(),
+      requirements = { all: [], any: [] };
+    const definition = {
+      regulatoryRequirementsConfirmed: true,
+      effectiveFrom: '2020-01-01T00:00:00.000Z',
+      effectiveUntil: null,
+      regulatory: { LEVEL_1: requirements, LEVEL_2: requirements },
+      operator: { LEVEL_1: requirements, LEVEL_2: requirements },
+    };
+    await dataSource.query(
+      `INSERT INTO kyc_tier_policy_proposals(id,request_id,expected_version,definition,fingerprint,maker_id,maker_session_id,checker_id,checker_session_id,state) VALUES($1,$2,0,$3,$4,'maker',$5,'checker',$6,'APPROVED')`,
+      [
+        proposal,
+        randomUUID(),
+        JSON.stringify(definition),
+        'a'.repeat(64),
+        randomUUID(),
+        randomUUID(),
+      ],
+    );
+    await dataSource.query(
+      `INSERT INTO kyc_tier_policy_versions(version,proposal_id,definition,maker_id,checker_id) VALUES(1,$1,$2,'maker','checker')`,
+      [proposal, JSON.stringify(definition)],
+    );
+    await dataSource.query('UPDATE kyc_tier_policy_head SET version=1');
   }, 180000);
 
   afterAll(async () => {
@@ -104,6 +140,25 @@ describe('V1-SYSTEM-01 suspended-customer financial boundary (real PostgreSQL)',
       `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$2,true,NOW())`,
       [customerId, canonical10],
     );
+    await dataSource.query(
+      `INSERT INTO customer_kyc_assessments(customer_id,kyc_level,kyc_status,assessed_by,expires_at) VALUES($1,'LEVEL_1','APPROVED','fixture',clock_timestamp()+interval '1 hour')`,
+      [customerId],
+    );
+    snapshots.set(customerId, {
+      identityRevision: 'fixture',
+      evidence: [
+        {
+          id: randomUUID(),
+          customerId,
+          identityRevision: 'fixture',
+          type: 'BVN',
+          status: 'VERIFIED',
+          provenance: 'VERIFIED_PROVIDER',
+          verifiedAt: new Date(Date.now() - 10000),
+          expiresAt: new Date(Date.now() + 1800000),
+        },
+      ],
+    });
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',
