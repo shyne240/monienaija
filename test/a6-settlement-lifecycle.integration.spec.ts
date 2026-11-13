@@ -215,11 +215,12 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
 
   async function seedOperation(
     lifecycleState: ExternalOperationLifecycleState = ExternalOperationLifecycleState.PENDING_VERIFICATION,
+    accountId = customerLedgerAccountId,
   ): Promise<{ id: string; version: number; evidenceValue: string }> {
     const suffix = randomUUID().slice(0, 8);
     // Real A3 customer/wallet rows, then a real withdrawal: the external_operations foreign
     // keys are genuine and are part of what this suite verifies.
-    const participant = await seedTransferParticipant(dataSource, 'a6', customerLedgerAccountId);
+    const participant = await seedTransferParticipant(dataSource, 'a6', accountId);
     const withdrawalId = randomUUID();
     await dataSource.query(
       `INSERT INTO withdrawals (id, wallet_id, payment_reference, amount_minor, currency, status,
@@ -255,7 +256,7 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
         randomUUID(),
         participant.customerId,
         participant.walletAccountId,
-        customerLedgerAccountId,
+        accountId,
         `a6-target:${sha256(suffix)}`,
         `operation-key-${suffix}`,
         `provider-key-${suffix}`,
@@ -388,6 +389,44 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
     await expect(
       service.settleVerifiedOutcome(settleCommand(operation, { expectedVersion: 99 })),
     ).rejects.toBeTruthy();
+  });
+
+  it('rejects evidence belonging to another operation without creating settlement or poisoning retry', async () => {
+    const original = await seedOperation();
+    const otherAccount = await ledger.createAccount({
+      code: `A6-OTHER-${randomUUID()}`,
+      name: 'Other customer',
+      accountType: LedgerAccountType.LIABILITY,
+      currency: 'NGN',
+    });
+    const other = await seedOperation(
+      ExternalOperationLifecycleState.PENDING_VERIFICATION,
+      otherAccount.id,
+    );
+    const wrong = settleCommand(original, {
+      evidence: { ...settleCommand(other).evidence, observedAt: new Date() },
+    });
+    await expect(service.settleVerifiedOutcome(wrong)).rejects.toMatchObject({
+      code: 'INTERNAL_ACCOUNT_MISMATCH',
+    });
+    const rows = await dataSource.query<Array<{ n: number }>>(
+      'SELECT count(*)::int AS n FROM external_settlements WHERE external_operation_id=$1',
+      [original.id],
+    );
+    expect(rows[0]!.n).toBe(0);
+    const result = await service.settleVerifiedOutcome(settleCommand(original));
+    expect(result.settlement.journalId).toBeTruthy();
+  });
+
+  it('rejects evidence with a forged source', async () => {
+    const operation = await seedOperation();
+    const command = settleCommand(operation);
+    await expect(
+      service.settleVerifiedOutcome({
+        ...command,
+        evidence: { ...command.evidence, source: ExternalOperationReferenceSource.STATUS_QUERY },
+      }),
+    ).rejects.toMatchObject({ code: 'INTERNAL_ACCOUNT_MISMATCH' });
   });
 
   it('records a suspense entry for an unreconciled outcome', async () => {

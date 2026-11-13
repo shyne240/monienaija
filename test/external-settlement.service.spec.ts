@@ -230,7 +230,9 @@ class FakeManager {
       const operationId = this.references.byValue.get(
         `NIBSS_NIP:${referenceType}:${referenceValue}:${namespace}`,
       );
-      return Promise.resolve(operationId ? [{ external_operation_id: operationId }] : []);
+      return Promise.resolve(
+        operationId ? [{ external_operation_id: operationId, source: 'ACKNOWLEDGEMENT' }] : [],
+      );
     }
     return Promise.resolve([]);
   }
