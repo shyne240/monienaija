@@ -42,6 +42,9 @@ const migrationHead = repositoryMigrations().at(-1)!;
 const previousMigrationHead = repositoryMigrations().at(-2)!;
 
 class ReadinessDataSource {
+  /** The application's loaded migration classes (none in the generic stub). */
+  readonly migrations: Array<{ name: string }> = [];
+
   constructor(readonly head: MigrationHead = migrationHead) {}
 
   query(sql: string): Promise<unknown[]> {
@@ -51,7 +54,7 @@ class ReadinessDataSource {
     if (sql.includes('AS unsafe')) {
       return Promise.resolve([{ unsafe: false }]);
     }
-    if (sql.includes('LIMIT 1')) {
+    if (sql.includes('LIMIT 1') || sql.includes('ORDER BY timestamp ASC')) {
       return Promise.resolve([{ timestamp: this.head.timestamp, name: this.head.name }]);
     }
     if (sql.includes('applied_count')) {
@@ -192,6 +195,84 @@ describe('M8 production readiness', () => {
     } finally {
       process.env.NODE_ENV = original;
     }
+  });
+
+  it('rejects a database that skipped an earlier shipped migration', async () => {
+    class MissingEarlierMigration extends ReadinessDataSource {
+      override readonly migrations = [
+        { name: 'CreateInstitutionFoundation1785753600400' },
+        { name: 'CreateInstitutionalFinancialOwnership1785753600401' },
+        { name: 'InstitutionGovernanceExecutionIntegrity1785753600500' },
+        { name: 'ProtectedAuthorityBoundary1785753600501' },
+        { name: 'ProtectedAuthorityInstitutionalOwnership1785753600502' },
+      ];
+      override query(sql: string): Promise<unknown[]> {
+        if (sql.includes('ORDER BY timestamp ASC')) {
+          return Promise.resolve([
+            { timestamp: '1785753600400', name: 'CreateInstitutionFoundation1785753600400' },
+            {
+              timestamp: '1785753600501',
+              name: 'ProtectedAuthorityBoundary1785753600501',
+            },
+            {
+              timestamp: '1785753600502',
+              name: 'ProtectedAuthorityInstitutionalOwnership1785753600502',
+            },
+          ]);
+        }
+        return super.query(sql);
+      }
+    }
+    const readiness = new ProductionReadinessService(
+      new MissingEarlierMigration() as unknown as DataSource,
+      new ReconciliationStub() as never,
+    );
+    const result = await readiness.getReadiness();
+    expect(result.status).toBe('error');
+    expect(result.reason).toBe('schema_incompatible');
+    expect(result.migrations.compatible).toBe(false);
+    expect(result.migrations.missing).toEqual(
+      expect.arrayContaining([
+        'CreateInstitutionalFinancialOwnership1785753600401',
+        'InstitutionGovernanceExecutionIntegrity1785753600500',
+      ]),
+    );
+  });
+
+  it('rejects an applied migration the application does not ship', async () => {
+    class UnexpectedMigration extends ReadinessDataSource {
+      override readonly migrations = [
+        { name: 'ProtectedAuthorityInstitutionalOwnership1785753600502' },
+        { name: 'CreateInstitutionFoundation1785753600400' },
+      ];
+      override query(sql: string): Promise<unknown[]> {
+        if (sql.includes('ORDER BY timestamp ASC')) {
+          return Promise.resolve([
+            { timestamp: '1785753600400', name: 'CreateInstitutionFoundation1785753600400' },
+            {
+              timestamp: '1785753600401',
+              name: 'CreateGovernedLedgerReversalExecutions1785753600117',
+            },
+            {
+              timestamp: '1785753600502',
+              name: 'ProtectedAuthorityInstitutionalOwnership1785753600502',
+            },
+          ]);
+        }
+        return super.query(sql);
+      }
+    }
+    const readiness = new ProductionReadinessService(
+      new UnexpectedMigration() as unknown as DataSource,
+      new ReconciliationStub() as never,
+    );
+    await expect(readiness.getReadiness()).resolves.toMatchObject({
+      status: 'error',
+      reason: 'schema_incompatible',
+      migrations: {
+        unexpected: ['CreateGovernedLedgerReversalExecutions1785753600117'],
+      },
+    });
   });
 
   it('fails production readiness closed if database role inspection cannot complete', async () => {

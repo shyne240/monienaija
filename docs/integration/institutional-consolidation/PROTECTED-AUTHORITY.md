@@ -165,6 +165,13 @@ PROTECTED_AUTHORITY_DB_PASSWORD=<authority secret>
 Only `verified` allows production startup. `not_configured`, `unsafe` and `unavailable` all fail
 closed with distinct reasons. There is no environment override.
 
+Readiness also verifies the **complete migration inventory**, not just the head: every migration
+class the application ships must be recorded as applied, and no unknown migration may be applied.
+A skipped earlier id (for example 0400 missing while 0401 is present) fails closed as
+`schema_incompatible`. The intentionally absent 0117 and 0120–0132 ids are simply not part of the
+shipped inventory; `test/migration-inventory.spec.ts` pins that, so they are neither fabricated nor
+renumbered. See §7 for the real-PostgreSQL missing-earlier-migration test.
+
 `test/protected-authority-boundary.integration.spec.ts` boots the real `AppModule` with the runtime
 and authority logins and observes `status: 'ok'` / `authority: 'verified'`.
 

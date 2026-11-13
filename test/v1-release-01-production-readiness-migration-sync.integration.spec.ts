@@ -145,4 +145,34 @@ describe('V1-RELEASE-01 production readiness vs. real migration chain', () => {
   it('verifyStartup() does not throw against the real, fully-migrated schema', async () => {
     await expect(readinessService.verifyStartup()).resolves.toBeUndefined();
   });
+
+  it('fails closed when an earlier shipped migration is missing from the applied inventory', async () => {
+    const applied = await readinessService.getReadiness();
+    expect(applied.migrations).toMatchObject({
+      compatible: true,
+      missing: [],
+      unexpected: [],
+    });
+    expect(applied.migrations.expectedCount).toBeGreaterThan(0);
+    expect(applied.migrations.expectedCount).toBe(applied.migrations.appliedCount);
+
+    const [target] = await dataSource.query<Array<{ name: string }>>(
+      `SELECT name FROM typeorm_migrations WHERE timestamp=1785753600116`,
+    );
+    expect(target).toBeDefined();
+    await dataSource.query(`DELETE FROM typeorm_migrations WHERE timestamp=1785753600116`);
+    try {
+      const readiness = await readinessService.getReadiness();
+      expect(readiness.migrations.compatible).toBe(false);
+      expect(readiness.migrations.missing).toContain(target!.name);
+      expect(readiness.status).toBe('error');
+      expect(readiness.reason).toBe('schema_incompatible');
+    } finally {
+      await dataSource.query(
+        `INSERT INTO typeorm_migrations (timestamp, name) VALUES (1785753600116, $1)`,
+        [target!.name],
+      );
+    }
+    await expect(readinessService.verifyStartup()).resolves.toBeUndefined();
+  });
 });

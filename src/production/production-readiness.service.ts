@@ -43,6 +43,9 @@ export class ProductionReadinessService {
             status: 'error' as const,
             compatible: false,
             appliedCount: 0,
+            expectedCount: 0,
+            missing: [] as string[],
+            unexpected: [] as string[],
             latestTimestamp: null,
             latestName: null,
           };
@@ -168,39 +171,77 @@ export class ProductionReadinessService {
     }
   }
 
+  /**
+   * The complete migration inventory, not only the head.
+   *
+   * The deployed repository's loaded migration classes are the source of truth. Every loaded
+   * migration must be recorded as applied and no unknown migration may be applied. That detects a
+   * skipped EARLIER id (for example a database that somehow applied 0401 but not 0400, or missed a
+   * whole range), instead of a head-only check silently accepting it. Intentionally absent ids
+   * (0117 and the unfinished Arena 1 0120-0132 range) are simply not part of the loaded inventory,
+   * so they are neither required nor fabricated. See `test/migration-inventory.spec.ts`.
+   */
   private async checkMigrations() {
     try {
       const result: unknown = await this.dataSource.query(
         `SELECT timestamp::text AS timestamp, name
            FROM typeorm_migrations
-          ORDER BY timestamp DESC
-          LIMIT 1`,
+          ORDER BY timestamp ASC`,
       );
-      const latest = rowsOf(result)[0] ?? {};
-      const latestTimestamp = stringValue(latest.timestamp);
-      const latestName = stringValue(latest.name);
+      const applied = rowsOf(result)
+        .map((row) => ({
+          timestamp: stringValue(row.timestamp),
+          name: stringValue(row.name),
+        }))
+        .filter((row) => row.name.length > 0);
+      const latest = applied[applied.length - 1] ?? { timestamp: '', name: '' };
+      const expected = this.expectedMigrations();
+      const appliedNames = new Set(applied.map((row) => row.name));
+      const expectedNames = new Set(expected.map((row) => row.name));
+      const missing = expected.filter((row) => !appliedNames.has(row.name)).map((row) => row.name);
+      const unexpected =
+        expected.length > 0
+          ? applied.filter((row) => !expectedNames.has(row.name)).map((row) => row.name)
+          : [];
       const compatible =
-        latestTimestamp === EXPECTED_MIGRATION_TIMESTAMP && latestName === EXPECTED_MIGRATION_NAME;
-      const countResult: unknown = await this.dataSource.query(
-        `SELECT COUNT(*)::text AS applied_count FROM typeorm_migrations`,
-      );
-      const countRow = rowsOf(countResult)[0] ?? {};
+        latest.timestamp === EXPECTED_MIGRATION_TIMESTAMP &&
+        latest.name === EXPECTED_MIGRATION_NAME &&
+        missing.length === 0 &&
+        unexpected.length === 0;
       return {
         status: compatible ? ('ok' as const) : ('error' as const),
         compatible,
-        appliedCount: Number(countRow.applied_count ?? 0),
-        latestTimestamp: latestTimestamp || null,
-        latestName: latestName || null,
+        appliedCount: applied.length,
+        expectedCount: expected.length,
+        missing,
+        unexpected,
+        latestTimestamp: latest.timestamp || null,
+        latestName: latest.name || null,
       };
     } catch {
       return {
         status: 'error' as const,
         compatible: false,
         appliedCount: 0,
+        expectedCount: 0,
+        missing: [] as string[],
+        unexpected: [] as string[],
         latestTimestamp: null,
         latestName: null,
       };
     }
+  }
+
+  /** Migration classes this application actually ships, derived from the loaded DataSource. */
+  private expectedMigrations(): Array<{ timestamp: string; name: string }> {
+    const migrations = this.dataSource.migrations;
+    if (!Array.isArray(migrations)) return [];
+    return migrations
+      .map((migration) => {
+        const name = typeof migration.name === 'string' ? migration.name : '';
+        return { timestamp: name.slice(-13), name };
+      })
+      .filter((entry) => /^\d{13}$/.test(entry.timestamp));
   }
 
   private async pendingOutboxCount(): Promise<number> {
