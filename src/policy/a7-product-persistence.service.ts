@@ -12,6 +12,11 @@ import { AuthorizationService } from '../authorization/authorization.service';
 import { AuthenticationSessionService } from '../customer-authentication/authentication-session.service';
 import { AuditService } from '../operations/audit.service';
 import { isRetryableTransactionError } from '../payment/payment-support';
+import { InboundFundingService } from '../virtual-account/inbound-funding.service';
+import {
+  A7_INBOUND_EXECUTION_AUTHORITY,
+  type A7InboundExecutionAuthority,
+} from './a7-inbound-execution-authority';
 import { A7_INBOUND_ADMISSION_PROFILE } from './a7-inbound-admission.profile';
 import {
   A7_INBOUND_ADMISSION_AUTHORITY,
@@ -34,7 +39,8 @@ export type A7PersistedState =
   | 'LIFECYCLE_ADMITTED'
   | 'LIFECYCLE_UNKNOWN'
   | 'LIFECYCLE_MANUAL_REVIEW'
-  | 'LIFECYCLE_CANCELLED';
+  | 'LIFECYCLE_CANCELLED'
+  | 'LIFECYCLE_CREDITED';
 export interface A7CreatePersistedCommand {
   token: string;
   operationType: A7PersistedOperationType;
@@ -83,6 +89,7 @@ const TRANSITIONS: Readonly<Record<A7PersistedState, readonly A7PersistedState[]
   LIFECYCLE_UNKNOWN: [],
   LIFECYCLE_MANUAL_REVIEW: [],
   LIFECYCLE_CANCELLED: [],
+  LIFECYCLE_CREDITED: [],
 };
 
 /** Nonfinancial A7 persistence boundary. No method posts or authorizes value movement. */
@@ -96,6 +103,9 @@ export class A7ProductPersistenceService {
     private readonly eligibility: CustomerFinancialEligibilityService,
     @Inject(A7_INBOUND_ADMISSION_AUTHORITY)
     private readonly inboundAuthority: A7InboundAdmissionAuthority,
+    private readonly inboundFunding: InboundFundingService,
+    @Inject(A7_INBOUND_EXECUTION_AUTHORITY)
+    private readonly executionAuthority: A7InboundExecutionAuthority,
   ) {}
 
   async create(
@@ -487,6 +497,192 @@ export class A7ProductPersistenceService {
   }
   async findLifecycle(reference: string): Promise<A7PersistedLifecycle | null> {
     return readPersistedA7Lifecycle(this.db, reference);
+  }
+
+  /** Execute only an admitted command that already names a durably verified observation.
+   * Receipt, posting, authorization, lifecycle and authority limit consumption commit together. */
+  async executeInbound(input: {
+    token: string;
+    lifecycleId: string;
+    expectedVersion: number;
+    idempotencyKey: string;
+  }) {
+    const principal = await this.authenticate(input.token);
+    const lifecycleId = this.uuid(input.lifecycleId);
+    const keyHash = this.key(input.idempotencyKey);
+    if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1)
+      throw new BadRequestException('Invalid A7 execution version');
+    const requestHash = this.hash(
+      JSON.stringify({
+        lifecycleId,
+        expectedVersion: input.expectedVersion,
+        nextState: 'LIFECYCLE_CREDITED',
+      }),
+    );
+    return this.retry(async (manager) => {
+      await this.lockSession(manager, principal.sessionId, principal.customerId);
+      const rows = await manager.query<
+        Array<
+          A7PersistedLifecycle & {
+            customer_id: string;
+            policy_decision_reference: string | null;
+            operation_type: A7PersistedOperationType;
+            binding_id: string;
+            binding_version: number;
+            customer_wallet_id: string;
+            wallet_account_id: string;
+            ledger_account_id: string;
+            authorization_event_id: string;
+            session_id: string;
+            virtual_account_id: string | null;
+            inbound_observation_id: string | null;
+            intended_amount_minor: string | null;
+          }
+        >
+      >(
+        `SELECT l.*,c.customer_id,c.policy_decision_reference,c.operation_type,c.binding_id,c.binding_version,c.customer_wallet_id,c.wallet_account_id,c.ledger_account_id,c.authorization_event_id,c.session_id,c.virtual_account_id,c.inbound_observation_id,c.intended_amount_minor FROM a7_product_lifecycles l JOIN a7_product_commands c ON c.id=l.command_id WHERE l.id=$1 AND c.customer_id=$2 FOR UPDATE OF l`,
+        [lifecycleId, principal.customerId],
+      );
+      const current = rows[0];
+      if (!current) throw new ConflictException('A7 lifecycle unavailable');
+      const prior = await manager.query<Array<{ request_hash: string; to_state: string }>>(
+        'SELECT request_hash,to_state FROM a7_product_lifecycle_transitions WHERE lifecycle_id=$1 AND idempotency_key_hash=$2',
+        [lifecycleId, keyHash],
+      );
+      if (prior[0]) {
+        if (prior[0].request_hash !== requestHash || prior[0].to_state !== 'LIFECYCLE_CREDITED')
+          throw new ConflictException('A7 execution idempotency conflict');
+        if (current.state !== 'LIFECYCLE_CREDITED' || !current.execution_receipt_id)
+          throw new ConflictException('A7 execution evidence missing');
+        return { lifecycle: current, replayed: true };
+      }
+      if (current.version !== input.expectedVersion || current.state !== 'LIFECYCLE_ADMITTED')
+        throw new ConflictException('A7 execution lifecycle conflict');
+      if (
+        current.operation_type !== 'INBOUND_FUNDING' ||
+        !current.inbound_observation_id ||
+        !current.virtual_account_id ||
+        !current.intended_amount_minor ||
+        !current.policy_decision_reference
+      )
+        throw new ConflictException('A7 verified inbound obligation is missing');
+      await this.lockSession(manager, current.session_id, current.customer_id);
+      await this.recheckCommandAuthority(manager, current);
+      await this.checkPolicy(
+        manager,
+        current.policy_decision_reference,
+        current.customer_id,
+        current.operation_type,
+        current.binding_id,
+        true,
+        current.intended_amount_minor,
+      );
+      await this.eligibility.require(manager, current.customer_id);
+      const observations = await manager.query<
+        Array<{
+          id: string;
+          provider_key: string;
+          provider_reference: string;
+          provider_reference_hash: string;
+          evidence_hash: string;
+          amount_minor: string;
+          currency: string;
+        }>
+      >(
+        `SELECT o.id,o.provider_key,o.provider_reference,o.provider_reference_hash,o.evidence_hash,o.amount_minor::text,o.currency FROM inbound_funding_observations o JOIN virtual_accounts v ON v.id=$2 AND v.wallet_id=$3 AND v.status='ACTIVE' AND v.provider=o.provider_key AND v.bank_code=o.bank_code AND v.account_number=o.account_number WHERE o.id=$1 AND o.amount_minor=$4 AND o.currency='NGN' FOR SHARE OF o,v`,
+        [
+          current.inbound_observation_id,
+          current.virtual_account_id,
+          current.wallet_account_id,
+          current.intended_amount_minor,
+        ],
+      );
+      const obs = observations[0];
+      if (!obs) throw new ConflictException('A7 verified observation does not match obligation');
+      let authority: Awaited<ReturnType<A7InboundExecutionAuthority['authorize']>>;
+      try {
+        authority = await this.executionAuthority.authorize(manager, {
+          commandId: current.command_id,
+          customerId: current.customer_id,
+          bindingId: current.binding_id,
+          virtualAccountId: current.virtual_account_id,
+          walletAccountId: current.wallet_account_id,
+          observationId: obs.id,
+          providerKey: obs.provider_key,
+          providerReferenceHash: obs.provider_reference_hash,
+          evidenceHash: obs.evidence_hash,
+          amountMinor: obs.amount_minor,
+          currency: obs.currency,
+          admissionPolicyReference: current.policy_decision_reference,
+        });
+      } catch {
+        throw new ServiceUnavailableException('Inbound execution authority unavailable');
+      }
+      if (authority.status === 'UNAVAILABLE')
+        throw new ServiceUnavailableException('Inbound execution authority unavailable');
+      if (authority.status !== 'AUTHORIZED')
+        throw new ConflictException('Inbound execution authority denied');
+      if (
+        ![
+          authority.policyReference,
+          authority.obligationReference,
+          authority.limitReference,
+          authority.institutionReference,
+        ].every((x) => typeof x === 'string' && x.trim().length > 0 && x.length <= 180)
+      )
+        throw new ConflictException('Inbound execution evidence missing');
+      const result = await this.inboundFunding.receiveInTransaction(manager, {
+        providerKey: obs.provider_key,
+        providerReference: obs.provider_reference,
+        correlationId: `a7-execution:${lifecycleId}`,
+        expectedWalletAccountId: current.wallet_account_id,
+        expectedAmountMinor: current.intended_amount_minor,
+        expectedCurrency: 'NGN',
+        allowSuspense: false,
+      });
+      if (result.status !== 'CREDITED' || result.replayed)
+        throw new ConflictException('Inbound receipt already used or requires review');
+      const auth = await this.recordAuthorization(
+        manager,
+        principal.customerId,
+        principal.sessionId,
+        current.command_id,
+        'transition',
+      );
+      await manager.query(
+        `INSERT INTO a7_product_lifecycle_transitions(id,lifecycle_id,from_state,to_state,from_version,to_version,authorization_event_id,idempotency_key_hash,request_hash) VALUES($1,$2,$3,'LIFECYCLE_CREDITED',$4,$5,$6,$7,$8)`,
+        [
+          randomUUID(),
+          lifecycleId,
+          current.state,
+          current.version,
+          current.version + 1,
+          auth,
+          keyHash,
+          requestHash,
+        ],
+      );
+      const updated = await manager.query<A7PersistedLifecycle[]>(
+        `WITH changed AS (UPDATE a7_product_lifecycles SET state='LIFECYCLE_CREDITED',version=version+1,execution_receipt_id=$2,updated_at=clock_timestamp() WHERE id=$1 RETURNING *) SELECT * FROM changed`,
+        [lifecycleId, result.receiptId],
+      );
+      await this.audit.record(manager, {
+        entityType: 'A7_PRODUCT_LIFECYCLE',
+        entityId: lifecycleId,
+        action: 'CREDITED',
+        actor: principal.customerId,
+        newValues: {
+          receiptId: result.receiptId,
+          journalId: result.journalId,
+          observationId: obs.id,
+          policyReference: authority.policyReference,
+          obligationReference: authority.obligationReference,
+          limitReference: authority.limitReference,
+          institutionReference: authority.institutionReference,
+        },
+      });
+      return { lifecycle: updated[0]!, replayed: false };
+    });
   }
 
   private async authenticate(token: string) {

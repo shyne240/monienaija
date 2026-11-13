@@ -44,6 +44,25 @@
 import { Module, Provider } from '@nestjs/common';
 
 import { AuthorizationModule } from '../authorization/authorization.module';
+import { LedgerModule } from '../ledger/ledger.module';
+import { PaymentModule } from '../payment/payment.module';
+import { InboundFundingService } from '../virtual-account/inbound-funding.service';
+import {
+  INBOUND_FUNDING_VERIFIER,
+  UnavailableInboundFundingVerifier,
+} from '../virtual-account/inbound-funding-verifier';
+import {
+  INBOUND_INSTITUTION_AUTHORITY,
+  UnavailableInboundInstitutionAuthority,
+} from '../virtual-account/inbound-institution-authority';
+import {
+  INBOUND_SUSPENSE_POLICY,
+  UnavailableInboundSuspensePolicy,
+} from '../virtual-account/inbound-suspense-policy';
+import {
+  A7_INBOUND_EXECUTION_AUTHORITY,
+  UnavailableA7InboundExecutionAuthority,
+} from './a7-inbound-execution-authority';
 import { KycTierModule } from '../kyc-verification/kyc-tier.module';
 import {
   A7_INBOUND_ADMISSION_AUTHORITY,
@@ -75,6 +94,11 @@ export const A7_PRODUCT_COMMAND_PROVIDERS: readonly Provider[] = Object.freeze([
   A7ProductCommandRepository,
   A7ProductCommandService,
   A7ProductPersistenceService,
+  InboundFundingService,
+  { provide: INBOUND_FUNDING_VERIFIER, useClass: UnavailableInboundFundingVerifier },
+  { provide: INBOUND_INSTITUTION_AUTHORITY, useClass: UnavailableInboundInstitutionAuthority },
+  { provide: INBOUND_SUSPENSE_POLICY, useClass: UnavailableInboundSuspensePolicy },
+  { provide: A7_INBOUND_EXECUTION_AUTHORITY, useClass: UnavailableA7InboundExecutionAuthority },
   { provide: A7_INBOUND_ADMISSION_AUTHORITY, useClass: UnavailableA7InboundAdmissionAuthority },
 ]);
 
@@ -90,6 +114,8 @@ export const A7_PRODUCT_COMMAND_PROVIDERS: readonly Provider[] = Object.freeze([
     AuthorizationModule,
     CustomerAuthenticationModule,
     KycTierModule,
+    LedgerModule,
+    PaymentModule,
     OperationsModule,
     PartnerModule,
     VirtualAccountModule,
@@ -99,6 +125,11 @@ export const A7_PRODUCT_COMMAND_PROVIDERS: readonly Provider[] = Object.freeze([
   ],
   controllers: [A7InboundController],
   providers: A7_PRODUCT_COMMAND_PROVIDERS as Provider[],
-  exports: [A7ProductCommandService, A7ProductCommandRepository, A7ProductPersistenceService],
+  exports: [
+    A7ProductCommandService,
+    A7ProductCommandRepository,
+    A7ProductPersistenceService,
+    InboundFundingService,
+  ],
 })
 export class A7ProductCommandModule {}
