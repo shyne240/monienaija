@@ -91,7 +91,11 @@ export const TransactionsScreen: React.FC = () => {
         data={transactions}
         keyExtractor={(item) => item.id ?? item.transferId}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[theme.colors.primary.main]} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[theme.colors.primary.main]}
+          />
         }
         renderItem={({ item }) => {
           const row = mapTransactionToRow(item);

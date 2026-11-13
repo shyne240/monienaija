@@ -10,6 +10,8 @@ import { SplashScreen } from '../screens/unauthenticated/SplashScreen';
 import { WelcomeScreen } from '../screens/unauthenticated/WelcomeScreen';
 import { LoginScreen } from '../screens/unauthenticated/LoginScreen';
 import { RegistrationScreen } from '../screens/unauthenticated/RegistrationScreen';
+import { CredentialRecoveryScreen } from '../screens/unauthenticated/CredentialRecoveryScreen';
+import { CredentialRotationScreen } from '../screens/unauthenticated/CredentialRotationScreen';
 
 import { HomeScreen } from '../screens/authenticated/HomeScreen';
 import { SendMoneyScreen } from '../screens/authenticated/SendMoneyScreen';
@@ -60,6 +62,16 @@ export const AppNavigator: React.FC = () => {
             name="Registration"
             component={RegistrationScreen}
             options={{ title: 'Create Wallet' }}
+          />
+          <Stack.Screen
+            name="CredentialRecovery"
+            component={CredentialRecoveryScreen}
+            options={{ title: 'Account Recovery' }}
+          />
+          <Stack.Screen
+            name="CredentialRotation"
+            component={CredentialRotationScreen}
+            options={{ title: 'Change Password' }}
           />
         </>
       ) : (

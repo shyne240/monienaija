@@ -49,8 +49,16 @@ describe('TransactionPinScreen', () => {
   });
 
   test('first-time creation: NOT_SET status shows the create form and a successful submit confirms creation', async () => {
-    (ApiClient.get as jest.Mock).mockResolvedValue({ status: 'NOT_SET', exists: false, accountLocked: false });
-    (ApiClient.post as jest.Mock).mockResolvedValue({ customerId: 'cust-1', pinVersion: 1, updatedAt: new Date().toISOString() });
+    (ApiClient.get as jest.Mock).mockResolvedValue({
+      status: 'NOT_SET',
+      exists: false,
+      accountLocked: false,
+    });
+    (ApiClient.post as jest.Mock).mockResolvedValue({
+      customerId: 'cust-1',
+      pinVersion: 1,
+      updatedAt: new Date().toISOString(),
+    });
 
     const { getByText, getByPlaceholderText, queryByText } = render(<TransactionPinScreen />);
 
@@ -66,8 +74,17 @@ describe('TransactionPinScreen', () => {
   });
 
   test('known-PIN change: ACTIVE status shows current/new/confirm fields and a successful change confirms it', async () => {
-    (ApiClient.get as jest.Mock).mockResolvedValue({ status: 'ACTIVE', exists: true, accountLocked: false, pinVersion: 1 });
-    (ApiClient.post as jest.Mock).mockResolvedValue({ customerId: 'cust-1', pinVersion: 2, updatedAt: new Date().toISOString() });
+    (ApiClient.get as jest.Mock).mockResolvedValue({
+      status: 'ACTIVE',
+      exists: true,
+      accountLocked: false,
+      pinVersion: 1,
+    });
+    (ApiClient.post as jest.Mock).mockResolvedValue({
+      customerId: 'cust-1',
+      pinVersion: 2,
+      updatedAt: new Date().toISOString(),
+    });
 
     const { getByText, getByPlaceholderText } = render(<TransactionPinScreen />);
 
@@ -86,7 +103,12 @@ describe('TransactionPinScreen', () => {
   });
 
   test('incorrect current PIN: change request rejected with 401 shows an error and does not clear ACTIVE status', async () => {
-    (ApiClient.get as jest.Mock).mockResolvedValue({ status: 'ACTIVE', exists: true, accountLocked: false, pinVersion: 1 });
+    (ApiClient.get as jest.Mock).mockResolvedValue({
+      status: 'ACTIVE',
+      exists: true,
+      accountLocked: false,
+      pinVersion: 1,
+    });
     (ApiClient.post as jest.Mock).mockRejectedValue(new ApiError('Current PIN is incorrect', 401));
 
     const { getByText, getByPlaceholderText } = render(<TransactionPinScreen />);
@@ -103,7 +125,12 @@ describe('TransactionPinScreen', () => {
   });
 
   test('new PIN mismatch: client-side validation blocks submission before any API call', async () => {
-    (ApiClient.get as jest.Mock).mockResolvedValue({ status: 'ACTIVE', exists: true, accountLocked: false, pinVersion: 1 });
+    (ApiClient.get as jest.Mock).mockResolvedValue({
+      status: 'ACTIVE',
+      exists: true,
+      accountLocked: false,
+      pinVersion: 1,
+    });
 
     const { getByText, getByPlaceholderText } = render(<TransactionPinScreen />);
     await waitFor(() => expect(getByText('Change Transaction PIN')).toBeTruthy());
@@ -118,12 +145,20 @@ describe('TransactionPinScreen', () => {
   });
 
   test('locked state: shows an honest "contact support" message, no PIN inputs and no fake reset button', async () => {
-    (ApiClient.get as jest.Mock).mockResolvedValue({ status: 'LOCKED', exists: true, accountLocked: true, pinVersion: 1 });
+    (ApiClient.get as jest.Mock).mockResolvedValue({
+      status: 'LOCKED',
+      exists: true,
+      accountLocked: true,
+      pinVersion: 1,
+    });
 
     const { getByText, queryByText, queryByPlaceholderText } = render(<TransactionPinScreen />);
 
     await waitFor(() => expect(getByText('Transaction PIN locked')).toBeTruthy());
-    expect(queryByText(/does not offer an in-app PIN reset/i)).toBeTruthy();
+    // ARENA 4 (C-9): a locked PIN is never reset from inside a signed-in session; the copy points
+    // at the unauthenticated recovery path (or Support) instead of offering a fake reset form.
+    expect(queryByText(/cannot be reset from inside a signed-in session/i)).toBeTruthy();
+    expect(queryByText(/Forgot your transaction PIN\?/)).toBeTruthy();
     expect(queryByText(/Reset PIN/i)).toBeNull();
     expect(queryByPlaceholderText('Enter current PIN')).toBeNull();
     expect(queryByPlaceholderText('Enter new PIN')).toBeNull();
@@ -143,16 +178,27 @@ describe('TransactionPinScreen', () => {
     await waitFor(() => expect(getByText('Network unreachable')).toBeTruthy());
     expect(getByText('Retry')).toBeTruthy();
 
-    (ApiClient.get as jest.Mock).mockResolvedValue({ status: 'NOT_SET', exists: false, accountLocked: false });
+    (ApiClient.get as jest.Mock).mockResolvedValue({
+      status: 'NOT_SET',
+      exists: false,
+      accountLocked: false,
+    });
     fireEvent.press(getByText('Retry'));
     await waitFor(() => expect(getByText('Create Transaction PIN')).toBeTruthy());
   });
 
   test('loading/duplicate-submit prevention: a second press while the first create request is in flight does not issue a second API call', async () => {
-    (ApiClient.get as jest.Mock).mockResolvedValue({ status: 'NOT_SET', exists: false, accountLocked: false });
+    (ApiClient.get as jest.Mock).mockResolvedValue({
+      status: 'NOT_SET',
+      exists: false,
+      accountLocked: false,
+    });
     let resolvePost: (value: unknown) => void = () => undefined;
     (ApiClient.post as jest.Mock).mockImplementation(
-      () => new Promise((resolve) => { resolvePost = resolve; }),
+      () =>
+        new Promise((resolve) => {
+          resolvePost = resolve;
+        }),
     );
 
     const { getByText, getByPlaceholderText } = render(<TransactionPinScreen />);

@@ -53,7 +53,6 @@ describe('Fund Wallet Screen Tests', () => {
     },
   ];
 
-
   // One-time worker warm-up: render (and unmount) the screen before the first
   // test so the cold React Native / jest-expo initialization cost is paid here
   // (hook budget: see jest.setTimeout above) instead of inside the first test.
@@ -92,9 +91,12 @@ describe('Fund Wallet Screen Tests', () => {
     fireEvent.changeText(getByPlaceholderText('0.00'), '0');
     fireEvent.press(getByText('Fund Wallet Now'));
 
-    await waitFor(() => {
-      expect(getByText('Amount must be greater than zero.')).toBeTruthy();
-    }, { timeout: 5000 });
+    await waitFor(
+      () => {
+        expect(getByText('Amount must be greater than zero.')).toBeTruthy();
+      },
+      { timeout: 5000 },
+    );
   });
 
   test('should create a pending deposit without a client-side completion step', async () => {
@@ -110,26 +112,29 @@ describe('Fund Wallet Screen Tests', () => {
     fireEvent.changeText(getByPlaceholderText('0.00'), '150'); // 150 NGN = 15000 kobo
     fireEvent.press(getByText('Fund Wallet Now'));
 
-    await waitFor(() => {
-      expect(ApiClient.post).toHaveBeenNthCalledWith(
-        1,
-        '/deposits',
-        expect.objectContaining({
-          walletId: 'wallet-uuid-444',
-          amountMinor: '15000',
-        }),
-        expect.any(Object)
-      );
-      // Customers can never complete their own deposit: settlement is confirmed by the provider.
-      expect(ApiClient.post).toHaveBeenCalledTimes(1);
-      expect(getByText('Deposit Initiated')).toBeTruthy();
-    }, { timeout: 5000 });
+    await waitFor(
+      () => {
+        expect(ApiClient.post).toHaveBeenNthCalledWith(
+          1,
+          '/deposits',
+          expect.objectContaining({
+            walletId: 'wallet-uuid-444',
+            amountMinor: '15000',
+          }),
+          expect.any(Object),
+        );
+        // Customers can never complete their own deposit: settlement is confirmed by the provider.
+        expect(ApiClient.post).toHaveBeenCalledTimes(1);
+        expect(getByText('Deposit Initiated')).toBeTruthy();
+      },
+      { timeout: 5000 },
+    );
   });
 
   test('should retain the same idempotency key across retries on failure', async () => {
     // Mock deposit creation failure
     (ApiClient.post as jest.Mock).mockRejectedValue(
-      new ApiError('Temporary database failure', 500)
+      new ApiError('Temporary database failure', 500),
     );
 
     const { getByPlaceholderText, getByText } = render(<FundWalletScreen />);
@@ -140,26 +145,32 @@ describe('Fund Wallet Screen Tests', () => {
     await waitForWalletsLoaded();
 
     fireEvent.changeText(getByPlaceholderText('0.00'), '50');
-    
+
     // First submit click
     fireEvent.press(getByText('Fund Wallet Now'));
 
     let originalKey = '';
-    await waitFor(() => {
-      expect(ApiClient.post).toHaveBeenCalledTimes(1);
-      originalKey = (ApiClient.post as jest.Mock).mock.calls[0][2].idempotencyKey;
-      expect(originalKey).toBeTruthy();
-      expect(getByText('Temporary database failure')).toBeTruthy();
-    }, { timeout: 5000 });
+    await waitFor(
+      () => {
+        expect(ApiClient.post).toHaveBeenCalledTimes(1);
+        originalKey = (ApiClient.post as jest.Mock).mock.calls[0][2].idempotencyKey;
+        expect(originalKey).toBeTruthy();
+        expect(getByText('Temporary database failure')).toBeTruthy();
+      },
+      { timeout: 5000 },
+    );
 
     // Second submit click (retry)
     fireEvent.press(getByText('Fund Wallet Now'));
 
-    await waitFor(() => {
-      expect(ApiClient.post).toHaveBeenCalledTimes(2);
-      const retryKey = (ApiClient.post as jest.Mock).mock.calls[1][2].idempotencyKey;
-      // Retained key across manual retry of the same form!
-      expect(retryKey).toBe(originalKey);
-    }, { timeout: 5000 });
+    await waitFor(
+      () => {
+        expect(ApiClient.post).toHaveBeenCalledTimes(2);
+        const retryKey = (ApiClient.post as jest.Mock).mock.calls[1][2].idempotencyKey;
+        // Retained key across manual retry of the same form!
+        expect(retryKey).toBe(originalKey);
+      },
+      { timeout: 5000 },
+    );
   });
 });

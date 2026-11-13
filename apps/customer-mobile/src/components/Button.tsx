@@ -52,7 +52,11 @@ export const Button: React.FC<ButtonProps> = ({
       {loading ? (
         <ActivityIndicator
           size="small"
-          color={variant === 'outline' || variant === 'text' ? theme.colors.primary.main : theme.colors.neutral.white}
+          color={
+            variant === 'outline' || variant === 'text'
+              ? theme.colors.primary.main
+              : theme.colors.neutral.white
+          }
         />
       ) : (
         <Text style={textStyles}>{label}</Text>

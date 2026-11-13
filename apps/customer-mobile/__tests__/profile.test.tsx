@@ -95,7 +95,8 @@ describe('Profile Screen Account Tests', () => {
     };
     (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
       if (url === '/customers/me') return Promise.resolve(mockIdentity);
-      if (url === '/customers/me/profile') return Promise.resolve({ profile: { displayName: 'Femi Kuti' } });
+      if (url === '/customers/me/profile')
+        return Promise.resolve({ profile: { displayName: 'Femi Kuti' } });
       if (url === '/customers/me/limits') return Promise.resolve({ products: [] });
       return Promise.reject(new Error('unexpected url'));
     });
@@ -122,7 +123,8 @@ describe('Profile Screen Account Tests', () => {
     };
     (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
       if (url === '/customers/me') return Promise.resolve(mockIdentity);
-      if (url === '/customers/me/profile') return Promise.resolve({ profile: { displayName: 'Femi Kuti' } });
+      if (url === '/customers/me/profile')
+        return Promise.resolve({ profile: { displayName: 'Femi Kuti' } });
       if (url === '/customers/me/limits') return Promise.resolve({ products: [] });
       return Promise.reject(new Error('unexpected url'));
     });
@@ -178,7 +180,8 @@ describe('Profile Screen Account Tests', () => {
     };
     (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
       if (url === '/customers/me') return Promise.resolve(mockIdentity);
-      if (url === '/customers/me/profile') return Promise.resolve({ profile: { displayName: 'Femi Kuti' } });
+      if (url === '/customers/me/profile')
+        return Promise.resolve({ profile: { displayName: 'Femi Kuti' } });
       if (url === '/customers/me/limits') return Promise.resolve(mockLimits);
       return Promise.reject(new Error('unexpected url'));
     });
@@ -206,8 +209,21 @@ describe('Profile Screen Account Tests', () => {
     };
     (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
       if (url === '/customers/me') return Promise.resolve(mockIdentity);
-      if (url === '/customers/me/profile') return Promise.resolve({ profile: { displayName: 'Femi Kuti' } });
-      if (url === '/customers/me/limits') return Promise.resolve({ products: [{ product: 'WALLET_TRANSFER', direction: 'OUTGOING', configured: false, perTransactionMinMinor: null, perTransactionMaxMinor: null, windows: [] }] });
+      if (url === '/customers/me/profile')
+        return Promise.resolve({ profile: { displayName: 'Femi Kuti' } });
+      if (url === '/customers/me/limits')
+        return Promise.resolve({
+          products: [
+            {
+              product: 'WALLET_TRANSFER',
+              direction: 'OUTGOING',
+              configured: false,
+              perTransactionMinMinor: null,
+              perTransactionMaxMinor: null,
+              windows: [],
+            },
+          ],
+        });
       return Promise.reject(new Error('unexpected url'));
     });
 

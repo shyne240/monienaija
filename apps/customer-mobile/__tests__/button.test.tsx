@@ -11,17 +11,15 @@ describe('Button component tests', () => {
   test('should call onPress when clicked', () => {
     const onPressMock = jest.fn();
     const { getByText } = render(<Button label="Submit" onPress={onPressMock} />);
-    
+
     fireEvent.press(getByText('Submit'));
     expect(onPressMock).toHaveBeenCalledTimes(1);
   });
 
   test('should disable press interaction when button is loading', () => {
     const onPressMock = jest.fn();
-    const { queryByText } = render(
-      <Button loading label="Submit" onPress={onPressMock} />
-    );
-    
+    const { queryByText } = render(<Button loading label="Submit" onPress={onPressMock} />);
+
     // Label should not be visible since loader activity indicator is shown
     expect(queryByText('Submit')).toBeNull();
   });

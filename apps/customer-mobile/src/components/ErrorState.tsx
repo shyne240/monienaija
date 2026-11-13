@@ -25,12 +25,7 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
       <Text style={styles.title}>{title}</Text>
       <Text style={styles.message}>{message}</Text>
       {onRetry && (
-        <Button
-          label={retryLabel}
-          style={styles.button}
-          variant="primary"
-          onPress={onRetry}
-        />
+        <Button label={retryLabel} style={styles.button} variant="primary" onPress={onRetry} />
       )}
     </View>
   );

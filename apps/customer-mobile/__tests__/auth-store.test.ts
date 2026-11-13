@@ -93,7 +93,10 @@ describe('Auth Store (Zustand) tests', () => {
     expect(state.isAuthenticated).toBe(false);
     expect(state.session).toBeNull();
     expect(state.rotationRequired).toBe(true);
-    expect(state.error).toBeTruthy();
+    // ARENA 4: rotation is a supported step now, so no error is raised; the pending rotation is
+    // bound to the backend-proven customer id and no session is fabricated.
+    expect(state.rotationCustomerId).toBe('cust-id-999');
+    expect(state.error).toBeNull();
   });
 
   test('should fail closed when the backend omits required session data', async () => {
@@ -213,9 +216,9 @@ describe('Auth Store real-authentication guarantees', () => {
     // the message its real contract produces ("Authentication response was missing required session
     // data"); the guarantee under test — the caller sees a rejection and no session is fabricated —
     // is unchanged. The other rejection path in this file still asserts 'Invalid credentials'.
-    await expect(
-      useAuthStore.getState().login('cust-id-999', 'wrong-pin'),
-    ).rejects.toThrow('Authentication response was missing required session data');
+    await expect(useAuthStore.getState().login('cust-id-999', 'wrong-pin')).rejects.toThrow(
+      'Authentication response was missing required session data',
+    );
 
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
     expect(SecureStorage.set).not.toHaveBeenCalled();

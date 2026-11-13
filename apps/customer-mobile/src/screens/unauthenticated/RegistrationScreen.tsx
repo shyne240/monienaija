@@ -277,8 +277,6 @@ export const RegistrationScreen: React.FC = () => {
     } catch (e) {
       if (e instanceof ApiError && e.status === 429)
         setError('Too many requests. Please wait before trying again.');
-      else if (e instanceof ApiError && e.status === 503)
-        setError('Verification is unavailable. Please try again later.');
       else if (e instanceof ApiError && e.status === 401)
         setError('The code or session is invalid or expired. If needed, start again.');
       else if (e instanceof ApiError && e.status === 409) {

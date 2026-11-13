@@ -53,17 +53,23 @@ describe('mapTransactionToRow — Wallet to Wallet', () => {
   });
 
   test('FAILED wallet transfer never renders as SUCCESS', () => {
-    const row = mapTransactionToRow(baseItem({ type: 'WALLET_TRANSFER', direction: 'SENT', status: 'FAILED' }));
+    const row = mapTransactionToRow(
+      baseItem({ type: 'WALLET_TRANSFER', direction: 'SENT', status: 'FAILED' }),
+    );
     expect(row.status).toBe('FAILED');
   });
 
   test('CANCELLED wallet transfer renders as CANCELLED, not SUCCESS', () => {
-    const row = mapTransactionToRow(baseItem({ type: 'WALLET_TRANSFER', direction: 'SENT', status: 'CANCELLED' }));
+    const row = mapTransactionToRow(
+      baseItem({ type: 'WALLET_TRANSFER', direction: 'SENT', status: 'CANCELLED' }),
+    );
     expect(row.status).toBe('CANCELLED');
   });
 
   test('PENDING/PROCESSING wallet transfer renders as PENDING with neutral-safe sign still OUT/IN by direction', () => {
-    const pending = mapTransactionToRow(baseItem({ type: 'WALLET_TRANSFER', direction: 'SENT', status: 'PROCESSING' }));
+    const pending = mapTransactionToRow(
+      baseItem({ type: 'WALLET_TRANSFER', direction: 'SENT', status: 'PROCESSING' }),
+    );
     expect(pending.status).toBe('PENDING');
     expect(pending.sign).toBe('OUT');
   });
@@ -92,7 +98,12 @@ describe('mapTransactionToRow — Cash to Wallet (CASH_IN) and Wallet to Cash (C
 describe('mapTransactionToRow — Cash to Cash', () => {
   test('UNCLAIMED (pending) renders neutral sign + PENDING status, never SUCCESS', () => {
     const row = mapTransactionToRow(
-      baseItem({ type: 'CASH_TO_CASH', direction: 'PENDING', status: 'UNCLAIMED', narration: null }),
+      baseItem({
+        type: 'CASH_TO_CASH',
+        direction: 'PENDING',
+        status: 'UNCLAIMED',
+        narration: null,
+      }),
     );
     expect(row.sign).toBe('NEUTRAL');
     expect(row.status).toBe('PENDING');
@@ -120,19 +131,25 @@ describe('mapTransactionToRow — Cash to Cash', () => {
 
 describe('mapTransactionToRow — Funding', () => {
   test('APPROVED funding renders incoming + SUCCESS', () => {
-    const row = mapTransactionToRow(baseItem({ type: 'FUNDING', direction: 'CREDIT', status: 'APPROVED', narration: null }));
+    const row = mapTransactionToRow(
+      baseItem({ type: 'FUNDING', direction: 'CREDIT', status: 'APPROVED', narration: null }),
+    );
     expect(row.sign).toBe('IN');
     expect(row.status).toBe('SUCCESS');
   });
 
   test('PENDING funding renders neutral sign (no premature credit) + PENDING status', () => {
-    const row = mapTransactionToRow(baseItem({ type: 'FUNDING', direction: 'CREDIT', status: 'PENDING', narration: null }));
+    const row = mapTransactionToRow(
+      baseItem({ type: 'FUNDING', direction: 'CREDIT', status: 'PENDING', narration: null }),
+    );
     expect(row.sign).toBe('NEUTRAL');
     expect(row.status).toBe('PENDING');
   });
 
   test('REJECTED funding renders neutral sign + FAILED status, never shown as a credit', () => {
-    const row = mapTransactionToRow(baseItem({ type: 'FUNDING', direction: 'CREDIT', status: 'REJECTED', narration: null }));
+    const row = mapTransactionToRow(
+      baseItem({ type: 'FUNDING', direction: 'CREDIT', status: 'REJECTED', narration: null }),
+    );
     expect(row.sign).toBe('NEUTRAL');
     expect(row.status).toBe('FAILED');
   });
@@ -184,7 +201,9 @@ describe('buildSupportContextForTransaction', () => {
 
   test('CASH_TO_CASH, CASH_IN, and CASH_OUT embed the reference in the description with no structured id field', () => {
     for (const type of ['CASH_TO_CASH', 'CASH_IN', 'CASH_OUT'] as const) {
-      const ctx = buildSupportContextForTransaction(baseItem({ id: 'x-1', type, reference: `REF-${type}` }));
+      const ctx = buildSupportContextForTransaction(
+        baseItem({ id: 'x-1', type, reference: `REF-${type}` }),
+      );
       expect(ctx.category).toBe(type);
       expect(ctx.relatedTransferId).toBeUndefined();
       expect(ctx.fundingRequestId).toBeUndefined();

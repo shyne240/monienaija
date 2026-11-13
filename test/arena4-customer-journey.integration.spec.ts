@@ -396,19 +396,22 @@ describe('ARENA 4 customer journey (real backend + PostgreSQL)', () => {
     expect(policy.body.enabled).toBe(true);
     expect(policy.body.authority.phoneNumberAloneIsSufficient).toBe(false);
 
-    // --- Passcode recovery
-    await request(server())
+    // --- Passcode recovery. The client never needs database access: the accepted response
+    // carries the opaque challenge reference the real mobile API client uses.
+    const requested = await request(server())
       .post('/api/v1/customers/credential-recovery/challenges')
       .send({ phone: storedPhone, purpose: 'LOGIN_PASSCODE' })
       .expect(202)
       .expect((res) => expect(res.body.status).toBe('ACCEPTED'));
+    expect(requested.body.challengeId).toMatch(/^[0-9a-f-]{36}$/i);
+    const challengeId = requested.body.challengeId as string;
     const challengeRows: Array<{ id: string; code_hash: string }> = await dataSource.query(
       `SELECT id, code_hash FROM customer_credential_recovery_challenges
         WHERE customer_id=$1 AND purpose='LOGIN_PASSCODE' AND status='ACTIVE'`,
       [customerId],
     );
     expect(challengeRows).toHaveLength(1);
-    const challengeId = challengeRows[0]!.id;
+    expect(challengeRows[0]!.id).toBe(challengeId);
     const otp = sms.lastCodeFor('recovery');
 
     // Wrong code is rejected and counted; the challenge stays usable.
@@ -463,18 +466,13 @@ describe('ARENA 4 customer journey (real backend + PostgreSQL)', () => {
     expect((await login(storedPhone, '998877')).status).toBe(401);
 
     // --- Transaction PIN recovery (separate purpose, separate challenge)
-    await request(server())
+    const pinRequested = await request(server())
       .post('/api/v1/customers/credential-recovery/challenges')
       .send({ phone: storedPhone, purpose: 'TRANSACTION_PIN' })
       .expect(202);
-    const pinChallenge: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM customer_credential_recovery_challenges
-        WHERE customer_id=$1 AND purpose='TRANSACTION_PIN' AND status='ACTIVE'`,
-      [customerId],
-    );
     const pinVerified = await request(server())
       .post('/api/v1/customers/credential-recovery/challenges/verify')
-      .send({ challengeId: pinChallenge[0]!.id, code: sms.lastCodeFor('recovery') })
+      .send({ challengeId: pinRequested.body.challengeId, code: sms.lastCodeFor('recovery') })
       .expect(200);
     const pinCompleted = await request(server())
       .post('/api/v1/customers/credential-recovery/complete')
@@ -574,6 +572,8 @@ describe('ARENA 4 customer journey (real backend + PostgreSQL)', () => {
       .send({ phone: phone(), purpose: 'LOGIN_PASSCODE' })
       .expect(202);
     expect(unknown.body.status).toBe('ACCEPTED');
+    // Same shape as a real challenge reference, but it refers to nothing.
+    expect(unknown.body.challengeId).toMatch(/^[0-9a-f-]{36}$/i);
     const unknownRows: Array<{ count: string }> = await dataSource.query(
       `SELECT count(*)::text AS count FROM customer_credential_recovery_challenges`,
     );
@@ -581,17 +581,13 @@ describe('ARENA 4 customer journey (real backend + PostgreSQL)', () => {
 
     // Known customer but no confirmable identity evidence ⇒ SUPPORT_REQUIRED, no credential change.
     evidence.withdraw(customerId);
-    await request(server())
+    const knownRequest = await request(server())
       .post('/api/v1/customers/credential-recovery/challenges')
       .send({ phone: storedPhone, purpose: 'LOGIN_PASSCODE' })
       .expect(202);
-    const challenge: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM customer_credential_recovery_challenges WHERE customer_id=$1 AND status='ACTIVE'`,
-      [customerId],
-    );
     const supportRequired = await request(server())
       .post('/api/v1/customers/credential-recovery/challenges/verify')
-      .send({ challengeId: challenge[0]!.id, code: sms.lastCodeFor('recovery') })
+      .send({ challengeId: knownRequest.body.challengeId, code: sms.lastCodeFor('recovery') })
       .expect(409);
     expect(supportRequired.body.status).toBe('SUPPORT_REQUIRED');
     expect(supportRequired.body.reason).toBe('TRUSTED_EVIDENCE_UNAVAILABLE');

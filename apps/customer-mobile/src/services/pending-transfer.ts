@@ -66,7 +66,9 @@ function isPendingTransferIntent(value: unknown): value is PendingTransferIntent
  * this to return null (and, for staleness, also clears the stale record) — never leaks a prior
  * customer's intent to a different one, and never resurrects a long-abandoned attempt.
  */
-export async function loadPendingTransferIntent(customerId: string): Promise<PendingTransferIntent | null> {
+export async function loadPendingTransferIntent(
+  customerId: string,
+): Promise<PendingTransferIntent | null> {
   const raw = await SecureStorage.get(storageKeyFor(customerId));
   if (!raw) return null;
 
@@ -92,7 +94,10 @@ export async function loadPendingTransferIntent(customerId: string): Promise<Pen
 }
 
 /** True only if every business-meaning field matches exactly — the two represent the same logical transfer. */
-export function matchesPendingIntent(intent: PendingTransferIntent, candidate: PendingTransferParams): boolean {
+export function matchesPendingIntent(
+  intent: PendingTransferIntent,
+  candidate: PendingTransferParams,
+): boolean {
   return (
     intent.sourceWalletId === candidate.sourceWalletId &&
     intent.destinationWalletId === candidate.destinationWalletId &&

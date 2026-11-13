@@ -11,8 +11,10 @@ jest.mock('../src/store/auth-store', () => ({
   useAuthStore: () => mockStoreState,
 }));
 
+const mockNavigate = jest.fn();
+
 jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({ navigate: jest.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate }),
 }));
 
 describe('describeLoginFailure', () => {
@@ -72,7 +74,11 @@ describe('LoginScreen', () => {
     const { getByText } = render(<LoginScreen />);
 
     expect(getByText('Password change required')).toBeTruthy();
-    expect(getByText(/credential rotation is not available in this app version/)).toBeTruthy();
+    expect(getByText(/must be changed before any session can be issued/)).toBeTruthy();
+    // ARENA 4: rotation is implemented, so the screen routes to the real contract instead of
+    // telling the customer to contact Support.
+    fireEvent.press(getByText('Change my temporary password'));
+    expect(mockNavigate).toHaveBeenCalledWith('CredentialRotation');
   });
 
   test('offers the onboarding path and keeps onboarding separate from financial access', () => {

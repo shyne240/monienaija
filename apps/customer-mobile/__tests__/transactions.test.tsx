@@ -197,7 +197,9 @@ describe('Transactions Screen History Tests', () => {
       }),
     );
     // No fundingRequestId should leak onto an unrelated WALLET_TRANSFER context.
-    expect((mockNavigate.mock.calls[0][1] as Record<string, unknown>).fundingRequestId).toBeUndefined();
+    expect(
+      (mockNavigate.mock.calls[0][1] as Record<string, unknown>).fundingRequestId,
+    ).toBeUndefined();
   });
 
   test('"Get help" on a FUNDING row prefills fundingRequestId instead of relatedTransferId', async () => {
@@ -224,7 +226,9 @@ describe('Transactions Screen History Tests', () => {
       'CreateSupportTicket',
       expect.objectContaining({ category: 'FUNDING', fundingRequestId: 'funding-uuid-1' }),
     );
-    expect((mockNavigate.mock.calls[0][1] as Record<string, unknown>).relatedTransferId).toBeUndefined();
+    expect(
+      (mockNavigate.mock.calls[0][1] as Record<string, unknown>).relatedTransferId,
+    ).toBeUndefined();
   });
 
   test('"Get help" on a CASH_TO_CASH row embeds the reference in the description with no new id field', async () => {
@@ -249,7 +253,10 @@ describe('Transactions Screen History Tests', () => {
 
     const [, params] = mockNavigate.mock.calls[0];
     expect(params).toEqual(
-      expect.objectContaining({ category: 'CASH_TO_CASH', description: expect.stringContaining('C2C-REF-7') }),
+      expect.objectContaining({
+        category: 'CASH_TO_CASH',
+        description: expect.stringContaining('C2C-REF-7'),
+      }),
     );
     expect(params.relatedTransferId).toBeUndefined();
     expect(params.fundingRequestId).toBeUndefined();

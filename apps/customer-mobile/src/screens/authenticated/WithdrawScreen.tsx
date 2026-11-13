@@ -36,7 +36,9 @@ export const WithdrawScreen: React.FC = () => {
 
   useEffect(() => {
     if (customerId) {
-      setIdempotencyKey(`withdraw-${customerId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+      setIdempotencyKey(
+        `withdraw-${customerId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      );
     }
   }, [customerId]);
 
@@ -79,15 +81,19 @@ export const WithdrawScreen: React.FC = () => {
 
     try {
       // Step 1: Create the withdrawal request: POST /withdrawals
-      const withdrawalResult = await ApiClient.post<{ id: string }>('/withdrawals', {
-        walletId: primaryWallet.id,
-        amountMinor: String(amountMinor),
-        currency: 'NGN',
-        reference: idempotencyKey,
-        narration: `Withdraw to ${bankDetails.trim()}`,
-      }, {
-        idempotencyKey,
-      });
+      const withdrawalResult = await ApiClient.post<{ id: string }>(
+        '/withdrawals',
+        {
+          walletId: primaryWallet.id,
+          amountMinor: String(amountMinor),
+          currency: 'NGN',
+          reference: idempotencyKey,
+          narration: `Withdraw to ${bankDetails.trim()}`,
+        },
+        {
+          idempotencyKey,
+        },
+      );
 
       // No client-side fulfilment step exists: processing and completion are operational
       // transitions owned by the settlement workflow, so the request stays PENDING.
@@ -110,12 +116,15 @@ export const WithdrawScreen: React.FC = () => {
           <Text style={styles.successIcon}>💸</Text>
           <Text style={styles.successTitle}>Withdrawal Initiated!</Text>
           <Text style={styles.successDescription}>
-            ₦
-            {parseFloat(amountStr || '0').toLocaleString('en-NG', { minimumFractionDigits: 2 })} is
+            ₦{parseFloat(amountStr || '0').toLocaleString('en-NG', { minimumFractionDigits: 2 })} is
             being processed for payout to {bankDetails}.
           </Text>
         </View>
-        <Button label="Back to Home" style={styles.button} onPress={() => navigation.navigate('Home')} />
+        <Button
+          label="Back to Home"
+          style={styles.button}
+          onPress={() => navigation.navigate('Home')}
+        />
       </View>
     );
   }
@@ -128,13 +137,16 @@ export const WithdrawScreen: React.FC = () => {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <Text style={styles.title}>Withdraw</Text>
-          <Text style={styles.subtitle}>Withdraw funds from your MoneyNaija wallet to your bank account</Text>
+          <Text style={styles.subtitle}>
+            Withdraw funds from your MoneyNaija wallet to your bank account
+          </Text>
         </View>
 
         <Card variant="flat" style={styles.sandboxCard}>
           <Text style={styles.sandboxTitle}>ℹ️ Payout processing</Text>
           <Text style={styles.sandboxText}>
-            A withdrawal request is reviewed and processed by MoneyNaija operations before payout. No bank transfer is initiated from this screen.
+            A withdrawal request is reviewed and processed by MoneyNaija operations before payout.
+            No bank transfer is initiated from this screen.
           </Text>
         </Card>
 
@@ -148,14 +160,21 @@ export const WithdrawScreen: React.FC = () => {
           <View style={styles.balanceContainer}>
             <Text style={styles.balanceLabel}>AVAILABLE BALANCE</Text>
             <Text style={styles.balanceValue}>
-              ₦{(primaryWallet.balanceMinor / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+              ₦
+              {(primaryWallet.balanceMinor / 100).toLocaleString('en-NG', {
+                minimumFractionDigits: 2,
+              })}
             </Text>
           </View>
         )}
 
         <View style={styles.form}>
           <AmountInput
-            error={amountMinor > 0 && primaryWallet && primaryWallet.balanceMinor < amountMinor ? 'Insufficient funds' : undefined}
+            error={
+              amountMinor > 0 && primaryWallet && primaryWallet.balanceMinor < amountMinor
+                ? 'Insufficient funds'
+                : undefined
+            }
             label="Amount to Withdraw"
             value={amountStr}
             onChangeValue={(str, minor) => {

@@ -90,7 +90,9 @@ export const SupportTicketDetailScreen: React.FC = () => {
       setMessages(messagesRes || []);
     } catch (err: any) {
       setLoadError(
-        err instanceof ApiError ? err.message || 'Failed to load this ticket.' : 'Failed to load this ticket.',
+        err instanceof ApiError
+          ? err.message || 'Failed to load this ticket.'
+          : 'Failed to load this ticket.',
       );
     } finally {
       setIsLoading(false);
@@ -132,7 +134,9 @@ export const SupportTicketDetailScreen: React.FC = () => {
       await load();
     } catch (err: any) {
       setReplyError(
-        err instanceof ApiError ? err.message || 'Failed to send your reply.' : 'Failed to send your reply.',
+        err instanceof ApiError
+          ? err.message || 'Failed to send your reply.'
+          : 'Failed to send your reply.',
       );
     } finally {
       setIsSending(false);
@@ -156,13 +160,20 @@ export const SupportTicketDetailScreen: React.FC = () => {
   const canReply = ticket.status !== 'CLOSED' && ticket.status !== 'RESOLVED';
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.flex}
+    >
       <SafeAreaView style={styles.flex}>
         <FlatList
           data={messages}
           keyExtractor={(item) => item.id}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[theme.colors.primary.main]} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              colors={[theme.colors.primary.main]}
+            />
           }
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={
@@ -170,12 +181,16 @@ export const SupportTicketDetailScreen: React.FC = () => {
               <Card variant="flat" style={styles.card} testID="support-detail-header-card">
                 <View style={styles.topRow}>
                   <Text style={styles.reference}>{ticket.reference}</Text>
-                  <Text style={[styles.statusBadge, statusStyle(ticket.status)]}>{ticket.status}</Text>
+                  <Text style={[styles.statusBadge, statusStyle(ticket.status)]}>
+                    {ticket.status}
+                  </Text>
                 </View>
                 <Text style={styles.subject} testID="support-detail-subject">
                   {ticket.subject}
                 </Text>
-                <Text style={styles.meta}>{ticket.category.replace(/_/g, ' ')} · {ticket.priority}</Text>
+                <Text style={styles.meta}>
+                  {ticket.category.replace(/_/g, ' ')} · {ticket.priority}
+                </Text>
               </Card>
 
               <Card variant="flat" style={styles.card}>
@@ -202,7 +217,9 @@ export const SupportTicketDetailScreen: React.FC = () => {
           }}
           ListEmptyComponent={
             <Card variant="flat" style={styles.card}>
-              <Text style={styles.muted}>No messages yet. Send one below if you need to add more detail.</Text>
+              <Text style={styles.muted}>
+                No messages yet. Send one below if you need to add more detail.
+              </Text>
             </Card>
           }
           ListFooterComponent={
@@ -239,8 +256,8 @@ export const SupportTicketDetailScreen: React.FC = () => {
               ) : (
                 <Card variant="flat" style={styles.card}>
                   <Text style={styles.muted}>
-                    This ticket is {ticket.status.toLowerCase()}. If you need further help, please create a new
-                    support ticket.
+                    This ticket is {ticket.status.toLowerCase()}. If you need further help, please
+                    create a new support ticket.
                   </Text>
                 </Card>
               )}

@@ -2,7 +2,10 @@ import React, { act } from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { SendMoneyScreen } from '../src/screens/authenticated/SendMoneyScreen';
 import { ApiClient, ApiError, NetworkError } from '../src/services/api-client';
-import { clearPendingTransferIntent, loadPendingTransferIntent } from '../src/services/pending-transfer';
+import {
+  clearPendingTransferIntent,
+  loadPendingTransferIntent,
+} from '../src/services/pending-transfer';
 import { SecureStorage } from '../src/services/secure-storage';
 
 // The first React render in a fresh jest worker pays a one-time synchronous
@@ -52,7 +55,11 @@ jest.mock('@react-navigation/native', () => ({
 let mockCustomerId: string | null = 'customer-a-uuid';
 jest.mock('../src/store/auth-store', () => ({
   useAuthStore: (selector: (state: { customerId: string | null }) => unknown) =>
-    selector({ get customerId() { return mockCustomerId; } }),
+    selector({
+      get customerId() {
+        return mockCustomerId;
+      },
+    }),
 }));
 
 /**
@@ -137,7 +144,10 @@ describe('Send Money (Transfer) Screen Tests', () => {
       expect(getByPlaceholderText('e.g. 5e6f7g8h-...')).toBeTruthy();
     });
 
-    fireEvent.changeText(getByPlaceholderText('e.g. 5e6f7g8h-...'), '12345678-1234-1234-1234-123456789012');
+    fireEvent.changeText(
+      getByPlaceholderText('e.g. 5e6f7g8h-...'),
+      '12345678-1234-1234-1234-123456789012',
+    );
     fireEvent.changeText(getByPlaceholderText('0.00'), '100');
     // PIN left blank
     fireEvent.press(getByText('Send Funds'));
@@ -166,9 +176,12 @@ describe('Send Money (Transfer) Screen Tests', () => {
 
     await fillAndSubmit(getByPlaceholderText, getByText, { amount: '100', pin: '4321' });
 
-    await waitFor(() => {
-      expect(getByText('Confirm Money Transfer')).toBeTruthy();
-    }, { timeout: 5000 });
+    await waitFor(
+      () => {
+        expect(getByText('Confirm Money Transfer')).toBeTruthy();
+      },
+      { timeout: 5000 },
+    );
 
     fireEvent.press(getByText('Confirm'));
 
@@ -197,9 +210,7 @@ describe('Send Money (Transfer) Screen Tests', () => {
   });
 
   test('should surface a locked-PIN failure in plain language and clear the PIN field', async () => {
-    (ApiClient.post as jest.Mock).mockRejectedValue(
-      new ApiError('Customer PIN is locked', 401),
-    );
+    (ApiClient.post as jest.Mock).mockRejectedValue(new ApiError('Customer PIN is locked', 401));
 
     const { getByPlaceholderText, getByText } = render(<SendMoneyScreen />);
 
@@ -212,7 +223,9 @@ describe('Send Money (Transfer) Screen Tests', () => {
 
     await waitFor(() => {
       expect(
-        getByText('Your Transaction PIN is locked due to too many failed attempts. Contact support to continue.'),
+        getByText(
+          'Your Transaction PIN is locked due to too many failed attempts. Contact support to continue.',
+        ),
       ).toBeTruthy();
     });
     expect(getByPlaceholderText('••••').props.value).toBe('');
@@ -234,7 +247,9 @@ describe('Send Money (Transfer) Screen Tests', () => {
 
     await waitFor(() => {
       expect(
-        getByText('This transfer exceeds an account transaction limit. Try a smaller amount or contact support.'),
+        getByText(
+          'This transfer exceeds an account transaction limit. Try a smaller amount or contact support.',
+        ),
       ).toBeTruthy();
     });
   });
@@ -287,7 +302,10 @@ describe('Send Money (Transfer) Screen Tests', () => {
       // Retry the SAME logical transfer (identical destination/amount; PIN must be re-entered —
       // it is always cleared after any attempt, by design) — must reuse the exact same
       // Idempotency-Key, not mint a new one.
-      (ApiClient.post as jest.Mock).mockResolvedValueOnce({ id: 'tx-retry-1', status: 'COMPLETED' });
+      (ApiClient.post as jest.Mock).mockResolvedValueOnce({
+        id: 'tx-retry-1',
+        status: 'COMPLETED',
+      });
       fireEvent.changeText(getByPlaceholderText('••••'), '1234');
       fireEvent.press(getByText('Send Funds'));
       await waitFor(() => expect(getByText('Confirm Money Transfer')).toBeTruthy());
@@ -331,7 +349,10 @@ describe('Send Money (Transfer) Screen Tests', () => {
       // A definitive rejection must NOT leave a reusable pending intent behind.
       expect(await loadPendingTransferIntent('customer-a-uuid')).toBeNull();
 
-      (ApiClient.post as jest.Mock).mockResolvedValueOnce({ id: 'tx-fresh-1', status: 'COMPLETED' });
+      (ApiClient.post as jest.Mock).mockResolvedValueOnce({
+        id: 'tx-fresh-1',
+        status: 'COMPLETED',
+      });
       fireEvent.changeText(getByPlaceholderText('••••'), '4321');
       fireEvent.press(getByText('Send Funds'));
       await waitFor(() => expect(getByText('Confirm Money Transfer')).toBeTruthy());
@@ -359,9 +380,15 @@ describe('Send Money (Transfer) Screen Tests', () => {
 
       // Customer B logs in on the same device and submits the SAME-looking transfer.
       mockCustomerId = 'customer-b-uuid';
-      (ApiClient.post as jest.Mock).mockResolvedValueOnce({ id: 'tx-customer-b', status: 'COMPLETED' });
+      (ApiClient.post as jest.Mock).mockResolvedValueOnce({
+        id: 'tx-customer-b',
+        status: 'COMPLETED',
+      });
       const screenB = render(<SendMoneyScreen />);
-      await fillAndSubmit(screenB.getByPlaceholderText, screenB.getByText, { amount: '100', pin: '1234' });
+      await fillAndSubmit(screenB.getByPlaceholderText, screenB.getByText, {
+        amount: '100',
+        pin: '1234',
+      });
       await waitFor(() => expect(screenB.getByText('Confirm Money Transfer')).toBeTruthy());
       fireEvent.press(screenB.getByText('Confirm'));
       await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('Home'));
@@ -405,7 +432,13 @@ describe('Send Money (Transfer) Screen Tests', () => {
       realUseAuthStore.setState({
         isAuthenticated: true,
         customerId: 'customer-a-uuid',
-        session: { accessToken: 't', sessionId: 's', expiresAt: '2999-01-01', customerId: 'customer-a-uuid', audience: 'customer-api' },
+        session: {
+          accessToken: 't',
+          sessionId: 's',
+          expiresAt: '2999-01-01',
+          customerId: 'customer-a-uuid',
+          audience: 'customer-api',
+        },
       });
       await realUseAuthStore.getState().logout();
 

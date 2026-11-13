@@ -268,7 +268,11 @@ export const SendMoneyScreen: React.FC = () => {
           />
 
           <AmountInput
-            error={amountMinor > 0 && primaryWallet && balanceMinor < amountMinor ? 'Insufficient funds' : undefined}
+            error={
+              amountMinor > 0 && primaryWallet && balanceMinor < amountMinor
+                ? 'Insufficient funds'
+                : undefined
+            }
             label="Amount (NGN)"
             value={amountStr}
             onChangeValue={(str, minor) => {
@@ -360,7 +364,9 @@ function describeTransferError(err: unknown): string {
       return 'Recipient wallet was not found.';
     }
     if (err.status === 409) {
-      return err.message || 'This transfer could not be completed because of a conflicting request.';
+      return (
+        err.message || 'This transfer could not be completed because of a conflicting request.'
+      );
     }
     if (err.code && err.code.startsWith('LIMIT_')) {
       return 'This transfer exceeds an account transaction limit. Try a smaller amount or contact support.';

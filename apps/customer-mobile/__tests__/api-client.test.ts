@@ -37,7 +37,6 @@ describe('ApiClient tests', () => {
 
     try {
       // Fresh module instance: the config module reads NODE_ENV when it is first loaded.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const client =
         require('../src/services/api-client') as typeof import('../src/services/api-client');
 
