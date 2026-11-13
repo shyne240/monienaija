@@ -142,16 +142,25 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
       connection,
       outbox,
       {
-        verify: ({ operation }) =>
-          Promise.resolve({
-            state: 'VERIFIED_REJECTED',
-            providerStatus: 'REJECTED',
-            providerReferenceHash: sha256(
-              operation.providerReferences.find((r) => r.source === ExternalOperationReferenceSource.STATUS_QUERY)!.referenceValue,
-            ),
+        verify: async ({ operation }) => {
+          // The controlled adapter changes its answer only after a settlement commits,
+          // simulating a later independently verified rejection for recovery tests.
+          const prior = await dataSource.getRepository(ExternalSettlement).findOne({
+            where: { externalOperationId: operation.externalOperationId },
+          });
+          const reference = operation.providerReferences.find(
+            (r) =>
+              r.source === ExternalOperationReferenceSource.STATUS_QUERY &&
+              r.referenceValue.startsWith(prior ? 'confirmed-' : 'provider-evidence-'),
+          );
+          return {
+            state: prior ? 'VERIFIED_REJECTED' : 'VERIFIED_SETTLED',
+            providerStatus: prior ? 'REJECTED' : 'SETTLED',
+            providerReferenceHash: reference ? sha256(reference.referenceValue) : null,
             observedAt: new Date().toISOString(),
             reasonCode: null,
-          }),
+          };
+        },
       },
     );
   }, 180000);
@@ -283,7 +292,7 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
       `INSERT INTO external_operation_references
          (id, external_operation_id, partner_key, reference_type, reference_value, namespace,
           source, observed_at)
-       VALUES ($1, $2, 'NIBSS_NIP', 'TRANSACTION', $3, 'nibss.nip', 'ACKNOWLEDGEMENT', now())`,
+       VALUES ($1, $2, 'NIBSS_NIP', 'TRANSACTION', $3, 'nibss.nip', 'STATUS_QUERY', now())`,
       [randomUUID(), id, evidenceValue],
     );
 
@@ -308,7 +317,7 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
         referenceType: 'TRANSACTION',
         referenceValue: operation.evidenceValue,
         namespace: 'nibss.nip',
-        source: ExternalOperationReferenceSource.ACKNOWLEDGEMENT,
+        source: ExternalOperationReferenceSource.STATUS_QUERY,
         observedAt: new Date(),
       },
       requestContext,
@@ -329,7 +338,7 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
         referenceType: 'TRANSACTION',
         referenceValue: operation.evidenceValue,
         namespace: 'nibss.nip',
-        source: ExternalOperationReferenceSource.ACKNOWLEDGEMENT,
+        source: ExternalOperationReferenceSource.STATUS_QUERY,
         observedAt: new Date(),
       },
       requestContext,
@@ -442,7 +451,7 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
     await expect(
       service.settleVerifiedOutcome({
         ...command,
-        evidence: { ...command.evidence, source: ExternalOperationReferenceSource.STATUS_QUERY },
+        evidence: { ...command.evidence, source: ExternalOperationReferenceSource.ACKNOWLEDGEMENT },
       }),
     ).rejects.toMatchObject({ code: 'INTERNAL_ACCOUNT_MISMATCH' });
   });

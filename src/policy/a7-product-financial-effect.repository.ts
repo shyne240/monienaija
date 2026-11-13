@@ -403,6 +403,7 @@ export class A7ProductFinancialEffectRepository {
     }
     return {
       version: view.version,
+      providerReferences: view.providerReferences,
       externalOperationId: view.externalOperationId,
       externalOperationReference: view.externalOperationReference,
       partnerKey: view.partnerKey,

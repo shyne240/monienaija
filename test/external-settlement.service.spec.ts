@@ -231,7 +231,20 @@ class FakeManager {
         `NIBSS_NIP:${referenceType}:${referenceValue}:${namespace}`,
       );
       return Promise.resolve(
-        operationId ? [{ external_operation_id: operationId, source: 'ACKNOWLEDGEMENT' }] : [],
+        operationId
+          ? [
+              {
+                external_operation_id: operationId,
+                source: [...this.references.records.values()].find(
+                  (r) =>
+                    r.externalOperationId === operationId &&
+                    String(r.referenceType) === referenceType &&
+                    r.referenceValue === referenceValue &&
+                    r.namespace === namespace,
+                )?.source,
+              },
+            ]
+          : [],
       );
     }
     return Promise.resolve([]);
@@ -572,7 +585,12 @@ function makeService(
   const references = new FakeReferenceRepository();
   const operationService = new FakeExternalOperationService();
   if (!options.partnerMissingReference) {
-    const reference = makeReference(operation.id, 'provider-evidence-1');
+    const reference = makeReference(
+      operation.id,
+      'provider-evidence-1',
+      'TRANSACTION',
+      ExternalOperationReferenceSource.STATUS_QUERY,
+    );
     references.records.set(reference.id, reference);
     references.byValue.set(
       `NIBSS_NIP:${reference.referenceType}:${reference.referenceValue}:${reference.namespace}`,
@@ -593,13 +611,22 @@ function makeService(
   );
   operationService.references.set(verifiedRef.id, verifiedRef);
   const verifier = {
-    verify: jest.fn().mockResolvedValue({
-      state: 'VERIFIED_REJECTED',
-      providerStatus: 'REJECTED',
-      providerReferenceHash: sha256(verifiedRef.referenceValue),
-      observedAt: new Date().toISOString(),
-      reasonCode: null,
-    }),
+    verify: jest
+      .fn()
+      .mockResolvedValueOnce({
+        state: 'VERIFIED_SETTLED',
+        providerStatus: 'SETTLED',
+        providerReferenceHash: sha256('provider-evidence-1'),
+        observedAt: new Date().toISOString(),
+        reasonCode: null,
+      })
+      .mockResolvedValue({
+        state: 'VERIFIED_REJECTED',
+        providerStatus: 'REJECTED',
+        providerReferenceHash: sha256(verifiedRef.referenceValue),
+        observedAt: new Date().toISOString(),
+        reasonCode: null,
+      }),
   };
 
   const settlements = new FakeSettlementRepository();
@@ -660,7 +687,7 @@ function settleCommand(
       referenceType: 'TRANSACTION',
       referenceValue: 'provider-evidence-1',
       namespace: 'nibss.nip',
-      source: ExternalOperationReferenceSource.ACKNOWLEDGEMENT,
+      source: ExternalOperationReferenceSource.STATUS_QUERY,
       observedAt: new Date('2026-08-08T00:00:00.000Z'),
     },
     requestContext: REQUEST_CONTEXT,
@@ -673,6 +700,62 @@ function sha256(value: string): string {
 }
 
 describe('ExternalSettlementService', () => {
+  it.each([
+    'UNKNOWN',
+    'VERIFIED_PENDING',
+    'VERIFIED_ACCEPTED_NOT_SETTLED',
+    'VERIFIED_REJECTED',
+    'UNAVAILABLE',
+  ] as const)('does not settle when provider outcome is %s', async (state) => {
+    const fixture = makeService();
+    fixture.verifier.verify.mockReset().mockResolvedValue({
+      state,
+      providerStatus: null,
+      providerReferenceHash: sha256('provider-evidence-1'),
+      observedAt: new Date().toISOString(),
+      reasonCode: null,
+    });
+    await expect(fixture.service.settleVerifiedOutcome(settleCommand())).rejects.toThrow();
+    expect(fixture.ledgerService.journals).toHaveLength(0);
+  });
+
+  it.each(['wrong-hash', 'invalid-time'] as const)(
+    'rejects fabricated verification: %s',
+    async (kind) => {
+      const fixture = makeService();
+      fixture.verifier.verify.mockReset().mockResolvedValue({
+        state: 'VERIFIED_SETTLED',
+        providerStatus: null,
+        providerReferenceHash: sha256(kind === 'wrong-hash' ? 'different' : 'provider-evidence-1'),
+        observedAt: kind === 'invalid-time' ? 'invalid' : new Date().toISOString(),
+        reasonCode: null,
+      });
+      await expect(fixture.service.settleVerifiedOutcome(settleCommand())).rejects.toThrow();
+      expect(fixture.ledgerService.journals).toHaveLength(0);
+    },
+  );
+
+  it('does not treat a provider acknowledgement as settlement evidence', async () => {
+    const fixture = makeService();
+    const reference = fixture.references.records.get('ref-provider-evidence-1')!;
+    reference.source = ExternalOperationReferenceSource.ACKNOWLEDGEMENT;
+    const command = settleCommand();
+    command.evidence.source = ExternalOperationReferenceSource.ACKNOWLEDGEMENT;
+    await expect(fixture.service.settleVerifiedOutcome(command)).rejects.toMatchObject({
+      code: 'INVALID_SETTLEMENT_STATE',
+    });
+    expect(fixture.ledgerService.journals).toHaveLength(0);
+  });
+
+  it('treats a verifier exception as a retryable dependency outage', async () => {
+    const fixture = makeService();
+    fixture.verifier.verify.mockReset().mockRejectedValue(new Error('adapter offline'));
+    await expect(fixture.service.settleVerifiedOutcome(settleCommand())).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(fixture.ledgerService.journals).toHaveLength(0);
+  });
+
   it('posts a single balanced Ledger journal for a verified external outcome', async () => {
     const fixture = makeService();
 

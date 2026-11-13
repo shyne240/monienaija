@@ -1449,8 +1449,9 @@ export class A7ProductFinancialEffectService {
     }
     void a6T08Category;
 
-    // Build the A6T08 evidence envelope from the A6T05 record.
-    const evidence: ExternalSettlementEvidence = {
+    // A suspense record may carry the operation correlation identifier, but a
+    // settlement must use a separately verified provider reference below.
+    const suspenseEvidence: ExternalSettlementEvidence = {
       referenceType: 'OPERATION',
       referenceValue: command.a6ExternalOperationReference,
       namespace: A7_PRODUCT_FINANCIAL_EFFECT_SETTLEMENT_REFERENCE_PREFIX,
@@ -1478,6 +1479,30 @@ export class A7ProductFinancialEffectService {
           'The A6 external operation could not be read for settlement',
         );
       }
+      const verified = await ports.a6StatusVerification(command.a6ExternalOperationReference);
+      if (verified.state === 'UNAVAILABLE')
+        throw new ServiceUnavailableException('Provider outcome verification is unavailable');
+      const reference = a6View.providerReferences.find(
+        (item) =>
+          ['OPERATION', 'TRANSACTION', 'SETTLEMENT'].includes(item.referenceType) &&
+          ['STATUS_QUERY', 'CALLBACK', 'STATEMENT', 'REPORT'].includes(item.source) &&
+          this.sha256(item.referenceValue) === verified.providerReferenceHash,
+      );
+      if (
+        verified.state !== 'VERIFIED_SETTLED' ||
+        !reference ||
+        !Number.isFinite(Date.parse(verified.observedAt))
+      )
+        throw new ConflictException(
+          'Provider settlement outcome is not verified for this operation',
+        );
+      const evidence: ExternalSettlementEvidence = {
+        referenceType: reference.referenceType as ExternalSettlementEvidence['referenceType'],
+        referenceValue: reference.referenceValue,
+        namespace: reference.namespace,
+        source: reference.source,
+        observedAt: reference.observedAt,
+      };
       const settleResult = await ports.a6T08SettleVerifiedOutcome(
         {
           externalOperationId: a6View.externalOperationId,
@@ -1532,7 +1557,7 @@ export class A7ProductFinancialEffectService {
             | 'PROVIDER_FAILURE',
           rejectionCode: 'SUSPENSE_REASON_INVALID' as ExternalSettlementRejectionCode,
           expectedVersion: a6View.version,
-          evidence,
+          evidence: suspenseEvidence,
           requestContext: command.requestContext,
           owner: A7_PRODUCT_FINANCIAL_EFFECT_AUDIT_ACTOR,
           ownerPrincipal: A7_PRODUCT_FINANCIAL_EFFECT_AUDIT_ACTOR,

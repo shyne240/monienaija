@@ -385,6 +385,7 @@ export interface A7ProductLifecycleA6LifecycleView {
  */
 export interface A7ProductLifecycleA6StatusVerificationView {
   readonly state:
+    | 'VERIFIED_SETTLED'
     | 'VERIFIED_PENDING'
     | 'VERIFIED_REJECTED'
     | 'VERIFIED_ACCEPTED_NOT_SETTLED'
