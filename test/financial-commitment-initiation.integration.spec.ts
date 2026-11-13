@@ -745,6 +745,47 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
     expect(await balance(s.sourceId)).toBe('1000');
   });
 
+  it('keeps reserved funds on hold when an identity ownership conflict exists', async () => {
+    const s = await subject();
+    const other = await subject();
+    const op = await pending(s);
+    const consent = randomUUID();
+    const attempt = randomUUID();
+    const claim = randomUUID();
+    await db.query(
+      `INSERT INTO kyc_consents(id,customer_id,kind,notice_version,actor_id,expires_at)
+      VALUES($1,$2,'BVN','test',$2,clock_timestamp()+interval '1 day')`,
+      [consent, other.customerId],
+    );
+    await db.query(
+      `INSERT INTO kyc_verification_attempts(id,customer_id,consent_id,request_id,kind,provider,policy_version,request_mac,identity_mac,mac_key_version,outcome,completed_at,expires_at)
+      VALUES($1,$2,$3,$4,'BVN','TEST','test',$5,$5,'test','MATCH',clock_timestamp(),clock_timestamp()+interval '1 day')`,
+      [attempt, other.customerId, consent, randomUUID(), 'a'.repeat(64)],
+    );
+    await db.query(
+      `INSERT INTO kyc_identity_claims(id,kind,identifier_mac,customer_id,attempt_id,status) VALUES($1,'BVN',$2,$3,$4,'VERIFIED')`,
+      [claim, createHash('sha256').update(claim).digest('hex'), other.customerId, attempt],
+    );
+    await db.query(
+      `INSERT INTO kyc_identity_conflicts(id,requester_customer_id,claim_id,claimed_customer_id,kind) VALUES($1,$2,$3,$4,'BVN')`,
+      [randomUUID(), s.customerId, claim, other.customerId],
+    );
+    await expect(settlement.settleVerifiedOutcome(settleCommand(op))).rejects.toThrow();
+    verificationState = 'VERIFIED_REJECTED';
+    await expect(settlement.releaseReservedWithdrawal(releaseCommand(op))).rejects.toThrow(
+      'restricted pending compliance review',
+    );
+    expect(await balance(s.sourceId)).toBe('300');
+    expect(
+      (
+        await db.query<Array<{ state: string }>>(
+          'SELECT state FROM financial_commitments WHERE id=$1',
+          [op.commitment.id],
+        )
+      )[0]?.state,
+    ).toBe('RESERVED');
+  });
+
   it('rolls back a settlement interrupted after posting and safely retries', async () => {
     const s = await subject();
     const op = await pending(s);
