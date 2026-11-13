@@ -5,7 +5,11 @@ import { ValidationPipe } from '@nestjs/common';
 import { WITHDRAWAL_EXECUTION_AUTHORITY } from '../src/financial-commitment/withdrawal-execution-authority';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
-import { DataSource } from 'typeorm';
+import { DataSource, type DeepPartial } from 'typeorm';
+import { A2FinanceRoleAssignment } from '../src/authorization/workforce-authentication.entity';
+import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+import request = require('supertest');
 
 import { AuthenticationExecutionService } from '../src/customer-authentication/authentication-execution.service';
 import { AuthenticationSessionService } from '../src/customer-authentication/authentication-session.service';
@@ -1140,6 +1144,142 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
     expect(row).toEqual([{ state: 'RELEASED', resolution_journal_id: released.journalId }]);
   });
 
+  it('reverses the genuine reservation exactly, only after verified rejection and after a rolled-back outbox failure', async () => {
+    const s = await subject();
+    const op = await pending(s);
+    const command = releaseCommand(op);
+    await db.query(
+      `INSERT INTO kyc_tier_manual_holds(customer_id,actor,reason) VALUES($1,'test','MANUAL_REVIEW')`,
+      [s.customerId],
+    );
+    verificationState = 'VERIFIED_REJECTED';
+    await expect(settlement.releaseReservedWithdrawal(command)).rejects.toThrow(
+      'restricted pending compliance review',
+    );
+    await db.query('DELETE FROM kyc_tier_manual_holds WHERE customer_id=$1', [s.customerId]);
+    for (const state of ['UNKNOWN', 'UNAVAILABLE'] as const) {
+      verificationState = state;
+      await expect(settlement.releaseReservedWithdrawal(command)).rejects.toThrow();
+    }
+    verificationState = 'VERIFIED_REJECTED';
+    verificationHashOverride = createHash('sha256').update('another-operation').digest('hex');
+    await expect(settlement.releaseReservedWithdrawal(command)).rejects.toThrow('not verified');
+    verificationHashOverride = null;
+    const outbox = jest
+      .spyOn(app.get(OutboxService), 'enqueue')
+      .mockRejectedValueOnce(new Error('injected release outbox outage'));
+    try {
+      await expect(settlement.releaseReservedWithdrawal(command)).rejects.toThrow(
+        'injected release outbox outage',
+      );
+    } finally {
+      outbox.mockRestore();
+    }
+    expect(await balance(s.sourceId)).toBe('300');
+    expect(
+      await db.query('SELECT id FROM ledger_journals WHERE reversal_of_journal_id=$1', [
+        op.commitment.reservation_journal_id,
+      ]),
+    ).toHaveLength(0);
+    expect(
+      await db.query('SELECT state FROM financial_commitments WHERE id=$1', [op.commitment.id]),
+    ).toEqual([{ state: 'RESERVED' }]);
+    const result = await settlement.releaseReservedWithdrawal(command);
+    expect(await balance(s.sourceId)).toBe('1000');
+    const lines = await db.query<
+      Array<{ ledger_account_id: string; direction: string; amount_minor: string }>
+    >(
+      'SELECT ledger_account_id,direction,amount_minor::text FROM ledger_lines WHERE journal_id=$1 ORDER BY ledger_account_id',
+      [op.commitment.reservation_journal_id],
+    );
+    const reversed = await db.query<
+      Array<{ ledger_account_id: string; direction: string; amount_minor: string }>
+    >(
+      'SELECT ledger_account_id,direction,amount_minor::text FROM ledger_lines WHERE journal_id=$1 ORDER BY ledger_account_id',
+      [result.journalId],
+    );
+    expect(reversed).toEqual(
+      lines.map((x) => ({ ...x, direction: x.direction === 'DEBIT' ? 'CREDIT' : 'DEBIT' })),
+    );
+    expect(
+      await db.query('SELECT reversal_of_journal_id FROM ledger_journals WHERE id=$1', [
+        result.journalId,
+      ]),
+    ).toEqual([{ reversal_of_journal_id: op.commitment.reservation_journal_id }]);
+  });
+  it('serializes concurrent authorized reservation release and recovers exactly one result', async () => {
+    const s = await subject();
+    const op = await pending(s);
+    verificationState = 'VERIFIED_REJECTED';
+    const command = releaseCommand(op);
+    const attempts = await Promise.allSettled([
+      settlement.releaseReservedWithdrawal(command),
+      settlement.releaseReservedWithdrawal(command),
+    ]);
+    expect(attempts.some((x) => x.status === 'fulfilled')).toBe(true);
+    const replay = await settlement.releaseReservedWithdrawal(command);
+    expect(replay.replayed).toBe(true);
+    expect(
+      await db.query('SELECT id FROM ledger_journals WHERE reversal_of_journal_id=$1', [
+        op.commitment.reservation_journal_id,
+      ]),
+    ).toEqual([{ id: replay.journalId }]);
+    expect(await balance(s.sourceId)).toBe('1000');
+  });
+  it('preserves a settled commitment despite unknown or rejected outcomes without proof of returned funds', async () => {
+    const s = await subject();
+    const op = await pending(s);
+    const settled = await settlement.settleVerifiedOutcome(settleCommand(op));
+    const suspense = await settlement.recordSuspense({
+      externalOperationId: op.commitment.external_operation_id,
+      expectedVersion: op.version,
+      reason: 'MANUAL_REVIEW',
+      rejectionCode: 'INVALID_SETTLEMENT_STATE',
+      evidence: op.evidence,
+      requestContext,
+    });
+    const command = {
+      externalOperationId: op.commitment.external_operation_id,
+      settlementId: settled.settlement.settlementId,
+      suspenseEntryId: suspense.suspenseId,
+      expectedVersion: op.version,
+      requestContext,
+    };
+    for (const state of ['UNKNOWN', 'UNAVAILABLE', 'VERIFIED_REJECTED'] as const) {
+      verificationState = state;
+      await expect(settlement.recordCompensatingEntry(command)).rejects.toThrow(
+        'governed commitment recovery',
+      );
+    }
+    expect((await settlement.getByOperation(op.commitment.external_operation_id))?.status).toBe(
+      'POSTED',
+    );
+    expect(await balance(s.sourceId)).toBe('300');
+    expect(
+      await db.query('SELECT id FROM ledger_journals WHERE reversal_of_journal_id=$1', [
+        settled.settlement.journalId,
+      ]),
+    ).toHaveLength(0);
+  });
+  it('prevents duplicate reservation reversals and recovers the first authorized release', async () => {
+    const s = await subject();
+    const op = await pending(s);
+    verificationState = 'VERIFIED_REJECTED';
+    const command = releaseCommand(op);
+    const first = await settlement.releaseReservedWithdrawal(command);
+    const replay = await settlement.releaseReservedWithdrawal(command);
+    expect(replay.replayed).toBe(true);
+    expect(replay.journalId).toBe(first.journalId);
+    expect(
+      await db.query('SELECT id FROM ledger_journals WHERE reversal_of_journal_id=$1', [
+        op.commitment.reservation_journal_id,
+      ]),
+    ).toEqual([{ id: first.journalId }]);
+    await expect(
+      ledger.reverseJournal(op.commitment.reservation_journal_id, randomUUID()),
+    ).rejects.toThrow();
+    expect(await balance(s.sourceId)).toBe('1000');
+  });
   it('rejects missing, unverified and fabricated provider evidence without losing the reservation', async () => {
     const s = await subject();
     const op = await pending(s);
@@ -1456,6 +1596,86 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
     expect(await balance(s.sourceId)).toBe('300');
   });
 
+  it('does not permit generic maker-checker approval to reverse a genuine committed outbound settlement', async () => {
+    const s = await subject();
+    const op = await pending(s);
+    const settled = await settlement.settleVerifiedOutcome(settleCommand(op));
+    const journalId = settled.settlement.journalId!;
+    const provision = async (roleKey: string) => {
+      const principalId = `a6-commitment-recovery-test:${roleKey}:${randomUUID()}`;
+      const now = new Date();
+      await db
+        .getRepository(A2FinanceRoleAssignment)
+        .save({
+          id: randomUUID(),
+          assignmentReference: `a6-commitment-test:${principalId}`,
+          assignmentVersion: 1,
+          principalId,
+          roleKey,
+          scopes: [],
+          status: 'ACTIVE',
+          initiatedScope: 'SUPER_ADMIN_SCOPE',
+          interim: true,
+          effectiveFrom: new Date(now.getTime() - 60000),
+          effectiveTo: new Date(now.getTime() + 3600000),
+          assignedBy: 'test-harness',
+          assignedAt: now,
+          revokedBy: null,
+          revokedAt: null,
+          bootstrapReference: null,
+          approvalIds: [],
+          auditReferences: [],
+        } as DeepPartial<A2FinanceRoleAssignment>);
+      const session = await app
+        .get(A2WorkforceSessionService)
+        .establish({
+          issuer: 'https://local-dev-identity.monienaija.invalid',
+          subject: principalId,
+          principalId,
+          audience: ['workforce-admin'],
+          issuedAt: now.toISOString(),
+          expiresAt: new Date(now.getTime() + 3600000).toISOString(),
+          authenticatedAt: now.toISOString(),
+          assuranceLevel: 'MFA',
+          amr: ['pwd', 'otp'],
+          acr: null,
+          signingKeyId: 'test-harness-key',
+        });
+      return session.accessToken;
+    };
+    const maker = await provision('FINANCE_PREPARER');
+    const checker = await provision('FINANCE_CONTROLLER');
+    const reason = 'Controlled settlement recovery test';
+    const created = await request(app.getHttpServer())
+      .post(`/api/v1/ledger/journals/${journalId}/reversal-request`)
+      .set('Authorization', `Bearer ${maker}`)
+      .send({ reason });
+    expect(created.status).toBe(201);
+    const approvalId = (created.body as { approvalId: string }).approvalId;
+    const approved = await request(app.getHttpServer())
+      .post(`/api/v1/internal/a2/workforce/approvals/${approvalId}/approve`)
+      .set('Authorization', `Bearer ${checker}`)
+      .send({ comment: 'controlled test' });
+    expect(approved.status).toBe(201);
+    const reversal = await request(app.getHttpServer())
+      .post(`/api/v1/ledger/journals/${journalId}/reversal`)
+      .set('Authorization', `Bearer ${checker}`)
+      .send({ reason, approvalId, idempotencyKey: 'blocked-commitment-reversal' });
+    expect(reversal.status).toBe(409);
+    expect((reversal.body as { message: string }).message).toContain(
+      'reserve account is restricted',
+    );
+    expect(
+      await db.query('SELECT status FROM privileged_action_approvals WHERE id=$1', [approvalId]),
+    ).toEqual([{ status: 'APPROVED' }]);
+    expect(
+      await db.query('SELECT id FROM ledger_journals WHERE reversal_of_journal_id=$1', [journalId]),
+    ).toHaveLength(0);
+    expect((await settlement.getByOperation(op.commitment.external_operation_id))?.status).toBe(
+      'POSTED',
+    );
+    expect(await balance(s.sourceId)).toBe('300');
+  });
   it('cannot bypass reserved recovery via generic rejection', async () => {
     const s = await subject();
     const op = await pending(s);

@@ -196,6 +196,18 @@ export class LedgerReversalGovernanceService {
         if (!original) throw new NotFoundException(`Journal ${journalId} was not found`);
         if (original.reversalOfJournalId)
           throw new ConflictException('A reversal cannot itself be reversed');
+        // Generic approval does not establish receipt-specific return evidence or
+        // disposition authority. Preserve approval and the original receipt until
+        // a separately governed inbound recovery contract exists. The database
+        // trigger remains the defense-in-depth boundary for direct ledger callers.
+        const inbound = await manager.query<Array<{ id: string }>>(
+          'SELECT id FROM inbound_funding_receipts WHERE journal_id=$1 FOR SHARE',
+          [journalId],
+        );
+        if (inbound.length)
+          throw new ConflictException(
+            'Inbound funding reversal requires governed receipt recovery',
+          );
         const consumed = await this.approvals.consumeInTransaction(manager, {
           principal: command.principal,
           approvalId,
