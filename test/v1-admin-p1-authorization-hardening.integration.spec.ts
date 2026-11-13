@@ -338,6 +338,13 @@ describe('V1-ADMIN-P1-HARDENING — P1 function-level authorization for all inte
       for (const role of ['SUPER_ADMIN', 'FINANCE_AUDITOR', 'TREASURY']) {
         const tok = role === 'SUPER_ADMIN' ? await loginSuperAdmin() : await tokenForRole(role);
         await expectStatus('/api/v1/internal/reconciliation/report', 'get', tok, null, 200);
+        await expectStatus(
+          '/api/v1/internal/reconciliation/inbound-unresolved',
+          'get',
+          tok,
+          null,
+          200,
+        );
         await expectStatus('/api/v1/internal/reconciliation/trial-balance', 'get', tok, null, 200);
       }
       for (const role of [
@@ -352,6 +359,13 @@ describe('V1-ADMIN-P1-HARDENING — P1 function-level authorization for all inte
       ]) {
         const tok = await tokenForRole(role);
         await expectStatus('/api/v1/internal/reconciliation/report', 'get', tok, null, 403);
+        await expectStatus(
+          '/api/v1/internal/reconciliation/inbound-unresolved',
+          'get',
+          tok,
+          null,
+          403,
+        );
         await expectStatus('/api/v1/internal/reconciliation/trial-balance', 'get', tok, null, 403);
       }
     });

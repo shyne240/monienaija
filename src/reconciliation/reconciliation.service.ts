@@ -251,6 +251,25 @@ export class ReconciliationService {
         ),
       );
 
+      checks.push(
+        await this.executeCheck(
+          manager,
+          'verified_inbound_unresolved',
+          `SELECT COUNT(*)::text AS violations
+             FROM inbound_funding_observations o
+            WHERE NOT EXISTS (
+              SELECT 1 FROM inbound_funding_receipts r
+               WHERE r.provider_key=o.provider_key
+                 AND r.provider_reference_hash=o.provider_reference_hash
+                 AND r.evidence_hash=o.evidence_hash
+                 AND r.status='CREDITED'
+            )`,
+          'All verified inbound observations have been credited.',
+          [],
+          VerificationStatus.WARNING,
+        ),
+      );
+
       const binding = await this.collectBindingReconciliation(manager);
       checks.push(this.bindingCheck(binding));
       return {
@@ -262,6 +281,36 @@ export class ReconciliationService {
     });
     await this.metricsService?.observeDuration('reconciliation.duration_ms', startedAt);
     return report;
+  }
+
+  /** Restricted finance work queue; returns hashes rather than bank account details. */
+  async getUnresolvedInboundObservations(offset = 0) {
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1_000_000)
+      throw new BadRequestException('Invalid inbound reconciliation offset');
+    return this.dataSource.query<
+      Array<{
+        id: string;
+        provider_key: string;
+        provider_reference_hash: string;
+        evidence_hash: string;
+        amount_minor: string;
+        currency: string;
+        receipt_status: 'SUSPENSE' | null;
+        provider_observed_at: Date;
+        created_at: Date;
+      }>
+    >(
+      `SELECT o.id, o.provider_key, o.provider_reference_hash, o.evidence_hash,
+              o.amount_minor::text, o.currency, o.provider_observed_at, o.created_at,
+              r.status AS receipt_status
+         FROM inbound_funding_observations o
+         LEFT JOIN inbound_funding_receipts r
+           ON r.provider_key=o.provider_key AND r.provider_reference_hash=o.provider_reference_hash
+          AND r.evidence_hash=o.evidence_hash
+        WHERE r.id IS NULL OR r.status <> 'CREDITED'
+        ORDER BY o.created_at, o.id LIMIT 100 OFFSET $1`,
+      [offset],
+    );
   }
 
   async getBindingReconciliation(): Promise<CustomerFinancialAccountReconciliationReport> {
