@@ -322,15 +322,19 @@ export class TypeOrmPolicyDecisionRecordRepository implements PolicyDecisionReco
         const decisionInsert = decisionEntity as unknown as Parameters<
           Repository<PolicyDecisionRecord>['insert']
         >[0];
-        await manager.getRepository(PolicyDecisionRecord).insert(decisionInsert);
+        const inserted = await manager.getRepository(PolicyDecisionRecord).insert(decisionInsert);
+        const entityId: unknown = inserted.identifiers[0]?.id;
+        if (typeof entityId !== 'string')
+          throw new ConflictException('A4 decision identity unavailable');
         await auditService.record(manager, {
           entityType: 'A4_POLICY_DECISION',
-          entityId: result.decisionReference,
+          entityId,
           action: 'DECISION_PERSISTED',
           actor: result.requestContext.requestId,
           correlationId: result.requestContext.correlationId,
           requestId: result.requestContext.requestId,
           newValues: {
+            decisionReference: result.decisionReference,
             customerId: result.subject.customerId,
             capability: result.capability,
             action: result.action,

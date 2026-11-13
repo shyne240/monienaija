@@ -44,6 +44,11 @@
 import { Module, Provider } from '@nestjs/common';
 
 import { AuthorizationModule } from '../authorization/authorization.module';
+import { KycTierModule } from '../kyc-verification/kyc-tier.module';
+import {
+  A7_INBOUND_ADMISSION_AUTHORITY,
+  UnavailableA7InboundAdmissionAuthority,
+} from './a7-inbound-admission-authority';
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { A7ProductPersistenceService } from './a7-product-persistence.service';
 import { OperationsModule } from '../operations/operations.module';
@@ -69,6 +74,7 @@ export const A7_PRODUCT_COMMAND_PROVIDERS: readonly Provider[] = Object.freeze([
   A7ProductCommandRepository,
   A7ProductCommandService,
   A7ProductPersistenceService,
+  { provide: A7_INBOUND_ADMISSION_AUTHORITY, useClass: UnavailableA7InboundAdmissionAuthority },
 ]);
 
 /**
@@ -82,6 +88,7 @@ export const A7_PRODUCT_COMMAND_PROVIDERS: readonly Provider[] = Object.freeze([
   imports: [
     AuthorizationModule,
     CustomerAuthenticationModule,
+    KycTierModule,
     OperationsModule,
     PartnerModule,
     VirtualAccountModule,

@@ -18,3 +18,30 @@ Both existing A7 A4 profiles (`src/policy/a7-product-policy.profiles.ts`) requir
 - Guarded disposable PostgreSQL run `a7i02`: 61 passed, 14 failed, 75 total, 6 suites (4 passed, 2 failed). The new authoritative persistence suite passed all 8 tests; A6 financial-commitment initiation, commitment schema and migration readiness passed. The financial-effect suite had 12 failures from fixtures that expect the prohibited outbound withdrawal path; the legacy lifecycle suite had 2 failures expecting response-body-based replay. The latter were already fail-closed at checkpoint `342489a` and the financial-effect guard is unchanged. No claim is made that these suites pass.
 - Obligation identity and A7 policy unit run `a7i-unit`: 22 passed, 0 failed in 2 suites. The obligation tests validate the exact profile templates, missing/duplicate/altered obligations and deadlines; they do not demonstrate a successful A4-backed admission.
 - Authenticated A6 HTTP behavior was exercised by the financial-commitment suite; there is no A7 HTTP endpoint in this checkpoint, so no authenticated A7 admission HTTP test is claimed.
+
+## Inbound admission checkpoint (incomplete)
+
+A separate draft inbound A4 profile and transaction-bound authority contract now exist. The profile is **not published by this change**. Admission requires its exact active, effective governed definition, a current immutable A4 decision and snapshot, the original authenticated session and authorization, current binding, virtual account and financial eligibility, a positive intended amount, and a trusted inbound authority recheck in the same serializable transaction. The default authority is unavailable. The authority must independently revalidate all relevant evidence, policy, consent, limits, compliance, route and institution, not accept the customer's amount or an A4 snapshot as proof. Evidence references are audited. The intended amount is not a receipt or permission to credit; the verified-receipt execution boundary remains separate and unimplemented here. Existing commands without an amount retain their original replay hash.
+
+The PostgreSQL acceptance fixture publishes a **test-only** profile and uses isolated database-backed source and authority records, a test KYC reader, real customer session/A2/binding and real A4 decision/snapshot persistence. It proves a nonfinancial lifecycle admission, no A6 operation or ledger journal, same-key concurrent replay, admission/cancellation race, rollback on a denied authority, stale route/source/session/profile, missing authority, amount mismatch, compliance hold, limits and corrupt obligations. It is not a production evidence integration, policy approval, HTTP acceptance or a verified payment. No HTTP endpoint presently invokes this persistence admission method; authenticated HTTP acceptance remains outstanding.
+
+The original 14 PostgreSQL failures were examined. The two response-only legacy lifecycle replays now explicitly fail closed, with real persisted concurrent replay tested separately. Twelve financial-effect tests remain failing; changing them into successful inbound settlement would violate scope and direction integrity:
+
+| Legacy test                                       | Current blocker                                                 |
+| ------------------------------------------------- | --------------------------------------------------------------- |
+| temporary dependency outage and retry             | direction guard precedes the mocked outbound settlement call    |
+| uncommitted operation eligibility                 | direct A6 settlement lacks an exact reserved commitment         |
+| concurrent settlement                             | direct A6 settlement lacks an exact reserved commitment         |
+| provider verification and retry                   | direct A6 settlement lacks an exact reserved commitment         |
+| persisted operation version                       | inbound envelope is blocked from outbound withdrawal settlement |
+| verified financial effect / balanced journal      | inbound envelope is blocked from outbound withdrawal settlement |
+| compensating entries                              | prerequisite inbound-as-outbound settlement is blocked          |
+| concurrent compensation                           | prerequisite inbound-as-outbound settlement is blocked          |
+| uncertain exhausted outcome / confirmed rejection | prerequisite inbound-as-outbound settlement is blocked          |
+| double reversal                                   | prerequisite inbound-as-outbound settlement is blocked          |
+| financial-effect idempotent replay                | prerequisite inbound-as-outbound settlement is blocked          |
+| injected outbox rollback and retry                | direction guard precedes the attempted outbound posting         |
+
+These need properly authorized outbound A6 commitment fixtures or a separately governed inbound financial execution implementation, as applicable; no historical settlement or inbound credit may be fabricated. Three financial-effect unit tests likewise still expect the prohibited inbound-to-outbound path. The local authority fixture does not establish production institution, consent, regulatory limits or provider authority; those remain blocked until genuinely governed integrations exist.
+
+Validation: guarded PostgreSQL `/home/user/a7in09.log` **67/67** across admission, legacy lifecycle, commitment initiation/schema and migration readiness; broader `/home/user/a7in08.log` **89 passed / 12 failed**, including passing A6 settlement suite. Relevant unit run `/home/user/a7in-units3.log` **236 passed / 3 failed**. TypeScript, changed-file ESLint and `git diff --check` pass. No deployment, main merge, real transactions or live provider calls were performed.

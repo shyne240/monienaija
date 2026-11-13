@@ -652,19 +652,17 @@ describe('A7 Product Lifecycle (real PostgreSQL)', () => {
   // B. Idempotency
   // =======================================================================================
   describe('Idempotency checks', () => {
-    it('replays identical lifecycle transitions and throws on request hash conflict', async () => {
+    it('rejects legacy response-only replay and still detects request hash conflicts', async () => {
       await seedExternalOperation('CREATED');
       const envelope = buildEnvelope();
 
       const first = await a7Lifecycle.transitionProductLifecycle(envelope);
-      const second = await a7Lifecycle.transitionProductLifecycle(envelope);
-
       expect(first.valid).toBe(true);
-      expect(second.valid).toBe(true);
-      if (first.valid && second.valid) {
-        expect(second.record.productLifecycleId).toBe(first.record.productLifecycleId);
-        expect(second.record.replayed).toBe(true);
-      }
+      // This legacy stubbed path has no persisted A7 aggregate. Replay must not
+      // reconstruct state from the old idempotency response body.
+      await expect(a7Lifecycle.transitionProductLifecycle(envelope)).rejects.toThrow(
+        'Legacy A7 lifecycle replay has no authoritative persisted state',
+      );
 
       // Payload conflict
       const conflictingEnvelope = buildEnvelope({
@@ -805,17 +803,13 @@ describe('A7 Product Lifecycle (real PostgreSQL)', () => {
       const fulfilled = results.filter((r) => r.status === 'fulfilled');
       const rejected = results.filter((r) => r.status === 'rejected');
 
-      // The idempotency service completed reservation should return one successful and one blocked
-      expect(fulfilled).toHaveLength(2);
-      expect(rejected).toHaveLength(0);
-
-      const res1 = (fulfilled[0] as PromiseFulfilledResult<any>).value;
-      const res2 = (fulfilled[1] as PromiseFulfilledResult<any>).value;
-
-      // One is a new transaction, the other is replayed idempotently
-      expect(res1.valid).toBe(true);
-      expect(res2.valid).toBe(true);
-      expect(res2.record.productLifecycleId).toBe(res1.record.productLifecycleId);
+      // One stubbed legacy request commits; the other cannot manufacture replay
+      // state. Real persisted replay/concurrency is covered by the authoritative
+      // PostgreSQL admission suite.
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect((fulfilled[0] as PromiseFulfilledResult<{ valid: boolean }>).value.valid).toBe(true);
+      expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(Error);
     });
   });
 

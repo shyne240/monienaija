@@ -1,8 +1,31 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
+import type { EntityManager } from 'typeorm';
+import {
+  A7_INBOUND_ADMISSION_AUTHORITY,
+  type A7InboundAdmissionAuthority,
+} from '../src/policy/a7-inbound-admission-authority';
+import { A7_INBOUND_ADMISSION_PROFILE } from '../src/policy/a7-inbound-admission.profile';
+import { TypeOrmPolicyProfileVersionRepository } from '../src/policy/capability-policy-persistence.repositories';
+import { PolicyProfileLifecycleState } from '../src/policy/capability-policy-persistence.enums';
+import {
+  CapabilityPolicyEvaluationService,
+  calculateSnapshotInputHash,
+} from '../src/policy/capability-policy.service';
+import {
+  PolicyCollectionStatus,
+  PolicyEvidenceFreshnessState,
+  PolicySourceClass,
+} from '../src/policy/capability-policy.enums';
+import type {
+  PolicyEvidenceItem,
+  PolicyEvidenceSnapshot,
+} from '../src/policy/capability-policy.types';
+import { AuthenticationSessionService } from '../src/customer-authentication/authentication-session.service';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
@@ -26,10 +49,87 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
   const snapshots = new Map();
   beforeAll(async () => {
     db = await createIntegrationDataSource('a7persist');
+    // Controlled, database-backed authority fixture. Production remains unavailable.
+    await db.query(
+      `CREATE TABLE test_a7_inbound_authority (id uuid PRIMARY KEY, customer_id uuid NOT NULL, binding_id uuid NOT NULL, route_id uuid NOT NULL, approved boolean NOT NULL, held boolean NOT NULL, max_minor bigint NOT NULL, used_minor bigint NOT NULL, checks integer NOT NULL DEFAULT 0)`,
+    );
+    await db.query(
+      `CREATE TABLE test_a7_source_evidence(id uuid PRIMARY KEY, customer_id uuid NOT NULL, source_class text NOT NULL, source_version integer NOT NULL, value jsonb NOT NULL)`,
+    );
+    const authority: A7InboundAdmissionAuthority = {
+      recheck: async (manager: EntityManager, input) => {
+        const rows = await manager.query<
+          Array<{
+            id: string;
+            approved: boolean;
+            held: boolean;
+            max_minor: string;
+            used_minor: string;
+          }>
+        >(
+          `SELECT id,approved,held,max_minor,used_minor FROM test_a7_inbound_authority WHERE customer_id=$1 AND binding_id=$2 AND route_id=$3 FOR UPDATE`,
+          [input.customerId, input.bindingId, input.virtualAccountId],
+        );
+        const row = rows[0];
+        if (row)
+          await manager.query('UPDATE test_a7_inbound_authority SET checks=checks+1 WHERE id=$1', [
+            row.id,
+          ]);
+        if (
+          !row ||
+          !row.approved ||
+          row.held ||
+          BigInt(row.used_minor) + BigInt(input.intendedAmountMinor) > BigInt(row.max_minor)
+        )
+          return { status: 'DENIED' };
+        const attachments = await manager.query<
+          Array<{ snapshot_payload: PolicyEvidenceSnapshot }>
+        >(
+          `SELECT a.snapshot_payload FROM policy_decision_records d JOIN immutable_evidence_snapshot_attachments a ON a.snapshot_reference=d.snapshot_reference WHERE d.decision_reference=$1`,
+          [input.policyDecisionReference],
+        );
+        const snapshot = attachments[0]?.snapshot_payload;
+        if (!snapshot || snapshot.sourceItems.length !== 10) return { status: 'DENIED' };
+        for (const item of snapshot.sourceItems) {
+          const sources = await manager.query<
+            Array<{
+              customer_id: string;
+              source_class: PolicySourceClass;
+              source_version: number;
+              value: Record<string, unknown>;
+            }>
+          >(
+            'SELECT customer_id,source_class,source_version,value FROM test_a7_source_evidence WHERE id=$1 FOR SHARE',
+            [item.sourceId],
+          );
+          const source = sources[0];
+          if (
+            !source ||
+            source.customer_id !== input.customerId ||
+            source.source_class !== item.sourceClass ||
+            source.source_version !== item.sourceVersion ||
+            !isDeepStrictEqual(source.value, item.normalizedValue)
+          )
+            return { status: 'DENIED' };
+        }
+        return {
+          status: 'AUTHORIZED',
+          evidenceReferences: {
+            route: input.virtualAccountId,
+            limits: row.id,
+            compliance: row.id,
+            institution: row.id,
+            consent: null,
+          },
+        };
+      },
+    };
     const { AppModule } = await import('../src/app.module');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(db)
+      .overrideProvider(A7_INBOUND_ADMISSION_AUTHORITY)
+      .useValue(authority)
       .overrideProvider(KycTierEvidenceReader)
       .useValue({ read: (_: unknown, id: string) => Promise.resolve(snapshots.get(id) ?? null) })
       .overrideProvider(NOTIFICATION_PROVIDER_TOKEN)
@@ -56,6 +156,19 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
       [proposal, JSON.stringify(d)],
     );
     await db.query('UPDATE kyc_tier_policy_head SET version=1');
+    const profile = A7_INBOUND_ADMISSION_PROFILE;
+    await app.get(TypeOrmPolicyProfileVersionRepository).insertImmutable({
+      ...profile,
+      effectiveFrom: new Date('2020-01-01T00:00:00Z'),
+      effectiveTo: null,
+      lifecycleState: PolicyProfileLifecycleState.ACTIVE,
+      definitionPayload: profile as unknown as Readonly<Record<string, unknown>>,
+      createdAt: new Date(),
+      createdBy: 'controlled-test-governance',
+      retentionClass: 'A4_POLICY_HISTORY',
+      legalHold: false,
+      retentionExpiresAt: null,
+    });
   });
   afterAll(async () => {
     if (app) await app.close();
@@ -109,6 +222,179 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
     );
     return { ...p, token, sessionId };
   }
+  async function inboundFixture() {
+    const p = await subject();
+    const routeId = randomUUID();
+    const evidenceId = randomUUID();
+    const number = String(Math.floor(1000000000 + Math.random() * 8000000000));
+    await db.query(
+      `INSERT INTO virtual_accounts(id,wallet_id,bank_code,account_number,account_name,provider,status,reference) VALUES($1,$2,'BANK',$3,'Test','test-provider','ACTIVE',$4)`,
+      [routeId, p.walletAccountId, number, `MN${Math.floor(Math.random() * 1000000000000)}`],
+    );
+    await db.query(
+      'INSERT INTO test_a7_inbound_authority(id,customer_id,binding_id,route_id,approved,held,max_minor,used_minor) VALUES($1,$2,$3,$4,true,false,10000,0)',
+      [evidenceId, p.customerId, p.bindingId, routeId],
+    );
+    const now = new Date().toISOString();
+    const profile = A7_INBOUND_ADMISSION_PROFILE;
+    const validation = await app
+      .get(AuthenticationSessionService)
+      .validate({ token: p.token, audience: 'customer-api' });
+    if (!validation.valid || !validation.principal) throw new Error('fixture session invalid');
+    const principal = {
+      type: 'CUSTOMER' as const,
+      principalId: p.customerId,
+      customerId: p.customerId,
+      sessionId: p.sessionId,
+      audience: 'customer-api',
+      roles: [],
+      scopes: [],
+      customerAccess: 'SELF' as const,
+    };
+    const item = (
+      sourceClass: PolicySourceClass,
+      normalizedValue: Record<string, unknown>,
+    ): PolicyEvidenceItem => ({
+      sourceClass,
+      sourceType: sourceClass,
+      sourceId: randomUUID(),
+      customerId: p.customerId,
+      sourceVersion: 1,
+      sourceUpdatedAt: now,
+      observedAt: now,
+      deleted: false,
+      freshnessState: PolicyEvidenceFreshnessState.CURRENT,
+      classification: 'Restricted',
+      normalizedValue,
+    });
+    const items = [
+      item(PolicySourceClass.CUSTOMER, { status: 'ACTIVE' }),
+      item(PolicySourceClass.ONBOARDING, { status: 'COMPLETED' }),
+      item(PolicySourceClass.ELIGIBILITY, { status: 'ELIGIBLE' }),
+      item(PolicySourceClass.RESTRICTIONS, { active: false, type: 'NONE' }),
+      item(PolicySourceClass.LIMITS, {
+        currency: 'NGN',
+        dailyTransactionCount: 10,
+        dailyTransactionAmountMinor: '10000',
+        singleTransactionAmountMinor: '10000',
+        monthlyTransactionAmountMinor: '10000',
+        walletBalanceMinor: '10000',
+      }),
+      item(PolicySourceClass.ENROLLMENT, { product: 'virtual-account', status: 'ACTIVE' }),
+      item(PolicySourceClass.RISK, {
+        sourceKind: 'P1_10_MANUAL',
+        riskLevel: 'LOW',
+        status: 'ACTIVE',
+      }),
+      item(PolicySourceClass.COMPLIANCE, { casePresent: false }),
+      item(PolicySourceClass.ACCOUNT_BINDING, {
+        bindingId: p.bindingId,
+        state: 'ACTIVE',
+        dimensionsCompatible: true,
+        ledgerIsActive: true,
+        reconciliationStatus: 'PASS',
+      }),
+      item(PolicySourceClass.AUTHORIZATION, {
+        allowed: true,
+        customerId: p.customerId,
+        principalType: 'CUSTOMER',
+      }),
+    ];
+    for (const entry of items)
+      await db.query('INSERT INTO test_a7_source_evidence VALUES($1,$2,$3,$4,$5)', [
+        entry.sourceId,
+        p.customerId,
+        entry.sourceClass,
+        entry.sourceVersion,
+        JSON.stringify(entry.normalizedValue),
+      ]);
+    const classes = items.map((x) => x.sourceClass);
+    const context = {
+      currency: 'NGN',
+      targetBindingId: p.bindingId,
+      limitUsage: {
+        amountMinor: '100',
+        currency: 'NGN',
+        dailyUsedCount: 0,
+        dailyUsedAmountMinor: '0',
+        monthlyUsedAmountMinor: '0',
+        projectedWalletBalanceMinor: '100',
+        usageAsOf: now,
+        usageSourceReference: evidenceId,
+      },
+    };
+    const base: PolicyEvidenceSnapshot = {
+      contractName: 'A4-EVIDENCE-SNAPSHOT',
+      contractVersion: 1,
+      snapshotReference: `test-a7-${randomUUID()}`,
+      subject: { type: 'CUSTOMER', customerId: p.customerId },
+      policyRequestScope: {
+        capability: profile.capability,
+        action: 'admit',
+        requestedAt: now,
+        asOf: now,
+        evidenceProfile: profile.profileReference,
+        targetBindingId: p.bindingId,
+        evaluationContext: context,
+      },
+      collection: {
+        status: PolicyCollectionStatus.COMPLETE,
+        collectedAt: now,
+        requiredSourceClasses: classes,
+        collectedSourceClasses: classes,
+        missingSourceClasses: [],
+        unavailableSourceClasses: [],
+        restrictedSourceClasses: [],
+        conflictSourceClasses: [],
+      },
+      sourceItems: items,
+      evidenceSummary: {
+        freshnessStates: [PolicyEvidenceFreshnessState.CURRENT],
+        sourceCount: items.length,
+        normalizedInputHash: '',
+      },
+      integrity: {
+        canonicalizationVersion: 1,
+        arrayOrderingRule: 'sourceClass/sourceType/sourceId/sourceVersion',
+        hashAlgorithm: 'SHA-256',
+      },
+    };
+    const snapshot = {
+      ...base,
+      evidenceSummary: {
+        ...base.evidenceSummary,
+        normalizedInputHash: calculateSnapshotInputHash(base),
+      },
+    };
+    const decision = await app.get(CapabilityPolicyEvaluationService).evaluate({
+      contractName: 'A4-CAPABILITY-POLICY',
+      contractVersion: 1,
+      subject: base.subject,
+      capability: profile.capability,
+      action: 'admit',
+      requestedAt: now,
+      evaluationContext: context,
+      actorContext: { principal },
+      sourceEvidenceRequest: {
+        evidenceProfile: profile.profileReference,
+        asOf: now,
+        requiredSourceClasses: classes,
+      },
+      requestContext: { requestId: randomUUID(), correlationId: randomUUID() },
+      snapshot,
+    });
+    expect(decision.decision).toBe('ALLOW_WITH_LIMITS');
+    const created = await service.create({
+      token: p.token,
+      operationType: 'INBOUND_FUNDING',
+      bindingId: p.bindingId,
+      virtualAccountId: routeId,
+      intendedAmountMinor: '100',
+      policyDecisionReference: decision.decisionReference,
+      idempotencyKey: 'inbound',
+    });
+    return { ...p, routeId, evidenceId, decision, created };
+  }
   it('persists actual inbound identity and authorization without requiring A6; replays and rejects conflicts', async () => {
     const p = await subject();
     const input = {
@@ -121,6 +407,20 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
     const again = await service.create(input);
     expect(again.replayed).toBe(true);
     expect(again.command.id).toBe(first.command.id);
+    // Legacy null-amount commands must retain their pre-migration replay hash.
+    expect(first.command.request_hash).toBe(
+      createHash('sha256')
+        .update(
+          JSON.stringify({
+            operationType: input.operationType,
+            bindingId: p.bindingId,
+            virtualAccountId: null,
+            observationId: null,
+            policy: null,
+          }),
+        )
+        .digest('hex'),
+    );
     expect(first.command.customer_id).toBe(p.customerId);
     expect(first.command.session_id).toBe(p.sessionId);
     expect(first.command.policy_decision_reference).toBeNull();
@@ -355,5 +655,191 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
       [lifecycle.id],
     );
     expect(transitions).toEqual([{ to_state: 'LIFECYCLE_CANCELLED' }]);
+  });
+  it('admits a governed inbound intent exactly once without recording a payment', async () => {
+    const f = await inboundFixture();
+    const count = async () =>
+      (await db.query<Array<{ n: string }>>('SELECT count(*) n FROM ledger_journals'))[0]!.n;
+    const before = await count();
+    const request = {
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 1,
+      nextState: 'LIFECYCLE_ADMITTED' as const,
+      idempotencyKey: 'admit',
+    };
+    const results = await Promise.all([service.transition(request), service.transition(request)]);
+    expect(results.map((x) => x.replayed).sort()).toEqual([false, true]);
+    expect(results[0]?.lifecycle.state).toBe('LIFECYCLE_ADMITTED');
+    expect(await count()).toBe(before);
+    expect(f.created.command.inbound_observation_id).toBeNull();
+    const audit = await db.query<Array<{ new_values: { admissionEvidence: { limits: string } } }>>(
+      `SELECT new_values FROM audit_events WHERE entity_type='A7_PRODUCT_LIFECYCLE' AND entity_id=$1 AND action='TRANSITIONED'`,
+      [f.created.lifecycle.id],
+    );
+    expect(audit[0]?.new_values.admissionEvidence.limits).toBe(f.evidenceId);
+    const operations = await db.query<Array<{ n: string }>>(
+      'SELECT count(*) n FROM external_operations WHERE customer_id=$1',
+      [f.customerId],
+    );
+    expect(operations[0]?.n).toBe('0');
+  });
+  it('rejects controlled authority holds and limit exhaustion and rolls back', async () => {
+    const f = await inboundFixture();
+    const req = {
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 1,
+      nextState: 'LIFECYCLE_ADMITTED' as const,
+      idempotencyKey: 'admit',
+    };
+    await db.query('UPDATE test_a7_inbound_authority SET held=true WHERE id=$1', [f.evidenceId]);
+    await expect(service.transition(req)).rejects.toThrow('authority denied');
+    await db.query(
+      'UPDATE test_a7_inbound_authority SET held=false,used_minor=max_minor WHERE id=$1',
+      [f.evidenceId],
+    );
+    await expect(service.transition(req)).rejects.toThrow('authority denied');
+    expect((await service.findLifecycle(f.created.lifecycle.lifecycle_reference))?.version).toBe(1);
+    const rows = await db.query<Array<{ checks: number }>>(
+      'SELECT checks FROM test_a7_inbound_authority WHERE id=$1',
+      [f.evidenceId],
+    );
+    expect(rows[0]?.checks).toBe(0);
+  });
+  it('rejects missing authority evidence and a stale inbound route', async () => {
+    const f = await inboundFixture();
+    const req = {
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 1,
+      nextState: 'LIFECYCLE_ADMITTED' as const,
+      idempotencyKey: 'admit',
+    };
+    await db.query('DELETE FROM test_a7_inbound_authority WHERE id=$1', [f.evidenceId]);
+    await expect(service.transition(req)).rejects.toThrow('authority denied');
+    await db.query(
+      "UPDATE virtual_accounts SET status='DEACTIVATED',deactivated_at=clock_timestamp() WHERE id=$1",
+      [f.routeId],
+    );
+    await expect(service.transition(req)).rejects.toThrow('route is stale');
+  });
+  it('rejects policy amount substitution', async () => {
+    const f = await inboundFixture();
+    const other = await service.create({
+      token: f.token,
+      operationType: 'INBOUND_FUNDING',
+      bindingId: f.bindingId,
+      virtualAccountId: f.routeId,
+      intendedAmountMinor: '101',
+      policyDecisionReference: f.decision.decisionReference,
+      idempotencyKey: 'different-amount',
+    });
+    await expect(
+      service.transition({
+        token: f.token,
+        lifecycleId: other.lifecycle.id,
+        expectedVersion: 1,
+        nextState: 'LIFECYCLE_ADMITTED',
+        idempotencyKey: 'admit',
+      }),
+    ).rejects.toThrow('policy amount does not match');
+  });
+  it('serializes valid admission against cancellation and never posts', async () => {
+    const f = await inboundFixture();
+    const base = { token: f.token, lifecycleId: f.created.lifecycle.id, expectedVersion: 1 };
+    const results = await Promise.allSettled([
+      service.transition({ ...base, nextState: 'LIFECYCLE_ADMITTED', idempotencyKey: 'admit' }),
+      service.transition({ ...base, nextState: 'LIFECYCLE_CANCELLED', idempotencyKey: 'cancel' }),
+    ]);
+    expect(results.filter((x) => x.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((x) => x.status === 'rejected')).toHaveLength(1);
+    const transitions = await db.query<Array<{ to_state: string }>>(
+      'SELECT to_state FROM a7_product_lifecycle_transitions WHERE lifecycle_id=$1',
+      [base.lifecycleId],
+    );
+    expect(transitions).toHaveLength(1);
+    expect(['LIFECYCLE_ADMITTED', 'LIFECYCLE_CANCELLED']).toContain(transitions[0]?.to_state);
+  });
+
+  it('rejects revoked original authorization even with a new valid customer session', async () => {
+    const f = await inboundFixture();
+    const newToken = randomUUID();
+    await db.query(
+      `INSERT INTO authentication_sessions(id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at,version) SELECT $1,customer_id,credential_id,$2,'customer-api','ACTIVE',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp(),1 FROM authentication_sessions WHERE id=$3`,
+      [randomUUID(), createHash('sha256').update(newToken).digest('hex'), f.sessionId],
+    );
+    await db.query(
+      `UPDATE authentication_sessions SET status='REVOKED',revoked_at=clock_timestamp(),revoke_reason='test' WHERE id=$1`,
+      [f.sessionId],
+    );
+    await expect(
+      service.transition({
+        token: newToken,
+        lifecycleId: f.created.lifecycle.id,
+        expectedVersion: 1,
+        nextState: 'LIFECYCLE_ADMITTED',
+        idempotencyKey: 'admit',
+      }),
+    ).rejects.toThrow('session no longer active');
+  });
+  it('rejects tampered obligation records instead of trusting an allow label', async () => {
+    const f = await inboundFixture();
+    // Explicitly corrupt this isolated disposable database to exercise defense in depth.
+    await db.query(
+      'ALTER TABLE policy_decision_records DISABLE TRIGGER policy_decision_records_are_immutable',
+    );
+    try {
+      await db.query(
+        "UPDATE policy_decision_records SET obligations='[]'::jsonb WHERE decision_reference=$1",
+        [f.decision.decisionReference],
+      );
+    } finally {
+      await db.query(
+        'ALTER TABLE policy_decision_records ENABLE TRIGGER policy_decision_records_are_immutable',
+      );
+    }
+    await expect(
+      service.transition({
+        token: f.token,
+        lifecycleId: f.created.lifecycle.id,
+        expectedVersion: 1,
+        nextState: 'LIFECYCLE_ADMITTED',
+        idempotencyKey: 'admit',
+      }),
+    ).rejects.toThrow('obligations missing');
+  });
+
+  it('rejects a stale authoritative source even if the persisted A4 snapshot allowed it', async () => {
+    const f = await inboundFixture();
+    await db.query(
+      `UPDATE test_a7_source_evidence SET source_version=source_version+1,value='{"status":"SUSPENDED"}'::jsonb WHERE customer_id=$1 AND source_class='ELIGIBILITY'`,
+      [f.customerId],
+    );
+    await expect(
+      service.transition({
+        token: f.token,
+        lifecycleId: f.created.lifecycle.id,
+        expectedVersion: 1,
+        nextState: 'LIFECYCLE_ADMITTED',
+        idempotencyKey: 'admit',
+      }),
+    ).rejects.toThrow('authority denied');
+  });
+  it('rejects a retired inbound policy profile', async () => {
+    const f = await inboundFixture();
+    await db.query(
+      `UPDATE policy_profile_versions SET lifecycle_state='RETIRED',retired_at=clock_timestamp(),retired_by='controlled-test' WHERE profile_reference=$1`,
+      [A7_INBOUND_ADMISSION_PROFILE.profileReference],
+    );
+    await expect(
+      service.transition({
+        token: f.token,
+        lifecycleId: f.created.lifecycle.id,
+        expectedVersion: 1,
+        nextState: 'LIFECYCLE_ADMITTED',
+        idempotencyKey: 'admit',
+      }),
+    ).rejects.toThrow('policy evidence missing or mismatched');
   });
 });

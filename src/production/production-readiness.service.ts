@@ -10,8 +10,8 @@ import { ReconciliationService } from '../reconciliation/reconciliation.service'
 // test/v1-release-01-production-readiness-migration-sync.integration.spec.ts, which runs the
 // full migration chain against real PostgreSQL and fails the build if this constant and the
 // actual latest migration file ever diverge again.
-const EXPECTED_MIGRATION_TIMESTAMP = '1785753600144';
-const EXPECTED_MIGRATION_NAME = 'CreateA7AuthoritativePersistence1785753600144';
+const EXPECTED_MIGRATION_TIMESTAMP = '1785753600145';
+const EXPECTED_MIGRATION_NAME = 'AddA7InboundIntendedAmount1785753600145';
 
 type Row = Record<string, unknown>;
 

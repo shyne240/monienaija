@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Inject,
   UnauthorizedException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -11,6 +12,19 @@ import { AuthorizationService } from '../authorization/authorization.service';
 import { AuthenticationSessionService } from '../customer-authentication/authentication-session.service';
 import { AuditService } from '../operations/audit.service';
 import { isRetryableTransactionError } from '../payment/payment-support';
+import { A7_INBOUND_ADMISSION_PROFILE } from './a7-inbound-admission.profile';
+import {
+  A7_INBOUND_ADMISSION_AUTHORITY,
+  type A7InboundAdmissionAuthority,
+} from './a7-inbound-admission-authority';
+import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
+import { PolicyDecisionRecord } from './policy-decision-record.entity';
+import { ImmutableEvidenceSnapshotAttachment } from './immutable-evidence-snapshot-attachment.entity';
+import { entityToDecision, entityToSnapshot } from './capability-policy-persistence.mappers';
+import {
+  calculatePolicyDecisionResultHash,
+  calculateSnapshotInputHash,
+} from './capability-policy.service';
 import { A7_PRODUCT_POLICY_PROFILES } from './a7-product-policy.profiles';
 import type { PolicyObligation } from './capability-policy.types';
 
@@ -27,6 +41,7 @@ export interface A7CreatePersistedCommand {
   bindingId: string;
   virtualAccountId?: string | null;
   inboundObservationId?: string | null;
+  intendedAmountMinor?: string | null;
   policyDecisionReference?: string | null;
   idempotencyKey: string;
 }
@@ -44,6 +59,7 @@ export interface A7PersistedCommand {
   ledger_account_id: string;
   virtual_account_id: string | null;
   inbound_observation_id: string | null;
+  intended_amount_minor: string | null;
   policy_decision_reference: string | null;
   request_hash: string;
   created_at: Date;
@@ -77,6 +93,9 @@ export class A7ProductPersistenceService {
     private readonly sessions: AuthenticationSessionService,
     private readonly authorization: AuthorizationService,
     private readonly audit: AuditService,
+    private readonly eligibility: CustomerFinancialEligibilityService,
+    @Inject(A7_INBOUND_ADMISSION_AUTHORITY)
+    private readonly inboundAuthority: A7InboundAdmissionAuthority,
   ) {}
 
   async create(
@@ -86,9 +105,20 @@ export class A7ProductPersistenceService {
     const bindingId = this.uuid(input.bindingId);
     const virtualAccountId = input.virtualAccountId ? this.uuid(input.virtualAccountId) : null;
     const observationId = input.inboundObservationId ? this.uuid(input.inboundObservationId) : null;
+    const intendedAmount = input.intendedAmountMinor ?? null;
+    if (
+      intendedAmount !== null &&
+      (typeof intendedAmount !== 'string' ||
+        !/^[1-9][0-9]{0,18}$/.test(intendedAmount) ||
+        BigInt(intendedAmount) > 9223372036854775807n)
+    )
+      throw new BadRequestException('Invalid inbound intended amount');
     if (!['VIRTUAL_ACCOUNT_ASSIGN', 'INBOUND_FUNDING'].includes(input.operationType))
       throw new BadRequestException('Invalid A7 operation type');
-    if (input.operationType === 'VIRTUAL_ACCOUNT_ASSIGN' && (virtualAccountId || observationId))
+    if (
+      input.operationType === 'VIRTUAL_ACCOUNT_ASSIGN' &&
+      (virtualAccountId || observationId || intendedAmount)
+    )
       throw new BadRequestException('Assignment does not accept inbound evidence');
     if (observationId && !virtualAccountId)
       throw new BadRequestException('Observation requires a virtual account');
@@ -102,6 +132,7 @@ export class A7ProductPersistenceService {
         virtualAccountId,
         observationId,
         policy,
+        ...(intendedAmount === null ? {} : { intendedAmount }),
       }),
     );
     return this.retry(async (manager) => {
@@ -150,7 +181,9 @@ export class A7ProductPersistenceService {
       );
       const binding = bindings[0];
       if (!binding) throw new ConflictException('A7 destination binding unavailable or inactive');
-      let observation: { provider_key: string; provider_reference_hash: string } | undefined;
+      let observation:
+        | { provider_key: string; provider_reference_hash: string; amount_minor: string }
+        | undefined;
       if (virtualAccountId) {
         const accounts = await manager.query<Array<{ id: string }>>(
           `SELECT id FROM virtual_accounts WHERE id=$1 AND wallet_id=$2 AND status='ACTIVE' FOR SHARE`,
@@ -160,9 +193,9 @@ export class A7ProductPersistenceService {
       }
       if (observationId) {
         const rows = await manager.query<
-          Array<{ provider_key: string; provider_reference_hash: string }>
+          Array<{ provider_key: string; provider_reference_hash: string; amount_minor: string }>
         >(
-          `SELECT o.provider_key,o.provider_reference_hash FROM inbound_funding_observations o JOIN virtual_accounts v
+          `SELECT o.provider_key,o.provider_reference_hash,o.amount_minor::text FROM inbound_funding_observations o JOIN virtual_accounts v
           ON v.provider=o.provider_key AND v.bank_code=o.bank_code AND v.account_number=o.account_number
           WHERE o.id=$1 AND v.id=$2 AND o.currency='NGN' FOR SHARE OF o,v`,
           [observationId, virtualAccountId],
@@ -170,6 +203,8 @@ export class A7ProductPersistenceService {
         observation = rows[0];
         if (!observation)
           throw new ConflictException('Inbound observation does not match destination');
+        if (intendedAmount && observation.amount_minor !== intendedAmount)
+          throw new ConflictException('Inbound observation amount does not match intent');
         const conflicts = await manager.query<Array<{ id: string }>>(
           `SELECT id FROM inbound_funding_observations WHERE provider_key=$1 AND provider_reference_hash=$2 AND id<>$3`,
           [observation.provider_key, observation.provider_reference_hash, observationId],
@@ -205,8 +240,8 @@ export class A7ProductPersistenceService {
       );
       const rows = await manager.query<A7PersistedCommand[]>(
         `INSERT INTO a7_product_commands
-        (id,command_reference,operation_type,customer_id,session_id,authorization_event_id,binding_id,binding_version,customer_wallet_id,wallet_account_id,ledger_account_id,virtual_account_id,policy_decision_reference,inbound_observation_id,inbound_provider_key,inbound_reference_hash,idempotency_key_hash,request_hash)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+        (id,command_reference,operation_type,customer_id,session_id,authorization_event_id,binding_id,binding_version,customer_wallet_id,wallet_account_id,ledger_account_id,virtual_account_id,policy_decision_reference,inbound_observation_id,inbound_provider_key,inbound_reference_hash,idempotency_key_hash,request_hash,intended_amount_minor)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
         [
           id,
           `a7-product-command:v2:${id}`,
@@ -226,6 +261,7 @@ export class A7ProductPersistenceService {
           observation?.provider_reference_hash ?? null,
           keyHash,
           requestHash,
+          intendedAmount,
         ],
       );
       const lifecycles = await manager.query<A7PersistedLifecycle[]>(
@@ -287,10 +323,14 @@ export class A7ProductPersistenceService {
             ledger_account_id: string;
             authorization_event_id: string;
             session_id: string;
+            command_reference: string;
+            virtual_account_id: string | null;
+            inbound_observation_id: string | null;
+            intended_amount_minor: string | null;
           }
         >
       >(
-        `SELECT l.*,c.customer_id,c.policy_decision_reference,c.operation_type,c.binding_id,c.binding_version,c.customer_wallet_id,c.wallet_account_id,c.ledger_account_id,c.authorization_event_id,c.session_id FROM a7_product_lifecycles l JOIN a7_product_commands c ON c.id=l.command_id WHERE l.id=$1 AND c.customer_id=$2 FOR UPDATE OF l`,
+        `SELECT l.*,c.customer_id,c.policy_decision_reference,c.operation_type,c.binding_id,c.binding_version,c.customer_wallet_id,c.wallet_account_id,c.ledger_account_id,c.authorization_event_id,c.session_id,c.command_reference,c.virtual_account_id,c.inbound_observation_id,c.intended_amount_minor FROM a7_product_lifecycles l JOIN a7_product_commands c ON c.id=l.command_id WHERE l.id=$1 AND c.customer_id=$2 FOR UPDATE OF l`,
         [lifecycleId, principal.customerId],
       );
       const current = rows[0];
@@ -311,6 +351,7 @@ export class A7ProductPersistenceService {
         throw new ConflictException('A7 lifecycle version conflict');
       if (!TRANSITIONS[current.state].includes(input.nextState))
         throw new ConflictException('Invalid A7 lifecycle transition');
+      let admissionEvidence: Record<string, string | null> | null = null;
       if (input.nextState === 'LIFECYCLE_ADMITTED') {
         await this.recheckCommandAuthority(manager, current);
         if (!current.policy_decision_reference)
@@ -322,13 +363,83 @@ export class A7ProductPersistenceService {
           current.operation_type,
           current.binding_id,
           true,
+          current.intended_amount_minor,
         );
-        // The A4 profile requires A6 partner-reference and execution-limit rechecks.
-        // Neither authoritative identity is linked to this command. In particular, an
-        // outbound withdrawal cannot serve as authority for an inbound command.
-        throw new ServiceUnavailableException(
-          'A7 partner reference and execution-limit authority unavailable',
+        if (current.operation_type !== 'INBOUND_FUNDING')
+          throw new ServiceUnavailableException('A7 assignment admission authority unavailable');
+        if (!current.virtual_account_id) throw new ConflictException('Inbound route is missing');
+        if (!current.intended_amount_minor)
+          throw new ConflictException('Inbound intended amount is missing');
+        // Recheck the creator's authorization as well as the current authenticated caller.
+        await this.lockSession(manager, current.session_id, current.customer_id);
+        await this.eligibility.require(manager, current.customer_id);
+        const routes = await manager.query<Array<{ id: string }>>(
+          `SELECT id FROM virtual_accounts WHERE id=$1 AND wallet_id=$2 AND status='ACTIVE' FOR SHARE`,
+          [current.virtual_account_id, current.wallet_account_id],
         );
+        if (!routes[0]) throw new ConflictException('Inbound route is stale or mismatched');
+        if (current.inbound_observation_id) {
+          const observations = await manager.query<
+            Array<{ provider_key: string; provider_reference_hash: string }>
+          >(
+            `SELECT o.provider_key,o.provider_reference_hash FROM inbound_funding_observations o JOIN virtual_accounts v ON v.id=$2 AND v.provider=o.provider_key AND v.bank_code=o.bank_code AND v.account_number=o.account_number WHERE o.id=$1 AND o.amount_minor=$3 AND o.currency='NGN' FOR SHARE OF o,v`,
+            [
+              current.inbound_observation_id,
+              current.virtual_account_id,
+              current.intended_amount_minor,
+            ],
+          );
+          const observation = observations[0];
+          if (!observation) throw new ConflictException('Inbound observation is mismatched');
+          const conflicting = await manager.query<Array<{ id: string }>>(
+            'SELECT id FROM inbound_funding_observations WHERE provider_key=$1 AND provider_reference_hash=$2 AND id<>$3 FOR SHARE',
+            [
+              observation.provider_key,
+              observation.provider_reference_hash,
+              current.inbound_observation_id,
+            ],
+          );
+          if (conflicting.length) throw new ConflictException('Conflicting inbound observations');
+        }
+        let authority: Awaited<ReturnType<A7InboundAdmissionAuthority['recheck']>>;
+        try {
+          authority = await this.inboundAuthority.recheck(manager, {
+            commandId: current.command_id,
+            commandReference: current.command_reference,
+            customerId: current.customer_id,
+            sessionId: current.session_id,
+            bindingId: current.binding_id,
+            bindingVersion: current.binding_version,
+            customerWalletId: current.customer_wallet_id,
+            walletAccountId: current.wallet_account_id,
+            ledgerAccountId: current.ledger_account_id,
+            virtualAccountId: current.virtual_account_id,
+            policyDecisionReference: current.policy_decision_reference,
+            inboundObservationId: current.inbound_observation_id,
+            intendedAmountMinor: current.intended_amount_minor,
+          });
+        } catch {
+          throw new ServiceUnavailableException('Inbound admission authority unavailable');
+        }
+        if (authority.status === 'UNAVAILABLE')
+          throw new ServiceUnavailableException('Inbound admission authority unavailable');
+        if (authority.status !== 'AUTHORIZED')
+          throw new ConflictException('Inbound admission authority denied');
+        const evidence = authority.evidenceReferences;
+        if (
+          !evidence ||
+          ![evidence.route, evidence.limits, evidence.compliance, evidence.institution].every(
+            (x) => typeof x === 'string' && x.trim().length > 0 && x.length <= 180,
+          ) ||
+          !(
+            evidence.consent === null ||
+            (typeof evidence.consent === 'string' &&
+              evidence.consent.trim().length > 0 &&
+              evidence.consent.length <= 180)
+          )
+        )
+          throw new ConflictException('Inbound authority evidence references missing');
+        admissionEvidence = { ...evidence };
       }
       const auth = await this.recordAuthorization(
         manager,
@@ -364,6 +475,7 @@ export class A7ProductPersistenceService {
           fromState: current.state,
           toState: input.nextState,
           version: current.version + 1,
+          admissionEvidence,
         },
       });
       return { lifecycle: updated[0]!, replayed: false };
@@ -497,8 +609,13 @@ export class A7ProductPersistenceService {
     operation: A7PersistedOperationType,
     bindingId: string,
     requireAllow: boolean,
+    intendedAmount: string | null = null,
   ) {
-    const action = operation === 'VIRTUAL_ACCOUNT_ASSIGN' ? 'assign' : 'lifecycle';
+    const inbound = operation === 'INBOUND_FUNDING';
+    const capability = inbound
+      ? A7_INBOUND_ADMISSION_PROFILE.capability
+      : 'product.virtual-account';
+    const action = inbound ? 'admit' : 'assign';
     const rows = await manager.query<
       Array<{
         id: string;
@@ -511,19 +628,21 @@ export class A7ProductPersistenceService {
       JOIN immutable_evidence_snapshot_attachments s ON s.snapshot_reference=p.snapshot_reference AND s.normalized_input_hash=p.normalized_input_hash
       JOIN policy_profile_versions v ON v.profile_reference=p.profile_reference AND v.definition_hash=p.definition_hash
         AND v.profile_version=p.profile_version AND v.policy_version=p.policy_version AND v.capability=p.capability
-      WHERE p.decision_reference=$1 AND p.customer_id=$2 AND p.capability='product.virtual-account' AND p.action=$3
+      WHERE p.decision_reference=$1 AND p.customer_id=$2 AND p.capability=$6 AND p.action=$3
       AND s.customer_id=p.customer_id AND s.capability=p.capability AND s.action=p.action
       AND s.snapshot_payload #>> '{policyRequestScope,targetBindingId}'=$4
       AND ($5::boolean=false OR (p.decision IN ('ALLOW','ALLOW_WITH_LIMITS') AND p.collection_status='COMPLETE'
         AND s.collection_status='COMPLETE' AND p.expires_at>clock_timestamp() AND (p.review_at IS NULL OR p.review_at>clock_timestamp())
         AND v.lifecycle_state='ACTIVE' AND v.effective_from<=clock_timestamp() AND (v.effective_to IS NULL OR v.effective_to>clock_timestamp())
         AND NOT EXISTS(SELECT 1 FROM policy_decision_records newer WHERE newer.supersedes_decision_reference=p.decision_reference))) FOR SHARE OF p,s,v`,
-      [reference, customerId, action, bindingId, requireAllow],
+      [reference, customerId, action, bindingId, requireAllow, capability],
     );
     const row = rows[0];
     if (!row) throw new ConflictException('A7 policy evidence missing or mismatched');
     if (requireAllow) {
-      const profile = A7_PRODUCT_POLICY_PROFILES.find((item) => item.actions.includes(action));
+      const profile = inbound
+        ? A7_INBOUND_ADMISSION_PROFILE
+        : A7_PRODUCT_POLICY_PROFILES.find((item) => item.actions.includes(action));
       if (
         !profile ||
         profile.profileReference !== row.profile_reference ||
@@ -531,6 +650,29 @@ export class A7ProductPersistenceService {
       )
         throw new ConflictException('A7 policy profile is not the expected authoritative version');
       validateA7Obligations(row.obligations, profile.obligations, Date.now());
+      const entity = await manager
+        .getRepository(PolicyDecisionRecord)
+        .findOne({ where: { id: row.id } });
+      if (!entity) throw new ConflictException('A7 policy decision unavailable');
+      const decision = entityToDecision(entity);
+      const snapshotEntity = await manager
+        .getRepository(ImmutableEvidenceSnapshotAttachment)
+        .findOne({ where: { snapshotReference: entity.snapshotReference } });
+      if (!snapshotEntity) throw new ConflictException('A7 policy snapshot unavailable');
+      const snapshot = entityToSnapshot(snapshotEntity);
+      if (
+        inbound &&
+        (!intendedAmount ||
+          snapshot.policyRequestScope.evaluationContext?.limitUsage?.amountMinor !==
+            intendedAmount ||
+          snapshot.policyRequestScope.evaluationContext?.currency !== 'NGN')
+      )
+        throw new ConflictException('A7 policy amount does not match the inbound intent');
+      if (
+        calculatePolicyDecisionResultHash(decision) !== decision.resultHash ||
+        calculateSnapshotInputHash(snapshot) !== entity.normalizedInputHash
+      )
+        throw new ConflictException('A7 policy evidence integrity mismatch');
     }
   }
 
