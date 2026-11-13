@@ -50,6 +50,6 @@ import { KycTierWorker } from './kyc-tier-worker.service';
       ) => new KycTierWorker(db, transitions, policies),
     },
   ],
-  exports: [KycTierTransitionService, CustomerFinancialEligibilityService],
+  exports: [KycTierTransitionService, CustomerFinancialEligibilityService, KycTierEvidenceReader],
 })
 export class KycTierModule {}

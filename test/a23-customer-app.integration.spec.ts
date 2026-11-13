@@ -8,6 +8,8 @@ import * as request from 'supertest';
 
 import type { HistoryResponseFixture } from './support/history-response-fixture';
 import { AppModule } from '../src/app.module';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { TrustedTierFixture } from './support/trusted-tier-fixture';
 import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
@@ -23,12 +25,21 @@ function encodePbkdf2(password: string, saltStr = 'a23-test-salt'): string {
 describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
+  /**
+   * ARENA 4: the financial-eligibility gate requires authorised tier policy + a trusted evidence
+   * source. Production has no confirmed evidence provider (the reader resolves `null` by design), so
+   * this suite installs the same controlled `TrustedTierFixture` the other financial integration
+   * suites use. The gate itself is untouched.
+   */
+  const evidence = new TrustedTierFixture();
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a23customerapp');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(evidence)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -49,6 +60,9 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
+    // TRUNCATE also clears the singleton tier-policy head + versions, so re-seed the controlled
+    // approved policy before each case (otherwise eligibility correctly reports "policy unavailable").
+    await evidence.seedPolicy(dataSource);
   });
 
   async function createCustomerWithCredential(
@@ -86,7 +100,7 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     const canonical10 = `8${String(Math.floor(100000000 + Math.random() * 900000000))}`;
     // Store contact with canonical as normalizedValue
     await dataSource.query(
-      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$3,true)`,
+      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$3,true,now())`,
       [customerId, `0${canonical10.slice(1)}`, canonical10],
     );
     const hash = encodePbkdf2(password);
@@ -94,6 +108,8 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
       [customerId, hash],
     );
+    // Controlled trusted evidence + an approved, unexpired assessment for the same tier.
+    await evidence.approveLevelOne(dataSource, customerId);
     const login = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId, password })
