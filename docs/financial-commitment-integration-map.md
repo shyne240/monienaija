@@ -91,3 +91,27 @@ passed 173 tests across eight suites; its commitment and ledger are service-boun
 acceptance. Full backend regression has 3 failing A7 unit tests (2,840 passed). The
 most recent combined targeted PostgreSQL run before the wiring has 12 A7 failures.
 The A6 checkpoint is not overall mission acceptance.
+
+## A7 integration investigation
+
+The existing A7 financial-effect contract cannot safely consume inbound funds as-is:
+its required A6 operation is schema-constrained to an outbound withdrawal, while the
+production repository's A2, A4, A7T04, A7T05 and A7T07 lookups synthesize successful
+views from nonempty caller references instead of resolving authoritative decisions,
+commands or lifecycle records. In addition, the lifecycle service records a response
+in idempotency storage but validates the proposed prior state from the caller; its
+existing public transition does not compose a verified inbound receipt in the caller's
+transaction. Treating these placeholders as genuine authorization or inventing an
+outbound operation would violate the financial boundary. They remain fail-closed for
+new verified virtual-account postings.
+
+The existing inbound processor now exposes `receiveInTransaction` for a caller-owned
+SERIALIZABLE transaction. It independently verifies the provider response, binds the
+expected wallet, amount and currency on initial posting and replay, and rejects use
+without an active SERIALIZABLE transaction. Real PostgreSQL tests cover wallet/amount
+substitution and rollback of the receipt/journal when the enclosing transaction fails.
+This is a compositional prerequisite, **not** an A7 lifecycle integration: no actual A7
+transition is coupled to it yet and the unresolved-evidence/policy gap remains. The
+upstream authoritative product command, authorization, policy and lifecycle bindings
+must be established and used before replacing the direction guard; the old withdrawal
+operation cannot stand in for them. No unit fake establishes these boundaries.
