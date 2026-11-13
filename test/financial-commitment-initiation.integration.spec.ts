@@ -433,6 +433,80 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
     };
   }
 
+  it('composes bound inbound funding atomically with its caller transaction', async () => {
+    const s = await subject();
+    const item = await incoming(s);
+    const input = {
+      ...item.request,
+      expectedWalletAccountId: s.walletAccountId,
+      expectedAmountMinor: '700',
+      expectedCurrency: 'NGN',
+    };
+    await expect(inbound.receiveInTransaction(db.manager, input)).rejects.toThrow(
+      'active serializable transaction',
+    );
+    await expect(
+      db.transaction('READ COMMITTED', (manager) => inbound.receiveInTransaction(manager, input)),
+    ).rejects.toThrow('active serializable transaction');
+    await expect(
+      db.transaction('SERIALIZABLE', async (manager) => {
+        const received = await inbound.receiveInTransaction(manager, input);
+        expect(received.status).toBe('CREDITED');
+        throw new Error('injected lifecycle failure');
+      }),
+    ).rejects.toThrow('injected lifecycle failure');
+    expect(await balance(s.sourceId)).toBe('1000');
+    expect(
+      await db.query('SELECT id FROM inbound_funding_receipts WHERE provider_reference_hash=$1', [
+        createHash('sha256').update(item.reference).digest('hex'),
+      ]),
+    ).toHaveLength(0);
+    const received = await db.transaction('SERIALIZABLE', (manager) =>
+      inbound.receiveInTransaction(manager, input),
+    );
+    expect(received.status).toBe('CREDITED');
+    expect(await balance(s.sourceId)).toBe('1700');
+  });
+
+  it('rejects product wallet and amount substitutions for verified inbound funds, including replay', async () => {
+    const s = await subject();
+    const other = await subject();
+    const item = await incoming(s);
+    const expected = {
+      ...item.request,
+      expectedWalletAccountId: s.walletAccountId,
+      expectedAmountMinor: '700',
+      expectedCurrency: 'NGN',
+    };
+    for (const altered of [
+      { ...expected, expectedWalletAccountId: other.walletAccountId },
+      { ...expected, expectedAmountMinor: '701' },
+    ]) {
+      const result = await db.transaction('SERIALIZABLE', (manager) =>
+        inbound.receiveInTransaction(manager, altered),
+      );
+      expect(result).toMatchObject({ status: 'REVIEW', reason: 'EVIDENCE_CONFLICT' });
+    }
+    expect(await balance(s.sourceId)).toBe('1000');
+    expect(await balance(other.sourceId)).toBe('1000');
+    expect(
+      (
+        await db.transaction('SERIALIZABLE', (manager) =>
+          inbound.receiveInTransaction(manager, expected),
+        )
+      ).status,
+    ).toBe('CREDITED');
+    const mismatchedReplay = await db.transaction('SERIALIZABLE', (manager) =>
+      inbound.receiveInTransaction(manager, {
+        ...expected,
+        expectedWalletAccountId: other.walletAccountId,
+      }),
+    );
+    expect(mismatchedReplay).toMatchObject({ status: 'REVIEW', reason: 'EVIDENCE_CONFLICT' });
+    expect(await balance(s.sourceId)).toBe('1700');
+    expect(await balance(other.sourceId)).toBe('1000');
+  });
+
   it('credits verified inbound funds exactly once with debit asset and credit recipient wallet', async () => {
     const s = await subject();
     const receipt = await incoming(s);
