@@ -9,7 +9,11 @@ import { AuthenticationSessionService } from '../src/customer-authentication/aut
 import { CustomerAuthenticationService } from '../src/customer-authentication/customer-authentication.service';
 import { PasswordHashAlgorithm } from '../src/customer-authentication/customer-authentication.enums';
 import { MobileOnboardingAuthService } from '../src/customer-registration/mobile-onboarding-auth.service';
-import { CustomerKycLevel, CustomerKycStatus, CustomerStatus } from '../src/customer/customer.enums';
+import {
+  CustomerKycLevel,
+  CustomerKycStatus,
+  CustomerStatus,
+} from '../src/customer/customer.enums';
 import { CustomerService } from '../src/customer/customer.service';
 import type { TierEvidenceSnapshot } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
@@ -239,11 +243,7 @@ async function createVerifiedRegistrationSession(phone: string) {
   await db.query(
     `INSERT INTO kyc_registration_sessions(id,phone,authorization_hash,status,verified_at,expires_at)
      VALUES($1,$2,$3,'VERIFIED',clock_timestamp(),clock_timestamp()+interval '10 minutes')`,
-    [
-      registrationSessionId,
-      phone,
-      createHash('sha256').update(registrationToken).digest('hex'),
-    ],
+    [registrationSessionId, phone, createHash('sha256').update(registrationToken).digest('hex')],
   );
   return { registrationSessionId, registrationToken };
 }
@@ -660,10 +660,9 @@ describe('Batch 2C CD-12 & CD-13 Session and Authentication Remediation (Isolate
     expect(failedRotate.statusCode).toBe(401);
 
     // Simulate an injected mid-transaction failure inside issueInManager for an eligible customer.
-    await db.query(
-      `UPDATE customers SET kyc_level='LEVEL_1', kyc_status='APPROVED' WHERE id=$1`,
-      [customerId],
-    );
+    await db.query(`UPDATE customers SET kyc_level='LEVEL_1', kyc_status='APPROVED' WHERE id=$1`, [
+      customerId,
+    ]);
     await db.query(
       `INSERT INTO customer_kyc_assessments(id,customer_id,kyc_level,kyc_status,assessed_by,is_current,expires_at)
        VALUES($1,$2,'LEVEL_1','APPROVED','fixture',true,clock_timestamp()+interval '1 hour')`,
@@ -913,10 +912,9 @@ describe('Batch 2C CD-12 & CD-13 Session and Authentication Remediation (Isolate
         `SELECT id FROM customer_kyc_assessments WHERE customer_id = $1 FOR SHARE`,
         [customerId],
       );
-      await sharedLocker.query(
-        `SELECT id FROM authentication_sessions WHERE id = $1 FOR SHARE`,
-        [sessionId],
-      );
+      await sharedLocker.query(`SELECT id FROM authentication_sessions WHERE id = $1 FOR SHARE`, [
+        sessionId,
+      ]);
 
       // 10 parallel GET requests (mode='READ') must ALL complete quickly without blocking on FOR SHARE!
       const parallelReads = await Promise.all(
