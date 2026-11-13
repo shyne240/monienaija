@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -10,6 +10,7 @@ import { Button } from '../../../components/Button';
 import { Input } from '../../../components/Input';
 import {
   describeApiError,
+  recoverAgentCashToCashClaimByNumber,
   resolveCustomerRecipient,
   type ResolvedCustomerRecipientView,
 } from '../../../services/agent-api';
@@ -18,6 +19,8 @@ import {
   classifyCashToCashClaimIdentifier,
   validateSixDigitTransferNumber,
 } from './cash-to-cash-reference-handoff.plan';
+import { loadPendingCashToCashLocatorClaim, type PendingCashToCashLocatorClaim } from '../../../services/pending-operation';
+import { useAuthStore } from '../../../store/auth-store';
 import type { RootStackParamList } from '../../../navigation/types';
 
 /**
@@ -34,6 +37,33 @@ import type { RootStackParamList } from '../../../navigation/types';
  */
 export const CashToCashClaimRecipientScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { agentId } = useAuthStore();
+  const [pending, setPending] = useState<PendingCashToCashLocatorClaim | null>(null);
+  const [pendingChecked, setPendingChecked] = useState(false);
+  const [pendingError, setPendingError] = useState('');
+  const [recovering, setRecovering] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setPendingChecked(false);
+    if (!agentId) { setPendingError('Agent session unavailable. Sign in again.'); return () => { active = false; }; }
+    void loadPendingCashToCashLocatorClaim(agentId).then(value => {
+      if (active) { setPending(value); setPendingChecked(true); }
+    }).catch(() => { if (active) setPendingError('Claim recovery storage is unavailable. Do not start another claim; contact support.'); });
+    return () => { active = false; };
+  }, [agentId]);
+  const recoverPending = async () => {
+    if (!pending || recovering) return;
+    setRecovering(true);
+    setPendingError('');
+    try {
+      const result = await recoverAgentCashToCashClaimByNumber({ senderPhone: pending.senderPhone, transferNumber: pending.transferNumber, idempotencyKey: pending.idempotencyKey });
+      navigation.reset({ index: 0, routes: [{ name: 'CashToCashClaimSuccess', params: {
+        result, customerReceivingNumber: pending.beneficiaryPhone, pendingLocatorClaim: true,
+      } }] });
+    } catch {
+      setPendingError('The previous claim remains unresolved. Check again later or contact support; do not submit a replacement.');
+    } finally { setRecovering(false); }
+  };
   const [phoneInput, setPhoneInput] = useState('');
   const [senderPhoneInput, setSenderPhoneInput] = useState('');
   const [transferNumberInput, setTransferNumberInput] = useState('');
@@ -104,6 +134,7 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
   };
 
   const handleVerify = () => {
+    if (!pendingChecked || pending) return;
     const validated = validateLocatorInputs();
     if (!validated) return;
     setClientError('');
@@ -111,6 +142,7 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
   };
 
   const handleProceed = () => {
+    if (!pendingChecked || pending) return;
     if (!customer) return;
     if (customer.ownerType !== 'CUSTOMER') {
       setClientError('Only Customer accounts can claim Cash→Cash transfers.');
@@ -144,7 +176,12 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
           the ledger settlement.
         </Text>
 
-        <Card style={styles.card}>
+        {pending && <Card style={styles.card}>
+          <Text testID="c2c-pending-claim-notice">A previous claim needs receipt recovery before another claim can be started.</Text>
+          <Button label="Recover claim receipt" loading={recovering} onPress={() => { void recoverPending(); }} testID="c2c-recover-pending-claim" />
+        </Card>}
+        {!!pendingError && <Text accessibilityRole="alert" testID="c2c-pending-claim-error">{pendingError}</Text>}
+        {pendingChecked && !pending && <Card style={styles.card}>
           <Input
             autoCapitalize="none"
             autoCorrect={false}
@@ -205,7 +242,7 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
             onPress={handleVerify}
             testID="c2c-claim-verify-button"
           />
-        </Card>
+        </Card>}
 
         {(!!clientError || resolveMutation.isError) && (
           <View style={styles.errorBanner}>

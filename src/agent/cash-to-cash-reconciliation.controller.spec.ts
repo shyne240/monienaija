@@ -20,4 +20,20 @@ describe('workforce cash-to-cash reconciliation scope', () => {
     expect(requireFunction).toHaveBeenCalled();
     expect(lookup).not.toHaveBeenCalled();
   });
+  it('fails closed for operation handoffs without institutional authority', async () => {
+    const service = {
+      operationHandoff: async (_id: string, scope: (id: string) => Promise<void>) => {
+        await scope('11111111-1111-4111-8111-111111111111');
+        return { status: 'UNRESOLVED' };
+      },
+    };
+    const controller = new CashToCashReconciliationController(
+      service as never,
+      { requireFunction: jest.fn().mockResolvedValue(undefined) } as never,
+      new CashToCashWorkforceScope(),
+    );
+    await expect(
+      controller.lookupOperation({}, '11111111-1111-4111-8111-111111111111'),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
 });

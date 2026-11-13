@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -8,6 +8,8 @@ import { Card } from '../../../components/Card';
 import { Button } from '../../../components/Button';
 import { AgentReceipt, receiptFromCashToCashClaimResult } from '../../../components/AgentReceipt';
 import { formatNairaFromMinor } from '../../../utils/format';
+import { clearPendingCashToCashLocatorClaim, loadPendingCashToCashLocatorClaim } from '../../../services/pending-operation';
+import { useAuthStore } from '../../../store/auth-store';
 import type { RootStackParamList } from '../../../navigation/types';
 
 /**
@@ -20,7 +22,24 @@ import type { RootStackParamList } from '../../../navigation/types';
 export const CashToCashClaimSuccessScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'CashToCashClaimSuccess'>>();
-  const { result, customerDisplay, customerReceivingNumber } = route.params;
+  const { result, customerDisplay, customerReceivingNumber, pendingLocatorClaim } = route.params;
+  const { agentId } = useAuthStore();
+  const [storageError, setStorageError] = useState('');
+  const acknowledge = async (destination: 'Home' | 'Transactions' | 'CashToCashClaim') => {
+    try {
+      if (pendingLocatorClaim) {
+        if (!agentId) throw new Error('Agent session unavailable');
+        const pending = await loadPendingCashToCashLocatorClaim(agentId);
+        if (!pending || pending.idempotencyKey !== result.idempotencyKey) throw new Error('Claim identity mismatch');
+        await clearPendingCashToCashLocatorClaim(agentId);
+      }
+      navigation.reset(destination === 'Transactions'
+        ? { index: 1, routes: [{ name: 'Home' }, { name: 'Transactions' }] }
+        : { index: 0, routes: [{ name: destination }] });
+    } catch {
+      setStorageError('Unable to acknowledge this receipt. Keep this screen and try again.');
+    }
+  };
 
   const replayed = result.replayed === true || result.status === 'REPLAYED';
   const cashPayout = result.redemptionMethod === 'AGENT_CASH';
@@ -69,23 +88,22 @@ export const CashToCashClaimSuccessScreen: React.FC = () => {
 
       <AgentReceipt receipt={receipt} testID="c2c-claim-receipt" />
 
+      {!!storageError && <Text accessibilityRole="alert">{storageError}</Text>}
       <Button
         label="View transaction history"
         variant="outline"
-        onPress={() =>
-          navigation.reset({ index: 1, routes: [{ name: 'Home' }, { name: 'Transactions' }] })
-        }
+        onPress={() => { void acknowledge('Transactions'); }}
         testID="c2c-claim-success-history"
       />
       <Button
         label="New Cash-to-Cash claim"
         variant="outline"
-        onPress={() => navigation.reset({ index: 0, routes: [{ name: 'CashToCashClaim' }] })}
+        onPress={() => { void acknowledge('CashToCashClaim'); }}
         testID="c2c-claim-success-new"
       />
       <Button
         label="Done"
-        onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
+        onPress={() => { void acknowledge('Home'); }}
         testID="c2c-claim-success-done"
       />
     </ScrollView>

@@ -216,7 +216,10 @@ function isPendingCashToCashLocatorClaim(value: unknown): value is PendingCashTo
 export async function savePendingCashToCashLocatorClaim(
   intent: PendingCashToCashLocatorClaim,
 ): Promise<void> {
-  await SecureStorage.setDurable(locatorClaimStorageKeyFor(intent.agentId), JSON.stringify(intent));
+  const { agentId, senderPhone, transferNumber, beneficiaryPhone, customerId, redemptionMethod, idempotencyKey, createdAt } = intent;
+  await SecureStorage.setDurable(locatorClaimStorageKeyFor(agentId), JSON.stringify({
+    agentId, senderPhone, transferNumber, beneficiaryPhone, customerId, redemptionMethod, idempotencyKey, createdAt,
+  }));
 }
 
 export async function clearPendingCashToCashLocatorClaim(agentId: string): Promise<void> {

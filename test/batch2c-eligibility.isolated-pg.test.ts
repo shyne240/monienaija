@@ -1,3 +1,4 @@
+import type * as MobilePending from '../apps/agent-mobile/src/services/pending-operation';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import { workforceConfiguration } from '../src/authorization/workforce-configuration';
 import { CashToCashWorkforceScope } from '../src/agent/cash-to-cash-workforce-scope';
@@ -87,7 +88,19 @@ beforeAll(async () => {
     .overrideProvider(DataSource)
     .useValue(db)
     .overrideProvider(A2_WORKFORCE_CONFIG)
-    .useValue({ ...workforceConfiguration({}), enabled: true })
+    .useValue({
+      ...workforceConfiguration({}),
+      enabled: true,
+      // Synthetic catalogue grant only: integration must use Arena 4's approved authority.
+      roles: [
+        {
+          roleKey: 'FINANCE_AUDITOR',
+          enabled: true,
+          scopes: ['institution.attribution.view'],
+          administrativeCapability: false,
+        },
+      ],
+    })
     .overrideProvider(CashOutInstitutionResolver)
     .useValue({
       resolve: (_manager: unknown, agentId: string) =>
@@ -129,7 +142,11 @@ beforeAll(async () => {
     })
     .overrideProvider(CashToCashWorkforceScope)
     .useValue({
-      assertCanAccessInstitution: (principal: { principalId: string }, institutionId: string) => {
+      assertCanAccessInstitution: (
+        principal: { principalId: string; scopes: string[] },
+        institutionId: string,
+      ) => {
+        if (principal.scopes.includes('institution.attribution.view')) return Promise.resolve();
         if (workforceInstitutions.get(principal.principalId) !== institutionId)
           throw new NotFoundException('Institution not found');
         return Promise.resolve();
@@ -2387,6 +2404,43 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     signingKeyId: 'fixture',
   });
   workforceInstitutions.set(workforceId, affiliation.institutionId);
+  const createOtherWorkforceSession = async (roleKey: string) => {
+    const id = `reconciliation-${randomUUID()}`;
+    await db.getRepository(A2FinanceRoleAssignment).save({
+      id: randomUUID(),
+      assignmentReference: id,
+      assignmentVersion: 1,
+      principalId: id,
+      roleKey,
+      scopes: [],
+      status: 'ACTIVE',
+      interim: true,
+      effectiveFrom: new Date(now.getTime() - 60000),
+      effectiveTo: new Date(now.getTime() + 86400000),
+      assignedBy: 'fixture',
+      assignedAt: now,
+      revokedBy: null,
+      revokedAt: null,
+      bootstrapReference: null,
+      approvalIds: [],
+      auditReferences: [],
+    } as never);
+    return app.get(A2WorkforceSessionService).establish({
+      issuer: 'https://local-dev-identity.monienaija.invalid',
+      subject: id,
+      principalId: id,
+      audience: ['workforce-admin'],
+      issuedAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 3600000).toISOString(),
+      authenticatedAt: now.toISOString(),
+      assuranceLevel: 'MFA',
+      amr: ['pwd', 'otp'],
+      acr: null,
+      signingKeyId: 'fixture',
+    });
+  };
+  const platformSession = await createOtherWorkforceSession('FINANCE_AUDITOR');
+  const noFunctionSession = await createOtherWorkforceSession('CUSTOMER_SERVICE');
   const operationLookupUrl = `/api/v1/internal/reconciliation/cash-to-cash/operation/${pendingId}`;
   expect((await server.inject({ method: 'GET', url: operationLookupUrl })).statusCode).toBe(401);
   const authorizedLookup = await server.inject({
@@ -2411,6 +2465,24 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     ).statusCode,
   ).toBe(404);
   workforceInstitutions.set(workforceId, affiliation.institutionId);
+  expect(
+    (
+      await server.inject({
+        method: 'GET',
+        url: operationLookupUrl,
+        headers: { authorization: `Bearer ${platformSession.accessToken}` },
+      })
+    ).statusCode,
+  ).toBe(200);
+  expect(
+    (
+      await server.inject({
+        method: 'GET',
+        url: operationLookupUrl,
+        headers: { authorization: `Bearer ${noFunctionSession.accessToken}` },
+      })
+    ).statusCode,
+  ).toBe(403);
   expect(await db.query(`SELECT count(*)::int AS n FROM ledger_journals`)).toEqual(beforeJournals);
   recoveryResolver.mockRestore();
   const duplicateFunding = await server.inject({
@@ -2569,6 +2641,41 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     ).statusCode,
   ).toBe(404);
   workforceInstitutions.set(workforceId, affiliation.institutionId);
+  expect(
+    (
+      await server.inject({
+        method: 'GET',
+        url: workforceTransferUrl,
+        headers: { authorization: `Bearer ${platformSession.accessToken}` },
+      })
+    ).statusCode,
+  ).toBe(200);
+  expect(
+    (
+      await server.inject({
+        method: 'GET',
+        url: workforceTransferUrl,
+        headers: { authorization: `Bearer ${noFunctionSession.accessToken}` },
+      })
+    ).statusCode,
+  ).toBe(403);
+  const unavailableScope = jest
+    .spyOn(app.get(CashToCashWorkforceScope), 'assertCanAccessInstitution')
+    .mockRejectedValue(new ServiceUnavailableException('Authority unavailable'));
+  try {
+    for (const url of [operationLookupUrl, workforceTransferUrl])
+      expect(
+        (
+          await server.inject({
+            method: 'GET',
+            url,
+            headers: { authorization: `Bearer ${platformSession.accessToken}` },
+          })
+        ).statusCode,
+      ).toBe(503);
+  } finally {
+    unavailableScope.mockRestore();
+  }
   const { CashToCashReconciliationService } = await import(
     '../src/agent/cash-to-cash-reconciliation.service'
   );
@@ -3105,6 +3212,208 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     await expect(
       claim.recoverClaimForAgent(transferId, { ...principal, agentId: randomUUID() }),
     ).rejects.toThrow();
+    // The actual mobile client uses the protected locator for both challenge and claim.
+    // Fastify is real; only network transport and the native storage adapter are simulated.
+    const mobile = await import('../apps/agent-mobile/src/services/agent-api');
+    const mobileClient = await import('../apps/agent-mobile/src/services/api-client');
+    const mobileStorage = await import('../apps/agent-mobile/src/services/secure-storage');
+    const mobilePending = await import('../apps/agent-mobile/src/services/pending-operation');
+    const mobileCustomer = await subject('LEVEL_1', ['BVN']);
+    await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [mobileCustomer]);
+    const mobilePhone = `7${randomUUID().replace(/\D/g, '').padEnd(9, '1').slice(0, 9)}`;
+    await db.query(
+      `UPDATE customer_contact_methods SET value=$2,normalized_value=$2 WHERE customer_id=$1`,
+      [mobileCustomer, mobilePhone],
+    );
+    await db.query(
+      `INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE')`,
+      [randomUUID(), mobileCustomer],
+    );
+    await db.query(`UPDATE agent_authentication_credentials SET password_hash=$2 WHERE id=$1`, [
+      agentCredential,
+      pinHash,
+    ]);
+    fundingSubjects.set(agentId, { senderPhone: '8011111111', recipient: mobilePhone });
+    await ledger.postJournal({
+      idempotencyKey: randomUUID(),
+      currency: 'NGN',
+      lines: [
+        { accountId: source.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '200' },
+        {
+          accountId: agentWallet[0]!.ledger_account_id,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: '200',
+        },
+      ],
+    });
+    const mobileFunding = await server.inject({
+      method: 'POST',
+      url: '/api/v1/agents/cash-to-cash',
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        ...fundingPayload,
+        beneficiaryPhone: mobilePhone,
+        amountMinor: '100',
+        idempotencyKey: randomUUID(),
+      },
+    });
+    expect(mobileFunding.statusCode).toBe(201);
+    const mobileTransfer = mobileFunding.json<{
+      transferId: string;
+      transferCode: string;
+      transferNumber: string;
+    }>();
+    const nativeStore = new Map<string, string>();
+    const nativeAdapter = jest.requireMock<{
+      getItemAsync: (key: string) => Promise<string | null>;
+      setItemAsync: (key: string, value: string) => Promise<void>;
+      deleteItemAsync: (key: string) => Promise<void>;
+    }>('expo-secure-store');
+    nativeAdapter.getItemAsync = (key) => Promise.resolve(nativeStore.get(key) ?? null);
+    nativeAdapter.setItemAsync = (key, value) => {
+      nativeStore.set(key, value);
+      return Promise.resolve();
+    };
+    nativeAdapter.deleteItemAsync = (key) => {
+      nativeStore.delete(key);
+      return Promise.resolve();
+    };
+    const nativePlatform = jest.requireMock<{ Platform: { OS: string } }>('react-native');
+    const oldPlatform = nativePlatform.Platform.OS;
+    const oldNodeEnv = process.env.NODE_ENV;
+    nativePlatform.Platform.OS = 'ios';
+    process.env.NODE_ENV = 'production';
+    const oldFetch = global.fetch;
+    let dropClaim = false;
+    let claimPosts = 0;
+    let deliveredJournal = '';
+    global.fetch = async (url, init) => {
+      const path = new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url)
+        .pathname;
+      const headers = Object.fromEntries(
+        Object.entries(init?.headers ?? {}).map(([key, value]) => [key, String(value)]),
+      );
+      const response = await server.inject({
+        method: (init?.method ?? 'GET') as 'GET' | 'POST',
+        url: path,
+        headers,
+        payload: typeof init?.body === 'string' ? init.body : undefined,
+      });
+      if (path === '/api/v1/agents/cash-to-cash/claim-by-number') {
+        claimPosts++;
+        if (dropClaim) {
+          expect(response.statusCode).toBe(200);
+          deliveredJournal = response.json<{ journalId: string }>().journalId;
+          dropClaim = false;
+          throw new Error('Synthetic lost claim response');
+        }
+      }
+      return new Response(response.body, {
+        status: response.statusCode,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+    try {
+      mobileClient.setBaseUrl('http://mobile-contract.invalid');
+      const login = await mobile.agentLogin(agentId, '1234');
+      if (!('accessToken' in login)) throw new Error('Agent session not issued');
+      await mobileStorage.SecureStorage.set(
+        mobileClient.AGENT_SESSION_KEYS.token,
+        login.accessToken,
+      );
+      sms.clear();
+      const locator = { senderPhone: '8011111111', transferNumber: mobileTransfer.transferNumber };
+      const mobileChallenge = await mobile.requestAgentMfaChallenge(
+        mobileCustomer,
+        'CASH_TO_CASH_CLAIM',
+        undefined,
+        { ...locator, redemptionMethod: 'AGENT_CASH' },
+      );
+      const mobileOtp = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+      const identity = {
+        agentId,
+        ...locator,
+        beneficiaryPhone: mobilePhone,
+        customerId: mobileCustomer,
+        redemptionMethod: 'AGENT_CASH' as const,
+        idempotencyKey: randomUUID(),
+        createdAt: new Date().toISOString(),
+      };
+      await mobilePending.savePendingCashToCashLocatorClaim(identity);
+      dropClaim = true;
+      await expect(
+        mobile.agentCashToCashClaimByNumber({
+          ...locator,
+          beneficiaryPhone: mobilePhone,
+          transferCode: mobileTransfer.transferCode,
+          customerId: mobileCustomer,
+          mfaChallengeId: mobileChallenge.challengeId,
+          otp: mobileOtp,
+          idempotencyKey: identity.idempotencyKey,
+          redemptionMethod: 'AGENT_CASH',
+          agentPin: '1234',
+        }),
+      ).rejects.toMatchObject({ name: 'NetworkError' });
+      const rawPending = nativeStore.get(`pending_c2c_locator_claim.${agentId}`)!;
+      expect(JSON.parse(rawPending)).toEqual(identity);
+      expect(rawPending).not.toContain(mobileTransfer.transferCode);
+      expect(rawPending).not.toContain(mobileOtp);
+      expect(JSON.parse(rawPending)).not.toHaveProperty('agentPin');
+      expect(JSON.parse(rawPending)).not.toHaveProperty('otp');
+      expect(JSON.parse(rawPending)).not.toHaveProperty('transferCode');
+      let restarted: typeof MobilePending | undefined;
+      jest.isolateModules(() => {
+        restarted = jest.requireActual<typeof MobilePending>(
+          '../apps/agent-mobile/src/services/pending-operation',
+        );
+      });
+      if (!restarted) throw new Error('Mobile restart failed');
+      const afterRestart = await restarted.loadPendingCashToCashLocatorClaim(agentId);
+      expect(afterRestart).toEqual(identity);
+      await mobile.agentLogout();
+      await mobileClient.purgeAgentSessionFromStorage();
+      const loginAgain = await mobile.agentLogin(agentId, '1234');
+      if (!('accessToken' in loginAgain)) throw new Error('Agent session not issued');
+      expect(loginAgain.sessionId).not.toBe(login.sessionId);
+      await mobileStorage.SecureStorage.set(
+        mobileClient.AGENT_SESSION_KEYS.token,
+        loginAgain.accessToken,
+      );
+      await mobileStorage.SecureStorage.set(mobileClient.AGENT_SESSION_KEYS.token, otherToken);
+      await expect(
+        mobile.recoverAgentCashToCashClaimByNumber({
+          ...locator,
+          idempotencyKey: afterRestart!.idempotencyKey,
+        }),
+      ).rejects.toMatchObject({ status: 404 });
+      await mobileStorage.SecureStorage.set(
+        mobileClient.AGENT_SESSION_KEYS.token,
+        loginAgain.accessToken,
+      );
+      const recovered = await mobile.recoverAgentCashToCashClaimByNumber({
+        ...locator,
+        idempotencyKey: afterRestart!.idempotencyKey,
+      });
+      expect(recovered).toMatchObject({
+        transferId: mobileTransfer.transferId,
+        journalId: deliveredJournal,
+        idempotencyKey: identity.idempotencyKey,
+        redemptionMethod: 'AGENT_CASH',
+      });
+      expect(claimPosts).toBe(1);
+      expect(sms.sent).toHaveLength(1);
+      expect(
+        await db.query(`SELECT count(*)::int AS n FROM ledger_journals WHERE id=$1`, [
+          deliveredJournal,
+        ]),
+      ).toEqual([{ n: 1 }]);
+      expect(await mobilePending.loadPendingCashToCashLocatorClaim(randomUUID())).toBeNull();
+      await mobilePending.clearPendingCashToCashLocatorClaim(agentId);
+    } finally {
+      global.fetch = oldFetch;
+      nativePlatform.Platform.OS = oldPlatform;
+      process.env.NODE_ENV = oldNodeEnv;
+    }
     await db.query(
       `UPDATE agent_authentication_sessions SET status='REVOKED',revoked_at=clock_timestamp() WHERE id=$1`,
       [deskSession],
@@ -3203,3 +3512,233 @@ test('claim failures remain budgeted across replacement challenges', async () =>
     ]),
   ).toEqual([{ status: 'UNCLAIMED', claim_journal_id: null }]);
 });
+
+test('historical 0201 to 0205 upgrades preserve funded, claim, cancellation and handoff evidence', async () => {
+  const { readdirSync } = await import('node:fs');
+  const path = await import('node:path');
+  const historicalName = `kyc_upgrade_${randomUUID().replace(/-/g, '')}`;
+  await admin.query(`CREATE DATABASE "${historicalName}"`);
+  let historical: DataSource | undefined;
+  const migrationFiles = readdirSync(path.join(__dirname, '../src/migrations'))
+    .filter((file) => /^1785753600\d{3}-.*\.ts$/.test(file))
+    .sort();
+  const openAt = async (last: string) => {
+    if (historical?.isInitialized) await historical.destroy();
+    historical = new DataSource({
+      type: 'postgres',
+      host: socket,
+      port: 55461,
+      username: 'kyc_synthetic',
+      database: historicalName,
+      synchronize: false,
+      migrationsRun: false,
+      migrationsTableName: 'typeorm_migrations',
+      entities: [],
+      migrations: migrationFiles
+        .filter((file) => file.slice(0, 13) <= last)
+        .map((file) => path.join(__dirname, '../src/migrations', file)),
+    });
+    await historical.initialize();
+    return historical;
+  };
+  try {
+    let h = await openAt('1785753600201');
+    await h.runMigrations({ transaction: 'all' });
+    const agent = randomUUID(),
+      customer = randomUUID(),
+      credential = randomUUID(),
+      session = randomUUID();
+    const outstanding = randomUUID(),
+      claimed = randomUUID(),
+      funding1 = randomUUID(),
+      funding2 = randomUUID(),
+      claimJournal = randomUUID();
+    await h.query(`INSERT INTO agents(id,reference,status) VALUES($1,$2,'ACTIVE')`, [agent, agent]);
+    await h.query(
+      `INSERT INTO customers(id,reference,customer_type,status,kyc_level,kyc_status) VALUES($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`,
+      [customer, customer],
+    );
+    await h.query(
+      `INSERT INTO agent_authentication_credentials(id,agent_id,password_hash,hash_algorithm,password_version,status) VALUES($1,$2,'fixture','PBKDF2',1,'ACTIVE')`,
+      [credential, agent],
+    );
+    await h.query(
+      `INSERT INTO agent_authentication_sessions(id,agent_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at) VALUES($1,$2,$3,$4,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp())`,
+      [session, agent, credential, 'a'.repeat(64)],
+    );
+    const liability = (
+      await h.query<Array<{ id: string }>>(
+        `SELECT id FROM ledger_accounts WHERE code='CASH_TO_CASH-UNCLAIMED-NGN'`,
+      )
+    )[0]!.id;
+    const asset = randomUUID();
+    await h.query(
+      `INSERT INTO ledger_accounts(id,code,name,account_type,normal_balance,currency,allow_negative_balance) VALUES($1,$2,'historical fixture','ASSET','DEBIT','NGN',true)`,
+      [asset, asset],
+    );
+    await h.transaction(async (manager) => {
+      for (const id of [funding1, funding2, claimJournal]) {
+        await manager.query(
+          `INSERT INTO ledger_journals(id,idempotency_key,request_hash,currency,total_minor) VALUES($1,$2,$3,'NGN',100)`,
+          [id, id, 'a'.repeat(64)],
+        );
+        const claimedLine = id === claimJournal;
+        await manager.query(
+          `INSERT INTO ledger_lines(id,journal_id,ledger_account_id,line_number,direction,amount_minor,currency,accounting_unit) VALUES($1,$2,$3,1,$4,100,'NGN','CUSTOMER_FUNDS'),($5,$2,$6,2,$7,100,'NGN','CUSTOMER_FUNDS')`,
+          [
+            randomUUID(),
+            id,
+            liability,
+            claimedLine ? 'DEBIT' : 'CREDIT',
+            randomUUID(),
+            asset,
+            claimedLine ? 'CREDIT' : 'DEBIT',
+          ],
+        );
+      }
+    });
+    await h.query(
+      `INSERT INTO cash_to_cash_transfers(id,agent_id,beneficiary_phone,principal_minor,total_minor,currency,status,transfer_code_hash,hash_algorithm,journal_id,idempotency_key,expires_at) VALUES($1,$2,'8011111111',100,100,'NGN','UNCLAIMED','historical-hash','PBKDF2',$3,$4,clock_timestamp()+interval '1 day')`,
+      [outstanding, agent, funding1, randomUUID()],
+    );
+    await h.query(
+      `INSERT INTO cash_to_cash_transfers(id,agent_id,beneficiary_phone,principal_minor,total_minor,currency,status,transfer_code_hash,hash_algorithm,journal_id,idempotency_key,expires_at,claimed_at,claimant_customer_id,claim_journal_id,claim_idempotency_key) VALUES($1,$2,'8011111111',100,100,'NGN','CLAIMED','historical-hash','PBKDF2',$3,$4,clock_timestamp()+interval '1 day',clock_timestamp(),$5,$6,$7)`,
+      [claimed, agent, funding2, randomUUID(), customer, claimJournal, randomUUID()],
+    );
+    await h.query(
+      `INSERT INTO audit_events(entity_type,entity_id,action,actor,new_values) VALUES('AGENT_CASH_TO_CASH_CLAIM',$1,'CASH_TO_CASH_CLAIMED',$2,$3::jsonb)`,
+      [
+        claimJournal,
+        agent,
+        JSON.stringify({ redemptionMethod: 'CUSTOMER_WALLET', requestHash: 'historical' }),
+      ],
+    );
+    const cashoutHandoff = randomUUID();
+    await h.query(
+      `INSERT INTO cash_out_reconciliation_handoffs(id,agent_id,operation_key,reason,evidence) VALUES($1,$2,$3,'UNKNOWN_OUTCOME','{"status":"UNKNOWN"}')`,
+      [cashoutHandoff, agent, randomUUID()],
+    );
+    let originalTransfers = await h.query<Array<Record<string, unknown>>>(
+      `SELECT * FROM cash_to_cash_transfers ORDER BY id`,
+    );
+    const originalJournals = await h.query<Array<Record<string, unknown>>>(
+      `SELECT * FROM ledger_journals ORDER BY id`,
+    );
+    const originalLines = await h.query<Array<Record<string, unknown>>>(
+      `SELECT * FROM ledger_lines ORDER BY id`,
+    );
+    const originalAudit = await h.query<Array<Record<string, unknown>>>(
+      `SELECT * FROM audit_events WHERE entity_id=$1`,
+      [claimJournal],
+    );
+    const originalCashout = await h.query<Array<Record<string, unknown>>>(
+      `SELECT * FROM cash_out_reconciliation_handoffs WHERE id=$1`,
+      [cashoutHandoff],
+    );
+    const { ProductionReadinessService } = await import(
+      '../src/production/production-readiness.service'
+    );
+    const readiness = (source: DataSource) =>
+      new ProductionReadinessService(source, {
+        runReconciliation: () => Promise.resolve({ status: 'PASS' }),
+      } as never);
+    expect((await readiness(h).getReadiness()).migrations.compatible).toBe(false);
+    let savedCancellation: Array<Record<string, unknown>> = [];
+    let savedHandoff: Array<Record<string, unknown>> = [];
+    for (const last of ['1785753600202', '1785753600203', '1785753600204', '1785753600205']) {
+      h = await openAt(last);
+      const applied = await h.runMigrations({ transaction: 'all' });
+      expect(applied.map((item) => String(item.timestamp))).toEqual([last]);
+      expect(
+        await h.query<Array<Record<string, unknown>>>(
+          `SELECT * FROM cash_to_cash_transfers ORDER BY id`,
+        ),
+      ).toEqual(originalTransfers);
+      expect(
+        await h.query<Array<Record<string, unknown>>>(`SELECT * FROM ledger_journals ORDER BY id`),
+      ).toEqual(originalJournals);
+      expect(
+        await h.query<Array<Record<string, unknown>>>(`SELECT * FROM ledger_lines ORDER BY id`),
+      ).toEqual(originalLines);
+      expect(
+        await h.query<Array<Record<string, unknown>>>(
+          `SELECT * FROM audit_events WHERE entity_id=$1`,
+          [claimJournal],
+        ),
+      ).toEqual(originalAudit);
+      expect(
+        await h.query(`SELECT * FROM cash_out_reconciliation_handoffs WHERE id=$1`, [
+          cashoutHandoff,
+        ]),
+      ).toEqual(originalCashout);
+      expect(await h.query(`SELECT count(*)::int AS n FROM cash_to_cash_funding_evidence`)).toEqual(
+        [{ n: 0 }],
+      );
+      if (last === '1785753600203') {
+        await h.transaction(async (manager) => {
+          await manager.query(`UPDATE cash_to_cash_transfers SET status='CANCELLED' WHERE id=$1`, [
+            outstanding,
+          ]);
+          await manager.query(
+            `INSERT INTO cash_to_cash_cancellations(transfer_id,agent_id,session_id) VALUES($1,$2,$3)`,
+            [outstanding, agent, session],
+          );
+        });
+        originalTransfers = await h.query<Array<Record<string, unknown>>>(
+          `SELECT * FROM cash_to_cash_transfers ORDER BY id`,
+        );
+        savedCancellation = await h.query<Array<Record<string, unknown>>>(
+          `SELECT * FROM cash_to_cash_cancellations`,
+        );
+      }
+      if (last === '1785753600204') {
+        await h.query(
+          `INSERT INTO cash_to_cash_reconciliation_handoffs(id,transfer_id,agent_id,reason,evidence) VALUES($1,$2,$3,'EVIDENCE_REVIEW','{"historical":true}')`,
+          [randomUUID(), outstanding, agent],
+        );
+        savedHandoff = await h.query<Array<Record<string, unknown>>>(
+          `SELECT * FROM cash_to_cash_reconciliation_handoffs`,
+        );
+      }
+      if (last >= '1785753600204') {
+        expect(
+          await h.query<Array<Record<string, unknown>>>(`SELECT * FROM cash_to_cash_cancellations`),
+        ).toEqual(savedCancellation);
+      }
+      if (last === '1785753600205')
+        expect(
+          await h.query<Array<Record<string, unknown>>>(
+            `SELECT * FROM cash_to_cash_reconciliation_handoffs`,
+          ),
+        ).toEqual(savedHandoff);
+      if (last >= '1785753600204')
+        expect(
+          await h.query(
+            `SELECT count(*)::int AS n FROM cash_to_cash_cancellations WHERE transfer_id=$1`,
+            [outstanding],
+          ),
+        ).toEqual([{ n: 1 }]);
+      if (last === '1785753600205')
+        expect(
+          await h.query(
+            `SELECT evidence FROM cash_to_cash_reconciliation_handoffs WHERE transfer_id=$1`,
+            [outstanding],
+          ),
+        ).toEqual([{ evidence: { historical: true } }]);
+    }
+    expect(await h.showMigrations()).toBe(false);
+    expect((await readiness(h).getReadiness()).migrations).toMatchObject({
+      compatible: true,
+      latestTimestamp: '1785753600205',
+      latestName: 'CashToCashOperationHandoffs1785753600205',
+    });
+    expect(
+      await h.query(
+        `SELECT timestamp::text,name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
+      ),
+    ).toEqual([{ timestamp: '1785753600205', name: 'CashToCashOperationHandoffs1785753600205' }]);
+  } finally {
+    if (historical?.isInitialized) await historical.destroy();
+    await admin.query(`DROP DATABASE "${historicalName}" WITH (FORCE)`);
+  }
+}, 120_000);

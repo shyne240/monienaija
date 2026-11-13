@@ -113,6 +113,7 @@ export type RootStackParamList = {
     result: AgentCashToCashClaimResult;
     customerDisplay?: string;
     customerReceivingNumber?: string;
+    pendingLocatorClaim?: boolean;
   };
 
   // Unified history + history-derived receipt (V1-AGENT-MOBILE-06)

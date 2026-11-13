@@ -18,6 +18,7 @@ import {
 } from '../src/services/pending-operation';
 import { useAuthStore } from '../src/store/auth-store';
 import { CashToCashClaimRecipientScreen } from '../src/screens/authenticated/cash-to-cash/CashToCashClaimRecipientScreen';
+import { CashToCashClaimSuccessScreen } from '../src/screens/authenticated/cash-to-cash/CashToCashClaimSuccessScreen';
 import { CashToCashClaimConfirmScreen } from '../src/screens/authenticated/cash-to-cash/CashToCashClaimConfirmScreen';
 import {
   CASH_TO_CASH_REFERENCE_HANDOFF_PLAN,
@@ -119,6 +120,50 @@ describe('Sprint 3 Final — Agent Mobile Six-Digit Cash-to-Cash Redemption & Re
     } as any);
   });
 
+  test('entry recovers the saved claim without another OTP or redemption and retains it until receipt acknowledgement', async () => {
+    const pending = { agentId: AGENT_ID, senderPhone: '8031234567', transferNumber: '000042',
+      beneficiaryPhone: '8012345678', customerId: customerFixture.customerId, redemptionMethod: 'AGENT_CASH' as const,
+      idempotencyKey: settledClaimFixture.idempotencyKey, createdAt: new Date().toISOString() };
+    await savePendingCashToCashLocatorClaim(pending);
+    mockApi.recoverAgentCashToCashClaimByNumber.mockResolvedValue(settledClaimFixture);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    const view = render(<QueryClientProvider client={client}><CashToCashClaimRecipientScreen /></QueryClientProvider>);
+    await waitFor(() => expect(view.getByTestId('c2c-recover-pending-claim')).toBeTruthy());
+    expect(view.queryByTestId('c2c-claim-verify-button')).toBeNull();
+    fireEvent.press(view.getByTestId('c2c-recover-pending-claim'));
+    await waitFor(() => expect(mockReset).toHaveBeenCalledWith(expect.objectContaining({ routes: [expect.objectContaining({ name: 'CashToCashClaimSuccess', params: expect.objectContaining({ result: settledClaimFixture, pendingLocatorClaim: true }) })] })));
+    expect(mockApi.recoverAgentCashToCashClaimByNumber).toHaveBeenCalledWith({senderPhone:pending.senderPhone, transferNumber:pending.transferNumber,idempotencyKey:pending.idempotencyKey});
+    expect(mockApi.requestAgentMfaChallenge).not.toHaveBeenCalled();
+    expect(mockApi.agentCashToCashClaimByNumber).not.toHaveBeenCalled();
+    expect(await loadPendingCashToCashLocatorClaim(AGENT_ID)).toEqual(pending);
+    view.unmount(); client.clear();
+  });
+
+  test('receipt acknowledgement clears only its own persisted claim', async () => {
+    const pending = { agentId:AGENT_ID,senderPhone:'8031234567',transferNumber:'000042',beneficiaryPhone:'8012345678',customerId:customerFixture.customerId,redemptionMethod:'AGENT_CASH' as const,idempotencyKey:settledClaimFixture.idempotencyKey,createdAt:new Date().toISOString() };
+    await savePendingCashToCashLocatorClaim(pending);
+    mockRoute = { key:'receipt',name:'CashToCashClaimSuccess',params:{result:settledClaimFixture,pendingLocatorClaim:true} };
+    const view = render(<CashToCashClaimSuccessScreen />);
+    fireEvent.press(view.getByTestId('c2c-claim-success-done'));
+    await waitFor(() => expect(mockReset).toHaveBeenCalledWith({index:0,routes:[{name:'Home'}]}));
+    expect(await loadPendingCashToCashLocatorClaim(AGENT_ID)).toBeNull();
+    view.unmount();
+  });
+
+  test('unknown receipt recovery stays unresolved and blocks replacement claim', async () => {
+    await savePendingCashToCashLocatorClaim({ agentId:AGENT_ID,senderPhone:'8031234567',transferNumber:'000042',beneficiaryPhone:'8012345678',customerId:customerFixture.customerId,redemptionMethod:'CUSTOMER_WALLET',idempotencyKey:'unknown-key',createdAt:new Date().toISOString() });
+    mockApi.recoverAgentCashToCashClaimByNumber.mockRejectedValue(makeApiError('Not found',404));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    const view = render(<QueryClientProvider client={client}><CashToCashClaimRecipientScreen /></QueryClientProvider>);
+    await waitFor(() => expect(view.getByTestId('c2c-recover-pending-claim')).toBeTruthy());
+    fireEvent.press(view.getByTestId('c2c-recover-pending-claim'));
+    await waitFor(() => expect(view.getByTestId('c2c-pending-claim-error')).toBeTruthy());
+    expect(view.queryByTestId('c2c-claim-verify-button')).toBeNull();
+    expect((await loadPendingCashToCashLocatorClaim(AGENT_ID))?.idempotencyKey).toBe('unknown-key');
+    expect(mockApi.requestAgentMfaChallenge).not.toHaveBeenCalled();
+    view.unmount(); client.clear();
+  });
+
   test('validateSixDigitTransferNumber & classifyCashToCashClaimIdentifier preserve leading zeros and reject unpadded/invalid values', () => {
     expect(validateSixDigitTransferNumber('000042')).toBe('000042');
     expect(validateSixDigitTransferNumber(' 000000 ')).toBe('000000');
@@ -168,6 +213,7 @@ describe('Sprint 3 Final — Agent Mobile Six-Digit Cash-to-Cash Redemption & Re
       </QueryClientProvider>,
     );
 
+    await waitFor(() => expect(view.getByTestId('c2c-claim-phone-input')).toBeTruthy());
     fireEvent.changeText(view.getByTestId('c2c-claim-phone-input'), '08012345678');
     fireEvent.changeText(view.getByTestId('c2c-claim-sender-phone-input'), '08031234567');
 
@@ -276,7 +322,7 @@ describe('Sprint 3 Final — Agent Mobile Six-Digit Cash-to-Cash Redemption & Re
     expect(typeof submittedPayload.transferNumber).toBe('string');
     expect(submittedPayload).not.toHaveProperty('transferId');
     expect(mockApi.agentCashToCashClaim).not.toHaveBeenCalled();
-    expect(await loadPendingCashToCashLocatorClaim(AGENT_ID)).toBeNull();
+    expect(await loadPendingCashToCashLocatorClaim(AGENT_ID)).not.toBeNull();
 
     view.unmount();
     queryClient.clear();
@@ -345,7 +391,7 @@ describe('Sprint 3 Final — Agent Mobile Six-Digit Cash-to-Cash Redemption & Re
       transferNumber: '000042',
       idempotencyKey: originalKey,
     });
-    expect(await loadPendingCashToCashLocatorClaim(AGENT_ID)).toBeNull();
+    expect(await loadPendingCashToCashLocatorClaim(AGENT_ID)).not.toBeNull();
 
     view.unmount();
 
