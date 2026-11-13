@@ -11,6 +11,8 @@ import { AuthorizationService } from '../authorization/authorization.service';
 import { AuthenticationSessionService } from '../customer-authentication/authentication-session.service';
 import { AuditService } from '../operations/audit.service';
 import { isRetryableTransactionError } from '../payment/payment-support';
+import { A7_PRODUCT_POLICY_PROFILES } from './a7-product-policy.profiles';
+import type { PolicyObligation } from './capability-policy.types';
 
 export type A7PersistedOperationType = 'VIRTUAL_ACCOUNT_ASSIGN' | 'INBOUND_FUNDING';
 export type A7PersistedState =
@@ -60,8 +62,9 @@ export interface A7PersistedLifecycle {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TRANSITIONS: Readonly<Record<A7PersistedState, readonly A7PersistedState[]>> = {
   LIFECYCLE_PENDING: ['LIFECYCLE_ADMITTED', 'LIFECYCLE_CANCELLED'],
-  LIFECYCLE_ADMITTED: ['LIFECYCLE_UNKNOWN'],
-  LIFECYCLE_UNKNOWN: ['LIFECYCLE_MANUAL_REVIEW'],
+  // Provider-derived states require independent evidence, not customer assertions.
+  LIFECYCLE_ADMITTED: [],
+  LIFECYCLE_UNKNOWN: [],
   LIFECYCLE_MANUAL_REVIEW: [],
   LIFECYCLE_CANCELLED: [],
 };
@@ -278,10 +281,16 @@ export class A7ProductPersistenceService {
             policy_decision_reference: string | null;
             operation_type: A7PersistedOperationType;
             binding_id: string;
+            binding_version: number;
+            customer_wallet_id: string;
+            wallet_account_id: string;
+            ledger_account_id: string;
+            authorization_event_id: string;
+            session_id: string;
           }
         >
       >(
-        `SELECT l.*,c.customer_id,c.policy_decision_reference,c.operation_type,c.binding_id FROM a7_product_lifecycles l JOIN a7_product_commands c ON c.id=l.command_id WHERE l.id=$1 AND c.customer_id=$2 FOR UPDATE OF l`,
+        `SELECT l.*,c.customer_id,c.policy_decision_reference,c.operation_type,c.binding_id,c.binding_version,c.customer_wallet_id,c.wallet_account_id,c.ledger_account_id,c.authorization_event_id,c.session_id FROM a7_product_lifecycles l JOIN a7_product_commands c ON c.id=l.command_id WHERE l.id=$1 AND c.customer_id=$2 FOR UPDATE OF l`,
         [lifecycleId, principal.customerId],
       );
       const current = rows[0];
@@ -303,6 +312,7 @@ export class A7ProductPersistenceService {
       if (!TRANSITIONS[current.state].includes(input.nextState))
         throw new ConflictException('Invalid A7 lifecycle transition');
       if (input.nextState === 'LIFECYCLE_ADMITTED') {
+        await this.recheckCommandAuthority(manager, current);
         if (!current.policy_decision_reference)
           throw new ConflictException('A7 policy decision is missing');
         await this.checkPolicy(
@@ -313,8 +323,12 @@ export class A7ProductPersistenceService {
           current.binding_id,
           true,
         );
-        // Admission requires a transaction-bound implementation of A4 recheck obligations.
-        throw new ServiceUnavailableException('A7 policy obligations are not implemented');
+        // The A4 profile requires A6 partner-reference and execution-limit rechecks.
+        // Neither authoritative identity is linked to this command. In particular, an
+        // outbound withdrawal cannot serve as authority for an inbound command.
+        throw new ServiceUnavailableException(
+          'A7 partner reference and execution-limit authority unavailable',
+        );
       }
       const auth = await this.recordAuthorization(
         manager,
@@ -357,18 +371,10 @@ export class A7ProductPersistenceService {
   }
 
   async findCommand(reference: string): Promise<A7PersistedCommand | null> {
-    const rows = await this.db.query<A7PersistedCommand[]>(
-      'SELECT * FROM a7_product_commands WHERE command_reference=$1',
-      [reference],
-    );
-    return rows[0] ?? null;
+    return readPersistedA7Command(this.db, reference);
   }
   async findLifecycle(reference: string): Promise<A7PersistedLifecycle | null> {
-    const rows = await this.db.query<A7PersistedLifecycle[]>(
-      'SELECT * FROM a7_product_lifecycles WHERE lifecycle_reference=$1',
-      [reference],
-    );
-    return rows[0] ?? null;
+    return readPersistedA7Lifecycle(this.db, reference);
   }
 
   private async authenticate(token: string) {
@@ -434,6 +440,56 @@ export class A7ProductPersistenceService {
     });
     return event.id;
   }
+  private async recheckCommandAuthority(
+    manager: EntityManager,
+    command: {
+      command_id: string;
+      customer_id: string;
+      session_id: string;
+      authorization_event_id: string;
+      binding_id: string;
+      binding_version: number;
+      customer_wallet_id: string;
+      wallet_account_id: string;
+      ledger_account_id: string;
+    },
+  ): Promise<void> {
+    const events = await manager.query<Array<{ id: string }>>(
+      `SELECT id FROM audit_events
+      WHERE id=$1 AND entity_type='A7_ACCESS_AUTHORIZATION' AND entity_id=$2 AND action='ALLOWED'
+        AND actor=$3 AND new_values->>'customerId'=$3 AND new_values->>'sessionId'=$4
+        AND new_values->>'resourceId'=$2::text AND new_values->>'action'='a7:create'
+        AND new_values->>'allowed'='true' FOR SHARE`,
+      [command.authorization_event_id, command.command_id, command.customer_id, command.session_id],
+    );
+    if (!events[0]) throw new ConflictException('A7 original authorization evidence mismatch');
+    const rows = await manager.query<Array<{ id: string }>>(
+      `SELECT b.id
+      FROM customer_financial_account_bindings b JOIN customers c ON c.id=b.customer_id
+      JOIN customer_wallets cw ON cw.id=b.customer_wallet_id AND cw.customer_id=c.id
+      JOIN wallet_ownerships o ON o.wallet_id=cw.id AND o.customer_id=c.id
+      JOIN wallet_accounts w ON w.id=b.wallet_account_id AND w.customer_id=c.id::text AND w.ledger_account_id=b.ledger_account_id
+      JOIN ledger_accounts la ON la.id=b.ledger_account_id
+      WHERE b.id=$1 AND b.version=$2 AND b.customer_id=$3 AND b.customer_wallet_id=$4 AND b.wallet_account_id=$5 AND b.ledger_account_id=$6
+      AND b.state='ACTIVE' AND b.currency='NGN' AND b.accounting_unit='CUSTOMER_FUNDS'
+      AND c.status='ACTIVE' AND c.deleted_at IS NULL AND c.version=b.source_customer_version
+      AND cw.status='ACTIVE' AND cw.deleted_at IS NULL AND cw.version=b.source_customer_wallet_version AND cw.currency='NGN'
+      AND o.deleted_at IS NULL AND w.status='ACTIVE' AND w.currency='NGN' AND w.owner_class='CUSTOMER'
+      AND wallet_owner_class(w.customer_id)='CUSTOMER' AND la.is_active AND NOT la.allow_negative_balance
+      AND la.currency='NGN' AND la.accounting_unit='CUSTOMER_FUNDS' AND la.account_type='LIABILITY' AND la.normal_balance='CREDIT'
+      FOR SHARE OF b,c,cw,o,w,la`,
+      [
+        command.binding_id,
+        command.binding_version,
+        command.customer_id,
+        command.customer_wallet_id,
+        command.wallet_account_id,
+        command.ledger_account_id,
+      ],
+    );
+    if (!rows[0]) throw new ConflictException('A7 binding evidence is stale or mismatched');
+  }
+
   private async checkPolicy(
     manager: EntityManager,
     reference: string,
@@ -443,16 +499,41 @@ export class A7ProductPersistenceService {
     requireAllow: boolean,
   ) {
     const action = operation === 'VIRTUAL_ACCOUNT_ASSIGN' ? 'assign' : 'lifecycle';
-    const rows = await manager.query<Array<{ id: string }>>(
-      `SELECT p.id FROM policy_decision_records p JOIN immutable_evidence_snapshot_attachments s ON s.snapshot_reference=p.snapshot_reference AND s.normalized_input_hash=p.normalized_input_hash
+    const rows = await manager.query<
+      Array<{
+        id: string;
+        obligations: PolicyObligation[];
+        profile_reference: string;
+        definition_hash: string;
+      }>
+    >(
+      `SELECT p.id,p.obligations,p.profile_reference,p.definition_hash FROM policy_decision_records p
+      JOIN immutable_evidence_snapshot_attachments s ON s.snapshot_reference=p.snapshot_reference AND s.normalized_input_hash=p.normalized_input_hash
+      JOIN policy_profile_versions v ON v.profile_reference=p.profile_reference AND v.definition_hash=p.definition_hash
+        AND v.profile_version=p.profile_version AND v.policy_version=p.policy_version AND v.capability=p.capability
       WHERE p.decision_reference=$1 AND p.customer_id=$2 AND p.capability='product.virtual-account' AND p.action=$3
       AND s.customer_id=p.customer_id AND s.capability=p.capability AND s.action=p.action
       AND s.snapshot_payload #>> '{policyRequestScope,targetBindingId}'=$4
-      AND ($5::boolean=false OR (p.decision IN ('ALLOW','ALLOW_WITH_LIMITS') AND p.collection_status='COMPLETE' AND p.expires_at>clock_timestamp() AND (p.review_at IS NULL OR p.review_at>clock_timestamp()))) FOR SHARE OF p,s`,
+      AND ($5::boolean=false OR (p.decision IN ('ALLOW','ALLOW_WITH_LIMITS') AND p.collection_status='COMPLETE'
+        AND s.collection_status='COMPLETE' AND p.expires_at>clock_timestamp() AND (p.review_at IS NULL OR p.review_at>clock_timestamp())
+        AND v.lifecycle_state='ACTIVE' AND v.effective_from<=clock_timestamp() AND (v.effective_to IS NULL OR v.effective_to>clock_timestamp())
+        AND NOT EXISTS(SELECT 1 FROM policy_decision_records newer WHERE newer.supersedes_decision_reference=p.decision_reference))) FOR SHARE OF p,s,v`,
       [reference, customerId, action, bindingId, requireAllow],
     );
-    if (!rows[0]) throw new ConflictException('A7 policy evidence missing or mismatched');
+    const row = rows[0];
+    if (!row) throw new ConflictException('A7 policy evidence missing or mismatched');
+    if (requireAllow) {
+      const profile = A7_PRODUCT_POLICY_PROFILES.find((item) => item.actions.includes(action));
+      if (
+        !profile ||
+        profile.profileReference !== row.profile_reference ||
+        profile.definitionHash !== row.definition_hash
+      )
+        throw new ConflictException('A7 policy profile is not the expected authoritative version');
+      validateA7Obligations(row.obligations, profile.obligations, Date.now());
+    }
   }
+
   private uuid(value: string) {
     if (typeof value !== 'string' || !UUID.test(value))
       throw new BadRequestException('A7 identifier must be a UUID');
@@ -475,5 +556,55 @@ export class A7ProductPersistenceService {
       }
     }
     throw new ConflictException('A7 transaction could not complete');
+  }
+}
+
+/** Shared authoritative reads for A7 consumers; no idempotency response is an aggregate. */
+export async function readPersistedA7Command(
+  db: DataSource,
+  reference: string,
+): Promise<A7PersistedCommand | null> {
+  const rows = await db.query<A7PersistedCommand[]>(
+    'SELECT * FROM a7_product_commands WHERE command_reference=$1',
+    [reference],
+  );
+  return rows[0] ?? null;
+}
+export async function readPersistedA7Lifecycle(
+  db: DataSource,
+  reference: string,
+): Promise<A7PersistedLifecycle | null> {
+  const rows = await db.query<A7PersistedLifecycle[]>(
+    'SELECT * FROM a7_product_lifecycles WHERE lifecycle_reference=$1',
+    [reference],
+  );
+  return rows[0] ?? null;
+}
+
+/** Validate the obligations as issued; this does not satisfy or waive any recheck. */
+export function validateA7Obligations(
+  actual: readonly PolicyObligation[],
+  expected: readonly PolicyObligation[],
+  now: number,
+): void {
+  if (!Array.isArray(actual) || actual.length !== expected.length)
+    throw new ConflictException('A7 policy obligations missing or unexpected');
+  const issued = actual as readonly PolicyObligation[];
+  for (const required of expected) {
+    const matches = issued.filter((entry) => entry && entry.code === required.code);
+    const item = matches[0];
+    if (
+      matches.length !== 1 ||
+      !item ||
+      item.required !== required.required ||
+      (item.reference ?? null) !== (required.reference ?? null)
+    )
+      throw new ConflictException('A7 policy obligation mismatched');
+    for (const date of [item.dueAt, item.expiresAt])
+      if (
+        date !== undefined &&
+        (typeof date !== 'string' || !Number.isFinite(Date.parse(date)) || Date.parse(date) <= now)
+      )
+        throw new ConflictException('A7 policy obligation expired');
   }
 }

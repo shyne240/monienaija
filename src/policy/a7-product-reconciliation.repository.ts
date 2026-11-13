@@ -137,6 +137,12 @@
  * product financial effect identity.
  */
 
+import {
+  readPersistedA7Command,
+  readPersistedA7Lifecycle,
+  type A7PersistedCommand,
+  type A7PersistedLifecycle,
+} from './a7-product-persistence.service';
 import { Inject, Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
@@ -315,50 +321,17 @@ export class A7ProductReconciliationRepository {
   private lookupA2AuthorizationContext(
     authorizationContextReference: string,
   ): Promise<A7ProductReconciliationA2AuthorizationContextView | null> {
-    const normalized = authorizationContextReference.trim();
-    if (!normalized) {
-      return Promise.resolve(null);
-    }
-    void this.authorizationService;
-    return Promise.resolve({
-      principalType: 'SERVICE',
-      principalId: 'a7-product-reconciliation',
-      customerId: null,
-      customerAccess: 'ANY',
-      evaluatedAt: new Date().toISOString(),
-      allowed: true,
-      action: 'a7-product-reconciliation',
-      resourceType: A7_PRODUCT_RECONCILIATION_AUDIT_ENTITY_TYPE,
-      resourceId: null,
-    });
+    // This legacy shape cannot prove the authority or ownership requested.
+    void [authorizationContextReference];
+    return Promise.resolve(null);
   }
 
   private lookupA4ProductPolicyDecision(
     decisionReference: string,
   ): Promise<A7ProductReconciliationA4ProductPolicyDecisionView | null> {
-    const normalized = decisionReference.trim();
-    if (!normalized) {
-      return Promise.resolve(null);
-    }
-    const profileRegistration = this.productPolicyService.getProfileRegistration(
-      'product.virtual-account',
-      'lifecycle',
-    );
-    if (!profileRegistration) {
-      return Promise.resolve(null);
-    }
-    return Promise.resolve({
-      decisionReference: normalized,
-      productKey: 'VIRTUAL_ACCOUNT',
-      capability: profileRegistration.capability,
-      action: profileRegistration.action,
-      profileReference: profileRegistration.profileReference,
-      policyVersion: profileRegistration.policyVersion,
-      decision: 'ALLOW_WITH_LIMITS',
-      expiresAt: null,
-      reasonCodes: [],
-      maxAmountMinor: null,
-    });
+    // This legacy shape cannot prove the authority or ownership requested.
+    void [decisionReference];
+    return Promise.resolve(null);
   }
 
   // ------------------------------------------------------------------
@@ -725,26 +698,29 @@ export class A7ProductReconciliationRepository {
   // consumer of the shared Operations `IdempotencyService`.
   // ------------------------------------------------------------------
 
-  private async lookupA7T05ProductCommand(
-    productCommandReference: string,
-  ): Promise<A7ProductReconciliationProductCommandView | null> {
-    return this.lookupA7Record<A7ProductReconciliationProductCommandView>(
-      productCommandReference,
-      'A7_PRODUCT_COMMAND',
-      'productCommandReference',
-      (row) => this.toA7T05ProductCommandView(row),
-    );
+  /** Canonical facts for consumers that can handle absent legacy-only fields. */
+  readPersistedCommand(reference: string): Promise<A7PersistedCommand | null> {
+    return readPersistedA7Command(this.dataSource, reference);
   }
 
-  private async lookupA7T07ProductLifecycle(
-    productLifecycleReference: string,
+  readPersistedLifecycle(reference: string): Promise<A7PersistedLifecycle | null> {
+    return readPersistedA7Lifecycle(this.dataSource, reference);
+  }
+
+  private lookupA7T05ProductCommand(
+    reference: string,
+  ): Promise<A7ProductReconciliationProductCommandView | null> {
+    // The legacy view requires operation, amount and product-state fields not persisted here.
+    void reference;
+    return Promise.resolve(null);
+  }
+
+  private lookupA7T07ProductLifecycle(
+    reference: string,
   ): Promise<A7ProductReconciliationProductLifecycleView | null> {
-    return this.lookupA7Record<A7ProductReconciliationProductLifecycleView>(
-      productLifecycleReference,
-      'A7_PRODUCT_LIFECYCLE',
-      'productLifecycleReference',
-      (row) => this.toA7T07ProductLifecycleView(row),
-    );
+    // Outcome and product-state cannot be recovered from an idempotency response body.
+    void reference;
+    return Promise.resolve(null);
   }
 
   private async lookupA7T08ProductFinancialEffect(productOperationReference: string): Promise<{
@@ -805,79 +781,15 @@ export class A7ProductReconciliationRepository {
     );
   }
 
-  private async lookupA7Record<T>(
+  private lookupA7Record<T>(
     reference: string,
     resourceType: string,
     referenceField: string,
     transform: (row: Record<string, unknown>) => T,
   ): Promise<T | null> {
-    const normalized = reference.trim();
-    if (!normalized) {
-      return null;
-    }
-    try {
-      const rows = await this.dataSource.query<Array<{ response_body: Record<string, unknown> }>>(
-        `SELECT response_body
-           FROM idempotency_records
-          WHERE status = 'COMPLETED'
-            AND resource_type = $1
-            AND response_body ->> $2 = $3
-          ORDER BY created_at DESC
-          LIMIT 1`,
-        [resourceType, referenceField, normalized],
-      );
-      if (rows.length === 0) {
-        return null;
-      }
-      return transform(rows[0]!.response_body);
-    } catch {
-      return null;
-    }
-  }
-
-  private toA7T05ProductCommandView(
-    row: Record<string, unknown>,
-  ): A7ProductReconciliationProductCommandView {
-    return {
-      productCommandReference: this.asString(row['productCommandReference']),
-      productOperationReference: this.asString(row['productOperationReference']),
-      productKey: 'VIRTUAL_ACCOUNT',
-      productVersion: 1,
-      capabilityKey: this.asString(row['capabilityKey']),
-      action: this.asString(row['action']),
-      productState: this.asString(
-        row['productState'],
-      ) as A7ProductReconciliationProductCommandView['productState'],
-      operationState: this.asString(row['operationState']),
-      customerId: this.asString(row['customerId']),
-      customerWalletId: this.asString(row['customerWalletId']),
-      bindingId: this.asString(row['bindingId']),
-      bindingVersion: this.asNumber(row['bindingVersion']),
-      amountMinor: this.asString(row['amountMinor']),
-      currency: this.asString(row['currency']),
-      accountingUnit: this.asString(row['accountingUnit']),
-    };
-  }
-
-  private toA7T07ProductLifecycleView(
-    row: Record<string, unknown>,
-  ): A7ProductReconciliationProductLifecycleView {
-    return {
-      productLifecycleId: this.asString(row['productLifecycleId']),
-      productLifecycleReference: this.asString(row['productLifecycleReference']),
-      productKey: 'VIRTUAL_ACCOUNT',
-      capabilityKey: this.asString(row['capabilityKey']),
-      action: this.asString(row['action']),
-      productState: this.asString(
-        row['productState'],
-      ) as A7ProductReconciliationProductLifecycleView['productState'],
-      currentLifecycleState: this.asString(row['currentLifecycleState']),
-      outcome: this.asString(row['outcome']),
-      customerId: this.asString(row['customerId']),
-      customerWalletId: this.asString(row['customerWalletId']),
-      bindingId: this.asString(row['bindingId']),
-      bindingVersion: this.asNumber(row['bindingVersion']),
-    };
+    // An idempotency response body is not an authoritative A7 aggregate.
+    void [reference, resourceType, referenceField, transform];
+    return Promise.resolve(null);
   }
 
   private toA7T04ProductCustomerBindingView(

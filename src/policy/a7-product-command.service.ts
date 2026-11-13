@@ -89,6 +89,7 @@ import {
   A7_PRODUCT_COMMAND_REFERENCE_PREFIX,
   A7_PRODUCT_OPERATION_REFERENCE_PREFIX,
 } from './a7-product-command.constants';
+import { readPersistedA7Command, type A7PersistedCommand } from './a7-product-persistence.service';
 import { A7ProductCommandRepository } from './a7-product-command.repository';
 import type {
   A7ProductCommandCreateV1,
@@ -183,6 +184,11 @@ export class A7ProductCommandService {
     @Inject(A7ProductCommandRepository)
     private readonly repository: A7ProductCommandRepository,
   ) {}
+
+  /** Read only persisted facts, rather than legacy idempotency response bodies. */
+  readPersistedCommand(reference: string): Promise<A7PersistedCommand | null> {
+    return readPersistedA7Command(this.repository.getDataSource(), reference);
+  }
 
   /**
    * Reserves the A7 product command against the A7 internal

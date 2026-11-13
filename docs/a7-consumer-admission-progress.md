@@ -1,0 +1,20 @@
+# A7 consumer and admission integration — partial progress
+
+Admission is **not enabled** and this checkpoint does not satisfy the requested completion criteria. No provider calls, financial execution or posting are enabled by these changes. The outbound-withdrawal direction guard remains unchanged.
+
+## Implemented
+
+- The A7 command and lifecycle services, and reconciliation repository, expose reads of the existing authoritative command and lifecycle tables through the shared persistence read functions. The old reconciliation command/lifecycle lookups no longer use idempotency response bodies as authoritative state. Legacy view contracts that require unstored operation, amount, product state, outcome, map or consent fields still fail closed rather than inventing them. These new read methods do not make the legacy write/consumer contracts compatible.
+- Notification and reconciliation legacy authorization and policy lookups no longer turn arbitrary strings into allowed decisions. Notification's legacy binding-map and command-reference checks also fail closed. A7 policy result summaries no longer add obligations absent from the A4 decision.
+- Before a pending-to-admitted transition, the write transaction checks the original persisted A2 audit event and locks/revalidates the exact current A3 binding, customer, wallet ownership, wallet and ledger account. It also locks the A4 decision, snapshot and profile, checks the decision/customer/action/binding linkage, effective profile and decision state, rejects superseded decisions, and compares the issued obligation set and deadline fields against the registered A7 profile. These checks do **not** fulfill the outstanding A6 or execution-limit obligations. Admission continues to fail closed.
+- Customer-supplied transitions into provider-derived unknown/manual-review states are disabled because no independent provider evidence exists for them. Pending cancellation remains supported.
+
+## Concrete blocker
+
+Both existing A7 A4 profiles (`src/policy/a7-product-policy.profiles.ts`) require `RECHECK_A6_PARTNER_REFERENCE` and `RECHECK_EXECUTION_LIMIT`. Their partner references are profile template labels, not operation-bound evidence. `external_operation_references` only attach to `external_operations`, whose entity and database constraints permit `WITHDRAWAL` / `OUTBOUND_BANK_SETTLEMENT` only. The existing A7 command does not record an independently authenticated inbound/assignment A6 partner-reference identity or the amount/usage and limit identity necessary for the execution-limit recheck. No legitimate source or transaction-bound contract in the current code establishes those facts for this nonfinancial A7 admission. Reinterpreting an outbound withdrawal, using a template string, or declaring required obligations satisfied would violate the direction and evidence requirements. A governed compatible policy/profile and authoritative obligation evidence contract are needed before admission can be enabled; the code must also revalidate the other A4 source evidence and adapt the remaining incompatible consumers.
+
+## Verification
+
+- Guarded disposable PostgreSQL run `a7i02`: 61 passed, 14 failed, 75 total, 6 suites (4 passed, 2 failed). The new authoritative persistence suite passed all 8 tests; A6 financial-commitment initiation, commitment schema and migration readiness passed. The financial-effect suite had 12 failures from fixtures that expect the prohibited outbound withdrawal path; the legacy lifecycle suite had 2 failures expecting response-body-based replay. The latter were already fail-closed at checkpoint `342489a` and the financial-effect guard is unchanged. No claim is made that these suites pass.
+- Obligation identity and A7 policy unit run `a7i-unit`: 22 passed, 0 failed in 2 suites. The obligation tests validate the exact profile templates, missing/duplicate/altered obligations and deadlines; they do not demonstrate a successful A4-backed admission.
+- Authenticated A6 HTTP behavior was exercised by the financial-commitment suite; there is no A7 HTTP endpoint in this checkpoint, so no authenticated A7 admission HTTP test is claimed.

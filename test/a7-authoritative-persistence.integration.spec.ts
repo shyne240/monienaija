@@ -9,6 +9,10 @@ import { TestNotificationProvider } from '../src/notification/notification-provi
 import { A7ProductPersistenceService } from '../src/policy/a7-product-persistence.service';
 import { A7ProductCommandRepository } from '../src/policy/a7-product-command.repository';
 import { A7ProductCustomerBindingRepository } from '../src/policy/a7-product-customer-binding.repository';
+import { A7ProductCommandService } from '../src/policy/a7-product-command.service';
+import { A7ProductLifecycleService } from '../src/policy/a7-product-lifecycle.service';
+import { A7ProductNotificationDeliveryRepository } from '../src/policy/a7-product-notification-delivery.repository';
+import { A7ProductReconciliationRepository } from '../src/policy/a7-product-reconciliation.repository';
 import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
@@ -125,6 +129,22 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
     expect(await service.findCommand(first.command.command_reference)).toMatchObject({
       id: first.command.id,
     });
+    expect(
+      await app.get(A7ProductCommandService).readPersistedCommand(first.command.command_reference),
+    ).toMatchObject({ id: first.command.id, customer_id: p.customerId });
+    expect(
+      await app
+        .get(A7ProductLifecycleService)
+        .readPersistedLifecycle(first.lifecycle.lifecycle_reference),
+    ).toMatchObject({ id: first.lifecycle.id, state: 'LIFECYCLE_PENDING' });
+    expect(await app.get(A7ProductCommandService).readPersistedCommand('nonexistent')).toBeNull();
+    const reconciliation = app.get(A7ProductReconciliationRepository);
+    expect(
+      await reconciliation.readPersistedCommand(first.command.command_reference),
+    ).toMatchObject({ id: first.command.id });
+    expect(
+      await reconciliation.readPersistedLifecycle(first.lifecycle.lifecycle_reference),
+    ).toMatchObject({ id: first.lifecycle.id, state: 'LIFECYCLE_PENDING' });
     const auth = await db.query<Array<{ entity_id: string; actor: string; action: string }>>(
       'SELECT * FROM audit_events WHERE id=$1',
       [first.command.authorization_event_id],
@@ -262,5 +282,78 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
     expect(await command.a2AuthorizationContextLookup('asserted-reference')).toBeNull();
     expect(await command.a4ProductPolicyDecisionLookup('asserted-reference')).toBeNull();
     expect(await binding.a6T04FundingTargetLookup(randomUUID(), 'MN1234')).toBeNull();
+  });
+  it('rechecks original authorization and current binding under the admission transaction', async () => {
+    const p = await subject();
+    const created = await service.create({
+      token: p.token,
+      operationType: 'INBOUND_FUNDING',
+      bindingId: p.bindingId,
+      idempotencyKey: 'binding-stale',
+    });
+    await db.query(`UPDATE wallet_accounts SET status='SUSPENDED' WHERE id=$1`, [
+      p.walletAccountId,
+    ]);
+    await expect(
+      service.transition({
+        token: p.token,
+        lifecycleId: created.lifecycle.id,
+        expectedVersion: 1,
+        nextState: 'LIFECYCLE_ADMITTED',
+        idempotencyKey: 'admit',
+      }),
+    ).rejects.toThrow('binding evidence is stale');
+    const current = await service.findLifecycle(created.lifecycle.lifecycle_reference);
+    expect(current?.state).toBe('LIFECYCLE_PENDING');
+    expect(current?.version).toBe(1);
+    const rows = await db.query<Array<{ n: string }>>(
+      'SELECT count(*) n FROM a7_product_lifecycle_transitions WHERE lifecycle_id=$1',
+      [created.lifecycle.id],
+    );
+    expect(rows[0]?.n).toBe('0');
+  });
+  it('fails closed for legacy notification and reconciliation authority lookups', async () => {
+    const notification = app.get(A7ProductNotificationDeliveryRepository).getConsumerPorts();
+    const reconciliation = app.get(A7ProductReconciliationRepository).getConsumerPorts();
+    expect(await notification.a2AuthorizationContextLookup('asserted')).toBeNull();
+    expect(await notification.a4ProductPolicyDecisionLookup('asserted')).toBeNull();
+    expect(await reconciliation.a2AuthorizationContextLookup('asserted')).toBeNull();
+    expect(await reconciliation.a4ProductPolicyDecisionLookup('asserted')).toBeNull();
+  });
+  it('rolls back blocked admission and permits concurrent cancellation without posting', async () => {
+    const p = await subject();
+    const { lifecycle } = await service.create({
+      token: p.token,
+      operationType: 'INBOUND_FUNDING',
+      bindingId: p.bindingId,
+      idempotencyKey: 'race',
+    });
+    const count = async () =>
+      (await db.query<Array<{ n: string }>>('SELECT count(*) n FROM ledger_journals'))[0]!.n;
+    const before = await count();
+    const base = { token: p.token, lifecycleId: lifecycle.id, expectedVersion: 1 };
+    const [admit, cancel] = await Promise.allSettled([
+      service.transition({
+        ...base,
+        nextState: 'LIFECYCLE_ADMITTED',
+        idempotencyKey: 'admit-race',
+      }),
+      service.transition({
+        ...base,
+        nextState: 'LIFECYCLE_CANCELLED',
+        idempotencyKey: 'cancel-race',
+      }),
+    ]);
+    expect(admit.status).toBe('rejected');
+    expect(cancel.status).toBe('fulfilled');
+    expect((await service.findLifecycle(lifecycle.lifecycle_reference))?.state).toBe(
+      'LIFECYCLE_CANCELLED',
+    );
+    expect(await count()).toBe(before);
+    const transitions = await db.query<Array<{ to_state: string }>>(
+      'SELECT to_state FROM a7_product_lifecycle_transitions WHERE lifecycle_id=$1',
+      [lifecycle.id],
+    );
+    expect(transitions).toEqual([{ to_state: 'LIFECYCLE_CANCELLED' }]);
   });
 });
