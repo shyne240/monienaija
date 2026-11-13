@@ -46,3 +46,18 @@ approved policy or evidence source. This is not a completed initiation lifecycle
 adapters and real PostgreSQL initiation/rollback/concurrency acceptance are still required.
 Expiry keeps the principal in the unclaimed liability; cancellation or release cannot be
 implemented safely without an approved disposition authority and accounting policy.
+
+### Controlled HTTP funding-to-claim acceptance
+
+The isolated PostgreSQL/Fastify test now initiates an agent-funded transfer via the real
+HTTP route, issues its transfer-bound challenge, redeems it via HTTP, and recovers the
+receipt. The synthetic server-side funding authority checks an explicitly provisioned
+sender/recipient policy fixture and the locked agent wallet; it is not the production
+identity, policy or institutional authority. Real session, PIN, service capability, claim
+and HTTP guards remain in place. The test checks one original wallet debit, the linked
+immutable evidence, one unclaimed-liability debit on claim, initiation replay/conflict,
+insufficient balance, concurrent over-spend, failed sender policy, and rollback after
+journal and evidence insertion. The complete isolated suite passes 14/14. The existing
+controlled claim institution and KYC providers are likewise not production integration.
+This does not establish cancellation, mobile recovery, historical recovery or the full
+acceptance matrix.
