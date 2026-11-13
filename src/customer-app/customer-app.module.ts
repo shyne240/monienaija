@@ -16,6 +16,8 @@ import { AgentModule } from '../agent/agent.module';
 import { OperationsModule } from '../operations/operations.module';
 import { CustomerBeneficiaryModule } from '../customer-beneficiary/customer-beneficiary.module';
 import { CustomerTransactionHistoryService } from './customer-transaction-history.service';
+import { CustomerKycController } from './customer-kyc.controller';
+import { CustomerKycViewService } from './customer-kyc-view.service';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 
 @Module({
@@ -36,7 +38,7 @@ import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
     CustomerBeneficiaryModule,
     LimitCatalogModule,
   ],
-  controllers: [CustomerAppController, CustomerBeneficiaryMeController],
-  providers: [CustomerTransactionHistoryService],
+  controllers: [CustomerAppController, CustomerBeneficiaryMeController, CustomerKycController],
+  providers: [CustomerTransactionHistoryService, CustomerKycViewService],
 })
 export class CustomerAppModule {}
