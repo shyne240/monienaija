@@ -27,6 +27,10 @@ export type AdminView =
   | 'notifications'
   | 'systemHealth'
   | 'auditEvents'
+  // ARENA 4 — institutional administration console. The workspace is contextual: it is only
+  // reachable with an institution id supplied by the directory.
+  | 'institutions'
+  | 'institutionWorkspace'
   // Legacy view aliases retained for existing in-app callers/bookmarks.
   | 'ledger'
   | 'transactions'
@@ -42,6 +46,7 @@ export interface AdminNavigationContext {
   customerId?: string;
   agentId?: string;
   openAgentApplications?: boolean;
+  institutionId?: string;
 }
 
 const LEGACY_VIEW_ALIASES: Partial<Record<AdminView, AdminView>> = {
@@ -163,6 +168,13 @@ export function canAccessAdminView(
       return hasAny('metrics.view', 'diagnostics.view', 'outbox.view', 'notification.view_deliveries');
     case 'auditEvents':
       return has('audit.search');
+    case 'institutions':
+      // The backend scopes the listing to institutions the principal is assigned to; this guard
+      // only decides whether the screen may be opened at all.
+      return has('institution.view');
+    case 'institutionWorkspace':
+      // Contextual route: an institution id must be supplied by an authorized navigation.
+      return Boolean(context?.institutionId) && has('institution.view');
     default:
       return false;
   }
