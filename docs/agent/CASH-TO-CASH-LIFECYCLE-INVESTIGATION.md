@@ -139,3 +139,9 @@ Backend `--runInBand --detectOpenHandles` passed 242 suites / 2850 tests with no
 report and exited normally. A subsequent standard two-worker run also passed and exited normally.
 The earlier forced worker exit was intermittent and its precise cause remains unconfirmed;
 these runs do not prove there is no leak under all schedules.
+
+The existing workforce transfer-handoff HTTP lookup is now fail-closed after the workforce
+function check: a reconciliation function grant alone is not evidence of institutional
+entitlement. Its internal evidence classifier remains available for controlled tests, but
+no production workforce disclosure is enabled until an authoritative workforce-to-institution
+scope is integrated. A targeted unit test verifies the function check and refusal to read.
