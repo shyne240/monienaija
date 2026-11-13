@@ -33,7 +33,7 @@ import { CustomerModule } from '../customer/customer.module';
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { AgentCashOutService } from './agent-cash-out.service';
 import { AgentCashOutController } from './agent-cash-out.controller';
-import { AgentCashToCashService } from './agent-cash-to-cash.service';
+import { AgentCashToCashService, CashToCashFundingAuthority } from './agent-cash-to-cash.service';
 import { AgentCashToCashController } from './agent-cash-to-cash.controller';
 import { AgentCashToCashClaimService } from './agent-cash-to-cash-claim.service';
 import { AgentCashToCashClaimController } from './agent-cash-to-cash-claim.controller';
@@ -123,6 +123,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     AgentCashInService,
     AgentCashOutService,
     AgentCashToCashService,
+    CashToCashFundingAuthority,
     AgentCashToCashClaimService,
     AgentCashToCashExpiryService,
     AgentCashToCashExpiryWorker,

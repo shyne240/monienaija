@@ -9,6 +9,7 @@ import {
   Injectable,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -64,6 +65,15 @@ const DEFAULT_CASH_TO_CASH_EXPIRY_SECONDS = 604800;
 const MIN_CASH_TO_CASH_EXPIRY_SECONDS = 60;
 const MAX_CASH_TO_CASH_EXPIRY_SECONDS = 31_536_000;
 
+// No deployment switch: this placeholder must be replaced by transactional authoritative
+// institution, identity-policy and commitment integration before funding can be enabled.
+@Injectable()
+export class CashToCashFundingAuthority {
+  require(): void {
+    throw new ServiceUnavailableException('Cash-to-cash funding authorization unavailable');
+  }
+}
+
 function stripControlCharacters(value: string): string {
   return [...value]
     .filter((character) => {
@@ -103,6 +113,7 @@ export class AgentCashToCashService {
     // or disabled → legacy evidence-only annotations for manual-construction unit tests).
     @Optional()
     private readonly commercialAccountingService?: CommercialAccountingService,
+    @Optional() private readonly fundingAuthority?: CashToCashFundingAuthority,
   ) {}
 
   async execute(input: AgentCashToCashInput): Promise<AgentCashToCashResult> {
@@ -384,6 +395,14 @@ export class AgentCashToCashService {
             }
             throw new ConflictException('Idempotency replay missing resource linkage');
           }
+
+          // New funding must remain disabled until the authoritative institution, sender
+          // identity policy and financial-commitment contracts are integrated. Replays above
+          // remain available for existing committed transfers. Do not replace this with an
+          // environment flag or caller-provided institutional evidence.
+          if (!this.fundingAuthority)
+            throw new ServiceUnavailableException('Cash-to-cash funding authorization unavailable');
+          this.fundingAuthority.require();
 
           // NEW — verify Agent wallet ownership inside same transaction (pessimistic)
           const walletInTx = await manager.getRepository(WalletAccount).findOne({

@@ -1,9 +1,13 @@
-import { AgentCashToCashService } from './agent-cash-to-cash.service';
+import { AgentCashToCashService, CashToCashFundingAuthority } from './agent-cash-to-cash.service';
 
 const AGENT_ID = '11111111-1111-4111-8111-111111111111';
 const BENEFICIARY_PHONE = '8012345678';
 
-function createHarness(verifiedSenderName: string | null = null, locatorUrl?: string) {
+function createHarness(
+  verifiedSenderName: string | null = null,
+  locatorUrl?: string,
+  productionAuthority = false,
+) {
   let storedResponse: Record<string, unknown> | null = null;
   const outboxCalls: Array<{
     eventType: string;
@@ -90,6 +94,7 @@ function createHarness(verifiedSenderName: string | null = null, locatorUrl?: st
     undefined,
     undefined,
     undefined,
+    productionAuthority ? new CashToCashFundingAuthority() : { require: jest.fn() },
   );
   jest
     .spyOn(service as never, 'getUnclaimedAccount' as never)
@@ -121,6 +126,16 @@ const input = {
 };
 
 describe('Cash-to-Cash initiation notification outbox', () => {
+  it('fails closed before posting or emitting an event with the production authority', async () => {
+    const harness = createHarness(null, undefined, true);
+    await expect(harness.service.execute(input)).rejects.toThrow(
+      'Cash-to-cash funding authorization unavailable',
+    );
+    expect(harness.ledgerService.postJournalInTransaction).not.toHaveBeenCalled();
+    expect(harness.outboxService.enqueueOnce).not.toHaveBeenCalled();
+    expect(harness.idempotencyService.complete).not.toHaveBeenCalled();
+  });
+
   it('enqueues one safe event in the initiation transaction and replay creates no journal or event', async () => {
     const harness = createHarness('Ada Example', 'https://locator.example.ng/agents');
     const initiation = { ...input, senderPhone: '8011111111' };
