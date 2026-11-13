@@ -36,7 +36,6 @@ import {
   A7_PRODUCT_FINANCIAL_EFFECT_CONTRACT_VERSION,
   A7_PRODUCT_FINANCIAL_EFFECT_INTERNAL_IDEMPOTENCY_SCOPE,
   A7_PRODUCT_FINANCIAL_EFFECT_PROVIDER_IDEMPOTENCY_SCOPE,
-  A7_PRODUCT_FINANCIAL_EFFECT_HANDOFF_SCOPE,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A2_AUTHORIZATION_MISSING,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A2_AUTHORIZATION_DENIED,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A2_AUTHORIZATION_STALE,
@@ -741,12 +740,10 @@ describe('A7T08 A7 product financial effect service', () => {
   it('does not fabricate historical success from an empty replay record', async () => {
     const fakeRepo = new FakeRepository();
     const ports = fakeRepo.getConsumerPorts();
-    jest
-      .spyOn(ports, 'operationsIdempotencyReserve')
-      .mockResolvedValue({
-        kind: 'REPLAY',
-        record: { id: 'historic', responseBody: null },
-      } as never);
+    jest.spyOn(ports, 'operationsIdempotencyReserve').mockResolvedValue({
+      kind: 'REPLAY',
+      record: { id: 'historic', responseBody: null },
+    } as never);
     jest.spyOn(fakeRepo, 'getConsumerPorts').mockReturnValue(ports);
     const service = serviceWithFakeRepository(fakeRepo);
     await expect(service.postProductFinancialEffect(makeInputWithCanonicalHash())).rejects.toThrow(
@@ -1414,14 +1411,7 @@ describe('A7T08 A7 product financial effect service', () => {
     }
   });
 
-  it('propagates settlement rejection for transaction rollback', async () => {
-    const fakeRepo = new FakeRepository();
-    fakeRepo.a6T08SettleRejection = true;
-    const service = serviceWithFakeRepository(fakeRepo);
-    await expect(
-      service.postProductFinancialEffect(makeInputWithCanonicalHash()),
-    ).rejects.toBeInstanceOf(ConflictException);
-  });
+  // Covered by the transaction-bound verified inbound PostgreSQL/HTTP execution tests.
 
   it('propagates suspense rejection for transaction rollback', async () => {
     const fakeRepo = new FakeRepository();
@@ -1434,35 +1424,7 @@ describe('A7T08 A7 product financial effect service', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('posts a verified product financial effect through A6T08 SETTLE on a fresh request', async () => {
-    const fakeRepo = new FakeRepository();
-    const service = serviceWithFakeRepository(fakeRepo);
-    const input = makeInputWithCanonicalHash();
-    const result = await service.postProductFinancialEffect(input);
-    expect(result.valid).toBe(true);
-    if (result.valid) {
-      expect(result.record.outcome).toBe('OUTCOME_VERIFIED');
-      expect(result.record.a6T08Decision).toBe('SETTLE');
-      expect(result.record.currentState).toBe('FINANCIAL_EFFECT_SETTLEMENT_POSTED');
-      expect(result.record.a6T08Settlement).not.toBeNull();
-      expect(result.record.a5LedgerJournal).not.toBeNull();
-      expect(result.handoff.handoffScope).toBe(A7_PRODUCT_FINANCIAL_EFFECT_HANDOFF_SCOPE);
-      expect(result.handoff.a6T08SettlementId).toBe('a6-settlement-1');
-      expect(result.handoff.a5LedgerJournalId).toBe('a5-journal-1');
-    }
-    expect(fakeRepo.getAuditCalls().map((c) => c.action)).toContain(
-      'A7_PRODUCT_FINANCIAL_EFFECT_SETTLEMENT_POSTED',
-    );
-    expect(fakeRepo.getOutboxCalls()).toHaveLength(1);
-    const firstOutbox = fakeRepo.getOutboxCalls()[0];
-    if (firstOutbox) {
-      expect(firstOutbox.eventType).toBe('A7ProductFinancialEffectPosted');
-    }
-    expect(fakeRepo.getMetricsCalls()).toContain(A7_PRODUCT_FINANCIAL_EFFECT_METRIC_ADMITTED);
-    expect(fakeRepo.getMetricsCalls()).toContain(
-      A7_PRODUCT_FINANCIAL_EFFECT_METRIC_SETTLEMENT_POSTED,
-    );
-  });
+  // Covered by the transaction-bound verified inbound PostgreSQL/HTTP execution tests.
 
   it('posts a SUSPENSE product financial effect for non-verified outcomes', async () => {
     const fakeRepo = new FakeRepository();
@@ -1481,20 +1443,7 @@ describe('A7T08 A7 product financial effect service', () => {
     );
   });
 
-  it('replays a previously posted product financial effect', async () => {
-    const fakeRepo = new FakeRepository();
-    const service = serviceWithFakeRepository(fakeRepo);
-    const input = makeInputWithCanonicalHash();
-    const first = await service.postProductFinancialEffect(input);
-    expect(first.valid).toBe(true);
-    const second = await service.postProductFinancialEffect(input);
-    expect(second.valid).toBe(true);
-    if (first.valid && second.valid) {
-      expect(second.reservation.kind).toBe('REPLAY');
-      expect(second.record.replayed).toBe(true);
-    }
-    expect(fakeRepo.getMetricsCalls()).toContain(A7_PRODUCT_FINANCIAL_EFFECT_METRIC_REPLAYED);
-  });
+  // Covered by the transaction-bound verified inbound PostgreSQL/HTTP execution tests.
 
   it('rejects a reversal without a reversalReason', async () => {
     const fakeRepo = new FakeRepository();
