@@ -1593,70 +1593,8 @@ export class A7ProductLifecycleService {
       } | null;
     },
   ): A7ProductLifecycleRecordV1 {
-    if (!reservation.record) {
-      throw new Error(
-        'The A7 product lifecycle replay reservation is missing the idempotency record',
-      );
-    }
-    const stored = reservation.record.responseBody;
-    if (stored && typeof stored === 'object' && 'productLifecycleId' in stored) {
-      const replayedRecord = stored as unknown as A7ProductLifecycleRecordV1;
-      const result: A7ProductLifecycleRecordV1 = {
-        ...replayedRecord,
-        currentLifecycleState: nextLifecycleState,
-        updatedAt: new Date().toISOString(),
-        replayed: true,
-      };
-      return result;
-    }
-    const createdAt = new Date().toISOString();
-    return {
-      contractName: A7_PRODUCT_LIFECYCLE_CONTRACT_NAME,
-      contractVersion: A7_PRODUCT_LIFECYCLE_CONTRACT_VERSION,
-      productLifecycleId,
-      productLifecycleReference: this.productLifecycleReference(productLifecycleId),
-      productKey: PRODUCT_KEY,
-      productVersion: PRODUCT_VERSION,
-      capabilityKey: command.capabilityKey,
-      action: command.action,
-      productState: command.productState,
-      customerId: command.customerId,
-      customerWalletId: command.customerWalletId,
-      bindingId: command.bindingId,
-      bindingVersion: command.bindingVersion,
-      walletAccountId: command.bindingId,
-      ledgerAccountId: command.bindingId,
-      currentLifecycleState: nextLifecycleState,
-      outcome: command.outcome,
-      retryClass: command.retryClass,
-      attempt: command.attempt,
-      maxAttempts: A7_PRODUCT_LIFECYCLE_MAX_RETRY_ATTEMPTS,
-      a7ProductCommandReference: command.a7ProductCommandReference,
-      a6ExternalOperationReference: command.a6ExternalOperationReference,
-      a6LifecycleState: command.a6LifecycleState,
-      a6ProviderIdempotencyScope: command.a6ProviderIdempotencyScope,
-      a6ProviderIdempotencyKey: command.a6ProviderIdempotencyKey,
-      a2AuthorizationContextReference: command.a2AuthorizationContextReference,
-      a4ProductPolicyDecisionReference: command.a4ProductPolicyDecisionReference,
-      a7T04ProductCustomerBindingMapReference: command.a7T04ProductCustomerBindingMapReference,
-      a7T06NotificationDeliveryReference: command.a7T06NotificationDeliveryReference,
-      recoveryReference: command.recoveryReference,
-      manualReviewReason: command.manualReviewReason,
-      failureCode: command.failureCode,
-      failureMessage: command.failureMessage,
-      providerStatus: command.providerStatus,
-      idempotencyScope: A7_PRODUCT_LIFECYCLE_INTERNAL_IDEMPOTENCY_SCOPE,
-      idempotencyKey: command.idempotencyKey,
-      requestHash: command.requestHash,
-      requestContext: command.requestContext,
-      causationId: command.causationId,
-      replayed: true,
-      conflict: false,
-      conflictReason: null,
-      createdAt,
-      updatedAt: createdAt,
-      version: 1,
-    };
+    void [productLifecycleId, command, nextLifecycleState, reservation];
+    throw new Error('Legacy A7 lifecycle replay has no authoritative persisted state');
   }
 
   private buildHandoff(record: A7ProductLifecycleRecordV1): A7ProductLifecycleHandoffV1 {

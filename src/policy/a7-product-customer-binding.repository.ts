@@ -57,13 +57,9 @@ import {
   A7_PRODUCT_CUSTOMER_BINDING_AUDIT_ACTOR,
 } from './a7-product-customer-binding.constants';
 
-const A7_PRODUCT_CUSTOMER_BINDING_A4_DECISION_REFERENCE_PATTERN = /^[a-z0-9][a-z0-9_.:-]{0,159}$/;
-const A7_PRODUCT_CUSTOMER_BINDING_A2_AUTHORIZATION_REFERENCE_PATTERN =
-  /^[a-z0-9][a-z0-9_.:-]{0,159}$/;
 const A7_PRODUCT_CUSTOMER_BINDING_A6_REFERENCE_VALUE_PATTERN =
   /^[a-zA-Z0-9][a-zA-Z0-9_.:/@-]{0,159}$/;
 const A7_PRODUCT_CUSTOMER_BINDING_A6_NAMESPACE_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.:/-]{0,159}$/;
-const OUTBOUND_BANK_SETTLEMENT_PURPOSE = 'OUTBOUND_BANK_SETTLEMENT' as const;
 
 /**
  * The A7 product customer-binding read-only consumer repository. The A7
@@ -275,40 +271,17 @@ export class A7ProductCustomerBindingRepository {
   private lookupA4ProductPolicyDecision(
     decisionReference: string,
   ): Promise<A7ProductCustomerBindingA4ProductPolicyDecision | null> {
-    if (!A7_PRODUCT_CUSTOMER_BINDING_A4_DECISION_REFERENCE_PATTERN.test(decisionReference)) {
-      return Promise.resolve(null);
-    }
-    return Promise.resolve({
-      decisionReference,
-      productKey: 'VIRTUAL_ACCOUNT',
-      capability: 'product.virtual-account',
-      action: 'lifecycle',
-      profileReference: 'profile.product-virtual-account-lifecycle.v1',
-      policyVersion: 'a4.profile.product-virtual-account-lifecycle.v1',
-      decision: 'ALLOW_WITH_LIMITS',
-      expiresAt: null,
-      reasonCodes: [],
-      maxAmountMinor: null,
-    });
+    // Legacy evidence is not reconstructible from caller-supplied references.
+    void [decisionReference];
+    return Promise.resolve(null);
   }
 
   private lookupA2AuthorizationContext(
     authorizationContextReference: string,
   ): Promise<A7ProductCustomerBindingA2AuthorizationContext | null> {
-    if (
-      !A7_PRODUCT_CUSTOMER_BINDING_A2_AUTHORIZATION_REFERENCE_PATTERN.test(
-        authorizationContextReference,
-      )
-    ) {
-      return Promise.resolve(null);
-    }
-    return Promise.resolve({
-      principalType: 'SERVICE',
-      principalId: 'a7-product-customer-binding',
-      customerAccess: 'ANY',
-      evaluatedAt: new Date().toISOString(),
-      allowed: true,
-    });
+    // Legacy evidence is not reconstructible from caller-supplied references.
+    void [authorizationContextReference];
+    return Promise.resolve(null);
   }
 
   /**
@@ -337,23 +310,9 @@ export class A7ProductCustomerBindingRepository {
     customerId: string,
     virtualAccountReference: string,
   ): Promise<A7ProductCustomerBindingA6T04FundingTargetEvidence | null> {
-    if (!virtualAccountReference || !customerId) {
-      return Promise.resolve(null);
-    }
-    return Promise.resolve({
-      source: 'CUSTOMER_BENEFICIARY',
-      targetId: 'a7-target-id',
-      targetVersion: 1,
-      institutionCode: '999',
-      targetCurrency: 'NGN',
-      consentReference: virtualAccountReference,
-      consentVersion: 1,
-      consentGrantedAt: new Date().toISOString(),
-      consentExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      consentGrantedBy: 'customer-consent',
-      consentPurpose: OUTBOUND_BANK_SETTLEMENT_PURPOSE,
-      verificationReference: `a7-verification:${virtualAccountReference}`,
-    });
+    // Legacy evidence is not reconstructible from caller-supplied references.
+    void [customerId, virtualAccountReference];
+    return Promise.resolve(null);
   }
 
   private async lookupBankDirectoryEntry(
