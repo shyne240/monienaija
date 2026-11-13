@@ -116,7 +116,7 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
     });
   };
 
-  const checkPostSubmitClaimRecovery = async (triggerError?: unknown) => {
+  const checkPostSubmitClaimRecovery = async (_triggerError?: unknown) => {
     if (!agentId) return;
     setPostSubmitChecking(true);
     setPostSubmitRecoveryNoticeError('');
@@ -132,22 +132,9 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
       await completeClaimSuccess(recovered);
     } catch (lookupError: unknown) {
       if (isApiNotFound(lookupError)) {
-        if (isLocatorMode && triggerError && isAmbiguousLocatorClaimError(triggerError)) {
-          // Per ARENA 1 §2.C: on locator claims, an immediate 404 right after a lost/503 response is
-          // NOT proof an in-flight transaction cannot still commit. Hold in recovery mode until the
-          // Agent explicitly re-checks status, and NEVER rotate idempotencyKey.
-          setPostSubmitRecoveryUnknown(true);
-          setRollbackRetryReady(false);
-        } else {
-          // Confirmed not committed (either legacy UUID 404 or explicit manual re-check on locator):
-          // allow retry ONLY with the SAME idempotencyKey + locked redemptionMethod + fresh OTP.
-          setPostSubmitRecoveryUnknown(false);
-          setRollbackRetryReady(true);
-          if (isLocatorMode) {
-            setChallenge(null);
-            setMfaInvalidatedRevision((rev) => rev + 1);
-          }
-        }
+        // A missing receipt is not proof that a submitted claim cannot still commit.
+        setPostSubmitRecoveryUnknown(true);
+        setRollbackRetryReady(false);
       } else {
         setPostSubmitRecoveryUnknown(true);
         setRollbackRetryReady(false);
@@ -272,7 +259,9 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
 
     if (isLocatorMode) {
       void (async () => {
-        const existing = await loadPendingCashToCashLocatorClaim(agentId);
+        let existing;
+        try { existing = await loadPendingCashToCashLocatorClaim(agentId); }
+        catch { if (active) { setRecoveryStatus('ERROR'); setRecoveryError('Claim recovery storage is unavailable. Do not submit another claim; contact support.'); } return; }
         if (!active) return;
         const matches =
           existing &&
@@ -282,10 +271,8 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
             beneficiaryPhone,
             customerId: customer.customerId,
           });
-        if (!matches || !existing) {
-          setRecoveryStatus('READY');
-          return;
-        }
+        if (!existing) { setRecoveryStatus('READY'); return; }
+        if (!matches) { setRecoveryStatus('ERROR'); setRecoveryError('A previous claim is unresolved. Recover it before starting another claim.'); return; }
 
         // Restore exact persisted idempotency key and payout method before recovering.
         idempotencyKeyRef.current = existing.idempotencyKey;
@@ -304,8 +291,8 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
         } catch (error: unknown) {
           if (!active) return;
           if (isApiNotFound(error)) {
-            setRollbackRetryReady(true);
-            setRecoveryStatus('READY');
+            setRecoveryStatus('ERROR');
+            setRecoveryError('The previous claim is unresolved. Check again or contact support; do not submit another claim.');
             return;
           }
           setRecoveryStatus('ERROR');

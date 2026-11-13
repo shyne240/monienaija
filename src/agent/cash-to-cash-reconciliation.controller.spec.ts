@@ -1,4 +1,5 @@
 import { ServiceUnavailableException } from '@nestjs/common';
+import { CashToCashWorkforceScope } from './cash-to-cash-workforce-scope';
 import { CashToCashReconciliationController } from './cash-to-cash-reconciliation.controller';
 
 describe('workforce cash-to-cash reconciliation scope', () => {
@@ -6,8 +7,12 @@ describe('workforce cash-to-cash reconciliation scope', () => {
     const lookup = jest.fn();
     const requireFunction = jest.fn().mockResolvedValue(undefined);
     const controller = new CashToCashReconciliationController(
-      { lookup } as never,
+      {
+        lookup,
+        transferHandoffInstitution: () => Promise.resolve('11111111-1111-4111-8111-111111111111'),
+      } as never,
       { requireFunction } as never,
+      new CashToCashWorkforceScope(),
     );
     await expect(
       controller.lookup({}, '11111111-1111-4111-8111-111111111111'),

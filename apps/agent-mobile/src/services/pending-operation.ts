@@ -180,7 +180,7 @@ const ALL_OPERATION_TYPES: AgentOperationType[] = ['CASH_IN', 'CASH_OUT', 'CASH_
 const LOCATOR_CLAIM_STORAGE_PREFIX = 'pending_c2c_locator_claim';
 
 function locatorClaimStorageKeyFor(agentId: string): string {
-  return `${LOCATOR_CLAIM_STORAGE_PREFIX}:${agentId}`;
+  return `${LOCATOR_CLAIM_STORAGE_PREFIX}.${agentId}`;
 }
 
 export interface CashToCashLocatorClaimParams {
@@ -216,34 +216,24 @@ function isPendingCashToCashLocatorClaim(value: unknown): value is PendingCashTo
 export async function savePendingCashToCashLocatorClaim(
   intent: PendingCashToCashLocatorClaim,
 ): Promise<void> {
-  await SecureStorage.set(locatorClaimStorageKeyFor(intent.agentId), JSON.stringify(intent));
+  await SecureStorage.setDurable(locatorClaimStorageKeyFor(intent.agentId), JSON.stringify(intent));
 }
 
 export async function clearPendingCashToCashLocatorClaim(agentId: string): Promise<void> {
-  await SecureStorage.remove(locatorClaimStorageKeyFor(agentId));
+  await SecureStorage.removeDurable(locatorClaimStorageKeyFor(agentId));
 }
 
 export async function loadPendingCashToCashLocatorClaim(
   agentId: string,
 ): Promise<PendingCashToCashLocatorClaim | null> {
-  const raw = await SecureStorage.get(locatorClaimStorageKeyFor(agentId));
+  const raw = await SecureStorage.getDurable(locatorClaimStorageKeyFor(agentId));
   if (!raw) return null;
 
   let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-
-  if (!isPendingCashToCashLocatorClaim(parsed)) return null;
-  if (parsed.agentId !== agentId) return null;
-
-  const ageMs = Date.now() - new Date(parsed.createdAt).getTime();
-  if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > MAX_PENDING_AGE_MS) {
-    await clearPendingCashToCashLocatorClaim(agentId);
-    return null;
-  }
+  try { parsed = JSON.parse(raw); }
+  catch { throw new Error('Claim recovery state is unreadable'); }
+  if (!isPendingCashToCashLocatorClaim(parsed) || parsed.agentId !== agentId)
+    throw new Error('Claim recovery state is invalid');
 
   return parsed;
 }

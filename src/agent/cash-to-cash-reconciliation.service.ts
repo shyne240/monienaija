@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   UnauthorizedException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DataSource, EntityManager } from 'typeorm';
@@ -129,6 +130,29 @@ export class CashToCashReconciliationService {
       if (!prior[0]) throw new ConflictException('Handoff unavailable');
       return { id: prior[0].id };
     });
+  }
+  async transferHandoffInstitution(id: string): Promise<string> {
+    if (!UUID.test(id)) throw new NotFoundException('Handoff not found');
+    const rows = await this.db.query<Array<{ institution_id: string | null }>>(
+      `SELECT f.institution_id FROM cash_to_cash_reconciliation_handoffs h LEFT JOIN cash_to_cash_funding_evidence f ON f.transfer_id=h.transfer_id WHERE h.id=$1`,
+      [id],
+    );
+    if (!rows[0]) throw new NotFoundException('Handoff not found');
+    if (!rows[0].institution_id)
+      throw new ServiceUnavailableException('Institutional evidence unavailable');
+    return rows[0].institution_id;
+  }
+  async operationHandoff(id: string, scope: (institutionId: string) => Promise<void>) {
+    if (!UUID.test(id)) throw new NotFoundException('Handoff not found');
+    const rows = await this.db.query<
+      Array<{ id: string; institution_id: string; [key: string]: unknown }>
+    >(
+      `SELECT id,institution_id,agent_id,operation_key,reason,evidence,created_at FROM cash_to_cash_operation_handoffs WHERE id=$1`,
+      [id],
+    );
+    if (!rows[0]) throw new NotFoundException('Handoff not found');
+    await scope(rows[0].institution_id);
+    return { ...rows[0], status: 'UNRESOLVED' as const };
   }
   async lookup(id: string) {
     if (!UUID.test(id)) throw new NotFoundException('Handoff not found');

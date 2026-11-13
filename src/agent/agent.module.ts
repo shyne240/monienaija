@@ -56,6 +56,7 @@ import { AgentDeskOtpController } from './agent-desk-otp.controller';
 import { AgentDeskOtpService } from './agent-desk-otp.service';
 import { CashOutInstitutionResolver } from './cash-out-institution.resolver';
 import { CashToCashClaimFinancialContext } from './cash-to-cash-claim-authorization';
+import { CashToCashWorkforceScope } from './cash-to-cash-workforce-scope';
 import { CashToCashReconciliationService } from './cash-to-cash-reconciliation.service';
 import { CashToCashReconciliationController } from './cash-to-cash-reconciliation.controller';
 import { CashOutReconciliationService } from './cash-out-reconciliation.service';
@@ -127,6 +128,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     CashToCashClaimFinancialContext,
     CashOutReconciliationService,
     CashToCashReconciliationService,
+    CashToCashWorkforceScope,
     AgentClassService,
     AgentApplicationService,
     AgentReceivingNumberService,
