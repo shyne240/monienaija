@@ -27,6 +27,7 @@ import { CustomerFinancialEligibilityService } from '../kyc-verification/custome
 import { AgentPasswordHashVerificationService } from '../agent-authentication/agent-password-hash-verification.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import type { AgentCashOutInput, AgentCashOutResult } from './agent-cash-out.types';
+import type { AgentFinancialExecutionResult } from './agent-financial-execution.types';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -300,9 +301,37 @@ export class AgentCashOutService {
           principalWalletCustomerId: customerId,
         },
       },
-      async (manager, replay) => {
+      async (manager, replay, requestHash) => {
         await this.financialEligibility.require(manager, customerId, { lockMode: 'SHARE' });
-        if (replay) return null;
+        const records = await manager.query<
+          Array<{
+            customer_id: string;
+            challenge_id: string;
+            request_hash: string;
+            response_body: AgentFinancialExecutionResult;
+          }>
+        >(
+          `SELECT customer_id, challenge_id, request_hash, response_body FROM cash_out_execution_records WHERE agent_id=$1 AND idempotency_key=$2 FOR UPDATE`,
+          [agentId, idempotencyKey],
+        );
+        const record = records[0];
+        if (record) {
+          if (
+            record.customer_id !== customerId ||
+            record.challenge_id !== challengeId ||
+            record.request_hash !== requestHash
+          ) {
+            throw new ConflictException('Cash-out replay does not match the authorized execution');
+          }
+          return {
+            ...record.response_body,
+            status: 'REPLAYED' as const,
+            replayed: true,
+            replayedFrom: record.response_body.journalId,
+          };
+        }
+        // Pre-migration idempotency receipts do not establish an OTP-to-journal binding.
+        if (replay) throw new ConflictException('Cash-out replay authorization record unavailable');
         const result = await this.mfaExecutionService.verifyChallengeInManager(manager, {
           expectedPurpose: AGENT_DESK_OTP_PURPOSE_WALLET_TO_CASH,
           principal: principalForMfa,
@@ -315,6 +344,21 @@ export class AgentCashOutService {
         if (result.failureReason === 'MISMATCH') return 'OTP invalid';
         if (result.failureReason === 'REPLAYED') return 'OTP already used';
         return `OTP verification failed: ${result.failureReason}`;
+      },
+      async (manager, requestHash, result) => {
+        await manager.query(
+          `INSERT INTO cash_out_execution_records(agent_id,idempotency_key,customer_id,challenge_id,request_hash,journal_id,response_body)
+           VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+          [
+            agentId,
+            idempotencyKey,
+            customerId,
+            challengeId,
+            requestHash,
+            result.journalId,
+            JSON.stringify(result),
+          ],
+        );
       },
     );
 
