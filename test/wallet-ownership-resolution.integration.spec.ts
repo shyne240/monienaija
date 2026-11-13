@@ -40,6 +40,8 @@ import {
 } from '../src/ledger/ledger.enums';
 import { WalletOwnerClass } from '../src/wallet/wallet.enums';
 import { WalletFinancialBoundaryService } from '../src/wallet/wallet-financial-boundary.service';
+import { WalletOwnershipResolutionService } from '../src/wallet/wallet-ownership-resolution.service';
+import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 import { walletOwnershipResolutionFingerprint } from '../src/wallet/wallet-ownership-resolution.service';
 import {
   createIntegrationDataSource,
@@ -117,7 +119,10 @@ describe('Governed wallet ownership resolution — real PostgreSQL + real HTTP',
 
   // ------------------------------------------------------------------ fixtures
 
-  async function provisionRole(roleKey: string): Promise<Role> {
+  async function provisionRole(
+    roleKey: string,
+    assuranceLevel: 'PASSWORD' | 'MFA' = 'MFA',
+  ): Promise<Role> {
     const principalId = `w08own:${roleKey}:${randomUUID()}`.slice(0, 160);
     const now = new Date();
     await dataSource.getRepository(A2FinanceRoleAssignment).save({
@@ -148,8 +153,8 @@ describe('Governed wallet ownership resolution — real PostgreSQL + real HTTP',
       issuedAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + 3_600_000).toISOString(),
       authenticatedAt: now.toISOString(),
-      assuranceLevel: 'MFA',
-      amr: ['pwd', 'otp'],
+      assuranceLevel,
+      amr: assuranceLevel === 'MFA' ? ['pwd', 'otp'] : ['pwd'],
       acr: null,
       signingKeyId: 'test-harness-key',
     });
@@ -1244,5 +1249,71 @@ describe('Governed wallet ownership resolution — real PostgreSQL + real HTTP',
         wallet.ledgerAccountId,
       ),
     ).rejects.toThrow(/requires review/);
+  });
+
+  it('requires MFA before a privileged controller session exists or may execute', async () => {
+    // Arena 4 documented MFA as an acceptance property; this proves where it is enforced. A
+    // privileged workforce session cannot even be established without MFA, and the service
+    // independently refuses to execute for a principal whose assurance has been downgraded.
+    const { controller } = await roles();
+    await expect(provisionRole('FINANCE_CONTROLLER', 'PASSWORD')).rejects.toThrow(
+      /requires recent MFA/,
+    );
+
+    const resolution = app.get(WalletOwnershipResolutionService);
+    const downgraded = {
+      principalId: controller.principalId,
+      type: 'OPERATOR',
+      roles: ['FINANCE_CONTROLLER'],
+      scopes: [],
+      assuranceLevel: 'PASSWORD',
+    } as unknown as AuthorizationPrincipal;
+    expect(() => resolution.assertExecuteEntitled(downgraded)).toThrow(/FINANCE_CONTROLLER/);
+
+    // Read-only principals are refused too, even at MFA.
+    const readOnly = {
+      ...downgraded,
+      assuranceLevel: 'MFA' as const,
+      readOnlyPrincipal: true,
+    };
+    expect(() => resolution.assertExecuteEntitled(readOnly)).toThrow(/FINANCE_CONTROLLER/);
+  });
+
+  it('keeps resolved CUSTOMER wallets subject to KYC financial eligibility', async () => {
+    // Ownership resolution must not become a financial-eligibility bypass: once the wallet is a
+    // CUSTOMER wallet, the real boundary still applies the governed KYC gate to its owner.
+    const { preparer, controller } = await roles();
+    const customer = await customerFixture();
+    const wallet = await insertWallet({ ownerReference: randomUUID() });
+    const body = {
+      resolutionClass: 'CUSTOMER',
+      targetOwnerId: customer.id,
+      evidenceType: 'CUSTOMER_RECORD_REFERENCE',
+      evidenceReference: customer.reference,
+      reason: 'Reconciled against the authoritative customer record',
+    };
+    const created = await requestResolution(preparer.token, wallet.id, body);
+    expect(created.status).toBe(201);
+    await approve(controller.token, created.body.approvalId);
+    expect(
+      (
+        await executeResolution(controller.token, wallet.id, {
+          approvalId: created.body.approvalId,
+          ...body,
+        })
+      ).status,
+    ).toBe(201);
+
+    const resolved = await walletRow(wallet.id);
+    expect(resolved.owner_class).toBe(WalletOwnerClass.CUSTOMER);
+    // The fixture customer has no governed KYC evidence, so the eligibility gate still refuses.
+    await expect(
+      boundary.requireCustomerWallet(
+        dataSource.manager,
+        customer.id,
+        wallet.id,
+        wallet.ledgerAccountId,
+      ),
+    ).rejects.toThrow(/not eligible for financial access|financial policy is unavailable/);
   });
 });
