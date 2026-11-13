@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { DataSource } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
 
@@ -210,13 +210,13 @@ test('unavailable, synthetic, conflicting and expired evidence or holds fail clo
   await expect(check()).resolves.toBeUndefined();
   const snapshot = snapshots.get(id)!;
   snapshots.delete(id);
-  await expect(check()).rejects.toThrow('Trusted KYC evidence is unavailable');
+  await expect(check()).rejects.toMatchObject({ status: 503 });
   snapshots.set(id, snapshot);
   snapshot.evidence[0]!.provenance = 'SYNTHETIC';
   await expect(check()).rejects.toThrow();
   snapshot.evidence[0]!.provenance = 'VERIFIED_PROVIDER';
   snapshot.evidence[0]!.status = 'REVIEW';
-  await expect(check()).rejects.toThrow();
+  await expect(check()).rejects.toMatchObject({ status: 409 });
   snapshot.evidence[0]!.status = 'VERIFIED';
   await db.query(
     `INSERT INTO kyc_tier_manual_holds(customer_id,actor,reason) VALUES($1,'test','MANUAL_REVIEW')`,
@@ -268,6 +268,40 @@ test.each([
     expect(session.audience).toBe('customer-api');
     const sessionService = app.get(AuthenticationSessionService);
     expect((await sessionService.validate({ token: session.accessToken })).valid).toBe(true);
+    const saved = snapshots.get(id)!;
+    snapshots.delete(id);
+    try {
+      await expect(sessionService.validate({ token: session.accessToken })).rejects.toMatchObject({
+        status: 503,
+      });
+    } finally {
+      snapshots.set(id, saved);
+    }
+    expect((await sessionService.validate({ token: session.accessToken })).valid).toBe(true);
+    const outageToken = randomBytes(32).toString('base64url');
+    const outageRegistration = randomUUID();
+    await db.query(
+      `INSERT INTO kyc_registration_sessions(id,phone,authorization_hash,status,verified_at,expires_at) VALUES($1,$2,$3,'VERIFIED',clock_timestamp(),clock_timestamp()+interval '10 minutes')`,
+      [outageRegistration, phone, createHash('sha256').update(outageToken).digest('hex')],
+    );
+    const reader = app.get(KycTierEvidenceReader);
+    const failQuery = jest
+      .spyOn(reader, 'read')
+      .mockImplementationOnce(async (m: EntityManager) => {
+        await m.query('SELECT * FROM deliberately_missing_evidence_table');
+        return null;
+      });
+    try {
+      const outageSession = await app
+        .get(MobileOnboardingAuthService)
+        .login(outageRegistration, outageToken, '112233');
+      expect(outageSession.audience).toBe('customer-onboarding');
+      expect((await sessionService.validate({ token: outageSession.accessToken })).valid).toBe(
+        false,
+      );
+    } finally {
+      failQuery.mockRestore();
+    }
     snapshots.get(id)!.evidence[0]!.status = 'REVOKED';
     expect((await sessionService.validate({ token: session.accessToken })).valid).toBe(false);
     snapshots.get(id)!.evidence[0]!.status = 'VERIFIED';
@@ -735,6 +769,57 @@ test('legacy classification preserves rows and leaves unknown or colliding refer
     await runner.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
     await runner.release();
   }
+});
+
+test('temporary KYC reader unavailability does not permanently fail a withdrawal and the same operation can retry', async () => {
+  const { LedgerService } = await import('../src/ledger/ledger.service');
+  const { WithdrawalService } = await import('../src/withdrawal/withdrawal.service');
+  const { LedgerEntryDirection } = await import('../src/ledger/ledger.enums');
+  const customer = await subject('LEVEL_1', ['BVN']);
+  await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [customer]);
+  const wallet = await app
+    .get(WalletService)
+    .createWallet({ customerId: customer, currency: 'NGN', idempotencyKey: randomUUID() });
+  const ledger = app.get(LedgerService);
+  const [asset] = await db.query<Array<{ id: string }>>(
+    `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN'`,
+  );
+  await ledger.postJournal({
+    idempotencyKey: randomUUID(),
+    currency: 'NGN',
+    lines: [
+      { accountId: asset!.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '50' },
+      {
+        accountId: wallet.ledgerAccountId,
+        direction: LedgerEntryDirection.CREDIT,
+        amountMinor: '50',
+      },
+    ],
+  });
+  const withdrawal = randomUUID();
+  await db.query(
+    `INSERT INTO withdrawals(id,wallet_id,payment_reference,amount_minor,currency,status,idempotency_key,request_hash) VALUES($1,$2,$3,25,'NGN','PROCESSING',$4,$5)`,
+    [withdrawal, wallet.id, `R${randomUUID().replace(/-/g, '')}`, randomUUID(), 'c'.repeat(64)],
+  );
+  const snapshot = snapshots.get(customer)!;
+  snapshots.delete(customer);
+  try {
+    await expect(app.get(WithdrawalService).completeWithdrawal(withdrawal)).rejects.toMatchObject({
+      status: 503,
+    });
+    expect(
+      await db.query(`SELECT status,journal_id,failure_code FROM withdrawals WHERE id=$1`, [
+        withdrawal,
+      ]),
+    ).toEqual([{ status: 'PROCESSING', journal_id: null, failure_code: null }]);
+    expect((await ledger.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('50');
+  } finally {
+    snapshots.set(customer, snapshot);
+  }
+  await expect(app.get(WithdrawalService).completeWithdrawal(withdrawal)).resolves.toMatchObject({
+    status: 'COMPLETED',
+  });
+  expect((await ledger.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('25');
 });
 
 test('fully migrated AppModule does not claim financial readiness without production dependencies', async () => {

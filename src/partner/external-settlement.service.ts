@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 
@@ -823,6 +823,7 @@ export class ExternalSettlementService {
         ],
       });
     } catch (error) {
+      if (error instanceof ServiceUnavailableException) throw error;
       const code = this.ledgerFailureCode(error);
       await this.completeFailedIdempotency(manager, idempotencyRecordId, command, {
         code,

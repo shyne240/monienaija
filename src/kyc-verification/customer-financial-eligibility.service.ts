@@ -1,9 +1,8 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { decideTier } from './kyc-tier-decision';
 import { KycTierEvidenceReader } from './kyc-tier-evidence.reader';
 import { KycTierPolicyService } from './kyc-tier-policy.service';
-import { KycFoundationError } from './kyc.types';
 
 /** Transactional gate for an identified customer. The trusted reader is intentionally
  * unavailable in production until provider provenance has been reviewed. */
@@ -43,13 +42,10 @@ export class CustomerFinancialEligibilityService {
     let policy;
     try {
       policy = await this.policies.effective(manager, now);
-    } catch (error) {
-      // A missing or invalid governed policy denies financial scope; it must not
-      // turn a verified onboarding sign-in into an unhandled server error.
-      if (error instanceof KycFoundationError && ['DISABLED', 'INVALID'].includes(error.code))
-        throw new ConflictException('Customer financial policy is unavailable');
-      throw error;
+    } catch {
+      throw new ServiceUnavailableException('Customer financial policy is unavailable');
     }
+    if (!policy) throw new ServiceUnavailableException('Customer financial policy is unavailable');
     const holds = await manager.query<Array<{ customer_id: string }>>(
       'SELECT customer_id FROM kyc_tier_manual_holds WHERE customer_id=$1 FOR UPDATE',
       [customerId],
@@ -67,8 +63,13 @@ export class CustomerFinancialEligibilityService {
     );
     if (phones.length !== 1)
       throw new ConflictException('Customer is not eligible for financial access');
-    const source = await this.reader.read(manager, customerId);
-    if (!source) throw new ConflictException('Trusted KYC evidence is unavailable');
+    let source;
+    try {
+      source = await this.reader.read(manager, customerId);
+    } catch {
+      throw new ServiceUnavailableException('Trusted KYC evidence is unavailable');
+    }
+    if (!source) throw new ServiceUnavailableException('Trusted KYC evidence is unavailable');
     const decision = decideTier({
       customerId,
       identityRevision: source.identityRevision,
