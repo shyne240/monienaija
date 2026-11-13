@@ -8,7 +8,7 @@ Status: work in progress, not an approval to deploy or submit financial transact
 * A6 suspense and reference records are evidence/reconciliation paths, not authorizations to spend or to release an uncertain reservation. Rejection release requires independent outcome verification and the exact reserved commitment. Existing post-settlement compensation is a recovery path, not a new payment; commitment-linked settlements currently fail closed there until governed commitment recovery is implemented.
 * A7 product financial effect accepts `virtual-account.assign` and `virtual-account.inbound-funding`, yet its current implementation maps its SETTLE decision to the outbound A6 withdrawal settlement. Assignment is not a withdrawal; inbound funding should credit the customer, not debit a wallet or require an outbound withdrawal reservation. The existing mapping is not an authoritative inbound settlement implementation. New verified A7 settlement attempts now fail closed before outbound posting; its temporary idempotency reservation rolls back with the transaction. An isolated inbound receipt prototype now exists, but is not connected to A7 or any production module and does not complete that lifecycle. It is not part of the withdrawal reservation mechanism.
 * Virtual account assignment in `src/virtual-account/virtual-account.service.ts` is account lifecycle metadata, not inbound payment settlement. Customer funding has its own financial approval and ledger boundary; it is not the A6 outbound withdrawal flow.
-* The generic withdrawal HTTP initiation and production partner submission remain disabled. The internal commitment initiation service is deliberately not registered as a production API.
+* Generic withdrawal HTTP initiation remains disabled. The dedicated customer-self `POST /customers/me/withdrawal-commitments` now routes through the authenticated session, PIN, beneficiary, eligibility, limit, operation and reservation lifecycle. It does not submit to a provider. The registered execution authority is unavailable by default: without both authoritative institutional entitlement and independent destination ownership evidence, the endpoint fails closed before financial execution. The test-only authority is not a production approval.
 
 ## Inbound receipt prototype (not accepted or production enabled)
 
@@ -70,3 +70,24 @@ run passed 35 tests, including inbound exactly-once, eligibility hold, unknown t
 policy/authority/verifier unavailable, conflict, rollback/retry and reversal guard.
 Governed ledger reversal PostgreSQL suites passed 29 tests. Full lint and TypeScript
 passed; none of these results establishes A7 integration or mission acceptance.
+
+## Stage 1 A6 integration checkpoint
+
+The customer-self withdrawal commitment endpoint and module use the actual commitment
+service and server-resolved destination. The new `WithdrawalExecutionAuthority` port is
+called while the destination rows are locked, before any new commitment or reservation,
+and binds the customer, wallet, beneficiary version, bank/account, target, amount and
+currency. Its registered production default returns unavailable; controlled tests override
+it. Arena 4 and the destination verification integration must supply independently
+authenticated, transaction-fresh authority and a durable institutional binding before any
+production execution is enabled. A Boolean authorization alone and the existing NULL
+institution column are not a complete institutional foundation. No live submission is
+wired or enabled by this change.
+
+The A6 PostgreSQL and commitment/schema/readiness run passed 54 tests, including real
+HTTP customer-self initiation, default 503, genuine PIN/session/eligibility/reservation,
+replay, wallet substitution, settlement, and rollback. The A6-related unit regression
+passed 173 tests across eight suites; its commitment and ledger are service-boundary doubles, not financial
+acceptance. Full backend regression has 3 failing A7 unit tests (2,840 passed). The
+most recent combined targeted PostgreSQL run before the wiring has 12 A7 failures.
+The A6 checkpoint is not overall mission acceptance.

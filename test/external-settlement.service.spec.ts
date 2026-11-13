@@ -30,6 +30,7 @@ const LEDGER_ID = '00000000-0000-4000-8000-000000000003';
 const RESOURCE_ID = '00000000-0000-4000-8000-000000000004';
 const COMMAND_ID = '00000000-0000-4000-8000-000000000005';
 const SETTLEMENT_ASSET_LEDGER_ID = '00000000-0000-4000-8000-000000000006';
+const RESERVE_ID = '00000000-0000-4000-8000-000000000007';
 const TARGET_MAPPING_REFERENCE = `a6-target:${'a'.repeat(64)}`;
 
 const REQUEST_CONTEXT = {
@@ -203,6 +204,20 @@ class FakeManager {
   references: FakeReferenceRepository;
   settlements: FakeSettlementRepository;
   suspense: FakeSuspenseRepository;
+  // Service-boundary double only, not evidence of a real authorization/reservation.
+  commitment: {
+    id: string;
+    reserve_account_id: string;
+    idempotency_key: string;
+    state: string;
+    withdrawal_id: string;
+  } | null = {
+    id: 'unit-commitment',
+    reserve_account_id: RESERVE_ID,
+    idempotency_key: 'unit-reservation',
+    state: 'RESERVED',
+    withdrawal_id: RESOURCE_ID,
+  };
 
   constructor(
     operations: FakeOperationRepository,
@@ -225,6 +240,25 @@ class FakeManager {
   }
 
   query(sql: string, parameters: unknown[]): Promise<Array<Record<string, unknown>>> {
+    if (
+      sql.includes(
+        'SELECT id, reserve_account_id, idempotency_key, state, withdrawal_id FROM financial_commitments',
+      )
+    )
+      return Promise.resolve(
+        this.commitment && parameters[0] === this.operations.records.keys().next().value
+          ? [this.commitment]
+          : [],
+      );
+    if (sql.includes('SELECT id FROM financial_commitments'))
+      return Promise.resolve(this.commitment ? [{ id: this.commitment.id }] : []);
+    if (sql.includes('SELECT status FROM limit_reservations')) return Promise.resolve([]);
+    if (sql.includes('UPDATE financial_commitments')) {
+      if (!this.commitment || this.commitment.state !== 'RESERVED') return Promise.resolve([]);
+      this.commitment.state = 'SETTLED';
+      return Promise.resolve([{ id: this.commitment.id }]);
+    }
+    if (sql.includes('UPDATE withdrawals')) return Promise.resolve([{ id: RESOURCE_ID }]);
     if (sql.includes('external_operation_references')) {
       const [referenceType, referenceValue, namespace] = parameters as [string, string, string];
       const operationId = this.references.byValue.get(
@@ -418,6 +452,11 @@ class FakeLedgerService {
   failureMode: 'NONE' | 'POST' = 'NONE';
   private nextId = 1;
   private nextLineId = 1;
+
+  postWithdrawalSettlementInTransaction: FakeLedgerService['postJournalInTransaction'] = (
+    manager,
+    command,
+  ) => this.postJournalInTransaction(manager, command);
 
   postReversalInTransaction: FakeLedgerService['postJournalInTransaction'] = (manager, command) =>
     this.postJournalInTransaction(manager, command);
@@ -676,6 +715,69 @@ function makeService(
   };
 }
 
+// Historical recovery unit fixture: explicitly pre-existing records, not a new commitment.
+// The real-PostgreSQL suite independently verifies the historical accounting behavior.
+async function historicalFixture(fixture: ReturnType<typeof makeService>) {
+  fixture.manager.commitment = null;
+  const journalId = await fixture.ledgerService.postJournalInTransaction(fixture.manager, {
+    idempotencyKey: 'historical-journal',
+    currency: 'NGN',
+    accountingUnit: 'CUSTOMER_FUNDS',
+    lines: [
+      { accountId: LEDGER_ID, direction: LedgerEntryDirection.DEBIT, amountMinor: '1000' },
+      {
+        accountId: SETTLEMENT_ASSET_LEDGER_ID,
+        direction: LedgerEntryDirection.CREDIT,
+        amountMinor: '1000',
+      },
+    ],
+  });
+  const row = {
+    id: '00000000-0000-4000-8000-000000000011',
+    externalOperationId: fixture.operation.id,
+    externalOperationReference: 'historical',
+    partnerKey: 'NIBSS_NIP',
+    capabilityKey: 'external.wallet.withdrawal.settlement',
+    operationType: 'OUTBOUND_BANK_SETTLEMENT',
+    customerId: CUSTOMER_ID,
+    walletAccountId: WALLET_ID,
+    customerLedgerAccountId: LEDGER_ID,
+    settlementAssetLedgerAccountId: SETTLEMENT_ASSET_LEDGER_ID,
+    decision: ExternalSettlementDecision.SETTLE,
+    status: ExternalSettlementStatus.POSTED,
+    amountMinor: '1000',
+    currency: 'NGN',
+    accountingUnit: 'CUSTOMER_FUNDS',
+    lifecycleState: 'SETTLED',
+    journalId,
+    reversalJournalId: null,
+    evidenceType: 'TRANSACTION',
+    evidenceValue: 'provider-evidence-1',
+    evidenceNamespace: 'nibss.nip',
+    evidenceSource: 'STATUS_QUERY',
+    evidenceHash: sha256('provider-evidence-1'),
+    idempotencyScope: 'historical',
+    idempotencyKey: 'historical',
+    requestHash: 'a'.repeat(64),
+    correlationId: 'historical',
+    requestId: 'historical',
+    ownerPrincipal: 'historical',
+    postedAt: new Date(),
+    reversalPostedAt: null,
+  } as ExternalSettlement;
+  await fixture.settlements.save(row);
+  fixture.verifier.verify.mockReset().mockResolvedValue({
+    state: 'VERIFIED_REJECTED',
+    providerStatus: 'REJECTED',
+    providerReferenceHash: sha256('confirmed-provider-failure'),
+    observedAt: new Date().toISOString(),
+    reasonCode: null,
+  });
+  const settlement = await fixture.service.getByOperation(fixture.operation.id);
+  if (!settlement) throw new Error('Missing historical settlement');
+  return { settlement };
+}
+
 function settleCommand(
   overrides: Partial<SettleVerifiedOutcomeCommand> = {},
 ): SettleVerifiedOutcomeCommand {
@@ -717,6 +819,7 @@ describe('ExternalSettlementService', () => {
     });
     await expect(fixture.service.settleVerifiedOutcome(settleCommand())).rejects.toThrow();
     expect(fixture.ledgerService.journals).toHaveLength(0);
+    expect(fixture.verifier.verify).toHaveBeenCalledTimes(1);
   });
 
   it.each(['wrong-hash', 'invalid-time'] as const)(
@@ -732,6 +835,7 @@ describe('ExternalSettlementService', () => {
       });
       await expect(fixture.service.settleVerifiedOutcome(settleCommand())).rejects.toThrow();
       expect(fixture.ledgerService.journals).toHaveLength(0);
+      expect(fixture.verifier.verify).toHaveBeenCalledTimes(1);
     },
   );
 
@@ -745,6 +849,17 @@ describe('ExternalSettlementService', () => {
       code: 'INVALID_SETTLEMENT_STATE',
     });
     expect(fixture.ledgerService.journals).toHaveLength(0);
+  });
+
+  it('rejects a new settlement without a reserved commitment even with a verified provider response', async () => {
+    const fixture = makeService();
+    fixture.manager.commitment = null;
+    await expect(fixture.service.settleVerifiedOutcome(settleCommand())).rejects.toMatchObject({
+      code: 'INVALID_SETTLEMENT_STATE',
+    });
+    expect(fixture.verifier.verify).not.toHaveBeenCalled();
+    expect(fixture.ledgerService.journals).toHaveLength(0);
+    expect(fixture.settlements.records.size).toBe(0);
   });
 
   it('treats a verifier exception as a retryable dependency outage', async () => {
@@ -777,7 +892,7 @@ describe('ExternalSettlementService', () => {
     expect(journal.accountingUnit).toBe('CUSTOMER_FUNDS');
     const lines = fixture.ledgerService.lines.filter((line) => line.journalId === journal.id);
     expect(lines).toHaveLength(2);
-    expect(lines.find((line) => line.ledgerAccountId === LEDGER_ID)?.direction).toBe(
+    expect(lines.find((line) => line.ledgerAccountId === RESERVE_ID)?.direction).toBe(
       LedgerEntryDirection.DEBIT,
     );
     expect(
@@ -855,19 +970,28 @@ describe('ExternalSettlementService', () => {
     ).rejects.toMatchObject({ code: 'STALE_OPERATION_VERSION' });
   });
 
-  it('routes unmatched evidence to a suspense entry with named exception ownership', async () => {
+  it('preserves a reserved obligation and records owned suspense for unmatched evidence', async () => {
     const fixture = makeService({ partnerMissingReference: true });
-
-    const result = await fixture.service.settleVerifiedOutcome(settleCommand());
-
-    expect(result.settlement.decision).toBe(ExternalSettlementDecision.REJECT);
-    expect(result.settlement.journalId).toBeNull();
-    expect(result.suspense).not.toBeNull();
-    expect(result.suspense?.reason).toBe('EVIDENCE_REFERENCE_MISSING');
-    expect(result.suspense?.rejectionCode).toBe('EVIDENCE_REFERENCE_MISSING');
-    expect(result.suspense?.owner).toBe('finance-ledger-suspense');
-    expect(result.suspense?.ownerPrincipal).toBe('a6-settlement-suspense-owner');
-    expect(result.suspense?.status).toBe(ExternalSuspenseStatus.OPEN);
+    await expect(fixture.service.settleVerifiedOutcome(settleCommand())).rejects.toMatchObject({
+      code: 'EVIDENCE_REFERENCE_MISSING',
+    });
+    expect(fixture.manager.commitment?.state).toBe('RESERVED');
+    expect(fixture.settlements.records.size).toBe(0);
+    const suspense = await fixture.service.recordSuspense({
+      externalOperationId: fixture.operation.id,
+      expectedVersion: 1,
+      reason: 'EVIDENCE_REFERENCE_MISSING',
+      rejectionCode: 'EVIDENCE_REFERENCE_MISSING',
+      evidence: settleCommand().evidence,
+      requestContext: REQUEST_CONTEXT,
+    });
+    expect(suspense).toMatchObject({
+      reason: 'EVIDENCE_REFERENCE_MISSING',
+      rejectionCode: 'EVIDENCE_REFERENCE_MISSING',
+      owner: 'finance-ledger-suspense',
+      ownerPrincipal: 'a6-settlement-suspense-owner',
+      status: ExternalSuspenseStatus.OPEN,
+    });
     expect(fixture.ledgerService.journals).toHaveLength(0);
   });
 
@@ -912,7 +1036,7 @@ describe('ExternalSettlementService', () => {
 
   it('refuses unverified provider outcomes and mismatched verification references', async () => {
     const fixture = makeService();
-    const settled = await fixture.service.settleVerifiedOutcome(settleCommand());
+    const settled = await historicalFixture(fixture);
     const suspense = await fixture.service.recordSuspense({
       externalOperationId: fixture.operation.id,
       expectedVersion: 1,
@@ -959,7 +1083,7 @@ describe('ExternalSettlementService', () => {
   it('posts a compensating entry against an open suspense entry and clears the suspense', async () => {
     const fixture = makeService();
 
-    const settled = await fixture.service.settleVerifiedOutcome(settleCommand());
+    const settled = await historicalFixture(fixture);
     const suspense = await fixture.service.recordSuspense({
       externalOperationId: settled.settlement.externalOperationId,
       expectedVersion: 1,
@@ -1002,28 +1126,23 @@ describe('ExternalSettlementService', () => {
   });
 
   it('rejects a compensating entry against a settlement that has no journal', async () => {
-    // Build a settlement without a journal (suspense path) by removing reference first
-    const suspenseFixture = makeService({ partnerMissingReference: true });
-    const settled = await suspenseFixture.service.settleVerifiedOutcome(
-      settleCommand({ externalOperationId: suspenseFixture.operation.id }),
-    );
-    // simulate a settlement row with no journal
-    const settlementWithoutJournal = settled.settlement;
-    settlementWithoutJournal.journalId = null;
-    settlementWithoutJournal.status = ExternalSettlementStatus.POSTED;
-    suspenseFixture.settlements.records.set(settlementWithoutJournal.settlementId, {
-      ...settlementWithoutJournal,
-    } as unknown as ExternalSettlement);
-
-    const suspenseEntries = await suspenseFixture.service.getSuspenseForOperation(
-      settlementWithoutJournal.externalOperationId,
-    );
-
+    const fixture = makeService();
+    const { settlement } = await historicalFixture(fixture);
+    const row = fixture.settlements.records.get(settlement.settlementId)!;
+    row.journalId = null;
+    const suspense = await fixture.service.recordSuspense({
+      externalOperationId: fixture.operation.id,
+      expectedVersion: 1,
+      reason: 'INVALID_SETTLEMENT_STATE',
+      rejectionCode: 'INVALID_SETTLEMENT_STATE',
+      evidence: settlement.evidence,
+      requestContext: REQUEST_CONTEXT,
+    });
     await expect(
-      suspenseFixture.service.recordCompensatingEntry({
-        externalOperationId: settlementWithoutJournal.externalOperationId,
-        settlementId: settlementWithoutJournal.settlementId,
-        suspenseEntryId: suspenseEntries[0]?.suspenseId ?? '',
+      fixture.service.recordCompensatingEntry({
+        externalOperationId: fixture.operation.id,
+        settlementId: settlement.settlementId,
+        suspenseEntryId: suspense.suspenseId,
         expectedVersion: 1,
         requestContext: REQUEST_CONTEXT,
       }),
@@ -1032,7 +1151,7 @@ describe('ExternalSettlementService', () => {
 
   it('rejects a second compensating entry for an already reversed settlement', async () => {
     const fixture = makeService();
-    const settled = await fixture.service.settleVerifiedOutcome(settleCommand());
+    const settled = await historicalFixture(fixture);
     const suspense = await fixture.service.recordSuspense({
       externalOperationId: settled.settlement.externalOperationId,
       expectedVersion: 1,
@@ -1092,8 +1211,10 @@ describe('ExternalSettlementService', () => {
 
   it('records outbox events for settled, suspense, and compensating actions', async () => {
     const fixture = makeService();
-    const settled = await fixture.service.settleVerifiedOutcome(settleCommand());
-    const suspense = await fixture.service.recordSuspense({
+    await fixture.service.settleVerifiedOutcome(settleCommand());
+    const history = makeService();
+    const settled = await historicalFixture(history);
+    const suspense = await history.service.recordSuspense({
       externalOperationId: settled.settlement.externalOperationId,
       expectedVersion: 1,
       reason: 'INVALID_SETTLEMENT_STATE',
@@ -1101,14 +1222,16 @@ describe('ExternalSettlementService', () => {
       evidence: settled.settlement.evidence,
       requestContext: { ...REQUEST_CONTEXT, requestId: 'suspense-request' },
     } as SuspenseVerifiedOutcomeCommand);
-    await fixture.service.recordCompensatingEntry({
+    await history.service.recordCompensatingEntry({
       externalOperationId: settled.settlement.externalOperationId,
       settlementId: settled.settlement.settlementId,
       suspenseEntryId: suspense.suspenseId,
       expectedVersion: 1,
       requestContext: { ...REQUEST_CONTEXT, requestId: 'compensating-request' },
     });
-    const eventTypes = fixture.outbox.events.map((event) => event.eventType);
+    const eventTypes = [...fixture.outbox.events, ...history.outbox.events].map(
+      (event) => event.eventType,
+    );
     expect(eventTypes).toContain('A6_EXTERNAL_SETTLEMENT_POSTED');
     expect(eventTypes).toContain('A6_EXTERNAL_SETTLEMENT_SUSPENSE');
     expect(eventTypes).toContain('A6_EXTERNAL_SETTLEMENT_COMPENSATED');

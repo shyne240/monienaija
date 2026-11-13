@@ -74,6 +74,7 @@ import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { TransferModule } from './transfer/transfer.module';
 import { VirtualAccountModule } from './virtual-account/virtual-account.module';
 import { WithdrawalModule } from './withdrawal/withdrawal.module';
+import { FinancialCommitmentModule } from './financial-commitment/financial-commitment.module';
 import { AdminModule } from './admin/admin.module';
 import { CapabilityRegistryModule } from './capability-registry/capability.module';
 import { AuthorizationCatalogueModule } from './authorization-catalogue/authorization-catalogue.module';
@@ -175,6 +176,7 @@ import { ProtectedAuthorityModule } from './authorization/protected-authority.mo
     VirtualAccountModule,
     WalletModule,
     WithdrawalModule,
+    FinancialCommitmentModule,
     AdminModule,
     CapabilityRegistryModule,
     AuthorizationCatalogueModule,
