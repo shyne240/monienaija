@@ -1402,7 +1402,7 @@ export class A7ProductFinancialEffectService {
     // service, and the A6T08 settlement service posts the A5
     // Ledger journal on the A7 product financial effect service's
     // behalf.
-    const a6T08Decision = A7_PRODUCT_FINANCIAL_EFFECT_TO_A6_DECISION[command.outcome] as
+    let a6T08Decision = A7_PRODUCT_FINANCIAL_EFFECT_TO_A6_DECISION[command.outcome] as
       | A7ProductFinancialEffectA6T08Decision
       | undefined;
     if (!a6T08Decision) {
@@ -1491,6 +1491,17 @@ export class A7ProductFinancialEffectService {
       );
       a6T08SettlementView = settleResult.settlement;
       a6T08SuspenseView = settleResult.suspense;
+      if (settleResult.decision !== ExternalSettlementDecision.SETTLE) {
+        if (!settleResult.suspense || settleResult.settlement.journalId)
+          throw new Error('Rejected settlement is missing its suspense evidence');
+        // Missing provider evidence remains an explicit suspense outcome, not a
+        // posted financial effect. Keep A6's rejection and suspense together.
+        a6T08Decision = 'SUSPENSE';
+        category = A7_PRODUCT_FINANCIAL_EFFECT_CATEGORY_SUSPENSE;
+        currentState = A7_PRODUCT_FINANCIAL_EFFECT_STATE_SUSPENSE_RECORDED;
+        auditAction = A7_PRODUCT_FINANCIAL_EFFECT_AUDIT_ACTION_SUSPENSE_RECORDED;
+        metricName = A7_PRODUCT_FINANCIAL_EFFECT_METRIC_SUSPENSE_RECORDED;
+      }
       a5LedgerJournal = settleResult.settlement.journalId
         ? await ports.a5LedgerJournalLookup(settleResult.settlement.journalId, manager)
         : null;
