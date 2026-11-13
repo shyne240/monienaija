@@ -91,5 +91,6 @@ export interface PrivilegedActionDecision {
     | 'ACTION_MISMATCH'
     | 'RESOURCE_MISMATCH'
     | 'FINGERPRINT_MISMATCH'
-    | 'INVALID_EMERGENCY_ACCESS';
+    | 'INVALID_EMERGENCY_ACCESS'
+    | 'SESSION_REQUIRED';
 }

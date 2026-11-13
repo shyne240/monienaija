@@ -88,7 +88,7 @@ describe('V1-RELEASE-01 production readiness vs. real migration chain', () => {
       // The disposable application's connection is also its superuser/database owner.
       expect(readiness.reason).toBe('runtime_database_role_unsafe');
       expect(readiness.runtimeDatabaseRole.status).toBe('unsafe');
-      expect(readiness.protectedCheckerAuthority.status).toBe('unavailable');
+      expect(readiness.protectedCheckerAuthority.status).toBe('not_configured');
       await expect(readinessService.verifyStartup()).rejects.toThrow(
         'runtime_database_role_unsafe',
       );
@@ -97,7 +97,7 @@ describe('V1-RELEASE-01 production readiness vs. real migration chain', () => {
     }
   });
 
-  it('still fails closed with a separate non-owner login and no protected authority', async () => {
+  it('still fails closed with a separate non-owner login and no protected authority credential', async () => {
     const role = `readiness_${randomUUID().replace(/-/g, '')}`;
     const password = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
     const options = dataSource.options;
@@ -129,10 +129,10 @@ describe('V1-RELEASE-01 production readiness vs. real migration chain', () => {
       } as never);
       const readiness = await checker.getReadiness();
       expect(readiness.runtimeDatabaseRole.status).toBe('no_obvious_escalation');
-      expect(readiness.protectedCheckerAuthority.status).toBe('unavailable');
-      expect(readiness.reason).toBe('protected_checker_authority_unavailable');
+      expect(readiness.protectedCheckerAuthority.status).toBe('not_configured');
+      expect(readiness.reason).toBe('protected_checker_authority_not_configured');
       await expect(checker.verifyStartup()).rejects.toThrow(
-        'protected_checker_authority_unavailable',
+        'protected_checker_authority_not_configured',
       );
     } finally {
       process.env.NODE_ENV = original;

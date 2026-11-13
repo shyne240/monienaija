@@ -4,12 +4,14 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AuditService } from '../operations/audit.service';
 import { AuthorizationCatalogueRuntimeService } from '../authorization-catalogue/authorization-catalogue-runtime.service';
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
+import { ProtectedAuthorityService } from './protected-authority.service';
 import type { AuthorizationPrincipal } from './authorization.types';
 import {
   A2FinanceRoleAssignment,
@@ -73,7 +75,17 @@ export class A2FinanceRoleAdministrationService {
     private readonly approvals: PrivilegedActionApprovalService,
     @Inject(A2_WORKFORCE_CONFIG) private readonly config: A2WorkforceConfigurationV1,
     private readonly catalogue: AuthorizationCatalogueRuntimeService,
+    @Optional() private readonly protectedAuthority?: ProtectedAuthorityService,
   ) {}
+
+  /**
+   * Workforce role assignments and bootstrap consumptions are protected authentication/authority
+   * evidence. Every read used for authorization and every write runs on the authority connection;
+   * ordinary runtime credentials have no write privilege on either table.
+   */
+  private get authoritySource(): DataSource {
+    return this.protectedAuthority?.dataSource ?? this.ds;
+  }
   async consumeBootstrap(compact: string, principal: AuthorizationPrincipal, now = new Date()) {
     if (!this.config.bootstrapEnabled) throw new ForbiddenException('Bootstrap disabled');
     if (principal.assuranceLevel !== 'MFA') throw new ForbiddenException('Bootstrap requires MFA');
@@ -110,7 +122,7 @@ export class A2FinanceRoleAdministrationService {
       expires = instant(s.expiresAt, 'expiresAt');
     if (to <= from || from > now || to <= now || issued > now || expires <= now)
       throw new UnauthorizedException('Bootstrap outside validity');
-    return this.ds.transaction('SERIALIZABLE', async (m) => {
+    return this.authoritySource.transaction('SERIALIZABLE', async (m) => {
       const cr = m.getRepository(A2WorkforceBootstrapConsumption);
       const existing = await cr.findOne({ where: { nonce: s.nonce } });
       if (existing)
@@ -238,7 +250,7 @@ export class A2FinanceRoleAdministrationService {
       throw new ForbiddenException('SUPER_ADMIN role is disabled or undefined in configuration');
 
     const ref = this.reference(principalId, 'SUPER_ADMIN'),
-      r = this.ds.getRepository(A2FinanceRoleAssignment),
+      r = this.authoritySource.getRepository(A2FinanceRoleAssignment),
       existing = await r.findOne({ where: { assignmentReference: ref, status: 'ACTIVE' } });
     if (existing) return this.view(existing, now);
 
@@ -271,7 +283,7 @@ export class A2FinanceRoleAdministrationService {
         updatedAt: now,
       }),
     );
-    const event = await this.audit.record(this.ds.manager, {
+    const event = await this.audit.record(this.authoritySource.manager, {
       entityType: 'A2_FINANCE_ROLE_ASSIGNMENT',
       entityId: row.id,
       action: 'LOCAL_ADMIN_SUPER_ADMIN_GRANTED',
@@ -333,7 +345,7 @@ export class A2FinanceRoleAdministrationService {
     }
     await this.consumeApprovals('FINANCE_ROLE_REVOKE', c);
     const ref = this.reference(c.targetPrincipalId, c.roleKey),
-      r = this.ds.getRepository(A2FinanceRoleAssignment),
+      r = this.authoritySource.getRepository(A2FinanceRoleAssignment),
       row = await r.findOne({ where: { assignmentReference: ref, status: 'ACTIVE' } });
     if (!row) throw new ConflictException('Active assignment not found');
     row.status = 'REVOKED';
@@ -365,7 +377,7 @@ export class A2FinanceRoleAdministrationService {
     if (!c.principal.roles.includes('ADMINISTRATOR') && !c.principal.roles.includes('SUPER_ADMIN'))
       throw new ForbiddenException('Operational role revocation initiator denied');
     const ref = this.reference(c.targetPrincipalId, c.roleKey),
-      r = this.ds.getRepository(A2FinanceRoleAssignment),
+      r = this.authoritySource.getRepository(A2FinanceRoleAssignment),
       row = await r.findOne({ where: { assignmentReference: ref, status: 'ACTIVE' } });
     if (!row) throw new ConflictException('Active assignment not found');
     const now = c.now ?? new Date();
@@ -373,7 +385,7 @@ export class A2FinanceRoleAdministrationService {
     row.revokedBy = c.principal.principalId;
     row.revokedAt = now;
     await r.save(row);
-    await this.audit.record(this.ds.manager, {
+    await this.audit.record(this.authoritySource.manager, {
       entityType: 'A2_FINANCE_ROLE_ASSIGNMENT',
       entityId: row.id,
       action: 'WORKFORCE_ROLE_REVOKED_OPERATIONAL',
@@ -465,7 +477,7 @@ export class A2FinanceRoleAdministrationService {
     const legacyDef = this.config.roles.find((r) => r.roleKey === c.roleKey),
       now = c.now ?? new Date(),
       ref = this.reference(c.targetPrincipalId, c.roleKey),
-      r = this.ds.getRepository(A2FinanceRoleAssignment);
+      r = this.authoritySource.getRepository(A2FinanceRoleAssignment);
     if (await r.findOne({ where: { assignmentReference: ref, status: 'ACTIVE' } }))
       throw new ConflictException('Active assignment exists');
     const scopes =
@@ -495,7 +507,7 @@ export class A2FinanceRoleAdministrationService {
         updatedAt: now,
       }),
     );
-    const e = await this.audit.record(this.ds.manager, {
+    const e = await this.audit.record(this.authoritySource.manager, {
       entityType: 'A2_FINANCE_ROLE_ASSIGNMENT',
       entityId: row.id,
       action: auditAction,

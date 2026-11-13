@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { DataSource, In, type EntityManager } from 'typeorm';
 import { AuditService } from '../operations/audit.service';
 import { AuthorizationCatalogueRuntimeService } from '../authorization-catalogue/authorization-catalogue-runtime.service';
@@ -7,6 +7,7 @@ import { AuthorizationRole } from '../authorization-catalogue/authorization-role
 import type { AuthorizationPrincipal } from './authorization.types';
 import { A2FinanceRoleAssignment, A2WorkforceSession } from './workforce-authentication.entity';
 import { A2_WORKFORCE_CONFIG } from './workforce-oidc.service';
+import { ProtectedAuthorityService } from './protected-authority.service';
 import type {
   A2WorkforceAssertionEvidenceV1,
   A2WorkforceConfigurationV1,
@@ -30,7 +31,18 @@ export class A2WorkforceSessionService {
     private readonly audit: AuditService,
     private readonly catalogue: AuthorizationCatalogueRuntimeService,
     @Inject(A2_WORKFORCE_CONFIG) private readonly config: A2WorkforceConfigurationV1,
+    @Optional() private readonly protectedAuthority?: ProtectedAuthorityService,
   ) {}
+
+  /**
+   * Session issuance, validation refresh, revocation and role resolution are protected
+   * authentication evidence. They run on the credential-separated authority connection (migration
+   * 1785753600501 revokes the corresponding tables from the ordinary runtime role), so runtime SQL
+   * can neither mint a session nor rewrite a legitimate checker's token hash or role set.
+   */
+  private get authoritySource(): DataSource {
+    return this.protectedAuthority?.dataSource ?? this.dataSource;
+  }
   async establish(
     e: A2WorkforceAssertionEvidenceV1,
     now = new Date(),
@@ -40,7 +52,7 @@ export class A2WorkforceSessionService {
     const token = randomBytes(32).toString('base64url'),
       expires = new Date(now.getTime() + this.config.sessionTtlSeconds * 1000),
       resolved = await this.resolve(e.principalId, now);
-    const row = await this.dataSource.transaction(async (m) => {
+    const row = await this.authoritySource.transaction(async (m) => {
       const r = m.getRepository(A2WorkforceSession),
         s = await r.save(
           r.create({
@@ -96,7 +108,7 @@ export class A2WorkforceSessionService {
     audience: string,
     now = new Date(),
   ): Promise<AuthorizationPrincipal> {
-    const r = this.dataSource.getRepository(A2WorkforceSession),
+    const r = this.authoritySource.getRepository(A2WorkforceSession),
       s = await r.findOne({ where: { tokenHash: hash(token) } });
     if (!s || s.status !== 'ACTIVE' || s.expiresAt <= now || s.audience !== audience) {
       if (s && s.status === 'ACTIVE' && s.expiresAt <= now) {
@@ -122,7 +134,7 @@ export class A2WorkforceSessionService {
     reason: string,
     now = new Date(),
   ) {
-    const r = this.dataSource.getRepository(A2WorkforceSession),
+    const r = this.authoritySource.getRepository(A2WorkforceSession),
       s = await r.findOne({ where: { id: sessionId } });
     if (!s) throw new UnauthorizedException('Session not found');
     if (s.principalId !== principal.principalId && !principal.scopes.includes('privileged:execute'))
@@ -189,7 +201,7 @@ export class A2WorkforceSessionService {
     // authorization catalogue below. Local development administrator login is unaffected: it goes
     // through LocalAdminAuthenticationService, which builds its own identity-specific evidence and
     // never relied on this grant (see its V1-ADMIN-UAT-IDENTITY-01 note).
-    const rows = await this.dataSource
+    const rows = await this.authoritySource
       .getRepository(A2FinanceRoleAssignment)
       .find({ where: { principalId, status: 'ACTIVE' } });
     const legacyDefs = new Map(
@@ -200,7 +212,7 @@ export class A2WorkforceSessionService {
 
     const catalogue = await this.catalogue.resolveForRoleKeys(activeRoleKeys);
     const catalogueDefinitions = activeRoleKeys.length
-      ? await this.dataSource.getRepository(AuthorizationRole).find({
+      ? await this.authoritySource.getRepository(AuthorizationRole).find({
           where: { roleKey: In(activeRoleKeys) },
         })
       : [];

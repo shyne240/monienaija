@@ -4,12 +4,14 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
 import { PrivilegedActionApproval } from '../authorization/privileged-action-approval.entity';
 import { PrivilegedActionApprovalStatus } from '../authorization/privileged-action-approval.enums';
 import { PrivilegedActionApprovalService } from '../authorization/privileged-action-approval.service';
+import { ProtectedAuthorityService } from '../authorization/protected-authority.service';
 import {
   governedAction,
   governedChangeFingerprint,
@@ -112,7 +114,13 @@ export class InstitutionAffiliationService {
     private readonly dataSource: DataSource,
     private readonly approvals: PrivilegedActionApprovalService,
     private readonly auditService: AuditService,
+    @Optional() private readonly protectedAuthority?: ProtectedAuthorityService,
   ) {}
+
+  /** Affiliation execution consumes a protected approval, so it runs on the authority credential. */
+  private get authoritySource(): DataSource {
+    return this.protectedAuthority?.dataSource ?? this.dataSource;
+  }
 
   async requestAffiliation(
     command: RequestInstitutionAffiliationCommand,
@@ -187,7 +195,7 @@ export class InstitutionAffiliationService {
       }),
     );
 
-    return this.dataSource.transaction(async (manager) => {
+    return this.authoritySource.transaction(async (manager) => {
       const approval = await manager.getRepository(PrivilegedActionApproval).findOne({
         where: { id: approvalId },
         lock: { mode: 'pessimistic_write' },

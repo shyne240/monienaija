@@ -1,8 +1,14 @@
-# Protected checker authority — incomplete application WIP
+# Protected checker authority — WIP record (superseded by the implementation)
 
-**NOT ACCEPTED.** The required protected checker authority and least-privilege runtime role model are not implemented. The branch retains the earlier application candidate and its failing direct-SQL reproductions. The production readiness guard added in this WIP is an interim safety interlock, not an implementation of checker authority. It intentionally prevents production startup until that authority is implemented; there is no environment override.
+> **Status: implemented.** The boundary described here as missing is now implemented by migration
+> `1785753600501-ProtectedAuthorityBoundary`, the `ProtectedAuthorityModule`/authority credential,
+> and `scripts/provision-database-roles.js`. See `PROTECTED-AUTHORITY.md` for the accepted design,
+> provisioning, readiness and test evidence. This file is retained as the reproduction/decision
+> history that led to it; statements below that describe "not implemented" are historical.
 
-## Current trust boundary
+> **Historical WIP statement (no longer current):** at the time of this record the required protected checker authority and least-privilege runtime role model were not implemented, the failing direct-SQL reproductions were retained, and production readiness was an interim interlock. That interlock has now been replaced by verification of the implemented boundary (see `PROTECTED-AUTHORITY.md` §5).
+
+## Trust boundary at the time of this record
 
 - The ordinary application is configured with one TypeORM `DataSource` using `DB_USER`/`DB_PASSWORD`; `src/config/data-source.ts` also uses that configuration for migrations. The repository's local Docker setup derives PostgreSQL's initial `POSTGRES_USER` from `DB_USER`. The local disposable test user was a database owner and superuser. Actual production roles, privileges and provisioning are **NOT VERIFIED**.
 - Workforce OIDC validation verifies the external signed identity assertion and recent MFA before `A2WorkforceSessionService.establish` creates a random bearer token and stores its hash with principal, MFA evidence and session expiry in `a2_workforce_sessions`. Subsequent bearer validation trusts those mutable rows and resolves current roles from `a2_finance_role_assignments` and the authorization catalogue. Other supported local administration identity paths also reach the workforce-session service. The stored assertion evidence is a summary, not an independently re-verifiable signed assertion.

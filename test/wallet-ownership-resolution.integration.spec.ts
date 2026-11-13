@@ -51,6 +51,11 @@ import {
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
+import {
+  provisionedRoleSet,
+  provisionMigratedDatabase,
+  roleConnection,
+} from './support/protected-authority-provisioning';
 
 const WALLETS = '/api/v1/wallets';
 const APPROVALS = '/api/v1/internal/a2/workforce/approvals';
@@ -404,7 +409,7 @@ describe('Governed wallet ownership resolution — real PostgreSQL + real HTTP',
 
   // ------------------------------------------------------------------ successful resolutions
 
-  it('rejects a wallet resolution whose checker decision was forged by a SQL DML role', async () => {
+  it('rejects a wallet resolution whose checker decision was forged by the runtime role', async () => {
     const { preparer, controller } = await roles();
     const customer = await customerFixture();
     const wallet = await insertWallet({ ownerReference: randomUUID() });
@@ -417,29 +422,14 @@ describe('Governed wallet ownership resolution — real PostgreSQL + real HTTP',
     };
     const created = await requestResolution(preparer.token, wallet.id, body);
     expect(created.status).toBe(201);
-    const role = `wallet_app_${randomUUID().replace(/-/g, '')}`;
-    const password = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
-    const options = dataSource.options;
-    if (options.type !== 'postgres') throw new Error('PostgreSQL required');
-    const runtime = new DataSource({
-      type: 'postgres',
-      host: options.host,
-      port: options.port,
-      database: options.database,
-      username: role,
-      password,
-      synchronize: false,
+    const roleset = provisionedRoleSet('walletsql');
+    await provisionMigratedDatabase(dataSource, roleset);
+    const runtime = roleConnection(dataSource, {
+      user: roleset.runtimeRole,
+      password: roleset.runtimePassword,
     });
-    await dataSource.query(
-      `CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '${password}'`,
-    );
+    await runtime.initialize();
     try {
-      await dataSource.query(`GRANT USAGE ON SCHEMA public TO ${role}`);
-      await dataSource.query(`GRANT SELECT ON privileged_action_approvals TO ${role}`);
-      await dataSource.query(
-        `GRANT UPDATE (status,approved_by,approved_at) ON privileged_action_approvals TO ${role}`,
-      );
-      await runtime.initialize();
       const attributes = await runtime.query<
         Array<{
           current_user: string;
@@ -451,22 +441,51 @@ describe('Governed wallet ownership resolution — real PostgreSQL + real HTTP',
         `SELECT current_user, rolsuper, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname=current_user`,
       );
       expect(attributes).toEqual([
-        { current_user: role, rolsuper: false, rolcreaterole: false, rolcreatedb: false },
+        {
+          current_user: roleset.runtimeRole,
+          rolsuper: false,
+          rolcreaterole: false,
+          rolcreatedb: false,
+        },
       ]);
+      // Row level security hides the protected wallet-resolution approval from the runtime role:
+      // the UPDATE succeeds syntactically but matches zero rows, so no forged decision exists.
       await runtime.query(
         `UPDATE privileged_action_approvals SET status='APPROVED', approved_by=$2, approved_at=now() WHERE id=$1`,
         [created.body.approvalId, controller.principalId],
       );
+      const afterForge = await dataSource.query<
+        Array<{ status: string; approved_by: string | null }>
+      >('SELECT status, approved_by FROM privileged_action_approvals WHERE id=$1', [
+        created.body.approvalId,
+      ]);
+      expect(afterForge).toEqual([{ status: 'REQUESTED', approved_by: null }]);
+      // Manufacturing a protected decision directly is impossible: the schema is unreachable.
+      await expect(
+        runtime.query(
+          `INSERT INTO protected_authority.checker_decisions
+             (approval_id, action_type, action_fingerprint, payload_digest, decision,
+              checker_principal_id, checker_session_id, assurance_level, decided_at, expires_at)
+           VALUES ($1,'WALLET_OWNERSHIP_RESOLUTION',$2,repeat('a',64),'APPROVED',$3,$4,'MFA',now(),now()+interval '1 day')`,
+          [created.body.approvalId, 'a'.repeat(64), controller.principalId, randomUUID()],
+        ),
+      ).rejects.toThrow(/permission denied/i);
       const executed = await executeResolution(controller.token, wallet.id, {
         ...body,
         approvalId: created.body.approvalId,
       });
       expect(executed.status).not.toBe(201);
       expect((await walletRow(wallet.id)).owner_class).toBe(WalletOwnerClass.REVIEW);
+      // The legitimate independent checker still executes through the real application.
+      const approved = await approve(controller.token, created.body.approvalId);
+      expect(approved.status).toBe(201);
+      const legitimate = await executeResolution(controller.token, wallet.id, {
+        ...body,
+        approvalId: created.body.approvalId,
+      });
+      expect(legitimate.status).toBe(201);
     } finally {
       if (runtime.isInitialized) await runtime.destroy();
-      await dataSource.query(`DROP OWNED BY ${role}`);
-      await dataSource.query(`DROP ROLE ${role}`);
     }
   });
 

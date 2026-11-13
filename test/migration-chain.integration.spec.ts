@@ -367,7 +367,20 @@ describe('institution 0400 historical upgrade (real PostgreSQL)', () => {
       const executed = await db.runMigrations({ transaction: 'all' });
       expect(executed.map((m) => m.name)).toEqual([
         'InstitutionGovernanceExecutionIntegrity1785753600500',
+        'ProtectedAuthorityBoundary1785753600501',
       ]);
+      const boundary = await db.query<
+        Array<{ decisions: string | null; consumptions: string | null; guarded: boolean }>
+      >(
+        `SELECT to_regclass('protected_authority.checker_decisions')::text AS decisions,
+                to_regclass('protected_authority.approval_consumptions')::text AS consumptions,
+                EXISTS (SELECT 1 FROM pg_trigger
+                  WHERE tgname='privileged_action_approval_authority_guard'
+                    AND NOT tgisinternal) AS guarded`,
+      );
+      expect(boundary[0]!.decisions).toBe('protected_authority.checker_decisions');
+      expect(boundary[0]!.consumptions).toBe('protected_authority.approval_consumptions');
+      expect(boundary[0]!.guarded).toBe(true);
       const rows = await db.query<
         Array<{ approval_id: string; legacy_reserved: boolean; result_snapshot: unknown }>
       >(

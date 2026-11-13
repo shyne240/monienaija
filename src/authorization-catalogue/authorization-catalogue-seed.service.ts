@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -10,6 +10,7 @@ import {
 import { AuthorizationFunction } from './authorization-function.entity';
 import { AuthorizationRoleFunction } from './authorization-role-function.entity';
 import { AuthorizationRole } from './authorization-role.entity';
+import { ProtectedAuthorityService } from '../authorization/protected-authority.service';
 
 /**
  * Idempotent bootstrap seed for the authorization catalogue, mirroring the
@@ -27,7 +28,31 @@ export class AuthorizationCatalogueSeedService implements OnApplicationBootstrap
     private readonly roleRepo: Repository<AuthorizationRole>,
     @InjectRepository(AuthorizationRoleFunction)
     private readonly roleFunctionRepo: Repository<AuthorizationRoleFunction>,
+    @Optional() private readonly protectedAuthority?: ProtectedAuthorityService,
   ) {}
+
+  /**
+   * The authorization catalogue is protected authority evidence: a writable function/role grant
+   * table would let ordinary runtime SQL grant itself any checker function. Seed writes therefore
+   * use the protected authority connection (migration 1785753600501 revokes runtime writes).
+   */
+  private get functions(): Repository<AuthorizationFunction> {
+    return this.protectedAuthority
+      ? this.protectedAuthority.dataSource.getRepository(AuthorizationFunction)
+      : this.functionRepo;
+  }
+
+  private get roles(): Repository<AuthorizationRole> {
+    return this.protectedAuthority
+      ? this.protectedAuthority.dataSource.getRepository(AuthorizationRole)
+      : this.roleRepo;
+  }
+
+  private get roleFunctions(): Repository<AuthorizationRoleFunction> {
+    return this.protectedAuthority
+      ? this.protectedAuthority.dataSource.getRepository(AuthorizationRoleFunction)
+      : this.roleFunctionRepo;
+  }
 
   async onApplicationBootstrap(): Promise<void> {
     await this.seedIfEmpty();
@@ -54,12 +79,12 @@ export class AuthorizationCatalogueSeedService implements OnApplicationBootstrap
   private async seedFunctions(): Promise<number> {
     let inserted = 0;
     for (const item of AUTHORIZATION_FUNCTION_SEED) {
-      const exists = await this.functionRepo.findOne({
+      const exists = await this.functions.findOne({
         where: { functionCode: item.functionCode } as never,
       });
       if (!exists) {
-        await this.functionRepo.save(
-          this.functionRepo.create({
+        await this.functions.save(
+          this.functions.create({
             functionCode: item.functionCode,
             domain: item.domain,
             name: item.name,
@@ -84,10 +109,10 @@ export class AuthorizationCatalogueSeedService implements OnApplicationBootstrap
   private async seedRoles(): Promise<number> {
     let inserted = 0;
     for (const item of AUTHORIZATION_ROLE_SEED) {
-      const exists = await this.roleRepo.findOne({ where: { roleKey: item.roleKey } as never });
+      const exists = await this.roles.findOne({ where: { roleKey: item.roleKey } as never });
       if (!exists) {
-        await this.roleRepo.save(
-          this.roleRepo.create({
+        await this.roles.save(
+          this.roles.create({
             roleKey: item.roleKey,
             displayName: item.displayName,
             description: item.description,
@@ -109,7 +134,7 @@ export class AuthorizationCatalogueSeedService implements OnApplicationBootstrap
 
   private async seedRoleFunctions(): Promise<number> {
     let inserted = 0;
-    const roles = await this.roleRepo.find();
+    const roles = await this.roles.find();
     const roleIdByKey = new Map(roles.map((r) => [r.roleKey, r.id]));
 
     for (const item of AUTHORIZATION_ROLE_FUNCTION_SEED) {
@@ -120,12 +145,12 @@ export class AuthorizationCatalogueSeedService implements OnApplicationBootstrap
         );
         continue;
       }
-      const exists = await this.roleFunctionRepo.findOne({
+      const exists = await this.roleFunctions.findOne({
         where: { roleId, functionCode: item.functionCode } as never,
       });
       if (!exists) {
-        await this.roleFunctionRepo.save(
-          this.roleFunctionRepo.create({
+        await this.roleFunctions.save(
+          this.roleFunctions.create({
             roleId,
             functionCode: item.functionCode,
             accessType: item.accessType,
@@ -142,9 +167,9 @@ export class AuthorizationCatalogueSeedService implements OnApplicationBootstrap
 
   /** For tests only: truncate and reseed from scratch. */
   async reseed(): Promise<{ functions: number; roles: number; roleFunctions: number }> {
-    await this.roleFunctionRepo.query('TRUNCATE TABLE authorization_role_functions');
-    await this.roleRepo.query('TRUNCATE TABLE authorization_roles CASCADE');
-    await this.functionRepo.query('TRUNCATE TABLE authorization_functions CASCADE');
+    await this.roleFunctions.query('TRUNCATE TABLE authorization_role_functions');
+    await this.roles.query('TRUNCATE TABLE authorization_roles CASCADE');
+    await this.functions.query('TRUNCATE TABLE authorization_functions CASCADE');
     return this.seedIfEmpty();
   }
 }

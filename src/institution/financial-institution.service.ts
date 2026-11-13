@@ -4,12 +4,14 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
 import { PrivilegedActionApproval } from '../authorization/privileged-action-approval.entity';
 import { PrivilegedActionApprovalStatus } from '../authorization/privileged-action-approval.enums';
 import { PrivilegedActionApprovalService } from '../authorization/privileged-action-approval.service';
+import { ProtectedAuthorityService } from '../authorization/protected-authority.service';
 import {
   governedAction,
   governedChangeFingerprint,
@@ -94,7 +96,17 @@ export class FinancialInstitutionService {
     private readonly dataSource: DataSource,
     private readonly approvals: PrivilegedActionApprovalService,
     private readonly auditService: AuditService,
+    @Optional() private readonly protectedAuthority?: ProtectedAuthorityService,
   ) {}
+
+  /**
+   * Consuming a protected institutional approval is a protected-authority write. The whole
+   * execution transaction runs on that credential so the approval consumption, the institution
+   * mutation, the trigger-generated evidence and any rollback remain one atomic unit.
+   */
+  private get authoritySource(): DataSource {
+    return this.protectedAuthority?.dataSource ?? this.dataSource;
+  }
 
   async register(command: RegisterInstitutionCommand): Promise<FinancialInstitutionView> {
     const reference = this.requiredToken(command.reference, 'reference', 80);
@@ -319,7 +331,7 @@ export class FinancialInstitutionService {
     const approvalId = this.uuid(command.approvalId, 'approvalId');
     const reason = this.requiredText(command.reason, 'reason', 500);
 
-    return this.dataSource.transaction(async (manager) => {
+    return this.authoritySource.transaction(async (manager) => {
       const approval = await manager.getRepository(PrivilegedActionApproval).findOne({
         where: { id: approvalId },
         lock: { mode: 'pessimistic_write' },

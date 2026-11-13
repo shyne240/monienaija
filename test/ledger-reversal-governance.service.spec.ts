@@ -81,6 +81,18 @@ class MemoryManager {
     if (!repository) throw new Error('Unexpected repository');
     return repository as unknown as Repository<T>;
   }
+
+  /**
+   * The protected decision/consumption evidence is written by SQL to a schema this in-memory
+   * double does not model. Emulate the RETURNING row so the service's protected-authority contract
+   * is exercised; the real database evidence is covered by the real-PostgreSQL suites.
+   */
+  query(sql: string, parameters: unknown[] = []): Promise<unknown[]> {
+    if (/INSERT INTO protected_authority\.(checker_decisions|approval_consumptions)/.test(sql)) {
+      return Promise.resolve([{ approval_id: parameters[0] }]);
+    }
+    return Promise.resolve([]);
+  }
 }
 
 class MemoryDataSource {

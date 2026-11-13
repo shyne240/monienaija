@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
@@ -17,6 +18,7 @@ import {
   A2SuperAdminRecoveryConsumption,
 } from './workforce-authentication.entity';
 import { A2_WORKFORCE_CONFIG } from './workforce-oidc.service';
+import { ProtectedAuthorityService } from './protected-authority.service';
 import type {
   A2RecoveryStatementV1,
   A2SuperAdminRecoveryViewV1,
@@ -59,7 +61,13 @@ export class SuperAdminRecoveryService {
     private readonly audit: AuditService,
     private readonly sessions: A2WorkforceSessionService,
     @Inject(A2_WORKFORCE_CONFIG) private readonly config: A2WorkforceConfigurationV1,
+    @Optional() private readonly protectedAuthority?: ProtectedAuthorityService,
   ) {}
+
+  /** Recovery revokes protected role/session evidence; it must run on the authority credential. */
+  private get authoritySource(): DataSource {
+    return this.protectedAuthority?.dataSource ?? this.ds;
+  }
 
   async consumeRevocation(
     compact: string,
@@ -115,7 +123,7 @@ export class SuperAdminRecoveryService {
     if (issued > now || expires <= now)
       throw new UnauthorizedException('Recovery statement outside validity');
 
-    return this.ds.transaction('SERIALIZABLE', async (m) => {
+    return this.authoritySource.transaction('SERIALIZABLE', async (m) => {
       const cr = m.getRepository(A2SuperAdminRecoveryConsumption),
         existing = await cr.findOne({ where: { nonce: s.nonce } });
       if (existing)

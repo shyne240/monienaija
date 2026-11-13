@@ -213,6 +213,14 @@ export const environmentSchema = z
     DB_POOL_IDLE_TIMEOUT_MS: z.coerce.number().int().min(0).max(3_600_000).optional(),
     DB_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(0).max(600_000).optional(),
     DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).max(3_600_000).optional(),
+    // ARENA 3 — separate credential for the protected checker-authority component. Optional at
+    // startup (local/test may run single-role) but required by production readiness; the authority
+    // login must not be the ordinary runtime login (verified against the live connection).
+    PROTECTED_AUTHORITY_DB_USER: optionalEnvironmentString,
+    PROTECTED_AUTHORITY_DB_PASSWORD: optionalEnvironmentSecret,
+    PROTECTED_AUTHORITY_DB_HOST: optionalEnvironmentString,
+    PROTECTED_AUTHORITY_DB_PORT: z.coerce.number().int().min(1).max(65535).optional(),
+    PROTECTED_AUTHORITY_DB_NAME: optionalEnvironmentString,
     // SMS-V1-01 — provider-neutral SMS production configuration.
     // Provider selection: 'console' (default, keeps dev/test provider-neutral), 'robase'
     // (env-supplied key), or 'managed' (governed DB-encrypted runtime configuration).
@@ -669,6 +677,7 @@ export const environmentSchema = z
     if (config.NODE_ENV !== 'production') return;
     for (const [field, value] of [
       ['DB_PASSWORD', config.DB_PASSWORD],
+      ['PROTECTED_AUTHORITY_DB_PASSWORD', config.PROTECTED_AUTHORITY_DB_PASSWORD],
       ['A6_PARTNER_SANDBOX_CALLBACK_SECRET', config.A6_PARTNER_SANDBOX_CALLBACK_SECRET],
       ['A6_PARTNER_PRODUCTION_CALLBACK_SECRET', config.A6_PARTNER_PRODUCTION_CALLBACK_SECRET],
     ] as const) {

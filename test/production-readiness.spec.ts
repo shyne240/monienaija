@@ -129,7 +129,7 @@ describe('M8 production readiness', () => {
     await expect(incompatible.verifyStartup()).rejects.toThrow('schema_incompatible');
   });
 
-  it('fails production readiness closed while protected checker authority is unavailable', async () => {
+  it('fails production readiness closed without a separate protected checker authority', async () => {
     const original = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';
     try {
@@ -139,12 +139,56 @@ describe('M8 production readiness', () => {
       );
       await expect(readiness.getReadiness()).resolves.toMatchObject({
         status: 'error',
-        reason: 'protected_checker_authority_unavailable',
-        protectedCheckerAuthority: { status: 'unavailable' },
+        reason: 'protected_checker_authority_not_configured',
+        protectedCheckerAuthority: { status: 'not_configured' },
       });
       await expect(readiness.verifyStartup()).rejects.toThrow(
-        'protected_checker_authority_unavailable',
+        'protected_checker_authority_not_configured',
       );
+    } finally {
+      process.env.NODE_ENV = original;
+    }
+  });
+
+  it('accepts only a verified protected checker authority in production', async () => {
+    const original = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    const authority = (status: 'verified' | 'unsafe' | 'unavailable') =>
+      ({
+        inspect: () =>
+          Promise.resolve({
+            status,
+            checks: {},
+            observed: {
+              runtimeLoginRole: 'runtime',
+              authorityLoginRole: 'authority',
+              authorityActiveRole: 'authority',
+            },
+          }),
+      }) as never;
+    try {
+      const verified = new ProductionReadinessService(
+        new ReadinessDataSource() as unknown as DataSource,
+        new ReconciliationStub() as never,
+        authority('verified'),
+      );
+      await expect(verified.getReadiness()).resolves.toMatchObject({
+        status: 'ok',
+        reason: null,
+        protectedCheckerAuthority: { status: 'verified' },
+      });
+      await expect(verified.verifyStartup()).resolves.toBeUndefined();
+
+      const unsafe = new ProductionReadinessService(
+        new ReadinessDataSource() as unknown as DataSource,
+        new ReconciliationStub() as never,
+        authority('unsafe'),
+      );
+      await expect(unsafe.getReadiness()).resolves.toMatchObject({
+        status: 'error',
+        reason: 'protected_checker_authority_unsafe',
+      });
+      await expect(unsafe.verifyStartup()).rejects.toThrow('protected_checker_authority_unsafe');
     } finally {
       process.env.NODE_ENV = original;
     }

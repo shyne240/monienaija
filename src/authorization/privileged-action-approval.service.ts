@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 
@@ -10,6 +10,8 @@ import { SecurityEventHistory } from '../customer-authentication/security-event-
 import { SecurityEventType } from '../customer-authentication/customer-authentication.enums';
 import { AuthorizationService } from './authorization.service';
 import { AGENT_FUNDING_ACTIONS, governedAction } from './governed-action.registry';
+import { isProtectedAuthorityAction } from './protected-authority.actions';
+import { ProtectedAuthorityService } from './protected-authority.service';
 import type { AuthorizationPrincipal } from './authorization.types';
 import { PrivilegedActionApproval } from './privileged-action-approval.entity';
 import { PrivilegedActionApprovalStatus } from './privileged-action-approval.enums';
@@ -39,7 +41,17 @@ export class PrivilegedActionApprovalService {
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
     private readonly authorizationService: AuthorizationService,
+    @Optional() private readonly protectedAuthority?: ProtectedAuthorityService,
   ) {}
+
+  /**
+   * Writes to privileged approvals happen on the protected-authority connection. A separate
+   * credential is the boundary: ordinary runtime credentials can neither manufacture a protected
+   * decision nor consume one (migration 1785753600501 also enforces this in the database).
+   */
+  private get authoritySource(): DataSource {
+    return this.protectedAuthority?.dataSource ?? this.dataSource;
+  }
 
   async getApproval(approvalId: string): Promise<PrivilegedActionApprovalView | null> {
     const approval = await this.findApproval(approvalId);
@@ -47,7 +59,9 @@ export class PrivilegedActionApprovalService {
   }
 
   async request(command: RequestPrivilegedActionCommand): Promise<PrivilegedActionDecision> {
-    return this.dataSource.transaction((manager) => this.requestInTransaction(manager, command));
+    return this.authoritySource.transaction((manager) =>
+      this.requestInTransaction(manager, command),
+    );
   }
 
   /** Create an approval inside a domain transaction that also persists its request record. */
@@ -163,7 +177,7 @@ export class PrivilegedActionApprovalService {
   }
 
   async cancel(command: DecidePrivilegedActionCommand): Promise<PrivilegedActionDecision> {
-    return this.dataSource.transaction<PrivilegedActionDecision>(async (manager) => {
+    return this.authoritySource.transaction<PrivilegedActionDecision>(async (manager) => {
       // Read the current lifecycle state only after acquiring the same row lock used by approve,
       // reject, and consume. Saving a pre-transaction entity can overwrite a decision that
       // committed while this cancellation was waiting for the lock.
@@ -210,7 +224,9 @@ export class PrivilegedActionApprovalService {
   }
 
   async consume(command: ConsumePrivilegedActionCommand): Promise<PrivilegedActionDecision> {
-    return this.dataSource.transaction((manager) => this.consumeInTransaction(manager, command));
+    return this.authoritySource.transaction((manager) =>
+      this.consumeInTransaction(manager, command),
+    );
   }
 
   /**
@@ -296,6 +312,12 @@ export class PrivilegedActionApprovalService {
       return { approved: false, approval: this.toView(approval), reason: 'FINGERPRINT_MISMATCH' };
     }
 
+    if (isProtectedAuthorityAction(approval.actionType)) {
+      if (!command.principal.sessionId) {
+        return { approved: false, approval: this.toView(approval), reason: 'SESSION_REQUIRED' };
+      }
+      await this.recordProtectedConsumption(manager, approval.id, command.principal, now);
+    }
     approval.status = PrivilegedActionApprovalStatus.CONSUMED;
     approval.consumedAt = now;
     const saved = await manager.getRepository(PrivilegedActionApproval).save(approval);
@@ -334,7 +356,7 @@ export class PrivilegedActionApprovalService {
     const expiresAt = new Date(
       now.getTime() + this.normalizeEmergencyTtl(command.expiresInSeconds) * 1000,
     );
-    const saved = await this.dataSource.transaction(async (manager) => {
+    const saved = await this.authoritySource.transaction(async (manager) => {
       const approval = await manager.getRepository(PrivilegedActionApproval).save(
         manager.getRepository(PrivilegedActionApproval).create({
           id: randomUUID(),
@@ -416,7 +438,7 @@ export class PrivilegedActionApprovalService {
     }
     approval.status = PrivilegedActionApprovalStatus.EMERGENCY_REVOKED;
     approval.cancelledAt = now;
-    const saved = await this.dataSource.transaction(async (manager) => {
+    const saved = await this.authoritySource.transaction(async (manager) => {
       const result = await manager.getRepository(PrivilegedActionApproval).save(approval);
       await this.audit(manager, result, 'EMERGENCY_ACCESS_REVOKED', principal.principalId, {
         resourceType: result.resourceType,
@@ -437,11 +459,54 @@ export class PrivilegedActionApprovalService {
     return { approved: false, approval: this.toView(saved), reason: 'CANCELLED' };
   }
 
+  private async recordProtectedDecision(
+    manager: EntityManager,
+    approvalId: string,
+    principal: AuthorizationPrincipal,
+    now: Date,
+  ): Promise<void> {
+    const rows: unknown = await manager.query(
+      `INSERT INTO protected_authority.checker_decisions
+         (approval_id, action_type, action_fingerprint, payload_digest, decision,
+          checker_principal_id, checker_session_id, assurance_level, decided_at, expires_at)
+       SELECT a.id, a.action_type, a.action_fingerprint,
+              protected_authority.approval_payload_digest(a.id), 'APPROVED',
+              $2, $3, 'MFA', $4, a.expires_at
+         FROM public.privileged_action_approvals a
+        WHERE a.id = $1
+       RETURNING approval_id`,
+      [approvalId, principal.principalId, principal.sessionId, now],
+    );
+    if (!Array.isArray(rows) || rows.length !== 1) {
+      throw new ConflictException('Protected checker decision could not be recorded');
+    }
+  }
+
+  private async recordProtectedConsumption(
+    manager: EntityManager,
+    approvalId: string,
+    principal: AuthorizationPrincipal,
+    now: Date,
+  ): Promise<void> {
+    const rows: unknown = await manager.query(
+      `INSERT INTO protected_authority.approval_consumptions
+         (approval_id, payload_digest, executor_principal_id, executor_session_id, consumed_at)
+       SELECT a.id, protected_authority.approval_payload_digest(a.id), $2, $3, $4
+         FROM public.privileged_action_approvals a
+        WHERE a.id = $1
+       RETURNING approval_id`,
+      [approvalId, principal.principalId, principal.sessionId, now],
+    );
+    if (!Array.isArray(rows) || rows.length !== 1) {
+      throw new ConflictException('Protected approval consumption could not be recorded');
+    }
+  }
+
   private async decide(
     command: DecidePrivilegedActionCommand,
     approve: boolean,
   ): Promise<PrivilegedActionDecision> {
-    return this.dataSource.transaction((manager) =>
+    return this.authoritySource.transaction((manager) =>
       this.decideInTransaction(manager, command, approve),
     );
   }
@@ -532,6 +597,15 @@ export class PrivilegedActionApprovalService {
     }
     if (approval.requiredAssurance === 'MFA' && command.principal.assuranceLevel !== 'MFA') {
       return { approved: false, approval: this.toView(approval), reason: 'MFA_REQUIRED' };
+    }
+    if (approve && isProtectedAuthorityAction(approval.actionType)) {
+      // The decision record is appended before the approval becomes APPROVED. It is derived from
+      // the locked approval row (never from caller-supplied identity, MFA or digest claims) and is
+      // written on the protected authority connection by the caller of this transaction.
+      if (!command.principal.sessionId) {
+        return { approved: false, approval: this.toView(approval), reason: 'SESSION_REQUIRED' };
+      }
+      await this.recordProtectedDecision(manager, approval.id, command.principal, now);
     }
 
     approval.status = approve

@@ -1,7 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
+import {
+  ProtectedAuthorityInspection,
+  ProtectedAuthorityService,
+} from '../authorization/protected-authority.service';
 
 // V1-RELEASE-01: this marker must always equal the newest file in src/migrations/*.ts.
 // It previously drifted twice (stayed at 1785753600079 while migrations 080 and 081 were
@@ -10,8 +14,8 @@ import { ReconciliationService } from '../reconciliation/reconciliation.service'
 // test/v1-release-01-production-readiness-migration-sync.integration.spec.ts, which runs the
 // full migration chain against real PostgreSQL and fails the build if this constant and the
 // actual latest migration file ever diverge again.
-const EXPECTED_MIGRATION_TIMESTAMP = '1785753600500';
-const EXPECTED_MIGRATION_NAME = 'InstitutionGovernanceExecutionIntegrity1785753600500';
+const EXPECTED_MIGRATION_TIMESTAMP = '1785753600501';
+const EXPECTED_MIGRATION_NAME = 'ProtectedAuthorityBoundary1785753600501';
 
 type Row = Record<string, unknown>;
 
@@ -20,6 +24,7 @@ export class ProductionReadinessService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly reconciliationService: ReconciliationService,
+    @Optional() private readonly protectedAuthority?: ProtectedAuthorityService,
   ) {}
 
   async verifyStartup(): Promise<void> {
@@ -50,11 +55,15 @@ export class ProductionReadinessService {
       }
     }
     const pendingOutbox = await this.pendingOutboxCount();
-    // The institutional candidate currently has no independent protected checker authority.
-    // Do not make an environment flag a substitute for that security boundary: production
-    // must remain unavailable until its real authority and DB-role checks are implemented.
-    const protectedCheckerAuthority =
-      process.env.NODE_ENV === 'production' ? 'unavailable' : 'not_evaluated';
+    // Verify the real implemented boundary instead of asserting availability. In production the
+    // authority inspection must prove a distinct, non-privileged credential that owns protected
+    // checker evidence while the runtime role cannot write it. Any missing/unsafe result keeps
+    // production unavailable: there is deliberately no environment override.
+    const inspection =
+      process.env.NODE_ENV === 'production' && database.status === 'ok'
+        ? await this.checkProtectedAuthority()
+        : ({ status: 'not_evaluated' } as const);
+    const protectedCheckerAuthority = inspection.status;
     const runtimeDatabaseRole =
       process.env.NODE_ENV === 'production' && database.status === 'ok'
         ? await this.checkRuntimeDatabaseRole()
@@ -65,6 +74,8 @@ export class ProductionReadinessService {
       reconciliation !== 'ERROR' &&
       pendingOutbox >= 0 &&
       protectedCheckerAuthority !== 'unavailable' &&
+      protectedCheckerAuthority !== 'not_configured' &&
+      protectedCheckerAuthority !== 'unsafe' &&
       runtimeDatabaseRole.status !== 'unsafe' &&
       runtimeDatabaseRole.status !== 'unavailable'
         ? 'ok'
@@ -83,7 +94,11 @@ export class ProductionReadinessService {
                 : runtimeDatabaseRole.status === 'unsafe' ||
                     runtimeDatabaseRole.status === 'unavailable'
                   ? 'runtime_database_role_unsafe'
-                  : 'protected_checker_authority_unavailable';
+                  : protectedCheckerAuthority === 'not_configured'
+                    ? 'protected_checker_authority_not_configured'
+                    : protectedCheckerAuthority === 'unsafe'
+                      ? 'protected_checker_authority_unsafe'
+                      : 'protected_checker_authority_unavailable';
     return {
       status,
       reason,
@@ -92,7 +107,7 @@ export class ProductionReadinessService {
       database,
       migrations,
       reconciliation: { status: reconciliation },
-      protectedCheckerAuthority: { status: protectedCheckerAuthority },
+      protectedCheckerAuthority: inspection,
       runtimeDatabaseRole,
       pendingOutbox,
       checkedAt: new Date().toISOString(),
@@ -106,6 +121,14 @@ export class ProductionReadinessService {
     } catch {
       return { status: 'error' };
     }
+  }
+
+  private async checkProtectedAuthority(): Promise<
+    ProtectedAuthorityInspection | { status: 'not_configured' }
+  > {
+    if (!this.protectedAuthority) return { status: 'not_configured' };
+    const inspection = await this.protectedAuthority.inspect();
+    return inspection;
   }
 
   /** A preliminary negative check only; a safe result is not proof of authority isolation. */

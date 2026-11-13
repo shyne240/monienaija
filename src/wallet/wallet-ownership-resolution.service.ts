@@ -4,12 +4,14 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
 
 import { PrivilegedActionApproval } from '../authorization/privileged-action-approval.entity';
 import { PrivilegedActionApprovalStatus } from '../authorization/privileged-action-approval.enums';
 import { PrivilegedActionApprovalService } from '../authorization/privileged-action-approval.service';
+import { ProtectedAuthorityService } from '../authorization/protected-authority.service';
 import {
   governedAction,
   governedChangeFingerprint,
@@ -105,7 +107,17 @@ export class WalletOwnershipResolutionService {
     private readonly dataSource: DataSource,
     private readonly approvals: PrivilegedActionApprovalService,
     private readonly auditService: AuditService,
+    @Optional() private readonly protectedAuthority?: ProtectedAuthorityService,
   ) {}
+
+  /**
+   * Wallet ownership resolution consumes a protected approval. The entire execution (decision
+   * evidence, consumption, resolution record, wallet owner update) runs on the authority
+   * credential so a forged runtime row can never reach it.
+   */
+  private get authoritySource(): DataSource {
+    return this.protectedAuthority?.dataSource ?? this.dataSource;
+  }
 
   /**
    * Maker side. Creates the pending maker-checker request. No wallet mutation occurs here; the
@@ -204,7 +216,7 @@ export class WalletOwnershipResolutionService {
       normalized.reason,
     );
 
-    return this.dataSource
+    return this.authoritySource
       .transaction(async (manager) => {
         // Serialises consumption/replay of this approval.
         const approval = await manager.getRepository(PrivilegedActionApproval).findOne({

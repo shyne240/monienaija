@@ -34,6 +34,11 @@ import {
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
+import {
+  provisionedRoleSet,
+  provisionMigratedDatabase,
+  roleConnection,
+} from './support/protected-authority-provisioning';
 
 const INSTITUTIONS = '/api/v1/internal/institutions';
 const AGENT_AFFILIATIONS = '/api/v1/internal/agent-affiliations';
@@ -940,7 +945,7 @@ describe('Institutional foundation (ARENA 4 Phase 1) — real PostgreSQL + real 
     }
   });
 
-  it('rejects checker session impersonation by an ordinary DML role', async () => {
+  it('rejects checker session impersonation by the provisioned ordinary runtime role', async () => {
     const institutionId = await approvedInstitution();
     const { operator, controller } = await roles();
     const created = await requestLifecycle(
@@ -950,28 +955,14 @@ describe('Institutional foundation (ARENA 4 Phase 1) — real PostgreSQL + real 
       'Review institutional regulatory status',
     );
     expect(created.status).toBe(201);
-    const attackerToken = randomUUID() + randomUUID();
-    const role = `inst_auth_${randomUUID().replace(/-/g, '')}`;
-    const password = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
-    const options = dataSource.options;
-    if (options.type !== 'postgres') throw new Error('PostgreSQL required');
-    const runtime = new DataSource({
-      type: 'postgres',
-      host: options.host,
-      port: options.port,
-      database: options.database,
-      username: role,
-      password,
-      synchronize: false,
+    const roleset = provisionedRoleSet('instimp');
+    await provisionMigratedDatabase(dataSource, roleset);
+    const runtime = roleConnection(dataSource, {
+      user: roleset.runtimeRole,
+      password: roleset.runtimePassword,
     });
-    await dataSource.query(
-      `CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '${password}'`,
-    );
+    await runtime.initialize();
     try {
-      await dataSource.query(`GRANT USAGE ON SCHEMA public TO ${role}`);
-      await dataSource.query(`GRANT SELECT ON a2_workforce_sessions TO ${role}`);
-      await dataSource.query(`GRANT UPDATE (token_hash) ON a2_workforce_sessions TO ${role}`);
-      await runtime.initialize();
       const attributes = await runtime.query<
         Array<{
           current_user: string;
@@ -983,18 +974,33 @@ describe('Institutional foundation (ARENA 4 Phase 1) — real PostgreSQL + real 
         `SELECT current_user, rolsuper, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname=current_user`,
       );
       expect(attributes).toEqual([
-        { current_user: role, rolsuper: false, rolcreaterole: false, rolcreatedb: false },
+        {
+          current_user: roleset.runtimeRole,
+          rolsuper: false,
+          rolcreaterole: false,
+          rolcreatedb: false,
+        },
       ]);
-      await runtime.query(
-        `UPDATE a2_workforce_sessions SET token_hash=$1 WHERE principal_id=$2 AND status='ACTIVE'`,
-        [createHash('sha256').update(attackerToken).digest('hex'), controller.principalId],
-      );
-      const result = await approve(attackerToken, created.body.approvalId);
-      expect(result.status).not.toBe(201);
+      // The ordinary runtime credential cannot even read, let alone rewrite, the session hash that
+      // authenticates the real MFA checker.
+      const attackerToken = randomUUID() + randomUUID();
+      await expect(
+        runtime.query(
+          `UPDATE a2_workforce_sessions SET token_hash=$1 WHERE principal_id=$2 AND status='ACTIVE'`,
+          [createHash('sha256').update(attackerToken).digest('hex'), controller.principalId],
+        ),
+      ).rejects.toThrow(/permission denied/i);
+      await expect(
+        runtime.query(`SELECT token_hash FROM a2_workforce_sessions LIMIT 1`),
+      ).rejects.toThrow(/permission denied/i);
+      // And the attacker-minted token is not accepted by the application.
+      const forged = await approve(attackerToken, created.body.approvalId);
+      expect(forged.status).not.toBe(201);
+      // The legitimate authenticated checker is unaffected.
+      const legitimate = await approve(controller.token, created.body.approvalId);
+      expect(legitimate.status).toBe(201);
     } finally {
       if (runtime.isInitialized) await runtime.destroy();
-      await dataSource.query(`DROP OWNED BY ${role}`);
-      await dataSource.query(`DROP ROLE ${role}`);
     }
   });
 

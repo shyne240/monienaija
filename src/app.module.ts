@@ -92,6 +92,7 @@ import { SupportModule } from './support/support.module';
 import { SupportAuthenticationModule } from './support-authentication/support-authentication.module';
 import { LocalAdminAuthenticationModule } from './local-admin-authentication/local-admin-authentication.module';
 import { WalletModule } from './wallet/wallet.module';
+import { ProtectedAuthorityModule } from './authorization/protected-authority.module';
 
 @Module({
   imports: [
@@ -106,6 +107,7 @@ import { WalletModule } from './wallet/wallet.module';
     TypeOrmModule.forRootAsync({
       useFactory: () => createDatabaseOptions(validateEnvironment(process.env)),
     }),
+    ProtectedAuthorityModule,
     HealthModule,
     AgentModule,
     AggregatorModule,

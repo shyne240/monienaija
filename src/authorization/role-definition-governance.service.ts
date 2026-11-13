@@ -5,6 +5,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Optional,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -16,6 +17,7 @@ import { AuthorizationRole } from '../authorization-catalogue/authorization-role
 import { AuthorizationRoleFunction } from '../authorization-catalogue/authorization-role-function.entity';
 import type { AuthorizationPrincipal } from './authorization.types';
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
+import { ProtectedAuthorityService } from './protected-authority.service';
 import {
   RoleDefinitionFunctionGrant,
   RoleDefinitionPriorSnapshot,
@@ -94,6 +96,7 @@ export class RoleDefinitionGovernanceService {
     private readonly dataSource: DataSource,
     private readonly approvals: PrivilegedActionApprovalService,
     private readonly audit: AuditService,
+    @Optional() private readonly protectedAuthority?: ProtectedAuthorityService,
   ) {}
 
   // ------------------------------------------------------------------ submit
@@ -254,7 +257,7 @@ export class RoleDefinitionGovernanceService {
     });
 
     try {
-      const saved = await this.dataSource.transaction(async (manager) => {
+      const saved = await this.authoritySource.transaction(async (manager) => {
         const result = await manager.getRepository(RoleDefinitionProposal).save(proposal);
         await this.auditRecord(
           manager,
@@ -289,6 +292,11 @@ export class RoleDefinitionGovernanceService {
       }
       throw e;
     }
+  }
+
+  /** Role/function catalogue mutations are protected authority evidence. */
+  private get authoritySource(): DataSource {
+    return this.protectedAuthority?.dataSource ?? this.dataSource;
   }
 
   // --------------------------------------------------------------- decide
@@ -402,7 +410,7 @@ export class RoleDefinitionGovernanceService {
     }
     const now = command.now ?? new Date();
 
-    return this.dataSource.transaction(async (manager) => {
+    return this.authoritySource.transaction(async (manager) => {
       const repo = manager.getRepository(RoleDefinitionProposal);
       const proposal = await repo.findOne({
         where: { id: command.proposalId },
@@ -594,7 +602,7 @@ export class RoleDefinitionGovernanceService {
     now: Date,
     correlationId: string | null | undefined,
   ): Promise<RoleDefinitionProposal> {
-    return this.dataSource.transaction(async (manager) => {
+    return this.authoritySource.transaction(async (manager) => {
       const repo = manager.getRepository(RoleDefinitionProposal);
       proposal.status = status;
       if (status === 'APPROVED' || status === 'REJECTED') {
@@ -624,7 +632,7 @@ export class RoleDefinitionGovernanceService {
     correlationId: string | undefined,
     now: Date,
   ): Promise<void> {
-    await this.dataSource.transaction(async (manager) => {
+    await this.authoritySource.transaction(async (manager) => {
       await this.audit.record(manager, {
         entityType: 'ROLE_DEFINITION_PROPOSAL',
         entityId: proposal.id,

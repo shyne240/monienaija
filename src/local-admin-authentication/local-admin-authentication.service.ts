@@ -1,12 +1,19 @@
 import { pbkdf2Sync, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 
-import { Inject, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+  Optional,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import { A2_WORKFORCE_CONFIG } from '../authorization/workforce-oidc.service';
 import { A2WorkforceSessionService } from '../authorization/workforce-session.service';
+import { ProtectedAuthorityService } from '../authorization/protected-authority.service';
 import { A2FinanceRoleAdministrationService } from '../authorization/finance-role-administration.service';
 import { sha256 } from '../authorization/workforce-crypto';
 import type {
@@ -89,7 +96,18 @@ export class LocalAdminAuthenticationService {
     private readonly financeRoles: A2FinanceRoleAdministrationService,
     private readonly auditService: AuditService,
     @Inject(A2_WORKFORCE_CONFIG) private readonly workforceConfig: A2WorkforceConfigurationV1,
+    @Optional() private readonly protectedAuthority?: ProtectedAuthorityService,
   ) {}
+
+  /**
+   * Local administrator credentials are an authentication store. Writes are revoked from the
+   * ordinary runtime role; the dev/test-only service uses the authority connection instead.
+   */
+  private get credentials(): Repository<LocalAdminCredential> {
+    return this.protectedAuthority
+      ? this.protectedAuthority.dataSource.getRepository(LocalAdminCredential)
+      : this.repository;
+  }
 
   /**
    * Deterministic, per-email subject/principalId for the local administrator's REAL workforce
@@ -146,22 +164,22 @@ export class LocalAdminAuthenticationService {
       throw new Error('password must be at least 8 characters');
     }
 
-    const existing = await this.repository.findOne({ where: { email } as never });
+    const existing = await this.credentials.findOne({ where: { email } as never });
     let created: boolean;
     if (existing) {
       created = false;
     } else {
       const passwordHash = this.hashPassword(input.password);
       try {
-        const saved = await this.repository.save(
-          this.repository.create({
+        const saved = await this.credentials.save(
+          this.credentials.create({
             id: randomUUID(),
             email,
             passwordHash,
             hashAlgorithm: 'PBKDF2',
           }),
         );
-        await this.auditService.record(this.repository.manager, {
+        await this.auditService.record(this.credentials.manager, {
           entityType: 'LOCAL_ADMIN_CREDENTIAL',
           entityId: saved.id,
           action: 'LOCAL_ADMIN_CREDENTIAL_SEEDED',
@@ -208,7 +226,7 @@ export class LocalAdminAuthenticationService {
     }
 
     const normalized = this.normalizeEmail(email);
-    const row = await this.repository.findOne({ where: { email: normalized } as never });
+    const row = await this.credentials.findOne({ where: { email: normalized } as never });
 
     // Always perform a PBKDF2 comparison, even for an unknown email, so that "unknown email"
     // and "wrong password" are not trivially distinguishable by timing — same convention as
@@ -223,7 +241,7 @@ export class LocalAdminAuthenticationService {
 
     if (!row || !verified) {
       if (row) {
-        await this.auditService.record(this.repository.manager, {
+        await this.auditService.record(this.credentials.manager, {
           entityType: 'LOCAL_ADMIN_CREDENTIAL',
           entityId: row.id,
           action: 'LOCAL_ADMIN_LOGIN_FAILED',
