@@ -406,10 +406,17 @@ export async function agentCashToCash(
 
 export type CashToCashFundingRecovery =
   | { status: 'UNKNOWN' }
-  | { status: 'EVIDENCE_REVIEW'; transferId: string }
+  | { status: 'EVIDENCE_REVIEW'; transferId?: string }
   | { status: 'FOUND'; transferId: string; lifecycleStatus: 'UNCLAIMED' | 'CLAIMED' | 'CANCELLED' | 'EXPIRED'; principalMinor: string; currency: string; journalId: string; claimJournalId: string | null; disposition: 'PENDING' | null; senderPhone: string | null; transferNumber: string | null; createdAt: string; expiresAt: string; expiredAt: string | null };
 export async function recoverCashToCashFunding(idempotencyKey: string): Promise<CashToCashFundingRecovery> {
   return ApiClient.post<CashToCashFundingRecovery>('api/v1/agents/cash-to-cash/recover-funding', { idempotencyKey });
+}
+
+export async function handoffCashToCashOperation(
+  idempotencyKey: string,
+  reason: 'UNKNOWN_OUTCOME' | 'LOST_TRANSFER_CODE' | 'EVIDENCE_REVIEW',
+): Promise<{ id: string; status: 'UNRESOLVED' }> {
+  return ApiClient.post('api/v1/agents/cash-to-cash/operation-handoff', { idempotencyKey, reason });
 }
 
 let pendingDisplayOnceTransferCode: string | null = null;
