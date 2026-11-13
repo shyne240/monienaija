@@ -18,7 +18,10 @@ import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletService } from '../wallet/wallet.service';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { parsePositiveMinorUnits, normalizeCurrency } from '../common/money';
-import { CashOutInstitutionResolver } from './cash-out-institution.resolver';
+import {
+  CashOutInstitutionResolver,
+  requireTransitionalCashOutScope,
+} from './cash-out-institution.resolver';
 import { requireCashOutAgentSession } from './cash-out-intent';
 import { cashOutOtpVerificationBudget, recordCashOutOtpFailure } from './cash-out-otp-budget';
 import { AgentTransactionAuthorizationService } from './agent-transaction-authorization.service';
@@ -49,6 +52,68 @@ export class AgentCashOutService {
     private readonly institutionResolver: CashOutInstitutionResolver,
   ) {}
 
+  /** Read-only confirmation of the durable supersession audit link. Absence is ambiguous. */
+  async replacementStatus(
+    principal: AuthorizationPrincipal,
+    rawOld: string,
+    rawNew: string,
+  ): Promise<{
+    status: 'REPLACED';
+    replacementStatus: string;
+    customerId: string;
+    amountMinor: string;
+    currency: string;
+  }> {
+    const agentId = principal.agentId;
+    const oldKey = rawOld?.trim();
+    const newKey = rawNew?.trim();
+    if (
+      principal.type !== 'AGENT' ||
+      !agentId ||
+      principal.principalId !== agentId ||
+      !oldKey ||
+      !newKey ||
+      oldKey === newKey ||
+      oldKey.length > 255 ||
+      newKey.length > 255
+    )
+      throw new UnauthorizedException('Agent authentication required');
+    return this.dataSource.transaction(async (manager) => {
+      await requireCashOutAgentSession(manager, agentId, principal.sessionId);
+      const rows = await manager.query<
+        Array<{
+          customer_id: string;
+          institution_scope: string;
+          status: string;
+          amount_minor: string;
+          currency: string;
+        }>
+      >(
+        `SELECT n.customer_id,n.institution_scope,n.status,n.amount_minor::text,n.currency FROM cash_out_intents old JOIN audit_events a ON a.entity_id=old.id AND a.entity_type='CASH_OUT_INTENT' AND a.action='SUPERSEDED' JOIN cash_out_intents n ON n.id::text=a.new_values->>'replacementIntentId' AND n.agent_id=old.agent_id AND n.customer_id=old.customer_id AND n.institution_scope=old.institution_scope WHERE old.agent_id=$1 AND old.operation_key=$2 AND n.operation_key=$3 AND old.status='CANCELLED'`,
+        [agentId, oldKey, newKey],
+      );
+      const row = rows[0];
+      if (!row)
+        throw new NotFoundException(
+          'Replacement outcome unavailable; reconciliation may be required',
+        );
+      const scope = await requireTransitionalCashOutScope(
+        this.institutionResolver,
+        manager,
+        agentId,
+      );
+      if (scope !== 'MONIENAIJA' || scope !== row.institution_scope)
+        throw new ConflictException('Institution authorization unavailable');
+      return {
+        status: 'REPLACED' as const,
+        replacementStatus: row.status,
+        customerId: row.customer_id,
+        amountMinor: row.amount_minor,
+        currency: row.currency,
+      };
+    });
+  }
+
   /** Resolve an uncompleted operation without making a financial posting. */
   async cancelPending(
     principal: AuthorizationPrincipal,
@@ -74,7 +139,11 @@ export class AgentCashOutService {
       );
       const intent = rows[0];
       if (!intent) throw new NotFoundException('Cash-out unavailable; reconciliation required');
-      const scope = await this.institutionResolver.resolve(manager, agentId, intent.customer_id);
+      const scope = await requireTransitionalCashOutScope(
+        this.institutionResolver,
+        manager,
+        agentId,
+      );
       if (scope !== 'MONIENAIJA' || intent.institution_scope !== scope)
         throw new ConflictException('Institution authorization unavailable');
       const records = await manager.query<Array<{ agent_id: string }>>(
@@ -152,7 +221,11 @@ export class AgentCashOutService {
       const row = rows[0];
       if (!row)
         throw new NotFoundException('Cash-out receipt unavailable; reconciliation may be required');
-      const institution = await this.institutionResolver.resolve(manager, agentId, row.customer_id);
+      const institution = await requireTransitionalCashOutScope(
+        this.institutionResolver,
+        manager,
+        agentId,
+      );
       if (institution !== 'MONIENAIJA')
         throw new ConflictException('Institution integration not supported by current schema');
       return {
@@ -396,10 +469,10 @@ export class AgentCashOutService {
       },
       async (manager, replay, requestHash) => {
         await requireCashOutAgentSession(manager, agentId, agentPrincipal.sessionId);
-        const institutionScope = await this.institutionResolver.resolve(
+        const institutionScope = await requireTransitionalCashOutScope(
+          this.institutionResolver,
           manager,
           agentId,
-          customerId,
         );
         if (institutionScope !== 'MONIENAIJA')
           throw new ConflictException('Institution integration not supported by current schema');

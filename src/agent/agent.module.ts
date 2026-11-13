@@ -49,6 +49,8 @@ import { AgentTransactionHistoryService } from './agent-transaction-history.serv
 import { AgentDeskOtpController } from './agent-desk-otp.controller';
 import { AgentDeskOtpService } from './agent-desk-otp.service';
 import { CashOutInstitutionResolver } from './cash-out-institution.resolver';
+import { CashOutReconciliationService } from './cash-out-reconciliation.service';
+import { CashOutReconciliationController } from './cash-out-reconciliation.controller';
 import { NotificationModule } from '../notification/notification.module';
 import { OutletModule } from '../outlet/outlet.module';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
@@ -99,6 +101,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     RecipientResolutionController,
     AgentCashInController,
     AgentCashOutController,
+    CashOutReconciliationController,
     AgentCashToCashController,
     AgentCashToCashClaimController,
     AgentCashToCashOperationsController,
@@ -108,6 +111,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
   ],
   providers: [
     CashOutInstitutionResolver,
+    CashOutReconciliationService,
     AgentClassService,
     AgentApplicationService,
     AgentReceivingNumberService,

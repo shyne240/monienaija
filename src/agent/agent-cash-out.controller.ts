@@ -2,6 +2,7 @@ import { Body, Controller, HttpCode, Post, Req, UnauthorizedException } from '@n
 
 import { AgentCashOutService } from './agent-cash-out.service';
 import { RecoverCashOutDto } from './dto/recover-cash-out.dto';
+import { CashOutReplacementStatusDto } from './dto/cash-out-replacement-status.dto';
 import { CashOutDto } from './dto/cash-out.dto';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
@@ -13,6 +14,22 @@ interface AuthenticatedRequest {
 @Controller('agents')
 export class AgentCashOutController {
   constructor(private readonly cashOutService: AgentCashOutService) {}
+
+  @Post('cash-out/replacement-status')
+  @HttpCode(200)
+  async replacementStatus(
+    @Body() dto: CashOutReplacementStatusDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const principal = req.authorizationPrincipal;
+    if (!principal || principal.type !== 'AGENT' || !principal.agentId)
+      throw new UnauthorizedException('Agent authentication required');
+    return this.cashOutService.replacementStatus(
+      principal,
+      dto.idempotencyKey,
+      dto.replacementOperationKey,
+    );
+  }
 
   @Post('cash-out/cancel-pending')
   @HttpCode(200)
