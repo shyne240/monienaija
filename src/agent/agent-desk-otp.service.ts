@@ -15,6 +15,12 @@ import {
   requireTransitionalCashOutScope,
 } from './cash-out-institution.resolver';
 import { establishCashOutIntent } from './cash-out-intent';
+import {
+  bindClaimChallenge,
+  preflightClaimContext,
+  CashToCashClaimFinancialContext,
+} from './cash-to-cash-claim-authorization';
+import type { AgentCashToCashRedemptionMethod } from './agent-cash-to-cash-claim.types';
 import { AgentServiceCapabilityService } from './agent-service-capability.service';
 import { AgentService } from './agent-service.enum';
 import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
@@ -39,6 +45,8 @@ export interface IssueDeskOtpChallengeCommand {
   customerId: string;
   purpose: AgentDeskOtpPurpose;
   agentSessionId?: string;
+  transferId?: string;
+  redemptionMethod?: AgentCashToCashRedemptionMethod;
   amountMinor?: string | number;
   currency?: string;
   operationKey?: string;
@@ -100,6 +108,7 @@ export class AgentDeskOtpService {
     private readonly injectedProvider: NotificationProvider | null,
     @Optional() private readonly agentCapabilities?: AgentServiceCapabilityService,
     @Optional() private readonly institutionResolver?: CashOutInstitutionResolver,
+    @Optional() private readonly claimFinancialContext?: CashToCashClaimFinancialContext,
   ) {}
 
   private get provider(): NotificationProvider {
@@ -109,6 +118,14 @@ export class AgentDeskOtpService {
   async issue(command: IssueDeskOtpChallengeCommand): Promise<IssueDeskOtpChallengeView> {
     const customerId = command.customerId.trim().toLowerCase();
     const now = new Date();
+    if (
+      command.purpose === 'CASH_TO_CASH_CLAIM' &&
+      (!command.transferId ||
+        !command.redemptionMethod ||
+        !command.agentSessionId ||
+        !this.claimFinancialContext)
+    )
+      throw new BadRequestException('Cash-to-cash claim context required');
 
     // 1. Customer must exist and not be deleted (money flows re-check status/lifecycle).
     const customers = await this.dataSource.query<Array<{ id: string; status: string }>>(
@@ -164,6 +181,26 @@ export class AgentDeskOtpService {
         AgentService.CASH_OUT,
       );
       if (!capability?.allowed) throw new BadRequestException('Cash-out agent unavailable');
+    }
+
+    if (command.purpose === 'CASH_TO_CASH_CLAIM') {
+      const capability = await this.agentCapabilities?.evaluate(
+        command.agentId,
+        AgentService.CASH_TO_CASH,
+      );
+      if (!capability?.allowed) throw new BadRequestException('Claim agent unavailable');
+      await this.dataSource.transaction(async (manager) => {
+        await this.financialEligibility.require(manager, customerId, { lockMode: 'SHARE' });
+        await preflightClaimContext(manager, this.claimFinancialContext!, {
+          challengeId: randomUUID(),
+          transferId: command.transferId!,
+          customerId,
+          agentId: command.agentId,
+          agentSessionId: command.agentSessionId!,
+          redemptionMethod: command.redemptionMethod!,
+          destinationHash,
+        });
+      });
     }
 
     const intentId =
@@ -272,6 +309,21 @@ export class AgentDeskOtpService {
         `INSERT INTO cash_out_otp_challenge_security(challenge_id,customer_id,destination_hash,intent_id) VALUES($1,$2,$3,$4)`,
         [challenge.id, customerId, destinationHash, intentId],
       );
+    }
+
+    if (command.purpose === 'CASH_TO_CASH_CLAIM') {
+      await this.dataSource.transaction(async (manager) => {
+        await this.financialEligibility.require(manager, customerId, { lockMode: 'SHARE' });
+        await bindClaimChallenge(manager, this.claimFinancialContext!, {
+          challengeId: challenge.id,
+          transferId: command.transferId!,
+          customerId,
+          agentId: command.agentId,
+          agentSessionId: command.agentSessionId!,
+          redemptionMethod: command.redemptionMethod!,
+          destinationHash,
+        });
+      });
     }
 
     // 8. Delivery — DIRECT provider-neutral SMS (never dispatcher/outbox; failure is

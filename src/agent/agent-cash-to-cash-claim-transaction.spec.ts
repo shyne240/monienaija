@@ -1,3 +1,10 @@
+import type * as ClaimAuthorization from './cash-to-cash-claim-authorization';
+
+jest.mock('./cash-to-cash-claim-authorization', () => ({
+  ...jest.requireActual<typeof ClaimAuthorization>('./cash-to-cash-claim-authorization'),
+  requireClaimChallenge: jest.fn().mockResolvedValue(['fixture']),
+  recordCashOutOtpFailure: jest.fn().mockResolvedValue(undefined),
+}));
 import { AgentCashToCashClaimService } from './agent-cash-to-cash-claim.service';
 
 const transferId = '11111111-1111-4111-8111-111111111111';
@@ -22,6 +29,8 @@ function harness(verified: boolean) {
       if (sql.includes('FOR UPDATE')) return Promise.resolve([transfer]);
       if (sql.includes('AS is_expired')) return Promise.resolve([{ is_expired: false }]);
       if (sql.includes('FROM customers')) return Promise.resolve([customer]);
+      if (sql.includes('cash_to_cash_claim_challenge_bindings'))
+        return Promise.resolve([{ destination_hash: 'a'.repeat(64) }]);
       return Promise.resolve([]);
     }),
   };
@@ -35,8 +44,11 @@ function harness(verified: boolean) {
         return Promise.resolve([{ credential_id: credentialId }]);
       return Promise.resolve([]);
     }),
-    transaction: jest.fn(async (_isolation: string, callback: (m: unknown) => Promise<unknown>) =>
-      callback(manager),
+    transaction: jest.fn(
+      (
+        isolation: string | ((m: unknown) => Promise<unknown>),
+        callback?: (m: unknown) => Promise<unknown>,
+      ) => (typeof isolation === 'function' ? isolation(manager) : callback!(manager)),
     ),
   };
   const ledger = {
@@ -63,7 +75,8 @@ function harness(verified: boolean) {
     { require: jest.fn().mockResolvedValue(undefined) } as never,
   );
   const internal = service as unknown as Record<string, jest.Mock>;
-  internal.requireSafeClaimExecution = jest.fn(); // controlled test only; production remains contained
+  internal.claimFinancialContext = {} as jest.Mock;
+  internal.assertAgentSessionWithManager = jest.fn().mockResolvedValue(undefined);
   internal.getUnclaimedAccount = jest.fn().mockResolvedValue({ id: 'unclaimed' });
   internal.assertClaimantOwnsBeneficiaryPhone = jest.fn().mockResolvedValue(undefined);
   internal.assertWalletAssessmentUnexpired = jest.fn().mockResolvedValue(undefined);
@@ -79,6 +92,16 @@ function harness(verified: boolean) {
     otp: '123456',
     idempotencyKey: 'operation',
     redemptionMethod: 'CUSTOMER_WALLET' as const,
+    claimantPrincipal: {
+      type: 'AGENT' as const,
+      agentId: credentialId,
+      principalId: credentialId,
+      sessionId,
+      roles: [],
+      scopes: [],
+      customerAccess: 'NONE' as const,
+      agentAccess: 'SELF' as const,
+    },
   };
   return { service, input, manager, mfa, idem, ledger };
 }

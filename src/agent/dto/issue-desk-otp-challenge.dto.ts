@@ -46,6 +46,14 @@ export class IssueDeskOtpChallengeDto {
   supersedesOperationKey?: string;
 
   @IsOptional()
+  @IsUUID()
+  transferId?: string;
+
+  @IsOptional()
+  @IsIn(['AGENT_CASH', 'CUSTOMER_WALLET'])
+  redemptionMethod?: 'AGENT_CASH' | 'CUSTOMER_WALLET';
+
+  @IsOptional()
   @IsInt()
   @Min(30)
   @Max(900)
