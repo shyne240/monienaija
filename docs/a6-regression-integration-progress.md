@@ -1,3 +1,8 @@
+> Update: the Stage 1 checkpoint has now migrated the A6 unit doubles and wired the
+> dedicated fail-closed customer initiation route. See the Stage 1 section in
+> `financial-commitment-integration-map.md` for current results. The details below
+> preserve the earlier failure investigation.
+
 # A6 integration regression progress — not an A6 completion checkpoint
 
 The A6 PostgreSQL suite now exercises new withdrawals through the actual customer

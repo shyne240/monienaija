@@ -1,12 +1,13 @@
 import { createHash, pbkdf2Sync, randomBytes, randomUUID } from 'node:crypto';
 import { Test } from '@nestjs/testing';
+import { ValidationPipe } from '@nestjs/common';
+import { WITHDRAWAL_EXECUTION_AUTHORITY } from '../src/financial-commitment/withdrawal-execution-authority';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 
 import { AuthenticationExecutionService } from '../src/customer-authentication/authentication-execution.service';
 import { AuthenticationSessionService } from '../src/customer-authentication/authentication-session.service';
-import { PasswordHashVerificationService } from '../src/customer-authentication/password-hash-verification.service';
 import { CustomerTransactionPinService } from '../src/customer/customer-transaction-pin.service';
 import { FinancialCommitmentRepository } from '../src/financial-commitment/financial-commitment.repository';
 import { FinancialCommitmentService } from '../src/financial-commitment/financial-commitment.service';
@@ -20,7 +21,6 @@ import {
   LedgerNormalBalance,
 } from '../src/ledger/ledger.enums';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { LimitEnforcementService } from '../src/limit-catalog/limit-enforcement.service';
 import { LimitReservationRecoveryService } from '../src/limit-catalog/limit-reservation-recovery.service';
 import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
@@ -71,6 +71,7 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
   let ledger: LedgerService;
   let settlement: ExternalSettlementService;
   let inbound: InboundFundingService;
+  let withdrawalAuthority: 'AUTHORIZED' | 'DENIED' | 'UNAVAILABLE' = 'AUTHORIZED';
   const inboundEvidence = new Map<string, InboundVerification>();
   let verificationState:
     | 'VERIFIED_SETTLED'
@@ -100,13 +101,20 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
       .useValue({
         read: (_manager: unknown, id: string) => Promise.resolve(snapshots.get(id) ?? null),
       })
+      .overrideProvider(WITHDRAWAL_EXECUTION_AUTHORITY)
+      .useValue({ authorize: () => Promise.resolve(withdrawalAuthority) })
       .overrideProvider(NOTIFICATION_PROVIDER_TOKEN)
       .useValue(new TestNotificationProvider())
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }),
+    );
     await app.init();
+    await app.getHttpAdapter().getInstance().ready();
     ledger = app.get(LedgerService);
-    repository = new FinancialCommitmentRepository();
+    repository = app.get(FinancialCommitmentRepository);
     const verifier: ExternalOperationStatusVerifier = {
       verify: ({ operation, correlationId }) =>
         Promise.resolve({
@@ -158,18 +166,7 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
       { authorize: () => Promise.resolve('AUTHORIZED') },
       { authorize: () => Promise.resolve('AUTHORIZED') },
     );
-    service = new FinancialCommitmentService(
-      db,
-      app.get(AuthenticationSessionService),
-      app.get(CustomerTransactionPinService),
-      app.get(PasswordHashVerificationService),
-      app.get(WalletFinancialBoundaryService),
-      app.get(LimitEnforcementService),
-      app.get(WithdrawalService),
-      app.get(ExternalOperationService),
-      ledger,
-      repository,
-    );
+    service = app.get(FinancialCommitmentService);
     const proposal = randomUUID();
     const requirements = { all: [], any: [] };
     const definition = {
@@ -205,6 +202,7 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
   beforeEach(() => {
     verificationState = 'VERIFIED_SETTLED';
     verificationHashOverride = null;
+    withdrawalAuthority = 'AUTHORIZED';
   });
   afterAll(async () => {
     if (app) await app.close();
@@ -673,6 +671,112 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
       replayed: false,
     });
     expect(await balance(s.sourceId)).toBe('1700');
+  });
+
+  it('wires customer-self initiation through real authorization and reservation, with unavailable authority fail closed', async () => {
+    const s = await subject();
+    const payload = {
+      walletAccountId: s.walletAccountId,
+      beneficiaryId: s.beneficiaryId,
+      amountMinor: '700',
+      currency: 'NGN',
+      pin: '1234',
+    };
+    const headers = { authorization: `Bearer ${s.token}`, 'idempotency-key': randomUUID() };
+    const url = '/api/v1/customers/me/withdrawal-commitments';
+    const unauthenticated = await app.inject({
+      method: 'POST',
+      url,
+      payload,
+      headers: { 'idempotency-key': randomUUID() },
+    });
+    expect(unauthenticated.statusCode).toBe(401);
+    withdrawalAuthority = 'UNAVAILABLE';
+    const unavailable = await app.inject({ method: 'POST', url, payload, headers });
+    expect(unavailable.statusCode).toBe(503);
+    expect(await balance(s.sourceId)).toBe('1000');
+    expect(
+      await db.query('SELECT id FROM financial_authorizations WHERE customer_id=$1', [
+        s.customerId,
+      ]),
+    ).toHaveLength(0);
+    withdrawalAuthority = 'AUTHORIZED';
+    const first = await app.inject({ method: 'POST', url, payload, headers });
+    expect(first.statusCode).toBe(201);
+    const body = first.json<{
+      commitmentId: string;
+      withdrawalId: string;
+      externalOperationId: string;
+      state: string;
+      replayed: boolean;
+    }>();
+    expect(body).toMatchObject({ state: 'RESERVED', replayed: false });
+    expect(await balance(s.sourceId)).toBe('300');
+    const replay = await app.inject({ method: 'POST', url, payload, headers });
+    expect(replay.statusCode).toBe(201);
+    expect(replay.json()).toMatchObject({ commitmentId: body.commitmentId, replayed: true });
+    expect(await balance(s.sourceId)).toBe('300');
+    const other = await subject();
+    const substituted = await app.inject({
+      method: 'POST',
+      url,
+      payload: { ...payload, walletAccountId: other.walletAccountId },
+      headers: { ...headers, 'idempotency-key': randomUUID() },
+    });
+    expect(substituted.statusCode).toBeGreaterThanOrEqual(400);
+    expect(await balance(other.sourceId)).toBe('1000');
+  });
+
+  it('registers the product route with the real default unavailable withdrawal authority', async () => {
+    const s = await subject();
+    const { AppModule } = await import('../src/app.module');
+    const isolatedConnection = new DataSource({ ...db.options, migrationsRun: false });
+    await isolatedConnection.initialize();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(DataSource)
+      .useValue(isolatedConnection)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue({
+        read: (_manager: unknown, id: string) => Promise.resolve(snapshots.get(id) ?? null),
+      })
+      .overrideProvider(NOTIFICATION_PROVIDER_TOKEN)
+      .useValue(new TestNotificationProvider())
+      .compile();
+    const defaultApp = moduleRef.createNestApplication<NestFastifyApplication>(
+      new FastifyAdapter(),
+    );
+    defaultApp.setGlobalPrefix('api/v1');
+    defaultApp.useGlobalPipes(
+      new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }),
+    );
+    await defaultApp.init();
+    await defaultApp.getHttpAdapter().getInstance().ready();
+    try {
+      const result = await defaultApp.inject({
+        method: 'POST',
+        url: '/api/v1/customers/me/withdrawal-commitments',
+        headers: { authorization: `Bearer ${s.token}`, 'idempotency-key': randomUUID() },
+        payload: {
+          walletAccountId: s.walletAccountId,
+          beneficiaryId: s.beneficiaryId,
+          amountMinor: '700',
+          currency: 'NGN',
+          pin: '1234',
+        },
+      });
+      expect(result.statusCode).toBe(503);
+      expect(await balance(s.sourceId)).toBe('1000');
+      expect(
+        await db.query('SELECT id FROM financial_authorizations WHERE customer_id=$1', [
+          s.customerId,
+        ]),
+      ).toHaveLength(0);
+      expect(
+        await db.query('SELECT id FROM external_operations WHERE customer_id=$1', [s.customerId]),
+      ).toHaveLength(0);
+    } finally {
+      await defaultApp.close();
+    }
   });
 
   it('binds real PIN and session authorization to an atomic ledger reservation, preventing re-spending', async () => {

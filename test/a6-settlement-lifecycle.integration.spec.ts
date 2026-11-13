@@ -156,6 +156,7 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
       operations,
       ledger,
       new FinancialCommitmentRepository(),
+      { authorize: () => Promise.resolve('AUTHORIZED') },
     );
     const connection = new PartnerConnectionService(
       configService,

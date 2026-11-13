@@ -4,6 +4,8 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Inject,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
@@ -21,6 +23,10 @@ import { ExternalOperationResourceType } from '../partner/external-operation.enu
 import { ExternalOperationService } from '../partner/external-operation.service';
 import { WithdrawalService } from '../withdrawal/withdrawal.service';
 import { WalletFinancialBoundaryService } from '../wallet/wallet-financial-boundary.service';
+import {
+  WITHDRAWAL_EXECUTION_AUTHORITY,
+  type WithdrawalExecutionAuthority,
+} from './withdrawal-execution-authority';
 import {
   FinancialCommitmentRepository,
   type FinancialCommitmentRecord,
@@ -53,6 +59,8 @@ export class FinancialCommitmentService {
     private readonly operations: ExternalOperationService,
     private readonly ledger: LedgerService,
     private readonly commitments: FinancialCommitmentRepository,
+    @Inject(WITHDRAWAL_EXECUTION_AUTHORITY)
+    private readonly authority: WithdrawalExecutionAuthority,
   ) {}
 
   async initiate(
@@ -135,6 +143,34 @@ export class FinancialCommitmentService {
       requestHash: string;
     },
   ): Promise<{ commitment: FinancialCommitmentRecord; replayed: boolean }> {
+    const destination = await this.resolveDestination(
+      manager,
+      input.customerId,
+      input.beneficiaryId,
+    );
+    if (destination.targetReference !== input.target)
+      throw new ConflictException('Beneficiary changed after customer authorization');
+    let authorized;
+    try {
+      authorized = await this.authority.authorize(manager, {
+        customerId: input.customerId,
+        walletAccountId: input.walletId,
+        beneficiaryId: input.beneficiaryId,
+        beneficiaryVersion: destination.version,
+        bankId: destination.bankId,
+        bankCode: destination.bankCode,
+        accountNumber: destination.accountNumber,
+        targetReference: input.target,
+        amountMinor: input.amountMinor,
+        currency: input.currency,
+      });
+    } catch {
+      throw new ServiceUnavailableException('Withdrawal execution authority is unavailable');
+    }
+    if (authorized === 'UNAVAILABLE')
+      throw new ServiceUnavailableException('Withdrawal execution authority is unavailable');
+    if (authorized !== 'AUTHORIZED')
+      throw new ConflictException('Withdrawal execution is not authorized');
     await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [input.scopedKey]);
     const existing = await manager.query<FinancialCommitmentRecord[]>(
       'SELECT * FROM financial_commitments WHERE idempotency_key=$1 FOR UPDATE',
@@ -145,13 +181,6 @@ export class FinancialCommitmentService {
         throw new ConflictException('Idempotency key was already used');
       return { commitment: existing[0], replayed: true };
     }
-    const destination = await this.resolveDestination(
-      manager,
-      input.customerId,
-      input.beneficiaryId,
-    );
-    if (destination.targetReference !== input.target)
-      throw new ConflictException('Beneficiary changed after customer authorization');
     const sessions = await manager.query<Array<{ id: string }>>(
       `SELECT id FROM authentication_sessions WHERE id=$1 AND customer_id=$2 AND status='ACTIVE'
        AND audience='customer-api' AND expires_at>clock_timestamp() FOR SHARE`,
@@ -323,6 +352,7 @@ export class FinancialCommitmentService {
     version: number;
     bankId: string;
     bankCode: string;
+    accountNumber: string;
     targetReference: string;
   }> {
     const rows = await manager.query<
@@ -349,7 +379,13 @@ export class FinancialCommitmentService {
     if (rows.length !== 1 || !row)
       throw new ConflictException('Customer bank beneficiary is not available');
     const targetReference = `a6-target:${this.hash(`v1|${row.id}|${row.customer_id}|${row.version}|${row.bank_code}|${row.destination_identifier}`)}`;
-    return { version: row.version, bankId: row.bank_id, bankCode: row.bank_code, targetReference };
+    return {
+      version: row.version,
+      bankId: row.bank_id,
+      bankCode: row.bank_code,
+      accountNumber: row.destination_identifier,
+      targetReference,
+    };
   }
 
   private hash(value: string): string {
