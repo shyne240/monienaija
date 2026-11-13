@@ -2,6 +2,12 @@
 jest.mock('react-native', () => ({ Platform: { OS: 'test' } }), { virtual: true });
 jest.mock('expo-secure-store', () => ({}), { virtual: true });
 import { CashOutInstitutionResolver } from '../src/agent/cash-out-institution.resolver';
+import {
+  CashToCashFundingAuthority,
+  type CashToCashFundingAuthorizationRequest,
+} from '../src/agent/agent-cash-to-cash.service';
+import { ServiceUnavailableException } from '@nestjs/common';
+import type { EntityManager } from 'typeorm';
 import { CashToCashClaimFinancialContext } from '../src/agent/cash-to-cash-claim-authorization';
 import { CustomerFinancialEligibilityService } from '../src/kyc-verification/customer-financial-eligibility.service';
 import type { TierEvidenceSnapshot } from '../src/kyc-verification/kyc-tier-evidence.reader';
@@ -40,6 +46,9 @@ let app: NestFastifyApplication;
 const sms = new TestNotificationProvider();
 // This adapter is strictly local to this test module; no real provider is called.
 const snapshots = new Map<string, TierEvidenceSnapshot>();
+// Only explicitly provisioned synthetic subjects are authorized. Client inputs are lookup
+// values; these server-side fixtures represent independently verified policy and identity.
+const fundingSubjects = new Map<string, { senderPhone: string; recipient: string }>();
 
 beforeAll(async () => {
   await admin.initialize();
@@ -84,6 +93,32 @@ beforeAll(async () => {
           resolvedAt: new Date().toISOString(),
           evidenceFingerprint: 'fixture',
         }),
+    })
+    .overrideProvider(CashToCashFundingAuthority)
+    .useValue({
+      require: async (manager: EntityManager, request: CashToCashFundingAuthorizationRequest) => {
+        const subject = fundingSubjects.get(request.agentId);
+        if (
+          !subject ||
+          request.senderPhone !== subject.senderPhone ||
+          request.beneficiaryPhone !== subject.recipient ||
+          request.purpose !== 'fixture-purpose'
+        )
+          throw new ServiceUnavailableException('fixture funding evidence unavailable');
+        const wallets: Array<{ id: string }> = await manager.query(
+          `SELECT id FROM wallet_accounts WHERE id=$1 AND customer_id=$2 AND owner_class='AGENT' AND status='ACTIVE' AND ledger_account_id=$3 FOR SHARE`,
+          [request.fundingWalletId, request.agentId, request.fundingLedgerAccountId],
+        );
+        if (wallets.length !== 1)
+          throw new ServiceUnavailableException('fixture wallet unavailable');
+        return {
+          institutionId: '11111111-1111-4111-8111-111111111111',
+          senderIdentityFingerprint: 'a'.repeat(64),
+          senderPolicyFingerprint: 'b'.repeat(64),
+          fundingAuthorizationFingerprint: 'c'.repeat(64),
+          institutionEvidenceFingerprint: 'd'.repeat(64),
+        };
+      },
     })
     .overrideProvider(CashToCashClaimFinancialContext)
     .useValue({
@@ -1011,18 +1046,16 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
   expect((await ledger.getAccountBalance(customerWallet.ledgerAccountId)).balanceMinor).toBe('0');
   expect((await ledger.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe('1000');
   await expect(
-    app
-      .get(AgentDeskOtpService)
-      .issue({
-        agentId: agent.id,
-        agentSessionId: deskSession,
-        customerId,
-        purpose: 'WALLET_TO_CASH',
-        amountMinor: '2000',
-        currency: 'NGN',
-        operationKey: randomUUID(),
-        supersedesOperationKey: operationKey,
-      }),
+    app.get(AgentDeskOtpService).issue({
+      agentId: agent.id,
+      agentSessionId: deskSession,
+      customerId,
+      purpose: 'WALLET_TO_CASH',
+      amountMinor: '2000',
+      currency: 'NGN',
+      operationKey: randomUUID(),
+      supersedesOperationKey: operationKey,
+    }),
   ).rejects.toThrow('Superseded cash-out unavailable');
   expect(await db.query(`SELECT status FROM cash_out_intents WHERE id=$1`, [intentId])).toEqual([
     { status: 'COMPLETED' },
@@ -2101,24 +2134,153 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     });
     unclaimed = [{ id: account.id }];
   }
-  const funding = await ledger.postJournal({
+  const agentWallet = await db.query<Array<{ id: string; ledger_account_id: string }>>(
+    `SELECT id,ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
+    [agentId],
+  );
+  await ledger.postJournal({
     idempotencyKey: randomUUID(),
     currency: 'NGN',
     lines: [
-      { accountId: source.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '100' },
-      { accountId: unclaimed[0]!.id, direction: LedgerEntryDirection.CREDIT, amountMinor: '100' },
+      { accountId: source.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '1000' },
+      {
+        accountId: agentWallet[0]!.ledger_account_id,
+        direction: LedgerEntryDirection.CREDIT,
+        amountMinor: '1000',
+      },
     ],
   });
-  const transferId = randomUUID();
-  const transferCode = '12345678';
+  const server = app.getHttpAdapter().getInstance();
+  fundingSubjects.set(agentId, { senderPhone: '8011111111', recipient: phone });
+  const fundingPayload = {
+    senderPhone: '8011111111',
+    beneficiaryPhone: phone,
+    amountMinor: '100',
+    currency: 'NGN',
+    idempotencyKey: randomUUID(),
+    agentPin: '1234',
+    purpose: 'fixture-purpose',
+  };
+  const unauthFunding = await server.inject({
+    method: 'POST',
+    url: '/api/v1/agents/cash-to-cash',
+    payload: fundingPayload,
+  });
+  expect(unauthFunding.statusCode).toBe(401);
+  const initiated = await server.inject({
+    method: 'POST',
+    url: '/api/v1/agents/cash-to-cash',
+    headers: { authorization: `Bearer ${token}` },
+    payload: fundingPayload,
+  });
+  expect({ status: initiated.statusCode, body: initiated.body }).toMatchObject({ status: 201 });
+  const funding = initiated.json<{ transferId: string; journalId: string; transferCode: string }>();
+  const transferId = funding.transferId;
+  const transferCode = funding.transferCode;
+  const duplicateFunding = await server.inject({
+    method: 'POST',
+    url: '/api/v1/agents/cash-to-cash',
+    headers: { authorization: `Bearer ${token}` },
+    payload: fundingPayload,
+  });
+  expect(duplicateFunding.statusCode).toBe(201);
+  expect(duplicateFunding.json()).toMatchObject({
+    status: 'REPLAYED',
+    transferId,
+    journalId: funding.journalId,
+  });
+  const conflictingFunding = await server.inject({
+    method: 'POST',
+    url: '/api/v1/agents/cash-to-cash',
+    headers: { authorization: `Bearer ${token}` },
+    payload: { ...fundingPayload, amountMinor: '101' },
+  });
+  expect(conflictingFunding.statusCode).toBe(409);
+  expect(
+    await db.query(
+      `SELECT funding_agent_id,funding_wallet_id,funding_journal_id FROM cash_to_cash_funding_evidence WHERE transfer_id=$1`,
+      [transferId],
+    ),
+  ).toEqual([
+    {
+      funding_agent_id: agentId,
+      funding_wallet_id: agentWallet[0]!.id,
+      funding_journal_id: funding.journalId,
+    },
+  ]);
+  expect(
+    await db.query(
+      `SELECT direction,amount_minor::text FROM ledger_lines WHERE journal_id=$1 AND ledger_account_id=$2`,
+      [funding.journalId, agentWallet[0]!.ledger_account_id],
+    ),
+  ).toEqual([{ direction: 'DEBIT', amount_minor: '100' }]);
+  const deniedSender = await server.inject({
+    method: 'POST',
+    url: '/api/v1/agents/cash-to-cash',
+    headers: { authorization: `Bearer ${token}` },
+    payload: { ...fundingPayload, idempotencyKey: randomUUID(), senderPhone: '8022222222' },
+  });
+  expect(deniedSender.statusCode).toBe(503);
+  const insufficientKey = randomUUID();
+  const insufficient = await server.inject({
+    method: 'POST',
+    url: '/api/v1/agents/cash-to-cash',
+    headers: { authorization: `Bearer ${token}` },
+    payload: { ...fundingPayload, idempotencyKey: insufficientKey, amountMinor: '901' },
+  });
+  expect(insufficient.statusCode).toBeGreaterThanOrEqual(400);
+  expect(
+    await db.query(
+      `SELECT count(*)::int AS n FROM cash_to_cash_transfers WHERE idempotency_key=$1`,
+      [insufficientKey],
+    ),
+  ).toEqual([{ n: 0 }]);
+  const concurrentKeys = [randomUUID(), randomUUID()];
+  const concurrent = await Promise.all(
+    concurrentKeys.map((idempotencyKey) =>
+      server.inject({
+        method: 'POST',
+        url: '/api/v1/agents/cash-to-cash',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { ...fundingPayload, idempotencyKey, amountMinor: '600' },
+      }),
+    ),
+  );
+  expect(concurrent.filter((r) => r.statusCode === 201)).toHaveLength(1);
+  expect(
+    await db.query(
+      `SELECT count(*)::int AS n FROM cash_to_cash_transfers WHERE idempotency_key=ANY($1::text[])`,
+      [concurrentKeys],
+    ),
+  ).toEqual([{ n: 1 }]);
+  const { AgentCashToCashService } = await import('../src/agent/agent-cash-to-cash.service');
+  const rollbackKey = randomUUID();
+  await expect(
+    app
+      .get(AgentCashToCashService)
+      .execute({
+        ...fundingPayload,
+        idempotencyKey: rollbackKey,
+        amountMinor: '50',
+        agentId,
+        agentPrincipal: principal,
+        _simulateFailureAfterJournal: true,
+      }),
+  ).rejects.toThrow('Simulated failure after journal');
+  expect(
+    await db.query(
+      `SELECT count(*)::int AS n FROM cash_to_cash_transfers WHERE idempotency_key=$1`,
+      [rollbackKey],
+    ),
+  ).toEqual([{ n: 0 }]);
+  expect(
+    await db.query(`SELECT count(*)::int AS n FROM ledger_journals WHERE idempotency_key=$1`, [
+      `agent:${agentId}:${rollbackKey}`,
+    ]),
+  ).toEqual([{ n: 0 }]);
   const salt = randomBytes(16);
   const codeHash = `PBKDF2$sha256$10000$${salt.toString('base64url')}$${pbkdf2Sync(transferCode, salt, 10000, 32, 'sha256').toString('base64url')}`;
-  await db.query(
-    `INSERT INTO cash_to_cash_transfers(id,agent_id,beneficiary_phone,principal_minor,total_minor,currency,status,transfer_code_hash,hash_algorithm,journal_id,idempotency_key,expires_at) VALUES($1,$2,$3,100,100,'NGN','UNCLAIMED',$4,'PBKDF2',$5,$6,clock_timestamp()+interval '1 hour')`,
-    [transferId, agentId, phone, codeHash, funding.id, randomUUID()],
-  );
   sms.clear();
-  const server = app.getHttpAdapter().getInstance();
   const issuePayload = {
     customerId,
     transferId,
@@ -2312,7 +2474,9 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
       ),
     );
     const successes = results.filter((r) => r.statusCode === 200);
-    expect(successes.filter((r) => r.json<{status:string}>().status === 'COMPLETED')).toHaveLength(1);
+    expect(
+      successes.filter((r) => r.json<{ status: string }>().status === 'COMPLETED'),
+    ).toHaveLength(1);
     expect(results.every((r) => r.statusCode === 200 || r.statusCode === 409)).toBe(true);
     const duplicate = await server.inject({
       method: 'POST',
@@ -2323,7 +2487,9 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     expect(duplicate.statusCode).toBe(200);
     expect(duplicate.json()).toMatchObject({
       status: 'REPLAYED',
-      journalId: successes.find((r) => r.json<{status:string}>().status === 'COMPLETED')!.json<{journalId:string}>().journalId,
+      journalId: successes
+        .find((r) => r.json<{ status: string }>().status === 'COMPLETED')!
+        .json<{ journalId: string }>().journalId,
     });
     const altered = await server.inject({
       method: 'POST',
@@ -2340,6 +2506,18 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
       [transferId],
     );
     expect(rows[0]?.status).toBe('CLAIMED');
+    expect(
+      await db.query(
+        `SELECT direction,amount_minor::text FROM ledger_lines WHERE journal_id=$1 AND ledger_account_id=$2`,
+        [rows[0]!.claim_journal_id, unclaimed[0]!.id],
+      ),
+    ).toEqual([{ direction: 'DEBIT', amount_minor: '100' }]);
+    expect(
+      await db.query(
+        `SELECT count(*)::int AS n FROM cash_to_cash_funding_evidence WHERE transfer_id=$1`,
+        [transferId],
+      ),
+    ).toEqual([{ n: 1 }]);
     const httpReceipt = await server.inject({
       method: 'GET',
       url: `/api/v1/agents/cash-to-cash/claims/${transferId}`,
