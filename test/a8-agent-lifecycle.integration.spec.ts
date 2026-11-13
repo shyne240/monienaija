@@ -605,6 +605,7 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
       '1785753600102',
       '1785753600103',
       '1785753600116',
+      '1785753600117',
       '1785753600118',
       '1785753600400',
       '1785753600401',
@@ -624,13 +625,14 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
       'AddNotificationCredentialBinding1785753600102',
       'ConfigureTransactionNotificationEvents1785753600103',
       'WalletOwnerClassification1785753600116',
-      'GovernedWalletOwnershipResolution1785753600118',
+      'CashOutInstitutionalScope1785753600503',
+      'CreateGovernedLedgerReversalExecutions1785753600117',
       'CreateInstitutionFoundation1785753600400',
       'CreateInstitutionalFinancialOwnership1785753600401',
+      'GovernedWalletOwnershipResolution1785753600118',
       'InstitutionGovernanceExecutionIntegrity1785753600500',
       'ProtectedAuthorityBoundary1785753600501',
       'ProtectedAuthorityInstitutionalOwnership1785753600502',
-      'CashOutInstitutionalScope1785753600503',
     ]).toContain(latest[0]!.name);
   });
 });

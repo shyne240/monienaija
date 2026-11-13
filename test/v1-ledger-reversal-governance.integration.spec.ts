@@ -291,12 +291,18 @@ describe('P0-B ledger journal reversal maker-checker governance — real Postgre
     expect(executed.status).toBe(201);
     expect(executed.body).toMatchObject({ reversalOfJournalId: journalId });
 
-    // Replay is rejected.
+    // Same-key replay returns the same committed journal. A different key is not a replay.
     const replay = await request(app.getHttpServer())
       .post(`${LEDGER_PATH}/journals/${journalId}/reversal`)
       .set(auth(controller.token))
+      .send({ reason, approvalId, idempotencyKey: `rev-${journalId}-checker` });
+    expect(replay.status).toBe(201);
+    expect(replay.body.id).toBe(executed.body.id);
+    const changedKey = await request(app.getHttpServer())
+      .post(`${LEDGER_PATH}/journals/${journalId}/reversal`)
+      .set(auth(controller.token))
       .send({ reason, approvalId, idempotencyKey: `rev-${journalId}-replay` });
-    expect(replay.status).toBe(409);
+    expect(changedKey.status).toBe(409);
 
     // The approval trail shows pending → approved → consumed.
     const stored = await dataSource.getRepository(PrivilegedActionApproval).findOne({
