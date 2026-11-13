@@ -187,6 +187,53 @@ export class LedgerService {
     return this.postWithinTransaction(manager, normalized);
   }
 
+  /** Reserve customer funds only for an authorization and operation created in this transaction.
+   * This is an internal domain boundary, not a general journal-posting capability. */
+  async postWithdrawalReservationInTransaction(
+    manager: EntityManager,
+    command: PostJournalCommand,
+    authorizationId: string,
+    operationId: string,
+  ): Promise<string> {
+    const normalized = this.normalizeJournal(command);
+    const bindings = await manager.query<
+      Array<{ source_id: string; reserve_id: string; amount_minor: string; currency: string }>
+    >(
+      `SELECT a.ledger_account_id::text AS source_id, r.id::text AS reserve_id,
+              a.amount_minor::text AS amount_minor, a.currency
+       FROM financial_authorizations a JOIN external_operations o ON o.id=$2
+       JOIN ledger_accounts r ON r.code='PAYMENT-WITHDRAWAL_RESERVE-NGN' AND r.is_active=true
+       WHERE a.id=$1 AND o.customer_id=a.customer_id AND o.wallet_account_id=a.wallet_account_id
+         AND o.ledger_account_id=a.ledger_account_id AND o.amount_minor=a.amount_minor AND o.currency=a.currency
+         AND a.xmin::text::bigint=(txid_current() % 4294967296)
+         AND o.xmin::text::bigint=(txid_current() % 4294967296)`,
+      [authorizationId, operationId],
+    );
+    const binding = bindings[0];
+    if (
+      !binding ||
+      normalized.currency !== binding.currency ||
+      normalized.accountingUnit !== 'CUSTOMER_FUNDS' ||
+      normalized.reversalOfJournalId ||
+      normalized.lines.length !== 2 ||
+      !normalized.lines.some(
+        (line) =>
+          line.accountId === binding.source_id &&
+          line.direction === LedgerEntryDirection.DEBIT &&
+          line.amountMinor.toString() === binding.amount_minor,
+      ) ||
+      !normalized.lines.some(
+        (line) =>
+          line.accountId === binding.reserve_id &&
+          line.direction === LedgerEntryDirection.CREDIT &&
+          line.amountMinor.toString() === binding.amount_minor,
+      )
+    ) {
+      throw new ConflictException('Withdrawal reservation is not bound to its authorization');
+    }
+    return this.postWithinTransaction(manager, normalized, false, false, true);
+  }
+
   /** For an already-authorized settlement compensation, in its owning transaction.
    * Callers must enforce their own approval and settlement controls; exact inversion is
    * independently verified against the immutable original journal below. */
@@ -399,6 +446,7 @@ export class LedgerService {
     command: NormalizedJournal,
     recoveryAuthority = false,
     governedReversal = false,
+    withdrawalReserveAuthority = false,
   ): Promise<string> {
     const journalRepository = manager.getRepository(LedgerJournal);
     const existing = await journalRepository.findOne({
@@ -414,6 +462,13 @@ export class LedgerService {
 
     const accountIds = [...new Set(command.lines.map((line) => line.accountId))].sort();
     const accounts = await this.lockAccounts(manager, accountIds);
+    if (
+      accounts.some((account) => account.code === 'PAYMENT-WITHDRAWAL_RESERVE-NGN') &&
+      !withdrawalReserveAuthority
+    )
+      throw new ConflictException(
+        'Withdrawal reserve account is restricted to committed obligations',
+      );
     if (governedReversal || (recoveryAuthority && command.reversalOfJournalId))
       await this.requireGovernedReversalCompliance(manager, accountIds);
     // A reversal is exempt from current eligibility only after proving that every

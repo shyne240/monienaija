@@ -114,13 +114,26 @@ export class CustomerTransactionPinService {
 
   async verifyTransactionPin(
     customerId: string,
-    command: { pin: string; actor: string },
+    command: {
+      pin: string;
+      actor: string;
+      financialBinding?: { requestHash: string; sessionId: string };
+    },
     verificationService: {
       verify: (pin: string, alg: string, hash: string) => { verified: boolean };
     },
-  ): Promise<{ verified: boolean; locked?: boolean; failureReason?: string }> {
+  ): Promise<{ verified: boolean; locked?: boolean; failureReason?: string; auditId?: string }> {
     this.assertUuid(customerId, 'customerId');
     const actor = this.normalizeActor(command.actor);
+    const binding = command.financialBinding;
+    if (
+      binding &&
+      (!/^[a-f0-9]{64}$/.test(binding.requestHash) ||
+        !UUID_PATTERN.test(binding.sessionId) ||
+        actor !== customerId)
+    ) {
+      throw new BadRequestException('Financial PIN binding is invalid');
+    }
     const pin = command.pin;
     if (typeof pin !== 'string' || pin.length === 0 || pin.length > 1024) {
       return { verified: false, failureReason: 'INVALID_PIN' };
@@ -145,16 +158,23 @@ export class CustomerTransactionPinService {
           stored.failedCount = 0;
           await pinRepo.save(stored);
         }
-        await this.audit(
+        const auditId = await this.audit(
           manager,
           'CUSTOMER_TRANSACTION_PIN',
           stored.id,
           'PIN_VERIFIED',
           actor,
           undefined,
-          { customerId, pinVersion: stored.pinVersion, outcome: 'VERIFIED' },
+          {
+            customerId,
+            pinVersion: stored.pinVersion,
+            outcome: 'VERIFIED',
+            ...(binding
+              ? { financialRequestHash: binding.requestHash, sessionId: binding.sessionId }
+              : {}),
+          },
         );
-        return { verified: true };
+        return binding ? { verified: true, auditId } : { verified: true };
       }
       const previous = this.pinValues(stored);
       stored.failedCount += 1;
@@ -206,8 +226,8 @@ export class CustomerTransactionPinService {
     actor: string,
     previousValues?: Record<string, unknown>,
     newValues?: Record<string, unknown>,
-  ): Promise<void> {
-    await this.auditService.record(manager, {
+  ): Promise<string> {
+    const event = await this.auditService.record(manager, {
       entityType,
       entityId,
       action,
@@ -215,6 +235,7 @@ export class CustomerTransactionPinService {
       previousValues: previousValues ? redactRecord(previousValues) : undefined,
       newValues: newValues ? redactRecord(newValues) : undefined,
     });
+    return event?.id ?? '';
   }
 
   private assertUuid(value: string, field: string): void {

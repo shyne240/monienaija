@@ -110,6 +110,14 @@ export class ExternalOperationService {
     );
   }
 
+  /** Compose operation identity with a domain-owned SERIALIZABLE transaction. */
+  async createInTransaction(
+    manager: EntityManager,
+    command: CreateExternalOperationCommand,
+  ): Promise<ExternalOperationView> {
+    return this.createWithinTransaction(manager, this.normalizeCreate(command));
+  }
+
   async get(externalOperationId: string): Promise<ExternalOperationView> {
     const normalizedId = this.normalizeUuid(externalOperationId, 'externalOperationId');
     const operation = await this.operationRepository.findOne({ where: { id: normalizedId } });

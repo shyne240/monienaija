@@ -87,6 +87,14 @@ export class WithdrawalService {
     return this.getWithdrawal(withdrawalId);
   }
 
+  /** Compose creation with a domain-owned SERIALIZABLE transaction. Not an authorization gate. */
+  async createWithdrawalInTransaction(
+    manager: EntityManager,
+    command: CreateWithdrawalCommand,
+  ): Promise<string> {
+    return this.createWithinTransaction(manager, this.normalizeCreate(command));
+  }
+
   async getWithdrawal(withdrawalId: string): Promise<WithdrawalView> {
     assertPaymentUuid(withdrawalId, 'withdrawalId');
     const withdrawal = await this.withdrawalRepository.findOne({ where: { id: withdrawalId } });
