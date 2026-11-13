@@ -141,6 +141,18 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
       audit,
       connection,
       outbox,
+      {
+        verify: ({ operation }) =>
+          Promise.resolve({
+            state: 'VERIFIED_REJECTED',
+            providerStatus: 'REJECTED',
+            providerReferenceHash: sha256(
+              operation.providerReferences.find((r) => r.source === ExternalOperationReferenceSource.STATUS_QUERY)!.referenceValue,
+            ),
+            observedAt: new Date().toISOString(),
+            reasonCode: null,
+          }),
+      },
     );
   }, 180000);
 
@@ -275,6 +287,12 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
       [randomUUID(), id, evidenceValue],
     );
 
+    await dataSource.query(
+      `INSERT INTO external_operation_references
+      (id, external_operation_id, partner_key, reference_type, reference_value, namespace, source, observed_at)
+      VALUES ($1,$2,'NIBSS_NIP','TRANSACTION',$3,'nibss.nip','STATUS_QUERY',now())`,
+      [randomUUID(), id, `confirmed-${suffix}`],
+    );
     return { id, version: 1, evidenceValue };
   }
 

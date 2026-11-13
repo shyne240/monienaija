@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { Inject, Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 
@@ -47,6 +47,10 @@ import {
 } from './external-settlement.types';
 import { ExternalSuspenseEntry } from './external-suspense-entry.entity';
 import { PartnerConnectionService } from './partner-connection.service';
+import {
+  EXTERNAL_OPERATION_STATUS_VERIFIER,
+  type ExternalOperationStatusVerifier,
+} from './external-operation-status-verifier';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SAFE_TEXT_PATTERN = /^[\x20-\x7E]+$/;
@@ -127,6 +131,9 @@ export class ExternalSettlementService {
     private readonly auditService: AuditService,
     private readonly partnerConnectionService: PartnerConnectionService,
     @Optional() private readonly outboxService?: OutboxService,
+    @Optional()
+    @Inject(EXTERNAL_OPERATION_STATUS_VERIFIER)
+    private readonly statusVerifier?: ExternalOperationStatusVerifier,
   ) {}
 
   async settleVerifiedOutcome(
@@ -154,6 +161,14 @@ export class ExternalSettlementService {
     return this.dataSource.transaction('SERIALIZABLE', (manager) =>
       this.compensateWithinTransaction(manager, normalized),
     );
+  }
+
+  /** Compose compensation with the caller's financial execution and audit transaction. */
+  async recordCompensatingEntryInTransaction(
+    manager: EntityManager,
+    command: RecordCompensatingEntryCommand,
+  ): Promise<ExternalSettlementCompensatingResult> {
+    return this.compensateWithinTransaction(manager, this.normalizeCompensatingCommand(command));
   }
 
   async getByOperation(externalOperationId: string): Promise<ExternalSettlementView | null> {
@@ -670,6 +685,43 @@ export class ExternalSettlementService {
       );
     }
 
+    // A failed or exhausted lifecycle is not itself proof the provider rejected
+    // the transfer. Require a trusted verifier and a reference actually recorded
+    // for this operation; UNKNOWN/PENDING never authorize automatic compensation.
+    if (!this.statusVerifier)
+      throw new ServiceUnavailableException('Provider outcome verification is unavailable');
+    const operationView = await this.externalOperationService.getInTransaction(
+      manager,
+      operation.id,
+    );
+    let verification;
+    try {
+      verification = await this.statusVerifier.verify({
+        operation: operationView,
+        requestedAt: new Date().toISOString(),
+        correlationId: command.requestContext.correlationId,
+      });
+    } catch {
+      throw new ServiceUnavailableException('Provider outcome verification is unavailable');
+    }
+    if (verification.state === 'UNAVAILABLE')
+      throw new ServiceUnavailableException('Provider outcome verification is unavailable');
+    const matched = operationView.providerReferences.some(
+      (reference) =>
+        ['STATUS_QUERY', 'CALLBACK', 'STATEMENT', 'REPORT'].includes(reference.source) &&
+        this.sha256(reference.referenceValue) === verification.providerReferenceHash,
+    );
+    if (
+      verification.state !== 'VERIFIED_REJECTED' ||
+      !matched ||
+      !Number.isFinite(Date.parse(verification.observedAt))
+    ) {
+      throw new ExternalSettlementException(
+        'COMPENSATING_NOT_PERMITTED',
+        'Provider failure is not verified for this operation',
+      );
+    }
+
     const originalJournal = await this.ledgerService.getJournal(settlement.journalId);
     const reversalLines = originalJournal.lines.map((line) => ({
       accountId: line.accountId,
@@ -734,6 +786,9 @@ export class ExternalSettlementService {
         externalOperationId: settlement.externalOperationId,
         originalJournalId: originalJournal.id,
         reversalJournalId,
+        verifiedProviderReferenceHash: verification.providerReferenceHash,
+        verifiedProviderOutcome: verification.state,
+        verifiedProviderObservedAt: verification.observedAt,
         settlementStatus: settlement.status,
         suspenseStatus: suspense.status,
       },

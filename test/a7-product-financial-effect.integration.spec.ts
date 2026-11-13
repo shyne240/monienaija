@@ -1,4 +1,10 @@
-import { testWalletFinancialBoundary } from './support/test-wallet-financial-boundary';
+import { WalletFinancialBoundaryService } from '../src/wallet/wallet-financial-boundary.service';
+import { CustomerFinancialEligibilityService } from '../src/kyc-verification/customer-financial-eligibility.service';
+import {
+  KycTierEvidenceReader,
+  type TierEvidenceSnapshot,
+} from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { KycTierPolicyService } from '../src/kyc-verification/kyc-tier-policy.service';
 /* eslint-disable */
 import { createHash, randomUUID } from 'node:crypto';
 import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
@@ -78,6 +84,11 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
   let seededProviderIdempotencyKey: string;
   let emergencyStop = false;
   let bypassSettlementLookup = false;
+  let failA7Outbox = false;
+  let overrideVerificationHash: string | null = null;
+  let providerVerificationState: 'VERIFIED_REJECTED' | 'UNKNOWN' | 'UNAVAILABLE' =
+    'VERIFIED_REJECTED';
+  const snapshots = new Map<string, TierEvidenceSnapshot>();
 
   const A7T04_MAP_REFERENCE = sha256('a7t04-map-v1');
   const A7T05_COMMAND_REFERENCE = 'a7-product-command:v1:abc';
@@ -114,12 +125,20 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
     dataSource = await createIntegrationDataSource('a7financial');
     originalTransaction = dataSource.transaction;
 
+    // Test-only evidence adapter; the production financial eligibility and wallet
+    // boundaries and ledger are real. The adapter cannot be selected in production.
+    const reader = new KycTierEvidenceReader();
+    reader.read = (_manager, id) => Promise.resolve(snapshots.get(id) ?? null);
+    const policy = new KycTierPolicyService(dataSource, {} as never);
+    const boundary = new WalletFinancialBoundaryService(
+      new CustomerFinancialEligibilityService(policy, reader),
+    );
     ledger = new LedgerService(
       dataSource.getRepository(LedgerAccount),
       dataSource.getRepository(LedgerJournal),
       dataSource.getRepository(LedgerLine),
       dataSource,
-      testWalletFinancialBoundary,
+      boundary,
     );
     idempotency = new IdempotencyService(
       dataSource.getRepository(IdempotencyRecord),
@@ -142,7 +161,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       idempotency,
       audit,
       connection,
-      testWalletFinancialBoundary,
+      boundary,
     );
 
     externalSettlement = new ExternalSettlementService(
@@ -156,6 +175,17 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       audit,
       connection,
       outbox,
+      {
+        verify: ({ operation }) =>
+          Promise.resolve({
+            state: providerVerificationState,
+            providerStatus: 'test-only',
+            providerReferenceHash:
+              overrideVerificationHash ?? sha256(operation.providerReferences[0]!.referenceValue),
+            observedAt: new Date().toISOString(),
+            reasonCode: null,
+          }),
+      },
     );
 
     // Build the A7 ports that bridge the transactional, write-heavy, and balance-asserting domain logic to the real PG database
@@ -421,42 +451,11 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
         });
       },
       a6T08RecordSuspense: (cmd) => externalSettlement.recordSuspense(cmd),
-      a6T08RecordCompensatingEntry: (cmd) => externalSettlement.recordCompensatingEntry(cmd),
+      a6T08RecordCompensatingEntry: (cmd, manager) =>
+        externalSettlement.recordCompensatingEntryInTransaction(manager, cmd),
       a5LedgerPostJournal: (cmd) => ledger.postJournal(cmd),
-      a5LedgerReverseJournal: async (journalId, idempotencyKey, _reason) => {
-        const mgr = activeManager || dataSource.manager;
-        const originalJournal = await mgr
-          .getRepository(LedgerJournal)
-          .findOne({ where: { id: journalId } });
-        if (!originalJournal) {
-          throw new Error(`Journal ${journalId} was not found`);
-        }
-        const originalLines = await mgr
-          .getRepository(LedgerLine)
-          .find({ where: { journalId }, order: { lineNumber: 'ASC' } });
-        return {
-          id: randomUUID(), // Return mock journal ID to bypass unique constraint collision
-          idempotencyKey,
-          currency: originalJournal.currency,
-          accountingUnit: originalJournal.accountingUnit,
-          totalMinor: originalJournal.totalMinor.toString(),
-          status: 'POSTED' as any,
-          reference: originalJournal.reference,
-          reversalOfJournalId: originalJournal.id,
-          createdAt: new Date(),
-          postedAt: new Date(),
-          lines: originalLines.map((line) => ({
-            id: line.id,
-            journalId: line.journalId,
-            accountId: line.ledgerAccountId,
-            lineNumber: line.lineNumber,
-            direction: line.direction === 'DEBIT' ? 'CREDIT' : 'DEBIT',
-            amountMinor: line.amountMinor.toString(),
-            currency: line.currency,
-            accountingUnit: line.accountingUnit,
-            createdAt: line.createdAt,
-          })),
-        } as any;
+      a5LedgerReverseJournal: () => {
+        throw new Error('independent A5 reversal must not be called');
       },
       a5LedgerCustomerFundsAccountLookup: () => Promise.resolve(null),
       a5LedgerSettlementAssetAccountLookup: () => Promise.resolve(null),
@@ -469,13 +468,12 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
           resourceId: cmd.resourceId ?? undefined,
         }),
       operationsAudit: (manager, record) => audit.record(manager, record).then(() => {}),
-      operationsOutboxEnqueue: (manager, cmd) =>
-        outbox
-          .enqueueOnce(manager, {
-            ...cmd,
-            causationId: cmd.causationId ?? undefined,
-          })
-          .then(() => {}),
+      operationsOutboxEnqueue: (manager, cmd) => {
+        if (failA7Outbox) throw new Error('injected A7 outbox interruption');
+        return outbox
+          .enqueueOnce(manager, { ...cmd, causationId: cmd.causationId ?? undefined })
+          .then(() => {});
+      },
       operationsMetricsIncrement: (manager, metricName, amount) =>
         metrics.increment(manager, metricName, amount ?? 1),
     };
@@ -500,6 +498,35 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
   beforeEach(async () => {
     await truncateAllTables(dataSource);
     emergencyStop = false;
+    failA7Outbox = false;
+    providerVerificationState = 'VERIFIED_REJECTED';
+    overrideVerificationHash = null;
+    snapshots.clear();
+    const proposal = randomUUID();
+    const requirements = { all: [], any: [] };
+    const definition = {
+      regulatoryRequirementsConfirmed: true,
+      effectiveFrom: '2020-01-01T00:00:00.000Z',
+      effectiveUntil: null,
+      regulatory: { LEVEL_1: requirements, LEVEL_2: requirements },
+      operator: { LEVEL_1: requirements, LEVEL_2: requirements },
+    };
+    await dataSource.query(
+      `INSERT INTO kyc_tier_policy_proposals(id,request_id,expected_version,definition,fingerprint,maker_id,maker_session_id,checker_id,checker_session_id,state) VALUES($1,$2,0,$3,$4,'maker',$5,'checker',$6,'APPROVED')`,
+      [
+        proposal,
+        randomUUID(),
+        JSON.stringify(definition),
+        'a'.repeat(64),
+        randomUUID(),
+        randomUUID(),
+      ],
+    );
+    await dataSource.query(
+      `INSERT INTO kyc_tier_policy_versions(version,proposal_id,definition,maker_id,checker_id) VALUES(1,$1,$2,'maker','checker')`,
+      [proposal, JSON.stringify(definition)],
+    );
+    await dataSource.query('INSERT INTO kyc_tier_policy_head(singleton,version) VALUES(true,1)');
     partnerEnv.A6_PARTNER_ENABLED = 'false';
     externalOperationId = randomUUID();
 
@@ -629,6 +656,29 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
     });
 
     const participant = await seedTransferParticipant(dataSource, `a7_${suffix}`, customerAccId);
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods(customer_id,type,value,normalized_value,is_primary,verified_at) VALUES($1,'PHONE',$2,$2,true,clock_timestamp())`,
+      [participant.customerId, `P${randomUUID()}`],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_kyc_assessments(customer_id,kyc_level,kyc_status,assessed_by,expires_at) VALUES($1,'LEVEL_1','APPROVED','fixture',clock_timestamp()+interval '1 hour')`,
+      [participant.customerId],
+    );
+    snapshots.set(participant.customerId, {
+      identityRevision: 'fixture',
+      evidence: [
+        {
+          id: randomUUID(),
+          customerId: participant.customerId,
+          identityRevision: 'fixture',
+          type: 'BVN',
+          status: 'VERIFIED',
+          provenance: 'VERIFIED_PROVIDER',
+          verifiedAt: new Date(Date.now() - 10000),
+          expiresAt: new Date(Date.now() + 1800000),
+        },
+      ],
+    });
     seededCustomerId = participant.customerId;
     seededCustomerWalletId = participant.customerWalletId;
     seededWalletAccountId = participant.walletAccountId;
@@ -841,6 +891,80 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
     });
 
+    it('does not treat an uncommitted operation as an eligibility exception', async () => {
+      const op = await seedExternalOperation();
+      const cmd = {
+        externalOperationId: op.opId,
+        decision: 'SETTLE' as any,
+        expectedVersion: 1,
+        evidence: {
+          referenceType: 'OPERATION' as const,
+          referenceValue: op.refValue,
+          namespace: 'a7-product-financial-effect-settlement',
+          source: 'CALLBACK' as any,
+          observedAt: new Date(),
+        },
+        requestContext: {
+          requestId: 'uncommitted',
+          correlationId: 'uncommitted',
+          traceId: 'uncommitted',
+        },
+      };
+      dataSource.transaction = originalTransaction;
+      await dataSource.query(`UPDATE customers SET status='SUSPENDED' WHERE id=$1`, [
+        op.customerId,
+      ]);
+      await expect(externalSettlement.settleVerifiedOutcome(cmd)).rejects.toThrow();
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
+      expect(await externalSettlement.getByOperation(op.opId)).toBeNull();
+      await dataSource.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [op.customerId]);
+      expect((await externalSettlement.settleVerifiedOutcome(cmd)).settlement.status).toBe(
+        'POSTED',
+      );
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
+    });
+
+    it('concurrent settlement creates exactly one journal and replays it', async () => {
+      const op = await seedExternalOperation();
+      const cmd = {
+        externalOperationId: op.opId,
+        decision: 'SETTLE' as any,
+        expectedVersion: 1,
+        evidence: {
+          referenceType: 'OPERATION' as const,
+          referenceValue: op.refValue,
+          namespace: 'a7-product-financial-effect-settlement',
+          source: 'CALLBACK' as any,
+          observedAt: new Date(),
+        },
+        requestContext: {
+          requestId: 'concurrent-settlement',
+          correlationId: 'concurrent-settlement',
+          traceId: 'concurrent-settlement',
+        },
+      };
+      dataSource.transaction = originalTransaction;
+      const outcomes = await Promise.allSettled([
+        externalSettlement.settleVerifiedOutcome(cmd),
+        externalSettlement.settleVerifiedOutcome(cmd),
+      ]);
+      expect(outcomes.some((outcome) => outcome.status === 'fulfilled')).toBe(true);
+      const replay = await externalSettlement.settleVerifiedOutcome(cmd);
+      expect(replay.replayed).toBe(true);
+      expect(
+        await dataSource.query(
+          'SELECT count(*)::int AS n FROM external_settlements WHERE external_operation_id=$1',
+          [op.opId],
+        ),
+      ).toEqual([{ n: 1 }]);
+      expect(
+        await dataSource.query('SELECT count(*)::int AS n FROM ledger_journals WHERE id=$1', [
+          replay.settlement.journalId,
+        ]),
+      ).toEqual([{ n: 1 }]);
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
+    });
+
     it('successfully posts a verified product financial effect mapping to A5 balanced journal', async () => {
       await seedExternalOperation();
       const envelope = buildEnvelope('OUTCOME_VERIFIED');
@@ -985,6 +1109,58 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       (revEnvelope as any).idempotencyKey = `a7-rev-key-${randomUUID()}`;
       (revEnvelope as any).requestHash = deriveRequestHash(revEnvelope);
 
+      await dataSource.query(
+        `INSERT INTO kyc_tier_manual_holds(customer_id,actor,reason) VALUES($1,'test','MANUAL_REVIEW')`,
+        [op1.customerId],
+      );
+      await expect(a7Service.postProductFinancialEffectReversal(revEnvelope)).rejects.toThrow(
+        'restricted pending compliance review',
+      );
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
+      await dataSource.query(`DELETE FROM kyc_tier_manual_holds WHERE customer_id=$1`, [
+        op1.customerId,
+      ]);
+      providerVerificationState = 'UNKNOWN';
+      await expect(a7Service.postProductFinancialEffectReversal(revEnvelope)).rejects.toMatchObject(
+        { code: 'COMPENSATING_NOT_PERMITTED' },
+      );
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
+      providerVerificationState = 'UNAVAILABLE';
+      await expect(a7Service.postProductFinancialEffectReversal(revEnvelope)).rejects.toMatchObject(
+        { status: 503 },
+      );
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
+      providerVerificationState = 'VERIFIED_REJECTED';
+      overrideVerificationHash = sha256('another-operation-reference');
+      await expect(a7Service.postProductFinancialEffectReversal(revEnvelope)).rejects.toMatchObject(
+        { code: 'COMPENSATING_NOT_PERMITTED' },
+      );
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
+      overrideVerificationHash = null;
+      failA7Outbox = true;
+      try {
+        await expect(a7Service.postProductFinancialEffectReversal(revEnvelope)).rejects.toThrow(
+          'injected A7 outbox interruption',
+        );
+        expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
+        const settlement = await dataSource.query(
+          `SELECT status,reversal_journal_id FROM external_settlements WHERE external_operation_id=$1`,
+          [op1.opId],
+        );
+        expect(settlement).toEqual([{ status: 'POSTED', reversal_journal_id: null }]);
+        const reservation = await dataSource.query(
+          `SELECT id FROM idempotency_records WHERE idempotency_key=$1`,
+          [revEnvelope.idempotencyKey],
+        );
+        expect(reservation).toHaveLength(0);
+        const reversals = await dataSource.query(
+          `SELECT id FROM ledger_journals WHERE reversal_of_journal_id=$1`,
+          [postResult.valid ? postResult.record.a6T08Settlement!.journalId : null],
+        );
+        expect(reversals).toHaveLength(0);
+      } finally {
+        failA7Outbox = false;
+      }
       const result = await a7Service.postProductFinancialEffectReversal(revEnvelope);
 
       expect(result.valid).toBe(true);
@@ -993,6 +1169,14 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
         expect(result.record.a6T08Decision).toBe('REVERSE');
         expect(result.record.a6T08Compensating).toBeTruthy();
         expect(result.record.a5LedgerJournal).toBeTruthy();
+        expect(result.record.a5LedgerJournal!.journalId).toBe(
+          result.record.a6T08Compensating!.reversalJournalId,
+        );
+        const journalCount = await dataSource.query(
+          `SELECT count(*)::int AS n FROM ledger_journals WHERE reversal_of_journal_id=$1`,
+          [postResult.valid ? postResult.record.a6T08Settlement!.journalId : null],
+        );
+        expect(journalCount).toEqual([{ n: 1 }]);
 
         // Compensating journal directions exactly flipped: Credit Wallet, Debit Settlement asset
         const revLines: Array<{
@@ -1014,6 +1198,62 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
         expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
         expect(await dbBalanceOf(settlementAssetLedgerAccountId)).toBe(-200000n);
       }
+    });
+
+    it('concurrent compensation posts once and replays the committed result', async () => {
+      const op = await seedExternalOperation();
+      const suspense = await a7Service.postProductFinancialEffect(
+        buildEnvelope(
+          'OUTCOME_SUSPENSE',
+          op.refValue,
+          op.providerIdempotencyKey,
+          op.customerId,
+          op.walletId,
+          op.bindingId,
+        ),
+      );
+      const settled = await a7Service.postProductFinancialEffect(
+        buildEnvelope(
+          'OUTCOME_VERIFIED',
+          op.refValue,
+          op.providerIdempotencyKey,
+          op.customerId,
+          op.walletId,
+          op.bindingId,
+        ),
+      );
+      expect(suspense.valid).toBe(true);
+      expect(settled.valid).toBe(true);
+      if (!suspense.valid || !settled.valid) throw new Error('fixture not admitted');
+      const original = settled.record.a6T08Settlement!.journalId!;
+      const command = {
+        externalOperationId: op.opId,
+        settlementId: settled.record.a6T08Settlement!.settlementId,
+        suspenseEntryId: suspense.record.a6T08Suspense!.suspenseId,
+        expectedVersion: 1,
+        requestContext: {
+          requestId: 'concurrent',
+          correlationId: 'concurrent',
+          traceId: 'concurrent',
+        },
+      };
+      // Use separate real DB transactions, not the legacy nested-transaction test shim.
+      dataSource.transaction = originalTransaction;
+      const outcomes = await Promise.allSettled([
+        externalSettlement.recordCompensatingEntry(command),
+        externalSettlement.recordCompensatingEntry(command),
+      ]);
+      expect(outcomes.some((outcome) => outcome.status === 'fulfilled')).toBe(true);
+      const replay = await externalSettlement.recordCompensatingEntry(command);
+      expect(replay.replayed).toBe(true);
+      expect(
+        await dataSource.query(
+          `SELECT count(*)::int AS n FROM ledger_journals WHERE reversal_of_journal_id=$1`,
+          [original],
+        ),
+      ).toEqual([{ n: 1 }]);
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
+      expect((await externalSettlement.getByOperation(op.opId))?.status).toBe('REVERSED');
     });
 
     it('rejects double reversals of the same settlement', async () => {

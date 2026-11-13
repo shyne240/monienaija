@@ -585,6 +585,23 @@ function makeService(
     );
   }
 
+  const verifiedRef = makeReference(
+    operation.id,
+    'confirmed-provider-failure',
+    'TRANSACTION',
+    ExternalOperationReferenceSource.STATUS_QUERY,
+  );
+  operationService.references.set(verifiedRef.id, verifiedRef);
+  const verifier = {
+    verify: jest.fn().mockResolvedValue({
+      state: 'VERIFIED_REJECTED',
+      providerStatus: 'REJECTED',
+      providerReferenceHash: sha256(verifiedRef.referenceValue),
+      observedAt: new Date().toISOString(),
+      reasonCode: null,
+    }),
+  };
+
   const settlements = new FakeSettlementRepository();
   const suspense = new FakeSuspenseRepository();
   const manager = new FakeManager(operations, references, settlements, suspense);
@@ -610,6 +627,7 @@ function makeService(
     audit as never,
     partnerConnectionService as never,
     outbox as never,
+    verifier as never,
   );
   return {
     service,
@@ -627,6 +645,7 @@ function makeService(
     partnerConnectionService,
     ledgerService,
     operationService,
+    verifier,
   };
 }
 
@@ -806,6 +825,52 @@ describe('ExternalSettlementService', () => {
       (record) => record.status === 'FAILED',
     );
     expect(failedIdempotency).toBeDefined();
+  });
+
+  it('refuses unverified provider outcomes and mismatched verification references', async () => {
+    const fixture = makeService();
+    const settled = await fixture.service.settleVerifiedOutcome(settleCommand());
+    const suspense = await fixture.service.recordSuspense({
+      externalOperationId: fixture.operation.id,
+      expectedVersion: 1,
+      reason: 'PROVIDER_UNKNOWN',
+      rejectionCode: 'COMPENSATING_NOT_PERMITTED',
+      evidence: settled.settlement.evidence,
+      requestContext: REQUEST_CONTEXT,
+    });
+    const command = {
+      externalOperationId: fixture.operation.id,
+      settlementId: settled.settlement.settlementId,
+      suspenseEntryId: suspense.suspenseId,
+      expectedVersion: 1,
+      requestContext: REQUEST_CONTEXT,
+    };
+    const valid = {
+      providerStatus: null,
+      providerReferenceHash: sha256('confirmed-provider-failure'),
+      observedAt: new Date().toISOString(),
+      reasonCode: null,
+    };
+    fixture.verifier.verify.mockResolvedValueOnce({ ...valid, state: 'UNKNOWN' });
+    await expect(fixture.service.recordCompensatingEntry(command)).rejects.toMatchObject({
+      code: 'COMPENSATING_NOT_PERMITTED',
+    });
+    // The in-memory transaction fake does not roll back reservations.
+    fixture.idempotency.records.clear();
+    fixture.verifier.verify.mockResolvedValueOnce({
+      ...valid,
+      state: 'VERIFIED_REJECTED',
+      providerReferenceHash: sha256('other-operation'),
+    });
+    await expect(fixture.service.recordCompensatingEntry(command)).rejects.toMatchObject({
+      code: 'COMPENSATING_NOT_PERMITTED',
+    });
+    fixture.idempotency.records.clear();
+    fixture.verifier.verify.mockResolvedValueOnce({ ...valid, state: 'UNAVAILABLE' });
+    await expect(fixture.service.recordCompensatingEntry(command)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(fixture.ledgerService.journals).toHaveLength(1);
   });
 
   it('posts a compensating entry against an open suspense entry and clears the suspense', async () => {

@@ -828,6 +828,7 @@ export interface A7ProductFinancialEffectConsumerPorts {
    */
   readonly a5LedgerJournalLookup: (
     journalId: string,
+    manager?: EntityManager,
   ) => Promise<A7ProductFinancialEffectA5LedgerJournalView | null>;
 
   /**
@@ -881,6 +882,7 @@ export interface A7ProductFinancialEffectConsumerPorts {
    */
   readonly a6T08RecordCompensatingEntry: (
     command: RecordCompensatingEntryCommand,
+    manager: EntityManager,
   ) => Promise<ExternalSettlementCompensatingResult>;
 
   /**
