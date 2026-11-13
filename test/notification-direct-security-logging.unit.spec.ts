@@ -56,7 +56,7 @@ describe('direct security notification diagnostics', () => {
         {
           query,
           manager: {},
-          transaction: async (fn: (m: unknown) => Promise<void>) => fn({}),
+          transaction: async (fn: (m: unknown) => Promise<void>) => fn({ query: async () => [] }),
         } as never,
         {
           issueChallenge: async () => ({

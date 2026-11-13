@@ -18,6 +18,7 @@ import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletService } from '../wallet/wallet.service';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { parsePositiveMinorUnits, normalizeCurrency } from '../common/money';
+import { cashOutOtpVerificationBudget, recordCashOutOtpFailure } from './cash-out-otp-budget';
 import { AgentTransactionAuthorizationService } from './agent-transaction-authorization.service';
 import { AgentFinancialExecutionService } from './agent-financial-execution.service';
 import { AgentService } from './agent-service.enum';
@@ -332,6 +333,18 @@ export class AgentCashOutService {
         }
         // Pre-migration idempotency receipts do not establish an OTP-to-journal binding.
         if (replay) throw new ConflictException('Cash-out replay authorization record unavailable');
+        const challengeSecurity = await manager.query<Array<{ destination_hash: string }>>(
+          `SELECT s.destination_hash FROM cash_out_otp_challenge_security s JOIN mfa_challenges c ON c.id=s.challenge_id
+           WHERE s.challenge_id=$1 AND s.customer_id=$2 AND c.customer_id=$2 AND c.purpose='WALLET_TO_CASH'`,
+          [challengeId, customerId],
+        );
+        if (!challengeSecurity[0]) return 'Cash-out OTP authorization unavailable';
+        const budgetKeys = await cashOutOtpVerificationBudget(
+          manager,
+          customerId,
+          challengeSecurity[0].destination_hash,
+        );
+        if (!budgetKeys) return 'Cash-out OTP temporarily unavailable';
         const result = await this.mfaExecutionService.verifyChallengeInManager(manager, {
           expectedPurpose: AGENT_DESK_OTP_PURPOSE_WALLET_TO_CASH,
           principal: principalForMfa,
@@ -341,7 +354,10 @@ export class AgentCashOutService {
         } as any);
         if (result.verified) return null;
         if (result.failureReason === 'EXPIRED') return 'OTP expired';
-        if (result.failureReason === 'MISMATCH') return 'OTP invalid';
+        if (result.failureReason === 'MISMATCH') {
+          await recordCashOutOtpFailure(manager, budgetKeys);
+          return 'OTP invalid';
+        }
         if (result.failureReason === 'REPLAYED') return 'OTP already used';
         return `OTP verification failed: ${result.failureReason}`;
       },

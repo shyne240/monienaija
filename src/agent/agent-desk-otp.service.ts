@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+import { reserveCashOutOtpIssuance } from './cash-out-otp-budget';
 import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { AuditService } from '../operations/audit.service';
 import { MfaExecutionService } from '../customer-authentication/mfa-execution.service';
@@ -133,6 +134,13 @@ export class AgentDeskOtpService {
       throw new BadRequestException('Customer has no verified primary phone');
     }
 
+    const destinationHash = createHash('sha256').update(destinationPhone).digest('hex');
+    if (command.purpose === 'WALLET_TO_CASH') {
+      await this.dataSource.transaction((manager) =>
+        reserveCashOutOtpIssuance(manager, customerId, destinationHash),
+      );
+    }
+
     // 3. An ACTIVE customer credential must exist — the canonical verifier reconstructs
     //    its principal from the challenge's session (and falls back to the active
     //    credential). Without one verification cannot succeed, so fail early.
@@ -221,6 +229,12 @@ export class AgentDeskOtpService {
       purpose: command.purpose,
     };
     const challenge = await this.mfaExecutionService.issueChallenge(issueCommand);
+    if (command.purpose === 'WALLET_TO_CASH') {
+      await this.dataSource.query(
+        `INSERT INTO cash_out_otp_challenge_security(challenge_id,customer_id,destination_hash) VALUES($1,$2,$3)`,
+        [challenge.id, customerId, destinationHash],
+      );
+    }
 
     // 8. Delivery — DIRECT provider-neutral SMS (never dispatcher/outbox; failure is
     //    isolated and audited, matching registration/temporary-credential conventions).
