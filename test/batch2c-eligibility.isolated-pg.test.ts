@@ -2284,6 +2284,54 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
   await expect(
     db.query(`DELETE FROM cash_to_cash_cancellations WHERE transfer_id=$1`, [cancelledId]),
   ).rejects.toThrow('immutable');
+  const handoffUrl = '/api/v1/agents/cash-to-cash/reconciliation-handoff';
+  const handoffRequest = { transferId: cancelledId, reason: 'DISPOSITION_PENDING' };
+  expect(
+    (await server.inject({ method: 'POST', url: handoffUrl, payload: handoffRequest })).statusCode,
+  ).toBe(401);
+  const handoff = await server.inject({
+    method: 'POST',
+    url: handoffUrl,
+    headers: { authorization: `Bearer ${token}` },
+    payload: handoffRequest,
+  });
+  expect(handoff.statusCode).toBe(201);
+  const handoffId = handoff.json<{ id: string }>().id;
+  const handoffReplay = await server.inject({
+    method: 'POST',
+    url: handoffUrl,
+    headers: { authorization: `Bearer ${token}` },
+    payload: handoffRequest,
+  });
+  expect(handoffReplay.json()).toEqual({ id: handoffId });
+  expect(
+    (
+      await server.inject({
+        method: 'GET',
+        url: `/api/v1/internal/reconciliation/cash-to-cash/${handoffId}`,
+      })
+    ).statusCode,
+  ).toBe(401);
+  const { CashToCashReconciliationService } = await import(
+    '../src/agent/cash-to-cash-reconciliation.service'
+  );
+  const reconciliation = app.get(CashToCashReconciliationService);
+  expect(await reconciliation.lookup(handoffId)).toMatchObject({
+    current: { classification: 'CANCELLED_DISPOSITION_PENDING', outstandingLiabilityMinor: '600' },
+  });
+  await expect(
+    db.query(`DELETE FROM cash_to_cash_reconciliation_handoffs WHERE id=$1`, [handoffId]),
+  ).rejects.toThrow('immutable');
+  const outstandingHandoff = await server.inject({
+    method: 'POST',
+    url: handoffUrl,
+    headers: { authorization: `Bearer ${token}` },
+    payload: { transferId, reason: 'UNKNOWN_OUTCOME' },
+  });
+  expect(outstandingHandoff.statusCode).toBe(201);
+  expect(await reconciliation.lookup(outstandingHandoff.json<{ id: string }>().id)).toMatchObject({
+    current: { classification: 'OUTSTANDING_FUNDED', outstandingLiabilityMinor: '100' },
+  });
   const { AgentCashToCashExpiryService } = await import(
     '../src/agent/agent-cash-to-cash-expiry.service'
   );
@@ -2376,6 +2424,20 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
       `INSERT INTO cash_to_cash_transfers(id,agent_id,beneficiary_phone,principal_minor,total_minor,currency,status,transfer_code_hash,hash_algorithm,journal_id,idempotency_key,expires_at) VALUES($1,$2,$3,100,100,'NGN','UNCLAIMED',$4,'PBKDF2',$5,$6,clock_timestamp()+interval '1 hour')`,
       [otherTransferId, agentId, phone, codeHash, fundingOther.id, randomUUID()],
     );
+    const legacyHandoff = await server.inject({
+      method: 'POST',
+      url: handoffUrl,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { transferId: otherTransferId, reason: 'EVIDENCE_REVIEW' },
+    });
+    expect(legacyHandoff.statusCode).toBe(201);
+    expect(await reconciliation.lookup(legacyHandoff.json<{ id: string }>().id)).toMatchObject({
+      current: {
+        classification: 'INCOMPLETE_OR_CONFLICTING',
+        outstandingLiabilityMinor: null,
+        modern_evidence: false,
+      },
+    });
     await expect(claim.execute({ ...input, transferId: otherTransferId })).rejects.toThrow(
       'authorization context',
     );
@@ -2642,6 +2704,124 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
         [raceTransfer.transferId],
       ),
     ).toEqual([{ n: raced[0]!.status === 'CANCELLED' ? 1 : 0 }]);
+    const expiredFunding = await server.inject({
+      method: 'POST',
+      url: '/api/v1/agents/cash-to-cash',
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        ...fundingPayload,
+        beneficiaryPhone: racePhone,
+        amountMinor: '25',
+        idempotencyKey: randomUUID(),
+      },
+    });
+    expect(expiredFunding.statusCode).toBe(201);
+    const expiredId = expiredFunding.json<{ transferId: string }>().transferId;
+    const future = new Date(Date.now() + 40 * 86400000);
+    expect(await app.get(AgentCashToCashExpiryService).expireOne(expiredId, future)).toBe(true);
+    expect(await app.get(AgentCashToCashExpiryService).expireOne(expiredId, future)).toBe(false);
+    const expiredHandoff = await server.inject({
+      method: 'POST',
+      url: handoffUrl,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { transferId: expiredId, reason: 'DISPOSITION_PENDING' },
+    });
+    expect(expiredHandoff.statusCode).toBe(201);
+    expect(await reconciliation.lookup(expiredHandoff.json<{ id: string }>().id)).toMatchObject({
+      current: { classification: 'EXPIRED_DISPOSITION_PENDING', outstandingLiabilityMinor: '25' },
+    });
+    expect(
+      (
+        await server.inject({
+          method: 'POST',
+          url: `/api/v1/agents/cash-to-cash/${expiredId}/cancel`,
+          headers: { authorization: `Bearer ${token}` },
+          payload: { agentPin: '1234' },
+        })
+      ).statusCode,
+    ).toBe(409);
+    const expiryRaceFunding = await server.inject({
+      method: 'POST',
+      url: '/api/v1/agents/cash-to-cash',
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        ...fundingPayload,
+        beneficiaryPhone: racePhone,
+        amountMinor: '25',
+        idempotencyKey: randomUUID(),
+      },
+    });
+    expect(expiryRaceFunding.statusCode).toBe(201);
+    const expiryRaceTransfer = expiryRaceFunding.json<{
+      transferId: string;
+      transferCode: string;
+    }>();
+    sms.clear();
+    const expiryRaceIssue = await server.inject({
+      method: 'POST',
+      url: '/api/v1/agents/me/mfa-challenges',
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        customerId: raceCustomer,
+        transferId: expiryRaceTransfer.transferId,
+        redemptionMethod: 'AGENT_CASH',
+        purpose: 'CASH_TO_CASH_CLAIM',
+      },
+    });
+    expect(expiryRaceIssue.statusCode).toBe(201);
+    const expiryRaceOtp = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+    const expiryRaceChallenge = expiryRaceIssue.json<{ challengeId: string }>();
+    const [expiryRaceClaim, expiryResult] = await Promise.all([
+      server.inject({
+        method: 'POST',
+        url: '/api/v1/agents/cash-to-cash/claim',
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          transferId: expiryRaceTransfer.transferId,
+          beneficiaryPhone: racePhone,
+          transferCode: expiryRaceTransfer.transferCode,
+          customerId: raceCustomer,
+          mfaChallengeId: expiryRaceChallenge.challengeId,
+          otp: expiryRaceOtp,
+          idempotencyKey: randomUUID(),
+          redemptionMethod: 'AGENT_CASH',
+          agentPin: '1234',
+        },
+      }),
+      app.get(AgentCashToCashExpiryService).expireOne(expiryRaceTransfer.transferId, future),
+    ]);
+    const expiryRaceRow = await db.query<
+      Array<{ status: string; claim_journal_id: string | null }>
+    >(`SELECT status,claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`, [
+      expiryRaceTransfer.transferId,
+    ]);
+    expect(['CLAIMED', 'EXPIRED']).toContain(expiryRaceRow[0]!.status);
+    expect(expiryResult).toBe(expiryRaceRow[0]!.status === 'EXPIRED');
+    expect(expiryRaceClaim.statusCode === 200).toBe(expiryRaceRow[0]!.status === 'CLAIMED');
+    expect(expiryRaceRow[0]!.claim_journal_id !== null).toBe(
+      expiryRaceRow[0]!.status === 'CLAIMED',
+    );
+    expect(
+      await app.get(AgentCashToCashExpiryService).expireOne(expiryRaceTransfer.transferId, future),
+    ).toBe(false);
+    const completedHandoff = await server.inject({
+      method: 'POST',
+      url: handoffUrl,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { transferId, reason: 'RECEIPT_UNAVAILABLE' },
+    });
+    expect(completedHandoff.statusCode).toBe(201);
+    expect(await reconciliation.lookup(completedHandoff.json<{ id: string }>().id)).toMatchObject({
+      current: {
+        classification: 'COMPLETED_WITH_EXECUTION_EVIDENCE',
+        outstandingLiabilityMinor: '0',
+      },
+    });
+    expect(
+      await app
+        .get(AgentCashToCashExpiryService)
+        .expireOne(transferId, new Date(Date.now() + 86400000)),
+    ).toBe(false);
     const cancelClaimed = await server.inject({
       method: 'POST',
       url: `/api/v1/agents/cash-to-cash/${transferId}/cancel`,

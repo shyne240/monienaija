@@ -78,3 +78,23 @@ This is lifecycle containment, not approved disposition. Cancellation permission
 customer-facing messaging still require policy approval. Dedicated reconciliation handoff,
 historical evidence classification, mobile recovery and full expiry/claim race acceptance
 remain outstanding; initiation replay alone does not provide current lifecycle status.
+
+### Reconciliation and expiry acceptance checkpoint
+
+Migration `1785753600204` records immutable, deduplicated agent-initiated transfer
+handoffs and an evidence snapshot, with authenticated workforce `reconciliation.view`
+lookup and a live classification. The projection checks the existing funding wallet debit
+and unclaimed credit, and for a completed transfer the liability debit and matching claim
+audit fields. It does not backfill historical authorization. Conflicting or insufficient
+records report an unknown liability rather than assuming an amount or settlement. Handoff
+is non-financial: no adjudication or disposition is performed. The handoff currently requires
+a known transfer ID; recovery by initiation operation key and complete mobile integration
+remain outstanding. Classification is an evidence-based triage projection, not an audit or
+proof of approved historical authorization.
+
+Isolated PostgreSQL/Fastify acceptance covers cancellation, completed, outstanding and
+expired classifications and incomplete historical evidence, deduplicated handoffs,
+unauthenticated denial, and repeat expiry. A claim-versus-expiry race uses `expireOne` with
+an explicit future test clock; exactly one terminal outcome is observed. This is not a
+production-clock worker race test. The full isolated suite passed 14/14. Production identity,
+institution and disposition policy remain unavailable; no real financial execution occurs.

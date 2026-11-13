@@ -1419,6 +1419,27 @@ export class RoutePolicyRegistry {
       };
     }
 
+    if (
+      lookedUpMethod === 'GET' &&
+      path.startsWith('/api/v1/internal/reconciliation/cash-to-cash/')
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
+        resourceType: 'internal-reconciliation',
+        policy: {
+          resourceType: 'internal-reconciliation',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['reconciliation.view'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // All other /api/v1/agents/* routes require an AGENT principal
     if (path.startsWith('/api/v1/agents/')) {
       // /agents/me and /agents/me/* are strictly AGENT SELF via agentAccess
