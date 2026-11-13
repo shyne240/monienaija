@@ -125,7 +125,14 @@ export async function verifyRealOtp(
  */
 export async function createDraftCustomerWithPhone(
   ctx: ControlledOnboardingContext,
-  options: { phone?: string; verified?: boolean; reference?: string; status?: string } = {},
+  options: {
+    phone?: string;
+    verified?: boolean;
+    reference?: string;
+    status?: string;
+    /** Audit actor recorded for the phone-verification write (defaults to a fixture actor). */
+    actor?: string;
+  } = {},
 ): Promise<DraftWithVerifiedPhone & { verificationToken: string; code: string }> {
   const phone = options.phone ?? controlledPhoneFactory()();
   const { canonical, e164 } = phoneForms(phone);
@@ -153,7 +160,7 @@ export async function createDraftCustomerWithPhone(
     // Real single-use token consumption → authoritative verified_at.
     await ctx.customerService.updateContactMethod(customerId, contactId, {
       verificationToken: token,
-      actor: 'controlled-onboarding-fixture',
+      actor: options.actor ?? 'controlled-onboarding-fixture',
     });
   }
 
