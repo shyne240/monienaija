@@ -820,6 +820,13 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
   ).toEqual([{ n: 2 }]);
   expect((await ledger.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe('1000');
 
+  await db.query(
+    `UPDATE cash_out_otp_budgets SET window_started_at=clock_timestamp()-interval '16 minutes' WHERE budget_key=$1`,
+    [`customer:${customerId}`],
+  );
+  await db.query(
+    `UPDATE cash_out_otp_budgets SET window_started_at=clock_timestamp()-interval '16 minutes' WHERE budget_key LIKE 'destination:%'`,
+  );
   sms.clear();
   const another = await app
     .get(AgentDeskOtpService)
@@ -840,6 +847,18 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     ]),
   ).toEqual([{ status: 'REVOKED', failed_attempts: 5 }]);
   await expect(service.execute({ ...anotherInput, otp: anotherCode })).rejects.toThrow();
+  await expect(
+    app
+      .get(AgentDeskOtpService)
+      .issue({ agentId: agent.id, customerId, purpose: 'WALLET_TO_CASH' }),
+  ).rejects.toThrow('temporarily unavailable');
+  await db.query(
+    `UPDATE cash_out_otp_budgets SET window_started_at=clock_timestamp()-interval '16 minutes' WHERE budget_key=$1`,
+    [`customer:${customerId}`],
+  );
+  await db.query(
+    `UPDATE cash_out_otp_budgets SET window_started_at=clock_timestamp()-interval '16 minutes' WHERE budget_key LIKE 'destination:%'`,
+  );
   sms.clear();
   const expired = await app
     .get(AgentDeskOtpService)
@@ -861,4 +880,69 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [expired.challengeId]),
   ).toEqual([{ status: 'EXPIRED' }]);
   expect((await ledger.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe('1000');
+  sms.clear();
+  const first = await app
+    .get(AgentDeskOtpService)
+    .issue({ agentId: agent.id, customerId, purpose: 'WALLET_TO_CASH' });
+  const firstCode = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+  sms.clear();
+  const second = await app
+    .get(AgentDeskOtpService)
+    .issue({ agentId: agent.id, customerId, purpose: 'WALLET_TO_CASH' });
+  const secondCode = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+  for (const [challengeId, code, count] of [
+    [first.challengeId, firstCode, 3],
+    [second.challengeId, secondCode, 2],
+  ] as const) {
+    const bad = code === '000000' ? '000001' : '000000';
+    for (let i = 0; i < count; i++) {
+      await expect(
+        service.execute({
+          ...input,
+          mfaChallengeId: challengeId,
+          idempotencyKey: randomUUID(),
+          otp: bad,
+        }),
+      ).rejects.toThrow('OTP invalid');
+    }
+  }
+  expect(
+    await db.query(`SELECT failed_attempts FROM cash_out_otp_budgets WHERE budget_key=$1`, [
+      `customer:${customerId}`,
+    ]),
+  ).toEqual([{ failed_attempts: 5 }]);
+  await expect(
+    service.execute({
+      ...input,
+      mfaChallengeId: second.challengeId,
+      idempotencyKey: randomUUID(),
+      otp: secondCode,
+    }),
+  ).rejects.toThrow('temporarily unavailable');
+  await expect(
+    app
+      .get(AgentDeskOtpService)
+      .issue({ agentId: agent.id, customerId, purpose: 'WALLET_TO_CASH' }),
+  ).rejects.toThrow('temporarily unavailable');
+});
+
+test('concurrent cash-out challenge issuance cannot reset the persisted issuance budget', async () => {
+  const { AgentDeskOtpService } = await import('../src/agent/agent-desk-otp.service');
+  const customerId = await subject('LEVEL_1', ['BVN']);
+  await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [customerId]);
+  await db.query(
+    `INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE')`,
+    [randomUUID(), customerId],
+  );
+  const service = app.get(AgentDeskOtpService);
+  const command = { agentId: randomUUID(), customerId, purpose: 'WALLET_TO_CASH' as const };
+  const results = await Promise.allSettled(Array.from({ length: 6 }, () => service.issue(command)));
+  expect(results.filter((result) => result.status === 'fulfilled').length).toBeLessThanOrEqual(3);
+  expect(
+    await db.query(
+      `SELECT issuance_count,failed_attempts FROM cash_out_otp_budgets WHERE budget_key=$1`,
+      [`customer:${customerId}`],
+    ),
+  ).toEqual([{ issuance_count: 3, failed_attempts: 0 }]);
+  await expect(service.issue(command)).rejects.toThrow('temporarily unavailable');
 });
