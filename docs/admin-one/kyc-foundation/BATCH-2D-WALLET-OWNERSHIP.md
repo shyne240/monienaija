@@ -1,3 +1,5 @@
+> **Source-branch report:** The migration inventory and test results below describe Arena 4’s original branch, which included migration 0117. The Arena 3 integration deliberately excludes 0117; see the [Arena 3 integration report](../../integration/governed-wallet-ownership-integration.md) for its actual migration chain and independent results.
+
 # Governed wallet ownership resolution (REVIEW → CUSTOMER / AGENT / SYSTEM)
 
 **Status:** implemented, migration `1785753600118`, verified against real PostgreSQL 18.4 with real
@@ -174,8 +176,8 @@ identically on the untouched baseline checkpoint `81793dd` (e.g.
 4. **Pre-existing KYC evidence unavailability** still restricts resolved CUSTOMER wallets at the
    financial boundary until production trusted evidence and policy are available; ownership resolution
    changes classification, never eligibility.
-5. **SUPER_ADMIN execution inheritance.** `privileged:execute` holders (including SUPER_ADMIN, who is
-   never the maker here) can execute an approved resolution, mirroring the established `consume()`
+5. **SUPER_ADMIN execution inheritance.** `privileged:execute` holders (including SUPER_ADMIN when that scope is granted) can execute an
+   approved resolution, provided the executor is not the maker, mirroring the established `consume()`
    contract and the ledger-reversal flow. If ownership resolution should be limited to the approving
    controller only, that is a governance decision to record and enforce across both flows.
 6. **`wallet_system_owners` is a static registry.** Adding/retiring system owners requires a governed
