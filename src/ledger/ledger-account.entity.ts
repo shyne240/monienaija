@@ -37,6 +37,30 @@ export class LedgerAccount {
   @Column({ name: 'allow_negative_balance', type: 'boolean', default: false })
   allowNegativeBalance!: boolean;
 
+  /**
+   * Institutional isolation (ARENA 4 Phase 2).
+   *
+   * - `UNATTRIBUTED`: historical/legacy account with no authoritative institutional owner. It can
+   *   only participate in journals with no institutional context.
+   * - `INSTITUTION`: owned by exactly one institution (customer funds, settlement, suspense or
+   *   clearing). It can only participate in that institution's journals.
+   * - `PLATFORM`: explicitly designated platform-level account. It can only participate in
+   *   journals with no institutional context.
+   */
+  @Column({
+    name: 'institutional_scope',
+    type: 'varchar',
+    length: 24,
+    default: 'UNATTRIBUTED',
+  })
+  institutionalScope!: string;
+
+  @Column({ name: 'institution_id', type: 'uuid', nullable: true })
+  institutionId!: string | null;
+
+  @Column({ name: 'institutional_purpose', type: 'varchar', length: 32, nullable: true })
+  institutionalPurpose!: string | null;
+
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
 

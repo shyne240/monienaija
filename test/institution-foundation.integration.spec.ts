@@ -996,12 +996,26 @@ describe('Institutional foundation (ARENA 4 Phase 1) — real PostgreSQL + real 
     expect(Number(journalCountAfter!.count)).toBe(Number(journalCountBefore!.count) + 1);
 
     // No fabricated institutional attribution was written onto historical financial rows.
-    const columns = await dataSource.query<Array<{ column_name: string }>>(
-      `SELECT column_name FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name IN ('wallet_accounts', 'ledger_journals', 'ledger_lines')
-          AND column_name LIKE '%institution%'`,
+    //
+    // ARENA 4 Phase 2 deliberately supersedes the Phase 1 schema assertion that these tables had
+    // no institution columns at all: migration 1785753600401 adds `wallet_accounts.institution_id` /
+    // `institution_attribution_id`, `ledger_journals.institution_id` and the ledger-account
+    // institutional scope columns. What must still hold — and is asserted here — is that they are
+    // additive and empty: an affiliation change never attributes a wallet, a journal or an account.
+    const attribution = await dataSource.query<
+      Array<{ wallets: string; journals: string; accounts: string }>
+    >(
+      `SELECT (SELECT count(*) FROM wallet_accounts WHERE institution_id IS NOT NULL)::text AS wallets,
+              (SELECT count(*) FROM ledger_journals WHERE institution_id IS NOT NULL)::text AS journals,
+              (SELECT count(*) FROM ledger_accounts WHERE institutional_scope <> 'UNATTRIBUTED')::text AS accounts`,
     );
-    expect(columns).toHaveLength(0);
+    expect(Number(attribution[0]!.wallets)).toBe(0);
+    expect(Number(attribution[0]!.journals)).toBe(0);
+    expect(Number(attribution[0]!.accounts)).toBe(0);
+    const [attributedWallet] = await dataSource.query<Array<{ institution_id: string | null }>>(
+      `SELECT institution_id FROM wallet_accounts WHERE id = $1`,
+      [wallet.id],
+    );
+    expect(attributedWallet!.institution_id).toBeNull();
   });
 });

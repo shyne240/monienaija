@@ -665,6 +665,18 @@ export class RoutePolicyRegistry {
         requiredFunction = 'institution.lifecycle.prepare';
       } else if (/\/lifecycle$/.test(path)) {
         requiredFunction = 'institution.lifecycle.approve';
+      } else if (/\/enrolments\/execute$/.test(path)) {
+        // ARENA 4 Phase 2 — enrolment checker step.
+        requiredFunction = 'institution.enrolment.approve';
+      } else if (/\/enrolments$/.test(path)) {
+        requiredFunction = 'institution.enrolment.prepare';
+      } else if (/\/wallet-attributions\/execute$/.test(path)) {
+        // ARENA 4 Phase 2 — attribution checker step.
+        requiredFunction = 'institution.attribution.approve';
+      } else if (/\/wallet-attributions$/.test(path)) {
+        requiredFunction = 'institution.attribution.prepare';
+      } else if (/\/ledger-accounts$/.test(path)) {
+        requiredFunction = 'institution.manage';
       } else {
         requiredFunction = 'institution.manage';
       }
@@ -677,6 +689,70 @@ export class RoutePolicyRegistry {
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
           requiredFunctions: [requiredFunction],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // ARENA 4 Phase 2 — institutional financial ownership support routes. Platform-level ledger
+    // administration, cross-entity enrolment/attribution reads and the financial-context probe all
+    // require the explicit platform markers; institution-scoped writes stay on the routes above.
+    if (
+      path === '/api/v1/internal/institution-ledger' ||
+      path.startsWith('/api/v1/internal/institution-ledger/')
+    ) {
+      const isRead = lookedUpMethod === 'GET' || lookedUpMethod === 'HEAD';
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'institutional-ledger',
+        policy: {
+          resourceType: 'institutional-ledger',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: [isRead ? 'institution.attribution.view' : 'institution.manage'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    if (
+      path === '/api/v1/internal/institution-enrolments' ||
+      path.startsWith('/api/v1/internal/institution-enrolments/')
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'customer-institution-enrolment',
+        policy: {
+          resourceType: 'customer-institution-enrolment',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['institution.attribution.view'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    if (
+      path === '/api/v1/internal/financial-context' ||
+      path.startsWith('/api/v1/internal/financial-context/')
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'financial-context',
+        policy: {
+          resourceType: 'financial-context',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['institution.attribution.view'],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',

@@ -1298,6 +1298,62 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
     notes:
       'Platform-level administration. The resulting assignment is re-read on every request, so revocation applies to live sessions immediately.',
   },
+  // ARENA 4 Phase 2 — institutional financial ownership. `institution.attribution.view` (above)
+  // remains the ONLY platform-level read marker; these four are the maker/checker write functions
+  // for governed wallet attribution and customer institution enrolment.
+  {
+    functionCode: 'institution.attribution.prepare',
+    domain: 'INSTITUTION',
+    name: 'Prepare wallet institution attribution',
+    description:
+      'Initiate a governed WALLET_INSTITUTION_ATTRIBUTION request binding a wallet and its ledger account to one institution with evidence.',
+    sensitivity: OPERATIONAL,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    makerCheckerRequired: true,
+    notes: 'Maker side of WALLET_INSTITUTION_ATTRIBUTION; FINANCE_PREPARER.',
+  },
+  {
+    functionCode: 'institution.attribution.approve',
+    domain: 'INSTITUTION',
+    name: 'Approve wallet institution attribution',
+    description:
+      'Independently approve a wallet institution attribution; consumption and attribution are atomic.',
+    sensitivity: SENSITIVE,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    financeClassRestricted: true,
+    makerCheckerRequired: true,
+    approvalRequired: true,
+    notes:
+      'Checker side of WALLET_INSTITUTION_ATTRIBUTION; FINANCE_CONTROLLER, self-approval prohibited.',
+  },
+  {
+    functionCode: 'institution.enrolment.prepare',
+    domain: 'INSTITUTION',
+    name: 'Prepare customer institution enrolment',
+    description:
+      'Initiate a governed customer institution enrolment creation or transition, including any authorized KYC reuse.',
+    sensitivity: OPERATIONAL,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    makerCheckerRequired: true,
+    notes: 'Maker side of CUSTOMER_INSTITUTION_ENROLMENT_CHANGE; AGENT_NETWORK_MANAGER.',
+  },
+  {
+    functionCode: 'institution.enrolment.approve',
+    domain: 'INSTITUTION',
+    name: 'Approve customer institution enrolment',
+    description:
+      'Independently approve a customer institution enrolment change and its institutional financial eligibility.',
+    sensitivity: SENSITIVE,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    financeClassRestricted: true,
+    makerCheckerRequired: true,
+    approvalRequired: true,
+    notes: 'Checker side of CUSTOMER_INSTITUTION_ENROLMENT_CHANGE; FINANCE_CONTROLLER.',
+  },
 ];
 
 export const AUTHORIZATION_ROLE_SEED: AuthorizationRoleSeed[] = [
@@ -1698,6 +1754,12 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('FINANCE_AUDITOR', 'institution.attribution.view', VIEW),
   nowAssign('COMPLIANCE', 'institution.view', VIEW),
   nowAssign('COMPLIANCE', 'institution.attribution.view', VIEW),
+  // ARENA 4 Phase 2 — institutional financial ownership.
+  nowAssign('FINANCE_PREPARER', 'institution.view', VIEW),
+  nowAssign('FINANCE_PREPARER', 'institution.attribution.prepare', INITIATE),
+  nowAssign('AGENT_NETWORK_MANAGER', 'institution.enrolment.prepare', INITIATE),
+  nowAssign('FINANCE_CONTROLLER', 'institution.attribution.approve', APPROVE),
+  nowAssign('FINANCE_CONTROLLER', 'institution.enrolment.approve', APPROVE),
   // TREASURY deliberately receives NO institution function: the approved V1 decision pins
   // TREASURY to exactly `reconciliation.view`, and this phase must not widen any existing role.
 ];
