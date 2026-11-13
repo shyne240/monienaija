@@ -12,6 +12,7 @@ import {
   agentCashToCash,
   describeCashToCashError,
   recoverCashToCashFunding,
+  handoffCashToCashOperation,
   setPendingTransferCode,
   type AgentCashToCashResult,
   type SafeCashToCashResult,
@@ -128,10 +129,12 @@ export const CashToCashConfirmScreen: React.FC = () => {
           return;
         }
         const recovery = await recoverCashToCashFunding(existing.idempotencyKey);
+        const reason = recovery.status === 'UNKNOWN' ? 'UNKNOWN_OUTCOME' : recovery.status === 'FOUND' && recovery.lifecycleStatus === 'UNCLAIMED' ? 'LOST_TRANSFER_CODE' : 'EVIDENCE_REVIEW';
+        const handoff = await handoffCashToCashOperation(existing.idempotencyKey, reason);
         if (recovery.status === 'FOUND') {
-          setClientError(`Transfer ${recovery.transferId}: ${recovery.lifecycleStatus}. ${recovery.disposition === 'PENDING' ? 'Funds remain an outstanding obligation; this is not a refund.' : 'Contact support for receipt recovery.'}`);
+          setClientError(`Transfer ${recovery.transferId}: ${recovery.lifecycleStatus}. ${recovery.disposition === 'PENDING' ? 'Funds remain an outstanding obligation; this is not a refund.' : recovery.lifecycleStatus === 'UNCLAIMED' ? 'Funding is recorded, but the one-time code cannot be recovered. Recipient redemption remains unavailable until support resolves this.' : 'Contact support for receipt recovery.'} Support reference: ${handoff.id}.`);
         } else {
-          setClientError('The previous transfer is unresolved. Contact support; do not submit a new transfer.');
+          setClientError(`The previous transfer is unresolved. Do not submit a new transfer. Support reference: ${handoff.id}.`);
         }
         return;
       }

@@ -2268,6 +2268,66 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
   });
   expect(crossAgent.statusCode).toBe(200);
   expect(crossAgent.json()).toEqual({ status: 'UNKNOWN' });
+  const operationHandoffUrl = '/api/v1/agents/cash-to-cash/operation-handoff';
+  const absentKey = randomUUID();
+  const absentPayload = { idempotencyKey: absentKey, reason: 'UNKNOWN_OUTCOME' };
+  expect(
+    (await server.inject({ method: 'POST', url: operationHandoffUrl, payload: absentPayload }))
+      .statusCode,
+  ).toBe(401);
+  const beforeJournals = await db.query<Array<{ n: number }>>(`SELECT count(*)::int AS n FROM ledger_journals`);
+  const pendingHandoffs = await Promise.all(
+    [1, 2].map(() =>
+      server.inject({
+        method: 'POST',
+        url: operationHandoffUrl,
+        headers: { authorization: `Bearer ${token}` },
+        payload: absentPayload,
+      }),
+    ),
+  );
+  expect(pendingHandoffs.map((r) => r.statusCode)).toEqual([201, 201]);
+  const pendingId = pendingHandoffs[0]!.json<{ id: string }>().id;
+  expect(pendingHandoffs[1]!.json()).toEqual({ id: pendingId, status: 'UNRESOLVED' });
+  expect(
+    await db.query(`SELECT evidence,reason FROM cash_to_cash_operation_handoffs WHERE id=$1`, [
+      pendingId,
+    ]),
+  ).toEqual([{ evidence: { status: 'UNKNOWN' }, reason: 'UNKNOWN_OUTCOME' }]);
+  const lostCode = await server.inject({
+    method: 'POST',
+    url: operationHandoffUrl,
+    headers: { authorization: `Bearer ${token}` },
+    payload: { idempotencyKey: fundingPayload.idempotencyKey, reason: 'LOST_TRANSFER_CODE' },
+  });
+  expect(lostCode.statusCode).toBe(201);
+  const lostId = lostCode.json<{ id: string }>().id;
+  const lostRecord = await db.query<Array<{ evidence: Record<string, unknown> }>>(
+    `SELECT evidence FROM cash_to_cash_operation_handoffs WHERE id=$1`,
+    [lostId],
+  );
+  expect(lostRecord[0]!.evidence).toMatchObject({
+    status: 'FOUND',
+    transferId,
+    journalId: funding.journalId,
+    lifecycleStatus: 'UNCLAIMED',
+  });
+  expect(JSON.stringify(lostRecord)).not.toContain(transferCode);
+  await expect(
+    db.query(`DELETE FROM cash_to_cash_operation_handoffs WHERE id=$1`, [pendingId]),
+  ).rejects.toThrow('immutable');
+  expect(await db.query(`SELECT count(*)::int AS n FROM ledger_journals`)).toEqual(beforeJournals);
+  recoveryResolver.mockResolvedValueOnce({ ...affiliation, institutionId: randomUUID() });
+  expect(
+    (
+      await server.inject({
+        method: 'POST',
+        url: operationHandoffUrl,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { idempotencyKey: fundingPayload.idempotencyKey, reason: 'LOST_TRANSFER_CODE' },
+      })
+    ).statusCode,
+  ).toBe(409);
   recoveryResolver.mockRestore();
   const duplicateFunding = await server.inject({
     method: 'POST',

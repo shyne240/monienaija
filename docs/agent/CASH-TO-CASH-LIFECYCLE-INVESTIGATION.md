@@ -117,3 +117,25 @@ durable receipt UI, claim recovery, cancellation/expiry presentation and authent
 institution-scoped acceptance remain outstanding. Current recovery deliberately holds even
 first-attempt definitive errors pending support, rather than risk discarding an earlier
 ambiguous operation; an approved resolution path is needed for usability.
+
+### Operation-key handoff and lost-code containment
+
+Migration `1785753600205` adds immutable, agent-and-operation-key-deduplicated handoffs.
+Authenticated creation resolves and locks the current agent session and institution in
+the same transaction as the evidence snapshot and audit. UNKNOWN remains unresolved,
+without a manufactured transfer ID; known funding records preserve original journal and
+lifecycle information. The mobile funding recovery path creates a support reference for an
+unknown outcome or lost one-time code, retains its original key, and does not retry funding.
+The code is not persisted or recovered and no replacement is generated. Governed code
+replacement remains an external policy decision. Where an old transfer has no trustworthy
+institution evidence, recovery does not expose its transfer ID as institution-scoped evidence.
+
+A workforce operation-handoff lookup with authoritative institution scope is NOT yet wired;
+the support reference alone is not a complete operational resolution pathway. The pre-existing
+transfer handoff workforce view also still needs institution-scoped authorization acceptance.
+Mobile claim/receipt recovery and supported historical upgrade tests remain incomplete.
+
+Backend `--runInBand --detectOpenHandles` passed 242 suites / 2850 tests with no open-handle
+report and exited normally. A subsequent standard two-worker run also passed and exited normally.
+The earlier forced worker exit was intermittent and its precise cause remains unconfirmed;
+these runs do not prove there is no leak under all schedules.
