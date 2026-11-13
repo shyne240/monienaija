@@ -64,7 +64,6 @@ import {
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_LEDGER_ACCOUNTING_UNIT_MISMATCH,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_LEDGER_AMOUNT_MISMATCH,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_REQUEST_HASH_CONFLICT,
-  A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OPERATIONS_EVIDENCE_UNAVAILABLE,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A3_BINDING_MISSING,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A7T04_PRODUCT_CUSTOMER_BINDING_MISSING,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A7T07_PRODUCT_LIFECYCLE_MISMATCH,
@@ -72,7 +71,6 @@ import {
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_RECOVERY_REFERENCE_MISSING,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A6T08_SETTLEMENT_REJECTED,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A6T08_SUSPENSE_REJECTED,
-  A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A6T08_COMPENSATING_REJECTED,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OUTCOME_FAILED,
   A7_PRODUCT_FINANCIAL_EFFECT_METRIC_ADMITTED,
   A7_PRODUCT_FINANCIAL_EFFECT_METRIC_SETTLEMENT_POSTED,
@@ -495,7 +493,25 @@ class FakeRepository {
       a6T08SuspenseLookup: jest.fn().mockImplementation(() => {
         return Promise.resolve(this.existingSuspenseList);
       }),
-      a5LedgerJournalLookup: jest.fn().mockResolvedValue(this.a5LedgerJournalView),
+      a5LedgerJournalLookup: jest.fn().mockImplementation((id: string) => {
+        if (id === this.a5ReversalJournal.id) {
+          if (this.a5LedgerReverseRejection) return Promise.resolve(null);
+          const journal = this.a5ReversalJournal;
+          return Promise.resolve({
+            journalId: journal.id,
+            idempotencyKey: journal.idempotencyKey,
+            currency: journal.currency,
+            accountingUnit: journal.accountingUnit,
+            totalMinor: journal.totalMinor,
+            status: journal.status,
+            reference: journal.reference,
+            reversalOfJournalId: journal.reversalOfJournalId,
+            createdAt: journal.createdAt.toISOString(),
+            postedAt: journal.postedAt.toISOString(),
+          });
+        }
+        return Promise.resolve(this.a5LedgerJournalView);
+      }),
       a5LedgerAccountLookup: jest.fn(),
       a5LedgerEnabled: jest.fn().mockResolvedValue({
         enabled: this.a5LedgerEnabled,
@@ -1474,36 +1490,28 @@ describe('A7T08 A7 product financial effect service', () => {
     }
   });
 
-  it('rejects a reversal when the A5 ledger reversal fails', async () => {
+  it('rolls back if the compensation journal is unavailable', async () => {
     const fakeRepo = new FakeRepository();
     fakeRepo.setReversalContext();
     fakeRepo.a5LedgerReverseRejection = true;
     const service = serviceWithFakeRepository(fakeRepo);
-    const result = await service.postProductFinancialEffectReversal(
-      makeInputWithCanonicalHash({ reversalReason: 'TEST_REVERSAL' }),
-    );
-    expect(result.valid).toBe(false);
-    if (!result.valid) {
-      expect(result.failure.code).toBe(
-        A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OPERATIONS_EVIDENCE_UNAVAILABLE,
-      );
-    }
+    await expect(
+      service.postProductFinancialEffectReversal(
+        makeInputWithCanonicalHash({ reversalReason: 'TEST_REVERSAL' }),
+      ),
+    ).rejects.toThrow('Compensating journal does not match');
   });
 
-  it('rejects a reversal when the A6T08 compensating entry is rejected', async () => {
+  it('propagates a compensating rejection so the transaction can roll back', async () => {
     const fakeRepo = new FakeRepository();
     fakeRepo.setReversalContext();
     fakeRepo.a6T08CompensatingRejection = true;
     const service = serviceWithFakeRepository(fakeRepo);
-    const result = await service.postProductFinancialEffectReversal(
-      makeInputWithCanonicalHash({ reversalReason: 'TEST_REVERSAL' }),
-    );
-    expect(result.valid).toBe(false);
-    if (!result.valid) {
-      expect(result.failure.code).toBe(
-        A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A6T08_COMPENSATING_REJECTED,
-      );
-    }
+    await expect(
+      service.postProductFinancialEffectReversal(
+        makeInputWithCanonicalHash({ reversalReason: 'TEST_REVERSAL' }),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('posts a reversal through the A5 Ledger reversal and A6T08 compensating entry', async () => {

@@ -697,6 +697,15 @@ test('committed replay and exact reversal survive suspension; altered reversal a
       ],
     }),
   ).rejects.toThrow('Customer is not eligible for financial access');
+  await db.query(
+    `INSERT INTO kyc_tier_manual_holds(customer_id,actor,reason) VALUES($1,'test','MANUAL_REVIEW')`,
+    [customer],
+  );
+  await expect(
+    ledger.reverseJournal(payment.id, randomUUID(), 'Controlled correction'),
+  ).rejects.toThrow('restricted pending compliance review');
+  expect((await ledger.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('60');
+  await db.query(`DELETE FROM kyc_tier_manual_holds WHERE customer_id=$1`, [customer]);
   const refund = await ledger.reverseJournal(payment.id, randomUUID(), 'Controlled refund');
   expect(refund.reversalOfJournalId).toBe(payment.id);
   expect((await ledger.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe('100');

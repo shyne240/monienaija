@@ -89,6 +89,7 @@ import type {
   ExternalSuspenseEntryView,
 } from '../partner/external-settlement.types';
 import { LedgerService } from '../ledger/ledger.service';
+import { LedgerJournal } from '../ledger/ledger-journal.entity';
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
 import { MetricsService } from '../operations/metrics.service';
@@ -260,7 +261,7 @@ export class A7ProductFinancialEffectRepository {
         this.lookupA6T08Settlement(externalOperationReference),
       a6T08SuspenseLookup: (externalOperationReference) =>
         this.lookupA6T08Suspense(externalOperationReference),
-      a5LedgerJournalLookup: (journalId) => this.lookupA5LedgerJournal(journalId),
+      a5LedgerJournalLookup: (journalId, manager) => this.lookupA5LedgerJournal(journalId, manager),
       a5LedgerAccountLookup: (accountId) => this.lookupA5LedgerAccount(accountId),
       a5LedgerEnabled: () => this.readA5LedgerEnabled(),
       a5LedgerInvariantCheck: (currency, accountingUnit) =>
@@ -268,8 +269,8 @@ export class A7ProductFinancialEffectRepository {
       a6T08SettleVerifiedOutcome: (command) =>
         this.externalSettlementService.settleVerifiedOutcome(command),
       a6T08RecordSuspense: (command) => this.externalSettlementService.recordSuspense(command),
-      a6T08RecordCompensatingEntry: (command) =>
-        this.externalSettlementService.recordCompensatingEntry(command),
+      a6T08RecordCompensatingEntry: (command, manager) =>
+        this.externalSettlementService.recordCompensatingEntryInTransaction(manager, command),
       a5LedgerPostJournal: (command) => this.ledgerService.postJournal(command),
       a5LedgerReverseJournal: (journalId, idempotencyKey, reason) =>
         this.ledgerService.reverseJournal(journalId, idempotencyKey, reason),
@@ -722,9 +723,26 @@ export class A7ProductFinancialEffectRepository {
 
   private async lookupA5LedgerJournal(
     journalId: string,
+    manager?: EntityManager,
   ): Promise<A7ProductFinancialEffectA5LedgerJournalView | null> {
     if (!UUID_PATTERN.test(journalId.trim())) {
       return null;
+    }
+    if (manager) {
+      const row = await manager.getRepository(LedgerJournal).findOne({ where: { id: journalId } });
+      if (!row) return null;
+      return {
+        journalId: row.id,
+        idempotencyKey: row.idempotencyKey,
+        currency: row.currency,
+        accountingUnit: row.accountingUnit,
+        totalMinor: String(row.totalMinor),
+        status: row.status,
+        reference: row.reference,
+        reversalOfJournalId: row.reversalOfJournalId,
+        createdAt: row.createdAt.toISOString(),
+        postedAt: row.postedAt.toISOString(),
+      };
     }
     try {
       const view = await this.ledgerService.getJournal(journalId);

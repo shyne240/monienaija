@@ -414,7 +414,8 @@ export class LedgerService {
 
     const accountIds = [...new Set(command.lines.map((line) => line.accountId))].sort();
     const accounts = await this.lockAccounts(manager, accountIds);
-    if (governedReversal) await this.requireGovernedReversalCompliance(manager, accountIds);
+    if (governedReversal || (recoveryAuthority && command.reversalOfJournalId))
+      await this.requireGovernedReversalCompliance(manager, accountIds);
     // A reversal is exempt from current eligibility only after proving that every
     // immutable original line is exactly inverted. Merely supplying metadata or a
     // reversal id must never make an arbitrary new spending journal eligible.

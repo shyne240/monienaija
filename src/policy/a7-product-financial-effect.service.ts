@@ -1858,73 +1858,29 @@ export class A7ProductFinancialEffectService {
       );
     }
 
-    // Post the A5 Ledger reversal journal (new compensating journal
-    // that reverses the original settlement journal) and record the
-    // A6T08 compensating entry (new suspense entry that represents
-    // the compensating effect).
-    const reversalIdempotencyKey = this.computeReversalReference(productFinancialEffectId);
-    const compensatingReference = this.computeCompensatingReference(productFinancialEffectId);
-    void compensatingReference;
-    let a5ReversalJournal: A7ProductFinancialEffectA5LedgerJournalView | null = null;
-    let a6T08Compensating: ExternalSuspenseEntryView | null = null;
-    try {
-      // The A5 Ledger reversal is performed through the A5
-      // `LedgerService.reverseJournal()` consumer boundary. The A5
-      // Ledger service creates a NEW compensating journal that
-      // reverses the original settlement journal. The A7 product
-      // financial effect service does NOT mutate the original
-      // settlement journal.
-      const a5ReversalJournalRaw = await ports.a5LedgerReverseJournal(
-        existingSettlement.journalId ?? '',
-        reversalIdempotencyKey,
-        command.reversalReason ?? 'A7 product financial effect reversal',
-      );
-      a5ReversalJournal = {
-        journalId: a5ReversalJournalRaw.id,
-        idempotencyKey: a5ReversalJournalRaw.idempotencyKey,
-        currency: a5ReversalJournalRaw.currency,
-        accountingUnit: a5ReversalJournalRaw.accountingUnit,
-        totalMinor: a5ReversalJournalRaw.totalMinor,
-        status: a5ReversalJournalRaw.status,
-        reference: a5ReversalJournalRaw.reference,
-        reversalOfJournalId: a5ReversalJournalRaw.reversalOfJournalId,
-        createdAt: a5ReversalJournalRaw.createdAt.toISOString(),
-        postedAt: a5ReversalJournalRaw.postedAt.toISOString(),
-      };
-    } catch (error) {
-      return this.failure(
-        command,
-        A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OPERATIONS_EVIDENCE_UNAVAILABLE,
-        `The A5 Ledger reversal could not be posted: ${(error as Error).message}`,
-        checkWithFailed('a5LedgerInvariant', 'FAIL'),
-      );
-    }
-    try {
-      a6T08Compensating = (
-        await ports.a6T08RecordCompensatingEntry({
-          externalOperationId: a6View.externalOperationId,
-          settlementId: existingSettlement.settlementId,
-          suspenseEntryId: firstSuspense.suspenseId,
-          expectedVersion: 1,
-          requestContext: command.requestContext,
-          reason: command.reversalReason ?? 'A7 product financial effect reversal',
-        })
-      ).suspense;
-    } catch (error) {
-      if (this.isA6T08CompensatingRejection(error)) {
-        return this.failure(
-          command,
-          A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A6T08_COMPENSATING_REJECTED,
-          `The A6T08 compensating entry was rejected: ${(error as Error).message}`,
-          checkWithFailed('a6T08Compensating', 'FAIL'),
-        );
-      }
-      return this.failure(
-        command,
-        A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OPERATIONS_EVIDENCE_UNAVAILABLE,
-        `The A6T08 compensating entry could not be recorded: ${(error as Error).message}`,
-        checkWithFailed('a6T08Compensating', 'FAIL'),
-      );
+    // A6 posts the one exact inversion and updates settlement/suspense using this
+    // transaction. No independent A5 reversal may commit ahead of compensation.
+    const compensation = await ports.a6T08RecordCompensatingEntry(
+      {
+        externalOperationId: a6View.externalOperationId,
+        settlementId: existingSettlement.settlementId,
+        suspenseEntryId: firstSuspense.suspenseId,
+        expectedVersion: 1,
+        requestContext: command.requestContext,
+        reason: command.reversalReason ?? 'A7 product financial effect reversal',
+      },
+      manager,
+    );
+    const a6T08Compensating = compensation.suspense;
+    const a5ReversalJournal = await ports.a5LedgerJournalLookup(
+      compensation.reversalJournalId,
+      manager,
+    );
+    if (
+      !a5ReversalJournal ||
+      a5ReversalJournal.reversalOfJournalId !== existingSettlement.journalId
+    ) {
+      throw new Error('Compensating journal does not match the original settlement');
     }
     const createdAt = new Date().toISOString();
     const productFinancialEffectReference =
@@ -1983,76 +1939,49 @@ export class A7ProductFinancialEffectService {
       version: 1,
     };
 
-    try {
-      await ports.operationsIdempotencyComplete(manager, reservation.record!.id, {
-        statusCode: 201,
-        responseBody: record as unknown as Record<string, unknown>,
-        resourceType: 'A7_PRODUCT_FINANCIAL_EFFECT',
-        resourceId: productFinancialEffectId,
-        key: command.idempotencyKey,
-        requestHash: canonicalHash,
-      });
-    } catch {
-      return this.failure(
+    await ports.operationsIdempotencyComplete(manager, reservation.record!.id, {
+      statusCode: 201,
+      responseBody: record as unknown as Record<string, unknown>,
+      resourceType: 'A7_PRODUCT_FINANCIAL_EFFECT',
+      resourceId: productFinancialEffectId,
+      key: command.idempotencyKey,
+      requestHash: canonicalHash,
+    });
+    await ports.operationsAudit(
+      manager,
+      this.buildAuditRecord(
+        A7_PRODUCT_FINANCIAL_EFFECT_AUDIT_ACTION_REVERSAL_POSTED,
+        productFinancialEffectId,
         command,
-        A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OPERATIONS_EVIDENCE_UNAVAILABLE,
-        'The A7 internal idempotency record could not be completed',
-        checkWithFailed('idempotency', 'FAIL'),
-      );
-    }
-    try {
-      await ports.operationsAudit(
-        manager,
-        this.buildAuditRecord(
-          A7_PRODUCT_FINANCIAL_EFFECT_AUDIT_ACTION_REVERSAL_POSTED,
-          productFinancialEffectId,
-          command,
-          record,
-        ),
-      );
-      await ports.operationsAudit(
-        manager,
-        this.buildAuditRecord(
-          A7_PRODUCT_FINANCIAL_EFFECT_AUDIT_ACTION_RESERVED,
-          productFinancialEffectId,
-          command,
-          record,
-        ),
-      );
-    } catch {
-      return this.failure(
+        record,
+      ),
+    );
+    await ports.operationsAudit(
+      manager,
+      this.buildAuditRecord(
+        A7_PRODUCT_FINANCIAL_EFFECT_AUDIT_ACTION_RESERVED,
+        productFinancialEffectId,
         command,
-        A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OPERATIONS_EVIDENCE_UNAVAILABLE,
-        'The A7 product financial effect reversal audit could not be recorded',
-        checkWithFailed('idempotency', 'FAIL'),
-      );
-    }
-    try {
-      await ports.operationsOutboxEnqueue(manager, {
-        eventType: A7_PRODUCT_FINANCIAL_EFFECT_OUTBOX_EVENT_TYPE,
-        aggregateType: 'A7_PRODUCT_FINANCIAL_EFFECT',
-        aggregateId: productFinancialEffectId,
-        eventKey: `a7-product-financial-effect:${productFinancialEffectId}`,
-        schemaVersion: 1,
-        classification: A7_PRODUCT_FINANCIAL_EFFECT_OUTBOX_EVENT_CLASSIFICATION,
-        retentionClass: A7_PRODUCT_FINANCIAL_EFFECT_OUTBOX_EVENT_RETENTION_CLASS,
-        occurredAt: new Date(createdAt),
-        correlationId: command.requestContext.correlationId,
-        causationId: command.causationId,
-        payload: this.buildOutboxPayload(
-          record,
-          command,
-          A7_PRODUCT_FINANCIAL_EFFECT_AUDIT_ACTION_REVERSAL_POSTED,
-        ),
-      });
-    } catch {
-      return this.failure(
+        record,
+      ),
+    );
+    await ports.operationsOutboxEnqueue(manager, {
+      eventType: A7_PRODUCT_FINANCIAL_EFFECT_OUTBOX_EVENT_TYPE,
+      aggregateType: 'A7_PRODUCT_FINANCIAL_EFFECT',
+      aggregateId: productFinancialEffectId,
+      eventKey: `a7-product-financial-effect:${productFinancialEffectId}`,
+      schemaVersion: 1,
+      classification: A7_PRODUCT_FINANCIAL_EFFECT_OUTBOX_EVENT_CLASSIFICATION,
+      retentionClass: A7_PRODUCT_FINANCIAL_EFFECT_OUTBOX_EVENT_RETENTION_CLASS,
+      occurredAt: new Date(createdAt),
+      correlationId: command.requestContext.correlationId,
+      causationId: command.causationId,
+      payload: this.buildOutboxPayload(
+        record,
         command,
-        A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OUTBOX_PUBLICATION_FAILED,
-        'The A7 product financial effect reversal outbox fact could not be published',
-        checkWithFailed('idempotency', 'FAIL'),
-      );
-    }
+        A7_PRODUCT_FINANCIAL_EFFECT_AUDIT_ACTION_REVERSAL_POSTED,
+      ),
+    });
     try {
       await ports.operationsMetricsIncrement(manager, A7_PRODUCT_FINANCIAL_EFFECT_METRIC_ADMITTED);
       await ports.operationsMetricsIncrement(
