@@ -18,6 +18,7 @@ import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletService } from '../wallet/wallet.service';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { parsePositiveMinorUnits, normalizeCurrency } from '../common/money';
+import { CashOutInstitutionResolver } from './cash-out-institution.resolver';
 import { requireCashOutAgentSession } from './cash-out-intent';
 import { cashOutOtpVerificationBudget, recordCashOutOtpFailure } from './cash-out-otp-budget';
 import { AgentTransactionAuthorizationService } from './agent-transaction-authorization.service';
@@ -45,7 +46,76 @@ export class AgentCashOutService {
     private readonly auditService: AuditService,
     private readonly verificationService: AgentPasswordHashVerificationService,
     private readonly financialEligibility: CustomerFinancialEligibilityService,
+    private readonly institutionResolver: CashOutInstitutionResolver,
   ) {}
+
+  /** Read-only receipt recovery: never invokes OTP verification or financial posting. */
+  async recoverReceipt(
+    principal: AuthorizationPrincipal,
+    rawKey: string,
+  ): Promise<AgentCashOutResult> {
+    const agentId = principal.agentId;
+    const key = rawKey?.trim();
+    if (
+      principal.type !== 'AGENT' ||
+      !agentId ||
+      principal.principalId !== agentId ||
+      !key ||
+      key.length > 255
+    )
+      throw new UnauthorizedException('Agent authentication required');
+    return this.dataSource.transaction(async (manager) => {
+      await requireCashOutAgentSession(manager, agentId, principal.sessionId);
+      const rows = await manager.query<
+        Array<{
+          customer_id: string;
+          challenge_id: string;
+          journal_id: string;
+          request_hash: string;
+          amount_minor: string;
+          currency: string;
+          reference: string | null;
+          correlation_id: string | null;
+          created_at: Date;
+          intent_id: string | null;
+          intent_status: string | null;
+        }>
+      >(
+        `SELECT r.customer_id,r.challenge_id,r.journal_id,r.request_hash,j.total_minor::text AS amount_minor,j.currency,j.reference,j.correlation_id,j.created_at,c.cash_out_intent_id AS intent_id,i.status AS intent_status
+        FROM cash_out_execution_records r
+        JOIN ledger_journals j ON j.id=r.journal_id AND j.status='POSTED' AND j.currency='NGN' AND j.accounting_unit='CUSTOMER_FUNDS'
+        JOIN mfa_challenges c ON c.id=r.challenge_id AND c.customer_id=r.customer_id
+        LEFT JOIN cash_out_intents i ON i.id=c.cash_out_intent_id
+        WHERE r.agent_id=$1 AND r.idempotency_key=$2
+          AND j.idempotency_key='agent:' || $1::text || ':' || $2
+          AND j.metadata->>'canonicalService'='CASH_OUT' AND j.metadata->>'agentId'=$1::text AND j.metadata->>'requestHash'=r.request_hash
+          AND EXISTS(SELECT 1 FROM ledger_lines l JOIN wallet_accounts w ON w.ledger_account_id=l.ledger_account_id WHERE l.journal_id=j.id AND l.direction='DEBIT' AND w.customer_id=r.customer_id::text AND w.owner_class='CUSTOMER' AND l.amount_minor=j.total_minor)
+          AND EXISTS(SELECT 1 FROM ledger_lines l JOIN wallet_accounts w ON w.ledger_account_id=l.ledger_account_id WHERE l.journal_id=j.id AND l.direction='CREDIT' AND w.customer_id=r.agent_id::text AND w.owner_class='AGENT' AND l.amount_minor=j.total_minor)
+          AND (c.cash_out_intent_id IS NULL OR (i.status='COMPLETED' AND i.agent_id=r.agent_id AND i.customer_id=r.customer_id AND i.operation_key=r.idempotency_key AND i.institution_scope='MONIENAIJA'))`,
+        [agentId, key],
+      );
+      const row = rows[0];
+      if (!row)
+        throw new NotFoundException('Cash-out receipt unavailable; reconciliation may be required');
+      const institution = await this.institutionResolver.resolve(manager, agentId, row.customer_id);
+      if (institution !== 'MONIENAIJA')
+        throw new ConflictException('Institution integration not supported by current schema');
+      return {
+        status: 'REPLAYED',
+        journalId: row.journal_id,
+        agentId,
+        customerId: row.customer_id,
+        amountMinor: row.amount_minor,
+        currency: row.currency,
+        idempotencyKey: key,
+        requestHash: row.request_hash,
+        replayed: true,
+        correlationId: row.correlation_id ?? undefined,
+        reference: row.reference ?? undefined,
+        createdAt: row.created_at,
+      };
+    });
+  }
 
   async execute(input: AgentCashOutInput): Promise<AgentCashOutResult> {
     const agentId = input.agentId?.trim();
@@ -271,6 +341,13 @@ export class AgentCashOutService {
       },
       async (manager, replay, requestHash) => {
         await requireCashOutAgentSession(manager, agentId, agentPrincipal.sessionId);
+        const institutionScope = await this.institutionResolver.resolve(
+          manager,
+          agentId,
+          customerId,
+        );
+        if (institutionScope !== 'MONIENAIJA')
+          throw new ConflictException('Institution integration not supported by current schema');
         await this.financialEligibility.require(manager, customerId, { lockMode: 'SHARE' });
         const intents = await manager.query<Array<{ status: string; valid: boolean }>>(
           `SELECT i.status, (i.expires_at>clock_timestamp()) AS valid

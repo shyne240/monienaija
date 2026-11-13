@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+import { CashOutInstitutionResolver } from './cash-out-institution.resolver';
 import { establishCashOutIntent } from './cash-out-intent';
 import { AgentServiceCapabilityService } from './agent-service-capability.service';
 import { AgentService } from './agent-service.enum';
@@ -94,6 +95,7 @@ export class AgentDeskOtpService {
     @Inject(NOTIFICATION_PROVIDER_TOKEN)
     private readonly injectedProvider: NotificationProvider | null,
     @Optional() private readonly agentCapabilities?: AgentServiceCapabilityService,
+    @Optional() private readonly institutionResolver?: CashOutInstitutionResolver,
   ) {}
 
   private get provider(): NotificationProvider {
@@ -164,7 +166,19 @@ export class AgentDeskOtpService {
       command.purpose === 'WALLET_TO_CASH'
         ? await this.dataSource.transaction(async (manager) => {
             await this.financialEligibility.require(manager, customerId, { lockMode: 'SHARE' });
+            if (!this.institutionResolver)
+              throw new BadRequestException('Institution authorization unavailable');
+            const institutionScope = await this.institutionResolver.resolve(
+              manager,
+              command.agentId,
+              customerId,
+            );
+            if (institutionScope !== 'MONIENAIJA')
+              throw new BadRequestException(
+                'Institution integration not supported by current schema',
+              );
             return establishCashOutIntent(manager, {
+              institutionScope,
               agentId: command.agentId,
               agentSessionId: command.agentSessionId,
               customerId,

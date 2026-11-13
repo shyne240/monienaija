@@ -489,6 +489,11 @@ export async function agentCashOut(request: AgentCashOutRequest): Promise<AgentC
   );
 }
 
+/** Read-only recovery. The server derives all transaction details from the receipt. */
+export async function recoverAgentCashOut(idempotencyKey: string): Promise<AgentCashOutResult> {
+  return ApiClient.post<AgentCashOutResult>('api/v1/agents/cash-out/recover', { idempotencyKey });
+}
+
 export function describeCashOutError(error: unknown): string {
   if (error instanceof Error && error.name === 'ApiError') {
     const status = (error as Error & { status?: number }).status;
@@ -541,7 +546,6 @@ export function describeCashOutError(error: unknown): string {
   }
   return describeApiError(error);
 }
-
 
 /* ---------------------------------------------------------------------------
  * Cash→Cash redemption — Customer-wallet credit or Agent-cash float credit.
