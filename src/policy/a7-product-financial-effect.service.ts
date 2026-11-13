@@ -86,7 +86,7 @@
 
 import { createHash, randomUUID } from 'node:crypto';
 
-import { ConflictException, Inject, Injectable } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { EntityManager, QueryFailedError } from 'typeorm';
 
 import { parsePositiveMinorUnits } from '../common/money';
@@ -1535,6 +1535,9 @@ export class A7ProductFinancialEffectService {
         });
       }
     } catch (error) {
+      // The reservation is held by this transaction. Propagating a dependency
+      // outage rolls it back rather than committing a permanently in-progress key.
+      if (error instanceof ServiceUnavailableException) throw error;
       if (this.isA6T08SettlementRejection(error)) {
         return this.failure(
           command,
