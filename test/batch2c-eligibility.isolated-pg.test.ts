@@ -2247,6 +2247,52 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     ),
   );
   expect(concurrent.filter((r) => r.statusCode === 201)).toHaveLength(1);
+  const cancelledId = concurrent
+    .find((r) => r.statusCode === 201)!
+    .json<{ transferId: string }>().transferId;
+  const cancellationUrl = `/api/v1/agents/cash-to-cash/${cancelledId}/cancel`;
+  expect(
+    (await server.inject({ method: 'POST', url: cancellationUrl, payload: { agentPin: '1234' } }))
+      .statusCode,
+  ).toBe(401);
+  const cancellations = await Promise.all(
+    [1, 2].map(() =>
+      server.inject({
+        method: 'POST',
+        url: cancellationUrl,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { agentPin: '1234' },
+      }),
+    ),
+  );
+  expect(cancellations.map((r) => r.statusCode)).toEqual([200, 200]);
+  expect(cancellations.map((r) => r.json<{ replayed: boolean }>().replayed).sort()).toEqual([
+    false,
+    true,
+  ]);
+  expect(
+    await db.query(`SELECT status,claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`, [
+      cancelledId,
+    ]),
+  ).toEqual([{ status: 'CANCELLED', claim_journal_id: null }]);
+  expect(
+    await db.query(
+      `SELECT count(*)::int AS n FROM cash_to_cash_cancellations WHERE transfer_id=$1`,
+      [cancelledId],
+    ),
+  ).toEqual([{ n: 1 }]);
+  await expect(
+    db.query(`DELETE FROM cash_to_cash_cancellations WHERE transfer_id=$1`, [cancelledId]),
+  ).rejects.toThrow('immutable');
+  const { AgentCashToCashExpiryService } = await import(
+    '../src/agent/agent-cash-to-cash-expiry.service'
+  );
+  expect(
+    await app
+      .get(AgentCashToCashExpiryService)
+      .expireOne(cancelledId, new Date(Date.now() + 86400000)),
+  ).toBe(false);
+
   expect(
     await db.query(
       `SELECT count(*)::int AS n FROM cash_to_cash_transfers WHERE idempotency_key=ANY($1::text[])`,
@@ -2256,16 +2302,14 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
   const { AgentCashToCashService } = await import('../src/agent/agent-cash-to-cash.service');
   const rollbackKey = randomUUID();
   await expect(
-    app
-      .get(AgentCashToCashService)
-      .execute({
-        ...fundingPayload,
-        idempotencyKey: rollbackKey,
-        amountMinor: '50',
-        agentId,
-        agentPrincipal: principal,
-        _simulateFailureAfterJournal: true,
-      }),
+    app.get(AgentCashToCashService).execute({
+      ...fundingPayload,
+      idempotencyKey: rollbackKey,
+      amountMinor: '50',
+      agentId,
+      agentPrincipal: principal,
+      _simulateFailureAfterJournal: true,
+    }),
   ).rejects.toThrow('Simulated failure after journal');
   expect(
     await db.query(
@@ -2518,6 +2562,93 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
         [transferId],
       ),
     ).toEqual([{ n: 1 }]);
+    // A second recipient has independent OTP budget, allowing a genuine claim/cancel race.
+    const raceCustomer = await subject('LEVEL_1', ['BVN']);
+    await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [raceCustomer]);
+    const racePhone = `9${randomUUID().replace(/\D/g, '').padEnd(9, '1').slice(0, 9)}`;
+    await db.query(
+      `UPDATE customer_contact_methods SET value=$2,normalized_value=$2 WHERE customer_id=$1`,
+      [raceCustomer, racePhone],
+    );
+    await db.query(
+      `INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE')`,
+      [randomUUID(), raceCustomer],
+    );
+    fundingSubjects.set(agentId, { senderPhone: '8011111111', recipient: racePhone });
+    const raceFunding = await server.inject({
+      method: 'POST',
+      url: '/api/v1/agents/cash-to-cash',
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        ...fundingPayload,
+        beneficiaryPhone: racePhone,
+        amountMinor: '50',
+        idempotencyKey: randomUUID(),
+      },
+    });
+    expect(raceFunding.statusCode).toBe(201);
+    const raceTransfer = raceFunding.json<{ transferId: string; transferCode: string }>();
+    sms.clear();
+    const raceIssue = await server.inject({
+      method: 'POST',
+      url: '/api/v1/agents/me/mfa-challenges',
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        customerId: raceCustomer,
+        transferId: raceTransfer.transferId,
+        redemptionMethod: 'AGENT_CASH',
+        purpose: 'CASH_TO_CASH_CLAIM',
+      },
+    });
+    expect(raceIssue.statusCode).toBe(201);
+    const raceOtp = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+    const raceChallenge = raceIssue.json<{ challengeId: string }>();
+    const [raceClaim, raceCancel] = await Promise.all([
+      server.inject({
+        method: 'POST',
+        url: '/api/v1/agents/cash-to-cash/claim',
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          transferId: raceTransfer.transferId,
+          beneficiaryPhone: racePhone,
+          transferCode: raceTransfer.transferCode,
+          customerId: raceCustomer,
+          mfaChallengeId: raceChallenge.challengeId,
+          otp: raceOtp,
+          idempotencyKey: randomUUID(),
+          redemptionMethod: 'AGENT_CASH',
+          agentPin: '1234',
+        },
+      }),
+      server.inject({
+        method: 'POST',
+        url: `/api/v1/agents/cash-to-cash/${raceTransfer.transferId}/cancel`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { agentPin: '1234' },
+      }),
+    ]);
+    expect(
+      [raceClaim.statusCode, raceCancel.statusCode].filter((status) => status === 200),
+    ).toHaveLength(1);
+    const raced = await db.query<Array<{ status: string; claim_journal_id: string | null }>>(
+      `SELECT status,claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`,
+      [raceTransfer.transferId],
+    );
+    expect(['CLAIMED', 'CANCELLED']).toContain(raced[0]!.status);
+    expect(raced[0]!.claim_journal_id !== null).toBe(raced[0]!.status === 'CLAIMED');
+    expect(
+      await db.query(
+        `SELECT count(*)::int AS n FROM cash_to_cash_cancellations WHERE transfer_id=$1`,
+        [raceTransfer.transferId],
+      ),
+    ).toEqual([{ n: raced[0]!.status === 'CANCELLED' ? 1 : 0 }]);
+    const cancelClaimed = await server.inject({
+      method: 'POST',
+      url: `/api/v1/agents/cash-to-cash/${transferId}/cancel`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { agentPin: '1234' },
+    });
+    expect(cancelClaimed.statusCode).toBe(409);
     const httpReceipt = await server.inject({
       method: 'GET',
       url: `/api/v1/agents/cash-to-cash/claims/${transferId}`,
