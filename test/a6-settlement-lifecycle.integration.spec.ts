@@ -1,27 +1,44 @@
-import { testWalletFinancialBoundary } from './support/test-wallet-financial-boundary';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, pbkdf2Sync, randomBytes, randomUUID } from 'node:crypto';
 import type { ConfigService } from '@nestjs/config';
-import type { DataSource } from 'typeorm';
+import { Test } from '@nestjs/testing';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { FastifyAdapter } from '@nestjs/platform-fastify';
+import { AuthenticationExecutionService } from '../src/customer-authentication/authentication-execution.service';
+import { AuthenticationSessionService } from '../src/customer-authentication/authentication-session.service';
+import { PasswordHashVerificationService } from '../src/customer-authentication/password-hash-verification.service';
+import { CustomerTransactionPinService } from '../src/customer/customer-transaction-pin.service';
+import { CustomerBeneficiaryService } from '../src/customer-beneficiary/customer-beneficiary.service';
+import {
+  CustomerBeneficiaryStatus,
+  CustomerBeneficiaryType,
+} from '../src/customer-beneficiary/customer-beneficiary.enums';
+import { FinancialCommitmentService } from '../src/financial-commitment/financial-commitment.service';
+import { FinancialCommitmentRepository } from '../src/financial-commitment/financial-commitment.repository';
+import {
+  KycTierEvidenceReader,
+  type TierEvidenceSnapshot,
+} from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { KycTierWorker } from '../src/kyc-verification/kyc-tier-worker.service';
+import { LimitEnforcementService } from '../src/limit-catalog/limit-enforcement.service';
+import { LimitUsageService } from '../src/limit-catalog/limit-usage.service';
+import { WalletFinancialBoundaryService } from '../src/wallet/wallet-financial-boundary.service';
+import { WithdrawalService } from '../src/withdrawal/withdrawal.service';
+import { ExternalOperationLifecycleService } from '../src/partner/external-operation-lifecycle.service';
+import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
+import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
+import { DataSource } from 'typeorm';
 
-import { LedgerAccount } from '../src/ledger/ledger-account.entity';
-import { LedgerJournal } from '../src/ledger/ledger-journal.entity';
-import { LedgerLine } from '../src/ledger/ledger-line.entity';
 import {
   LedgerAccountType,
   LedgerEntryDirection,
   LedgerNormalBalance,
 } from '../src/ledger/ledger.enums';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { AuditEvent } from '../src/operations/audit-event.entity';
 import { AuditService } from '../src/operations/audit.service';
-import { IdempotencyRecord } from '../src/operations/idempotency-record.entity';
 import { IdempotencyService } from '../src/operations/idempotency.service';
-import { OutboxEvent } from '../src/operations/outbox-event.entity';
 import { OutboxService } from '../src/operations/outbox.service';
 import { SettlementAccountService } from '../src/payment/settlement-account.service';
-import { ExternalOperation } from '../src/partner/external-operation.entity';
 import { ExternalOperationLifecycleState } from '../src/partner/external-operation-lifecycle.enums';
-import { ExternalOperationReference } from '../src/partner/external-operation-reference.entity';
 import { ExternalOperationReferenceSource } from '../src/partner/external-operation.enums';
 import { ExternalOperationService } from '../src/partner/external-operation.service';
 import { ExternalSettlement } from '../src/partner/external-settlement.entity';
@@ -63,6 +80,9 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let service: ExternalSettlementService;
   let ledger: LedgerService;
+  let app: NestFastifyApplication;
+  let commitmentService: FinancialCommitmentService;
+  const snapshots = new Map<string, TierEvidenceSnapshot>();
 
   const requestContext = {
     requestId: 'req-a6-settlement',
@@ -103,31 +123,45 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a6settlement');
 
-    ledger = new LedgerService(
-      dataSource.getRepository(LedgerAccount),
-      dataSource.getRepository(LedgerJournal),
-      dataSource.getRepository(LedgerLine),
+    const { AppModule } = await import('../src/app.module');
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(DataSource)
+      .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue({
+        read: (_manager: unknown, id: string) => Promise.resolve(snapshots.get(id) ?? null),
+      })
+      // The periodic background worker must not race the suite's per-test TRUNCATE.
+      // Financial eligibility is still evaluated by the real synchronous boundary.
+      .overrideProvider(KycTierWorker)
+      .useValue({})
+      .overrideProvider(NOTIFICATION_PROVIDER_TOKEN)
+      .useValue(new TestNotificationProvider())
+      .compile();
+    app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+    await app.init();
+    ledger = app.get(LedgerService);
+    const audit = app.get(AuditService);
+    const idempotency = app.get(IdempotencyService);
+    const outbox = app.get(OutboxService);
+    const operations = app.get(ExternalOperationService);
+    commitmentService = new FinancialCommitmentService(
       dataSource,
-      testWalletFinancialBoundary,
+      app.get(AuthenticationSessionService),
+      app.get(CustomerTransactionPinService),
+      app.get(PasswordHashVerificationService),
+      app.get(WalletFinancialBoundaryService),
+      app.get(LimitEnforcementService),
+      app.get(WithdrawalService),
+      operations,
+      ledger,
+      new FinancialCommitmentRepository(),
     );
-    const audit = new AuditService(dataSource.getRepository(AuditEvent));
-    const idempotency = new IdempotencyService(dataSource.getRepository(IdempotencyRecord));
-    const outbox = new OutboxService(dataSource.getRepository(OutboxEvent));
-
     const connection = new PartnerConnectionService(
       configService,
       new PartnerCapabilityRegistry(),
       new EnvironmentPartnerCredentialLoader(configService),
       new PartnerRequestSigningService(),
-    );
-    const operations = new ExternalOperationService(
-      dataSource.getRepository(ExternalOperation),
-      dataSource.getRepository(ExternalOperationReference),
-      dataSource,
-      idempotency,
-      audit,
-      connection,
-      testWalletFinancialBoundary,
     );
 
     service = new ExternalSettlementService(
@@ -162,15 +196,57 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
           };
         },
       },
+      app.get(LimitUsageService),
     );
   }, 180000);
 
   afterAll(async () => {
+    if (app) await app.close();
     if (dataSource) await destroyIntegrationDataSource(dataSource);
   }, 60000);
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
+    snapshots.clear();
+    const proposal = randomUUID();
+    const requirements = { all: [], any: [] };
+    const definition = {
+      regulatoryRequirementsConfirmed: true,
+      effectiveFrom: '2020-01-01T00:00:00.000Z',
+      effectiveUntil: null,
+      regulatory: { LEVEL_1: requirements, LEVEL_2: requirements },
+      operator: { LEVEL_1: requirements, LEVEL_2: requirements },
+    };
+    await dataSource.query(
+      `INSERT INTO kyc_tier_policy_proposals(id,request_id,expected_version,definition,fingerprint,maker_id,maker_session_id,checker_id,checker_session_id,state)
+      VALUES($1,$2,0,$3,$4,'maker',$5,'checker',$6,'APPROVED')`,
+      [
+        proposal,
+        randomUUID(),
+        JSON.stringify(definition),
+        'a'.repeat(64),
+        randomUUID(),
+        randomUUID(),
+      ],
+    );
+    await dataSource.query(
+      `INSERT INTO kyc_tier_policy_versions(version,proposal_id,definition,maker_id,checker_id) VALUES(1,$1,$2,'maker','checker')`,
+      [proposal, JSON.stringify(definition)],
+    );
+    await dataSource.query('INSERT INTO kyc_tier_policy_head(singleton,version) VALUES(true,1)');
+    await dataSource.query(
+      `INSERT INTO banks(id,bank_code,bank_name,short_name,nip_supported,status) VALUES($1,'FCBANK','Test Bank','Test',true,'ACTIVE')`,
+      [randomUUID()],
+    );
+    await ledger.createAccount({
+      code: 'PAYMENT-WITHDRAWAL_RESERVE-NGN',
+      name: 'Withdrawal reserve',
+      accountType: LedgerAccountType.LIABILITY,
+      normalBalance: LedgerNormalBalance.CREDIT,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+      allowNegativeBalance: false,
+    });
     const suffix = randomUUID().slice(0, 8);
     const customer = await ledger.createAccount({
       code: `A6-CUST-${suffix}`,
@@ -239,14 +315,187 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
     accountId = customerLedgerAccountId,
   ): Promise<{ id: string; version: number; evidenceValue: string }> {
     const suffix = randomUUID().slice(0, 8);
-    // Real A3 customer/wallet rows, then a real withdrawal: the external_operations foreign
-    // keys are genuine and are part of what this suite verifies.
-    const participant = await seedTransferParticipant(dataSource, 'a6', accountId);
+    if (accountId !== customerLedgerAccountId)
+      await ledger.postJournal({
+        idempotencyKey: `a6-other-fund-${suffix}`,
+        currency: 'NGN',
+        accountingUnit: 'CUSTOMER_FUNDS',
+        lines: [
+          {
+            accountId: settlementAssetLedgerAccountId,
+            direction: LedgerEntryDirection.DEBIT,
+            amountMinor: '1000',
+          },
+          { accountId, direction: LedgerEntryDirection.CREDIT, amountMinor: '1000' },
+        ],
+      });
+    const participant = await seedTransferParticipant(dataSource, `a6${suffix}`, accountId);
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods(customer_id,type,value,normalized_value,is_primary,verified_at)
+      VALUES($1,'PHONE',$2,$2,true,clock_timestamp())`,
+      [participant.customerId, `phone-${randomUUID()}`],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_kyc_assessments(customer_id,kyc_level,kyc_status,assessed_by,expires_at)
+      VALUES($1,'LEVEL_1','APPROVED','fixture',clock_timestamp()+interval '1 hour')`,
+      [participant.customerId],
+    );
+    snapshots.set(participant.customerId, {
+      identityRevision: 'fixture',
+      evidence: [
+        {
+          id: randomUUID(),
+          customerId: participant.customerId,
+          identityRevision: 'fixture',
+          type: 'BVN',
+          status: 'VERIFIED',
+          provenance: 'VERIFIED_PROVIDER',
+          verifiedAt: new Date(Date.now() - 10000),
+          expiresAt: new Date(Date.now() + 1800000),
+        },
+      ],
+    });
+    function hashPassword(value: string): string {
+      const salt = randomBytes(16);
+      const derived = pbkdf2Sync(value, salt, 10000, 32, 'sha256');
+      return `PBKDF2$sha256$10000$${salt.toString('base64url')}$${derived.toString('base64url')}`;
+    }
+    await dataSource.query(
+      `INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status,mobile_otp_required)
+      VALUES($1,$2,$3,'PBKDF2',1,'ACTIVE',false)`,
+      [randomUUID(), participant.customerId, hashPassword('password-123')],
+    );
+    await app.get(CustomerTransactionPinService).setTransactionPin(participant.customerId, {
+      pinHash: hashPassword('1234'),
+      hashAlgorithm: 'PBKDF2',
+      pinVersion: 1,
+      actor: participant.customerId,
+    });
+    const authentication = await app.get(AuthenticationExecutionService).authenticate({
+      customerId: participant.customerId,
+      password: 'password-123',
+      actor: participant.customerId,
+    });
+    if (!authentication.authenticated) throw new Error('Fixture authentication failed');
+    const session = await app
+      .get(AuthenticationSessionService)
+      .issue({ authentication, actor: participant.customerId });
+    const beneficiaries = app.get(CustomerBeneficiaryService);
+    const beneficiary = await beneficiaries.createBeneficiary(participant.customerId, {
+      type: CustomerBeneficiaryType.BANK_ACCOUNT,
+      displayName: 'Test beneficiary',
+      reference: `a6-${randomUUID()}`,
+      destinationIdentifier: '1234567890',
+      destinationInstitution: 'FCBANK',
+      actor: participant.customerId,
+    });
+    await beneficiaries.verifyBeneficiary(participant.customerId, beneficiary.id, {
+      verifiedBy: 'test',
+      verificationMethod: 'controlled-test',
+    });
+    await beneficiaries.updateBeneficiary(participant.customerId, beneficiary.id, {
+      status: CustomerBeneficiaryStatus.ACTIVE,
+      actor: participant.customerId,
+    });
+    const initiated = await commitmentService.initiate({
+      token: session.accessToken,
+      pin: '1234',
+      walletAccountId: participant.walletAccountId,
+      beneficiaryId: beneficiary.id,
+      amountMinor: '1000',
+      currency: 'NGN',
+      idempotencyKey: `a6-${randomUUID()}`,
+    });
+    const id = initiated.commitment.external_operation_id;
+    const lifecycle = app.get(ExternalOperationLifecycleService);
+    let version: number;
+    if (lifecycleState === ExternalOperationLifecycleState.CANCELLED) {
+      version = (
+        await lifecycle.transition({
+          externalOperationId: id,
+          expectedVersion: 1,
+          nextState: lifecycleState,
+          idempotencyKey: `cancel-${randomUUID()}`,
+          requestContext,
+        })
+      ).version;
+    } else {
+      const attempt = await lifecycle.beginAttempt(
+        id,
+        `attempt-${randomUUID()}`,
+        requestContext,
+        1,
+      );
+      version = (
+        await lifecycle.transition({
+          externalOperationId: id,
+          expectedVersion: attempt.version,
+          nextState: ExternalOperationLifecycleState.PENDING_VERIFICATION,
+          idempotencyKey: `pending-${randomUUID()}`,
+          requestContext,
+        })
+      ).version;
+    }
+    const evidenceValue = `provider-evidence-${suffix}`;
+    await app.get(ExternalOperationService).recordProviderReference({
+      externalOperationId: id,
+      partnerKey: 'NIBSS_NIP',
+      referenceType: 'TRANSACTION' as never,
+      referenceValue: evidenceValue,
+      namespace: 'nibss.nip',
+      source: ExternalOperationReferenceSource.STATUS_QUERY,
+      requestContext,
+    });
+    await app.get(ExternalOperationService).recordProviderReference({
+      externalOperationId: id,
+      partnerKey: 'NIBSS_NIP',
+      referenceType: 'TRANSACTION' as never,
+      referenceValue: `confirmed-${suffix}`,
+      namespace: 'nibss.nip',
+      source: ExternalOperationReferenceSource.STATUS_QUERY,
+      requestContext,
+    });
+    return { id, version, evidenceValue };
+  }
+
+  /** Explicit pre-commitment historical fixture. No new authorization is inferred or backfilled:
+   * the posted journal and settlement represent persisted records from the old lifecycle. */
+  async function historicalSettlement() {
+    const suffix = randomUUID().slice(0, 8);
+    const participant = await seedTransferParticipant(
+      dataSource,
+      `historical${suffix}`,
+      customerLedgerAccountId,
+    );
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods(customer_id,type,value,normalized_value,is_primary,verified_at)
+      VALUES($1,'PHONE',$2,$2,true,clock_timestamp())`,
+      [participant.customerId, `phone-${randomUUID()}`],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_kyc_assessments(customer_id,kyc_level,kyc_status,assessed_by,expires_at)
+      VALUES($1,'LEVEL_1','APPROVED','fixture',clock_timestamp()+interval '1 hour')`,
+      [participant.customerId],
+    );
+    snapshots.set(participant.customerId, {
+      identityRevision: 'fixture',
+      evidence: [
+        {
+          id: randomUUID(),
+          customerId: participant.customerId,
+          identityRevision: 'fixture',
+          type: 'BVN',
+          status: 'VERIFIED',
+          provenance: 'VERIFIED_PROVIDER',
+          verifiedAt: new Date(Date.now() - 10000),
+          expiresAt: new Date(Date.now() + 1800000),
+        },
+      ],
+    });
     const withdrawalId = randomUUID();
     await dataSource.query(
-      `INSERT INTO withdrawals (id, wallet_id, payment_reference, amount_minor, currency, status,
-         idempotency_key, request_hash)
-       VALUES ($1, $2, $3, '1000', 'NGN', 'PENDING', $4, $5)`,
+      `INSERT INTO withdrawals (id,wallet_id,payment_reference,amount_minor,currency,status,idempotency_key,request_hash)
+      VALUES ($1,$2,$3,1000,'NGN','PENDING',$4,$5)`,
       [
         withdrawalId,
         participant.walletAccountId,
@@ -255,64 +504,89 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
         sha256(`wd-${suffix}`),
       ],
     );
-
     const id = randomUUID();
     await dataSource.query(
       `INSERT INTO external_operations
-        (id, operation_version, partner_key, capability_key, operation_type, resource_type,
-         resource_id, internal_command_id, customer_id, wallet_account_id, ledger_account_id,
-         target_mapping_reference, amount_minor, currency, accounting_unit,
-         internal_idempotency_scope, internal_idempotency_key, provider_idempotency_scope,
-         provider_idempotency_key, request_hash, request_id, correlation_id, trace_id,
-         lifecycle_state, attempt_count, max_attempts, version)
-       VALUES ($1, 1, 'NIBSS_NIP', 'external.wallet.withdrawal.settlement',
-               'OUTBOUND_BANK_SETTLEMENT', 'WITHDRAWAL', $2, $3, $4, $5, $6,
-               $7, '1000', 'NGN', 'CUSTOMER_FUNDS',
-               'external.partner.operation.v1', $8, 'nibss.nip.external-operation.v1',
-               $9, $10, 'request-1', 'correlation-1', 'trace-1',
-               $11, 1, 3, 1)`,
+      (id,operation_version,partner_key,capability_key,operation_type,resource_type,resource_id,internal_command_id,customer_id,wallet_account_id,ledger_account_id,
+       target_mapping_reference,amount_minor,currency,accounting_unit,internal_idempotency_scope,internal_idempotency_key,provider_idempotency_scope,
+       provider_idempotency_key,request_hash,request_id,correlation_id,trace_id,lifecycle_state,attempt_count,max_attempts,version)
+      VALUES($1,1,'NIBSS_NIP','external.wallet.withdrawal.settlement','OUTBOUND_BANK_SETTLEMENT','WITHDRAWAL',$2,$3,$4,$5,$6,$7,1000,'NGN','CUSTOMER_FUNDS',
+       'external.partner.operation.v1',$8,'nibss.nip.external-operation.v1',$9,$10,'request-1','correlation-1','trace-1','PENDING_VERIFICATION',1,3,1)`,
       [
         id,
         withdrawalId,
         randomUUID(),
         participant.customerId,
         participant.walletAccountId,
-        accountId,
+        customerLedgerAccountId,
         `a6-target:${sha256(suffix)}`,
         `operation-key-${suffix}`,
         `provider-key-${suffix}`,
         sha256(`request-${suffix}`),
-        lifecycleState,
       ],
     );
-    // Verified provider evidence must already exist as an operation reference; the settlement
-    // service resolves the evidence through it rather than trusting the caller.
     const evidenceValue = `provider-evidence-${suffix}`;
+    for (const value of [evidenceValue, `confirmed-${suffix}`])
+      await dataSource.query(
+        `INSERT INTO external_operation_references
+      (id,external_operation_id,partner_key,reference_type,reference_value,namespace,source,observed_at)
+      VALUES($1,$2,'NIBSS_NIP','TRANSACTION',$3,'nibss.nip','STATUS_QUERY',now())`,
+        [randomUUID(), id, value],
+      );
+    const journal = await ledger.postJournal({
+      idempotencyKey: `historical-${suffix}`,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+      lines: [
+        {
+          accountId: customerLedgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: '1000',
+        },
+        {
+          accountId: settlementAssetLedgerAccountId,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: '1000',
+        },
+      ],
+    });
+    const settlementId = randomUUID();
     await dataSource.query(
-      `INSERT INTO external_operation_references
-         (id, external_operation_id, partner_key, reference_type, reference_value, namespace,
-          source, observed_at)
-       VALUES ($1, $2, 'NIBSS_NIP', 'TRANSACTION', $3, 'nibss.nip', 'STATUS_QUERY', now())`,
-      [randomUUID(), id, evidenceValue],
+      `INSERT INTO external_settlements
+      (id,external_operation_id,external_operation_reference,partner_key,capability_key,operation_type,customer_id,wallet_account_id,customer_ledger_account_id,
+       settlement_asset_ledger_account_id,decision,status,amount_minor,currency,accounting_unit,lifecycle_state,journal_id,evidence_type,evidence_value,
+       evidence_namespace,evidence_source,evidence_hash,idempotency_scope,idempotency_key,request_hash,correlation_id,request_id,owner_principal,posted_at)
+      VALUES($1,$2,$3,'NIBSS_NIP','external.wallet.withdrawal.settlement','OUTBOUND_BANK_SETTLEMENT',$4,$5,$6,$7,'SETTLE','POSTED',1000,'NGN','CUSTOMER_FUNDS',
+       'SETTLED',$8,'TRANSACTION',$9,'nibss.nip','STATUS_QUERY',$10,'historical',$11,$12,'historical','historical','historical',now())`,
+      [
+        settlementId,
+        id,
+        `a6-external-operation:${id}`,
+        participant.customerId,
+        participant.walletAccountId,
+        customerLedgerAccountId,
+        settlementAssetLedgerAccountId,
+        journal.id,
+        evidenceValue,
+        sha256(evidenceValue),
+        `a6-settlement:${sha256(suffix)}`,
+        sha256(`historical-${suffix}`),
+      ],
     );
-
-    await dataSource.query(
-      `INSERT INTO external_operation_references
-      (id, external_operation_id, partner_key, reference_type, reference_value, namespace, source, observed_at)
-      VALUES ($1,$2,'NIBSS_NIP','TRANSACTION',$3,'nibss.nip','STATUS_QUERY',now())`,
-      [randomUUID(), id, `confirmed-${suffix}`],
-    );
-    return { id, version: 1, evidenceValue };
+    return {
+      operation: { id, version: 1, evidenceValue },
+      settled: { settlement: { settlementId, journalId: journal.id, settlementVersion: 1 } },
+    };
   }
 
   function settleCommand(
-    operation: { id: string; evidenceValue: string },
+    operation: { id: string; version: number; evidenceValue: string },
     overrides: Partial<SettleVerifiedOutcomeCommand> = {},
   ): SettleVerifiedOutcomeCommand {
     return {
       externalOperationId: operation.id,
       decision: ExternalSettlementDecision.SETTLE,
-      expectedVersion: 1,
+      expectedVersion: operation.version,
       evidence: {
         referenceType: 'TRANSACTION',
         referenceValue: operation.evidenceValue,
@@ -326,14 +600,14 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
   }
 
   function suspenseCommand(
-    operation: { id: string; evidenceValue: string },
+    operation: { id: string; version: number; evidenceValue: string },
     overrides: Partial<SuspenseVerifiedOutcomeCommand> = {},
   ): SuspenseVerifiedOutcomeCommand {
     return {
       externalOperationId: operation.id,
       reason: 'SETTLEMENT_AMOUNT_MISMATCH',
       rejectionCode: 'SETTLEMENT_AMOUNT_MISMATCH',
-      expectedVersion: 1,
+      expectedVersion: operation.version,
       evidence: {
         referenceType: 'TRANSACTION',
         referenceValue: operation.evidenceValue,
@@ -360,14 +634,33 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
     expect(result.settlement.journalId).toBeTruthy();
     expect(result.settlement.reversalJournalId).toBeNull();
 
-    const lines: Array<{ direction: string; amount_minor: string }> = await dataSource.query(
-      'SELECT direction, amount_minor FROM ledger_lines WHERE journal_id = $1',
-      [result.settlement.journalId],
-    );
+    const lines: Array<{ direction: string; amount_minor: string; ledger_account_id: string }> =
+      await dataSource.query(
+        'SELECT direction, amount_minor, ledger_account_id FROM ledger_lines WHERE journal_id = $1',
+        [result.settlement.journalId],
+      );
     expect(lines).toHaveLength(2);
     const debits = lines.filter((l) => l.direction === String(LedgerEntryDirection.DEBIT));
     const credits = lines.filter((l) => l.direction === String(LedgerEntryDirection.CREDIT));
     expect(BigInt(debits[0]!.amount_minor)).toBe(BigInt(credits[0]!.amount_minor));
+    const reserve = (
+      await dataSource.query<Array<{ id: string }>>(
+        `SELECT id FROM ledger_accounts WHERE code='PAYMENT-WITHDRAWAL_RESERVE-NGN'`,
+      )
+    )[0]!.id;
+    expect(debits[0]).toMatchObject({ ledger_account_id: reserve, amount_minor: '1000' });
+    expect(credits[0]).toMatchObject({
+      ledger_account_id: settlementAssetLedgerAccountId,
+      amount_minor: '1000',
+    });
+    expect((await ledger.getAccountBalance(customerLedgerAccountId)).balanceMinor).toBe('99000');
+    expect((await ledger.getAccountBalance(reserve)).balanceMinor).toBe('0');
+    expect(
+      await dataSource.query(
+        `SELECT state FROM financial_commitments WHERE external_operation_id=$1`,
+        [operation.id],
+      ),
+    ).toEqual([{ state: 'SETTLED' }]);
   });
 
   it('replays an identical settlement without posting a second journal', async () => {
@@ -381,7 +674,7 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
     const journals: Array<Record<string, unknown>> = await dataSource.query(
       'SELECT id FROM ledger_journals',
     );
-    expect(journals).toHaveLength(2); // seeding journal + one settlement journal
+    expect(journals).toHaveLength(3); // funding, authorized reservation and settlement
   });
 
   it('rejects the same settlement key carrying different evidence', async () => {
@@ -468,9 +761,38 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
     expect(rows).toHaveLength(1);
   });
 
-  it('posts a compensating entry and marks the settlement REVERSED', async () => {
+  it('does not restore a settled commitment using rejection alone', async () => {
     const operation = await seedOperation();
     const settled = await service.settleVerifiedOutcome(settleCommand(operation));
+    const suspense = await service.recordSuspense(suspenseCommand(operation));
+    const before = await ledger.getAccountBalance(customerLedgerAccountId);
+    const journals = await dataSource.query<Array<{ id: string }>>(
+      'SELECT id FROM ledger_journals',
+    );
+    const command: RecordCompensatingEntryCommand = {
+      externalOperationId: operation.id,
+      settlementId: settled.settlement.settlementId,
+      suspenseEntryId: suspense.suspenseId,
+      expectedVersion: operation.version,
+      requestContext,
+    };
+    await expect(service.recordCompensatingEntry(command)).rejects.toMatchObject({
+      code: 'COMPENSATING_NOT_PERMITTED',
+    });
+    expect((await ledger.getAccountBalance(customerLedgerAccountId)).balanceMinor).toBe(
+      before.balanceMinor,
+    );
+    expect(await dataSource.query('SELECT id FROM ledger_journals')).toHaveLength(journals.length);
+    expect(
+      await dataSource.query(
+        'SELECT state FROM financial_commitments WHERE external_operation_id=$1',
+        [operation.id],
+      ),
+    ).toEqual([{ state: 'SETTLED' }]);
+  });
+
+  it('posts a compensating entry and marks the settlement REVERSED', async () => {
+    const { operation, settled } = await historicalSettlement();
     const suspense = await service.recordSuspense(suspenseCommand(operation));
 
     const command: RecordCompensatingEntryCommand = {
@@ -489,8 +811,7 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
   });
 
   it('keeps the compensating pair net-zero on the customer account', async () => {
-    const operation = await seedOperation();
-    const settled = await service.settleVerifiedOutcome(settleCommand(operation));
+    const { operation, settled } = await historicalSettlement();
     const suspense = await service.recordSuspense(suspenseCommand(operation));
     await service.recordCompensatingEntry({
       externalOperationId: operation.id,
@@ -510,8 +831,7 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
   });
 
   it('rejects compensation when the suspense belongs to another operation', async () => {
-    const operation = await seedOperation();
-    const settled = await service.settleVerifiedOutcome(settleCommand(operation));
+    const { operation, settled } = await historicalSettlement();
     const suspense = await service.recordSuspense(suspenseCommand(operation));
     await dataSource.query(
       'UPDATE external_suspense_entries SET external_operation_id=$1 WHERE id=$2',
@@ -538,8 +858,7 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
   });
 
   it('prevents a duplicate compensation for the same settlement', async () => {
-    const operation = await seedOperation();
-    const settled = await service.settleVerifiedOutcome(settleCommand(operation));
+    const { operation, settled } = await historicalSettlement();
     const suspense = await service.recordSuspense(suspenseCommand(operation));
     const command: RecordCompensatingEntryCommand = {
       externalOperationId: operation.id,
@@ -584,30 +903,47 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
 
   it('rolls the whole settlement back when the enclosing transaction aborts', async () => {
     const operation = await seedOperation();
-    const journalsBefore: Array<Record<string, unknown>> = await dataSource.query(
+    const journalsBefore = await dataSource.query<Array<{ id: string }>>(
       'SELECT id FROM ledger_journals',
     );
+    const customerBefore = await ledger.getAccountBalance(customerLedgerAccountId);
+    const reserve = (
+      await dataSource.query<Array<{ id: string }>>(
+        `SELECT id FROM ledger_accounts WHERE code='PAYMENT-WITHDRAWAL_RESERVE-NGN'`,
+      )
+    )[0]!.id;
+    const reserveBefore = await ledger.getAccountBalance(reserve);
     await expect(
       dataSource.transaction('SERIALIZABLE', async (manager) => {
-        await manager.query(
-          `INSERT INTO external_operation_references
-             (id, external_operation_id, partner_key, reference_type, reference_value, namespace,
-              source, observed_at)
-           VALUES ($1, $2, 'NIBSS_NIP', 'SETTLEMENT', $3, 'nibss.nip', 'CALLBACK', now())`,
-          [randomUUID(), operation.id, `rolled-back-${randomUUID().slice(0, 8)}`],
+        const posted = await service.settleVerifiedOutcomeInTransaction(
+          manager,
+          settleCommand(operation),
         );
+        expect(posted.settlement.journalId).toBeTruthy();
         throw new Error('aborted');
       }),
     ).rejects.toThrow('aborted');
-
-    const refs: Array<Record<string, unknown>> = await dataSource.query(
-      `SELECT id FROM external_operation_references WHERE reference_type = 'SETTLEMENT'`,
+    expect(await dataSource.query('SELECT id FROM ledger_journals')).toHaveLength(
+      journalsBefore.length,
     );
-    expect(refs).toEqual([]);
-    const journalsAfter: Array<Record<string, unknown>> = await dataSource.query(
-      'SELECT id FROM ledger_journals',
+    expect(
+      await dataSource.query('SELECT id FROM external_settlements WHERE external_operation_id=$1', [
+        operation.id,
+      ]),
+    ).toHaveLength(0);
+    expect(
+      await dataSource.query(
+        'SELECT state FROM financial_commitments WHERE external_operation_id=$1',
+        [operation.id],
+      ),
+    ).toEqual([{ state: 'RESERVED' }]);
+    expect((await ledger.getAccountBalance(customerLedgerAccountId)).balanceMinor).toBe(
+      customerBefore.balanceMinor,
     );
-    expect(journalsAfter).toHaveLength(journalsBefore.length);
+    expect((await ledger.getAccountBalance(reserve)).balanceMinor).toBe(reserveBefore.balanceMinor);
+    expect(
+      (await service.settleVerifiedOutcome(settleCommand(operation))).settlement.journalId,
+    ).toBeTruthy();
   });
 
   it('writes audit evidence for the settlement without contacting any partner', async () => {
