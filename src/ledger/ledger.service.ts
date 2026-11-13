@@ -21,6 +21,10 @@ import {
 import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { WalletFinancialBoundaryService } from '../wallet/wallet-financial-boundary.service';
 import { MetricsService } from '../operations/metrics.service';
+import {
+  governedChangeFingerprint,
+  LEDGER_JOURNAL_REVERSAL_ACTION,
+} from '../authorization/governed-action.registry';
 import { LedgerAccount } from './ledger-account.entity';
 import {
   LedgerAccountType,
@@ -254,6 +258,82 @@ export class LedgerService {
     return this.getJournal(journalId);
   }
 
+  /** Build an exact reversal using only the immutable original, in the caller's transaction.
+   * This internal primitive grants recovery authority only to its already-authorized caller. */
+  async reverseJournalInTransaction(
+    manager: EntityManager,
+    journalId: string,
+    idempotencyKey: string,
+    reason: string,
+    approvalId: string,
+  ): Promise<string> {
+    const fingerprint = governedChangeFingerprint(
+      LEDGER_JOURNAL_REVERSAL_ACTION.action,
+      LEDGER_JOURNAL_REVERSAL_ACTION.resourceType,
+      journalId,
+      { reason },
+    );
+    // The consumed row must have been written in this very transaction: a historical
+    // consumed approval is not a reusable capability to create an arbitrary new posting.
+    const approvals = await manager.query<Array<{ id: string }>>(
+      `SELECT id FROM privileged_action_approvals
+       WHERE id=$1 AND status='CONSUMED' AND consumed_at IS NOT NULL AND approved_by IS NOT NULL
+         AND action_type=$2 AND resource_type=$3 AND lower(resource_id)=$4
+         AND action_fingerprint=$5 AND customer_id IS NULL
+         AND xmin::text::bigint = (txid_current() % 4294967296) FOR SHARE`,
+      [
+        approvalId,
+        LEDGER_JOURNAL_REVERSAL_ACTION.action,
+        LEDGER_JOURNAL_REVERSAL_ACTION.resourceType,
+        journalId,
+        fingerprint,
+      ],
+    );
+    if (approvals.length !== 1)
+      throw new ConflictException('Reversal approval does not match journal');
+    const journalRepository = manager.getRepository(LedgerJournal);
+    const original = await journalRepository.findOne({ where: { id: journalId } });
+    if (!original) throw new NotFoundException(`Journal ${journalId} was not found`);
+    if (original.reversalOfJournalId)
+      throw new ConflictException('A reversal cannot itself be reversed');
+    const existingReversal = await journalRepository.findOne({
+      where: { reversalOfJournalId: journalId },
+    });
+    if (existingReversal) throw new ConflictException('This journal has already been reversed');
+    const lines = await manager.getRepository(LedgerLine).find({
+      where: { journalId },
+      order: { lineNumber: 'ASC' },
+    });
+    const reversalMetadata = {
+      reversalOfJournalId: journalId,
+      reversalReason: reason,
+      governedReversalApprovalId: approvalId,
+    };
+    const inheritedMetadata = { ...original.metadata, ...reversalMetadata };
+    const reversal: PostJournalCommand = {
+      idempotencyKey,
+      currency: original.currency,
+      accountingUnit: original.accountingUnit,
+      reference: original.reference ?? undefined,
+      description: reason.length <= 255 ? reason : `Reversal of journal ${journalId}`,
+      correlationId: original.correlationId ?? undefined,
+      // The original remains immutable and separately queryable; don't strand a reversal
+      // when its original metadata already occupies nearly the entire 32 KB budget.
+      metadata:
+        JSON.stringify(inheritedMetadata).length <= 32_768 ? inheritedMetadata : reversalMetadata,
+      reversalOfJournalId: journalId,
+      lines: lines.map((line) => ({
+        accountId: line.ledgerAccountId,
+        direction:
+          line.direction === LedgerEntryDirection.DEBIT
+            ? LedgerEntryDirection.CREDIT
+            : LedgerEntryDirection.DEBIT,
+        amountMinor: line.amountMinor,
+      })),
+    };
+    return this.postWithinTransaction(manager, this.normalizeJournal(reversal), true, true);
+  }
+
   async reverseJournal(
     journalId: string,
     idempotencyKey: string,
@@ -318,6 +398,7 @@ export class LedgerService {
     manager: EntityManager,
     command: NormalizedJournal,
     recoveryAuthority = false,
+    governedReversal = false,
   ): Promise<string> {
     const journalRepository = manager.getRepository(LedgerJournal);
     const existing = await journalRepository.findOne({
@@ -333,6 +414,7 @@ export class LedgerService {
 
     const accountIds = [...new Set(command.lines.map((line) => line.accountId))].sort();
     const accounts = await this.lockAccounts(manager, accountIds);
+    if (governedReversal) await this.requireGovernedReversalCompliance(manager, accountIds);
     // A reversal is exempt from current eligibility only after proving that every
     // immutable original line is exactly inverted. Merely supplying metadata or a
     // reversal id must never make an arbitrary new spending journal eligible.
@@ -423,6 +505,34 @@ export class LedgerService {
     await this.metricsService?.increment(manager, 'journals.posted');
 
     return journal.id;
+  }
+
+  /** Preserve explicit review restrictions, but do not reapply expired KYC or customer status
+   * to the exact correction of an already posted journal. Customer locks serialize with the
+   * KYC transition service's manual-hold writes. */
+  private async requireGovernedReversalCompliance(
+    manager: EntityManager,
+    accountIds: string[],
+  ): Promise<void> {
+    const customers = await manager.query<Array<{ id: string }>>(
+      `SELECT c.id FROM customers c WHERE EXISTS (
+         SELECT 1 FROM wallet_accounts w WHERE lower(w.customer_id)=c.id::text
+         AND w.ledger_account_id = ANY($1::uuid[])
+       ) ORDER BY c.id FOR UPDATE OF c`,
+      [accountIds],
+    );
+    for (const customer of customers) {
+      const holds = await manager.query<Array<{ customer_id: string }>>(
+        'SELECT customer_id FROM kyc_tier_manual_holds WHERE customer_id=$1 FOR SHARE',
+        [customer.id],
+      );
+      const conflicts = await manager.query<Array<{ id: string }>>(
+        'SELECT id FROM kyc_identity_conflicts WHERE requester_customer_id=$1 OR claimed_customer_id=$1 FOR SHARE',
+        [customer.id],
+      );
+      if (holds.length || conflicts.length)
+        throw new ConflictException('Reversal is restricted pending compliance review');
+    }
   }
 
   private async assertExactReversal(

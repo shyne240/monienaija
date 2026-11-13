@@ -74,7 +74,24 @@ class MemoryRepository<T extends ObjectLiteral> {
 }
 
 class MemoryManager {
+  private readonly executions = new Map<
+    string,
+    { reversal_journal_id: string; idempotency_key: string; original_journal_id: string }
+  >();
   constructor(private readonly repositories: Map<unknown, MemoryRepository<ObjectLiteral>>) {}
+
+  query(sql: string, parameters: string[]): Promise<unknown[]> {
+    if (sql.includes('INSERT INTO governed_ledger_reversal_executions')) {
+      this.executions.set(parameters[0]!, {
+        original_journal_id: parameters[1]!,
+        reversal_journal_id: parameters[2]!,
+        idempotency_key: parameters[3]!,
+      });
+      return Promise.resolve([]);
+    }
+    const item = this.executions.get(parameters[0]!);
+    return Promise.resolve(item && item.original_journal_id === parameters[1] ? [item] : []);
+  }
 
   getRepository<T extends ObjectLiteral>(target: unknown): Repository<T> {
     const repository = this.repositories.get(target);
@@ -135,19 +152,24 @@ function fixture(journal?: Partial<LedgerJournal>) {
   const authorizationService = {
     authorize: jest.fn().mockResolvedValue({ allowed: true, action: 'LEDGER_JOURNAL_REVERSAL' }),
   };
+  const dataSource = new MemoryDataSource(repositories);
   const approvals = new PrivilegedActionApprovalService(
     approvalRepository as unknown as Repository<PrivilegedActionApproval>,
     securityEventRepository as unknown as Repository<SecurityEventHistory>,
-    new MemoryDataSource(repositories) as unknown as DataSource,
+    dataSource as unknown as DataSource,
     auditService as unknown as AuditService,
     authorizationService as unknown as AuthorizationService,
   );
-  const reverseJournal = jest.fn().mockResolvedValue({ id: 'reversal-journal', status: 'POSTED' });
-  const ledgerService = { reverseJournal } as unknown as LedgerService;
+  const reverseJournal = jest.fn().mockResolvedValue('reversal-journal');
+  const ledgerService = {
+    reverseJournalInTransaction: reverseJournal,
+    getJournal: jest.fn().mockResolvedValue({ id: 'reversal-journal', status: 'POSTED' }),
+  } as unknown as LedgerService;
   const governance = new LedgerReversalGovernanceService(
     journalRepository as unknown as TypeOrmRepository<LedgerJournal>,
     ledgerService,
     approvals,
+    dataSource as unknown as DataSource,
   );
   return {
     governance,
@@ -262,9 +284,11 @@ describe('LedgerReversalGovernanceService (P0-B)', () => {
     });
     expect(result).toEqual({ id: 'reversal-journal', status: 'POSTED' });
     expect(reverseJournal).toHaveBeenCalledWith(
+      expect.anything(),
       JOURNAL_ID,
       expect.stringContaining(view.approvalId),
       'Correct posting duplicate entry',
+      view.approvalId,
     );
   });
 
@@ -308,7 +332,7 @@ describe('LedgerReversalGovernanceService (P0-B)', () => {
       }),
     ).rejects.toMatchObject({ status: 400 });
 
-    // Happy path then replay → 409.
+    // A matching retry returns the committed result without a second post.
     await governance.executeReversal({
       principal: checker,
       journalId: JOURNAL_ID,
@@ -322,7 +346,8 @@ describe('LedgerReversalGovernanceService (P0-B)', () => {
         reason: 'Correct posting duplicate entry',
         approvalId: view.approvalId,
       }),
-    ).rejects.toMatchObject({ status: 409 });
+    ).resolves.toEqual({ id: 'reversal-journal', status: 'POSTED' });
+    expect(reverseJournal).toHaveBeenCalledTimes(1);
   });
 
   it('denies unentitled executors before consumption', async () => {
