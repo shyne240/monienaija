@@ -1,3 +1,6 @@
+// Mobile client uses these native adapters; requests below are bridged to the real Fastify app.
+jest.mock('react-native', () => ({ Platform: { OS: 'test' } }), { virtual: true });
+jest.mock('expo-secure-store', () => ({}), { virtual: true });
 import { CashOutInstitutionResolver } from '../src/agent/cash-out-institution.resolver';
 import { CustomerFinancialEligibilityService } from '../src/kyc-verification/customer-financial-eligibility.service';
 import type { TierEvidenceSnapshot } from '../src/kyc-verification/kyc-tier-evidence.reader';
@@ -69,7 +72,18 @@ beforeAll(async () => {
     .overrideProvider(DataSource)
     .useValue(db)
     .overrideProvider(CashOutInstitutionResolver)
-    .useValue({ resolve: () => Promise.resolve('MONIENAIJA') })
+    .useValue({
+      resolve: (_manager: unknown, agentId: string) =>
+        Promise.resolve({
+          outcome: 'RESOLVED',
+          agentId,
+          institutionId: 'MONIENAIJA',
+          affiliationId: 'test-affiliation',
+          institutionStatus: 'APPROVED',
+          resolvedAt: new Date().toISOString(),
+          evidenceFingerprint: 'fixture',
+        }),
+    })
     .overrideProvider(KycTierEvidenceReader)
     .useValue({ read: (_m: unknown, id: string) => Promise.resolve(snapshots.get(id) ?? null) })
     .overrideProvider(NOTIFICATION_PROVIDER_TOKEN)
@@ -811,7 +825,15 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
   await expect(service.execute({ ...input, currency: 'USD' })).rejects.toThrow();
   await expect(service.execute({ ...input, customerId: randomUUID() })).rejects.toThrow();
   const scopeSpy = jest.spyOn(app.get(CashOutInstitutionResolver), 'resolve');
-  scopeSpy.mockResolvedValueOnce('DIFFERENT');
+  scopeSpy.mockResolvedValueOnce({
+    outcome: 'RESOLVED',
+    agentId: agent.id,
+    institutionId: randomUUID(),
+    affiliationId: randomUUID(),
+    institutionStatus: 'APPROVED',
+    resolvedAt: new Date().toISOString(),
+    evidenceFingerprint: 'fixture',
+  });
   await expect(service.execute(input)).rejects.toThrow('Institution');
   scopeSpy.mockRejectedValueOnce(new Error('Institution suspended'));
   await expect(service.execute(input)).rejects.toThrow('suspended');
@@ -944,7 +966,15 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
   });
   const resolver = app.get(CashOutInstitutionResolver);
   const resolverSpy = jest.spyOn(resolver, 'resolve');
-  resolverSpy.mockResolvedValueOnce('DIFFERENT');
+  resolverSpy.mockResolvedValueOnce({
+    outcome: 'RESOLVED',
+    agentId: agent.id,
+    institutionId: randomUUID(),
+    affiliationId: randomUUID(),
+    institutionStatus: 'APPROVED',
+    resolvedAt: new Date().toISOString(),
+    evidenceFingerprint: 'fixture',
+  });
   await expect(
     service.recoverReceipt({ ...input.agentPrincipal, sessionId: newSession }, operationKey),
   ).rejects.toThrow('Institution');
@@ -1076,18 +1106,16 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
   ).toEqual([{ status: 'REVOKED', failed_attempts: 5 }]);
   await expect(service.execute({ ...anotherInput, otp: anotherCode })).rejects.toThrow();
   await expect(
-    app
-      .get(AgentDeskOtpService)
-      .issue({
-        agentId: agent.id,
-        agentSessionId: deskSession,
-        customerId,
-        purpose: 'WALLET_TO_CASH',
-        amountMinor: '2000',
-        currency: 'NGN',
-        operationKey: randomUUID(),
-        supersedesOperationKey: anotherKey,
-      }),
+    app.get(AgentDeskOtpService).issue({
+      agentId: agent.id,
+      agentSessionId: deskSession,
+      customerId,
+      purpose: 'WALLET_TO_CASH',
+      amountMinor: '2000',
+      currency: 'NGN',
+      operationKey: randomUUID(),
+      supersedesOperationKey: anotherKey,
+    }),
   ).rejects.toThrow('temporarily unavailable');
   expect(
     await db.query(`SELECT status FROM cash_out_intents WHERE agent_id=$1 AND operation_key=$2`, [
@@ -1294,6 +1322,74 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     `SELECT cash_out_intent_id FROM mfa_challenges WHERE id=$1`,
     [oldChallenge.challengeId],
   );
+  expect(
+    await service.replacementStatus(input.agentPrincipal, oldKey, replacementKeys[winner]!),
+  ).toMatchObject({ status: 'REPLACED', replacementStatus: 'ACTIVE' });
+  await expect(
+    service.replacementStatus(input.agentPrincipal, oldKey, randomUUID()),
+  ).rejects.toThrow();
+  await expect(
+    service.replacementStatus(
+      { ...input.agentPrincipal, sessionId: randomUUID() },
+      oldKey,
+      replacementKeys[winner]!,
+    ),
+  ).rejects.toThrow();
+  const { CashOutReconciliationService } = await import(
+    '../src/agent/cash-out-reconciliation.service'
+  );
+  const reconciliation = app.get(CashOutReconciliationService);
+  const handoff = await reconciliation.handoff(input.agentPrincipal, {
+    idempotencyKey: oldKey,
+    reason: 'REPLACEMENT_UNKNOWN',
+  });
+  expect(
+    await reconciliation.handoff(input.agentPrincipal, {
+      idempotencyKey: oldKey,
+      reason: 'UNKNOWN_OUTCOME',
+    }),
+  ).toEqual(handoff);
+  expect(
+    await db.query(
+      `SELECT count(*)::int AS n FROM cash_out_reconciliation_handoffs WHERE agent_id=$1 AND operation_key=$2`,
+      [agent.id, oldKey],
+    ),
+  ).toEqual([{ n: 1 }]);
+  expect(await reconciliation.lookup(agent.id, oldKey)).toMatchObject({
+    id: handoff.id,
+    agent_id: agent.id,
+    customer_id: customerId,
+    current_intent_status: 'CANCELLED',
+  });
+  const { CashOutReconciliationController } = await import(
+    '../src/agent/cash-out-reconciliation.controller'
+  );
+  const workforce = {
+    type: 'OPERATOR' as const,
+    principalId: randomUUID(),
+    roles: [],
+    scopes: ['reconciliation.view'],
+    customerAccess: 'NONE' as const,
+  };
+  const controller = app.get(CashOutReconciliationController);
+  expect(
+    await controller.lookup({ authorizationPrincipal: workforce }, agent.id, oldKey),
+  ).toMatchObject({ id: handoff.id });
+  await expect(
+    controller.lookup({ authorizationPrincipal: { ...workforce, scopes: [] } }, agent.id, oldKey),
+  ).rejects.toThrow();
+  const forbiddenHandoffRead = await http.inject({
+    method: 'GET',
+    url: `/api/v1/internal/reconciliation/cash-out/${agent.id}/${oldKey}`,
+    headers: { authorization: `Bearer ${newSessionToken}` },
+  });
+  expect([401, 403]).toContain(forbiddenHandoffRead.statusCode);
+  await expect(
+    reconciliation.handoff(
+      { ...input.agentPrincipal, sessionId: randomUUID() },
+      { idempotencyKey: oldKey, reason: 'UNKNOWN_OUTCOME' },
+    ),
+  ).rejects.toThrow();
   const newIntent = await db.query<Array<{ cash_out_intent_id: string }>>(
     `SELECT cash_out_intent_id FROM mfa_challenges WHERE id=$1`,
     [replacement.value.challengeId],
@@ -1433,7 +1529,145 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     expect(replacementRace[1].status).toBe('fulfilled');
     expect(replaceRaceRecords).toHaveLength(0);
   }
-});
+  // Exercise the actual mobile API client and pending-operation logic against the
+  // real Fastify application. Only transport is bridged in-process; no API mock.
+  const mobile = await import('../apps/agent-mobile/src/services/agent-api');
+  const mobileClient = await import('../apps/agent-mobile/src/services/api-client');
+  const mobileStorage = await import('../apps/agent-mobile/src/services/secure-storage');
+  const mobilePending = await import('../apps/agent-mobile/src/services/pending-operation');
+  await db.query(`UPDATE agent_authentication_credentials SET password_hash=$2 WHERE id=$1`, [
+    agentCredential,
+    hash('1234'),
+  ]);
+  await db.query(
+    `UPDATE cash_out_otp_budgets SET window_started_at=clock_timestamp()-interval '16 minutes' WHERE budget_key=$1 OR budget_key LIKE 'destination:%'`,
+    [`customer:${customerId}`],
+  );
+  await ledger.postJournal({
+    idempotencyKey: randomUUID(),
+    currency: 'NGN',
+    accountingUnit: 'CUSTOMER_FUNDS',
+    lines: [
+      { accountId: source.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '1000' },
+      {
+        accountId: customerWallet.ledgerAccountId,
+        direction: LedgerEntryDirection.CREDIT,
+        amountMinor: '1000',
+      },
+    ],
+  });
+  const oldFetch = global.fetch;
+  let dropExecutionResponse = false;
+  global.fetch = async (url, init) => {
+    const path = new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url)
+      .pathname;
+    const headers = Object.fromEntries(
+      Object.entries(init?.headers ?? {}).map(([key, value]) => [key, String(value)]),
+    );
+    const response = await http.inject({
+      method: (init?.method ?? 'GET') as 'GET' | 'POST',
+      url: path,
+      headers,
+      payload: typeof init?.body === 'string' ? init.body : undefined,
+    });
+    if (path === '/api/v1/agents/cash-out' && dropExecutionResponse) {
+      dropExecutionResponse = false;
+      expect(response.statusCode).toBe(201);
+      throw new Error('Synthetic lost response');
+    }
+    return new Response(response.body, {
+      status: response.statusCode,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  try {
+    mobileClient.setBaseUrl('http://mobile-contract.invalid');
+    const login = await mobile.agentLogin(agent.id, '1234');
+    if (!('accessToken' in login)) throw new Error('Agent session not issued');
+    await mobileStorage.SecureStorage.set(mobileClient.AGENT_SESSION_KEYS.token, login.accessToken);
+    const mobileKey = randomUUID();
+    sms.clear();
+    const mobileChallenge = await mobile.requestAgentMfaChallenge(
+      customerId,
+      'WALLET_TO_CASH',
+      undefined,
+      { amountMinor: '1000', currency: 'NGN', operationKey: mobileKey },
+    );
+    const mobileCode = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+    await mobilePending.savePendingAgentOperation({
+      agentId: agent.id,
+      operationType: 'CASH_OUT',
+      idempotencyKey: mobileKey,
+      counterpartyId: customerId,
+      amountMinor: '1000',
+      currency: 'NGN',
+      createdAt: new Date().toISOString(),
+    });
+    dropExecutionResponse = true;
+    await expect(
+      mobile.agentCashOut({
+        customerId,
+        customerPin: '1234',
+        agentPin: '1234',
+        mfaChallengeId: mobileChallenge.challengeId,
+        otp: mobileCode,
+        amountMinor: '1000',
+        currency: 'NGN',
+        idempotencyKey: mobileKey,
+      }),
+    ).rejects.toMatchObject({ name: 'NetworkError' });
+    const pendingAfterRestart = await mobilePending.loadPendingAgentOperation(agent.id, 'CASH_OUT');
+    expect(pendingAfterRestart?.idempotencyKey).toBe(mobileKey);
+    await mobile.agentLogout();
+    await mobileClient.purgeAgentSessionFromStorage();
+    const loginAgain = await mobile.agentLogin(agent.id, '1234');
+    if (!('accessToken' in loginAgain)) throw new Error('Agent session not issued');
+    expect(loginAgain.sessionId).not.toBe(login.sessionId);
+    await mobileStorage.SecureStorage.set(
+      mobileClient.AGENT_SESSION_KEYS.token,
+      loginAgain.accessToken,
+    );
+    expect(
+      await db.query(`SELECT status FROM agent_authentication_sessions WHERE id=$1`, [
+        login.sessionId,
+      ]),
+    ).toEqual([{ status: 'REVOKED' }]);
+    const handoffMobile = await mobile.handoffCashOutReconciliation(mobileKey, 'UNKNOWN_OUTCOME');
+    expect(await mobile.handoffCashOutReconciliation(mobileKey, 'UNKNOWN_OUTCOME')).toEqual(
+      handoffMobile,
+    );
+    const receipt = await mobile.recoverAgentCashOut(pendingAfterRestart!.idempotencyKey);
+    expect(receipt).toMatchObject({
+      customerId,
+      agentId: agent.id,
+      amountMinor: '1000',
+      idempotencyKey: mobileKey,
+    });
+    expect(
+      await db.query(
+        `SELECT count(*)::int AS n FROM cash_out_execution_records WHERE agent_id=$1 AND idempotency_key=$2`,
+        [agent.id, mobileKey],
+      ),
+    ).toEqual([{ n: 1 }]);
+    expect(
+      await db.query(`SELECT count(*)::int AS n FROM ledger_lines WHERE journal_id=$1`, [
+        receipt.journalId,
+      ]),
+    ).toEqual([{ n: 2 }]);
+    await mobilePending.clearPendingAgentOperation(agent.id, 'CASH_OUT');
+    expect(await mobilePending.loadPendingAgentOperation(agent.id, 'CASH_OUT')).toBeNull();
+    sms.clear();
+    const nextKey = randomUUID();
+    await mobile.requestAgentMfaChallenge(customerId, 'WALLET_TO_CASH', undefined, {
+      amountMinor: '1000',
+      currency: 'NGN',
+      operationKey: nextKey,
+    });
+    expect(await mobile.cancelPendingAgentCashOut(nextKey)).toEqual({ status: 'CANCELLED' });
+  } finally {
+    global.fetch = oldFetch;
+  }
+}, 30000);
 
 test('concurrent cash-out challenge issuance cannot reset the persisted issuance budget', async () => {
   const { AgentDeskOtpService } = await import('../src/agent/agent-desk-otp.service');

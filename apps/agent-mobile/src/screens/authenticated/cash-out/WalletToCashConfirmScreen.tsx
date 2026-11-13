@@ -13,6 +13,9 @@ import {
   agentCashOut,
   recoverAgentCashOut,
   cancelPendingAgentCashOut,
+  requestAgentMfaChallenge,
+  getCashOutReplacementStatus,
+  handoffCashOutReconciliation,
   describeCashOutError,
   isAmbiguousOperationOutcome,
   type AgentCashOutResult,
@@ -26,6 +29,7 @@ import {
   loadPendingAgentOperation,
   matchesPendingAgentOperation,
   savePendingAgentOperation,
+  type PendingAgentOperation,
 } from '../../../services/pending-operation';
 import type { RootStackParamList } from '../../../navigation/types';
 
@@ -64,6 +68,9 @@ export const WalletToCashConfirmScreen: React.FC = () => {
   const [pendingMismatch, setPendingMismatch] = useState(false);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
+  const [pending, setPending] = useState<PendingAgentOperation | null>(null);
+  const [replacementChallenge, setReplacementChallenge] = useState(false);
+  const [handoffMessage, setHandoffMessage] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -75,6 +82,7 @@ export const WalletToCashConfirmScreen: React.FC = () => {
           ? pending.idempotencyKey
           : idempotencyKey;
       if (active) {
+        setPending(pending);
         setPendingKey(pending?.idempotencyKey ?? null);
         effectiveKeyRef.current = key;
         setOperationKey(key);
@@ -142,6 +150,130 @@ export const WalletToCashConfirmScreen: React.FC = () => {
     } catch {
       setRecoveryError(
         'Unable to cancel. If completed, recover the receipt; otherwise contact support for reconciliation.',
+      );
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  const handoff = async () => {
+    if (!pendingKey || resolving) return;
+    setResolving(true);
+    setHandoffMessage('');
+    try {
+      const reason = pending?.replacement ? 'REPLACEMENT_UNKNOWN' : 'UNKNOWN_OUTCOME';
+      const first = await handoffCashOutReconciliation(pendingKey, reason);
+      if (pending?.replacement)
+        await handoffCashOutReconciliation(pending.replacement.idempotencyKey, reason);
+      setHandoffMessage(
+        `Sent for reconciliation. Reference: ${first.id}. The pending operation remains protected.`,
+      );
+    } catch {
+      setHandoffMessage(
+        'Handoff not confirmed. Retry or contact support; keep the operation reference.',
+      );
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  const checkReplacement = async () => {
+    if (!agentId || !pending?.replacement || resolving) return;
+    setResolving(true);
+    setRecoveryError('');
+    try {
+      const result = await getCashOutReplacementStatus(
+        pending.idempotencyKey,
+        pending.replacement.idempotencyKey,
+      );
+      if (
+        result.status !== 'REPLACED' ||
+        result.customerId !== pending.replacement.counterpartyId ||
+        result.amountMinor !== pending.replacement.amountMinor ||
+        result.currency !== pending.replacement.currency
+      )
+        throw new Error('Unknown replacement');
+      const replacement = {
+        ...pending.replacement,
+        agentId,
+        operationType: 'CASH_OUT' as const,
+        createdAt: new Date().toISOString(),
+      };
+      await savePendingAgentOperation(replacement);
+      setPending(replacement);
+      setPendingKey(replacement.idempotencyKey);
+      const matches = matchesPendingAgentOperation(replacement, {
+        counterpartyId: customer.customerId,
+        amountMinor,
+        currency: 'NGN',
+      });
+      effectiveKeyRef.current = matches ? replacement.idempotencyKey : idempotencyKey;
+      setOperationKey(effectiveKeyRef.current);
+      setPendingMismatch(!matches);
+      setRecoveryPending(matches);
+    } catch {
+      setRecoveryError(
+        'Replacement not confirmed. Retry later or contact support; do not submit another cash-out.',
+      );
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  const replacePending = async () => {
+    if (
+      !agentId ||
+      !pending ||
+      pending.replacement ||
+      resolving ||
+      pending.counterpartyId !== customer.customerId ||
+      pending.amountMinor === amountMinor ||
+      pending.currency !== 'NGN' ||
+      idempotencyKey === pending.idempotencyKey
+    )
+      return;
+    setResolving(true);
+    setRecoveryError('');
+    const replacement = {
+      idempotencyKey,
+      counterpartyId: customer.customerId,
+      amountMinor,
+      currency: 'NGN',
+    };
+    try {
+      // Persist both locators before the network request; never overwrite the original
+      // identity on an ambiguous response or a process kill.
+      const inFlight = { ...pending, replacement };
+      await savePendingAgentOperation(inFlight);
+      setPending(inFlight);
+      const issued = await requestAgentMfaChallenge(
+        customer.customerId,
+        'WALLET_TO_CASH',
+        undefined,
+        {
+          amountMinor,
+          currency: 'NGN',
+          operationKey: idempotencyKey,
+          supersedesOperationKey: pending.idempotencyKey,
+        },
+      );
+      await savePendingAgentOperation({
+        agentId,
+        operationType: 'CASH_OUT',
+        ...replacement,
+        createdAt: new Date().toISOString(),
+      });
+      setPending(null);
+      setPendingKey(null);
+      setPendingMismatch(false);
+      setRecoveryPending(false);
+      effectiveKeyRef.current = idempotencyKey;
+      setOperationKey(idempotencyKey);
+      setChallenge(issued);
+      setReplacementChallenge(true);
+    } catch {
+      setRecoveryError(
+        'Replacement outcome is uncertain. Do not retry or submit; contact support with both operation references.',
       );
     } finally {
       setResolving(false);
@@ -318,9 +450,44 @@ export const WalletToCashConfirmScreen: React.FC = () => {
         {pendingMismatch && (
           <Card testID="w2c-pending-mismatch">
             <Text>
-              A previous cash-out is unresolved. Return to its original details to recover the
-              receipt or contact support.
+              Previous cash-out: customer {pending?.counterpartyId}, amount {pending?.amountMinor}{' '}
+              minor units {pending?.currency}. Its outcome must be resolved before a new cash-out.
             </Text>
+            {pending &&
+              !pending.replacement &&
+              pending.counterpartyId === customer.customerId &&
+              pending.amountMinor !== amountMinor && (
+                <>
+                  <Text>
+                    Replacing cancels the previous pending authorization atomically. Fresh customer
+                    authorization is required; a completed transaction cannot be replaced.
+                  </Text>
+                  <Button
+                    label="Replace pending cash-out"
+                    testID="w2c-replace"
+                    disabled={resolving}
+                    onPress={() => {
+                      void replacePending();
+                    }}
+                  />
+                </>
+              )}
+          </Card>
+        )}
+        {pending?.replacement && (
+          <Card testID="w2c-replacement-uncertain">
+            <Text>
+              Replacement outcome uncertain. Original: {pending.idempotencyKey}. Replacement:{' '}
+              {pending.replacement.idempotencyKey}.
+            </Text>
+            <Button
+              label="Check replacement"
+              testID="w2c-check-replacement"
+              disabled={resolving}
+              onPress={() => {
+                void checkReplacement();
+              }}
+            />
           </Card>
         )}
         {(recoveryPending || pendingMismatch) && (
@@ -331,18 +498,27 @@ export const WalletToCashConfirmScreen: React.FC = () => {
             </Text>
             <Button
               label="Cancel if not completed"
-              disabled={resolving}
+              disabled={resolving || !!pending?.replacement}
               onPress={() => {
                 void cancelUncompleted();
               }}
               testID="w2c-cancel-pending"
             />
             <Button
+              label="Send for reconciliation"
+              testID="w2c-handoff"
+              disabled={resolving}
+              onPress={() => {
+                void handoff();
+              }}
+            />
+            {handoffMessage ? <Text testID="w2c-handoff-message">{handoffMessage}</Text> : null}
+            <Button
               label="Contact support"
               onPress={() =>
                 navigation.navigate('CreateSupportTicket', {
                   prefillCategory: 'CASH_OUT',
-                  prefillDescription: `Please reconcile cash-out operation ${pendingKey ?? ''}.`,
+                  prefillDescription: `Please reconcile cash-out operation ${pendingKey ?? ''}${pending?.replacement ? `; replacement ${pending.replacement.idempotencyKey}` : ''}.`,
                 })
               }
               testID="w2c-support"
@@ -364,28 +540,34 @@ export const WalletToCashConfirmScreen: React.FC = () => {
             {recoveryError ? <Text testID="w2c-recovery-error">{recoveryError}</Text> : null}
           </Card>
         )}
-        <MfaChallengeCard
-          customerId={customer.customerId}
-          purpose="WALLET_TO_CASH"
-          cashOutContext={
-            operationKey
-              ? { amountMinor: String(amountMinor), currency: 'NGN', operationKey }
-              : undefined
-          }
-          invalidatedRevision={mfaInvalidatedRevision}
-          disabled={
-            cashOutMutation.isPending || !operationKey || recoveryPending || pendingMismatch
-          }
-          onChallengeReady={(issued) => {
-            setChallenge(issued);
-            setClientError('');
-          }}
-          onChallengeInvalidated={() => {
-            setChallenge(null);
-            setOtp('');
-          }}
-          testID="w2c-mfa-card"
-        />
+        {replacementChallenge ? (
+          <Text testID="w2c-replacement-ready">
+            Fresh customer verification code sent. Enter it below.
+          </Text>
+        ) : (
+          <MfaChallengeCard
+            customerId={customer.customerId}
+            purpose="WALLET_TO_CASH"
+            cashOutContext={
+              operationKey
+                ? { amountMinor: String(amountMinor), currency: 'NGN', operationKey }
+                : undefined
+            }
+            invalidatedRevision={mfaInvalidatedRevision}
+            disabled={
+              cashOutMutation.isPending || !operationKey || recoveryPending || pendingMismatch
+            }
+            onChallengeReady={(issued) => {
+              setChallenge(issued);
+              setClientError('');
+            }}
+            onChallengeInvalidated={() => {
+              setChallenge(null);
+              setOtp('');
+            }}
+            testID="w2c-mfa-card"
+          />
+        )}
 
         {/* Step 3B: Credentials & PIN Authorization */}
         <Card style={styles.card}>

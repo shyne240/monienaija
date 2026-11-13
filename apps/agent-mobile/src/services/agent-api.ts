@@ -228,7 +228,12 @@ export async function requestAgentMfaChallenge(
   customerId: string,
   purpose: MfaChallengePurpose,
   ttlSeconds?: number,
-  cashOutContext?: { amountMinor: string; currency: string; operationKey: string },
+  cashOutContext?: {
+    amountMinor: string;
+    currency: string;
+    operationKey: string;
+    supersedesOperationKey?: string;
+  },
 ): Promise<AgentMfaChallenge> {
   const body: Record<string, unknown> = { customerId, purpose, ...(cashOutContext ?? {}) };
   if (ttlSeconds !== undefined) {
@@ -487,6 +492,32 @@ export async function agentCashOut(request: AgentCashOutRequest): Promise<AgentC
     { ...request },
     { idempotencyKey: request.idempotencyKey, preserveSessionOn401: true },
   );
+}
+
+export async function handoffCashOutReconciliation(
+  idempotencyKey: string,
+  reason: 'UNKNOWN_OUTCOME' | 'REPLACEMENT_UNKNOWN' | 'RECEIPT_UNAVAILABLE',
+): Promise<{ id: string }> {
+  return ApiClient.post('api/v1/agents/cash-out/reconciliation-handoff', {
+    idempotencyKey,
+    reason,
+  });
+}
+
+export async function getCashOutReplacementStatus(
+  idempotencyKey: string,
+  replacementOperationKey: string,
+): Promise<{
+  status: 'REPLACED';
+  replacementStatus: string;
+  customerId: string;
+  amountMinor: string;
+  currency: string;
+}> {
+  return ApiClient.post('api/v1/agents/cash-out/replacement-status', {
+    idempotencyKey,
+    replacementOperationKey,
+  });
 }
 
 /** Cancels only an uncompleted intent; completed outcomes must be recovered. */

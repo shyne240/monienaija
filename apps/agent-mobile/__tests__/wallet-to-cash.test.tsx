@@ -28,6 +28,8 @@ jest.mock('../src/services/agent-api', () => ({
   agentCashOut: jest.fn(),
   recoverAgentCashOut: jest.fn(),
   cancelPendingAgentCashOut: jest.fn(),
+  getCashOutReplacementStatus: jest.fn(),
+  handoffCashOutReconciliation: jest.fn(),
   describeApiError: jest.requireActual('../src/services/agent-api').describeApiError,
   describeCashOutError: jest.requireActual('../src/services/agent-api').describeCashOutError,
   isAmbiguousOperationOutcome: jest.requireActual('../src/services/agent-api').isAmbiguousOperationOutcome,
@@ -39,6 +41,8 @@ const mockApi = jest.requireMock('../src/services/agent-api') as {
   agentCashOut: jest.Mock;
   recoverAgentCashOut: jest.Mock;
   cancelPendingAgentCashOut: jest.Mock;
+  getCashOutReplacementStatus: jest.Mock;
+  handoffCashOutReconciliation: jest.Mock;
 };
 
 const mockNavigate = jest.fn();
@@ -814,6 +818,52 @@ describe('Wallet→Cash — Idempotency-Key durability across a simulated proces
     await waitFor(() => expect(screen.getByTestId('w2c-confirm-error').props.children).toMatch(/storage unavailable/i));
     expect(mockApi.agentCashOut).not.toHaveBeenCalled();
     storage.mockRestore();
+  });
+
+  test('replacement uses one atomic supersession request and fresh customer authorization', async () => {
+    await savePendingAgentOperation({agentId,operationType:'CASH_OUT',idempotencyKey:'old',counterpartyId:customer.customerId,amountMinor:'300000',currency:'NGN',createdAt:new Date().toISOString()});
+    mockRoute={key:'k',name:'WalletToCashConfirm',params:{customer,amountMinor:'700000',idempotencyKey:'new'}};
+    mockApi.requestAgentMfaChallenge.mockResolvedValueOnce(mfaChallenge);
+    const screen=wrap(<WalletToCashConfirmScreen />);
+    await waitFor(() => expect(screen.getByTestId('w2c-replace')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('w2c-replace'));
+    await waitFor(() => expect(screen.getByTestId('w2c-replacement-ready')).toBeTruthy());
+    expect(mockApi.requestAgentMfaChallenge).toHaveBeenCalledWith(customer.customerId,'WALLET_TO_CASH',undefined,{amountMinor:'700000',currency:'NGN',operationKey:'new',supersedesOperationKey:'old'});
+    expect(mockApi.cancelPendingAgentCashOut).not.toHaveBeenCalled();
+    expect((await loadPendingAgentOperation(agentId,'CASH_OUT'))?.idempotencyKey).toBe('new');
+  });
+
+  test('ambiguous replacement survives remount and checks both operation locators', async () => {
+    await savePendingAgentOperation({agentId,operationType:'CASH_OUT',idempotencyKey:'old',counterpartyId:customer.customerId,amountMinor:'300000',currency:'NGN',createdAt:new Date().toISOString()});
+    mockRoute={key:'k',name:'WalletToCashConfirm',params:{customer,amountMinor:'700000',idempotencyKey:'new'}};
+    mockApi.requestAgentMfaChallenge.mockRejectedValueOnce(new Error('lost response'));
+    const first=wrap(<WalletToCashConfirmScreen />);
+    await waitFor(() => expect(first.getByTestId('w2c-replace')).toBeTruthy());
+    fireEvent.press(first.getByTestId('w2c-replace'));
+    await waitFor(() => expect(first.getByTestId('w2c-replacement-uncertain')).toBeTruthy());
+    expect((await loadPendingAgentOperation(agentId,'CASH_OUT'))?.replacement?.idempotencyKey).toBe('new');
+    first.unmount();
+    mockApi.getCashOutReplacementStatus.mockResolvedValueOnce({status:'REPLACED',replacementStatus:'ACTIVE',customerId:customer.customerId,amountMinor:'700000',currency:'NGN'});
+    const reopened=wrap(<WalletToCashConfirmScreen />);
+    await waitFor(() => expect(reopened.getByTestId('w2c-check-replacement')).toBeTruthy());
+    fireEvent.press(reopened.getByTestId('w2c-check-replacement'));
+    await waitFor(() => expect(reopened.getByTestId('w2c-recovery-card')).toBeTruthy());
+    expect(mockApi.getCashOutReplacementStatus).toHaveBeenCalledWith('old','new');
+    expect((await loadPendingAgentOperation(agentId,'CASH_OUT'))?.idempotencyKey).toBe('new');
+    expect(mockApi.agentCashOut).not.toHaveBeenCalled();
+  });
+
+  test('ambiguous replacement handoff preserves both references and pending state', async () => {
+    await savePendingAgentOperation({agentId,operationType:'CASH_OUT',idempotencyKey:'old',counterpartyId:customer.customerId,amountMinor:'300000',currency:'NGN',createdAt:new Date().toISOString(),replacement:{idempotencyKey:'new',counterpartyId:customer.customerId,amountMinor:'700000',currency:'NGN'}});
+    mockRoute={key:'k',name:'WalletToCashConfirm',params:{customer,amountMinor:'700000',idempotencyKey:'new'}};
+    mockApi.handoffCashOutReconciliation.mockResolvedValue({id:'case-id'});
+    const screen=wrap(<WalletToCashConfirmScreen />);
+    await waitFor(() => expect(screen.getByTestId('w2c-handoff')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('w2c-handoff'));
+    await waitFor(() => expect(screen.getByTestId('w2c-handoff-message')).toBeTruthy());
+    expect(mockApi.handoffCashOutReconciliation).toHaveBeenNthCalledWith(1,'old','REPLACEMENT_UNKNOWN');
+    expect(mockApi.handoffCashOutReconciliation).toHaveBeenNthCalledWith(2,'new','REPLACEMENT_UNKNOWN');
+    expect((await loadPendingAgentOperation(agentId,'CASH_OUT'))?.replacement?.idempotencyKey).toBe('new');
   });
 
   test('3. success clears the persisted operation', async () => {

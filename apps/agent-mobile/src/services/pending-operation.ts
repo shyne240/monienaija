@@ -63,6 +63,13 @@ export interface PendingAgentOperation extends AgentOperationParams {
   operationType: AgentOperationType;
   idempotencyKey: string;
   createdAt: string;
+  /** Durable locator for an in-flight atomic replacement, never an OTP. */
+  replacement?: {
+    idempotencyKey: string;
+    amountMinor: string;
+    currency: string;
+    counterpartyId: string;
+  };
 }
 
 function isPendingAgentOperation(value: unknown): value is PendingAgentOperation {
@@ -75,7 +82,14 @@ function isPendingAgentOperation(value: unknown): value is PendingAgentOperation
     typeof v.counterpartyId === 'string' &&
     typeof v.amountMinor === 'string' &&
     typeof v.currency === 'string' &&
-    typeof v.createdAt === 'string'
+    typeof v.createdAt === 'string' &&
+    (v.replacement === undefined ||
+      (typeof v.replacement === 'object' &&
+        v.replacement !== null &&
+        typeof (v.replacement as Record<string, unknown>).idempotencyKey === 'string' &&
+        typeof (v.replacement as Record<string, unknown>).amountMinor === 'string' &&
+        typeof (v.replacement as Record<string, unknown>).currency === 'string' &&
+        typeof (v.replacement as Record<string, unknown>).counterpartyId === 'string'))
   );
 }
 
