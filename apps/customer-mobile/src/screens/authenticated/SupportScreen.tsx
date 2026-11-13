@@ -1,5 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { FlatList, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import {
+  FlatList,
+  RefreshControl,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -87,7 +95,11 @@ export const SupportScreen: React.FC = () => {
         data={tickets}
         keyExtractor={(item) => item.id}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[theme.colors.primary.main]} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[theme.colors.primary.main]}
+          />
         }
         renderItem={({ item }) => (
           <TouchableOpacity

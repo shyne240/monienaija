@@ -36,7 +36,9 @@ export const FundWalletScreen: React.FC = () => {
 
   useEffect(() => {
     if (customerId) {
-      setIdempotencyKey(`fund-${customerId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+      setIdempotencyKey(
+        `fund-${customerId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      );
     }
   }, [customerId]);
 
@@ -71,15 +73,19 @@ export const FundWalletScreen: React.FC = () => {
 
     try {
       // Step 1: Create the deposit: POST /deposits
-      const depositResult = await ApiClient.post<{ id: string }>('/deposits', {
-        walletId: primaryWallet.id,
-        amountMinor: String(amountMinor),
-        currency: 'NGN',
-        reference: idempotencyKey,
-        narration: narration.trim() || 'Wallet Funding',
-      }, {
-        idempotencyKey,
-      });
+      const depositResult = await ApiClient.post<{ id: string }>(
+        '/deposits',
+        {
+          walletId: primaryWallet.id,
+          amountMinor: String(amountMinor),
+          currency: 'NGN',
+          reference: idempotencyKey,
+          narration: narration.trim() || 'Wallet Funding',
+        },
+        {
+          idempotencyKey,
+        },
+      );
 
       // No client-side completion step exists: a deposit is credited only when the payment
       // provider confirms settlement to the backend. Customers can never complete a deposit.
@@ -102,12 +108,15 @@ export const FundWalletScreen: React.FC = () => {
           <Text style={styles.successIcon}>💰</Text>
           <Text style={styles.successTitle}>Deposit Initiated</Text>
           <Text style={styles.successDescription}>
-            ₦
-            {parseFloat(amountStr || '0').toLocaleString('en-NG', { minimumFractionDigits: 2 })} will
-            be credited to your wallet once the payment is confirmed.
+            ₦{parseFloat(amountStr || '0').toLocaleString('en-NG', { minimumFractionDigits: 2 })}{' '}
+            will be credited to your wallet once the payment is confirmed.
           </Text>
         </View>
-        <Button label="Back to Home" style={styles.button} onPress={() => navigation.navigate('Home')} />
+        <Button
+          label="Back to Home"
+          style={styles.button}
+          onPress={() => navigation.navigate('Home')}
+        />
       </View>
     );
   }
@@ -126,7 +135,8 @@ export const FundWalletScreen: React.FC = () => {
         <Card variant="flat" style={styles.sandboxCard}>
           <Text style={styles.sandboxTitle}>ℹ️ Payment confirmation required</Text>
           <Text style={styles.sandboxText}>
-            Your wallet is credited only after the payment provider confirms settlement to MoneyNaija. Until then the deposit stays pending and can be cancelled by support.
+            Your wallet is credited only after the payment provider confirms settlement to
+            MoneyNaija. Until then the deposit stays pending and can be cancelled by support.
           </Text>
         </Card>
 

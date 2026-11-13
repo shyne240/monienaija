@@ -1,10 +1,5 @@
 import React from 'react';
-import {
-  Modal,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Modal, StyleSheet, Text, View } from 'react-native';
 
 import { theme } from '../theme';
 import { Button } from './Button';
@@ -31,12 +26,7 @@ export const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
   isLoading = false,
 }) => {
   return (
-    <Modal
-      animationType="fade"
-      transparent={true}
-      visible={visible}
-      onRequestClose={onCancel}
-    >
+    <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={onCancel}>
       <View style={styles.overlay}>
         <View style={styles.dialogContainer}>
           <Text style={styles.title}>{title}</Text>

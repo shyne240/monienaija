@@ -36,10 +36,12 @@ interface PinStatusResponse {
  *    when status is ACTIVE. Requires the current PIN as proof of knowledge
  *    before the server will replace it (same 5-attempt lockout counter used
  *    by Wallet→Wallet authorization).
- *  - LOCKED  — V1 has no secure, out-of-band way to prove identity
- *    independently of the PIN itself, so there is no in-app PIN reset for a
- *    locked PIN. This screen says so plainly and links to Support rather
- *    than presenting a fake "Reset PIN" button.
+ *  - LOCKED  — a locked PIN is never reset from inside a signed-in session
+ *    without proof of identity. ARENA 4 (C-9) added the accepted self-service
+ *    recovery contract, which is deliberately UNAUTHENTICATED and reachable
+ *    only from the sign-in screen (it also revokes every live session). This
+ *    screen therefore points at that path and at Support instead of
+ *    presenting an in-session "Reset PIN" button that cannot prove identity.
  *
  * The PIN values exist only in local component state: never logged, never
  * written to SecureStore/Zustand/navigation params, and cleared on submit,
@@ -73,7 +75,11 @@ export const TransactionPinScreen: React.FC = () => {
       setStatus(res.status);
     } catch (err) {
       setStatus('STATUS_ERROR');
-      setError(err instanceof ApiError ? err.message || 'Could not load Transaction PIN status.' : 'Could not load Transaction PIN status.');
+      setError(
+        err instanceof ApiError
+          ? err.message || 'Could not load Transaction PIN status.'
+          : 'Could not load Transaction PIN status.',
+      );
     }
   }, []);
 
@@ -115,7 +121,11 @@ export const TransactionPinScreen: React.FC = () => {
       clearPinFields();
       await loadStatus();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message || 'Could not create Transaction PIN.' : 'Could not create Transaction PIN.');
+      setError(
+        err instanceof ApiError
+          ? err.message || 'Could not create Transaction PIN.'
+          : 'Could not create Transaction PIN.',
+      );
     } finally {
       setIsLoading(false);
     }
@@ -160,7 +170,11 @@ export const TransactionPinScreen: React.FC = () => {
         await loadStatus();
         return;
       }
-      setError(err instanceof ApiError ? err.message || 'Could not change Transaction PIN.' : 'Could not change Transaction PIN.');
+      setError(
+        err instanceof ApiError
+          ? err.message || 'Could not change Transaction PIN.'
+          : 'Could not change Transaction PIN.',
+      );
     } finally {
       setIsLoading(false);
     }
@@ -198,7 +212,13 @@ export const TransactionPinScreen: React.FC = () => {
 
         {status === 'STATUS_ERROR' && (
           <View style={styles.form}>
-            <Button label="Retry" onPress={() => { setStatus('LOADING'); void loadStatus(); }} />
+            <Button
+              label="Retry"
+              onPress={() => {
+                setStatus('LOADING');
+                void loadStatus();
+              }}
+            />
           </View>
         )}
 
@@ -207,10 +227,11 @@ export const TransactionPinScreen: React.FC = () => {
             <View style={styles.lockedBanner}>
               <Text style={styles.lockedTitle}>Transaction PIN locked</Text>
               <Text style={styles.lockedText}>
-                Your Transaction PIN was locked after too many incorrect attempts. For your
-                security, MonieNaija does not offer an in-app PIN reset in this version — your
-                identity cannot yet be verified by any channel other than the PIN itself. Please
-                contact Support to have your PIN unlocked.
+                Your Transaction PIN was locked after too many incorrect attempts. It cannot be
+                reset from inside a signed-in session: a PIN reset needs a one-time code plus the
+                verification evidence MonieNaija already holds for you. Sign out and choose “Forgot
+                your transaction PIN?” on the sign-in screen to start recovery (that closes every
+                open session), or contact Support to have the PIN unlocked.
               </Text>
             </View>
             <Button
@@ -271,8 +292,10 @@ export const TransactionPinScreen: React.FC = () => {
         {status === 'ACTIVE' && (
           <View style={styles.form}>
             <Text style={styles.activeNote}>
-              {pinVersion ? `PIN version ${pinVersion} is active.` : 'A Transaction PIN is active on this account.'}
-              {' '}Enter your current PIN to set a new one.
+              {pinVersion
+                ? `PIN version ${pinVersion} is active.`
+                : 'A Transaction PIN is active on this account.'}{' '}
+              Enter your current PIN to set a new one.
             </Text>
             <Input
               secureTextEntry
@@ -325,6 +348,11 @@ export const TransactionPinScreen: React.FC = () => {
             />
           </View>
         )}
+
+        <Text style={styles.recoveryNote}>
+          Forgotten your PIN? Changing or resetting it always needs proof of identity. If you cannot
+          use the current PIN, sign out and use the recovery option on the sign-in screen.
+        </Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -402,6 +430,12 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.sizes.base,
     fontWeight: theme.typography.weights.bold,
     marginBottom: theme.spacing.xs,
+  },
+  recoveryNote: {
+    marginTop: theme.spacing.xl,
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.neutral.gray,
+    lineHeight: 18,
   },
   lockedText: {
     color: theme.colors.feedback.error,

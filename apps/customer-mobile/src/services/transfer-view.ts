@@ -21,7 +21,8 @@
 
 import type { BadgeStatus } from '../components/StatusBadge';
 
-export type UnifiedTransactionType = 'WALLET_TRANSFER' | 'FUNDING' | 'CASH_TO_CASH' | 'CASH_IN' | 'CASH_OUT';
+export type UnifiedTransactionType =
+  'WALLET_TRANSFER' | 'FUNDING' | 'CASH_TO_CASH' | 'CASH_IN' | 'CASH_OUT';
 
 export interface UnifiedCounterparty {
   type?: string;
@@ -43,7 +44,16 @@ export interface TransferListItem {
   reference: string | null;
   amountMinor: string | number;
   currency: string;
-  direction: 'SENT' | 'RECEIVED' | 'INTERNAL' | 'UNKNOWN' | 'CREDIT' | 'DEBIT' | 'PENDING' | 'EXPIRED' | string;
+  direction:
+    | 'SENT'
+    | 'RECEIVED'
+    | 'INTERNAL'
+    | 'UNKNOWN'
+    | 'CREDIT'
+    | 'DEBIT'
+    | 'PENDING'
+    | 'EXPIRED'
+    | string;
   status: string;
   createdAt: string;
   completedAt?: string | null;
@@ -77,7 +87,8 @@ function defaultLabel(item: TransferListItem): string {
     case 'WALLET_TRANSFER': {
       const name = cp?.displayName || cp?.receivingNumber;
       if (item.direction === 'SENT') return name ? `Sent to ${name}` : 'Wallet Transfer Sent';
-      if (item.direction === 'RECEIVED') return name ? `Received from ${name}` : 'Wallet Transfer Received';
+      if (item.direction === 'RECEIVED')
+        return name ? `Received from ${name}` : 'Wallet Transfer Received';
       if (item.direction === 'INTERNAL') return 'Wallet Transfer (Internal)';
       return 'Wallet Transfer';
     }
@@ -187,12 +198,7 @@ export function mapTransactionToRow(item: TransferListItem): TransactionRowView 
 }
 
 export type SupportTicketCategoryForTransaction =
-  | 'TRANSFER'
-  | 'FUNDING'
-  | 'CASH_TO_CASH'
-  | 'CASH_IN'
-  | 'CASH_OUT'
-  | 'OTHER';
+  'TRANSFER' | 'FUNDING' | 'CASH_TO_CASH' | 'CASH_IN' | 'CASH_OUT' | 'OTHER';
 
 export interface TransactionSupportContext {
   category: SupportTicketCategoryForTransaction;
@@ -215,7 +221,9 @@ export interface TransactionSupportContext {
  * prefilled, editable description instead of inventing a new backend field
  * for a single UI convenience.
  */
-export function buildSupportContextForTransaction(item: TransferListItem): TransactionSupportContext {
+export function buildSupportContextForTransaction(
+  item: TransferListItem,
+): TransactionSupportContext {
   const row = mapTransactionToRow(item);
   const amountDisplay = (row.amountMinor / 100).toLocaleString('en-NG', {
     minimumFractionDigits: 2,

@@ -4,6 +4,17 @@ export type RootStackParamList = {
   Welcome: undefined;
   Login: undefined;
   Registration: undefined;
+  /**
+   * ARENA 4 (C-9) — self-service credential recovery. Unauthenticated by design: it exists for a
+   * customer who cannot sign in, and it never issues a session.
+   */
+  CredentialRecovery: {
+    purpose: 'LOGIN_PASSCODE' | 'TRANSACTION_PIN';
+    /** Prefill only; never proof of ownership. */
+    phone?: string;
+  };
+  /** ARENA 4 — first-login rotation of a workforce-issued temporary password. */
+  CredentialRotation: undefined;
 
   // Authenticated screens
   Home: undefined;

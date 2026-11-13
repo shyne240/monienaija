@@ -1,11 +1,5 @@
 import React from 'react';
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  TextInputProps,
-  View,
-} from 'react-native';
+import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
 
 import { theme } from '../theme';
 
@@ -44,11 +38,7 @@ export const Input: React.FC<InputProps> = ({
     <View style={styles.container}>
       {label && <Text style={styles.label}>{label}</Text>}
       <View
-        style={[
-          styles.inputContainer,
-          isFocused && styles.focused,
-          !!error && styles.errorInput,
-        ]}
+        style={[styles.inputContainer, isFocused && styles.focused, !!error && styles.errorInput]}
       >
         <TextInput
           placeholderTextColor={theme.colors.neutral.gray}

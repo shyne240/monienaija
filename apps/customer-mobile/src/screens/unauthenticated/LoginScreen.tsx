@@ -97,7 +97,7 @@ export const LoginScreen: React.FC = () => {
     if (rotationRequired) {
       return {
         title: 'Password change required',
-        body: 'This is a temporary password. It must be changed before a session can be issued — credential rotation is not available in this app version, so contact support to complete it.',
+        body: 'This is a temporary password. It must be changed before any session can be issued.',
         tone: 'warning',
       };
     }
@@ -181,6 +181,36 @@ export const LoginScreen: React.FC = () => {
           />
 
           <Button loading={isLoading} label="Log In" style={styles.button} onPress={handleLogin} />
+
+          {rotationRequired && (
+            <Button
+              label="Change my temporary password"
+              variant="secondary"
+              onPress={() => navigation.navigate('CredentialRotation')}
+            />
+          )}
+        </View>
+
+        <View style={styles.recoveryBlock}>
+          <Text style={styles.helpTitle}>Forgotten your credentials?</Text>
+          <Text style={styles.helpBody}>
+            Recovery needs more than your phone number: MonieNaija sends a one-time code and also
+            checks the verification evidence it already holds for you. If it cannot confirm enough,
+            recovery stops and Support finishes it instead. Resetting a credential never grants
+            financial access.
+          </Text>
+          <Button
+            label="Forgot your login passcode?"
+            variant="outline"
+            onPress={() => navigation.navigate('CredentialRecovery', { purpose: 'LOGIN_PASSCODE' })}
+          />
+          <Button
+            label="Forgot your transaction PIN?"
+            variant="outline"
+            onPress={() =>
+              navigation.navigate('CredentialRecovery', { purpose: 'TRANSACTION_PIN' })
+            }
+          />
         </View>
 
         <View style={styles.helpBlock}>
@@ -265,6 +295,15 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: theme.spacing.md,
+  },
+  recoveryBlock: {
+    marginTop: theme.spacing.xl,
+    gap: theme.spacing.sm,
+    padding: theme.spacing.lg,
+    borderRadius: 14,
+    backgroundColor: theme.colors.surface.mist,
+    borderWidth: 1,
+    borderColor: theme.colors.surface.hairline,
   },
   helpBlock: {
     marginTop: theme.spacing.xxl,

@@ -21,7 +21,16 @@ interface AuthState {
   customerId: string | null;
   error: string | null;
   rotationRequired: boolean;
+  /** Set only when the backend proved a workforce-issued temporary credential. */
+  rotationCustomerId: string | null;
   login: (identifier: string, password: string) => Promise<void>;
+  /**
+   * ARENA 4 — completes the first-login rotation contract (`POST /customers/credentials/rotate`).
+   * The temporary password is verified and replaced by the backend, which then issues the first
+   * genuine session; the app never mints a session or keeps the temporary password.
+   */
+  rotateTemporaryCredential: (currentPassword: string, newPassword: string) => Promise<void>;
+  clearRotation: () => void;
   acceptSession: (session: UserSession) => Promise<void>;
   logout: () => Promise<void>;
   restoreSession: () => Promise<void>;
@@ -43,9 +52,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   customerId: null,
   error: null,
   rotationRequired: false,
+  rotationCustomerId: null,
 
   login: async (identifier: string, password: string) => {
-    set({ isLoading: true, error: null, rotationRequired: false });
+    set({ isLoading: true, error: null, rotationRequired: false, rotationCustomerId: null });
     try {
       const trimmedIdentifier = identifier.trim();
 
@@ -59,15 +69,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       }>('/customers/sessions', { identifier: trimmedIdentifier, password });
 
       if (response.rotationRequired) {
-        // Workforce-issued temporary credential: no session is issued yet.
-        // The customer must rotate the credential before a real session can
-        // exist (see `POST /customers/credentials/rotate`). This app does not
-        // yet implement a rotation screen; surface the true backend state
-        // rather than fabricating a session.
+        // Workforce-issued temporary credential: the backend verified it but issued NO session.
+        // The customer must rotate it before a real session can exist (see
+        // `POST /customers/credentials/rotate`, implemented by `rotateTemporaryCredential`).
         set({
           isLoading: false,
           rotationRequired: true,
-          error: 'Your temporary password must be changed before you can sign in. Credential rotation is not yet supported in this app version.',
+          rotationCustomerId: response.customerId ?? null,
+          error: null,
         });
         return;
       }
@@ -133,8 +142,45 @@ export const useAuthStore = create<AuthState>((set) => ({
       customerId: sessionData.customerId,
       error: null,
       rotationRequired: false,
+      rotationCustomerId: null,
     });
   },
+
+  /**
+   * ARENA 4 first-login rotation. The backend verifies the temporary password, replaces it and
+   * issues the first genuine session; the app never mints a token or keeps the temporary one.
+   */
+  rotateTemporaryCredential: async (currentPassword: string, newPassword: string) => {
+    const customerId = useAuthStore.getState().rotationCustomerId;
+    if (!customerId) {
+      throw new Error('Start signing in again: no pending credential rotation was found.');
+    }
+    set({ isLoading: true, error: null });
+    try {
+      const response = await ApiClient.post<{
+        accessToken?: string;
+        sessionId?: string;
+        expiresAt?: string;
+        customerId?: string;
+      }>('/customers/credentials/rotate', { customerId, currentPassword, newPassword });
+      if (!response.accessToken || !response.customerId) {
+        throw new Error('Authentication response was missing required session data');
+      }
+      await useAuthStore.getState().acceptSession({
+        accessToken: response.accessToken,
+        sessionId: response.sessionId ?? '',
+        expiresAt: response.expiresAt ?? new Date(Date.now() + 3600 * 1000).toISOString(),
+        customerId: response.customerId,
+        audience: ORDINARY_CUSTOMER_AUDIENCE,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Credential rotation failed';
+      set({ isLoading: false, rotationRequired: true, error: message });
+      throw err;
+    }
+  },
+
+  clearRotation: () => set({ rotationRequired: false, rotationCustomerId: null, error: null }),
 
   logout: async () => {
     set({ isLoading: true });

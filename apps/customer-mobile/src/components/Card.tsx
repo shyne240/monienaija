@@ -1,9 +1,5 @@
 import React from 'react';
-import {
-  StyleSheet,
-  View,
-  ViewProps,
-} from 'react-native';
+import { StyleSheet, View, ViewProps } from 'react-native';
 
 import { theme } from '../theme';
 
@@ -11,12 +7,7 @@ interface CardProps extends ViewProps {
   variant?: 'elevated' | 'outlined' | 'flat';
 }
 
-export const Card: React.FC<CardProps> = ({
-  children,
-  variant = 'elevated',
-  style,
-  ...props
-}) => {
+export const Card: React.FC<CardProps> = ({ children, variant = 'elevated', style, ...props }) => {
   return (
     <View style={[styles.card, styles[variant], style]} {...props}>
       {children}

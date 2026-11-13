@@ -25,7 +25,10 @@ jest.mock('@react-navigation/native-stack', () => {
       };
       const Screen = ({ name, component: Component }: any) => {
         // Return a mock element with custom fields for assertions
-        return mockReact.createElement('mock-screen', { name, 'component-name': Component.name || Component.displayName });
+        return mockReact.createElement('mock-screen', {
+          name,
+          'component-name': Component.name || Component.displayName,
+        });
       };
       return {
         Navigator,
@@ -52,7 +55,7 @@ describe('Navigation flow tests', () => {
 
     const { root } = render(<AppNavigator />);
     const screens = root.findAllByType('mock-screen');
-    
+
     expect(screens.length).toBeGreaterThanOrEqual(1);
     expect(screens[0].props.name).toBe('Splash');
   });
@@ -65,7 +68,7 @@ describe('Navigation flow tests', () => {
 
     const { root } = render(<AppNavigator />);
     const screens = root.findAllByType('mock-screen');
-    
+
     expect(screens.length).toBeGreaterThanOrEqual(1);
     expect(screens[0].props.name).toBe('Welcome');
   });
@@ -78,7 +81,7 @@ describe('Navigation flow tests', () => {
 
     const { root } = render(<AppNavigator />);
     const screens = root.findAllByType('mock-screen');
-    
+
     expect(screens.length).toBeGreaterThanOrEqual(1);
     expect(screens[0].props.name).toBe('Home');
   });

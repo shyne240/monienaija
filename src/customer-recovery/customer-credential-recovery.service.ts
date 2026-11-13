@@ -73,6 +73,13 @@ export interface RecoveryPolicyView {
 export interface RequestRecoveryChallengeView {
   status: 'ACCEPTED';
   purpose: CustomerCredentialRecoveryPurpose;
+  /**
+   * Opaque reference for `POST challenges/verify`. ALWAYS present and always a well-formed UUID —
+   * including for an unknown/unrecoverable number and when the policy is disabled, where it refers
+   * to nothing. Acceptance is therefore identical in every case and never enumerates accounts; the
+   * reference only becomes usable once the caller also possesses the OTP.
+   */
+  challengeId: string;
   resendAfterSeconds: number;
   expiresInSeconds: number;
 }
@@ -162,6 +169,9 @@ export class CustomerCredentialRecoveryService {
     const view: RequestRecoveryChallengeView = {
       status: 'ACCEPTED',
       purpose: normalizedPurpose,
+      // Placeholder reference used whenever no challenge row exists, so the response shape is
+      // constant across known/unknown numbers and disabled policy.
+      challengeId: randomUUID(),
       resendAfterSeconds: RECOVERY_OTP_RESEND_COOLDOWN_SECONDS,
       expiresInSeconds: RECOVERY_OTP_TTL_SECONDS,
     };
@@ -235,7 +245,10 @@ export class CustomerCredentialRecoveryService {
       return { challenge: saved, code };
     });
 
-    if (issued) await this.deliverOtp(issued.challenge, issued.code, correlationId);
+    if (issued) {
+      await this.deliverOtp(issued.challenge, issued.code, correlationId);
+      return { ...view, challengeId: issued.challenge.id };
+    }
     return view;
   }
 

@@ -105,7 +105,9 @@ export const CreateSupportTicketScreen: React.FC = () => {
       navigation.goBack();
     } catch (err: any) {
       setError(
-        err instanceof ApiError ? err.message || 'Failed to submit ticket.' : 'Failed to submit ticket.',
+        err instanceof ApiError
+          ? err.message || 'Failed to submit ticket.'
+          : 'Failed to submit ticket.',
       );
       // A genuinely failed attempt should still be retryable under the same key (safe
       // replay); only move to a fresh key once the user successfully leaves this screen.

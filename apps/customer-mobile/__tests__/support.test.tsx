@@ -119,8 +119,18 @@ describe('SupportTicketDetailScreen — detail, reply, idempotency, lifecycle', 
     (ApiClient.get as jest.Mock).mockImplementation((endpoint: string) => {
       if (endpoint.endsWith('/messages')) {
         return Promise.resolve([
-          { id: 'msg-1', authorType: 'CUSTOMER', body: 'Hello, any update?', createdAt: new Date().toISOString() },
-          { id: 'msg-2', authorType: 'SUPPORT_AGENT', body: 'Looking into it.', createdAt: new Date().toISOString() },
+          {
+            id: 'msg-1',
+            authorType: 'CUSTOMER',
+            body: 'Hello, any update?',
+            createdAt: new Date().toISOString(),
+          },
+          {
+            id: 'msg-2',
+            authorType: 'SUPPORT_AGENT',
+            body: 'Looking into it.',
+            createdAt: new Date().toISOString(),
+          },
         ]);
       }
       return Promise.resolve(mockTicket());
@@ -128,7 +138,9 @@ describe('SupportTicketDetailScreen — detail, reply, idempotency, lifecycle', 
 
     const { findByTestId } = render(<SupportTicketDetailScreen />);
 
-    expect((await findByTestId('support-detail-subject')).props.children).toBe('My transfer failed');
+    expect((await findByTestId('support-detail-subject')).props.children).toBe(
+      'My transfer failed',
+    );
     expect((await findByTestId('support-detail-description')).props.children).toBe(
       'The money left my wallet but never arrived.',
     );
@@ -275,8 +287,12 @@ describe('CreateSupportTicketScreen — prefill, idempotency, transaction linkag
     };
     (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'ticket-new' });
 
-    const { getByPlaceholderText, getByTestId, queryByTestId } = render(<CreateSupportTicketScreen />);
-    expect(getByPlaceholderText('Brief summary of the issue').props.value).toBe('Transaction PIN locked');
+    const { getByPlaceholderText, getByTestId, queryByTestId } = render(
+      <CreateSupportTicketScreen />,
+    );
+    expect(getByPlaceholderText('Brief summary of the issue').props.value).toBe(
+      'Transaction PIN locked',
+    );
     expect(queryByTestId('support-transaction-context-banner')).toBeNull();
 
     await act(async () => {
@@ -320,9 +336,7 @@ describe('CreateSupportTicketScreen — prefill, idempotency, transaction linkag
 
     await waitFor(() => expect(ApiClient.post).toHaveBeenCalledTimes(1));
     const [, body] = (ApiClient.post as jest.Mock).mock.calls[0];
-    expect(body).toEqual(
-      expect.objectContaining({ relatedTransferId: 'transfer-uuid-1' }),
-    );
+    expect(body).toEqual(expect.objectContaining({ relatedTransferId: 'transfer-uuid-1' }));
     expect(body.fundingRequestId).toBeUndefined();
   });
 

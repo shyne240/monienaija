@@ -1,10 +1,5 @@
 import React from 'react';
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { theme } from '../theme';
 
@@ -29,7 +24,7 @@ export const AmountInput: React.FC<AmountInputProps> = ({
     // Only allow digits and a single decimal point
     const sanitized = text.replace(/[^0-9.]/g, '');
     const parts = sanitized.split('.');
-    
+
     // Prevent multiple decimals
     let finalValue = sanitized;
     if (parts.length > 2) {
@@ -52,11 +47,7 @@ export const AmountInput: React.FC<AmountInputProps> = ({
     <View style={styles.container}>
       {label && <Text style={styles.label}>{label}</Text>}
       <View
-        style={[
-          styles.inputContainer,
-          isFocused && styles.focused,
-          !!error && styles.errorInput,
-        ]}
+        style={[styles.inputContainer, isFocused && styles.focused, !!error && styles.errorInput]}
       >
         <Text style={styles.currencySymbol}>{currencySymbol}</Text>
         <TextInput
