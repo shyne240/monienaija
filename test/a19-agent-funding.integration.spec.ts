@@ -820,6 +820,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
       '1785753600103',
       '1785753600116',
       '1785753600117',
+      '1785753600118',
     ]).toContain(latest[0]!.timestamp);
     expect([
       'SecureAgentApplicationAccess1785753600095',
@@ -833,6 +834,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
       'ConfigureTransactionNotificationEvents1785753600103',
       'WalletOwnerClassification1785753600116',
       'CreateGovernedLedgerReversalExecutions1785753600117',
+      'GovernedWalletOwnershipResolution1785753600118',
     ]).toContain(latest[0]!.name);
     const pool: Array<{ code: string }> = await dataSource.query(
       `SELECT code FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN'`,
@@ -857,6 +859,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
       '1785753600103',
       '1785753600116',
       '1785753600117',
+      '1785753600118',
     ]).toContain(latest[0]!.timestamp);
     expect([
       'SecureAgentApplicationAccess1785753600095',
@@ -870,6 +873,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
       'ConfigureTransactionNotificationEvents1785753600103',
       'WalletOwnerClassification1785753600116',
       'CreateGovernedLedgerReversalExecutions1785753600117',
+      'GovernedWalletOwnershipResolution1785753600118',
     ]).toContain(latest[0]!.name);
   });
 });

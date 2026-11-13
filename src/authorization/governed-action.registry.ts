@@ -158,6 +158,37 @@ export const LEDGER_JOURNAL_REVERSAL_ACTION = rule(
   [],
 );
 
+/**
+ * Legacy wallet ownership resolution (`REVIEW` -> `CUSTOMER` / `AGENT` / `SYSTEM`).
+ *
+ * Registered governed action `WALLET_OWNERSHIP_RESOLUTION` on resource type `WALLET_ACCOUNT`, bound
+ * to the exact wallet being resolved. Maker/checker shape follows the approved Decision-2 and
+ * `LEDGER_JOURNAL_REVERSAL` precedent exactly: FINANCE_PREPARER initiates, an independent
+ * FINANCE_CONTROLLER approves (MFA both sides, self-approval prohibited, minimum one approval),
+ * and execution consumes the approval.
+ *
+ * Function codes are a documented catalogue gap, deliberately NOT invented: no approved
+ * `authorization_functions` row covers wallet ownership resolution (`customer.create_wallet` is
+ * operational provisioning, `reconciliation.investigate/resolve` are FUTURE/`assignable: false`
+ * and are assigned to no role). The maker side therefore falls back to the approved role rule
+ * (`FINANCE_PREPARER`) and the checker side to `privileged:approve` — the literal capability
+ * FINANCE_CONTROLLER carries — exactly as `LEDGER_JOURNAL_REVERSAL` handles its unassignable
+ * `ledger.approve_adjustment` checker function.
+ */
+export const WALLET_OWNERSHIP_RESOLUTION_ACTION: GovernedActionDefinition = {
+  action: 'WALLET_OWNERSHIP_RESOLUTION',
+  resourceType: 'WALLET_ACCOUNT',
+  initiatingFunctionCodes: [],
+  approvingFunctionCodes: [],
+  initiatingRoles: [FINANCE_PREPARER],
+  approvingRoles: [FINANCE_CONTROLLER],
+  minimumApprovals: 1,
+  selfApprovalProhibited: true,
+  mfaRequired: true,
+  minimumAssurance: 'MFA',
+  approvalScope: 'privileged:approve',
+};
+
 /** Decision 7: AGENT_NETWORK_MANAGER initiates; independent FINANCE_CONTROLLER approves. */
 export const AGENT_FUNDING_ACTIONS: Readonly<Record<'FUND' | 'DEFUND', GovernedActionDefinition>> =
   {
@@ -193,6 +224,7 @@ export const GOVERNED_ACTIONS: Readonly<Record<string, GovernedActionDefinition>
   ...NOTIFICATION_CHANGE_ACTIONS,
   ...Object.fromEntries(Object.values(AGENT_FUNDING_ACTIONS).map((item) => [item.action, item])),
   [LEDGER_JOURNAL_REVERSAL_ACTION.action]: LEDGER_JOURNAL_REVERSAL_ACTION,
+  [WALLET_OWNERSHIP_RESOLUTION_ACTION.action]: WALLET_OWNERSHIP_RESOLUTION_ACTION,
 };
 
 export function governedAction(action: string): GovernedActionDefinition | undefined {
