@@ -971,7 +971,7 @@ describe('Governed wallet ownership resolution — real PostgreSQL + real HTTP',
       }),
     ]);
     expect(results.map((result) => result.status)).toEqual([201, 201]);
-    expect(results[0]!.body.executedAt).toBe(results[1]!.body.executedAt);
+    expect(results[0].body.executedAt).toBe(results[1].body.executedAt);
     expect(await resolutionRows()).toHaveLength(1);
   });
 

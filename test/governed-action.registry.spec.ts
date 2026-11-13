@@ -10,6 +10,7 @@ import {
   GOVERNED_ACTIONS,
   LEDGER_JOURNAL_REVERSAL_ACTION,
   NOTIFICATION_CHANGE_ACTIONS,
+  WALLET_OWNERSHIP_RESOLUTION_ACTION,
   governedAction,
   governedChangeFingerprint,
   isGovernedAction,
@@ -35,6 +36,7 @@ describe('governed-action registry (P0-A/P0-B)', () => {
         ...Object.values(AGENT_FUNDING_ACTIONS).map((definition) => definition.action),
         ...Object.keys(NOTIFICATION_CHANGE_ACTIONS),
         'LEDGER_JOURNAL_REVERSAL',
+        'WALLET_OWNERSHIP_RESOLUTION',
       ].sort(),
     );
     // Decision 2 explicitly keeps agent.assign_limit ungoverned and limit.modify out of this P0.
@@ -43,6 +45,7 @@ describe('governed-action registry (P0-A/P0-B)', () => {
     expect(isGovernedAction('AGENT_FUND')).toBe(true);
     expect(isGovernedAction('AGENT_DEFUND')).toBe(true);
     expect(isGovernedAction('LEDGER_JOURNAL_REVERSAL')).toBe(true);
+    expect(isGovernedAction('WALLET_OWNERSHIP_RESOLUTION')).toBe(true);
   });
 
   it('requires independent MFA maker/checker roles for both notification change types', () => {
@@ -129,6 +132,23 @@ describe('governed-action registry (P0-A/P0-B)', () => {
       // ledger.approve_adjustment is FUTURE/unassignable — approving side is role-gated only.
       approvingFunctionCodes: [],
       approvalScope: 'privileged:approve',
+    });
+  });
+
+  it('binds WALLET_OWNERSHIP_RESOLUTION to WALLET_ACCOUNT with role-only gates', () => {
+    // No approved catalogue function covers wallet ownership resolution; the maker and checker
+    // sides are role-gated exactly like LEDGER_JOURNAL_REVERSAL's unassignable checker function.
+    expect(WALLET_OWNERSHIP_RESOLUTION_ACTION).toMatchObject({
+      action: 'WALLET_OWNERSHIP_RESOLUTION',
+      resourceType: 'WALLET_ACCOUNT',
+      initiatingFunctionCodes: [],
+      approvingFunctionCodes: [],
+      initiatingRoles: ['FINANCE_PREPARER'],
+      approvingRoles: ['FINANCE_CONTROLLER'],
+      approvalScope: 'privileged:approve',
+      minimumApprovals: 1,
+      selfApprovalProhibited: true,
+      minimumAssurance: 'MFA',
     });
   });
 
