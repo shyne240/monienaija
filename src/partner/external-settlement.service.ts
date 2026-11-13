@@ -264,7 +264,7 @@ export class ExternalSettlementService {
       );
     }
 
-    const evidence = await this.resolveEvidence(manager, command.evidence);
+    const evidence = await this.resolveEvidence(manager, command.evidence, operation.id);
     if (!evidence) {
       const settlement = await this.persistSettlementRow(manager, {
         command,
@@ -1015,34 +1015,28 @@ export class ExternalSettlementService {
   private async resolveEvidence(
     manager: EntityManager,
     evidence: NormalizedEvidence,
+    expectedOperationId: string,
   ): Promise<{ evidenceHash: string } | null> {
-    const operationId = await this.lookupOperationId(manager, evidence);
-    if (!operationId) {
-      return null;
-    }
-    try {
-      await this.externalOperationService.getInTransaction(manager, operationId);
-    } catch {
-      return null;
-    }
-    return { evidenceHash: evidence.hash };
-  }
-
-  private async lookupOperationId(
-    manager: EntityManager,
-    evidence: NormalizedEvidence,
-  ): Promise<string | null> {
-    const rows: Array<{ external_operation_id: string }> = await manager.query(
-      `SELECT external_operation_id
-         FROM external_operation_references
-        WHERE partner_key = 'NIBSS_NIP'
-          AND reference_type = $1
-          AND reference_value = $2
-          AND namespace = $3
-        LIMIT 1`,
+    const rows = await manager.query<
+      Array<{ external_operation_id: string; source: ExternalOperationReferenceSource }>
+    >(
+      `SELECT external_operation_id, source FROM external_operation_references
+        WHERE partner_key = 'NIBSS_NIP' AND reference_type = $1
+          AND reference_value = $2 AND namespace = $3 LIMIT 1`,
       [evidence.referenceType, evidence.referenceValue, evidence.namespace],
     );
-    return rows[0]?.external_operation_id ?? null;
+    const reference = rows[0];
+    if (!reference) return null;
+    if (
+      reference.external_operation_id !== expectedOperationId ||
+      reference.source !== evidence.source
+    ) {
+      throw new ExternalSettlementException(
+        'INTERNAL_ACCOUNT_MISMATCH',
+        'Settlement evidence does not belong to this operation and source',
+      );
+    }
+    return { evidenceHash: evidence.hash };
   }
 
   private async completeFailedIdempotency(
