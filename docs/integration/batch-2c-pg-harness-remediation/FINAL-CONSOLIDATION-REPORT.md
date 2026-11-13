@@ -23,6 +23,8 @@ weakened, no test was deleted, skipped or loosened.
 | `fc70937` | `v1-customer-onboarding-01` migrated (20/20) — all three legacy suites green                             |
 | `d4db6be` | `s-fix-01` test 7 re-pointed at Arena 2's (stronger) session-revocation contract                         |
 | `557a115` | removed the last repo-wide lint warning (unused `eslint-disable`)                                        |
+| `c08c208` | this report + a supersede banner on the pre-Arena-2 remediation report                                   |
+| `a26fa24` | records the final SHA above (docs only)                                                                  |
 
 ---
 
