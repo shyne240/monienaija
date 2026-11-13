@@ -1698,6 +1698,6 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('FINANCE_AUDITOR', 'institution.attribution.view', VIEW),
   nowAssign('COMPLIANCE', 'institution.view', VIEW),
   nowAssign('COMPLIANCE', 'institution.attribution.view', VIEW),
-  nowAssign('TREASURY', 'institution.view', VIEW),
-  nowAssign('TREASURY', 'institution.attribution.view', VIEW),
+  // TREASURY deliberately receives NO institution function: the approved V1 decision pins
+  // TREASURY to exactly `reconciliation.view`, and this phase must not widen any existing role.
 ];

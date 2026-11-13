@@ -3,7 +3,7 @@
 **Date:** 2026-11-13
 **Branch:** `arena/5ee539a0-monienaija`
 **Preserved baseline:** `af67f5292f4785e765426b8aa411fcf95ebacd94` (affiliation investigation) — parent `e1c80d0…` (governed wallet ownership resolution). **Neither is modified by this document.**
-**Status:** design proposal only. No institution schema, no migration, no Cash-Out/OTP/settlement change, no deployment, no provider call, no branch merge.
+**Status:** accepted. Phase 1 (institutional foundation) is implemented; see `docs/ARENA4-INSTITUTIONAL-FOUNDATION-IMPLEMENTATION-20261113.md` for the delivered schema, services, resolver contract and acceptance evidence. Phases 2–7 remain unimplemented. No Cash-Out/OTP/settlement change, no deployment, no provider call, no branch merge.
 
 Derived from the accepted investigation (`docs/ARENA4-INSTITUTIONAL-AFFILIATION-INVESTIGATION-20261113.md`) and verified against a live PostgreSQL 18.4 database built from the full 119-migration chain.
 
