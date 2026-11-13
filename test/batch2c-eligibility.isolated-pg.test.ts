@@ -510,3 +510,59 @@ test('desk OTP preflight denies withdrawn and unavailable evidence before challe
   await expect(otp.issue(command)).resolves.toMatchObject({ customerId, delivered: true });
   expect(sms.sent).toHaveLength(1);
 });
+
+test('MFA transaction primitive rolls back with its caller and serializes concurrent verification', async () => {
+  const { AgentDeskOtpService } = await import('../src/agent/agent-desk-otp.service');
+  const { MfaExecutionService } = await import(
+    '../src/customer-authentication/mfa-execution.service'
+  );
+  const customerId = await subject('LEVEL_1', ['BVN']);
+  await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [customerId]);
+  const credentialId = randomUUID();
+  await db.query(
+    `INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE')`,
+    [credentialId, customerId],
+  );
+  sms.clear();
+  const issued = await app.get(AgentDeskOtpService).issue({
+    agentId: randomUUID(),
+    customerId,
+    purpose: 'WALLET_TO_CASH',
+  });
+  const code = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+  const [row] = await db.query<Array<{ session_id: string }>>(
+    `SELECT session_id FROM mfa_challenges WHERE id=$1`,
+    [issued.challengeId],
+  );
+  const command = {
+    principal: {
+      principalType: 'CUSTOMER' as const,
+      customerId,
+      credentialId,
+      sessionId: row!.session_id,
+      audience: 'customer-api',
+      authenticatedAt: new Date(),
+      expiresAt: issued.expiresAt,
+    },
+    challengeId: issued.challengeId,
+    providedHash: code,
+    actor: customerId,
+    expectedPurpose: 'WALLET_TO_CASH',
+  };
+  const mfa = app.get(MfaExecutionService);
+  await expect(
+    db.transaction(async (manager) => {
+      expect((await mfa.verifyChallengeInManager(manager, command)).verified).toBe(true);
+      throw new Error('synthetic transaction failure');
+    }),
+  ).rejects.toThrow('synthetic transaction failure');
+  expect(
+    await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [issued.challengeId]),
+  ).toEqual([{ status: 'ACTIVE' }]);
+  const results = await Promise.all([mfa.verifyChallenge(command), mfa.verifyChallenge(command)]);
+  expect(results.filter((result) => result.verified)).toHaveLength(1);
+  expect(results.filter((result) => result.failureReason === 'REPLAYED')).toHaveLength(1);
+  expect(
+    await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [issued.challengeId]),
+  ).toEqual([{ status: 'VERIFIED' }]);
+});
