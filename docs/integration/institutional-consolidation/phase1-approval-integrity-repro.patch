@@ -1,0 +1,78 @@
+diff --git a/test/institution-foundation.integration.spec.ts b/test/institution-foundation.integration.spec.ts
+index b141934..39b4d5f 100644
+--- a/test/institution-foundation.integration.spec.ts
++++ b/test/institution-foundation.integration.spec.ts
+@@ -618,0 +619,73 @@ describe('Institutional foundation (ARENA 4 Phase 1) — real PostgreSQL + real
++  it('rejects a consumed affiliation approval replay with a changed target or evidence', async () => {
++    const institutionId = await approvedInstitution();
++    const agent = await createAgent();
++    const body = affiliationBody(institutionId, 'ASSIGN');
++    const assigned = await governedAffiliation(agent.id, body);
++    expect(assigned.executed.status).toBe(201);
++    const { controller } = await roles();
++    const replay = await executeAffiliation(controller.token, agent.id, {
++      ...body,
++      evidenceReference: 'TAMPERED-EVIDENCE',
++      approvalId: assigned.created.body.approvalId,
++    });
++    expect(replay.status).toBe(403);
++  });
++
++  it('rejects reuse of a consumed lifecycle approval for another direct database transition', async () => {
++    const institutionId = await approvedInstitution();
++    const old = await dataSource.query<Array<{ lifecycle_approval_id: string }>>(
++      'SELECT lifecycle_approval_id FROM financial_institutions WHERE id=$1',
++      [institutionId],
++    );
++    const { operator, controller } = await roles();
++    const reason = 'Operational suspension pending a regulatory review';
++    const suspension = await requestLifecycle(operator.token, institutionId, 'SUSPENDED', reason);
++    expect(suspension.status).toBe(201);
++    expect((await approve(controller.token, suspension.body.approvalId)).status).toBe(201);
++    expect(
++      (
++        await executeLifecycle(
++          controller.token,
++          institutionId,
++          suspension.body.approvalId,
++          'SUSPENDED',
++          reason,
++        )
++      ).status,
++    ).toBe(201);
++    await expect(
++      dataSource.query(
++        "UPDATE financial_institutions SET status='APPROVED', suspended_at=NULL, suspended_by=NULL, lifecycle_approval_id=$2 WHERE id=$1",
++        [institutionId, old[0]!.lifecycle_approval_id],
++      ),
++    ).rejects.toThrow();
++  });
++
++  it('rejects a consumed lifecycle approval replay with a changed target or reason', async () => {
++    const institutionId = await approvedInstitution();
++    const { operator, controller } = await roles();
++    const reason = 'Operational suspension pending a regulatory review';
++    const suspension = await requestLifecycle(operator.token, institutionId, 'SUSPENDED', reason);
++    expect(suspension.status).toBe(201);
++    expect((await approve(controller.token, suspension.body.approvalId)).status).toBe(201);
++    expect(
++      (
++        await executeLifecycle(
++          controller.token,
++          institutionId,
++          suspension.body.approvalId,
++          'SUSPENDED',
++          reason,
++        )
++      ).status,
++    ).toBe(201);
++    const replay = await executeLifecycle(
++      controller.token,
++      institutionId,
++      suspension.body.approvalId,
++      'APPROVED',
++      'A different request payload',
++    );
++    expect(replay.status).toBe(403);
++  });
++

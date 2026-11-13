@@ -1,0 +1,53 @@
+{
+  "success": true,
+  "numTotalTestSuites": 7,
+  "numPassedTestSuites": 7,
+  "numFailedTestSuites": 0,
+  "numTotalTests": 127,
+  "numPassedTests": 127,
+  "numFailedTests": 0,
+  "suites": [
+    {
+      "file": "wallet-ownership-resolution.integration.spec.ts",
+      "status": "passed",
+      "total": 20,
+      "passed": 20
+    },
+    {
+      "file": "a20-outlets-terminals.integration.spec.ts",
+      "status": "passed",
+      "total": 23,
+      "passed": 23
+    },
+    {
+      "file": "institution-foundation.integration.spec.ts",
+      "status": "passed",
+      "total": 18,
+      "passed": 18
+    },
+    {
+      "file": "a19-agent-funding.integration.spec.ts",
+      "status": "passed",
+      "total": 21,
+      "passed": 21
+    },
+    {
+      "file": "a8-agent-lifecycle.integration.spec.ts",
+      "status": "passed",
+      "total": 23,
+      "passed": 23
+    },
+    {
+      "file": "migration-chain.integration.spec.ts",
+      "status": "passed",
+      "total": 19,
+      "passed": 19
+    },
+    {
+      "file": "v1-release-01-production-readiness-migration-sync.integration.spec.ts",
+      "status": "passed",
+      "total": 3,
+      "passed": 3
+    }
+  ]
+}
