@@ -1,5 +1,12 @@
 # ARENA 3 — PostgreSQL Regression Infrastructure Remediation (final report)
 
+> **Superseded in part.** This document describes the state at `fde13ce`, *before* Arena 2 was
+> integrated. Arena 2 is now merged (`4cc8a9c`), the three legacy-registration suites are migrated and
+> the six fixture failures are green. Read the current numbers and the outstanding items in
+> [`FINAL-CONSOLIDATION-REPORT.md`](./FINAL-CONSOLIDATION-REPORT.md). Statements below that say
+> "Arena 2 was not merged", "136/139" or "three still-red suites" describe that earlier point in time
+> and were kept for the remediation history.
+
 **Branch:** `arena/8e59e188-monienaija`
 **Base:** `3d05aaec1d569dc8a5200ebb3b350e2cc1f78510` (Arena 3 base)
 **Prerequisite merged in:** Arena 1 Batch 2C tip `780ec761245851cd6a1c201663ce0bc3777a5549` (merge commit `1c2bae6`)
