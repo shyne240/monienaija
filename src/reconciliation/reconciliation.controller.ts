@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Req } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Param, Query, Req } from '@nestjs/common';
 
 import { ReconciliationService } from './reconciliation.service';
 import { AuthorizationService } from '../authorization/authorization.service';
@@ -21,6 +21,16 @@ export class ReconciliationController {
   async getReport(@Req() req: AuthenticatedRequest) {
     await this.requireFunction(req, 'reconciliation.view');
     return this.reconciliationService.runReconciliation();
+  }
+
+  @Get('inbound-unresolved')
+  async getUnresolvedInbound(@Req() req: AuthenticatedRequest, @Query('offset') offset?: string) {
+    await this.requireFunction(req, 'reconciliation.view');
+    if (offset !== undefined && !/^(0|[1-9]\d*)$/.test(offset))
+      throw new BadRequestException('Invalid inbound reconciliation offset');
+    return this.reconciliationService.getUnresolvedInboundObservations(
+      offset === undefined ? 0 : Number(offset),
+    );
   }
 
   @Get('trial-balance')

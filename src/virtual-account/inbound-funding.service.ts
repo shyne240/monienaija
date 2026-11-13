@@ -17,7 +17,11 @@ import { SettlementAccountService } from '../payment/settlement-account.service'
 import { SettlementAccountRole } from '../payment/payment.enums';
 import { isRetryableTransactionError } from '../payment/payment-support';
 import { WalletFinancialBoundaryService } from '../wallet/wallet-financial-boundary.service';
-import { INBOUND_FUNDING_VERIFIER, type InboundFundingVerifier } from './inbound-funding-verifier';
+import {
+  INBOUND_FUNDING_VERIFIER,
+  type InboundFundingVerifier,
+  type InboundVerification,
+} from './inbound-funding-verifier';
 import {
   INBOUND_INSTITUTION_AUTHORITY,
   type InboundInstitutionAuthority,
@@ -50,10 +54,11 @@ export class InboundFundingService {
     providerReference: string;
     correlationId: string;
   }): Promise<InboundFundingResult> {
+    const verification = await this.observe(input);
     for (let i = 0; i < 3; i++) {
       try {
         return await this.dataSource.transaction('SERIALIZABLE', (manager) =>
-          this.processInTransaction(manager, input),
+          this.processInTransaction(manager, input, undefined, verification),
         );
       } catch (error) {
         if (!isRetryableTransactionError(error) || i === 2) throw error;
@@ -62,9 +67,53 @@ export class InboundFundingService {
     throw new ConflictException('Inbound funding could not be completed');
   }
 
+  /** Verify and durably retain received evidence before beginning a product transaction.
+   * This is deliberately not an accounting entry or an authorization to credit. */
+  async observe(input: {
+    providerKey: string;
+    providerReference: string;
+    correlationId: string;
+  }): Promise<InboundVerification> {
+    const { providerKey, providerReference } = this.normalizeRequest(input);
+    let verification: InboundVerification;
+    try {
+      verification = await this.verifier.verify({ providerKey, providerReference });
+    } catch {
+      throw new ServiceUnavailableException('Inbound provider verification is unavailable');
+    }
+    if (verification.state === 'UNAVAILABLE')
+      throw new ServiceUnavailableException('Inbound provider verification is unavailable');
+    if (verification.state !== 'RECEIVED') return verification;
+    const { currency, amountMinor, referenceHash, evidenceHash } = this.validateEvidence(
+      providerKey,
+      providerReference,
+      verification,
+    );
+    await this.dataSource.query(
+      `INSERT INTO inbound_funding_observations
+       (id,provider_key,provider_reference,provider_reference_hash,evidence_hash,bank_code,account_number,amount_minor,currency,provider_observed_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT(provider_key,provider_reference_hash,evidence_hash) DO NOTHING`,
+      [
+        randomUUID(),
+        providerKey,
+        providerReference,
+        referenceHash,
+        evidenceHash,
+        verification.bankCode,
+        verification.accountNumber,
+        amountMinor,
+        currency,
+        verification.observedAt,
+      ],
+    );
+    return verification;
+  }
+
   /** Caller supplies its existing transaction and authoritative product binding; the caller
    * must commit its lifecycle effect in that same transaction. This method does not itself
-   * authenticate the caller or establish a product lifecycle. */
+   * authenticate the caller or establish a product lifecycle. Call observe before the
+   * transaction so verified funds survive any subsequent rollback. */
   async receiveInTransaction(
     manager: EntityManager,
     input: {
@@ -94,29 +143,48 @@ export class InboundFundingService {
       amountMinor: parsePositiveMinorUnits(input.expectedAmountMinor).toString(),
       currency: normalizeCurrency(input.expectedCurrency),
     };
-    return this.processInTransaction(manager, input, expected);
+    const { providerKey, providerReference } = this.normalizeRequest(input);
+    const rows = await manager.query<
+      Array<{
+        provider_key: string;
+        provider_reference: string;
+        bank_code: string;
+        account_number: string;
+        amount_minor: string;
+        currency: string;
+        provider_observed_at: Date;
+      }>
+    >(
+      `SELECT provider_key,provider_reference,bank_code,account_number,amount_minor::text,currency,provider_observed_at
+         FROM inbound_funding_observations WHERE provider_key=$1 AND provider_reference_hash=$2
+         ORDER BY created_at,id LIMIT 1`,
+      [providerKey, this.hash(providerReference)],
+    );
+    const row = rows[0];
+    if (!row || row.provider_reference !== providerReference)
+      throw new ConflictException(
+        'Verified inbound evidence must be observed before the transaction',
+      );
+    return this.processInTransaction(manager, input, expected, {
+      state: 'RECEIVED',
+      providerKey: row.provider_key,
+      providerReference: row.provider_reference,
+      bankCode: row.bank_code,
+      accountNumber: row.account_number,
+      amountMinor: row.amount_minor,
+      currency: row.currency,
+      observedAt: row.provider_observed_at.toISOString(),
+    });
   }
 
   private async processInTransaction(
     manager: EntityManager,
     input: { providerKey: string; providerReference: string; correlationId: string },
-    expected?: { walletAccountId: string; amountMinor: string; currency: string },
+    expected: { walletAccountId: string; amountMinor: string; currency: string } | undefined,
+    observed: InboundVerification,
   ): Promise<InboundFundingResult> {
-    const providerKey = (input.providerKey ?? '').trim().toUpperCase();
-    const providerReference = (input.providerReference ?? '').trim();
-    const correlationId = (input.correlationId ?? '').trim();
-    if (
-      !/^[A-Z0-9_.:-]{2,80}$/.test(providerKey) ||
-      !/^[\x21-\x7e]{1,160}$/.test(providerReference) ||
-      !/^[\x20-\x7e]{1,160}$/.test(correlationId)
-    )
-      throw new BadRequestException('Invalid inbound evidence request');
-    let verification;
-    try {
-      verification = await this.verifier.verify({ providerKey, providerReference });
-    } catch {
-      throw new ServiceUnavailableException('Inbound provider verification is unavailable');
-    }
+    const { providerKey, providerReference, correlationId } = this.normalizeRequest(input);
+    const verification = observed;
     if (verification.state === 'UNAVAILABLE')
       throw new ServiceUnavailableException('Inbound provider verification is unavailable');
     const referenceHash = this.hash(providerReference);
@@ -130,30 +198,34 @@ export class InboundFundingService {
         correlationId,
       );
     }
-    if (
-      verification.providerKey !== providerKey ||
-      verification.providerReference !== providerReference ||
-      !/^[A-Z0-9]{3,20}$/.test(verification.bankCode) ||
-      !/^\d{4,32}$/.test(verification.accountNumber) ||
-      !Number.isFinite(Date.parse(verification.observedAt))
-    )
-      throw new ConflictException('Verified inbound evidence does not match the requested payment');
-    const currency = normalizeCurrency(verification.currency);
-    if (currency !== 'NGN') throw new ConflictException('Inbound currency is not supported');
-    const amountMinor = parsePositiveMinorUnits(verification.amountMinor).toString();
-    const evidenceHash = this.hash(
-      JSON.stringify({
-        providerKey,
-        referenceHash,
-        bankCode: verification.bankCode,
-        accountNumber: verification.accountNumber,
-        amountMinor,
-        currency,
-      }),
+    const { currency, amountMinor, evidenceHash } = this.validateEvidence(
+      providerKey,
+      providerReference,
+      verification,
     );
+    if (currency !== 'NGN') throw new ConflictException('Inbound currency is not supported');
     await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
       `inbound:${providerKey}:${referenceHash}`,
     ]);
+    const observations = await manager.query<Array<{ evidence_hash: string }>>(
+      'SELECT evidence_hash FROM inbound_funding_observations WHERE provider_key=$1 AND provider_reference_hash=$2',
+      [providerKey, referenceHash],
+    );
+    // Require pre-transaction preservation and refuse to choose between contradictory
+    // independently verified versions of the same provider reference.
+    if (!observations.some((row) => row.evidence_hash === evidenceHash))
+      throw new ConflictException(
+        'Verified inbound evidence must be observed before the transaction',
+      );
+    if (observations.some((row) => row.evidence_hash !== evidenceHash))
+      return this.recordReview(
+        manager,
+        providerKey,
+        referenceHash,
+        evidenceHash,
+        'EVIDENCE_CONFLICT',
+        correlationId,
+      );
     const receipts = await manager.query<
       Array<{
         id: string;
@@ -365,6 +437,52 @@ export class InboundFundingService {
       payload: { receiptId: id, journalId, amountMinor, currency, status },
     });
     return { status, receiptId: id, journalId, replayed: false };
+  }
+
+  private normalizeRequest(input: {
+    providerKey: string;
+    providerReference: string;
+    correlationId: string;
+  }) {
+    const providerKey = (input.providerKey ?? '').trim().toUpperCase();
+    const providerReference = (input.providerReference ?? '').trim();
+    const correlationId = (input.correlationId ?? '').trim();
+    if (
+      !/^[A-Z0-9_.:-]{2,80}$/.test(providerKey) ||
+      !/^[\x21-\x7e]{1,160}$/.test(providerReference) ||
+      !/^[\x20-\x7e]{1,160}$/.test(correlationId)
+    )
+      throw new BadRequestException('Invalid inbound evidence request');
+    return { providerKey, providerReference, correlationId };
+  }
+
+  private validateEvidence(
+    providerKey: string,
+    providerReference: string,
+    verification: Extract<InboundVerification, { state: 'RECEIVED' }>,
+  ) {
+    if (
+      verification.providerKey !== providerKey ||
+      verification.providerReference !== providerReference ||
+      !/^[A-Z0-9]{3,20}$/.test(verification.bankCode) ||
+      !/^\d{4,32}$/.test(verification.accountNumber) ||
+      !Number.isFinite(Date.parse(verification.observedAt))
+    )
+      throw new ConflictException('Verified inbound evidence does not match the requested payment');
+    const currency = normalizeCurrency(verification.currency);
+    const amountMinor = parsePositiveMinorUnits(verification.amountMinor).toString();
+    const referenceHash = this.hash(providerReference);
+    const evidenceHash = this.hash(
+      JSON.stringify({
+        providerKey,
+        referenceHash,
+        bankCode: verification.bankCode,
+        accountNumber: verification.accountNumber,
+        amountMinor,
+        currency,
+      }),
+    );
+    return { currency, amountMinor, referenceHash, evidenceHash };
   }
 
   private async recordReview(

@@ -1,3 +1,4 @@
+import { ReconciliationService } from '../src/reconciliation/reconciliation.service';
 import { createHash, pbkdf2Sync, randomBytes, randomUUID } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
@@ -449,6 +450,10 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
       db.transaction('READ COMMITTED', (manager) => inbound.receiveInTransaction(manager, input)),
     ).rejects.toThrow('active serializable transaction');
     await expect(
+      db.transaction('SERIALIZABLE', (manager) => inbound.receiveInTransaction(manager, input)),
+    ).rejects.toThrow('must be observed before the transaction');
+    await inbound.observe(item.request);
+    await expect(
       db.transaction('SERIALIZABLE', async (manager) => {
         const received = await inbound.receiveInTransaction(manager, input);
         expect(received.status).toBe('CREDITED');
@@ -456,6 +461,12 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
       }),
     ).rejects.toThrow('injected lifecycle failure');
     expect(await balance(s.sourceId)).toBe('1000');
+    expect(
+      await db.query(
+        'SELECT id FROM inbound_funding_observations WHERE provider_reference_hash=$1',
+        [createHash('sha256').update(item.reference).digest('hex')],
+      ),
+    ).toHaveLength(1);
     expect(
       await db.query('SELECT id FROM inbound_funding_receipts WHERE provider_reference_hash=$1', [
         createHash('sha256').update(item.reference).digest('hex'),
@@ -465,6 +476,23 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
       inbound.receiveInTransaction(manager, input),
     );
     expect(received.status).toBe('CREDITED');
+    expect(await balance(s.sourceId)).toBe('1700');
+  });
+
+  it('uses retained independently verified evidence within the product transaction without re-querying the provider', async () => {
+    const s = await subject();
+    const item = await incoming(s);
+    await inbound.observe(item.request);
+    inboundEvidence.set(item.reference, { state: 'UNAVAILABLE' });
+    const result = await db.transaction('SERIALIZABLE', (manager) =>
+      inbound.receiveInTransaction(manager, {
+        ...item.request,
+        expectedWalletAccountId: s.walletAccountId,
+        expectedAmountMinor: '700',
+        expectedCurrency: 'NGN',
+      }),
+    );
+    expect(result.status).toBe('CREDITED');
     expect(await balance(s.sourceId)).toBe('1700');
   });
 
@@ -478,6 +506,7 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
       expectedAmountMinor: '700',
       expectedCurrency: 'NGN',
     };
+    await inbound.observe(item.request);
     for (const altered of [
       { ...expected, expectedWalletAccountId: other.walletAccountId },
       { ...expected, expectedAmountMinor: '701' },
@@ -565,6 +594,12 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
       reason: 'OUTCOME_UNKNOWN',
     });
     expect(await balance(s.sourceId)).toBe('1000');
+    expect(
+      await db.query(
+        'SELECT id FROM inbound_funding_observations WHERE provider_reference_hash=$1',
+        [createHash('sha256').update(item.reference).digest('hex')],
+      ),
+    ).toHaveLength(0);
     inboundEvidence.set(item.reference, original);
     expect(await inbound.receive(item.request)).toMatchObject({
       status: 'CREDITED',
@@ -584,6 +619,50 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
     ).toHaveLength(2);
   });
 
+  it('retains contradictory verified observations and blocks credit before any receipt', async () => {
+    const s = await subject();
+    const item = await incoming(s);
+    const original = inboundEvidence.get(item.reference)!;
+    if (original.state !== 'RECEIVED') throw new Error('test evidence missing');
+    await inbound.observe(item.request);
+    inboundEvidence.set(item.reference, { ...original, amountMinor: '701' });
+    expect(await inbound.receive(item.request)).toMatchObject({
+      status: 'REVIEW',
+      reason: 'EVIDENCE_CONFLICT',
+    });
+    inboundEvidence.set(item.reference, original);
+    expect(await inbound.receive(item.request)).toMatchObject({
+      status: 'REVIEW',
+      reason: 'EVIDENCE_CONFLICT',
+    });
+    const rows = await db.query<Array<{ id: string }>>(
+      'SELECT id FROM inbound_funding_observations WHERE provider_reference_hash=$1',
+      [createHash('sha256').update(item.reference).digest('hex')],
+    );
+    expect(rows).toHaveLength(2);
+    await expect(
+      db.query('DELETE FROM inbound_funding_observations WHERE id=$1', [rows[0]!.id]),
+    ).rejects.toThrow();
+    expect(await balance(s.sourceId)).toBe('1000');
+  });
+
+  it('preserves independently verified unsupported currency without credit', async () => {
+    const s = await subject();
+    const item = await incoming(s);
+    const original = inboundEvidence.get(item.reference)!;
+    if (original.state !== 'RECEIVED') throw new Error('test evidence missing');
+    inboundEvidence.set(item.reference, { ...original, currency: 'USD' });
+    await expect(inbound.receive(item.request)).rejects.toThrow('currency is not supported');
+    const queue = await app.get(ReconciliationService).getUnresolvedInboundObservations();
+    expect(
+      queue.find(
+        (row) =>
+          row.provider_reference_hash === createHash('sha256').update(item.reference).digest('hex'),
+      ),
+    ).toMatchObject({ currency: 'USD', amount_minor: '700' });
+    expect(await balance(s.sourceId)).toBe('1000');
+  });
+
   it('books received funds to suspense when the customer is on compliance hold', async () => {
     const s = await subject();
     const item = await incoming(s);
@@ -599,6 +678,13 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
     );
     const result = await inbound.receive(item.request);
     expect(result.status).toBe('SUSPENSE');
+    const queue = await app.get(ReconciliationService).getUnresolvedInboundObservations();
+    expect(
+      queue.find(
+        (row) =>
+          row.provider_reference_hash === createHash('sha256').update(item.reference).digest('hex'),
+      ),
+    ).toMatchObject({ receipt_status: 'SUSPENSE' });
     expect(await balance(s.sourceId)).toBe('1000');
     expect(BigInt(await balance(suspense))).toBe(before + 700n);
     await db.query('DELETE FROM kyc_tier_manual_holds WHERE customer_id=$1', [s.customerId]);
@@ -649,6 +735,27 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
     await expect(noInstitution.receive(item.request)).rejects.toThrow(
       'institutional authority is unavailable',
     );
+    const observations = await db.query<
+      Array<{ provider_reference: string; amount_minor: string; currency: string }>
+    >(
+      'SELECT provider_reference, amount_minor, currency FROM inbound_funding_observations WHERE provider_reference_hash=$1',
+      [createHash('sha256').update(item.reference).digest('hex')],
+    );
+    expect(observations).toMatchObject([
+      { provider_reference: item.reference, amount_minor: '700', currency: 'NGN' },
+    ]);
+    const report = await app.get(ReconciliationService).runReconciliation();
+    expect(
+      report.checks.find((check) => check.name === 'verified_inbound_unresolved'),
+    ).toMatchObject({ status: 'WARNING' });
+    const queue = await app.get(ReconciliationService).getUnresolvedInboundObservations();
+    const observation = queue.find(
+      (row) =>
+        row.provider_reference_hash === createHash('sha256').update(item.reference).digest('hex'),
+    );
+    expect(observation).toMatchObject({ amount_minor: '700', currency: 'NGN' });
+    expect(observation).not.toHaveProperty('account_number');
+    expect(observation).not.toHaveProperty('provider_reference');
     expect(await balance(s.sourceId)).toBe('1000');
     expect(
       await db.query('SELECT id FROM inbound_funding_receipts WHERE provider_reference_hash=$1', [
@@ -676,6 +783,12 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
       new UnavailableInboundSuspensePolicy(),
     );
     await expect(noPolicy.receive(item.request)).rejects.toThrow('suspense policy is unavailable');
+    expect(
+      await db.query(
+        'SELECT id FROM inbound_funding_observations WHERE provider_reference_hash=$1',
+        [createHash('sha256').update(item.reference).digest('hex')],
+      ),
+    ).toHaveLength(1);
     expect(await balance(s.sourceId)).toBe('1000');
     expect(
       await db.query('SELECT id FROM inbound_funding_receipts WHERE provider_reference_hash=$1', [

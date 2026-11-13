@@ -4,11 +4,11 @@ Status: work in progress, not an approval to deploy or submit financial transact
 
 ## Direction and ownership
 
-* A6 `ExternalOperation` is constrained by its database schema to resource `WITHDRAWAL`, capability `external.wallet.withdrawal.settlement`, and operation `OUTBOUND_BANK_SETTLEMENT`. Its successful settlement debits customer funds and is an outbound financial obligation. New settlement must consume the exact reservation; direct ordinary wallet debits do not establish the required financial commitment.
-* A6 suspense and reference records are evidence/reconciliation paths, not authorizations to spend or to release an uncertain reservation. Rejection release requires independent outcome verification and the exact reserved commitment. Existing post-settlement compensation is a recovery path, not a new payment; commitment-linked settlements currently fail closed there until governed commitment recovery is implemented.
-* A7 product financial effect accepts `virtual-account.assign` and `virtual-account.inbound-funding`, yet its current implementation maps its SETTLE decision to the outbound A6 withdrawal settlement. Assignment is not a withdrawal; inbound funding should credit the customer, not debit a wallet or require an outbound withdrawal reservation. The existing mapping is not an authoritative inbound settlement implementation. New verified A7 settlement attempts now fail closed before outbound posting; its temporary idempotency reservation rolls back with the transaction. An isolated inbound receipt prototype now exists, but is not connected to A7 or any production module and does not complete that lifecycle. It is not part of the withdrawal reservation mechanism.
-* Virtual account assignment in `src/virtual-account/virtual-account.service.ts` is account lifecycle metadata, not inbound payment settlement. Customer funding has its own financial approval and ledger boundary; it is not the A6 outbound withdrawal flow.
-* Generic withdrawal HTTP initiation remains disabled. The dedicated customer-self `POST /customers/me/withdrawal-commitments` now routes through the authenticated session, PIN, beneficiary, eligibility, limit, operation and reservation lifecycle. It does not submit to a provider. The registered execution authority is unavailable by default: without both authoritative institutional entitlement and independent destination ownership evidence, the endpoint fails closed before financial execution. The test-only authority is not a production approval.
+- A6 `ExternalOperation` is constrained by its database schema to resource `WITHDRAWAL`, capability `external.wallet.withdrawal.settlement`, and operation `OUTBOUND_BANK_SETTLEMENT`. Its successful settlement debits customer funds and is an outbound financial obligation. New settlement must consume the exact reservation; direct ordinary wallet debits do not establish the required financial commitment.
+- A6 suspense and reference records are evidence/reconciliation paths, not authorizations to spend or to release an uncertain reservation. Rejection release requires independent outcome verification and the exact reserved commitment. Existing post-settlement compensation is a recovery path, not a new payment; commitment-linked settlements currently fail closed there until governed commitment recovery is implemented.
+- A7 product financial effect accepts `virtual-account.assign` and `virtual-account.inbound-funding`, yet its current implementation maps its SETTLE decision to the outbound A6 withdrawal settlement. Assignment is not a withdrawal; inbound funding should credit the customer, not debit a wallet or require an outbound withdrawal reservation. The existing mapping is not an authoritative inbound settlement implementation. New verified A7 settlement attempts now fail closed before outbound posting; its temporary idempotency reservation rolls back with the transaction. An isolated inbound receipt prototype now exists, but is not connected to A7 or any production module and does not complete that lifecycle. It is not part of the withdrawal reservation mechanism.
+- Virtual account assignment in `src/virtual-account/virtual-account.service.ts` is account lifecycle metadata, not inbound payment settlement. Customer funding has its own financial approval and ledger boundary; it is not the A6 outbound withdrawal flow.
+- Generic withdrawal HTTP initiation remains disabled. The dedicated customer-self `POST /customers/me/withdrawal-commitments` now routes through the authenticated session, PIN, beneficiary, eligibility, limit, operation and reservation lifecycle. It does not submit to a provider. The registered execution authority is unavailable by default: without both authoritative institutional entitlement and independent destination ownership evidence, the endpoint fails closed before financial execution. The test-only authority is not a production approval.
 
 ## Inbound receipt prototype (not accepted or production enabled)
 
@@ -115,3 +115,34 @@ transition is coupled to it yet and the unresolved-evidence/policy gap remains. 
 upstream authoritative product command, authorization, policy and lifecycle bindings
 must be established and used before replacing the direction guard; the old withdrawal
 operation cannot stand in for them. No unit fake establishes these boundaries.
+
+### Stage 2 continued: verified inbound observations (not A7 acceptance)
+
+A verified `RECEIVED` response is now retained before standalone inbound processing starts,
+independent of the ledger transaction. Caller-managed integrations must explicitly call
+`observe` before opening their serializable transaction; `receiveInTransaction` requires a
+matching retained observation, and reads that observation rather than re-verifying inside
+the transaction. This preserves a validated provider reference, destination,
+amount, currency and observation time when authorization, policy, posting or the enclosing
+lifecycle transaction fails. `UNKNOWN` notifications do not create verified observations.
+Contradictory observations for a reference prevent a new credit. Valid unsupported currency
+is retained, but cannot be posted by the NGN-only processor. Observation storage is immutable;
+raw bank account and provider reference are not included in the reconciliation API.
+
+The existing internal reconciliation report now warns about verified observations not
+credited, including suspense receipts. A `reconciliation.view`-authorized work queue provides
+up to 100 redacted records per offset, not an adjudication or recovery workflow. Its offset
+pagination is a live view: records can leave the queue between requests, so operators must
+re-query rather than treat an offset scan as a snapshot. No automatic suspense policy is added.
+The new table holds sensitive bank-account and provider-reference data and needs production
+access, retention and classification governance before deployment.
+
+This is **not** A7 financial integration: A7 still has no authoritative current lifecycle
+transition or trustworthy persisted command/authorization/policy inputs for an inbound effect.
+Its old outbound-direction guard remains in place; do not connect the inbound processor to
+fabricated A7 success views. Local acceptance remains incomplete. On the disposable cluster,
+A6/A7/commitment/migration tests produced 63 passes and 12 A7 failures, and the separately
+run governed reversal tests passed 29/29. The internal reconciliation authorization and
+inbound tests plus migration sync passed 54/54. Full backend: 2,840 passed and the same
+three A7 assertions failed. A subsequent focused inbound PostgreSQL run passed 36/36;
+TypeScript and full lint passed. No real provider or funds were used.
