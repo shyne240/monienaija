@@ -10,11 +10,13 @@ export async function lockCashOutOtpBudget(
   customerId: string,
   destinationHash: string,
   operationId?: string,
+  inheritedOperationId?: string,
 ): Promise<{ keys: string[]; issuanceCount: number; failures: number }> {
   const keys = [
     `customer:${customerId}`,
     `destination:${destinationHash}`,
     ...(operationId ? [`operation:${operationId}`] : []),
+    ...(inheritedOperationId ? [`operation:${inheritedOperationId}`] : []),
   ].sort();
   for (const key of keys) {
     await manager.query(
@@ -51,10 +53,23 @@ export async function reserveCashOutOtpIssuance(
   customerId: string,
   destinationHash: string,
   operationId?: string,
+  inheritedOperationId?: string,
 ): Promise<void> {
-  const budget = await lockCashOutOtpBudget(manager, customerId, destinationHash, operationId);
+  const budget = await lockCashOutOtpBudget(
+    manager,
+    customerId,
+    destinationHash,
+    operationId,
+    inheritedOperationId,
+  );
   if (budget.issuanceCount >= MAX_ISSUANCES || budget.failures >= MAX_FAILURES) {
     throw new HttpException('Cash-out OTP temporarily unavailable', HttpStatus.TOO_MANY_REQUESTS);
+  }
+  if (inheritedOperationId && operationId) {
+    await manager.query(
+      `UPDATE cash_out_otp_budgets target SET issuance_count=GREATEST(target.issuance_count, old.issuance_count),failed_attempts=GREATEST(target.failed_attempts, old.failed_attempts),window_started_at=LEAST(target.window_started_at,old.window_started_at) FROM cash_out_otp_budgets old WHERE target.budget_key=$1 AND old.budget_key=$2`,
+      [`operation:${operationId}`, `operation:${inheritedOperationId}`],
+    );
   }
   await manager.query(
     `UPDATE cash_out_otp_budgets SET issuance_count=issuance_count+1 WHERE budget_key=ANY($1::varchar[])`,

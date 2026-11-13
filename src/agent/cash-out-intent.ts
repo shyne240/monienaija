@@ -15,6 +15,7 @@ export interface CashOutIntentInput {
   amountMinor?: string | number;
   currency?: string;
   operationKey?: string;
+  supersedesOperationKey?: string;
 }
 export async function establishCashOutIntent(
   manager: EntityManager,
@@ -36,9 +37,17 @@ export async function establishCashOutIntent(
   const amount = parsePositiveMinorUnits(input.amountMinor).toString();
   if (normalizeCurrency(input.currency) !== 'NGN')
     throw new BadRequestException('currency must be NGN');
-  await manager.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
-    `cash-out:${input.agentId}:${key}`,
-  ]);
+  const previousKey = input.supersedesOperationKey?.trim();
+  if (
+    input.supersedesOperationKey !== undefined &&
+    (!previousKey || previousKey.length > 255 || previousKey === key)
+  )
+    throw new BadRequestException('Invalid superseded operation');
+  for (const lockKey of [key, ...(previousKey ? [previousKey] : [])].sort()) {
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+      `cash-out:${input.agentId}:${lockKey}`,
+    ]);
+  }
   const wallets = await manager.query<Array<{ id: string; ledger_account_id: string }>>(
     `SELECT id,ledger_account_id FROM wallet_accounts WHERE customer_id=$1 AND currency='NGN' AND status='ACTIVE' AND owner_class='CUSTOMER' FOR SHARE`,
     [input.customerId],
@@ -65,6 +74,43 @@ export async function establishCashOutIntent(
     `SELECT *, (status='ACTIVE' AND expires_at>clock_timestamp()) AS valid FROM cash_out_intents WHERE agent_id=$1 AND operation_key=$2 FOR UPDATE`,
     [input.agentId, key],
   );
+  let supersededIntentId: string | undefined;
+  if (previousKey) {
+    // Replacement must be a genuinely new operation and belongs to the same agent
+    // and customer. Lock the same intent row used by the execution boundary.
+    if (existing[0]) throw new ConflictException('Replacement operation already exists');
+    const previous = await manager.query<
+      Array<{
+        id: string;
+        customer_id: string;
+        institution_scope: string;
+        status: string;
+        amount_minor: string;
+        source_wallet_id: string;
+        valid: boolean;
+      }>
+    >(
+      `SELECT id,customer_id,institution_scope,status,amount_minor::text,source_wallet_id,expires_at>clock_timestamp() AS valid FROM cash_out_intents WHERE agent_id=$1 AND operation_key=$2 FOR UPDATE`,
+      [input.agentId, previousKey],
+    );
+    const old = previous[0];
+    if (
+      !old ||
+      old.customer_id !== input.customerId ||
+      old.institution_scope !== input.institutionScope ||
+      old.status !== 'ACTIVE' ||
+      !old.valid
+    )
+      throw new ConflictException('Superseded cash-out unavailable');
+    if (old.amount_minor === amount && old.source_wallet_id === wallets[0].id)
+      throw new ConflictException('Replacement must change a material detail');
+    supersededIntentId = old.id;
+    await manager.query(`UPDATE cash_out_intents SET status='CANCELLED' WHERE id=$1`, [old.id]);
+    await manager.query(
+      `UPDATE mfa_challenges SET status='REVOKED',revoked_at=clock_timestamp(),updated_at=clock_timestamp(),version=version+1 WHERE cash_out_intent_id=$1 AND status='ACTIVE'`,
+      [old.id],
+    );
+  }
   let id = existing[0]?.id;
   if (existing[0]) {
     const row = existing[0];
@@ -97,7 +143,24 @@ export async function establishCashOutIntent(
       ],
     );
   }
-  await reserveCashOutOtpIssuance(manager, input.customerId, input.destinationHash, id);
+  if (supersededIntentId) {
+    await manager.query(
+      `INSERT INTO audit_events (id,entity_type,entity_id,action,actor,new_values,occurred_at,created_at) VALUES ($1,'CASH_OUT_INTENT',$2,'SUPERSEDED',$3,$4,clock_timestamp(),clock_timestamp())`,
+      [
+        randomUUID(),
+        supersededIntentId,
+        `agent:${input.agentId}`,
+        JSON.stringify({ status: 'CANCELLED', replacementIntentId: id }),
+      ],
+    );
+  }
+  await reserveCashOutOtpIssuance(
+    manager,
+    input.customerId,
+    input.destinationHash,
+    id,
+    supersededIntentId,
+  );
   return id!;
 }
 

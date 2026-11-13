@@ -75,6 +75,15 @@ export class MfaExecutionService {
       throw new BadRequestException('Invalid cash-out challenge context');
 
     const challenge = await this.dataSource.transaction(async (manager) => {
+      if (command.cashOutIntentId) {
+        // Serialize challenge creation with cancellation and execution; a challenge
+        // cannot be inserted after its intent was cancelled or completed.
+        const intents = await manager.query<Array<{ id: string }>>(
+          `SELECT id FROM cash_out_intents WHERE id=$1 AND customer_id=$2 AND credential_id=$3 AND status='ACTIVE' AND expires_at>clock_timestamp() FOR UPDATE`,
+          [command.cashOutIntentId, command.principal.customerId, command.principal.credentialId],
+        );
+        if (!intents[0]) throw new BadRequestException('Cash-out intent unavailable');
+      }
       const customer = await manager.getRepository(Customer).findOne({
         where: { id: command.principal.customerId },
       });

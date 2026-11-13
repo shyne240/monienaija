@@ -63,7 +63,7 @@ export const CreateSupportTicketScreen: React.FC = () => {
   );
   const [priority, setPriority] = useState<SupportTicketPriority>('MEDIUM');
   const [subject, setSubject] = useState('');
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(route.params?.prefillDescription ?? '');
   const [relatedTransferId, setRelatedTransferId] = useState(
     route.params?.relatedTransferId ?? '',
   );

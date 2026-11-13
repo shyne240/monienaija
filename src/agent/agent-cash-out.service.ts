@@ -49,6 +49,61 @@ export class AgentCashOutService {
     private readonly institutionResolver: CashOutInstitutionResolver,
   ) {}
 
+  /** Resolve an uncompleted operation without making a financial posting. */
+  async cancelPending(
+    principal: AuthorizationPrincipal,
+    rawKey: string,
+  ): Promise<{ status: 'CANCELLED' }> {
+    const agentId = principal.agentId;
+    const key = rawKey?.trim();
+    if (
+      principal.type !== 'AGENT' ||
+      !agentId ||
+      principal.principalId !== agentId ||
+      !key ||
+      key.length > 255
+    )
+      throw new UnauthorizedException('Agent authentication required');
+    return this.dataSource.transaction(async (manager) => {
+      await requireCashOutAgentSession(manager, agentId, principal.sessionId);
+      const rows = await manager.query<
+        Array<{ id: string; customer_id: string; status: string; institution_scope: string }>
+      >(
+        `SELECT id,customer_id,status,institution_scope FROM cash_out_intents WHERE agent_id=$1 AND operation_key=$2 FOR UPDATE`,
+        [agentId, key],
+      );
+      const intent = rows[0];
+      if (!intent) throw new NotFoundException('Cash-out unavailable; reconciliation required');
+      const scope = await this.institutionResolver.resolve(manager, agentId, intent.customer_id);
+      if (scope !== 'MONIENAIJA' || intent.institution_scope !== scope)
+        throw new ConflictException('Institution authorization unavailable');
+      const records = await manager.query<Array<{ agent_id: string }>>(
+        `SELECT agent_id FROM cash_out_execution_records WHERE agent_id=$1 AND idempotency_key=$2`,
+        [agentId, key],
+      );
+      if (intent.status === 'COMPLETED' || records.length)
+        throw new ConflictException('Cash-out completed; recover receipt');
+      if (intent.status === 'CANCELLED') return { status: 'CANCELLED' as const };
+      if (intent.status !== 'ACTIVE')
+        throw new ConflictException('Cash-out unavailable; reconciliation required');
+      await manager.query(`UPDATE cash_out_intents SET status='CANCELLED' WHERE id=$1`, [
+        intent.id,
+      ]);
+      await manager.query(
+        `UPDATE mfa_challenges SET status='REVOKED',revoked_at=clock_timestamp(),updated_at=clock_timestamp(),version=version+1 WHERE cash_out_intent_id=$1 AND status='ACTIVE'`,
+        [intent.id],
+      );
+      await this.auditService.record(manager, {
+        entityType: 'CASH_OUT_INTENT',
+        entityId: intent.id,
+        action: 'CANCELLED',
+        actor: `agent:${agentId}`,
+        newValues: { status: 'CANCELLED' },
+      });
+      return { status: 'CANCELLED' as const };
+    });
+  }
+
   /** Read-only receipt recovery: never invokes OTP verification or financial posting. */
   async recoverReceipt(
     principal: AuthorizationPrincipal,

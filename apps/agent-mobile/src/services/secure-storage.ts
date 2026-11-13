@@ -28,6 +28,25 @@ class SecureStorageAbstraction {
     return Platform.OS === 'ios' || Platform.OS === 'android';
   }
 
+  // Cash-out must not silently fall back to volatile memory after a storage failure.
+  async getDurable(key: string): Promise<string | null> {
+    if (process.env.NODE_ENV === 'test') return this.fallback.getItemAsync(key);
+    if (!this.isAvailable()) throw new Error('Durable storage unavailable');
+    return SecureStore.getItemAsync(key);
+  }
+
+  async setDurable(key: string, value: string): Promise<void> {
+    if (process.env.NODE_ENV === 'test') return this.fallback.setItemAsync(key, value);
+    if (!this.isAvailable()) throw new Error('Durable storage unavailable');
+    await SecureStore.setItemAsync(key, value);
+  }
+
+  async removeDurable(key: string): Promise<void> {
+    if (process.env.NODE_ENV === 'test') return this.fallback.deleteItemAsync(key);
+    if (!this.isAvailable()) throw new Error('Durable storage unavailable');
+    await SecureStore.deleteItemAsync(key);
+  }
+
   async set(key: string, value: string): Promise<void> {
     try {
       if (this.isAvailable()) {

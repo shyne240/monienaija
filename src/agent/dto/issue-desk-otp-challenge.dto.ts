@@ -41,6 +41,11 @@ export class IssueDeskOtpChallengeDto {
   operationKey?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  supersedesOperationKey?: string;
+
+  @IsOptional()
   @IsInt()
   @Min(30)
   @Max(900)

@@ -39,7 +39,10 @@ const STORAGE_KEY_PREFIX = 'pending_agent_operation';
 // Agent B's, and an Agent's own Cash-In attempt can never collide with their own Cash-Out or
 // Cash→Cash-send attempt (even if, implausibly, more than one were ever mid-flight at once).
 function storageKeyFor(agentId: string, operationType: AgentOperationType): string {
-  return `${STORAGE_KEY_PREFIX}:${agentId}:${operationType}`;
+  // Expo SecureStore rejects colons; use a valid key for durable cash-out state.
+  return operationType === 'CASH_OUT'
+    ? `${STORAGE_KEY_PREFIX}.${agentId}.CASH_OUT`
+    : `${STORAGE_KEY_PREFIX}:${agentId}:${operationType}`;
 }
 
 // For non-cash-out flows, a pending intent older than this is treated as abandoned and ignored (and dropped from
@@ -86,23 +89,37 @@ export async function loadPendingAgentOperation(
   agentId: string,
   operationType: AgentOperationType,
 ): Promise<PendingAgentOperation | null> {
-  const raw = await SecureStorage.get(storageKeyFor(agentId, operationType));
+  const key = storageKeyFor(agentId, operationType);
+  const raw =
+    operationType === 'CASH_OUT'
+      ? await SecureStorage.getDurable(key)
+      : await SecureStorage.get(key);
   if (!raw) return null;
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
+    if (operationType === 'CASH_OUT') throw new Error('Cash-out pending state is unreadable');
     return null;
   }
 
   // Defense in depth: the storage key already encodes agentId+operationType, but a stored
   // value whose own fields disagree with the key it was read from must never be trusted.
-  if (!isPendingAgentOperation(parsed)) return null;
-  if (parsed.agentId !== agentId || parsed.operationType !== operationType) return null;
+  if (
+    !isPendingAgentOperation(parsed) ||
+    parsed.agentId !== agentId ||
+    parsed.operationType !== operationType
+  ) {
+    if (operationType === 'CASH_OUT') throw new Error('Cash-out pending state is invalid');
+    return null;
+  }
 
   const ageMs = Date.now() - new Date(parsed.createdAt).getTime();
-  if (operationType !== 'CASH_OUT' && (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > MAX_PENDING_AGE_MS)) {
+  if (
+    operationType !== 'CASH_OUT' &&
+    (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > MAX_PENDING_AGE_MS)
+  ) {
     await clearPendingAgentOperation(agentId, operationType);
     return null;
   }
@@ -129,7 +146,10 @@ export function matchesPendingAgentOperation(
 
 /** Persisted immediately before the request is sent, so an app kill right after send is still covered. */
 export async function savePendingAgentOperation(intent: PendingAgentOperation): Promise<void> {
-  await SecureStorage.set(storageKeyFor(intent.agentId, intent.operationType), JSON.stringify(intent));
+  const key = storageKeyFor(intent.agentId, intent.operationType);
+  if (intent.operationType === 'CASH_OUT')
+    await SecureStorage.setDurable(key, JSON.stringify(intent));
+  else await SecureStorage.set(key, JSON.stringify(intent));
 }
 
 /** Called after a DEFINITIVE outcome (success or a definitive rejection). */
@@ -137,7 +157,9 @@ export async function clearPendingAgentOperation(
   agentId: string,
   operationType: AgentOperationType,
 ): Promise<void> {
-  await SecureStorage.remove(storageKeyFor(agentId, operationType));
+  const key = storageKeyFor(agentId, operationType);
+  if (operationType === 'CASH_OUT') await SecureStorage.removeDurable(key);
+  else await SecureStorage.remove(key);
 }
 
 const ALL_OPERATION_TYPES: AgentOperationType[] = ['CASH_IN', 'CASH_OUT', 'CASH_TO_CASH_SEND'];
@@ -172,9 +194,7 @@ export interface PendingCashToCashLocatorClaim extends CashToCashLocatorClaimPar
   createdAt: string;
 }
 
-function isPendingCashToCashLocatorClaim(
-  value: unknown,
-): value is PendingCashToCashLocatorClaim {
+function isPendingCashToCashLocatorClaim(value: unknown): value is PendingCashToCashLocatorClaim {
   if (!value || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
   return (

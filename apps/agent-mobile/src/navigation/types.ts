@@ -30,6 +30,7 @@ export type RootStackParamList = {
   Support: undefined;
   CreateSupportTicket: {
     prefillCategory?: SupportTicketCategory;
+    prefillDescription?: string;
     relatedTransferId?: string;
     fundingRequestId?: string;
   } | undefined;

@@ -14,6 +14,15 @@ interface AuthenticatedRequest {
 export class AgentCashOutController {
   constructor(private readonly cashOutService: AgentCashOutService) {}
 
+  @Post('cash-out/cancel-pending')
+  @HttpCode(200)
+  async cancelPending(@Body() dto: RecoverCashOutDto, @Req() req: AuthenticatedRequest) {
+    const principal = req.authorizationPrincipal;
+    if (!principal || principal.type !== 'AGENT' || !principal.agentId)
+      throw new UnauthorizedException('Agent authentication required');
+    return this.cashOutService.cancelPending(principal, dto.idempotencyKey);
+  }
+
   @Post('cash-out/recover')
   @HttpCode(200)
   async recover(@Body() dto: RecoverCashOutDto, @Req() req: AuthenticatedRequest) {

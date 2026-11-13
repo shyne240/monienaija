@@ -39,6 +39,7 @@ export interface IssueDeskOtpChallengeCommand {
   amountMinor?: string | number;
   currency?: string;
   operationKey?: string;
+  supersedesOperationKey?: string;
   ttlSeconds?: number;
   correlationId?: string;
 }
@@ -187,6 +188,7 @@ export class AgentDeskOtpService {
               amountMinor: command.amountMinor,
               currency: command.currency,
               operationKey: command.operationKey,
+              supersedesOperationKey: command.supersedesOperationKey,
             });
           })
         : undefined;

@@ -12,6 +12,7 @@ import { MfaChallengeCard } from '../../../components/MfaChallengeCard';
 import {
   agentCashOut,
   recoverAgentCashOut,
+  cancelPendingAgentCashOut,
   describeCashOutError,
   isAmbiguousOperationOutcome,
   type AgentCashOutResult,
@@ -61,6 +62,8 @@ export const WalletToCashConfirmScreen: React.FC = () => {
   const [recoveryPending, setRecoveryPending] = useState(false);
   const [recoveryError, setRecoveryError] = useState('');
   const [pendingMismatch, setPendingMismatch] = useState(false);
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [resolving, setResolving] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -72,13 +75,17 @@ export const WalletToCashConfirmScreen: React.FC = () => {
           ? pending.idempotencyKey
           : idempotencyKey;
       if (active) {
+        setPendingKey(pending?.idempotencyKey ?? null);
         effectiveKeyRef.current = key;
         setOperationKey(key);
         setRecoveryPending(!!pending && matchesPendingAgentOperation(pending, params));
         setPendingMismatch(!!pending && !matchesPendingAgentOperation(pending, params));
       }
     };
-    void load();
+    void load().catch(() => {
+      if (active)
+        setRecoveryError('Secure storage unavailable. Contact support before proceeding.');
+    });
     return () => {
       active = false;
     };
@@ -120,6 +127,24 @@ export const WalletToCashConfirmScreen: React.FC = () => {
       setRecoveryError(
         'Receipt is not available yet. Retry recovery or contact support; do not submit a new cash-out.',
       );
+    }
+  };
+
+  const cancelUncompleted = async () => {
+    if (!agentId || !pendingKey || resolving) return;
+    setResolving(true);
+    setRecoveryError('');
+    try {
+      const outcome = await cancelPendingAgentCashOut(pendingKey);
+      if (outcome.status !== 'CANCELLED') throw new Error('Unresolved');
+      await clearPendingAgentOperation(agentId, 'CASH_OUT');
+      navigation.reset({ index: 0, routes: [{ name: 'WalletToCash' }] });
+    } catch {
+      setRecoveryError(
+        'Unable to cancel. If completed, recover the receipt; otherwise contact support for reconciliation.',
+      );
+    } finally {
+      setResolving(false);
     }
   };
 
@@ -172,6 +197,7 @@ export const WalletToCashConfirmScreen: React.FC = () => {
         setMfaInvalidatedRevision((rev) => rev + 1);
       }
       if (isAmbiguousOperationOutcome(err)) {
+        setPendingKey(effectiveKeyRef.current);
         setRecoveryPending(true);
       } else if (agentId) {
         await clearPendingAgentOperation(agentId, 'CASH_OUT');
@@ -226,14 +252,25 @@ export const WalletToCashConfirmScreen: React.FC = () => {
 
     const effectiveKey = effectiveKeyRef.current;
 
-    if (agentId) {
-      await savePendingAgentOperation({
-        agentId,
-        operationType: 'CASH_OUT',
-        idempotencyKey: effectiveKey,
-        ...candidateParams,
-        createdAt: new Date().toISOString(),
-      });
+    if (!agentId) {
+      submitInFlightRef.current = false;
+      setClientError('Agent session unavailable');
+      return;
+    }
+    try {
+      if (agentId) {
+        await savePendingAgentOperation({
+          agentId,
+          operationType: 'CASH_OUT',
+          idempotencyKey: effectiveKey,
+          ...candidateParams,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    } catch {
+      submitInFlightRef.current = false;
+      setClientError('Secure storage unavailable. Cash-out was not submitted.');
+      return;
     }
 
     cashOutMutation.mutate(undefined, {
@@ -275,12 +312,42 @@ export const WalletToCashConfirmScreen: React.FC = () => {
           </Text>
         </Card>
 
+        {!!recoveryError && !recoveryPending && !pendingMismatch && (
+          <Text testID="w2c-storage-error">{recoveryError}</Text>
+        )}
         {pendingMismatch && (
           <Card testID="w2c-pending-mismatch">
             <Text>
               A previous cash-out is unresolved. Return to its original details to recover the
               receipt or contact support.
             </Text>
+          </Card>
+        )}
+        {(recoveryPending || pendingMismatch) && (
+          <Card testID="w2c-resolution-card">
+            <Text>
+              Only cancel if the customer has not received cash. The server will refuse if the
+              transaction completed.
+            </Text>
+            <Button
+              label="Cancel if not completed"
+              disabled={resolving}
+              onPress={() => {
+                void cancelUncompleted();
+              }}
+              testID="w2c-cancel-pending"
+            />
+            <Button
+              label="Contact support"
+              onPress={() =>
+                navigation.navigate('CreateSupportTicket', {
+                  prefillCategory: 'CASH_OUT',
+                  prefillDescription: `Please reconcile cash-out operation ${pendingKey ?? ''}.`,
+                })
+              }
+              testID="w2c-support"
+            />
+            {pendingMismatch && recoveryError ? <Text>{recoveryError}</Text> : null}
           </Card>
         )}
         {/* Step 3A: Customer OTP Challenge */}
@@ -386,7 +453,9 @@ export const WalletToCashConfirmScreen: React.FC = () => {
 
           <Button
             loading={cashOutMutation.isPending}
-            disabled={cashOutMutation.isPending || !operationKey || recoveryPending || pendingMismatch}
+            disabled={
+              cashOutMutation.isPending || !operationKey || recoveryPending || pendingMismatch
+            }
             label={cashOutMutation.isPending ? 'Processing…' : 'Authorize cash-out'}
             onPress={handleSubmit}
             testID="w2c-confirm-submit"
