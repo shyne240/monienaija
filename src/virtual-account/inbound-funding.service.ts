@@ -123,6 +123,7 @@ export class InboundFundingService {
       expectedWalletAccountId: string;
       expectedAmountMinor: string;
       expectedCurrency: string;
+      allowSuspense?: boolean;
     },
   ): Promise<InboundFundingResult> {
     if (!manager.queryRunner?.isTransactionActive)
@@ -142,6 +143,7 @@ export class InboundFundingService {
       walletAccountId: input.expectedWalletAccountId.toLowerCase(),
       amountMinor: parsePositiveMinorUnits(input.expectedAmountMinor).toString(),
       currency: normalizeCurrency(input.expectedCurrency),
+      allowSuspense: input.allowSuspense !== false,
     };
     const { providerKey, providerReference } = this.normalizeRequest(input);
     const rows = await manager.query<
@@ -180,7 +182,9 @@ export class InboundFundingService {
   private async processInTransaction(
     manager: EntityManager,
     input: { providerKey: string; providerReference: string; correlationId: string },
-    expected: { walletAccountId: string; amountMinor: string; currency: string } | undefined,
+    expected:
+      | { walletAccountId: string; amountMinor: string; currency: string; allowSuspense: boolean }
+      | undefined,
     observed: InboundVerification,
   ): Promise<InboundFundingResult> {
     const { providerKey, providerReference, correlationId } = this.normalizeRequest(input);
@@ -342,6 +346,8 @@ export class InboundFundingService {
       }
     }
     if (!eligible) {
+      if (expected && !expected.allowSuspense)
+        throw new ConflictException('Inbound destination is ineligible for credit');
       let policy;
       try {
         policy = await this.suspensePolicy.authorize(manager, {

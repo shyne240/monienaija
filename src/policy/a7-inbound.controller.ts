@@ -74,6 +74,31 @@ export class A7InboundController {
     return this.transition(lifecycleId, dto, authorization, idempotencyKey, 'LIFECYCLE_ADMITTED');
   }
 
+  /** Processes only an already verified, command-bound observation; no receipt claims are accepted. */
+  @Post('lifecycles/:id/execution')
+  @HttpCode(200)
+  async execute(
+    @Param('id') lifecycleId: string,
+    @Body() dto: TransitionInboundDto,
+    @Headers('authorization') authorization?: string,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    const result = await this.persistence.executeInbound({
+      token: this.token(authorization),
+      lifecycleId,
+      expectedVersion: dto.expectedVersion,
+      idempotencyKey: idempotencyKey ?? '',
+    });
+    return {
+      lifecycleId: result.lifecycle.id,
+      lifecycleReference: result.lifecycle.lifecycle_reference,
+      state: result.lifecycle.state,
+      version: result.lifecycle.version,
+      receiptId: result.lifecycle.execution_receipt_id,
+      replayed: result.replayed,
+    };
+  }
+
   @Post('lifecycles/:id/cancellation')
   @HttpCode(200)
   async cancel(
