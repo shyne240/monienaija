@@ -13,6 +13,7 @@ import { DataSource } from 'typeorm';
 import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { AuditService } from '../operations/audit.service';
 import { MfaExecutionService } from '../customer-authentication/mfa-execution.service';
+import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import type { IssueMfaChallengeCommand } from '../customer-authentication/mfa-execution.types';
 import { NOTIFICATION_PROVIDER_TOKEN } from '../notification/notification.constants';
 import { ConsoleNotificationProvider } from '../notification/notification-provider.interface';
@@ -85,6 +86,7 @@ export class AgentDeskOtpService {
     private readonly dataSource: DataSource,
     private readonly mfaExecutionService: MfaExecutionService,
     private readonly auditService: AuditService,
+    private readonly financialEligibility: CustomerFinancialEligibilityService,
     @Optional()
     @Inject(NOTIFICATION_PROVIDER_TOKEN)
     private readonly injectedProvider: NotificationProvider | null,
@@ -109,6 +111,12 @@ export class AgentDeskOtpService {
     if (customers[0].status === 'CLOSED') {
       throw new BadRequestException('Customer is closed');
     }
+
+    // Preflight before creating challenge context or sending any OTP. This is not a
+    // substitute for revalidation in the transaction that posts the financial effect.
+    await this.dataSource.transaction((manager) =>
+      this.financialEligibility.require(manager, customerId, { lockMode: 'SHARE' }),
+    );
 
     // 2. Delivery destination: customer's verified PRIMARY phone — the established
     //    destination rule (same as V1-CUSTOMER-CREDENTIALS-01 temporary credential SMS).

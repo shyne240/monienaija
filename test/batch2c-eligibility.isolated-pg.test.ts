@@ -609,3 +609,33 @@ test('legacy classification preserves rows and leaves unknown or colliding refer
     await runner.release();
   }
 });
+
+test('desk OTP preflight denies withdrawn and unavailable evidence before challenge or delivery', async () => {
+  const { AgentDeskOtpService } = await import('../src/agent/agent-desk-otp.service');
+  const customerId = await subject('LEVEL_1', ['BVN']);
+  await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [customerId]);
+  await db.query(
+    `INSERT INTO customer_authentication_credentials(id, customer_id, password_hash, hash_algorithm, password_version, status) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE')`,
+    [randomUUID(), customerId],
+  );
+  const otp = app.get(AgentDeskOtpService);
+  const command = { agentId: randomUUID(), customerId, purpose: 'WALLET_TO_CASH' as const };
+  sms.clear();
+  snapshots.get(customerId)!.evidence[0]!.status = 'REVOKED';
+  await expect(otp.issue(command)).rejects.toThrow();
+  expect(sms.sent).toHaveLength(0);
+  expect(
+    await db.query(`SELECT id FROM mfa_challenges WHERE customer_id=$1`, [customerId]),
+  ).toEqual([]);
+  const snapshot = snapshots.get(customerId)!;
+  snapshot.evidence[0]!.status = 'VERIFIED';
+  snapshots.delete(customerId);
+  await expect(otp.issue(command)).rejects.toThrow('Trusted KYC evidence is unavailable');
+  expect(sms.sent).toHaveLength(0);
+  expect(
+    await db.query(`SELECT id FROM mfa_challenges WHERE customer_id=$1`, [customerId]),
+  ).toEqual([]);
+  snapshots.set(customerId, snapshot);
+  await expect(otp.issue(command)).resolves.toMatchObject({ customerId, delivered: true });
+  expect(sms.sent).toHaveLength(1);
+});
