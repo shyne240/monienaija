@@ -47,6 +47,7 @@
 import type { EntityManager } from 'typeorm';
 
 import type { RequestContext } from '../production/request-context';
+import type { ExternalOperationReferenceView } from '../partner/external-operation.types';
 import type {
   ExternalSettlementView,
   ExternalSuspenseEntryView,
@@ -468,6 +469,7 @@ export interface A7ProductFinancialEffectA4ProductPolicyDecisionView {
  * financial effect audit and outbox payloads.
  */
 export interface A7ProductFinancialEffectA6ExternalOperationView {
+  readonly providerReferences: readonly ExternalOperationReferenceView[];
   readonly version: number;
   readonly externalOperationId: string;
   readonly externalOperationReference: string;
@@ -523,6 +525,7 @@ export interface A7ProductFinancialEffectA6LifecycleView {
  */
 export interface A7ProductFinancialEffectA6StatusVerificationView {
   readonly state:
+    | 'VERIFIED_SETTLED'
     | 'VERIFIED_PENDING'
     | 'VERIFIED_REJECTED'
     | 'VERIFIED_ACCEPTED_NOT_SETTLED'

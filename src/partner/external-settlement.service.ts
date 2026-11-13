@@ -360,6 +360,37 @@ export class ExternalSettlementService {
     }
 
     if (command.decision === ExternalSettlementDecision.SETTLE) {
+      // An operation/reference proves correlation, not a successful provider outcome.
+      // Only the configured trusted verifier can establish that outcome. The default
+      // production adapter is unavailable and therefore fails closed.
+      if (!this.statusVerifier)
+        throw new ServiceUnavailableException('Provider outcome verification is unavailable');
+      const operationView = await this.externalOperationService.getInTransaction(
+        manager,
+        operation.id,
+      );
+      let verified;
+      try {
+        verified = await this.statusVerifier.verify({
+          operation: operationView,
+          requestedAt: new Date().toISOString(),
+          correlationId: command.requestContext.correlationId,
+        });
+      } catch {
+        throw new ServiceUnavailableException('Provider outcome verification is unavailable');
+      }
+      if (verified.state === 'UNAVAILABLE')
+        throw new ServiceUnavailableException('Provider outcome verification is unavailable');
+      if (
+        verified.state !== 'VERIFIED_SETTLED' ||
+        verified.providerReferenceHash !== command.evidenceHash ||
+        !['STATUS_QUERY', 'CALLBACK', 'STATEMENT', 'REPORT'].includes(command.evidence.source) ||
+        !Number.isFinite(Date.parse(verified.observedAt))
+      )
+        throw new ExternalSettlementException(
+          'INVALID_SETTLEMENT_STATE',
+          'Provider settlement outcome is not verified for this evidence',
+        );
       const settlement = await this.postSettlementJournal(
         manager,
         reservation.record.id,
@@ -383,6 +414,8 @@ export class ExternalSettlementService {
           customerLedgerAccountId: settlement.customerLedgerAccountId,
           settlementAssetLedgerAccountId: settlement.settlementAssetLedgerAccountId,
           evidenceHash: settlement.evidence.evidenceHash,
+          verifiedProviderOutcome: verified.state,
+          verifiedProviderObservedAt: verified.observedAt,
           evidenceType: settlement.evidence.referenceType,
           evidenceSource: settlement.evidence.source,
         },

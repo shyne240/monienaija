@@ -33,6 +33,8 @@ import { ExternalOperation } from '../src/partner/external-operation.entity';
 import { ExternalOperationReference } from '../src/partner/external-operation-reference.entity';
 import { ExternalOperationService } from '../src/partner/external-operation.service';
 import { ExternalSettlement } from '../src/partner/external-settlement.entity';
+import { ExternalSettlementDecision } from '../src/partner/external-settlement.enums';
+import { ExternalOperationReferenceSource } from '../src/partner/external-operation.enums';
 import { ExternalSuspenseEntry } from '../src/partner/external-suspense-entry.entity';
 import { ExternalSettlementService } from '../src/partner/external-settlement.service';
 import { PartnerConnectionService } from '../src/partner/partner-connection.service';
@@ -86,8 +88,11 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
   let failA7Outbox = false;
   let operationVersion = 1;
   let overrideVerificationHash: string | null = null;
-  let providerVerificationState: 'VERIFIED_REJECTED' | 'UNKNOWN' | 'UNAVAILABLE' =
-    'VERIFIED_REJECTED';
+  let providerVerificationState:
+    | 'VERIFIED_SETTLED'
+    | 'VERIFIED_REJECTED'
+    | 'UNKNOWN'
+    | 'UNAVAILABLE' = 'VERIFIED_SETTLED';
   const snapshots = new Map<string, TierEvidenceSnapshot>();
 
   const A7T04_MAP_REFERENCE = sha256('a7t04-map-v1');
@@ -227,27 +232,29 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
             reasonCodes: [],
             maxAmountMinor: null,
           }),
-      a6ExternalOperationLookup: (externalOperationReference) =>
-        Promise.resolve({
-          version: operationVersion,
-          externalOperationId,
-          externalOperationReference,
-          partnerKey: 'NIBSS_NIP',
-          capabilityKey: 'external.wallet.withdrawal.settlement',
-          operationType: 'OUTBOUND_BANK_SETTLEMENT',
-          customerId: seededCustomerId,
-          walletAccountId: seededWalletAccountId,
-          ledgerAccountId: customerLedgerAccountId,
-          amountMinor: '1000',
-          currency: 'NGN',
-          accountingUnit: 'CUSTOMER_FUNDS',
-          providerIdempotencyScope: A6_PROVIDER_IDEMPOTENCY_SCOPE,
-          providerIdempotencyKey: seededProviderIdempotencyKey,
-          lifecycleState: 'PENDING_VERIFICATION',
-          attemptCount: 1,
-          maxAttempts: 3,
-          replayed: false,
-        }),
+      a6ExternalOperationLookup: async (externalOperationReference) => ({
+        version: operationVersion,
+        providerReferences: (
+          await operations.getInTransaction(dataSource.manager, externalOperationId)
+        ).providerReferences,
+        externalOperationId,
+        externalOperationReference,
+        partnerKey: 'NIBSS_NIP',
+        capabilityKey: 'external.wallet.withdrawal.settlement',
+        operationType: 'OUTBOUND_BANK_SETTLEMENT',
+        customerId: seededCustomerId,
+        walletAccountId: seededWalletAccountId,
+        ledgerAccountId: customerLedgerAccountId,
+        amountMinor: '1000',
+        currency: 'NGN',
+        accountingUnit: 'CUSTOMER_FUNDS',
+        providerIdempotencyScope: A6_PROVIDER_IDEMPOTENCY_SCOPE,
+        providerIdempotencyKey: seededProviderIdempotencyKey,
+        lifecycleState: 'PENDING_VERIFICATION',
+        attemptCount: 1,
+        maxAttempts: 3,
+        replayed: false,
+      }),
       a6LifecycleLookup: (externalOperationReference) =>
         Promise.resolve({
           externalOperationId,
@@ -266,9 +273,9 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
         }),
       a6StatusVerification: () =>
         Promise.resolve({
-          state: 'VERIFIED_PENDING' as const,
+          state: 'VERIFIED_SETTLED' as const,
           providerStatus: null,
-          providerReferenceHash: null,
+          providerReferenceHash: sha256(`provider-settlement-${externalOperationId}`),
           observedAt: new Date().toISOString(),
           reasonCode: null,
         }),
@@ -363,23 +370,12 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
           bindingVersion: bV,
         }),
       a6T08SettlementLookup: async (ref) => {
-        if (bypassSettlementLookup) {
-          return null;
-        }
-        const mgr = dataSource.manager;
-        const refRow = await mgr.getRepository(ExternalOperationReference).findOne({
-          where: { referenceValue: ref },
-        });
-        if (!refRow) return null;
-        return externalSettlement.getByOperation(refRow.externalOperationId);
+        if (bypassSettlementLookup || ref !== A6_EXTERNAL_OPERATION_REFERENCE) return null;
+        return externalSettlement.getByOperation(externalOperationId);
       },
       a6T08SuspenseLookup: async (ref) => {
-        const mgr = dataSource.manager;
-        const refRow = await mgr.getRepository(ExternalOperationReference).findOne({
-          where: { referenceValue: ref },
-        });
-        if (!refRow) return null;
-        return externalSettlement.getSuspenseForOperation(refRow.externalOperationId);
+        if (ref !== A6_EXTERNAL_OPERATION_REFERENCE) return null;
+        return externalSettlement.getSuspenseForOperation(externalOperationId);
       },
       a5LedgerJournalLookup: (journalId, manager) => {
         const mgr = manager ?? dataSource.manager;
@@ -496,7 +492,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
     emergencyStop = false;
     failA7Outbox = false;
     operationVersion = 1;
-    providerVerificationState = 'VERIFIED_REJECTED';
+    providerVerificationState = 'VERIFIED_SETTLED';
     overrideVerificationHash = null;
     snapshots.clear();
     const proposal = randomUUID();
@@ -585,6 +581,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
   ): Promise<{
     opId: string;
     refValue: string;
+    providerValue: string;
     providerIdempotencyKey: string;
     customerId: string;
     walletId: string;
@@ -706,13 +703,14 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       `INSERT INTO external_operation_references
          (id, external_operation_id, partner_key, reference_type, reference_value, namespace,
           source, observed_at)
-       VALUES ($1, $2, 'NIBSS_NIP', 'OPERATION', $3, 'a7-product-financial-effect-settlement', 'CALLBACK', now())`,
-      [randomUUID(), opId, refValue],
+       VALUES ($1, $2, 'NIBSS_NIP', 'TRANSACTION', $3, 'nibss.nip', 'STATUS_QUERY', now())`,
+      [randomUUID(), opId, `provider-settlement-${opId}`],
     );
 
     return {
       opId,
       refValue,
+      providerValue: `provider-settlement-${opId}`,
       providerIdempotencyKey,
       customerId: seededCustomerId,
       walletId: seededCustomerWalletId,
@@ -868,10 +866,10 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
         decision: 'SETTLE' as any,
         expectedVersion: 1,
         evidence: {
-          referenceType: 'OPERATION' as const,
-          referenceValue: op.refValue,
-          namespace: 'a7-product-financial-effect-settlement',
-          source: 'CALLBACK' as any,
+          referenceType: 'TRANSACTION' as const,
+          referenceValue: op.providerValue,
+          namespace: 'nibss.nip',
+          source: 'STATUS_QUERY' as any,
           observedAt: new Date(),
         },
         requestContext: {
@@ -900,10 +898,10 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
         decision: 'SETTLE' as any,
         expectedVersion: 1,
         evidence: {
-          referenceType: 'OPERATION' as const,
-          referenceValue: op.refValue,
-          namespace: 'a7-product-financial-effect-settlement',
-          source: 'CALLBACK' as any,
+          referenceType: 'TRANSACTION' as const,
+          referenceValue: op.providerValue,
+          namespace: 'nibss.nip',
+          source: 'STATUS_QUERY' as any,
           observedAt: new Date(),
         },
         requestContext: {
@@ -933,21 +931,54 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
     });
 
-    it('reports missing settlement evidence as suspense without a financial journal', async () => {
+    it('rejects missing settlement evidence without a financial journal', async () => {
       const op = await seedExternalOperation();
       await dataSource.query(
         'DELETE FROM external_operation_references WHERE external_operation_id=$1',
         [op.opId],
       );
-      const result = await a7Service.postProductFinancialEffect(buildEnvelope('OUTCOME_VERIFIED'));
-      expect(result.valid).toBe(true);
-      if (!result.valid) throw new Error('Expected an A7 suspense result');
-      expect(result.record.a6T08Decision).toBe('SUSPENSE');
-      expect(result.record.currentState).toBe('FINANCIAL_EFFECT_SUSPENSE_RECORDED');
-      expect(result.record.a6T08Settlement?.decision).toBe('REJECT');
-      expect(result.record.a6T08Suspense?.reason).toBe('EVIDENCE_REFERENCE_MISSING');
-      expect(result.record.a5LedgerJournal).toBeNull();
+      await expect(
+        a7Service.postProductFinancialEffect(buildEnvelope('OUTCOME_VERIFIED')),
+      ).rejects.toThrow();
+      expect(await externalSettlement.getByOperation(op.opId)).toBeNull();
       expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
+    });
+
+    it('rejects unverified or mismatched provider success and allows a verified retry', async () => {
+      const op = await seedExternalOperation();
+      const cmd = {
+        externalOperationId: op.opId,
+        decision: ExternalSettlementDecision.SETTLE,
+        expectedVersion: 1,
+        evidence: {
+          referenceType: 'TRANSACTION' as const,
+          referenceValue: op.providerValue,
+          namespace: 'nibss.nip',
+          source: ExternalOperationReferenceSource.STATUS_QUERY,
+          observedAt: new Date(),
+        },
+        requestContext: {
+          requestId: 'verification',
+          correlationId: 'verification',
+          traceId: 'verification',
+        },
+      };
+      for (const state of ['UNKNOWN', 'UNAVAILABLE', 'VERIFIED_REJECTED'] as const) {
+        providerVerificationState = state;
+        await expect(externalSettlement.settleVerifiedOutcome(cmd)).rejects.toThrow();
+        expect(await externalSettlement.getByOperation(op.opId)).toBeNull();
+        expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
+      }
+      providerVerificationState = 'VERIFIED_SETTLED';
+      overrideVerificationHash = sha256('fabricated-provider-reference');
+      await expect(externalSettlement.settleVerifiedOutcome(cmd)).rejects.toThrow();
+      expect(await externalSettlement.getByOperation(op.opId)).toBeNull();
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
+      overrideVerificationHash = null;
+      const posted = await externalSettlement.settleVerifiedOutcome(cmd);
+      expect(posted.settlement.status).toBe('POSTED');
+      expect((await externalSettlement.settleVerifiedOutcome(cmd)).replayed).toBe(true);
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
     });
 
     it('uses the persisted operation version for settlement', async () => {
@@ -1102,6 +1133,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       (revEnvelope as any).idempotencyKey = `a7-rev-key-${randomUUID()}`;
       (revEnvelope as any).requestHash = deriveRequestHash(revEnvelope);
 
+      providerVerificationState = 'VERIFIED_REJECTED';
       await dataSource.query(
         `INSERT INTO kyc_tier_manual_holds(customer_id,actor,reason) VALUES($1,'test','MANUAL_REVIEW')`,
         [op1.customerId],
@@ -1230,6 +1262,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
           traceId: 'concurrent',
         },
       };
+      providerVerificationState = 'VERIFIED_REJECTED';
       const outcomes = await Promise.allSettled([
         externalSettlement.recordCompensatingEntry(command),
         externalSettlement.recordCompensatingEntry(command),
@@ -1350,6 +1383,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       (revEnvelope1 as any).idempotencyKey = `a7-rev-key-1-${randomUUID()}`;
       (revEnvelope1 as any).requestHash = deriveRequestHash(revEnvelope1);
 
+      providerVerificationState = 'VERIFIED_REJECTED';
       const first = await a7Service.postProductFinancialEffectReversal(revEnvelope1);
       expect(first.valid).toBe(true);
 

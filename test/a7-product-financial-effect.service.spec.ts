@@ -26,7 +26,10 @@ import {
   ExternalSettlementStatus,
   ExternalSuspenseStatus,
 } from '../src/partner/external-settlement.enums';
-import { ExternalOperationReferenceSource } from '../src/partner/external-operation.enums';
+import {
+  ExternalOperationReferenceSource,
+  ExternalOperationReferenceType,
+} from '../src/partner/external-operation.enums';
 import type { LedgerJournalView } from '../src/ledger/ledger.types';
 import {
   A7_PRODUCT_FINANCIAL_EFFECT_CONTRACT_NAME,
@@ -206,6 +209,20 @@ class FakeRepository {
     maxAmountMinor: null,
   };
   public a6ExternalOperation: A7ProductFinancialEffectA6ExternalOperationView | null = {
+    providerReferences: [
+      {
+        id: 'provider-reference',
+        externalOperationId: 'a6-external-op-id-1',
+        partnerKey: 'NIBSS_NIP',
+        referenceType: ExternalOperationReferenceType.TRANSACTION,
+        referenceValue: 'verified-provider-reference',
+        namespace: 'nibss.nip',
+        source: ExternalOperationReferenceSource.STATUS_QUERY,
+        observedAt: new Date(),
+        createdAt: new Date(),
+        replayed: false,
+      },
+    ],
     version: 1,
     externalOperationId: 'a6-external-op-id-1',
     externalOperationReference: A6_EXTERNAL_OPERATION_REFERENCE,
@@ -241,11 +258,12 @@ class FakeRepository {
     replayed: false,
   };
   public a6StatusState:
+    | 'VERIFIED_SETTLED'
     | 'VERIFIED_PENDING'
     | 'VERIFIED_REJECTED'
     | 'VERIFIED_ACCEPTED_NOT_SETTLED'
     | 'UNKNOWN'
-    | 'UNAVAILABLE' = 'VERIFIED_PENDING';
+    | 'UNAVAILABLE' = 'VERIFIED_SETTLED';
   public a6CircuitState: 'CLOSED' | 'OPEN' | 'HALF_OPEN' = 'CLOSED';
   public a5LedgerEnabled: boolean = true;
   public a5LedgerInvariantSatisfied: boolean = true;
@@ -463,7 +481,9 @@ class FakeRepository {
       a6StatusVerification: jest.fn().mockResolvedValue({
         state: this.a6StatusState,
         providerStatus: null,
-        providerReferenceHash: null,
+        providerReferenceHash: createHash('sha256')
+          .update('verified-provider-reference')
+          .digest('hex'),
         observedAt: new Date().toISOString(),
         reasonCode: null,
       }),
