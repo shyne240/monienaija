@@ -266,6 +266,47 @@ export const FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE_ACTION: GovernedActionDefini
   approvalScope: 'privileged:approve',
 };
 
+/**
+ * ARENA 4 Phase 2 — institutional financial ownership.
+ *
+ *  - `WALLET_INSTITUTION_ATTRIBUTION` on resource type `WALLET_ACCOUNT`: FINANCE_PREPARER prepares,
+ *    an independent FINANCE_CONTROLLER checks. Attribution is evidence-based, MFA-gated, atomic with
+ *    its immutable execution record, and idempotently replayable by approval id.
+ *  - `CUSTOMER_INSTITUTION_ENROLMENT_CHANGE` on resource type `CUSTOMER`: AGENT_NETWORK_MANAGER
+ *    prepares, FINANCE_CONTROLLER checks. Every enrolment creation/transition is governed; KYC reuse
+ *    additionally requires the recorded evidence + consent + policy triad.
+ *
+ * Both reuse the existing maker/checker stack — no second approval framework — and follow the same
+ * shape as `WALLET_OWNERSHIP_RESOLUTION` (self-approval prohibited, one approval, MFA both sides).
+ */
+export const WALLET_INSTITUTION_ATTRIBUTION_ACTION: GovernedActionDefinition = {
+  action: 'WALLET_INSTITUTION_ATTRIBUTION',
+  resourceType: 'WALLET_ACCOUNT',
+  initiatingFunctionCodes: ['institution.attribution.prepare'],
+  approvingFunctionCodes: ['institution.attribution.approve'],
+  initiatingRoles: [FINANCE_PREPARER],
+  approvingRoles: [FINANCE_CONTROLLER],
+  minimumApprovals: 1,
+  selfApprovalProhibited: true,
+  mfaRequired: true,
+  minimumAssurance: 'MFA',
+  approvalScope: 'privileged:approve',
+};
+
+export const CUSTOMER_INSTITUTION_ENROLMENT_CHANGE_ACTION: GovernedActionDefinition = {
+  action: 'CUSTOMER_INSTITUTION_ENROLMENT_CHANGE',
+  resourceType: 'CUSTOMER',
+  initiatingFunctionCodes: ['institution.enrolment.prepare'],
+  approvingFunctionCodes: ['institution.enrolment.approve'],
+  initiatingRoles: [AGENT_NETWORK_MANAGER],
+  approvingRoles: [FINANCE_CONTROLLER],
+  minimumApprovals: 1,
+  selfApprovalProhibited: true,
+  mfaRequired: true,
+  minimumAssurance: 'MFA',
+  approvalScope: 'privileged:approve',
+};
+
 export const GOVERNED_ACTIONS: Readonly<Record<string, GovernedActionDefinition>> = {
   ...COMMERCIAL_RULE_ACTIONS,
   ...NOTIFICATION_CHANGE_ACTIONS,
@@ -275,6 +316,9 @@ export const GOVERNED_ACTIONS: Readonly<Record<string, GovernedActionDefinition>
   [INSTITUTION_AGENT_AFFILIATION_CHANGE_ACTION.action]: INSTITUTION_AGENT_AFFILIATION_CHANGE_ACTION,
   [FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE_ACTION.action]:
     FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE_ACTION,
+  [WALLET_INSTITUTION_ATTRIBUTION_ACTION.action]: WALLET_INSTITUTION_ATTRIBUTION_ACTION,
+  [CUSTOMER_INSTITUTION_ENROLMENT_CHANGE_ACTION.action]:
+    CUSTOMER_INSTITUTION_ENROLMENT_CHANGE_ACTION,
 };
 
 export function governedAction(action: string): GovernedActionDefinition | undefined {

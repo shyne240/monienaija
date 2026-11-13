@@ -40,6 +40,9 @@ describe('governed-action registry (P0-A/P0-B)', () => {
         // ARENA 4 Phase 1 institutional foundation.
         'INSTITUTION_AGENT_AFFILIATION_CHANGE',
         'FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE',
+        // ARENA 4 Phase 2 institutional financial ownership.
+        'WALLET_INSTITUTION_ATTRIBUTION',
+        'CUSTOMER_INSTITUTION_ENROLMENT_CHANGE',
       ].sort(),
     );
     // Decision 2 explicitly keeps agent.assign_limit ungoverned and limit.modify out of this P0.
@@ -51,6 +54,8 @@ describe('governed-action registry (P0-A/P0-B)', () => {
     expect(isGovernedAction('WALLET_OWNERSHIP_RESOLUTION')).toBe(true);
     expect(isGovernedAction('INSTITUTION_AGENT_AFFILIATION_CHANGE')).toBe(true);
     expect(isGovernedAction('FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE')).toBe(true);
+    expect(isGovernedAction('WALLET_INSTITUTION_ATTRIBUTION')).toBe(true);
+    expect(isGovernedAction('CUSTOMER_INSTITUTION_ENROLMENT_CHANGE')).toBe(true);
   });
 
   it('requires independent MFA maker/checker roles for both notification change types', () => {

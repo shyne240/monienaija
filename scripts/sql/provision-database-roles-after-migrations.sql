@@ -41,6 +41,14 @@ REVOKE INSERT, UPDATE, DELETE ON public.institution_affiliation_transition_evide
   FROM monienaija_runtime;
 REVOKE INSERT, UPDATE, DELETE ON public.governed_institution_affiliation_replay_results
   FROM monienaija_runtime;
+DO $$
+BEGIN
+  IF to_regclass('public.governed_wallet_institution_attributions') IS NOT NULL THEN
+    EXECUTE 'REVOKE INSERT, UPDATE, DELETE ON public.governed_wallet_institution_attributions FROM monienaija_runtime';
+    EXECUTE 'REVOKE TRUNCATE, REFERENCES, TRIGGER ON public.governed_wallet_institution_attributions FROM monienaija_runtime';
+    EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON public.governed_wallet_institution_attributions TO monienaija_authority_core';
+  END IF;
+END $$;
 
 -- Protected governance approvals stay readable and usable for unprotected action types (row level
 -- security in migration 1785753600501 refuses every protected action).

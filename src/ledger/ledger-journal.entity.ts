@@ -40,6 +40,15 @@ export class LedgerJournal {
   @Column({ name: 'reversal_of_journal_id', type: 'uuid', nullable: true })
   reversalOfJournalId!: string | null;
 
+  /**
+   * Institutional context of the journal (ARENA 4 Phase 2). Derived from the posted accounts at
+   * INSERT time — journals are immutable, so this can never be back-filled later. `null` means the
+   * journal has no institutional context, and every account it touches must be unattributed or
+   * platform-level.
+   */
+  @Column({ name: 'institution_id', type: 'uuid', nullable: true })
+  institutionId!: string | null;
+
   @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
   metadata!: Record<string, unknown>;
 

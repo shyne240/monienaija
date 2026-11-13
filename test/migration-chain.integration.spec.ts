@@ -366,8 +366,10 @@ describe('institution 0400 historical upgrade (real PostgreSQL)', () => {
       db.migrations.splice(0, db.migrations.length, ...all);
       const executed = await db.runMigrations({ transaction: 'all' });
       expect(executed.map((m) => m.name)).toEqual([
+        'CreateInstitutionalFinancialOwnership1785753600401',
         'InstitutionGovernanceExecutionIntegrity1785753600500',
         'ProtectedAuthorityBoundary1785753600501',
+        'ProtectedAuthorityInstitutionalOwnership1785753600502',
       ]);
       const boundary = await db.query<
         Array<{ decisions: string | null; consumptions: string | null; guarded: boolean }>

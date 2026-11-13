@@ -289,7 +289,8 @@ const runtimePrivilegesSql = `
       AS catalogue_write,
     (has_table_privilege(session_user, 'public.governed_institution_lifecycle_executions', 'INSERT')
       OR has_table_privilege(session_user, 'public.institution_affiliation_transition_evidence', 'INSERT')
-      OR has_table_privilege(session_user, 'public.governed_institution_affiliation_replay_results', 'INSERT'))
+      OR has_table_privilege(session_user, 'public.governed_institution_affiliation_replay_results', 'INSERT')
+      OR has_table_privilege(session_user, 'public.governed_wallet_institution_attributions', 'INSERT'))
       AS evidence_write,
     EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
       WHERE n.nspname='protected_authority'

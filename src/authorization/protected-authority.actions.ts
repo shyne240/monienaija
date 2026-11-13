@@ -11,6 +11,11 @@ export const PROTECTED_AUTHORITY_ACTIONS: ReadonlySet<string> = new Set([
   'INSTITUTION_AGENT_AFFILIATION_CHANGE',
   'WALLET_OWNERSHIP_RESOLUTION',
   'LEDGER_JOURNAL_REVERSAL',
+  // ARENA 4 Phase 2 — institutional financial ownership. These were added after the Phase 1
+  // boundary and carry the same financial consequences, so they use the same protected contract
+  // (migration 1785753600502 extends the database guard and row level security to them).
+  'WALLET_INSTITUTION_ATTRIBUTION',
+  'CUSTOMER_INSTITUTION_ENROLMENT_CHANGE',
 ]);
 
 export function isProtectedAuthorityAction(actionType: string): boolean {

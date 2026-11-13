@@ -62,10 +62,17 @@ Migration `1785753600501-ProtectedAuthorityBoundary` adds:
 ### Protected actions
 
 `FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE`, `INSTITUTION_AGENT_AFFILIATION_CHANGE`,
-`WALLET_OWNERSHIP_RESOLUTION`, `LEDGER_JOURNAL_REVERSAL`
+`WALLET_OWNERSHIP_RESOLUTION`, `LEDGER_JOURNAL_REVERSAL`, and (ARENA 4 Phase 2)
+`WALLET_INSTITUTION_ATTRIBUTION` and `CUSTOMER_INSTITUTION_ENROLMENT_CHANGE`
 (`src/authorization/protected-authority.actions.ts`). This is an explicit allow-list. The remaining
 governed actions (notifications, agent funding, B2F policy, role-definition proposals, etc.) keep
 their pre-existing behaviour and are **not** claimed as protected by this boundary.
+
+Migration `1785753600502-ProtectedAuthorityInstitutionalOwnership` extends the 0501 guard and row
+level security to the two Phase 2 actions and revokes runtime writes on
+`governed_wallet_institution_attributions`. The Phase 2 execution transactions run on the authority
+connection. Pre-0502 approvals for these two actions have no protected decision and are
+conservatively non-executable.
 
 ### Application wiring
 
@@ -203,6 +210,9 @@ npx jest --config jest.config.js --runInBand
 
 Observed on this implementation:
 
+- `test/institution-financial-ownership.integration.spec.ts` (ARENA 4 Phase 2) — **16/16** with the
+  protected contract applied to wallet attribution and enrolment; runtime denial of attribution
+  approval/evidence writes is asserted in the boundary suite.
 - `test/protected-authority-boundary.integration.spec.ts` — **7/7** under migrated-by-migrator,
   app-as-runtime, authority-as-authority provisioning, including the legitimate checker flow,
   immutable decision/consumption evidence, replay, changed-payload rejection, consumed-approval
@@ -211,12 +221,12 @@ Observed on this implementation:
   non-owner-role, session-hash-impersonation and lifecycle-forgery negatives.
 - `test/wallet-ownership-resolution.integration.spec.ts` — **21/21**, including the retained
   wallet-approval forgery negative and legitimate checker execution.
-- `test/migration-chain.integration.spec.ts` — **20/20** (fresh chain, 0400→0500→0501 historical
-  upgrade, historical reservations).
+- `test/migration-chain.integration.spec.ts` — **20/20** (fresh chain, historical
+  0400→0401→0500→0501→0502 upgrade, historical reservations).
 - Workforce session, bootstrap, super-admin recovery, role-definition governance, notification
   provider governance, agent funding, A5/A19/A8/A20 and B2F targeted suites passed (see the
   turn's saved logs under `/home/user/authority-*.log` in the workspace; they are not committed).
-- Backend unit suite: **239 suites / 2,852 tests** passed.
+- Backend unit suite: **240 suites / 2,863 tests** passed.
 - `tsc --noEmit` passed; targeted Prettier/ESLint passed on the changed files.
 
 No provider call, real financial transaction, deployment or production-role verification was

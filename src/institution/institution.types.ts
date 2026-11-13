@@ -1,10 +1,15 @@
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import type {
+  CustomerInstitutionEnrolmentStatus,
   FinancialInstitutionStatus,
   FinancialInstitutionType,
   InstitutionAffiliationChangeKind,
   InstitutionAffiliationEvidenceType,
   InstitutionAffiliationStatus,
+  InstitutionAttributionEvidenceType,
+  InstitutionFinancialEligibility,
+  LedgerInstitutionalPurpose,
+  LedgerInstitutionalScope,
 } from './institution.enums';
 
 /**
@@ -177,4 +182,182 @@ export interface WorkforceInstitutionAssignmentView {
   grantedAt: string;
   revokedBy: string | null;
   revokedAt: string | null;
+}
+
+// --------------------------------------------------------------------------- Phase 2 additions
+
+export interface CustomerInstitutionEnrolmentView {
+  id: string;
+  reference: string;
+  customerId: string;
+  institutionId: string;
+  status: CustomerInstitutionEnrolmentStatus;
+  statusReason: string | null;
+  financialEligibility: InstitutionFinancialEligibility;
+  kycReuseAuthorized: boolean;
+  consentReference: string | null;
+  policyReference: string | null;
+  approvalId: string;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  version: number;
+}
+
+export interface RequestEnrolmentCommand {
+  customerId: string;
+  institutionId: string;
+  reference: string;
+  targetStatus: CustomerInstitutionEnrolmentStatus;
+  financialEligibility?: InstitutionFinancialEligibility;
+  statusReason: string;
+  /** KYC reuse is opt-in and requires consent + policy + evidence references together. */
+  kycReuse?: {
+    evidenceReference: string;
+    consentReference: string;
+    policyReference: string;
+  } | null;
+  principal: AuthorizationPrincipal;
+  expiresInSeconds?: number;
+  now?: Date;
+}
+
+export interface ExecuteEnrolmentCommand extends RequestEnrolmentCommand {
+  approvalId: string;
+}
+
+export interface WalletInstitutionAttributionView {
+  attributionId: string;
+  approvalId: string;
+  walletId: string;
+  ledgerAccountId: string;
+  institutionId: string;
+  ownerClass: string;
+  ownerReference: string;
+  evidenceType: InstitutionAttributionEvidenceType;
+  evidenceReference: string;
+  executedBy: string;
+  executedAt: string;
+}
+
+export interface RequestWalletAttributionCommand {
+  walletId: string;
+  institutionId: string;
+  evidenceType: InstitutionAttributionEvidenceType;
+  evidenceReference: string;
+  reason: string;
+  principal: AuthorizationPrincipal;
+  expiresInSeconds?: number;
+  now?: Date;
+}
+
+export interface ExecuteWalletAttributionCommand extends RequestWalletAttributionCommand {
+  approvalId: string;
+  /** TEST-ONLY: forces a failure after the rows are written, proving atomic rollback. */
+  _simulateFailureAfterAttribution?: boolean;
+}
+
+export interface InstitutionLedgerAccountView {
+  id: string;
+  code: string;
+  name: string;
+  accountType: string;
+  normalBalance: string;
+  currency: string;
+  institutionalScope: LedgerInstitutionalScope;
+  institutionId: string | null;
+  institutionalPurpose: LedgerInstitutionalPurpose | null;
+  isActive: boolean;
+}
+
+export interface OpenInstitutionLedgerAccountCommand {
+  institutionId: string;
+  code: string;
+  name: string;
+  accountType: 'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'EXPENSE';
+  normalBalance: 'DEBIT' | 'CREDIT';
+  currency: string;
+  purpose:
+    | LedgerInstitutionalPurpose.SETTLEMENT
+    | LedgerInstitutionalPurpose.SUSPENSE
+    | LedgerInstitutionalPurpose.CLEARING;
+  allowNegativeBalance?: boolean;
+  principal: AuthorizationPrincipal;
+}
+
+export interface DesignatePlatformLedgerAccountCommand {
+  ledgerAccountId: string;
+  principal: AuthorizationPrincipal;
+}
+
+/** One resolved financial party (wallet, ledger account, institution, enrolment). */
+export interface FinancialContextParty {
+  kind: 'WALLET' | 'LEDGER_ACCOUNT';
+  id: string;
+  ledgerAccountId: string | null;
+  ownerClass: string | null;
+  ownerReference: string | null;
+  institutionId: string | null;
+  institutionalScope: LedgerInstitutionalScope | null;
+  institutionalPurpose: LedgerInstitutionalPurpose | null;
+}
+
+export type FinancialContextOutcome =
+  | 'RESOLVED'
+  | 'UNRESOLVED'
+  | 'NOT_CONFIGURED'
+  | 'INSTITUTION_INACTIVE'
+  | 'INCOMPATIBLE';
+
+export type FinancialContextReason =
+  | 'NO_INSTITUTION_CONTEXT'
+  | 'UNATTRIBUTED_WALLET'
+  | 'UNATTRIBUTED_LEDGER_ACCOUNT'
+  | 'CROSS_INSTITUTION'
+  | 'INSTITUTION_SUSPENDED'
+  | 'INSTITUTION_NOT_APPROVED'
+  | 'AGENT_AFFILIATION_UNAVAILABLE'
+  | 'CUSTOMER_NOT_ENROLLED'
+  | 'CUSTOMER_NOT_ELIGIBLE'
+  | 'ENROLMENT_SUSPENDED'
+  | 'PLATFORM_ACCOUNT_IN_INSTITUTIONAL_CONTEXT'
+  | 'SCHEMA_NOT_CONFIGURED';
+
+/**
+ * Reusable financial context contract (ARENA 4 Phase 2 §5). Financial products use it to establish
+ * and validate the institutional context of a prospective operation *inside their own transaction*.
+ * It never returns a bare institution id: absence, non-configuration, inactivity and incompatibility
+ * are distinct outcomes with explicit reasons.
+ */
+export interface FinancialContext {
+  outcome: FinancialContextOutcome;
+  reasons: FinancialContextReason[];
+  institutionId: string | null;
+  institutionStatus: FinancialInstitutionStatus | null;
+  agentAffiliation: InstitutionResolution | null;
+  customerEnrolment: CustomerInstitutionEnrolmentView | null;
+  parties: FinancialContextParty[];
+  resolvedAt: string;
+  evidenceFingerprint: string;
+}
+
+export interface FinancialContextRequest {
+  institutionId?: string;
+  agentId?: string;
+  customerId?: string;
+  walletIds?: string[];
+  ledgerAccountIds?: string[];
+  /** Financial authorization paths must hold SHARE locks for the whole transaction. */
+  lock?: 'SHARE' | 'NONE';
+}
+
+export interface UnattributedFinancialAccountView {
+  entity: 'WALLET' | 'LEDGER_ACCOUNT';
+  entityId: string;
+  ownerClass: string | null;
+  ownerReference: string | null;
+  currency: string;
+  status: string;
+  ledgerAccountId: string;
+  ledgerLineCount: number;
+  balanceMinor: string;
 }

@@ -314,6 +314,41 @@ export class LedgerService {
     return this.toJournalView(journalAndLines);
   }
 
+  /**
+   * Derives and validates the journal's institutional context.
+   *
+   * - every account attributed to institution X ⇒ the journal belongs to X;
+   * - a mix of institutions ⇒ refused (cross-institution internal postings are out of V1 scope);
+   * - an institutional journal may only contain accounts attributed to that same institution;
+   * - a non-institutional journal may only contain unattributed or platform-level accounts.
+   */
+  private resolveJournalInstitution(accounts: LedgerAccount[]): string | null {
+    const institutionIds = new Set(
+      accounts
+        .filter((account) => (account.institutionalScope ?? 'UNATTRIBUTED') === 'INSTITUTION')
+        .map((account) => account.institutionId ?? ''),
+    );
+    if (institutionIds.size > 1) {
+      throw new ConflictException('Cross-institution internal ledger postings are not permitted');
+    }
+    if (institutionIds.size === 1) {
+      const institutionId = [...institutionIds][0]!;
+      const offender = accounts.find(
+        (account) =>
+          (account.institutionalScope ?? 'UNATTRIBUTED') !== 'INSTITUTION' ||
+          account.institutionId !== institutionId,
+      );
+      if (offender) {
+        throw new ConflictException(
+          `Ledger account ${offender.id} is not attributed to the journal's institution`,
+        );
+      }
+      return institutionId;
+    }
+    // No institutional accounts: platform-level and unattributed accounts only.
+    return null;
+  }
+
   private async postWithinTransaction(
     manager: EntityManager,
     command: NormalizedJournal,
@@ -362,6 +397,13 @@ export class LedgerService {
       }
     }
 
+    // ARENA 4 Phase 2 — institutional isolation. A journal belongs to exactly one institution (or
+    // to none). Institutional accounts may never mix with another institution's accounts, and an
+    // unattributed/platform account may never quietly join an institutional posting: unattributed
+    // is an honest historical state, not an isolation bypass. The database enforces the same rule
+    // on `ledger_lines`; this check turns it into a precise 409 for callers.
+    const journalInstitutionId = this.resolveJournalInstitution(accounts);
+
     const currentBalances = await this.calculateBalancesWithManager(manager, accounts);
     const projectedBalances = new Map<string, bigint>();
     for (const account of accounts) {
@@ -400,6 +442,7 @@ export class LedgerService {
       description: command.description ?? null,
       correlationId: sanitizeDiagnosticIdentifier(command.correlationId) ?? null,
       reversalOfJournalId: command.reversalOfJournalId ?? null,
+      institutionId: journalInstitutionId,
       metadata: command.metadata ?? {},
       totalMinor: command.totalMinor.toString(),
       postedAt: new Date(),
