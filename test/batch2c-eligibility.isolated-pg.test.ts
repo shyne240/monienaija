@@ -2311,7 +2311,27 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
         }),
       ),
     );
-    expect(results.filter((r) => r.statusCode === 200)).toHaveLength(1);
+    const successes = results.filter((r) => r.statusCode === 200);
+    expect(successes.filter((r) => r.json<{status:string}>().status === 'COMPLETED')).toHaveLength(1);
+    expect(results.every((r) => r.statusCode === 200 || r.statusCode === 409)).toBe(true);
+    const duplicate = await server.inject({
+      method: 'POST',
+      url: '/api/v1/agents/cash-to-cash/claim',
+      headers: { authorization: `Bearer ${token}` },
+      payload: httpClaim,
+    });
+    expect(duplicate.statusCode).toBe(200);
+    expect(duplicate.json()).toMatchObject({
+      status: 'REPLAYED',
+      journalId: successes.find((r) => r.json<{status:string}>().status === 'COMPLETED')!.json<{journalId:string}>().journalId,
+    });
+    const altered = await server.inject({
+      method: 'POST',
+      url: '/api/v1/agents/cash-to-cash/claim',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ...httpClaim, metadata: { changed: true } },
+    });
+    expect(altered.statusCode).toBe(409);
     expect(
       await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challenge.challengeId]),
     ).toEqual([{ status: 'VERIFIED' }]);

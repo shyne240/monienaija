@@ -377,8 +377,44 @@ export class AgentCashToCashClaimService {
       throw new ConflictException('Transfer has expired and cannot be claimed');
     }
     if (preTransfer.status === 'CLAIMED') {
-      // For already claimed, we still need to handle idempotency properly inside transaction (replay vs conflict).
-      // We will let the transaction handle it, but we can early return if this is a replay with same key? We'll just continue to OTP+transaction.
+      // A completed effect is recovered from its immutable audit evidence, never by
+      // consuming another OTP. Require the original actor and financial fingerprint.
+      if (!input.claimantPrincipal)
+        throw new ConflictException('Claim receipt requires an authenticated Agent');
+      const receipt = await this.recoverClaimForAgent(transferId, input.claimantPrincipal);
+      const wallet = await this.dataSource.getRepository(WalletAccount).findOne({
+        where: { customerId: settlementWalletOwnerId, currency: 'NGN' },
+      });
+      if (
+        !wallet ||
+        receipt.idempotencyKey !== idempotencyKey ||
+        receipt.claimantCustomerId !== customerId ||
+        receipt.beneficiaryPhone !== canonicalPhone ||
+        receipt.redemptionMethod !== redemptionMethod
+      )
+        throw new ConflictException('Claim replay does not match the original execution');
+      const fingerprint: ClaimRequestFingerprintInput = {
+        transferId,
+        beneficiaryPhone: canonicalPhone,
+        claimantCustomerId: customerId,
+        claimantAgentId,
+        redemptionMethod,
+        principalMinor: receipt.principalMinor,
+        currency: receipt.currency,
+        unclaimedAccountId: unclaimedAccount.id,
+        settlementWalletLedgerId: wallet.ledgerAccountId,
+        reference,
+        correlationId: correlationId ?? null,
+        metadata: input.metadata ?? {},
+      };
+      const hash = this.computeClaimRequestHash(fingerprint);
+      const legacyHash =
+        redemptionMethod === 'CUSTOMER_WALLET'
+          ? this.computeLegacyWalletClaimRequestHash(fingerprint)
+          : null;
+      if (receipt.requestHash !== hash && receipt.requestHash !== legacyHash)
+        throw new ConflictException('Claim replay does not match the original execution');
+      return receipt;
     } else {
       if (preTransfer.status !== 'UNCLAIMED')
         throw new ConflictException(`Transfer status ${preTransfer.status} cannot be claimed`);
@@ -655,8 +691,7 @@ export class AgentCashToCashClaimService {
           let claimRequestHashForLimit: string | null = null;
           let limitOutcome: EnforceResult | null = null;
           const limitPrincipalType = redemptionMethod === 'AGENT_CASH' ? 'AGENT' : 'CUSTOMER';
-          const limitPrincipalId =
-            redemptionMethod === 'AGENT_CASH' ? claimantAgentId : customerId;
+          const limitPrincipalId = redemptionMethod === 'AGENT_CASH' ? claimantAgentId : customerId;
           const claimRequestHashEarly = this.computeClaimRequestHash({
             transferId,
             beneficiaryPhone: canonicalPhone,
