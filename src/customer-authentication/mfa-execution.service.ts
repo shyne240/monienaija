@@ -134,147 +134,155 @@ export class MfaExecutionService {
   }
 
   async verifyChallenge(command: VerifyMfaChallengeCommand): Promise<MfaChallengeResult> {
+    return this.dataSource.transaction((manager) =>
+      this.verifyChallengeInManager(manager, command),
+    );
+  }
+
+  /** The caller must commit or roll back this manager together with the authorized effect. */
+  async verifyChallengeInManager(
+    manager: EntityManager,
+    command: VerifyMfaChallengeCommand,
+  ): Promise<MfaChallengeResult> {
     this.assertPrincipal(command.principal);
     const challengeId = command.challengeId.trim().toLowerCase();
     if (!UUID_PATTERN.test(challengeId) || !this.validHash(command.providedHash)) {
       return this.failedChallenge(command.principal, challengeId, 'INVALID_CHALLENGE');
     }
     const actor = this.normalizeActor(command.actor);
+    const challenge = await manager.getRepository(MfaChallenge).findOne({
+      where: { id: challengeId },
+      lock: { mode: 'pessimistic_write' },
+    });
     const now = command.now ?? new Date();
-
-    return this.dataSource.transaction(async (manager) => {
-      const challenge = await manager.getRepository(MfaChallenge).findOne({
-        where: { id: challengeId },
+    if (!challenge) {
+      return this.failedChallenge(command.principal, challengeId, 'INVALID_CHALLENGE');
+    }
+    if (challenge.customerId !== command.principal.customerId) {
+      return this.failedChallenge(command.principal, challengeId, 'WRONG_CUSTOMER');
+    }
+    if (challenge.sessionId !== command.principal.sessionId) {
+      return this.failedChallenge(command.principal, challengeId, 'WRONG_SESSION');
+    }
+    if (challenge.status !== MfaChallengeStatus.ACTIVE) {
+      return this.failedChallenge(
+        command.principal,
+        challenge.id,
+        challenge.status === MfaChallengeStatus.EXPIRED
+          ? 'EXPIRED'
+          : challenge.status === MfaChallengeStatus.VERIFIED
+            ? 'REPLAYED'
+            : 'MFA_UNAVAILABLE',
+        challenge,
+      );
+    }
+    if (challenge.expiresAt.getTime() <= now.getTime()) {
+      challenge.status = MfaChallengeStatus.EXPIRED;
+      const expired = await manager.getRepository(MfaChallenge).save(challenge);
+      await this.audit(manager, expired.id, 'MFA_CHALLENGE', 'EXPIRED', 'mfa-execution', {
+        customerId: expired.customerId,
+        enrollmentId: expired.enrollmentId,
+        methodId: expired.methodId,
       });
-      if (!challenge) {
-        return this.failedChallenge(command.principal, challengeId, 'INVALID_CHALLENGE');
-      }
-      if (challenge.customerId !== command.principal.customerId) {
-        return this.failedChallenge(command.principal, challengeId, 'WRONG_CUSTOMER');
-      }
-      if (challenge.sessionId !== command.principal.sessionId) {
-        return this.failedChallenge(command.principal, challengeId, 'WRONG_SESSION');
-      }
-      if (challenge.status !== MfaChallengeStatus.ACTIVE) {
-        return this.failedChallenge(
-          command.principal,
-          challenge.id,
-          challenge.status === MfaChallengeStatus.EXPIRED
-            ? 'EXPIRED'
-            : challenge.status === MfaChallengeStatus.VERIFIED
-              ? 'REPLAYED'
-              : 'MFA_UNAVAILABLE',
-          challenge,
-        );
-      }
-      if (challenge.expiresAt.getTime() <= now.getTime()) {
-        challenge.status = MfaChallengeStatus.EXPIRED;
-        const expired = await manager.getRepository(MfaChallenge).save(challenge);
-        await this.audit(manager, expired.id, 'MFA_CHALLENGE', 'EXPIRED', 'mfa-execution', {
-          customerId: expired.customerId,
-          enrollmentId: expired.enrollmentId,
-          methodId: expired.methodId,
-        });
-        return this.failedChallenge(command.principal, expired.id, 'EXPIRED', expired);
-      }
+      return this.failedChallenge(command.principal, expired.id, 'EXPIRED', expired);
+    }
 
-      // V1-AGENT-MFA-API-01 — purpose binding enforcement. A purpose-bound challenge
-      // presented to a consumer declaring a different (or absent) expected purpose is
-      // denied. NULL-purpose (legacy) challenges remain purpose-generic — unchanged
-      // behavior for everything issued before this feature.
-      if (
-        challenge.purpose !== null &&
-        challenge.purpose !== undefined &&
-        challenge.purpose !== command.expectedPurpose
-      ) {
-        return this.failedChallenge(command.principal, challenge.id, 'WRONG_PURPOSE', challenge);
-      }
+    // V1-AGENT-MFA-API-01 — purpose binding enforcement. A purpose-bound challenge
+    // presented to a consumer declaring a different (or absent) expected purpose is
+    // denied. NULL-purpose (legacy) challenges remain purpose-generic — unchanged
+    // behavior for everything issued before this feature.
+    if (
+      challenge.purpose !== null &&
+      challenge.purpose !== undefined &&
+      challenge.purpose !== command.expectedPurpose
+    ) {
+      return this.failedChallenge(command.principal, challenge.id, 'WRONG_PURPOSE', challenge);
+    }
 
-      const enrollment = await manager.getRepository(MfaEnrollment).findOne({
-        where: { id: challenge.enrollmentId, customerId: challenge.customerId },
-      });
-      const method = await manager.getRepository(MfaMethod).findOne({
-        where: {
-          id: challenge.methodId,
-          enrollmentId: challenge.enrollmentId,
-          customerId: challenge.customerId,
-        },
-      });
-      if (
-        !enrollment ||
-        enrollment.deletedAt !== null ||
-        enrollment.status !== MfaEnrollmentStatus.ENABLED ||
-        !method ||
-        method.deletedAt !== null ||
-        method.status !== MfaMethodStatus.ENABLED
-      ) {
-        return this.failedChallenge(command.principal, challenge.id, 'MFA_UNAVAILABLE', challenge);
-      }
+    const enrollment = await manager.getRepository(MfaEnrollment).findOne({
+      where: { id: challenge.enrollmentId, customerId: challenge.customerId },
+    });
+    const method = await manager.getRepository(MfaMethod).findOne({
+      where: {
+        id: challenge.methodId,
+        enrollmentId: challenge.enrollmentId,
+        customerId: challenge.customerId,
+      },
+    });
+    if (
+      !enrollment ||
+      enrollment.deletedAt !== null ||
+      enrollment.status !== MfaEnrollmentStatus.ENABLED ||
+      !method ||
+      method.deletedAt !== null ||
+      method.status !== MfaMethodStatus.ENABLED
+    ) {
+      return this.failedChallenge(command.principal, challenge.id, 'MFA_UNAVAILABLE', challenge);
+    }
 
-      if (!this.challengeMatches(challenge.challengeHash, command.providedHash)) {
-        await this.audit(manager, challenge.id, 'MFA_CHALLENGE', 'FAILED', actor, {
-          customerId: challenge.customerId,
-          enrollmentId: challenge.enrollmentId,
-          methodId: challenge.methodId,
-          reason: 'MISMATCH',
-        });
-        await this.securityEvent(
-          manager,
-          challenge.customerId,
-          null,
-          SecurityEventType.MFA_CHALLENGE_FAILED,
-          actor,
-          {
-            challengeId: challenge.id,
-            enrollmentId: challenge.enrollmentId,
-            methodId: challenge.methodId,
-          },
-        );
-        return this.failedChallenge(
-          command.principal,
-          challenge.id,
-          'MISMATCH',
-          challenge,
-          method.type,
-        );
-      }
-
-      challenge.status = MfaChallengeStatus.VERIFIED;
-      challenge.verifiedAt = now;
-      const verified = await manager.getRepository(MfaChallenge).save(challenge);
-      await this.audit(manager, verified.id, 'MFA_CHALLENGE', 'VERIFIED', actor, {
-        customerId: verified.customerId,
-        enrollmentId: verified.enrollmentId,
-        methodId: verified.methodId,
-        sessionId: verified.sessionId,
-        verifiedAt: verified.verifiedAt,
-        assurance: 'MFA',
+    if (!this.challengeMatches(challenge.challengeHash, command.providedHash)) {
+      await this.audit(manager, challenge.id, 'MFA_CHALLENGE', 'FAILED', actor, {
+        customerId: challenge.customerId,
+        enrollmentId: challenge.enrollmentId,
+        methodId: challenge.methodId,
+        reason: 'MISMATCH',
       });
       await this.securityEvent(
         manager,
-        verified.customerId,
+        challenge.customerId,
         null,
-        SecurityEventType.MFA_CHALLENGE_SUCCEEDED,
+        SecurityEventType.MFA_CHALLENGE_FAILED,
         actor,
         {
-          challengeId: verified.id,
-          enrollmentId: verified.enrollmentId,
-          methodId: verified.methodId,
+          challengeId: challenge.id,
+          enrollmentId: challenge.enrollmentId,
+          methodId: challenge.methodId,
         },
       );
-      return {
-        verified: true,
-        customerId: verified.customerId,
-        sessionId: verified.sessionId,
+      return this.failedChallenge(
+        command.principal,
+        challenge.id,
+        'MISMATCH',
+        challenge,
+        method.type,
+      );
+    }
+
+    challenge.status = MfaChallengeStatus.VERIFIED;
+    challenge.verifiedAt = now;
+    const verified = await manager.getRepository(MfaChallenge).save(challenge);
+    await this.audit(manager, verified.id, 'MFA_CHALLENGE', 'VERIFIED', actor, {
+      customerId: verified.customerId,
+      enrollmentId: verified.enrollmentId,
+      methodId: verified.methodId,
+      sessionId: verified.sessionId,
+      verifiedAt: verified.verifiedAt,
+      assurance: 'MFA',
+    });
+    await this.securityEvent(
+      manager,
+      verified.customerId,
+      null,
+      SecurityEventType.MFA_CHALLENGE_SUCCEEDED,
+      actor,
+      {
         challengeId: verified.id,
         enrollmentId: verified.enrollmentId,
         methodId: verified.methodId,
-        methodType: method.type,
-        assurance: 'MFA',
-        verifiedAt: verified.verifiedAt ?? now,
-        expiresAt: verified.expiresAt,
-      };
-    });
+      },
+    );
+    return {
+      verified: true,
+      customerId: verified.customerId,
+      sessionId: verified.sessionId,
+      challengeId: verified.id,
+      enrollmentId: verified.enrollmentId,
+      methodId: verified.methodId,
+      methodType: method.type,
+      assurance: 'MFA',
+      verifiedAt: verified.verifiedAt ?? now,
+      expiresAt: verified.expiresAt,
+    };
   }
 
   async checkTrustedDevice(command: CheckTrustedDeviceCommand): Promise<TrustedDeviceResult> {
