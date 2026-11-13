@@ -29,6 +29,7 @@ import {
 jest.mock('../src/services/agent-api', () => ({
   resolveAgentRecipient: jest.fn(),
   agentCashToCash: jest.fn(),
+  recoverCashToCashFunding: jest.fn(),
   describeApiError: jest.requireActual('../src/services/agent-api').describeApiError,
   describeCashToCashError: jest.requireActual('../src/services/agent-api').describeCashToCashError,
   setPendingTransferCode: jest.requireActual('../src/services/agent-api').setPendingTransferCode,
@@ -40,6 +41,7 @@ jest.mock('../src/services/agent-api', () => ({
 const mockApi = jest.requireMock('../src/services/agent-api') as {
   resolveAgentRecipient: jest.Mock;
   agentCashToCash: jest.Mock;
+  recoverCashToCashFunding: jest.Mock;
 };
 
 const mockNavigate = jest.fn();
@@ -241,9 +243,11 @@ describe('Cash→Cash — Step 3: Confirmation & Authorize (C2C-4 / C2C-7 / SEC-
     idempotencyKey: 'c2c-key-abc',
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
     clearPendingTransferCode();
+    useAuthStore.setState({ agentId: 'agent-confirm' });
+    await clearPendingAgentOperation('agent-confirm', 'CASH_TO_CASH_SEND');
     mockRoute = { key: 'k', name: 'CashToCashConfirm', params };
   });
 
@@ -614,7 +618,7 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
       createdAt: new Date().toISOString(),
     });
 
-    mockApi.agentCashToCash.mockResolvedValueOnce(cashToCashResult);
+    mockApi.recoverCashToCashFunding.mockResolvedValueOnce({status:'UNKNOWN'});
     mockRoute = {
       key: 'k2',
       name: 'CashToCashConfirm',
@@ -623,9 +627,8 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     const second = wrap(<CashToCashConfirmScreen />);
     fireEvent.changeText(second.getByTestId('c2c-pin-input'), '4321');
     fireEvent.press(second.getByTestId('c2c-confirm-submit'));
-    await waitFor(() => expect(mockApi.agentCashToCash).toHaveBeenCalledTimes(1));
-
-    expect(mockApi.agentCashToCash.mock.calls[0][0].idempotencyKey).toBe('c2c-restart-original');
+    await waitFor(() => expect(mockApi.recoverCashToCashFunding).toHaveBeenCalledWith('c2c-restart-original'));
+    expect(mockApi.agentCashToCash).not.toHaveBeenCalled();
   });
 
   test('3. success clears the persisted operation', async () => {
@@ -644,7 +647,7 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     );
   });
 
-  test('4. a definitive rejection (4xx) clears the persisted operation — a later attempt gets a clean new key', async () => {
+  test('4. a rejection retains the pending identity until authoritative recovery', async () => {
     mockRoute = {
       key: 'k1',
       name: 'CashToCashConfirm',
@@ -658,11 +661,11 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
       expect(first.getByTestId('c2c-confirm-error').props.children).toBe('Incorrect transaction PIN. Try again.'),
     );
     await waitFor(async () =>
-      expect(await loadPendingAgentOperation(agentId, 'CASH_TO_CASH_SEND')).toBeNull(),
+      expect((await loadPendingAgentOperation(agentId, 'CASH_TO_CASH_SEND'))?.idempotencyKey).toBe('c2c-definitive-reject'),
     );
     first.unmount();
 
-    mockApi.agentCashToCash.mockResolvedValueOnce(cashToCashResult);
+    mockApi.recoverCashToCashFunding.mockResolvedValueOnce({status:'UNKNOWN'});
     mockRoute = {
       key: 'k2',
       name: 'CashToCashConfirm',
@@ -671,11 +674,11 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     const second = wrap(<CashToCashConfirmScreen />);
     fireEvent.changeText(second.getByTestId('c2c-pin-input'), '4321');
     fireEvent.press(second.getByTestId('c2c-confirm-submit'));
-    await waitFor(() => expect(mockApi.agentCashToCash).toHaveBeenCalledTimes(2));
-    expect(mockApi.agentCashToCash.mock.calls[1][0].idempotencyKey).toBe('c2c-clean-retry-key');
+    await waitFor(() => expect(mockApi.recoverCashToCashFunding).toHaveBeenCalledWith('c2c-definitive-reject'));
+    expect(mockApi.agentCashToCash).toHaveBeenCalledTimes(1);
   });
 
-  test('5. a persisted operation for a DIFFERENT amount or DIFFERENT senderPhone is never reused', async () => {
+  test('5. a different amount or sender cannot overwrite an unresolved operation', async () => {
     await savePendingAgentOperation({
       agentId,
       operationType: 'CASH_TO_CASH_SEND',
@@ -686,7 +689,6 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
       createdAt: new Date().toISOString(),
     });
 
-    mockApi.agentCashToCash.mockResolvedValueOnce({ ...cashToCashResult, amountMinor: '900000' });
     mockRoute = {
       key: 'k2',
       name: 'CashToCashConfirm',
@@ -695,8 +697,8 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     const second = wrap(<CashToCashConfirmScreen />);
     fireEvent.changeText(second.getByTestId('c2c-pin-input'), '4321');
     fireEvent.press(second.getByTestId('c2c-confirm-submit'));
-    await waitFor(() => expect(mockApi.agentCashToCash).toHaveBeenCalledTimes(1));
-    expect(mockApi.agentCashToCash.mock.calls[0][0].idempotencyKey).toBe('c2c-amount-b-own-key');
+    await waitFor(() => expect(second.getByTestId('c2c-confirm-error').props.children).toMatch(/previous transfer is unresolved/i));
+    expect(mockApi.agentCashToCash).not.toHaveBeenCalled();
     second.unmount();
 
     // Save pending op for sender A, then submit for sender B -> uses sender B's own key
@@ -709,7 +711,6 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
       currency: 'NGN',
       createdAt: new Date().toISOString(),
     });
-    mockApi.agentCashToCash.mockResolvedValueOnce({ ...cashToCashResult, senderPhone: '8099998888' });
     mockRoute = {
       key: 'k3',
       name: 'CashToCashConfirm',
@@ -723,8 +724,8 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     const third = wrap(<CashToCashConfirmScreen />);
     fireEvent.changeText(third.getByTestId('c2c-pin-input'), '4321');
     fireEvent.press(third.getByTestId('c2c-confirm-submit'));
-    await waitFor(() => expect(mockApi.agentCashToCash).toHaveBeenCalledTimes(2));
-    expect(mockApi.agentCashToCash.mock.calls[1][0].idempotencyKey).toBe('c2c-sender-b-own-key');
+    await waitFor(() => expect(third.getByTestId('c2c-confirm-error').props.children).toMatch(/previous transfer is unresolved/i));
+    expect(mockApi.agentCashToCash).not.toHaveBeenCalled();
   });
 
   test('6. C2C_LOCATOR_UNAVAILABLE (409) retains persisted key for unchanged retry per ARENA 1 contract', async () => {

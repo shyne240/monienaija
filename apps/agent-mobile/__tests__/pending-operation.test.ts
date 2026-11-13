@@ -220,3 +220,18 @@ describe('pending-operation — logout clears all pending operations for an Agen
     await clearPendingCashToCashLocatorClaim('agent-bad-num');
   });
 });
+
+describe('cash-to-cash unresolved operation safety', () => {
+  test('retains an old operation under a durable native-compatible key', async () => {
+    const intent = makeIntent({agentId:'agent-retain', operationType:'CASH_TO_CASH_SEND', idempotencyKey:'original', createdAt:'2020-01-01T00:00:00.000Z'});
+    await savePendingAgentOperation(intent);
+    expect(await loadPendingAgentOperation('agent-retain', 'CASH_TO_CASH_SEND')).toEqual(intent);
+    expect(await SecureStorage.getDurable('pending_agent_operation.agent-retain.CASH_TO_CASH_SEND')).not.toBeNull();
+    await clearPendingAgentOperation('agent-retain', 'CASH_TO_CASH_SEND');
+  });
+  test('does not silently fall back when durable storage fails', async () => {
+    const failure = jest.spyOn(SecureStorage,'setDurable').mockRejectedValueOnce(new Error('storage unavailable'));
+    await expect(savePendingAgentOperation(makeIntent({agentId:'agent-failure', operationType:'CASH_TO_CASH_SEND'}))).rejects.toThrow('storage unavailable');
+    failure.mockRestore();
+  });
+});

@@ -7,15 +7,8 @@ import { SecureStorage } from './secure-storage';
  * that killing the app process between "request sent" and "response received" never forces
  * the Agent to mint a brand-new key for what they still believe is the same attempt.
  *
- * Scope: ONLY the three Agent flows whose backend idempotency boundary is a generic
- * `agent-financial.v1:<agentId>` ledger reservation with no independent business-level
- * duplicate guard — Cash→Wallet (CASH_IN), Wallet→Cash (CASH_OUT), Cash→Cash send
- * (CASH_TO_CASH_SEND). Cash→Cash CLAIM is deliberately excluded: `cash_to_cash_transfers`
- * carries its own UNCLAIMED→CLAIMED state machine keyed by the immutable `transferId`
- * (src/agent/agent-cash-to-cash-claim.service.ts), so a claim retry with a brand-new key
- * after process death is already rejected server-side with a definitive 409 — persisting a
- * key for it would add complexity without closing any real gap. See
- * docs/V1/V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-AUDIT-01.md for the full analysis.
+ * Separate keys isolate Cash-In, Cash-Out, and Cash-to-Cash funding. Cash-to-Cash
+ * locator claims have a separate pending record below. No credential is stored here.
  *
  * Design notes (deliberately NOT a copy of customer-mobile's pending-transfer.ts):
  *  - Customer Mobile has exactly one flow/shape (Wallet→Wallet) so one storage key suffices.
@@ -39,16 +32,13 @@ const STORAGE_KEY_PREFIX = 'pending_agent_operation';
 // Agent B's, and an Agent's own Cash-In attempt can never collide with their own Cash-Out or
 // Cash→Cash-send attempt (even if, implausibly, more than one were ever mid-flight at once).
 function storageKeyFor(agentId: string, operationType: AgentOperationType): string {
-  // Expo SecureStore rejects colons; use a valid key for durable cash-out state.
-  return operationType === 'CASH_OUT'
-    ? `${STORAGE_KEY_PREFIX}.${agentId}.CASH_OUT`
+  // Expo SecureStore rejects colons; financial recovery keys must be native-compatible.
+  return operationType === 'CASH_OUT' || operationType === 'CASH_TO_CASH_SEND'
+    ? `${STORAGE_KEY_PREFIX}.${agentId}.${operationType}`
     : `${STORAGE_KEY_PREFIX}:${agentId}:${operationType}`;
 }
 
-// For non-cash-out flows, a pending intent older than this is treated as abandoned and ignored (and dropped from
-// storage) rather than resurrected against a much later, unrelated operation that happens to
-// reuse the same screen. Matches the customer-mobile precedent: comfortably exceeds any
-// realistic ambiguous-timeout recovery window without lingering indefinitely on the device.
+// Cash-In retains its legacy timeout; Cash-Out and Cash-to-Cash funding never expire locally.
 const MAX_PENDING_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export interface AgentOperationParams {
@@ -95,9 +85,8 @@ function isPendingAgentOperation(value: unknown): value is PendingAgentOperation
 
 /**
  * Loads the persisted pending operation, but ONLY if it belongs to the given Agent and
- * operation type and, except for cash-out, has not exceeded the staleness window. Any mismatch, parse failure, or
- * staleness returns null (staleness also clears the stale record) — never leaks one Agent's
- * (or one operation type's) pending key into another's.
+ * operation type. Cash-Out and Cash-to-Cash funding fail closed if the record is invalid
+ * or unreadable and never discard it due to elapsed time. Cash-In retains its legacy timeout.
  */
 export async function loadPendingAgentOperation(
   agentId: string,
@@ -105,7 +94,7 @@ export async function loadPendingAgentOperation(
 ): Promise<PendingAgentOperation | null> {
   const key = storageKeyFor(agentId, operationType);
   const raw =
-    operationType === 'CASH_OUT'
+    operationType !== 'CASH_IN'
       ? await SecureStorage.getDurable(key)
       : await SecureStorage.get(key);
   if (!raw) return null;
@@ -114,7 +103,7 @@ export async function loadPendingAgentOperation(
   try {
     parsed = JSON.parse(raw);
   } catch {
-    if (operationType === 'CASH_OUT') throw new Error('Cash-out pending state is unreadable');
+    if (operationType !== 'CASH_IN') throw new Error('Financial pending state is unreadable');
     return null;
   }
 
@@ -125,13 +114,13 @@ export async function loadPendingAgentOperation(
     parsed.agentId !== agentId ||
     parsed.operationType !== operationType
   ) {
-    if (operationType === 'CASH_OUT') throw new Error('Cash-out pending state is invalid');
+    if (operationType !== 'CASH_IN') throw new Error('Financial pending state is invalid');
     return null;
   }
 
   const ageMs = Date.now() - new Date(parsed.createdAt).getTime();
   if (
-    operationType !== 'CASH_OUT' &&
+    operationType === 'CASH_IN' &&
     (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > MAX_PENDING_AGE_MS)
   ) {
     await clearPendingAgentOperation(agentId, operationType);
@@ -161,7 +150,7 @@ export function matchesPendingAgentOperation(
 /** Persisted immediately before the request is sent, so an app kill right after send is still covered. */
 export async function savePendingAgentOperation(intent: PendingAgentOperation): Promise<void> {
   const key = storageKeyFor(intent.agentId, intent.operationType);
-  if (intent.operationType === 'CASH_OUT')
+  if (intent.operationType !== 'CASH_IN')
     await SecureStorage.setDurable(key, JSON.stringify(intent));
   else await SecureStorage.set(key, JSON.stringify(intent));
 }
@@ -172,7 +161,7 @@ export async function clearPendingAgentOperation(
   operationType: AgentOperationType,
 ): Promise<void> {
   const key = storageKeyFor(agentId, operationType);
-  if (operationType === 'CASH_OUT') await SecureStorage.removeDurable(key);
+  if (operationType !== 'CASH_IN') await SecureStorage.removeDurable(key);
   else await SecureStorage.remove(key);
 }
 

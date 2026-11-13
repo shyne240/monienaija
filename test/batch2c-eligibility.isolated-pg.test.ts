@@ -2177,6 +2177,98 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
   const funding = initiated.json<{ transferId: string; journalId: string; transferCode: string }>();
   const transferId = funding.transferId;
   const transferCode = funding.transferCode;
+  const recoverUrl = '/api/v1/agents/cash-to-cash/recover-funding';
+  expect(
+    (
+      await server.inject({
+        method: 'POST',
+        url: recoverUrl,
+        payload: { idempotencyKey: fundingPayload.idempotencyKey },
+      })
+    ).statusCode,
+  ).toBe(401);
+  const unavailableRecovery = await server.inject({
+    method: 'POST',
+    url: recoverUrl,
+    headers: { authorization: `Bearer ${token}` },
+    payload: { idempotencyKey: fundingPayload.idempotencyKey },
+  });
+  expect(unavailableRecovery.statusCode).toBe(503);
+  const resolver = app.get(CashOutInstitutionResolver);
+  const recoveryResolver = jest.spyOn(resolver, 'resolve');
+  const affiliation = {
+    outcome: 'RESOLVED' as const,
+    agentId,
+    institutionId: '11111111-1111-4111-8111-111111111111',
+    affiliationId: randomUUID(),
+    resolvedAt: new Date().toISOString(),
+    evidenceFingerprint: 'a'.repeat(64),
+  };
+  recoveryResolver.mockResolvedValue(affiliation);
+  const recoveredFunding = await server.inject({
+    method: 'POST',
+    url: recoverUrl,
+    headers: { authorization: `Bearer ${token}` },
+    payload: { idempotencyKey: fundingPayload.idempotencyKey },
+  });
+  expect(recoveredFunding.statusCode).toBe(200);
+  expect(recoveredFunding.json()).toMatchObject({
+    status: 'FOUND',
+    transferId,
+    journalId: funding.journalId,
+    lifecycleStatus: 'UNCLAIMED',
+    principalMinor: '100',
+  });
+  expect(recoveredFunding.json()).not.toHaveProperty('transferCode');
+  const unknownFunding = await server.inject({
+    method: 'POST',
+    url: recoverUrl,
+    headers: { authorization: `Bearer ${token}` },
+    payload: { idempotencyKey: randomUUID() },
+  });
+  expect(unknownFunding.json()).toEqual({ status: 'UNKNOWN' });
+  recoveryResolver.mockResolvedValueOnce({ ...affiliation, institutionId: randomUUID() });
+  expect(
+    (
+      await server.inject({
+        method: 'POST',
+        url: recoverUrl,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { idempotencyKey: fundingPayload.idempotencyKey },
+      })
+    ).statusCode,
+  ).toBe(409);
+  const otherAgent = randomUUID(),
+    otherCredential = randomUUID(),
+    otherSession = randomUUID(),
+    otherToken = randomBytes(32).toString('base64url');
+  await db.query(`INSERT INTO agents(id,reference,status) VALUES($1,$2,'ACTIVE')`, [
+    otherAgent,
+    otherAgent,
+  ]);
+  await db.query(
+    `INSERT INTO agent_authentication_credentials(id,agent_id,password_hash,hash_algorithm,password_version,status,password_changed_at) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE',clock_timestamp()-interval '1 minute')`,
+    [otherCredential, otherAgent],
+  );
+  await db.query(
+    `INSERT INTO agent_authentication_sessions(id,agent_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at) VALUES($1,$2,$3,$4,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp())`,
+    [
+      otherSession,
+      otherAgent,
+      otherCredential,
+      createHash('sha256').update(otherToken).digest('hex'),
+    ],
+  );
+  recoveryResolver.mockResolvedValueOnce({ ...affiliation, agentId: otherAgent });
+  const crossAgent = await server.inject({
+    method: 'POST',
+    url: recoverUrl,
+    headers: { authorization: `Bearer ${otherToken}` },
+    payload: { idempotencyKey: fundingPayload.idempotencyKey },
+  });
+  expect(crossAgent.statusCode).toBe(200);
+  expect(crossAgent.json()).toEqual({ status: 'UNKNOWN' });
+  recoveryResolver.mockRestore();
   const duplicateFunding = await server.inject({
     method: 'POST',
     url: '/api/v1/agents/cash-to-cash',
