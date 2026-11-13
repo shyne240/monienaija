@@ -1,0 +1,21 @@
+# Cash-to-Cash lifecycle: investigation and safety checkpoint
+
+This is **not lifecycle completion**. The accepted Cash-Out checkpoint is unchanged. New Cash-to-Cash funding now fails closed at the NEW idempotency path; completed initiation replays take the existing path. The placeholder has no deployment switch. Tests can inject a controlled authority, but it is not a real policy or production approval. The existing claim and expiry pathways are not made safe or disabled by this checkpoint; they require separate urgent review before production use.
+
+## Existing pathway and evidence
+
+* Initiation authorizes the agent and PIN, resolves the agent wallet and unclaimed NGN ledger account, and posts agent debit / unclaimed credit in a SERIALIZABLE transaction. Ledger posting locks the actual ledger accounts, calculates balances and rejects negative projected balances when the account does not permit them. Wallet/account provenance, institution isolation, and wallet allow-negative configuration still need authoritative verification. Limit enforcement is optional in this service. Phone matching or lookup of a sender name is not verification of a walk-in sender.
+* The existing claim pathway has code attempt accounting and a transfer row lock; it supports agent cash and customer wallet destinations. It verifies the OTP via `verifyChallenge` **before** the serializable ledger transaction. Thus a later financial failure can consume the OTP without settlement. Its desk challenge is purpose-bound, not demonstrably bound to the transfer, amount and recipient. Do not regard this as accepted authorization. The new funding stop does not prevent claims on historical transfers.
+* Expiry marks unclaimed transfers expired under row lock, without returning funds. No approved cancellation/refund accounting treatment was established in this investigation. Preserve obligations and unresolved outcomes; an expired status is not evidence funds were returned.
+* Ledger wallet boundary applies customer financial eligibility to customer wallets, but an agent-funded initiation is not a customer-wallet debit. Obligations and compliance holds need an explicit, approved policy rather than bypassing that gate.
+* Claim recovery and operations views exist; recovery does not by itself resolve ambiguous initiation, notification loss, cancellation, institutional compatibility or compliance holds. No raw OTP should be persisted.
+
+## Integration blockers and next work
+
+1. Integrate Arena 4 financial context contract at `684271e9d972edc629d629b73e66cd719d759117` in the transaction: resolve agent, actual wallet IDs and ledger accounts with SHARE locks, require RESOLVED and bind the evidence fingerprint. No default institution. This branch does not contain that implementation and has not structurally or operationally integrated it.
+2. Obtain approved sender/recipient identity policy and evidence readers, including identified walk-ins; phone alone is insufficient. Establish policy for existing obligations and holds. Coordinate Arena 1 financial commitments; do not merge unfinished work blindly.
+3. Replace the funding stop only after binding immutable operation details, identity and institution evidence and proving atomic balance/commitment behaviour. Refactor claim to bind a fresh challenge to immutable transfer details, commit failed attempts durably, and consume successful authorization in the same transaction as the journal and state transition. Preserve historical evidence and safe recovery.
+4. Define approved cancellation, expiry and reconciliation handoff without inventing journal entries or restoring uncertain funds. Add durable operation and mobile recovery across reauthentication and ambiguous outcomes.
+5. Add real PostgreSQL and HTTP concurrency, rollback, identity, institution, hold, recovery and mobile-client tests required by the mission, plus full regressions. This checkpoint has only a mocked service test of the funding stop; it does not prove transactional rollback, claim safety, or production readiness.
+
+No migration was added. Remote branch inventory at this checkpoint included `1785753600200-CashOutReconciliationHandoffs.ts`; re-scan before allocating any new migration in the mandated 0200–0299 range.
