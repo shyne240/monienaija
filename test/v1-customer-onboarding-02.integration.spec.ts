@@ -20,6 +20,11 @@ import {
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+import {
+  createDraftCustomerWithPhone,
+  type ControlledOnboardingContext,
+} from './support/controlled-onboarding';
+import { CustomerService } from '../src/customer/customer.service';
 
 function encodePbkdf2(password: string, saltStr = 'onboarding02-test-salt'): string {
   const salt = Buffer.from(saltStr);
@@ -117,6 +122,8 @@ describe('V1-CUSTOMER-ONBOARDING-02 verified-phone activation (real PostgreSQL)'
     return () => `0${8}${String(counter++).slice(0, 9)}`;
   })();
 
+  let customerService: CustomerService;
+
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('v1custactivate');
     provider = new TestNotificationProvider();
@@ -139,6 +146,7 @@ describe('V1-CUSTOMER-ONBOARDING-02 verified-phone activation (real PostgreSQL)'
     );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+    customerService = moduleRef.get(CustomerService);
   }, 180000);
 
   afterAll(async () => {
@@ -156,34 +164,41 @@ describe('V1-CUSTOMER-ONBOARDING-02 verified-phone activation (real PostgreSQL)'
 
   // ---------------------------------------------------------------- helpers
 
-  /** Full real public registration flow → DRAFT + verified primary phone. */
+  const onboardingContext = (): ControlledOnboardingContext => ({
+    app,
+    dataSource,
+    provider,
+    customerService,
+  });
+
+  /**
+   * DRAFT customer + **really verified** primary phone, through the implemented controlled
+   * onboarding flow (real OTP → real verification-token consumption).
+   *
+   * This suite's subject is the workforce verified-phone activation gate, not the registration
+   * front door: `POST /customers/registration` is closed by design (503, Arena 1 `05a38f4`), so
+   * the *setup* now uses the controlled flow. Every assertion below is unchanged, and the phone
+   * is still only verified by an OTP the production verifier accepted — nothing is fabricated.
+   */
   async function registerDraft(): Promise<{
     customerId: string;
     phone: string;
     code: string;
     verificationToken: string;
   }> {
-    const phone = nextPhone();
-    await request(app.getHttpServer())
-      .post('/api/v1/customers/registration/otp')
-      .send({ phone })
-      .expect(200);
-    const destination = `+2348${phone.slice(2)}`;
-    const sent = provider.sent.find((entry) => entry.destination === destination);
-    const code = /code is (\d{6})/.exec(sent!.message)![1]!;
-    const verify = await request(app.getHttpServer())
-      .post('/api/v1/customers/registration/otp/verify')
-      .send({ phone, code })
-      .expect(200);
-    const register = await request(app.getHttpServer())
-      .post('/api/v1/customers/registration')
-      .send({ phone, verificationToken: verify.body.verificationToken })
-      .expect(201);
+    const created = await createDraftCustomerWithPhone(onboardingContext(), { phone: nextPhone() });
+    // Activation (DRAFT → ACTIVE) additionally runs the governed financial-eligibility gate with
+    // `requireActive = false`, so the draft must already be eligible. The shared fixture seeds the
+    // governed policy plus MAC-bound evidence for the real trusted reader this suite installs.
+    // Rejection cases below keep their deliberately non-eligible fixtures.
+    await makeCustomerFinanciallyEligible(dataSource, created.customerId, kycEvidence, {
+      allowDraft: true,
+    });
     return {
-      customerId: register.body.id,
-      phone,
-      code,
-      verificationToken: verify.body.verificationToken,
+      customerId: created.customerId,
+      phone: created.phone,
+      code: created.code,
+      verificationToken: created.verificationToken,
     };
   }
 
@@ -220,9 +235,9 @@ describe('V1-CUSTOMER-ONBOARDING-02 verified-phone activation (real PostgreSQL)'
       `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
       [customerId, encodePbkdf2('correct-password-02')],
     );
-      // The governed gate now runs when a session is issued, and this helper builds the
-      // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
-      await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
+    // The governed gate now runs when a session is issued, and this helper builds the
+    // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const login = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId, password: 'correct-password-02' })

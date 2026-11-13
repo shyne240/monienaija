@@ -20,16 +20,27 @@ import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
+import { CustomerService } from '../src/customer/customer.service';
+import {
+  createDraftCustomerWithPhone,
+  type ControlledOnboardingContext,
+} from './support/controlled-onboarding';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
   truncateAllTables,
 } from './support/pg-harness';
 
+const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
+
 describe('V1-CUSTOMER-CREDENTIALS-01 (real PG) — customer first-credential lifecycle', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
   let provider: TestNotificationProvider;
+  let customerService: CustomerService;
 
   const workforceConfig: A2WorkforceConfigurationV1 = {
     enabled: true,
@@ -116,6 +127,8 @@ describe('V1-CUSTOMER-CREDENTIALS-01 (real PG) — customer first-credential lif
       .useValue(workforceConfig)
       .overrideProvider(NOTIFICATION_PROVIDER_TOKEN)
       .useValue(provider)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(kycEvidence.reader)
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -124,6 +137,7 @@ describe('V1-CUSTOMER-CREDENTIALS-01 (real PG) — customer first-credential lif
     );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+    customerService = moduleRef.get(CustomerService);
   }, 180000);
 
   afterAll(async () => {
@@ -141,25 +155,31 @@ describe('V1-CUSTOMER-CREDENTIALS-01 (real PG) — customer first-credential lif
 
   // ---------------------------------------------------------------- fixtures
 
-  /** Full real public registration flow → DRAFT + verified primary phone. */
+  const onboardingContext = (): ControlledOnboardingContext => ({
+    app,
+    dataSource,
+    provider,
+    customerService,
+  });
+
+  /**
+   * DRAFT customer + **really verified** primary phone through the implemented controlled
+   * onboarding flow (real OTP → real single-use token consumption).
+   *
+   * This suite's subject is the credential lifecycle, not the registration front door, and
+   * `POST /customers/registration` is closed by design (503, Arena 1 `05a38f4`). The setup is
+   * migrated; every assertion about credentials is unchanged, and the phone is still verified
+   * only by an OTP the production verifier accepted.
+   */
   async function registerVerifiedDraft(): Promise<{ customerId: string; phone: string }> {
-    const phone = nextPhone();
-    await request(app.getHttpServer())
-      .post('/api/v1/customers/registration/otp')
-      .send({ phone })
-      .expect(200);
-    const destination = `+2348${phone.slice(2)}`;
-    const sent = provider.sent.find((entry) => entry.destination === destination);
-    const code = /code is (\d{6})/.exec(sent!.message)![1]!;
-    const verify = await request(app.getHttpServer())
-      .post('/api/v1/customers/registration/otp/verify')
-      .send({ phone, code })
-      .expect(200);
-    const register = await request(app.getHttpServer())
-      .post('/api/v1/customers/registration')
-      .send({ phone, verificationToken: verify.body.verificationToken })
-      .expect(201);
-    return { customerId: register.body.id, phone };
+    const created = await createDraftCustomerWithPhone(onboardingContext(), { phone: nextPhone() });
+    // Activation runs the governed financial-eligibility gate with `requireActive = false`, so a
+    // DRAFT must already be eligible before it can be activated. Rejection cases (DRAFT/SUSPENDED
+    // must not receive a credential) use their own deliberately non-eligible fixtures.
+    await makeCustomerFinanciallyEligible(dataSource, created.customerId, kycEvidence, {
+      allowDraft: true,
+    });
+    return { customerId: created.customerId, phone: created.phone };
   }
 
   /** Real workforce activation (existing lifecycle; verified phone gate already in place). */
