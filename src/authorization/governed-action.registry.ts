@@ -219,12 +219,62 @@ export const NOTIFICATION_CHANGE_ACTIONS: Readonly<Record<string, GovernedAction
     ]),
   );
 
+/**
+ * ARENA 4 — institutional foundation (Phase 1).
+ *
+ * Two registered governed actions, both reusing the existing maker/checker stack
+ * (`PrivilegedActionApprovalService`) rather than a parallel approval framework:
+ *
+ *  - `INSTITUTION_AGENT_AFFILIATION_CHANGE` on resource type `AGENT`: AGENT_NETWORK_MANAGER
+ *    prepares, an independent FINANCE_CONTROLLER checks. Every affiliation write (assign,
+ *    transfer, suspend, reactivate, terminate) consumes one approval bound to the exact agent and
+ *    to the exact affiliation state the checker saw.
+ *  - `FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE` on resource type `FINANCIAL_INSTITUTION`:
+ *    OPERATIONS prepares operational approval/suspension/closure, FINANCE_CONTROLLER checks. The
+ *    licence reference is evidence only; it can never move an institution to `APPROVED`.
+ *
+ * Function codes are the catalogue codes added for this phase (see
+ * `AUTHORIZATION_FUNCTION_SEED`); they are assigned to the roles above and are never invented at
+ * request time. `approvalScope` stays `privileged:approve`, the capability the checking role
+ * carries, exactly like `LEDGER_JOURNAL_REVERSAL` and `WALLET_OWNERSHIP_RESOLUTION`.
+ */
+export const INSTITUTION_AGENT_AFFILIATION_CHANGE_ACTION: GovernedActionDefinition = {
+  action: 'INSTITUTION_AGENT_AFFILIATION_CHANGE',
+  resourceType: 'AGENT',
+  initiatingFunctionCodes: ['institution.affiliation.prepare'],
+  approvingFunctionCodes: ['institution.affiliation.approve'],
+  initiatingRoles: [AGENT_NETWORK_MANAGER],
+  approvingRoles: [FINANCE_CONTROLLER],
+  minimumApprovals: 1,
+  selfApprovalProhibited: true,
+  mfaRequired: true,
+  minimumAssurance: 'MFA',
+  approvalScope: 'privileged:approve',
+};
+
+export const FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE_ACTION: GovernedActionDefinition = {
+  action: 'FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE',
+  resourceType: 'FINANCIAL_INSTITUTION',
+  initiatingFunctionCodes: ['institution.lifecycle.prepare'],
+  approvingFunctionCodes: ['institution.lifecycle.approve'],
+  initiatingRoles: ['OPERATIONS'],
+  approvingRoles: [FINANCE_CONTROLLER],
+  minimumApprovals: 1,
+  selfApprovalProhibited: true,
+  mfaRequired: true,
+  minimumAssurance: 'MFA',
+  approvalScope: 'privileged:approve',
+};
+
 export const GOVERNED_ACTIONS: Readonly<Record<string, GovernedActionDefinition>> = {
   ...COMMERCIAL_RULE_ACTIONS,
   ...NOTIFICATION_CHANGE_ACTIONS,
   ...Object.fromEntries(Object.values(AGENT_FUNDING_ACTIONS).map((item) => [item.action, item])),
   [LEDGER_JOURNAL_REVERSAL_ACTION.action]: LEDGER_JOURNAL_REVERSAL_ACTION,
   [WALLET_OWNERSHIP_RESOLUTION_ACTION.action]: WALLET_OWNERSHIP_RESOLUTION_ACTION,
+  [INSTITUTION_AGENT_AFFILIATION_CHANGE_ACTION.action]: INSTITUTION_AGENT_AFFILIATION_CHANGE_ACTION,
+  [FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE_ACTION.action]:
+    FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE_ACTION,
 };
 
 export function governedAction(action: string): GovernedActionDefinition | undefined {

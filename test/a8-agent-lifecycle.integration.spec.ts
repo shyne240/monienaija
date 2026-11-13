@@ -606,6 +606,8 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
       '1785753600103',
       '1785753600116',
       '1785753600118',
+      '1785753600400',
+      '1785753600500',
     ]).toContain(latest[0]!.timestamp);
     expect([
       'SecureAgentApplicationAccess1785753600095',
@@ -619,6 +621,8 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
       'ConfigureTransactionNotificationEvents1785753600103',
       'WalletOwnerClassification1785753600116',
       'GovernedWalletOwnershipResolution1785753600118',
+      'CreateInstitutionFoundation1785753600400',
+      'InstitutionGovernanceExecutionIntegrity1785753600500',
     ]).toContain(latest[0]!.name);
   });
 });

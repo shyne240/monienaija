@@ -642,6 +642,74 @@ export class RoutePolicyRegistry {
     // Aggregator self routes (if later authentication is introduced) would be handled here.
     // A18 does not expose aggregator login; foundation only. See AggregatorService docs.
 
+    // ARENA 4 Phase 1 — institutional foundation. Registered governed actions
+    // INSTITUTION_AGENT_AFFILIATION_CHANGE / FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE are executed
+    // through these routes, so the guard binds each write to the same catalogue function the
+    // controller enforces (defense in depth, exactly like the agent routes below). Reads require
+    // `institution.view`; the cross-institution attribution report requires the explicit
+    // platform marker `institution.attribution.view`. Institution *scope* itself is resolved at
+    // request time inside the controller/service, never from the token.
+    if (
+      path === '/api/v1/internal/institutions' ||
+      path.startsWith('/api/v1/internal/institutions/')
+    ) {
+      const isRead = lookedUpMethod === 'GET' || lookedUpMethod === 'HEAD';
+      let requiredFunction = 'institution.view';
+      if (isRead) {
+        requiredFunction = path.startsWith('/api/v1/internal/institutions/attribution-gaps')
+          ? 'institution.attribution.view'
+          : 'institution.view';
+      } else if (/\/workforce(?:\/|$)/.test(path)) {
+        requiredFunction = 'institution.workforce.assign';
+      } else if (/\/lifecycle\/request$/.test(path)) {
+        requiredFunction = 'institution.lifecycle.prepare';
+      } else if (/\/lifecycle$/.test(path)) {
+        requiredFunction = 'institution.lifecycle.approve';
+      } else {
+        requiredFunction = 'institution.manage';
+      }
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'financial-institution',
+        policy: {
+          resourceType: 'financial-institution',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: [requiredFunction],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    if (
+      path === '/api/v1/internal/agent-affiliations' ||
+      path.startsWith('/api/v1/internal/agent-affiliations/')
+    ) {
+      const requiredFunction =
+        lookedUpMethod === 'GET' || lookedUpMethod === 'HEAD'
+          ? 'institution.attribution.view'
+          : path.endsWith('/request')
+            ? 'institution.affiliation.prepare'
+            : 'institution.affiliation.approve';
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'agent-institution-affiliation',
+        policy: {
+          resourceType: 'agent-institution-affiliation',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: [requiredFunction],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // V1-SPRINT3-AGENT-HISTORY-API-01 (ARENA 3): workforce read of an Agent's unified
     // transaction history (AdminAgentController). Same gate as the internal receiving-number
     // read below and the sibling agent investigation reads: catalogue function agent.view.

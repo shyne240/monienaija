@@ -238,9 +238,11 @@ describe('governed wallet ownership migration with historical data (real Postgre
     ds.migrations.splice(
       0,
       ds.migrations.length,
-      ...migrations.filter((m) => m.name !== 'GovernedWalletOwnershipResolution1785753600118'),
+      ...migrations.filter((m) => Number(m.name?.slice(-13)) < 1785753600118),
     );
-    expect(ds.migrations.length).toBe(migrations.length - 1);
+    expect(
+      ds.migrations.some((m) => m.name === 'GovernedWalletOwnershipResolution1785753600118'),
+    ).toBe(false);
     await ds.runMigrations({ transaction: 'all' });
     return { ds, migrations };
   }
@@ -270,7 +272,11 @@ describe('governed wallet ownership migration with historical data (real Postgre
         'SELECT * FROM wallet_accounts WHERE id=$1',
         [id],
       );
-      ds.migrations.splice(0, ds.migrations.length, ...migrations);
+      ds.migrations.splice(
+        0,
+        ds.migrations.length,
+        ...migrations.filter((m) => Number(m.name?.slice(-13)) <= 1785753600118),
+      );
       const executed = await ds.runMigrations({ transaction: 'all' });
       expect(executed.map((m) => m.name)).toEqual([
         'GovernedWalletOwnershipResolution1785753600118',
@@ -296,7 +302,11 @@ describe('governed wallet ownership migration with historical data (real Postgre
         'SELECT * FROM wallet_accounts WHERE id = ANY($1::uuid[]) ORDER BY id',
         [[first, second]],
       );
-      ds.migrations.splice(0, ds.migrations.length, ...migrations);
+      ds.migrations.splice(
+        0,
+        ds.migrations.length,
+        ...migrations.filter((m) => Number(m.name?.slice(-13)) <= 1785753600118),
+      );
       // With the pre-existing case-sensitive unique constraint, canonicalisation itself can
       // fail before 118's later explicit duplicate diagnostic. Either way the chain is atomic.
       await expect(ds.runMigrations({ transaction: 'all' })).rejects.toThrow(
@@ -324,4 +334,51 @@ describe('governed wallet ownership migration with historical data (real Postgre
       await destroyIntegrationDataSource(ds);
     }
   }, 120000);
+});
+
+describe('institution 0400 historical upgrade (real PostgreSQL)', () => {
+  it('applies 0500 after 0400 and reserves pre-existing approvals without inventing executions', async () => {
+    const db = await createEmptyIntegrationDataSource('inst0400up');
+    try {
+      await db.initialize();
+      const all = [...db.migrations];
+      db.migrations.splice(
+        0,
+        db.migrations.length,
+        ...all.filter((m) => Number(m.name?.slice(-13)) <= 1785753600400),
+      );
+      await db.runMigrations({ transaction: 'all' });
+      const historicalId = randomUUID();
+      const pendingId = randomUUID();
+      const institutionId = randomUUID();
+      await db.query(
+        `INSERT INTO financial_institutions (id,reference,code,legal_name,institution_type,created_by)
+        VALUES ($1,'HIST-001','HIST_001','Historical Institution','PARTNER','fixture')`,
+        [institutionId],
+      );
+      await db.query(
+        `INSERT INTO privileged_action_approvals
+        (id,action_type,resource_type,resource_id,action_fingerprint,approval_scope,requester_principal_id,reason,status,requested_at,expires_at)
+        VALUES ($1,'FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE','FINANCIAL_INSTITUTION',$3,$4,'fixture','maker','historical','CONSUMED',now(),now()+interval '1 day'),
+               ($2,'FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE','FINANCIAL_INSTITUTION',$3,$4,'fixture','maker','pending','REQUESTED',now(),now()+interval '1 day')`,
+        [historicalId, pendingId, institutionId, 'a'.repeat(64)],
+      );
+      db.migrations.splice(0, db.migrations.length, ...all);
+      const executed = await db.runMigrations({ transaction: 'all' });
+      expect(executed.map((m) => m.name)).toEqual([
+        'InstitutionGovernanceExecutionIntegrity1785753600500',
+      ]);
+      const rows = await db.query<
+        Array<{ approval_id: string; legacy_reserved: boolean; result_snapshot: unknown }>
+      >(
+        'SELECT approval_id, legacy_reserved, result_snapshot FROM governed_institution_lifecycle_executions ORDER BY approval_id',
+      );
+      expect(rows).toHaveLength(2);
+      expect(rows.every((r) => r.legacy_reserved && r.result_snapshot === null)).toBe(true);
+      expect(rows.map((r) => r.approval_id).sort()).toEqual([historicalId, pendingId].sort());
+      expect(await db.showMigrations()).toBe(false);
+    } finally {
+      await destroyIntegrationDataSource(db);
+    }
+  }, 180_000);
 });

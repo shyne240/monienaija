@@ -37,6 +37,9 @@ describe('governed-action registry (P0-A/P0-B)', () => {
         ...Object.keys(NOTIFICATION_CHANGE_ACTIONS),
         'LEDGER_JOURNAL_REVERSAL',
         'WALLET_OWNERSHIP_RESOLUTION',
+        // ARENA 4 Phase 1 institutional foundation.
+        'INSTITUTION_AGENT_AFFILIATION_CHANGE',
+        'FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE',
       ].sort(),
     );
     // Decision 2 explicitly keeps agent.assign_limit ungoverned and limit.modify out of this P0.
@@ -46,6 +49,8 @@ describe('governed-action registry (P0-A/P0-B)', () => {
     expect(isGovernedAction('AGENT_DEFUND')).toBe(true);
     expect(isGovernedAction('LEDGER_JOURNAL_REVERSAL')).toBe(true);
     expect(isGovernedAction('WALLET_OWNERSHIP_RESOLUTION')).toBe(true);
+    expect(isGovernedAction('INSTITUTION_AGENT_AFFILIATION_CHANGE')).toBe(true);
+    expect(isGovernedAction('FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE')).toBe(true);
   });
 
   it('requires independent MFA maker/checker roles for both notification change types', () => {
