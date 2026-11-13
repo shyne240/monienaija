@@ -51,6 +51,7 @@ import {
 } from './a7-inbound-admission-authority';
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { A7ProductPersistenceService } from './a7-product-persistence.service';
+import { A7InboundController } from './a7-inbound.controller';
 import { OperationsModule } from '../operations/operations.module';
 import { PartnerModule } from '../partner/partner.module';
 import { VirtualAccountModule } from '../virtual-account/virtual-account.module';
@@ -96,6 +97,7 @@ export const A7_PRODUCT_COMMAND_PROVIDERS: readonly Provider[] = Object.freeze([
     A7ProductPolicyModule,
     A7ProductCustomerBindingModule,
   ],
+  controllers: [A7InboundController],
   providers: A7_PRODUCT_COMMAND_PROVIDERS as Provider[],
   exports: [A7ProductCommandService, A7ProductCommandRepository, A7ProductPersistenceService],
 })

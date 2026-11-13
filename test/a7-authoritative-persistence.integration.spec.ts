@@ -1,4 +1,7 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { ValidationPipe } from '@nestjs/common';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+import request = require('supertest');
 import { isDeepStrictEqual } from 'node:util';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
@@ -136,7 +139,13 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
       .useValue(new TestNotificationProvider())
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }),
+    );
     await app.init();
+    await app.getHttpAdapter().getInstance().ready();
+    await app.listen(0, '127.0.0.1');
     service = app.get(A7ProductPersistenceService);
     const proposal = randomUUID();
     const r = { all: [], any: [] };
@@ -174,6 +183,20 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
     if (app) await app.close();
     if (db) await destroyIntegrationDataSource(db);
   });
+  const http = {
+    async inject(input: {
+      method: 'POST';
+      url: string;
+      headers: Record<string, string>;
+      payload: object;
+    }) {
+      const response = await request(app.getHttpServer())
+        .post(input.url)
+        .set(input.headers)
+        .send(input.payload);
+      return { statusCode: response.status, json: <T>() => response.body as T };
+    },
+  };
   async function subject() {
     const ledgerId = randomUUID();
     await db.query(
@@ -211,7 +234,7 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
     });
     const credentialId = randomUUID();
     const sessionId = randomUUID();
-    const token = randomUUID();
+    const token = randomBytes(32).toString('base64url');
     await db.query(
       `INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status,mobile_otp_required) VALUES($1,$2,'fixture','PBKDF2',1,'ACTIVE',false)`,
       [credentialId, p.customerId],
@@ -825,6 +848,180 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
         idempotencyKey: 'admit',
       }),
     ).rejects.toThrow('authority denied');
+  });
+
+  it('admits via authenticated HTTP, enforces ownership, and replays without posting', async () => {
+    const f = await inboundFixture();
+    const url = '/api/v1/customers/me/inbound-funding/commands';
+    const headers = { authorization: `Bearer ${f.token}`, 'idempotency-key': 'http-create' };
+    const payload = {
+      bindingId: f.bindingId,
+      virtualAccountId: f.routeId,
+      intendedAmountMinor: '100',
+      policyDecisionReference: f.decision.decisionReference,
+    };
+    const before = (
+      await db.query<Array<{ n: string }>>('SELECT count(*) n FROM ledger_journals')
+    )[0]!.n;
+    const unauth = await http.inject({
+      method: 'POST',
+      url,
+      headers: { 'idempotency-key': 'http-create' },
+      payload,
+    });
+    expect(unauth.statusCode).toBe(401);
+    const other = await subject();
+    const forbidden = await http.inject({
+      method: 'POST',
+      url,
+      headers: { ...headers, authorization: `Bearer ${other.token}` },
+      payload,
+    });
+    expect(forbidden.statusCode).toBe(409);
+    const created = await http.inject({ method: 'POST', url, headers, payload });
+    expect(created.statusCode).toBe(200);
+    const command = created.json<{ lifecycleId: string; state: string; replayed: boolean }>();
+    expect(command.state).toBe('LIFECYCLE_PENDING');
+    const replay = await http.inject({ method: 'POST', url, headers, payload });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json<{ replayed: boolean }>().replayed).toBe(true);
+    const conflict = await http.inject({
+      method: 'POST',
+      url,
+      headers,
+      payload: { ...payload, intendedAmountMinor: '101' },
+    });
+    expect(conflict.statusCode).toBe(409);
+    const admit = {
+      method: 'POST' as const,
+      url: `/api/v1/customers/me/inbound-funding/lifecycles/${command.lifecycleId}/admission`,
+      headers: { authorization: `Bearer ${f.token}`, 'idempotency-key': 'http-admit' },
+      payload: { expectedVersion: 1 },
+    };
+    const results = await Promise.all([http.inject(admit), http.inject(admit)]);
+    expect(results.map((x) => x.statusCode)).toEqual([200, 200]);
+    expect(results.map((x) => x.json<{ replayed: boolean }>().replayed).sort()).toEqual([
+      false,
+      true,
+    ]);
+    expect(results[0]?.json<{ state: string }>().state).toBe('LIFECYCLE_ADMITTED');
+    expect(
+      (await db.query<Array<{ n: string }>>('SELECT count(*) n FROM ledger_journals'))[0]!.n,
+    ).toBe(before);
+  });
+  it('enforces HTTP authority, limits and compliance with transactional rollback', async () => {
+    const f = await inboundFixture();
+    const req = {
+      method: 'POST' as const,
+      url: `/api/v1/customers/me/inbound-funding/lifecycles/${f.created.lifecycle.id}/admission`,
+      headers: { authorization: `Bearer ${f.token}`, 'idempotency-key': 'http-admit' },
+      payload: { expectedVersion: 1 },
+    };
+    await db.query('UPDATE test_a7_inbound_authority SET held=true WHERE id=$1', [f.evidenceId]);
+    expect((await http.inject(req)).statusCode).toBe(409);
+    await db.query(
+      'UPDATE test_a7_inbound_authority SET held=false,used_minor=max_minor WHERE id=$1',
+      [f.evidenceId],
+    );
+    expect((await http.inject(req)).statusCode).toBe(409);
+    await db.query('DELETE FROM test_a7_inbound_authority WHERE id=$1', [f.evidenceId]);
+    expect((await http.inject(req)).statusCode).toBe(409);
+    expect((await service.findLifecycle(f.created.lifecycle.lifecycle_reference))?.version).toBe(1);
+    const transitions = await db.query<Array<{ n: string }>>(
+      'SELECT count(*) n FROM a7_product_lifecycle_transitions WHERE lifecycle_id=$1',
+      [f.created.lifecycle.id],
+    );
+    expect(transitions[0]?.n).toBe('0');
+  });
+
+  it('rejects missing or mismatched HTTP policy and stale sources', async () => {
+    const f = await inboundFixture();
+    const url = '/api/v1/customers/me/inbound-funding/commands';
+    const headers = { authorization: `Bearer ${f.token}`, 'idempotency-key': 'bad-policy-http' };
+    const payload = {
+      bindingId: f.bindingId,
+      virtualAccountId: f.routeId,
+      intendedAmountMinor: '100',
+      policyDecisionReference: f.decision.decisionReference,
+    };
+    expect(
+      (
+        await http.inject({
+          method: 'POST',
+          url,
+          headers,
+          payload: { ...payload, policyDecisionReference: 'missing' },
+        })
+      ).statusCode,
+    ).toBe(409);
+    expect(
+      (
+        await http.inject({
+          method: 'POST',
+          url,
+          headers,
+          payload: { ...payload, policyDecisionReference: '' },
+        })
+      ).statusCode,
+    ).toBe(400);
+    const made = await http.inject({
+      method: 'POST',
+      url,
+      headers: { ...headers, 'idempotency-key': 'bad-amount-http' },
+      payload: { ...payload, intendedAmountMinor: '101' },
+    });
+    expect(made.statusCode).toBe(200);
+    const id = made.json<{ lifecycleId: string }>().lifecycleId;
+    const req = {
+      method: 'POST' as const,
+      url: `/api/v1/customers/me/inbound-funding/lifecycles/${id}/admission`,
+      headers: { authorization: `Bearer ${f.token}`, 'idempotency-key': 'admit' },
+      payload: { expectedVersion: 1 },
+    };
+    expect((await http.inject(req)).statusCode).toBe(409);
+    await db.query(
+      `UPDATE test_a7_source_evidence SET source_version=source_version+1 WHERE customer_id=$1 AND source_class='ELIGIBILITY'`,
+      [f.customerId],
+    );
+    const stale = {
+      ...req,
+      url: `/api/v1/customers/me/inbound-funding/lifecycles/${f.created.lifecycle.id}/admission`,
+    };
+    expect((await http.inject(stale)).statusCode).toBe(409);
+  });
+  it('admits at most once under different concurrent HTTP idempotency keys', async () => {
+    const f = await inboundFixture();
+    const url = `/api/v1/customers/me/inbound-funding/lifecycles/${f.created.lifecycle.id}/admission`;
+    const req = {
+      method: 'POST' as const,
+      url,
+      headers: { authorization: `Bearer ${f.token}`, 'idempotency-key': 'one' },
+      payload: { expectedVersion: 1 },
+    };
+    const results = await Promise.all([
+      http.inject(req),
+      http.inject({ ...req, headers: { ...req.headers, 'idempotency-key': 'two' } }),
+    ]);
+    expect(results.map((x) => x.statusCode).sort()).toEqual([200, 409]);
+  });
+  it('serializes authenticated HTTP admission and cancellation', async () => {
+    const f = await inboundFixture();
+    const url = `/api/v1/customers/me/inbound-funding/lifecycles/${f.created.lifecycle.id}`;
+    const base = {
+      method: 'POST' as const,
+      headers: { authorization: `Bearer ${f.token}`, 'idempotency-key': 'http-race' },
+      payload: { expectedVersion: 1 },
+    };
+    const result = await Promise.all([
+      http.inject({ ...base, url: `${url}/admission` }),
+      http.inject({ ...base, url: `${url}/cancellation` }),
+    ]);
+    expect(result.map((x) => x.statusCode).sort()).toEqual([200, 409]);
+    const transitions = await db.query<Array<{ n: string }>>(
+      'SELECT count(*) n FROM a7_product_lifecycle_transitions WHERE lifecycle_id=$1',
+      [f.created.lifecycle.id],
+    );
+    expect(transitions[0]?.n).toBe('1');
   });
   it('rejects a retired inbound policy profile', async () => {
     const f = await inboundFixture();
