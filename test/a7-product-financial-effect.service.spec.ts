@@ -69,8 +69,6 @@ import {
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A7T07_PRODUCT_LIFECYCLE_MISMATCH,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A7T07_PRODUCT_LIFECYCLE_MISSING,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_RECOVERY_REFERENCE_MISSING,
-  A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A6T08_SETTLEMENT_REJECTED,
-  A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A6T08_SUSPENSE_REJECTED,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OUTCOME_FAILED,
   A7_PRODUCT_FINANCIAL_EFFECT_METRIC_ADMITTED,
   A7_PRODUCT_FINANCIAL_EFFECT_METRIC_SETTLEMENT_POSTED,
@@ -208,6 +206,7 @@ class FakeRepository {
     maxAmountMinor: null,
   };
   public a6ExternalOperation: A7ProductFinancialEffectA6ExternalOperationView | null = {
+    version: 1,
     externalOperationId: 'a6-external-op-id-1',
     externalOperationReference: A6_EXTERNAL_OPERATION_REFERENCE,
     partnerKey: 'NIBSS_NIP',
@@ -1357,30 +1356,24 @@ describe('A7T08 A7 product financial effect service', () => {
     }
   });
 
-  it('rejects SETTLE submission when the A6T08 settlement is rejected', async () => {
+  it('propagates settlement rejection for transaction rollback', async () => {
     const fakeRepo = new FakeRepository();
     fakeRepo.a6T08SettleRejection = true;
     const service = serviceWithFakeRepository(fakeRepo);
-    const result = await service.postProductFinancialEffect(makeInputWithCanonicalHash());
-    expect(result.valid).toBe(false);
-    if (!result.valid) {
-      expect(result.failure.code).toBe(
-        A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A6T08_SETTLEMENT_REJECTED,
-      );
-    }
+    await expect(
+      service.postProductFinancialEffect(makeInputWithCanonicalHash()),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('rejects SUSPENSE submission when the A6T08 suspense is rejected', async () => {
+  it('propagates suspense rejection for transaction rollback', async () => {
     const fakeRepo = new FakeRepository();
     fakeRepo.a6T08RecordSuspenseRejection = true;
     const service = serviceWithFakeRepository(fakeRepo);
-    const result = await service.postProductFinancialEffect(
-      makeInputWithCanonicalHash({ outcome: 'OUTCOME_SUSPENSE' }),
-    );
-    expect(result.valid).toBe(false);
-    if (!result.valid) {
-      expect(result.failure.code).toBe(A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A6T08_SUSPENSE_REJECTED);
-    }
+    await expect(
+      service.postProductFinancialEffect(
+        makeInputWithCanonicalHash({ outcome: 'OUTCOME_SUSPENSE' }),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('posts a verified product financial effect through A6T08 SETTLE on a fresh request', async () => {

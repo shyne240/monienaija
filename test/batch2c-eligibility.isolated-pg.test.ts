@@ -546,6 +546,23 @@ test('ledger posting gates existing customer wallets and separates agent and rev
     ]),
   ).toEqual([{ count: 1 }]);
   const operation = await app.get(ExternalOperationService).create(validCommand);
+  const { A7ProductFinancialEffectRepository } = await import(
+    '../src/policy/a7-product-financial-effect.repository'
+  );
+  const resolved = await app
+    .get(A7ProductFinancialEffectRepository)
+    .getConsumerPorts()
+    .a6ExternalOperationLookup(operation.externalOperationReference);
+  expect(resolved).toMatchObject({
+    externalOperationId: operation.externalOperationId,
+    version: operation.version,
+  });
+  expect(
+    await app
+      .get(A7ProductFinancialEffectRepository)
+      .getConsumerPorts()
+      .a6ExternalOperationLookup(`external-operation:v1:${'0'.repeat(64)}`),
+  ).toBeNull();
   await expect(
     app.get(ExternalOperationService).create({
       ...validCommand,

@@ -9,7 +9,7 @@ import { KycTierPolicyService } from '../src/kyc-verification/kyc-tier-policy.se
 import { createHash, randomUUID } from 'node:crypto';
 import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
-import type { DataSource, EntityManager } from 'typeorm';
+import type { DataSource } from 'typeorm';
 
 import { LedgerAccount } from '../src/ledger/ledger-account.entity';
 import { LedgerJournal } from '../src/ledger/ledger-journal.entity';
@@ -71,7 +71,6 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
   let metrics: MetricsService;
   let externalSettlement: ExternalSettlementService;
   let a7Service: A7ProductFinancialEffectService;
-  let originalTransaction: (isolationOrRunner?: any, runner?: any) => Promise<any>;
 
   let customerLedgerAccountId: string;
   let settlementAssetLedgerAccountId: string;
@@ -85,6 +84,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
   let emergencyStop = false;
   let bypassSettlementLookup = false;
   let failA7Outbox = false;
+  let operationVersion = 1;
   let overrideVerificationHash: string | null = null;
   let providerVerificationState: 'VERIFIED_REJECTED' | 'UNKNOWN' | 'UNAVAILABLE' =
     'VERIFIED_REJECTED';
@@ -123,7 +123,6 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a7financial');
-    originalTransaction = dataSource.transaction;
 
     // Test-only evidence adapter; the production financial eligibility and wallet
     // boundaries and ledger are real. The adapter cannot be selected in production.
@@ -230,6 +229,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
           }),
       a6ExternalOperationLookup: (externalOperationReference) =>
         Promise.resolve({
+          version: operationVersion,
           externalOperationId,
           externalOperationReference,
           partnerKey: 'NIBSS_NIP',
@@ -366,7 +366,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
         if (bypassSettlementLookup) {
           return null;
         }
-        const mgr = activeManager || dataSource.manager;
+        const mgr = dataSource.manager;
         const refRow = await mgr.getRepository(ExternalOperationReference).findOne({
           where: { referenceValue: ref },
         });
@@ -374,15 +374,15 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
         return externalSettlement.getByOperation(refRow.externalOperationId);
       },
       a6T08SuspenseLookup: async (ref) => {
-        const mgr = activeManager || dataSource.manager;
+        const mgr = dataSource.manager;
         const refRow = await mgr.getRepository(ExternalOperationReference).findOne({
           where: { referenceValue: ref },
         });
         if (!refRow) return null;
         return externalSettlement.getSuspenseForOperation(refRow.externalOperationId);
       },
-      a5LedgerJournalLookup: (journalId) => {
-        const mgr = activeManager || dataSource.manager;
+      a5LedgerJournalLookup: (journalId, manager) => {
+        const mgr = manager ?? dataSource.manager;
         return Promise.all([
           mgr.getRepository(LedgerJournal).findOne({ where: { id: journalId } }),
           mgr
@@ -445,12 +445,10 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
             : { enabled: true, reason: null, disabledAt: null },
         ),
       a5LedgerInvariantCheck: () => Promise.resolve({ satisfied: true, reason: null }),
-      a6T08SettleVerifiedOutcome: (cmd) => {
-        return externalSettlement.settleVerifiedOutcome(cmd).then((res) => {
-          return res;
-        });
-      },
-      a6T08RecordSuspense: (cmd) => externalSettlement.recordSuspense(cmd),
+      a6T08SettleVerifiedOutcome: (cmd, manager) =>
+        externalSettlement.settleVerifiedOutcomeInTransaction(manager, cmd),
+      a6T08RecordSuspense: (cmd, manager) =>
+        externalSettlement.recordSuspenseInTransaction(manager, cmd),
       a6T08RecordCompensatingEntry: (cmd, manager) =>
         externalSettlement.recordCompensatingEntryInTransaction(manager, cmd),
       a5LedgerPostJournal: (cmd) => ledger.postJournal(cmd),
@@ -493,12 +491,11 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
     }
   }, 60000);
 
-  let activeManager: EntityManager | null = null;
-
   beforeEach(async () => {
     await truncateAllTables(dataSource);
     emergencyStop = false;
     failA7Outbox = false;
+    operationVersion = 1;
     providerVerificationState = 'VERIFIED_REJECTED';
     overrideVerificationHash = null;
     snapshots.clear();
@@ -529,30 +526,6 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
     await dataSource.query('INSERT INTO kyc_tier_policy_head(singleton,version) VALUES(true,1)');
     partnerEnv.A6_PARTNER_ENABLED = 'false';
     externalOperationId = randomUUID();
-
-    // Intercept transaction boundaries so nested transactions opened in ExternalSettlementService
-    // run seamlessly on the exact same PostgreSQL connection/session as the parent A7 Service
-    activeManager = null;
-    dataSource.transaction = function (this: void, isolationOrRunner: any, runner?: any) {
-      if (activeManager) {
-        const actualRunner = typeof isolationOrRunner === 'function' ? isolationOrRunner : runner;
-        return actualRunner(activeManager);
-      }
-      const originalRunner = typeof isolationOrRunner === 'function' ? isolationOrRunner : runner;
-      const wrappedRunner = async (m: EntityManager) => {
-        activeManager = m;
-        try {
-          return await originalRunner(m);
-        } finally {
-          activeManager = null;
-        }
-      };
-      if (typeof isolationOrRunner === 'function') {
-        return originalTransaction.call(this, wrappedRunner);
-      } else {
-        return originalTransaction.call(this, isolationOrRunner, wrappedRunner);
-      }
-    };
 
     // Seed customer funds liability account
     const suffix = randomUUID().slice(0, 8);
@@ -600,10 +573,6 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       ],
     });
   }, 60000);
-
-  afterEach(() => {
-    dataSource.transaction = originalTransaction;
-  });
 
   // ---------------------------------------------------------------------------------------
   // Helpers
@@ -714,7 +683,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
                $7, '1000', 'NGN', 'CUSTOMER_FUNDS',
                'external.partner.operation.v1', $8, $9,
                $10, $11, 'request-1', 'correlation-1', 'trace-1',
-               $12, 1, 3, 1)`,
+               $12, 1, 3, $13)`,
       [
         opId,
         withdrawalId,
@@ -728,6 +697,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
         providerIdempotencyKey,
         sha256(`request-a7-${opId.slice(0, 8)}`),
         lifecycleState,
+        operationVersion,
       ],
     );
 
@@ -868,7 +838,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       await seedExternalOperation();
       const envelope = buildEnvelope('OUTCOME_VERIFIED');
       const failure = jest
-        .spyOn(externalSettlement, 'settleVerifiedOutcome')
+        .spyOn(externalSettlement, 'settleVerifiedOutcomeInTransaction')
         .mockRejectedValue(new ServiceUnavailableException('Trusted KYC evidence is unavailable'));
       try {
         for (let i = 0; i < 2; i++) {
@@ -910,7 +880,6 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
           traceId: 'uncommitted',
         },
       };
-      dataSource.transaction = originalTransaction;
       await dataSource.query(`UPDATE customers SET status='SUSPENDED' WHERE id=$1`, [
         op.customerId,
       ]);
@@ -943,7 +912,6 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
           traceId: 'concurrent-settlement',
         },
       };
-      dataSource.transaction = originalTransaction;
       const outcomes = await Promise.allSettled([
         externalSettlement.settleVerifiedOutcome(cmd),
         externalSettlement.settleVerifiedOutcome(cmd),
@@ -962,6 +930,14 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
           replay.settlement.journalId,
         ]),
       ).toEqual([{ n: 1 }]);
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
+    });
+
+    it('uses the persisted operation version for settlement', async () => {
+      operationVersion = 2;
+      await seedExternalOperation();
+      const result = await a7Service.postProductFinancialEffect(buildEnvelope('OUTCOME_VERIFIED'));
+      expect(result.valid).toBe(true);
       expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
     });
 
@@ -1237,8 +1213,6 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
           traceId: 'concurrent',
         },
       };
-      // Use separate real DB transactions, not the legacy nested-transaction test shim.
-      dataSource.transaction = originalTransaction;
       const outcomes = await Promise.allSettled([
         externalSettlement.recordCompensatingEntry(command),
         externalSettlement.recordCompensatingEntry(command),
@@ -1254,6 +1228,57 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       ).toEqual([{ n: 1 }]);
       expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
       expect((await externalSettlement.getByOperation(op.opId))?.status).toBe('REVERSED');
+    });
+
+    it('keeps exhausted but uncertain outcomes for review until rejection is confirmed', async () => {
+      const op = await seedExternalOperation();
+      const suspense = await a7Service.postProductFinancialEffect(
+        buildEnvelope(
+          'OUTCOME_SUSPENSE',
+          op.refValue,
+          op.providerIdempotencyKey,
+          op.customerId,
+          op.walletId,
+          op.bindingId,
+        ),
+      );
+      const settled = await a7Service.postProductFinancialEffect(
+        buildEnvelope(
+          'OUTCOME_VERIFIED',
+          op.refValue,
+          op.providerIdempotencyKey,
+          op.customerId,
+          op.walletId,
+          op.bindingId,
+        ),
+      );
+      if (!suspense.valid || !settled.valid) throw new Error('fixture not admitted');
+      await dataSource.query(
+        `UPDATE external_operations SET lifecycle_state='FAILED', failure_code='RETRY_EXHAUSTED', failure_message='Exhausted for test', attempt_count=max_attempts WHERE id=$1`,
+        [op.opId],
+      );
+      const command = {
+        externalOperationId: op.opId,
+        settlementId: settled.record.a6T08Settlement!.settlementId,
+        suspenseEntryId: suspense.record.a6T08Suspense!.suspenseId,
+        expectedVersion: 1,
+        requestContext: {
+          requestId: 'exhausted',
+          correlationId: 'exhausted',
+          traceId: 'exhausted',
+        },
+      };
+      providerVerificationState = 'UNKNOWN';
+      await expect(externalSettlement.recordCompensatingEntry(command)).rejects.toMatchObject({
+        code: 'COMPENSATING_NOT_PERMITTED',
+      });
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
+      expect((await externalSettlement.getByOperation(op.opId))?.status).toBe('POSTED');
+      providerVerificationState = 'VERIFIED_REJECTED';
+      const recovered = await externalSettlement.recordCompensatingEntry(command);
+      expect(recovered.settlement.status).toBe('REVERSED');
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
+      expect((await externalSettlement.recordCompensatingEntry(command)).replayed).toBe(true);
     });
 
     it('rejects double reversals of the same settlement', async () => {
@@ -1428,28 +1453,33 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
   // 12. ATOMIC ROLLBACK
   // =======================================================================================
   describe('Atomic Rollback Guarantee', () => {
-    it('rolls back the whole product financial effect transaction if any error is thrown', async () => {
-      await seedExternalOperation();
+    it('rolls settlement and A7 records back after an injected outbox interruption and retries', async () => {
+      const op = await seedExternalOperation();
       const envelope = buildEnvelope('OUTCOME_VERIFIED');
-      const initialJournals: Array<{ n: string }> = await dataSource.query(
-        'SELECT count(*)::text as n FROM ledger_journals',
+      const initialJournals = await dataSource.query(
+        'SELECT count(*)::int AS n FROM ledger_journals',
       );
-
-      await expect(
-        dataSource.transaction('SERIALIZABLE', async (manager) => {
-          // Manual admit
-          await a7Service.postProductFinancialEffect(envelope);
-          throw new Error('Forced rollback');
-        }),
-      ).rejects.toThrow('Forced rollback');
-
-      // Assert zero change or dirty state remains
-      const currentJournals: Array<{ n: string }> = await dataSource.query(
-        'SELECT count(*)::text as n FROM ledger_journals',
-      );
-      expect(firstRow(currentJournals, 'current journals').n).toBe(
-        firstRow(initialJournals, 'initial journals').n,
-      );
+      failA7Outbox = true;
+      try {
+        await expect(a7Service.postProductFinancialEffect(envelope)).rejects.toThrow(
+          'injected A7 outbox interruption',
+        );
+        expect(await dataSource.query('SELECT count(*)::int AS n FROM ledger_journals')).toEqual(
+          initialJournals,
+        );
+        expect(await externalSettlement.getByOperation(op.opId)).toBeNull();
+        expect(
+          await dataSource.query('SELECT id FROM idempotency_records WHERE idempotency_key=$1', [
+            envelope.idempotencyKey,
+          ]),
+        ).toHaveLength(0);
+        expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
+      } finally {
+        failA7Outbox = false;
+      }
+      const recovered = await a7Service.postProductFinancialEffect(envelope);
+      expect(recovered.valid).toBe(true);
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
     });
   });
 });

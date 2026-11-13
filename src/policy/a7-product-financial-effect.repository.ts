@@ -266,9 +266,10 @@ export class A7ProductFinancialEffectRepository {
       a5LedgerEnabled: () => this.readA5LedgerEnabled(),
       a5LedgerInvariantCheck: (currency, accountingUnit) =>
         this.checkA5LedgerInvariant(currency, accountingUnit),
-      a6T08SettleVerifiedOutcome: (command) =>
-        this.externalSettlementService.settleVerifiedOutcome(command),
-      a6T08RecordSuspense: (command) => this.externalSettlementService.recordSuspense(command),
+      a6T08SettleVerifiedOutcome: (command, manager) =>
+        this.externalSettlementService.settleVerifiedOutcomeInTransaction(manager, command),
+      a6T08RecordSuspense: (command, manager) =>
+        this.externalSettlementService.recordSuspenseInTransaction(manager, command),
       a6T08RecordCompensatingEntry: (command, manager) =>
         this.externalSettlementService.recordCompensatingEntryInTransaction(manager, command),
       a5LedgerPostJournal: (command) => this.ledgerService.postJournal(command),
@@ -396,11 +397,12 @@ export class A7ProductFinancialEffectRepository {
     }
     let view: ExternalOperationView;
     try {
-      view = await this.externalOperationService.get(normalized);
+      view = await this.externalOperationService.getByReference(normalized);
     } catch {
       return null;
     }
     return {
+      version: view.version,
       externalOperationId: view.externalOperationId,
       externalOperationReference: view.externalOperationReference,
       partnerKey: view.partnerKey,
@@ -430,7 +432,7 @@ export class A7ProductFinancialEffectRepository {
     }
     let view: ExternalOperationView;
     try {
-      view = await this.externalOperationService.get(normalized);
+      view = await this.externalOperationService.getByReference(normalized);
     } catch {
       return null;
     }
@@ -466,7 +468,7 @@ export class A7ProductFinancialEffectRepository {
     }
     let view: ExternalOperationView;
     try {
-      view = await this.externalOperationService.get(normalized);
+      view = await this.externalOperationService.getByReference(normalized);
     } catch {
       return {
         state: 'UNAVAILABLE',
@@ -691,7 +693,7 @@ export class A7ProductFinancialEffectRepository {
     try {
       let view: ExternalOperationView;
       try {
-        view = await this.externalOperationService.get(normalized);
+        view = await this.externalOperationService.getByReference(normalized);
       } catch {
         return null;
       }
@@ -711,7 +713,7 @@ export class A7ProductFinancialEffectRepository {
     try {
       let view: ExternalOperationView;
       try {
-        view = await this.externalOperationService.get(normalized);
+        view = await this.externalOperationService.getByReference(normalized);
       } catch {
         return null;
       }

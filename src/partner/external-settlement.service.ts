@@ -163,6 +163,21 @@ export class ExternalSettlementService {
     );
   }
 
+  /** Compose settlement with the caller's financial execution and audit transaction. */
+  async settleVerifiedOutcomeInTransaction(
+    manager: EntityManager,
+    command: SettleVerifiedOutcomeCommand,
+  ): Promise<ExternalSettlementResult> {
+    return this.settleWithinTransaction(manager, this.normalizeSettleCommand(command));
+  }
+
+  async recordSuspenseInTransaction(
+    manager: EntityManager,
+    command: SuspenseVerifiedOutcomeCommand,
+  ): Promise<ExternalSuspenseEntryView> {
+    return this.recordSuspenseWithinTransaction(manager, this.normalizeSuspenseCommand(command));
+  }
+
   /** Compose compensation with the caller's financial execution and audit transaction. */
   async recordCompensatingEntryInTransaction(
     manager: EntityManager,

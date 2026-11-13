@@ -126,6 +126,23 @@ export class ExternalOperationService {
     );
   }
 
+  /** Resolve the opaque, deterministic operation reference against persisted operations.
+   * A reference is correlation only; it never confers financial authority. */
+  async getByReference(reference: string): Promise<ExternalOperationView> {
+    const normalized = reference.trim();
+    if (!/^external-operation:v1:[a-f0-9]{64}$/.test(normalized))
+      throw new NotFoundException('External operation reference was not found');
+    const matches = await this.dataSource.query<Array<{ id: string }>>(
+      `SELECT id FROM external_operations WHERE
+       'external-operation:v1:' || encode(sha256(convert_to('NIBSS_NIP:' || id::text || ':external-operation','UTF8')),'hex') = $1
+       LIMIT 2`,
+      [normalized],
+    );
+    if (matches.length !== 1)
+      throw new NotFoundException('External operation reference was not found');
+    return this.get(matches[0]!.id);
+  }
+
   async recordProviderReference(
     command: RecordProviderReferenceCommand,
   ): Promise<RecordProviderReferenceResult> {
