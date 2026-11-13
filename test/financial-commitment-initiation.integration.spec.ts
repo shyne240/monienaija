@@ -45,6 +45,14 @@ import { LimitUsageService } from '../src/limit-catalog/limit-usage.service';
 import { WalletFinancialBoundaryService } from '../src/wallet/wallet-financial-boundary.service';
 import { WithdrawalService } from '../src/withdrawal/withdrawal.service';
 import { CustomerBeneficiaryService } from '../src/customer-beneficiary/customer-beneficiary.service';
+import { InboundFundingService } from '../src/virtual-account/inbound-funding.service';
+import {
+  UnavailableInboundFundingVerifier,
+  type InboundVerification,
+} from '../src/virtual-account/inbound-funding-verifier';
+import { UnavailableInboundInstitutionAuthority } from '../src/virtual-account/inbound-institution-authority';
+import { UnavailableInboundSuspensePolicy } from '../src/virtual-account/inbound-suspense-policy';
+import { VirtualAccountService } from '../src/virtual-account/virtual-account.service';
 import {
   CustomerBeneficiaryStatus,
   CustomerBeneficiaryType,
@@ -62,6 +70,8 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
   let repository: FinancialCommitmentRepository;
   let ledger: LedgerService;
   let settlement: ExternalSettlementService;
+  let inbound: InboundFundingService;
+  const inboundEvidence = new Map<string, InboundVerification>();
   let verificationState:
     | 'VERIFIED_SETTLED'
     | 'VERIFIED_REJECTED'
@@ -133,6 +143,20 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
       app.get(OutboxService),
       verifier,
       app.get(LimitUsageService),
+    );
+    inbound = new InboundFundingService(
+      db,
+      ledger,
+      app.get(WalletFinancialBoundaryService),
+      app.get(SettlementAccountService),
+      app.get(AuditService),
+      app.get(OutboxService),
+      {
+        verify: ({ providerReference }) =>
+          Promise.resolve(inboundEvidence.get(providerReference) ?? { state: 'UNKNOWN' }),
+      },
+      { authorize: () => Promise.resolve('AUTHORIZED') },
+      { authorize: () => Promise.resolve('AUTHORIZED') },
     );
     service = new FinancialCommitmentService(
       db,
@@ -378,6 +402,278 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
       requestContext: context,
     };
   }
+
+  async function incoming(s: { walletAccountId: string }, reference = randomUUID()) {
+    const accountNumber = (BigInt(`0x${randomUUID().replace(/-/g, '')}`) % 10000000000n)
+      .toString()
+      .padStart(10, '0');
+    const va = await app.get(VirtualAccountService).assign({
+      walletId: s.walletAccountId,
+      bankCode: 'FCBANK',
+      accountNumber,
+      accountName: 'Test account',
+      provider: 'TESTPROVIDER',
+    });
+    inboundEvidence.set(reference, {
+      state: 'RECEIVED',
+      providerKey: 'TESTPROVIDER',
+      providerReference: reference,
+      bankCode: 'FCBANK',
+      accountNumber,
+      amountMinor: '700',
+      currency: 'NGN',
+      observedAt: new Date().toISOString(),
+    });
+    return {
+      va,
+      reference,
+      request: {
+        providerKey: 'TESTPROVIDER',
+        providerReference: reference,
+        correlationId: `inbound-${reference}`,
+      },
+    };
+  }
+
+  it('credits verified inbound funds exactly once with debit asset and credit recipient wallet', async () => {
+    const s = await subject();
+    const receipt = await incoming(s);
+    const assetBefore = BigInt(await balance(s.assetId));
+    const results = await Promise.all([
+      inbound.receive(receipt.request),
+      inbound.receive(receipt.request),
+    ]);
+    expect(results.map((r) => r.status)).toEqual(['CREDITED', 'CREDITED']);
+    expect(results.filter((r) => !r.replayed)).toHaveLength(1);
+    expect(await balance(s.sourceId)).toBe('1700');
+    expect(BigInt(await balance(s.assetId))).toBe(assetBefore + 700n);
+    const record = (
+      await db.query<Array<{ id: string; journal_id: string; status: string }>>(
+        'SELECT id,journal_id,status FROM inbound_funding_receipts WHERE provider_reference_hash=$1',
+        [createHash('sha256').update(receipt.reference).digest('hex')],
+      )
+    )[0]!;
+    expect(record.status).toBe('CREDITED');
+    await expect(
+      db.query(
+        `INSERT INTO ledger_journals
+      (id,idempotency_key,request_hash,currency,accounting_unit,status,reversal_of_journal_id,total_minor,posted_at)
+      VALUES ($1,$2,$3,'NGN','CUSTOMER_FUNDS','POSTED',$4,700,clock_timestamp())`,
+        [randomUUID(), randomUUID(), 'a'.repeat(64), record.journal_id],
+      ),
+    ).rejects.toThrow('Inbound funding reversal requires a governed receipt recovery');
+    expect(await balance(s.sourceId)).toBe('1700');
+    const journal = await ledger.getJournal(record.journal_id);
+    expect(journal.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          accountId: s.assetId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: '700',
+        }),
+        expect.objectContaining({
+          accountId: s.sourceId,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: '700',
+        }),
+      ]),
+    );
+    expect(
+      await db.query('SELECT id FROM financial_commitments WHERE withdrawal_id=$1', [randomUUID()]),
+    ).toHaveLength(0);
+  });
+
+  it('routes uncertain or conflicting inbound evidence to review without duplicate credit', async () => {
+    const s = await subject();
+    const item = await incoming(s);
+    const original = inboundEvidence.get(item.reference)!;
+    inboundEvidence.set(item.reference, { state: 'UNKNOWN' });
+    expect(await inbound.receive(item.request)).toMatchObject({
+      status: 'REVIEW',
+      reason: 'OUTCOME_UNKNOWN',
+    });
+    expect(await balance(s.sourceId)).toBe('1000');
+    inboundEvidence.set(item.reference, original);
+    expect(await inbound.receive(item.request)).toMatchObject({
+      status: 'CREDITED',
+      replayed: false,
+    });
+    if (original.state !== 'RECEIVED') throw new Error('test evidence missing');
+    inboundEvidence.set(item.reference, { ...original, amountMinor: '701' });
+    expect(await inbound.receive(item.request)).toMatchObject({
+      status: 'REVIEW',
+      reason: 'EVIDENCE_CONFLICT',
+    });
+    expect(await balance(s.sourceId)).toBe('1700');
+    expect(
+      await db.query('SELECT id FROM inbound_funding_reviews WHERE provider_reference_hash=$1', [
+        createHash('sha256').update(item.reference).digest('hex'),
+      ]),
+    ).toHaveLength(2);
+  });
+
+  it('books received funds to suspense when the customer is on compliance hold', async () => {
+    const s = await subject();
+    const item = await incoming(s);
+    const suspense = (
+      await db.query<Array<{ id: string }>>(
+        `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SYSTEM_SUSPENSE-NGN'`,
+      )
+    )[0]!.id;
+    const before = BigInt(await balance(suspense));
+    await db.query(
+      `INSERT INTO kyc_tier_manual_holds(customer_id,actor,reason) VALUES($1,'test','MANUAL_REVIEW')`,
+      [s.customerId],
+    );
+    const result = await inbound.receive(item.request);
+    expect(result.status).toBe('SUSPENSE');
+    expect(await balance(s.sourceId)).toBe('1000');
+    expect(BigInt(await balance(suspense))).toBe(before + 700n);
+    await db.query('DELETE FROM kyc_tier_manual_holds WHERE customer_id=$1', [s.customerId]);
+    expect(await inbound.receive(item.request)).toMatchObject({
+      status: 'SUSPENSE',
+      replayed: true,
+    });
+    expect(await balance(s.sourceId)).toBe('1000');
+  });
+
+  it('fails closed with the default unavailable provider verifier', async () => {
+    const s = await subject();
+    const item = await incoming(s);
+    const noVerifier = new InboundFundingService(
+      db,
+      ledger,
+      app.get(WalletFinancialBoundaryService),
+      app.get(SettlementAccountService),
+      app.get(AuditService),
+      app.get(OutboxService),
+      new UnavailableInboundFundingVerifier(),
+      { authorize: () => Promise.resolve('AUTHORIZED') },
+      { authorize: () => Promise.resolve('AUTHORIZED') },
+    );
+    await expect(noVerifier.receive(item.request)).rejects.toThrow('verification is unavailable');
+    expect(await balance(s.sourceId)).toBe('1000');
+    expect(
+      await db.query('SELECT id FROM inbound_funding_receipts WHERE provider_reference_hash=$1', [
+        createHash('sha256').update(item.reference).digest('hex'),
+      ]),
+    ).toHaveLength(0);
+  });
+
+  it('fails closed without institutional authority even for confirmed receipt evidence', async () => {
+    const s = await subject();
+    const item = await incoming(s);
+    const noInstitution = new InboundFundingService(
+      db,
+      ledger,
+      app.get(WalletFinancialBoundaryService),
+      app.get(SettlementAccountService),
+      app.get(AuditService),
+      app.get(OutboxService),
+      { verify: () => Promise.resolve(inboundEvidence.get(item.reference)!) },
+      new UnavailableInboundInstitutionAuthority(),
+      { authorize: () => Promise.resolve('AUTHORIZED') },
+    );
+    await expect(noInstitution.receive(item.request)).rejects.toThrow(
+      'institutional authority is unavailable',
+    );
+    expect(await balance(s.sourceId)).toBe('1000');
+    expect(
+      await db.query('SELECT id FROM inbound_funding_receipts WHERE provider_reference_hash=$1', [
+        createHash('sha256').update(item.reference).digest('hex'),
+      ]),
+    ).toHaveLength(0);
+  });
+
+  it('does not book uncreditable funds without an approved suspense policy', async () => {
+    const s = await subject();
+    const item = await incoming(s);
+    await db.query(
+      `INSERT INTO kyc_tier_manual_holds(customer_id,actor,reason) VALUES($1,'test','MANUAL_REVIEW')`,
+      [s.customerId],
+    );
+    const noPolicy = new InboundFundingService(
+      db,
+      ledger,
+      app.get(WalletFinancialBoundaryService),
+      app.get(SettlementAccountService),
+      app.get(AuditService),
+      app.get(OutboxService),
+      { verify: () => Promise.resolve(inboundEvidence.get(item.reference)!) },
+      { authorize: () => Promise.resolve('AUTHORIZED') },
+      new UnavailableInboundSuspensePolicy(),
+    );
+    await expect(noPolicy.receive(item.request)).rejects.toThrow('suspense policy is unavailable');
+    expect(await balance(s.sourceId)).toBe('1000');
+    expect(
+      await db.query('SELECT id FROM inbound_funding_receipts WHERE provider_reference_hash=$1', [
+        createHash('sha256').update(item.reference).digest('hex'),
+      ]),
+    ).toHaveLength(0);
+  });
+
+  it('records verified funds for an unknown recipient in suspense without inventing a wallet', async () => {
+    const reference = randomUUID();
+    inboundEvidence.set(reference, {
+      state: 'RECEIVED',
+      providerKey: 'TESTPROVIDER',
+      providerReference: reference,
+      bankCode: 'FCBANK',
+      accountNumber: '8888888888',
+      amountMinor: '200',
+      currency: 'NGN',
+      observedAt: new Date().toISOString(),
+    });
+    const suspense = (
+      await db.query<Array<{ id: string }>>(
+        `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SYSTEM_SUSPENSE-NGN'`,
+      )
+    )[0]!.id;
+    const before = BigInt(await balance(suspense));
+    const result = await inbound.receive({
+      providerKey: 'TESTPROVIDER',
+      providerReference: reference,
+      correlationId: 'unknown-recipient',
+    });
+    expect(result.status).toBe('SUSPENSE');
+    expect(BigInt(await balance(suspense))).toBe(before + 200n);
+    const rows = await db.query<Array<{ wallet_account_id: string | null }>>(
+      'SELECT wallet_account_id FROM inbound_funding_receipts WHERE provider_reference_hash=$1',
+      [createHash('sha256').update(reference).digest('hex')],
+    );
+    expect(rows).toEqual([{ wallet_account_id: null }]);
+  });
+
+  it('fails closed on unavailable or mismatched provider proof and rolls back an interrupted credit', async () => {
+    const s = await subject();
+    const item = await incoming(s);
+    const original = inboundEvidence.get(item.reference)!;
+    inboundEvidence.set(item.reference, { state: 'UNAVAILABLE' });
+    await expect(inbound.receive(item.request)).rejects.toThrow('verification is unavailable');
+    if (original.state !== 'RECEIVED') throw new Error('test evidence missing');
+    inboundEvidence.set(item.reference, { ...original, providerReference: 'other-reference' });
+    await expect(inbound.receive(item.request)).rejects.toThrow('does not match');
+    inboundEvidence.set(item.reference, original);
+    const outbox = jest
+      .spyOn(app.get(OutboxService), 'enqueue')
+      .mockRejectedValueOnce(new Error('injected inbound failure'));
+    try {
+      await expect(inbound.receive(item.request)).rejects.toThrow('injected inbound failure');
+    } finally {
+      outbox.mockRestore();
+    }
+    expect(await balance(s.sourceId)).toBe('1000');
+    expect(
+      await db.query('SELECT id FROM inbound_funding_receipts WHERE provider_reference_hash=$1', [
+        createHash('sha256').update(item.reference).digest('hex'),
+      ]),
+    ).toHaveLength(0);
+    expect(await inbound.receive(item.request)).toMatchObject({
+      status: 'CREDITED',
+      replayed: false,
+    });
+    expect(await balance(s.sourceId)).toBe('1700');
+  });
 
   it('binds real PIN and session authorization to an atomic ledger reservation, preventing re-spending', async () => {
     const s = await subject();

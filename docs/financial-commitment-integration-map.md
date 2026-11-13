@@ -6,9 +6,17 @@ Status: work in progress, not an approval to deploy or submit financial transact
 
 * A6 `ExternalOperation` is constrained by its database schema to resource `WITHDRAWAL`, capability `external.wallet.withdrawal.settlement`, and operation `OUTBOUND_BANK_SETTLEMENT`. Its successful settlement debits customer funds and is an outbound financial obligation. New settlement must consume the exact reservation; direct ordinary wallet debits do not establish the required financial commitment.
 * A6 suspense and reference records are evidence/reconciliation paths, not authorizations to spend or to release an uncertain reservation. Rejection release requires independent outcome verification and the exact reserved commitment. Existing post-settlement compensation is a recovery path, not a new payment; commitment-linked settlements currently fail closed there until governed commitment recovery is implemented.
-* A7 product financial effect accepts `virtual-account.assign` and `virtual-account.inbound-funding`, yet its current implementation maps its SETTLE decision to the outbound A6 withdrawal settlement. Assignment is not a withdrawal; inbound funding should credit the customer, not debit a wallet or require an outbound withdrawal reservation. The existing mapping is not an authoritative inbound settlement implementation. New verified A7 settlement attempts now fail closed before outbound posting; its temporary idempotency reservation rolls back with the transaction; no inbound payment processor is implemented here. A dedicated independently verified inbound financial boundary is a dependency, not part of the withdrawal reservation mechanism.
+* A7 product financial effect accepts `virtual-account.assign` and `virtual-account.inbound-funding`, yet its current implementation maps its SETTLE decision to the outbound A6 withdrawal settlement. Assignment is not a withdrawal; inbound funding should credit the customer, not debit a wallet or require an outbound withdrawal reservation. The existing mapping is not an authoritative inbound settlement implementation. New verified A7 settlement attempts now fail closed before outbound posting; its temporary idempotency reservation rolls back with the transaction. An isolated inbound receipt prototype now exists, but is not connected to A7 or any production module and does not complete that lifecycle. It is not part of the withdrawal reservation mechanism.
 * Virtual account assignment in `src/virtual-account/virtual-account.service.ts` is account lifecycle metadata, not inbound payment settlement. Customer funding has its own financial approval and ledger boundary; it is not the A6 outbound withdrawal flow.
 * The generic withdrawal HTTP initiation and production partner submission remain disabled. The internal commitment initiation service is deliberately not registered as a production API.
+
+## Inbound receipt prototype (not accepted or production enabled)
+
+Migration `1785753600142` adds immutable receipt/review evidence and a ledger direction check. The internal `InboundFundingService` has no API, module registration, live provider, or A7 integration. A controlled test verifier models an independently confirmed receipt; it is not provider verification. For a confirmed, eligible test receipt the prototype debits the existing `PAYMENT-SETTLEMENT_ASSET-NGN` asset and credits the recipient wallet liability; for an ineligible or unknown destination, a controlled **test-only** policy allows credit to the existing `PAYMENT-SYSTEM_SUSPENSE-NGN` liability instead. Both entries are balanced, atomic with receipt/audit/outbox, and keyed by provider and reference. A receipt-linked journal cannot be generically reversed without a future governed inbound recovery contract; unrelated governed reversal remains unchanged.
+
+Neither the institution authorization nor suspense policy stub is a production approval. The default implementations of the verifier, institutional authority and suspense policy return unavailable. Before any wiring, Arena 4 must supply authoritative, transaction-fresh settlement-account and destination institution/product authorization (including how unknown destinations are attributed) without provider/aggregator inference. An independently approved suspense policy, its case ownership and resolution lifecycle, and authenticated receipt verification bound to the destination, amount, currency and reference are also required. Currently unavailable/denied authority or policy aborts rather than posting; it does not durably reconcile that confirmed receipt, so this is a known gap. Unknown provider outcomes and conflicting evidence create review evidence, but broader reconciliation, institutional isolation and resolution remain unfinished. In particular, a test-only policy cannot establish approved handling of arrived but uncreditable real funds.
+
+The receipt records cannot be treated as a complete A7 operation lifecycle: assignment is metadata, and a valid funding receipt needs an atomic binding to the corresponding A7 command/lifecycle and its replay semantics. Integration must not reinterpret an assignment as a debit or fabricate an outbound commitment. Review routing must also account for missing or inconsistent evidence and authorize access by institution.
 
 ## Historical obligations
 
@@ -51,3 +59,14 @@ or recovery outcome and an approved accounting policy, composed atomically with 
 existing approval, ledger reversal, reserve release, settlement/suspense and execution
 records. Until that boundary exists, generic reversals and A6 compensation reject
 commitment-linked settled journals rather than restoring funds twice or minting value.
+
+## Inbound prototype checkpoint verification
+
+The full backend run after the prototype still reports 2,824 passed and 18 failed
+(236 passed suites, two failed). The targeted A6/A7 plus commitment/schema/readiness
+PostgreSQL run reports 43 passed and 24 failed; the 24 legacy A6/A7 failures remain
+unresolved. The subsequent focused commitment/schema/migration-readiness PostgreSQL
+run passed 35 tests, including inbound exactly-once, eligibility hold, unknown target,
+policy/authority/verifier unavailable, conflict, rollback/retry and reversal guard.
+Governed ledger reversal PostgreSQL suites passed 29 tests. Full lint and TypeScript
+passed; none of these results establishes A7 integration or mission acceptance.
