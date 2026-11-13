@@ -795,4 +795,46 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     ]),
   ).toEqual([{ n: 2 }]);
   expect((await ledger.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe('1000');
+
+  sms.clear();
+  const another = await app
+    .get(AgentDeskOtpService)
+    .issue({ agentId: agent.id, customerId, purpose: 'WALLET_TO_CASH' });
+  const anotherCode = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+  const badCode = anotherCode === '000000' ? '000001' : '000000';
+  const anotherInput = {
+    ...input,
+    mfaChallengeId: another.challengeId,
+    idempotencyKey: randomUUID(),
+  };
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await expect(service.execute({ ...anotherInput, otp: badCode })).rejects.toThrow('OTP invalid');
+  }
+  expect(
+    await db.query(`SELECT status,failed_attempts FROM mfa_challenges WHERE id=$1`, [
+      another.challengeId,
+    ]),
+  ).toEqual([{ status: 'REVOKED', failed_attempts: 5 }]);
+  await expect(service.execute({ ...anotherInput, otp: anotherCode })).rejects.toThrow();
+  sms.clear();
+  const expired = await app
+    .get(AgentDeskOtpService)
+    .issue({ agentId: agent.id, customerId, purpose: 'WALLET_TO_CASH' });
+  const expiredCode = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+  await db.query(
+    `UPDATE mfa_challenges SET expires_at=clock_timestamp()-interval '1 second' WHERE id=$1`,
+    [expired.challengeId],
+  );
+  await expect(
+    service.execute({
+      ...input,
+      mfaChallengeId: expired.challengeId,
+      idempotencyKey: randomUUID(),
+      otp: expiredCode,
+    }),
+  ).rejects.toThrow('OTP expired');
+  expect(
+    await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [expired.challengeId]),
+  ).toEqual([{ status: 'EXPIRED' }]);
+  expect((await ledger.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe('1000');
 });
