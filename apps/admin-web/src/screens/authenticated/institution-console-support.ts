@@ -38,6 +38,18 @@ export const APPROVING_FUNCTION_BY_ACTION: Record<string, string> = {
   CUSTOMER_INSTITUTION_ENROLMENT_CHANGE: INSTITUTION_FUNCTIONS.enrolmentApprove,
 };
 
+/**
+ * Checker role configured for each governed action in the backend registry
+ * (`authorization/governed-action.registry.ts`). The approval endpoint authorizes on role AND
+ * function AND assurance, so the console mirrors all three before offering the action.
+ */
+export const APPROVING_ROLE_BY_ACTION: Record<string, string> = {
+  FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE: 'FINANCE_CONTROLLER',
+  INSTITUTION_AGENT_AFFILIATION_CHANGE: 'FINANCE_CONTROLLER',
+  WALLET_INSTITUTION_ATTRIBUTION: 'FINANCE_CONTROLLER',
+  CUSTOMER_INSTITUTION_ENROLMENT_CHANGE: 'FINANCE_CONTROLLER',
+};
+
 export const ACTION_LABELS: Record<string, string> = {
   FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE: 'Institution lifecycle change',
   INSTITUTION_AGENT_AFFILIATION_CHANGE: 'Agent institutional affiliation change',

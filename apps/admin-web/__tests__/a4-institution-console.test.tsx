@@ -257,6 +257,39 @@ describe('ARENA 4 institutional console — workspace', () => {
     );
   });
 
+  test('the approving function alone is not enough: the configured checker role is required', async () => {
+    setPrincipal({
+      scopes: CHECKER_SCOPES,
+      roles: ['ADMINISTRATOR'],
+      principalId: 'issuer:admin',
+    });
+    mockRoutes({
+      [`/internal/institutions/${INSTITUTION_ID}/pending-approvals`]: [
+        {
+          approvalId: APPROVAL_ID,
+          actionType: 'FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE',
+          resourceType: 'FINANCIAL_INSTITUTION',
+          resourceId: INSTITUTION_ID,
+          requesterPrincipalId: 'issuer:maker',
+          approvedBy: null,
+          status: 'REQUESTED',
+          reason: 'Regulator confirmed the operational licence.',
+          requestedAt: '2026-11-12T10:00:00.000Z',
+          expiresAt: '2026-11-12T11:00:00.000Z',
+          approvedAt: null,
+          awaitingChecker: true,
+        },
+      ],
+    });
+    render(
+      <InstitutionWorkspaceScreen institutionId={INSTITUTION_ID} onBackToDirectory={jest.fn()} />,
+    );
+    fireEvent.click(await screen.findByRole('tab', { name: 'Lifecycle & approvals' }));
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    expect((approve as HTMLButtonElement).disabled).toBe(true);
+    expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+
   test('an independent MFA checker approves through the existing approval endpoint', async () => {
     setPrincipal({
       scopes: CHECKER_SCOPES,

@@ -156,7 +156,7 @@ Hiding an action is presentation only; the backend guard is unchanged and author
 ## 5. Verification performed
 
 - Admin Web: `npx jest --watchAll=false` → **85 suites / 867 tests pass**, including the new
-  `__tests__/a4-institution-console.test.tsx` (11 tests: route guard, directory listing/registration
+  `__tests__/a4-institution-console.test.tsx` (12 tests: route guard, directory listing/registration
   gating, contextual workspace, no-authority warning, governed lifecycle request, self-approval
   disabled, independent MFA checker approval, approval-id + confirmation required before execution,
   posted-history attribution restriction) and the updated

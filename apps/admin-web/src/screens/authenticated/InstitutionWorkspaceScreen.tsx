@@ -21,6 +21,7 @@ import {
 import {
   ACTION_LABELS,
   APPROVING_FUNCTION_BY_ACTION,
+  APPROVING_ROLE_BY_ACTION,
   INSTITUTION_FUNCTIONS,
   STATUS_TONES,
   describeError,
@@ -619,8 +620,9 @@ const LifecycleTab: React.FC<{
         </p>
         {!canCheck ? (
           <p className="mn-inst__hint">
-            Approving requires <code>privileged:approve</code>, the action's approving function and
-            an MFA-authenticated session.
+            Approving requires <code>privileged:approve</code>, the action's approving function, the
+            configured checker role and an MFA-authenticated session — and the checker must not be
+            the requester.
           </p>
         ) : null}
         {pending.error ? (
@@ -660,10 +662,12 @@ const LifecycleTab: React.FC<{
                 {[...(pending.data ?? [])]
                   .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt))
                   .map((item) => {
+                    const checkerRole = APPROVING_ROLE_BY_ACTION[item.actionType];
                     const checkerReady =
                       canCheck &&
                       item.awaitingChecker &&
                       item.requesterPrincipalId !== principal?.principalId &&
+                      Boolean(checkerRole && principal?.roles.includes(checkerRole)) &&
                       hasAnyScope(scopes, APPROVING_FUNCTION_BY_ACTION[item.actionType] ?? '');
                     return (
                       <tr key={item.approvalId}>
