@@ -50,6 +50,12 @@ export const SECURITY_CRITICAL_NOTIFICATION_EVENT_TYPES: ReadonlySet<string> = n
   // delivery" class referenced above; issuance is AGENT-session-only and the OTP itself
   // is delivered to the customer, never to the agent.
   'agent.desk.customer_otp',
+  // ARENA 4 (C-9) — self-service credential recovery OTP. Delivered DIRECTLY through the
+  // provider-neutral SMS abstraction (never the dispatcher/outbox — an outbox record would
+  // persist the rendered OTP) to the customer's verified primary phone. A phone alone is not
+  // authority: the code only unlocks a challenge, and completion additionally requires trusted
+  // identity evidence under the approved recovery policy.
+  'customer.credentials.recovery_otp',
 ]);
 
 export function isSecurityCriticalNotificationEvent(eventType: string | null | undefined): boolean {

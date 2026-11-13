@@ -65,6 +65,6 @@ import { KycTierWorker } from './kyc-tier-worker.service';
         }),
     },
   ],
-  exports: [KycTierTransitionService, CustomerFinancialEligibilityService],
+  exports: [KycTierTransitionService, CustomerFinancialEligibilityService, KycTierEvidenceReader],
 })
 export class KycTierModule {}

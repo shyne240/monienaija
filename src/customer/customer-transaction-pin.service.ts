@@ -8,7 +8,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import { redactRecord } from '../common/sensitive-data-redaction';
@@ -16,6 +16,14 @@ import { Customer } from './customer.entity';
 import { CustomerTransactionPin } from './customer-transaction-pin.entity';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export interface CustomerTransactionPinSetCommand {
+  pinHash: string;
+  hashAlgorithm: string;
+  pinVersion: number;
+  actor: string;
+  createOnly?: boolean;
+}
 const MAX_FAILED_PINS = 5;
 
 @Injectable()
@@ -31,13 +39,22 @@ export class CustomerTransactionPinService {
 
   async setTransactionPin(
     customerId: string,
-    command: {
-      pinHash: string;
-      hashAlgorithm: string;
-      pinVersion: number;
-      actor: string;
-      createOnly?: boolean;
-    },
+    command: CustomerTransactionPinSetCommand,
+  ): Promise<CustomerTransactionPin> {
+    return this.dataSource.transaction((manager) =>
+      this.setTransactionPinInManager(manager, customerId, command),
+    );
+  }
+
+  /**
+   * ARENA 4 — in-manager variant so an existing transaction (credential recovery) can replace the
+   * PIN inside the SAME atomic unit as the rest of its evidence bookkeeping. Storage, hashing
+   * conventions and audit events are unchanged; there is still exactly one PIN store.
+   */
+  async setTransactionPinInManager(
+    manager: EntityManager,
+    customerId: string,
+    command: CustomerTransactionPinSetCommand,
   ): Promise<CustomerTransactionPin> {
     this.assertUuid(customerId, 'customerId');
     const actor = this.normalizeActor(command.actor);
@@ -48,7 +65,7 @@ export class CustomerTransactionPinService {
     if (!Number.isSafeInteger(command.pinVersion) || command.pinVersion < 1) {
       throw new BadRequestException('pinVersion must be a positive integer');
     }
-    return this.dataSource.transaction(async (manager) => {
+    {
       const customer = await manager
         .getRepository(Customer)
         .findOne({ where: { id: customerId }, lock: { mode: 'pessimistic_write' } });
@@ -109,7 +126,7 @@ export class CustomerTransactionPinService {
         this.pinValues(pin),
       );
       return pin;
-    });
+    }
   }
 
   async verifyTransactionPin(

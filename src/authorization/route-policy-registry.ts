@@ -45,6 +45,13 @@ const PUBLIC_ROUTES = new Set([
   // It is now an explicit catalogue-gated workforce read (see
   // INTERNAL_OPERATIONAL_ROUTE_POLICIES below). Public liveness/probe needs remain covered by
   // `GET /api/v1/health` and `GET /api/v1/health/ready`.
+  // ARENA 4 — customer self-service credential recovery. Unauthenticated by design: the caller
+  // holds no session yet. Authority is OTP-to-verified-phone + trusted identity evidence, enforced
+  // inside the service; the response shape is enumeration-safe and nothing here issues a session.
+  'GET /api/v1/customers/credential-recovery/policy',
+  'POST /api/v1/customers/credential-recovery/challenges',
+  'POST /api/v1/customers/credential-recovery/challenges/verify',
+  'POST /api/v1/customers/credential-recovery/complete',
   // V1-CUSTOMER-ONBOARDING-01 — customer registration front door (decided hybrid model,
   // docs/V1-CUSTOMER-ONBOARDING-DECISION-01.md). Unauthenticated by design: no session-
   // bearing auth mode exists pre-registration. Abuse is bounded inside the registration

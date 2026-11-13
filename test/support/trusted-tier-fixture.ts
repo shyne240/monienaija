@@ -32,10 +32,15 @@ export class TrustedTierFixture {
       ],
     );
     await db.query(
-      `INSERT INTO kyc_tier_policy_versions(version,proposal_id,definition,maker_id,checker_id) VALUES(1,$1,$2,'fixture-maker','fixture-checker')`,
+      `INSERT INTO kyc_tier_policy_versions(version,proposal_id,definition,maker_id,checker_id) VALUES(1,$1,$2,'fixture-maker','fixture-checker') ON CONFLICT (version) DO NOTHING`,
       [proposal, JSON.stringify(definition)],
     );
-    await db.query('UPDATE kyc_tier_policy_head SET version=1');
+    // The suite-wide TRUNCATE removes the singleton head row created by migration 1785753600110, so
+    // restore it explicitly rather than relying on an UPDATE that would affect zero rows.
+    await db.query(
+      `INSERT INTO kyc_tier_policy_head(singleton,version) VALUES(true,1)
+       ON CONFLICT (singleton) DO UPDATE SET version=GREATEST(kyc_tier_policy_head.version,1)`,
+    );
   }
 
   async approveLevelOne(db: DataSource, customerId: string): Promise<void> {

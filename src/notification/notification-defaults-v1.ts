@@ -137,6 +137,7 @@ export const NOTIFICATION_SECURITY_DEFAULTS_V1 = [
   'customer.registration.phone_verification',
   'customer.credentials.temporary_credential',
   'agent.desk.customer_otp',
+  'customer.credentials.recovery_otp',
 ] as const;
 
 /** Used by the migration and the test harness after it truncates reference data. */

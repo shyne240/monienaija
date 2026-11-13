@@ -8,6 +8,7 @@ import * as request from 'supertest';
 
 import type { HistoryResponseFixture } from './support/history-response-fixture';
 import { AppModule } from '../src/app.module';
+import { TrustedTierFixture } from './support/trusted-tier-fixture';
 import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
@@ -31,6 +32,13 @@ const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
+  /**
+   * ARENA 4: the financial-eligibility gate requires authorised tier policy + a trusted evidence
+   * source. Production has no confirmed evidence provider (the reader resolves `null` by design), so
+   * this suite installs the same controlled `TrustedTierFixture` the other financial integration
+   * suites use. The gate itself is untouched.
+   */
+  const evidence = new TrustedTierFixture();
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a23customerapp');
@@ -59,6 +67,9 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
+    // TRUNCATE also clears the singleton tier-policy head + versions, so re-seed the controlled
+    // approved policy before each case (otherwise eligibility correctly reports "policy unavailable").
+    await evidence.seedPolicy(dataSource);
   });
 
   async function createCustomerWithCredential(
@@ -96,7 +107,7 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     const canonical10 = `8${String(Math.floor(100000000 + Math.random() * 900000000))}`;
     // Store contact with canonical as normalizedValue
     await dataSource.query(
-      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$3,true)`,
+      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$3,true,now())`,
       [customerId, `0${canonical10.slice(1)}`, canonical10],
     );
     const hash = encodePbkdf2(password);
