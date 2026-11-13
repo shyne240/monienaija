@@ -245,6 +245,64 @@ describe('wallet ownership resolution — execution entitlement', () => {
   });
 });
 
+describe('wallet ownership resolution — requester separation', () => {
+  it('rejects the maker even with privileged execution scope before consuming approval', async () => {
+    const maker = principal({
+      roles: ['FINANCE_PREPARER', 'SUPER_ADMIN'],
+      scopes: ['privileged:execute'],
+    });
+    const approvalId = '00000000-0000-4000-8000-0000000000c3';
+    const evidenceType = WalletOwnershipEvidenceType.CUSTOMER_RECORD_REFERENCE;
+    const resolutionClass = WalletOwnershipResolutionClass.CUSTOMER;
+    const actionFingerprint = walletOwnershipResolutionFingerprint(
+      WALLET_ID,
+      resolutionClass,
+      TARGET_ID,
+      null,
+      evidenceType,
+      'customer-reference',
+      'reconciliation',
+    );
+    const approval = {
+      actionType: 'WALLET_OWNERSHIP_RESOLUTION',
+      resourceType: 'WALLET_ACCOUNT',
+      resourceId: WALLET_ID,
+      customerId: null,
+      actionFingerprint,
+      requesterPrincipalId: maker.principalId,
+      approvedBy: 'independent-checker',
+      status: 'APPROVED',
+    };
+    const findOne = jest.fn().mockResolvedValue(approval);
+    const query = jest.fn();
+    const manager = { getRepository: () => ({ findOne }), query };
+    const dataSource = {
+      transaction: (callback: (value: typeof manager) => Promise<unknown>) => callback(manager),
+    } as unknown as DataSource;
+    const consumeInTransaction = jest.fn();
+    const tested = new WalletOwnershipResolutionService(
+      dataSource,
+      { consumeInTransaction } as never,
+      {} as never,
+    );
+    await expect(
+      tested.executeResolution({
+        principal: maker,
+        walletId: WALLET_ID,
+        approvalId,
+        resolutionClass,
+        targetOwnerId: TARGET_ID,
+        evidenceType,
+        evidenceReference: 'customer-reference',
+        reason: 'reconciliation',
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(findOne).toHaveBeenCalledTimes(1);
+    expect(consumeInTransaction).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+  });
+});
+
 describe('wallet ownership resolution — database guard mapping', () => {
   const driverError = (code: string, message: string) =>
     Object.assign(new Error(message), { code, message });
