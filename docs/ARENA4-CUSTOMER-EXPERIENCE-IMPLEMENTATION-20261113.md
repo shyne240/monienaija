@@ -227,6 +227,7 @@ that sessions are never restored after backend rejection.
 | Backend unit                                | `npm test`                                                                                                            | **241 suites / 2863 tests pass**                                                             |
 | Backend build                               | `npm run build`                                                                                                       | clean                                                                                        |
 | KYC projection integration                  | `PG_TEST_RUN_ID=a4kyc10 … jest --config jest.integration.config.js test/arena4-customer-kyc-view.integration.spec.ts` | **5/5 pass** (real PostgreSQL)                                                               |
+| Backend build at final head                 | `npm run build` (`nest build`)                                                                                        | clean                                                                                        |
 | Full journey acceptance                     | `PG_TEST_RUN_ID=a4journey13 … --runTestsByPath test/arena4-customer-journey.integration.spec.ts`                      | **7/7 pass** (real PostgreSQL, 15 journey steps)                                             |
 | Customer app integration (a23)              | `PG_TEST_RUN_ID=a4auth03 … --runTestsByPath test/a23-customer-app.integration.spec.ts`                                | **15/15 pass** (was 13 failed / 2 passed)                                                    |
 | Auth / session / notification regression    | `PG_TEST_RUN_ID=a4auth04` on a23 + journey + kyc-view + notification-registry + migration-chain                       | **5 suites / 54 tests pass**                                                                 |
@@ -236,6 +237,27 @@ that sessions are never restored after backend rejection.
 | Mobile tests                                | `npm test`                                                                                                            | **21 suites / 175 tests pass** (baseline before Arena 4 was 14/122; 20/164 before this task) |
 | Mobile lint                                 | `npm run lint` (new flat config, C-8)                                                                                 | **0 errors**; 24 warnings (pre-existing `no-explicit-any`, stale disable directives)         |
 | `test/a23-customer-app.integration.spec.ts` | `PG_TEST_RUN_ID=a4auth03`                                                                                             | **15/15 pass**                                                                               |
+
+### 9.1 Visual-acceptance attempt (2026-11-13)
+
+Task 5 required an _attempt_ at rendering, not just an assertion that rendering was impossible. What
+was actually done:
+
+1. Exported the real production web bundle of `apps/customer-mobile`:
+   `EXPO_OFFLINE=1 CI=1 EXPO_PUBLIC_API_BASE_URL=http://127.0.0.1:4318 npx expo export --platform web`
+   → **succeeded** (`/tmp/a4web/index.html` + 886 kB `AppEntry-*.js`). This needed
+   `react-native-web@0.19.13` and `@expo/metro-runtime@~4.0.1` installed with `--no-save` (sandbox
+   only: neither is added to the app's `package.json`/lockfile, because a real web target is out of
+   scope for this mission).
+2. Wrote a harness that serves the bundle plus a **visual-only** stub API and drives it with Playwright,
+   using the Chromium binary already available at `@sparticuz/chromium` 153.0.0.
+3. The browser **could not start**: `ldd /tmp/chromium` reports `libnspr4.so`, `libnss3.so` and
+   `libnssutil3.so` as `not found`; the sandbox runs as uid 1001 (no root), has no apt cache and no
+   network access to distribution archives, so those libraries cannot be installed.
+
+Consequence: the export proves the code compiles and bundles for a real renderer, but **no frame was
+ever rendered**, so no screenshot, layout, spacing, contrast or touch-target claim is made for the new
+auth screens (or any other screen). Everything visual remains asserted structurally only.
 
 ## 10. What is explicitly not claimed
 
