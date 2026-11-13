@@ -5,6 +5,29 @@ import { theme } from '../theme';
 import { StatusBadge, type BadgeStatus } from './StatusBadge';
 import type { TransactionSign } from '../services/transfer-view';
 
+function statusLabel(status: BadgeStatus): string {
+  switch (status) {
+    case 'SUCCESS':
+      return 'Completed';
+    case 'PENDING':
+      return 'Pending';
+    case 'FAILED':
+      return 'Failed';
+    case 'CANCELLED':
+      return 'Cancelled';
+    case 'EXPIRED':
+      return 'Expired';
+    case 'REVERSED':
+      return 'Reversed';
+    case 'SUSPENDED':
+      return 'Suspended';
+    case 'ACTIVE':
+      return 'Active';
+    default:
+      return String(status);
+  }
+}
+
 interface TransactionRowProps {
   id: string;
   narration: string;
@@ -16,6 +39,8 @@ interface TransactionRowProps {
   createdAt: string;
   /** V1-CUSTOMER-09 — optional "get help with this transaction" affordance. */
   onGetHelp?: () => void;
+  /** ARENA 4 — opens the receipt/transaction detail. Renders the row as a button when present. */
+  onPress?: () => void;
 }
 
 export const TransactionRow: React.FC<TransactionRowProps> = ({
@@ -26,6 +51,7 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
   status,
   createdAt,
   onGetHelp,
+  onPress,
 }) => {
   const displayAmount = (amountMinor / 100).toLocaleString('en-NG', {
     minimumFractionDigits: 2,
@@ -51,8 +77,20 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
     sign === 'IN' ? styles.incoming : sign === 'OUT' ? styles.outgoing : styles.neutral;
   const amountPrefix = sign === 'IN' ? '+' : sign === 'OUT' ? '-' : '';
 
+  const Container: React.ElementType = onPress ? TouchableOpacity : View;
+
   return (
-    <View style={styles.container}>
+    <Container
+      style={styles.container}
+      {...(onPress
+        ? {
+            onPress,
+            accessibilityRole: 'button' as const,
+            accessibilityLabel: `${narration} · ${statusLabel(status)} · ${formattedDate}`,
+            activeOpacity: 0.7,
+          }
+        : {})}
+    >
       <View style={styles.leftContainer}>
         <Text numberOfLines={1} style={styles.narration}>
           {narration}
@@ -74,7 +112,7 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
           </TouchableOpacity>
         )}
       </View>
-    </View>
+    </Container>
   );
 };
 

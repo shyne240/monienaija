@@ -194,7 +194,9 @@ test('signs into an isolated onboarding session and signs out without storing a 
   fireEvent.changeText(input, '112233');
   fireEvent.press(v.getByText('Sign in to onboarding'));
   expect(
-    await v.findByText('Signed in to onboarding only. Financial services remain unavailable.'),
+    await v.findByText(
+      'You are signed in to onboarding only. Financial services remain unavailable because onboarding eligibility is separate from financial eligibility.',
+    ),
   ).toBeTruthy();
   expect(post).toHaveBeenCalledWith(
     expect.stringContaining('/onboarding-login'),
@@ -250,7 +252,9 @@ test.each(['BVN', 'NIN'])(
     fireEvent.changeText(await v.findByTestId('onboarding-passcode'), '112233');
     fireEvent.press(v.getByText('Sign in to onboarding'));
     expect(
-      await v.findByText('Signed in to onboarding only. Financial services remain unavailable.'),
+      await v.findByText(
+        'You are signed in to onboarding only. Financial services remain unavailable because onboarding eligibility is separate from financial eligibility.',
+      ),
     ).toBeTruthy();
     expect(post).toHaveBeenCalledWith(
       expect.stringContaining('/claim-match'),
@@ -284,7 +288,10 @@ test('unverified evidence is shown as pending', async () => {
   const v = render(<RegistrationScreen />);
   fireEvent.changeText(await v.findByTestId('claim-identifier'), '12345678901');
   fireEvent.press(v.getByText('Match verified identifier'));
-  expect(await v.findByText(/Verification or registration is pending/)).toBeTruthy();
+  expect(await v.findByText(/Your registration is not yet activated/)).toBeTruthy();
+  // ARENA 4: the outstanding requirements are enumerated instead of one vague sentence.
+  expect(v.getByText(/Onboarding requirements/)).toBeTruthy();
+  expect(v.getByText(/KYC assessment approved/)).toBeTruthy();
 });
 
 test('shows a mismatch without retaining the identifier', async () => {

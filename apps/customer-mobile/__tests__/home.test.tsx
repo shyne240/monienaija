@@ -1,5 +1,6 @@
 import React from 'react';
-import { render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
+
 import { HomeScreen } from '../src/screens/authenticated/HomeScreen';
 import { ApiClient } from '../src/services/api-client';
 
@@ -17,137 +18,177 @@ jest.mock('../src/store/auth-store', () => ({
   }),
 }));
 
-const mockNavigate = jest.fn();
-jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({
-    navigate: mockNavigate,
-  }),
+jest.mock('expo-clipboard', () => ({
+  setStringAsync: jest.fn().mockResolvedValue(true),
 }));
 
+const mockNavigate = jest.fn();
+jest.mock('@react-navigation/native', () => ({
+  useNavigation: () => ({ navigate: mockNavigate }),
+}));
+
+const dashboardFixture = (overrides: Record<string, unknown> = {}) => ({
+  identity: {
+    id: 'customer-1',
+    reference: 'CUS-0001',
+    type: 'INDIVIDUAL',
+    status: 'ACTIVE',
+    kycLevel: 'LEVEL_1',
+    kycStatus: 'APPROVED',
+    createdAt: '2026-10-01T09:00:00.000Z',
+  },
+  profile: { id: 'profile-1', displayName: 'Amaka Obi', legalName: 'Amaka Obi' },
+  balance: {
+    wallets: [{ id: 'wallet-uuid-999', currency: 'NGN', status: 'ACTIVE', balanceMinor: '250000' }],
+    primary: { id: 'wallet-uuid-999', currency: 'NGN', status: 'ACTIVE', balanceMinor: '250000' },
+  },
+  receivingIdentity: '08031234567',
+  recentTransactions: { items: [] },
+  ...overrides,
+});
+
+const kycFixture = (overrides: Record<string, unknown> = {}) => ({
+  customerId: 'customer-1',
+  kycLevel: 'LEVEL_1',
+  kycStatus: 'APPROVED',
+  assessment: { level: 'LEVEL_1', status: 'APPROVED', reason: null, expiresAt: null },
+  policy: { configured: true, version: 1 },
+  requirements: {
+    level: 'LEVEL_2',
+    regulatory: { all: ['PHONE'], any: [['BVN']] },
+    operator: { all: [], any: [] },
+  },
+  evidenceAssessment: {
+    status: 'UNAVAILABLE',
+    reason: 'TRUSTED_EVIDENCE_UNAVAILABLE',
+    note: 'Evidence cannot be assessed.',
+  },
+  lastEvaluation: null,
+  manualHold: null,
+  upgradePathway: { status: 'EVIDENCE_UNAVAILABLE', nextLevel: 'LEVEL_2' },
+  asOf: '2026-11-13T10:00:00.000Z',
+  ...overrides,
+});
+
+const routeGet = (mocks: { dashboard: unknown; kyc: unknown }) =>
+  (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+    if (url === '/customers/me/dashboard') return Promise.resolve(mocks.dashboard);
+    if (url === '/customers/me/kyc') return Promise.resolve(mocks.kyc);
+    return Promise.reject(new Error(`unexpected url ${url}`));
+  });
+
 /**
- * V1-CUSTOMER-02 — rewritten against the REAL, authenticated,
- * ownership-scoped `GET /customers/me/wallets` endpoint. The previous
- * version of this test asserted the legacy unauthenticated
- * `/customers/:id/wallets` route and a customer-initiated wallet
- * "provisioning" POST that V1 does not support (wallets are provisioned
- * atomically during registration).
- *
- * V1-CUSTOMER-07 — "recent transactions" assertions now target the unified
- * `GET /customers/me/transactions` endpoint instead of the Wallet→Wallet-only
- * `GET /customers/me/transfers` endpoint.
+ * ARENA 4 — the dashboard now reads ONE backend projection (`GET /customers/me/dashboard`) plus the
+ * customer KYC projection, instead of composing `/me/wallets` and `/me/transactions` in the client.
+ * Every assertion below checks that a value the backend returned is rendered as returned, and that
+ * absent data is presented as absent rather than filled in.
  */
-describe('HomeScreen Dashboard Tests', () => {
+describe('HomeScreen banking dashboard', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  test('should render balance correctly formatted from minor units, reading from /customers/me/*', async () => {
-    const mockWallets = [
-      {
-        id: 'wallet-uuid-999',
-        currency: 'NGN',
-        status: 'ACTIVE',
-        balanceMinor: 250000, // 2500.00 Naira
-      },
-    ];
+  test('renders the backend balance, greeting name and receiving number', async () => {
+    routeGet({ dashboard: dashboardFixture(), kyc: kycFixture() });
 
-    const mockTxHistory = { items: [] };
-
-    (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
-      if (url.startsWith('/customers/me/wallets')) return Promise.resolve(mockWallets);
-      if (url.startsWith('/customers/me/transactions')) return Promise.resolve(mockTxHistory);
-      return Promise.resolve([]);
-    });
-
-    const { getByText } = render(<HomeScreen />);
+    const { getByText, getAllByText } = render(<HomeScreen />);
 
     await waitFor(() => {
-      expect(ApiClient.get).toHaveBeenCalledWith('/customers/me/wallets');
-      expect(ApiClient.get).toHaveBeenCalledWith('/customers/me/transactions?page=1&limit=5');
+      expect(ApiClient.get).toHaveBeenCalledWith('/customers/me/dashboard');
+      expect(getByText('Amaka Obi')).toBeTruthy();
       expect(getByText('₦2,500.00')).toBeTruthy();
-      expect(getByText('Wallet ID: wallet-uuid-999')).toBeTruthy();
+      expect(getAllByText('08031234567').length).toBeGreaterThan(0);
     });
+
+    // The receivable figure is presented as a receiving number, not as an invented NUBAN.
+    expect(getByText('Your receiving number')).toBeTruthy();
   });
 
-  test('should display a no-wallet state and NOT offer any self-service wallet creation', async () => {
-    (ApiClient.get as jest.Mock).mockResolvedValue([]);
+  test('hides the balance on request without changing the underlying value', async () => {
+    routeGet({ dashboard: dashboardFixture(), kyc: kycFixture() });
+    const { getByText, queryByText, getByLabelText } = render(<HomeScreen />);
+
+    await waitFor(() => expect(getByText('₦2,500.00')).toBeTruthy());
+
+    fireEvent.press(getByLabelText('Hide balance'));
+
+    expect(queryByText('₦2,500.00')).toBeNull();
+    expect(getByText('••••••')).toBeTruthy();
+
+    fireEvent.press(getByLabelText('Show balance'));
+    expect(getByText('₦2,500.00')).toBeTruthy();
+  });
+
+  test('explains a customer record with no provisioned wallet instead of showing a balance', async () => {
+    routeGet({
+      dashboard: dashboardFixture({
+        balance: { wallets: [], primary: null },
+        receivingIdentity: null,
+      }),
+      kyc: kycFixture({ kycLevel: 'NONE', kycStatus: 'NOT_STARTED' }),
+    });
 
     const { getByText, queryByText } = render(<HomeScreen />);
 
-    await waitFor(() => {
-      expect(getByText('No Wallet Found')).toBeTruthy();
-    });
+    await waitFor(() => expect(getByText('No wallet provisioned yet')).toBeTruthy());
 
-    // V1 has no customer-initiated wallet provisioning endpoint; this control
-    // must not exist.
-    expect(queryByText('Provision Primary NGN Wallet')).toBeNull();
+    expect(queryByText('Available balance')).toBeNull();
+    expect(getByText('Contact support')).toBeTruthy();
     expect(ApiClient.post).not.toHaveBeenCalled();
   });
 
-  test('should render recent transactions mapped from the unified history shape', async () => {
-    const mockWallets = [
-      { id: 'wallet-uuid-999', currency: 'NGN', status: 'ACTIVE', balanceMinor: 100000 },
-    ];
-    const mockTxHistory = {
-      items: [
-        {
-          id: 'transfer-1',
-          type: 'WALLET_TRANSFER',
-          narration: 'Rent split',
-          reference: 'ref-1',
-          amountMinor: '5000',
-          currency: 'NGN',
-          direction: 'SENT',
-          status: 'COMPLETED',
-          createdAt: new Date().toISOString(),
+  test('renders recent unified transactions and opens the receipt', async () => {
+    routeGet({
+      dashboard: dashboardFixture({
+        recentTransactions: {
+          items: [
+            {
+              id: 'transfer-1',
+              type: 'WALLET_TRANSFER',
+              narration: 'Rent split',
+              reference: 'ref-1',
+              amountMinor: '5000',
+              currency: 'NGN',
+              direction: 'SENT',
+              status: 'COMPLETED',
+              createdAt: '2026-11-12T08:00:00.000Z',
+            },
+          ],
         },
-      ],
-    };
-
-    (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
-      if (url.startsWith('/customers/me/wallets')) return Promise.resolve(mockWallets);
-      if (url.startsWith('/customers/me/transactions')) return Promise.resolve(mockTxHistory);
-      return Promise.resolve([]);
+      }),
+      kyc: kycFixture(),
     });
 
-    const { getByText } = render(<HomeScreen />);
+    const { getByText, getByLabelText } = render(<HomeScreen />);
 
-    await waitFor(() => {
-      expect(getByText('Rent split')).toBeTruthy();
+    await waitFor(() => expect(getByText('Rent split')).toBeTruthy());
+    fireEvent.press(getByLabelText(/Rent split/));
+
+    expect(mockNavigate).toHaveBeenCalledWith('TransactionDetail', {
+      transactionId: 'transfer-1',
+      preview: expect.objectContaining({ reference: 'ref-1', status: 'COMPLETED' }),
     });
   });
 
-  test('should render a Cash→Wallet credit on the dashboard with agent context and no raw ledger codes', async () => {
-    const mockWallets = [
-      { id: 'wallet-uuid-999', currency: 'NGN', status: 'ACTIVE', balanceMinor: 100000 },
-    ];
-    const mockTxHistory = {
-      items: [
-        {
-          id: 'cash-in-1',
-          type: 'CASH_IN',
-          narration: null,
-          reference: 'ref-cash-in-1',
-          amountMinor: '15000',
-          currency: 'NGN',
-          direction: 'CREDIT',
-          status: 'COMPLETED',
-          createdAt: new Date().toISOString(),
-        },
-      ],
-    };
+  test('shows the real tier and an honest upgrade pathway, never a fabricated rejection', async () => {
+    routeGet({ dashboard: dashboardFixture(), kyc: kycFixture() });
+    const { getByText, queryByText } = render(<HomeScreen />);
 
-    (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
-      if (url.startsWith('/customers/me/wallets')) return Promise.resolve(mockWallets);
-      if (url.startsWith('/customers/me/transactions')) return Promise.resolve(mockTxHistory);
-      return Promise.resolve([]);
-    });
+    await waitFor(() => expect(getByText('Tier 1 · Verified')).toBeTruthy());
 
-    const { getByText } = render(<HomeScreen />);
+    expect(getByText('Approved · policy v1')).toBeTruthy();
+    expect(getByText('Your Tier 2 · Enhanced upgrade is not yet assessable')).toBeTruthy();
+    expect(queryByText(/unmet|failed requirement/i)).toBeNull();
+  });
 
-    await waitFor(() => {
-      expect(getByText('Cash Deposit via Agent')).toBeTruthy();
-      expect(getByText('+₦150.00')).toBeTruthy();
-    });
+  test('reports a load failure and offers retry rather than showing a balance', async () => {
+    (ApiClient.get as jest.Mock).mockRejectedValue(new Error('Network request failed'));
+
+    const { getByText, queryByText } = render(<HomeScreen />);
+
+    await waitFor(() => expect(getByText('Network request failed')).toBeTruthy());
+
+    expect(queryByText('Available balance')).toBeNull();
+    expect(getByText('Retry')).toBeTruthy();
   });
 });
