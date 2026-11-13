@@ -169,6 +169,10 @@ import {
   A7_PRODUCT_LIFECYCLE_TO_A6_LIFECYCLE,
   A7_PRODUCT_LIFECYCLE_TRANSITIONS,
 } from './a7-product-lifecycle.constants';
+import {
+  readPersistedA7Lifecycle,
+  type A7PersistedLifecycle,
+} from './a7-product-persistence.service';
 import { A7ProductLifecycleRepository } from './a7-product-lifecycle.repository';
 import type {
   A7ProductLifecycleConsumerPorts,
@@ -291,6 +295,11 @@ export class A7ProductLifecycleService {
     @Inject(A7ProductLifecycleRepository)
     private readonly repository: A7ProductLifecycleRepository,
   ) {}
+
+  /** Read only persisted facts, rather than legacy idempotency response bodies. */
+  readPersistedLifecycle(reference: string): Promise<A7PersistedLifecycle | null> {
+    return readPersistedA7Lifecycle(this.repository.getDataSource(), reference);
+  }
 
   /**
    * Drives the A7 product lifecycle transition. The A7 product
