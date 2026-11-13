@@ -523,16 +523,14 @@ async function claimOtpFixture(customerId: string) {
   const agentId = randomUUID(),
     agentSessionId = randomUUID(),
     credential = randomUUID();
-  const cls = await app
-    .get(AgentClassService)
-    .create({
-      reference: randomUUID(),
-      code: `F${randomUUID().slice(0, 8)}`,
-      name: 'claim fixture',
-      isActive: true,
-      applicableServices: [AgentService.CASH_TO_CASH],
-      actor: 'fixture',
-    });
+  const cls = await app.get(AgentClassService).create({
+    reference: randomUUID(),
+    code: `F${randomUUID().slice(0, 8)}`,
+    name: 'claim fixture',
+    isActive: true,
+    applicableServices: [AgentService.CASH_TO_CASH],
+    actor: 'fixture',
+  });
   await db.query(
     `INSERT INTO agents(id,reference,status,agent_class_id) VALUES($1,$3,'ACTIVE',$2)`,
     [agentId, cls.id, agentId],
@@ -575,12 +573,18 @@ async function claimOtpFixture(customerId: string) {
     ],
   });
   const transferId = randomUUID();
+  const { randomBytes, pbkdf2Sync } = await import('node:crypto');
+  const salt = randomBytes(16);
+  const transferCode = '12345678';
+  const transferCodeHash = `PBKDF2$sha256$10000$${salt.toString('base64url')}$${pbkdf2Sync(transferCode, salt, 10000, 32, 'sha256').toString('base64url')}`;
   await db.query(
-    `INSERT INTO cash_to_cash_transfers(id,agent_id,beneficiary_phone,principal_minor,total_minor,currency,status,transfer_code_hash,hash_algorithm,journal_id,idempotency_key,expires_at) VALUES($1,$2,$3,100,100,'NGN','UNCLAIMED','fixture','PBKDF2',$4,$5,clock_timestamp()+interval '1 hour')`,
-    [transferId, agentId, phone, journal.id, randomUUID()],
+    `INSERT INTO cash_to_cash_transfers(id,agent_id,beneficiary_phone,principal_minor,total_minor,currency,status,transfer_code_hash,hash_algorithm,journal_id,idempotency_key,expires_at) VALUES($1,$2,$3,100,100,'NGN','UNCLAIMED',$6,'PBKDF2',$4,$5,clock_timestamp()+interval '1 hour')`,
+    [transferId, agentId, phone, journal.id, randomUUID(), transferCodeHash],
   );
   return {
     agentId,
+    phone,
+    transferCode,
     agentSessionId,
     customerId,
     transferId,
@@ -1860,16 +1864,14 @@ test('bound wallet-redemption claim wiring rolls back OTP with a failed posting 
   ]);
   const { AgentClassService } = await import('../src/agent/agent-class.service');
   const { AgentService } = await import('../src/agent/agent-service.enum');
-  const cls = await app
-    .get(AgentClassService)
-    .create({
-      reference: randomUUID(),
-      code: `W${randomUUID().slice(0, 8)}`,
-      name: 'claim fixture',
-      isActive: true,
-      applicableServices: [AgentService.CASH_TO_CASH],
-      actor: 'fixture',
-    });
+  const cls = await app.get(AgentClassService).create({
+    reference: randomUUID(),
+    code: `W${randomUUID().slice(0, 8)}`,
+    name: 'claim fixture',
+    isActive: true,
+    applicableServices: [AgentService.CASH_TO_CASH],
+    actor: 'fixture',
+  });
   await db.query(`UPDATE agents SET agent_class_id=$2 WHERE id=$1`, [agentId, cls.id]);
   const agentSessionId = randomUUID(),
     agentCredential = randomUUID();
@@ -1929,16 +1931,14 @@ test('bound wallet-redemption claim wiring rolls back OTP with a failed posting 
     [transferId, agentId, phone, codeHash, funding.id, randomUUID()],
   );
   sms.clear();
-  const challenge = await app
-    .get(AgentDeskOtpService)
-    .issue({
-      agentId,
-      agentSessionId,
-      customerId,
-      transferId,
-      redemptionMethod: 'CUSTOMER_WALLET',
-      purpose: 'CASH_TO_CASH_CLAIM',
-    });
+  const challenge = await app.get(AgentDeskOtpService).issue({
+    agentId,
+    agentSessionId,
+    customerId,
+    transferId,
+    redemptionMethod: 'CUSTOMER_WALLET',
+    purpose: 'CASH_TO_CASH_CLAIM',
+  });
   const otp = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
   const claim = app.get(AgentCashToCashClaimService);
   const postJournal = ledger.postJournalInTransaction.bind(ledger);
@@ -2190,12 +2190,20 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     snapshot.evidence[0]!.status = 'REVOKED';
     await expect(claim.execute(input)).rejects.toThrow();
     snapshot.evidence[0]!.status = 'VERIFIED';
-    await db.query(`INSERT INTO kyc_tier_manual_holds(customer_id,actor,reason) VALUES($1,'fixture','MANUAL_REVIEW')`,[customerId]);
-    const {claimantPrincipal: ignoredPrincipal, ...holdRequest} = input;
+    await db.query(
+      `INSERT INTO kyc_tier_manual_holds(customer_id,actor,reason) VALUES($1,'fixture','MANUAL_REVIEW')`,
+      [customerId],
+    );
+    const { claimantPrincipal: ignoredPrincipal, ...holdRequest } = input;
     void ignoredPrincipal;
-    const held = await server.inject({method:'POST',url:'/api/v1/agents/cash-to-cash/claim',headers:{authorization:`Bearer ${token}`},payload:holdRequest});
+    const held = await server.inject({
+      method: 'POST',
+      url: '/api/v1/agents/cash-to-cash/claim',
+      headers: { authorization: `Bearer ${token}` },
+      payload: holdRequest,
+    });
     expect(held.statusCode).toBeGreaterThanOrEqual(400);
-    await db.query(`DELETE FROM kyc_tier_manual_holds WHERE customer_id=$1`,[customerId]);
+    await db.query(`DELETE FROM kyc_tier_manual_holds WHERE customer_id=$1`, [customerId]);
     expect(
       await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challenge.challengeId]),
     ).toEqual([{ status: 'ACTIVE' }]);
@@ -2208,16 +2216,14 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     ).toEqual([{ status: 'ACTIVE', failed_attempts: 1 }]);
     const previousChallengeId = challenge.challengeId;
     sms.clear();
-    challenge = await app
-      .get(AgentDeskOtpService)
-      .issue({
-        agentId,
-        agentSessionId: deskSession,
-        customerId,
-        transferId,
-        redemptionMethod: 'AGENT_CASH',
-        purpose: 'CASH_TO_CASH_CLAIM',
-      });
+    challenge = await app.get(AgentDeskOtpService).issue({
+      agentId,
+      agentSessionId: deskSession,
+      customerId,
+      transferId,
+      redemptionMethod: 'AGENT_CASH',
+      purpose: 'CASH_TO_CASH_CLAIM',
+    });
     otp = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
     input.mfaChallengeId = challenge.challengeId;
     input.otp = otp;
@@ -2239,31 +2245,27 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     );
     await expect(claim.execute(input)).rejects.toThrow('EXPIRED');
     sms.clear();
-    challenge = await app
-      .get(AgentDeskOtpService)
-      .issue({
+    challenge = await app.get(AgentDeskOtpService).issue({
+      agentId,
+      agentSessionId: deskSession,
+      customerId,
+      transferId,
+      redemptionMethod: 'AGENT_CASH',
+      purpose: 'CASH_TO_CASH_CLAIM',
+    });
+    otp = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+    input.mfaChallengeId = challenge.challengeId;
+    input.otp = otp;
+    sms.clear();
+    await expect(
+      app.get(AgentDeskOtpService).issue({
         agentId,
         agentSessionId: deskSession,
         customerId,
         transferId,
         redemptionMethod: 'AGENT_CASH',
         purpose: 'CASH_TO_CASH_CLAIM',
-      });
-    otp = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
-    input.mfaChallengeId = challenge.challengeId;
-    input.otp = otp;
-    sms.clear();
-    await expect(
-      app
-        .get(AgentDeskOtpService)
-        .issue({
-          agentId,
-          agentSessionId: deskSession,
-          customerId,
-          transferId,
-          redemptionMethod: 'AGENT_CASH',
-          purpose: 'CASH_TO_CASH_CLAIM',
-        }),
+      }),
     ).rejects.toThrow('temporarily unavailable');
     expect(sms.sent).toHaveLength(0);
     expect(
@@ -2359,3 +2361,79 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     ledgerSpy.mockRestore();
   }
 }, 120_000);
+
+test('claim failures remain budgeted across replacement challenges', async () => {
+  const { AgentDeskOtpService } = await import('../src/agent/agent-desk-otp.service');
+  const { AgentCashToCashClaimService } = await import(
+    '../src/agent/agent-cash-to-cash-claim.service'
+  );
+  const customerId = await subject('LEVEL_1', ['BVN']);
+  await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [customerId]);
+  await db.query(
+    `INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE')`,
+    [randomUUID(), customerId],
+  );
+  const context = await claimOtpFixture(customerId);
+  const principal = {
+    type: 'AGENT' as const,
+    agentId: context.agentId,
+    principalId: context.agentId,
+    sessionId: context.agentSessionId,
+    roles: [],
+    scopes: [],
+    customerAccess: 'NONE' as const,
+    agentAccess: 'SELF' as const,
+  };
+  const issuer = app.get(AgentDeskOtpService),
+    claim = app.get(AgentCashToCashClaimService);
+  let lastChallenge = '',
+    lastCode = '';
+  for (const count of [2, 2, 1]) {
+    sms.clear();
+    const challenge = await issuer.issue(context);
+    const code = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+    const wrong = code === '000000' ? '000001' : '000000';
+    for (let i = 0; i < count; i++) {
+      await expect(
+        claim.execute({
+          transferId: context.transferId,
+          beneficiaryPhone: context.phone,
+          transferCode: context.transferCode,
+          customerId,
+          mfaChallengeId: challenge.challengeId,
+          otp: wrong,
+          idempotencyKey: randomUUID(),
+          redemptionMethod: 'CUSTOMER_WALLET',
+          claimantPrincipal: principal,
+        }),
+      ).rejects.toThrow('MISMATCH');
+    }
+    lastChallenge = challenge.challengeId;
+    lastCode = code;
+  }
+  expect(
+    await db.query(
+      `SELECT issuance_count,failed_attempts FROM cash_out_otp_budgets WHERE budget_key=$1`,
+      [`customer:${customerId}`],
+    ),
+  ).toEqual([{ issuance_count: 3, failed_attempts: 5 }]);
+  await expect(
+    claim.execute({
+      transferId: context.transferId,
+      beneficiaryPhone: context.phone,
+      transferCode: context.transferCode,
+      customerId,
+      mfaChallengeId: lastChallenge,
+      otp: lastCode,
+      idempotencyKey: randomUUID(),
+      redemptionMethod: 'CUSTOMER_WALLET',
+      claimantPrincipal: principal,
+    }),
+  ).rejects.toThrow('temporarily unavailable');
+  await expect(issuer.issue(context)).rejects.toThrow('temporarily unavailable');
+  expect(
+    await db.query(`SELECT status,claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`, [
+      context.transferId,
+    ]),
+  ).toEqual([{ status: 'UNCLAIMED', claim_journal_id: null }]);
+});
