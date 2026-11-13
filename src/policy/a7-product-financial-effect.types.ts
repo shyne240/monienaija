@@ -468,6 +468,7 @@ export interface A7ProductFinancialEffectA4ProductPolicyDecisionView {
  * financial effect audit and outbox payloads.
  */
 export interface A7ProductFinancialEffectA6ExternalOperationView {
+  readonly version: number;
   readonly externalOperationId: string;
   readonly externalOperationReference: string;
   readonly partnerKey: string;
@@ -868,6 +869,7 @@ export interface A7ProductFinancialEffectConsumerPorts {
    */
   readonly a6T08SettleVerifiedOutcome: (
     command: SettleVerifiedOutcomeCommand,
+    manager: EntityManager,
   ) => Promise<ExternalSettlementResult>;
 
   /**
@@ -875,6 +877,7 @@ export interface A7ProductFinancialEffectConsumerPorts {
    */
   readonly a6T08RecordSuspense: (
     command: SuspenseVerifiedOutcomeCommand,
+    manager: EntityManager,
   ) => Promise<ExternalSuspenseEntryView>;
 
   /**

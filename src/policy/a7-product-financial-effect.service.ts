@@ -143,7 +143,6 @@ import {
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_LEDGER_DUPLICATE_SETTLEMENT,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_LEDGER_INVARIANT_VIOLATION,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OPERATIONS_EVIDENCE_UNAVAILABLE,
-  A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OUTBOX_PUBLICATION_FAILED,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OUTCOME_FAILED,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OUTCOME_MAPPING_MISSING,
   A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OUTCOME_NOT_VERIFIED,
@@ -1465,60 +1464,54 @@ export class A7ProductFinancialEffectService {
     // the A5 Ledger journal on the A7 product financial effect
     // service's behalf (for the SETTLE decision) or record a new
     // A6T08 suspense entry (for the SUSPENSE decision).
-    try {
-      if (a6T08Decision === 'SETTLE') {
-        // Look up the A6T05 external-operation record to extract
-        // the operationId (the A6T08 settlement command requires
-        // the A6T05 externalOperationId, not the
-        // externalOperationReference). The A7 product financial
-        // effect service reads the A6T05 record through the A6T05
-        // service consumer boundary (reused as-is, without
-        // modification).
-        const a6View = await ports.a6ExternalOperationLookup(command.a6ExternalOperationReference);
-        if (!a6View) {
-          return this.failure(
-            command,
-            A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A6_EXTERNAL_OPERATION_NOT_FOUND,
-            'The A6T05 external-operation record could not be read for A6T08 settlement',
-            checkWithFailed('a6ExternalOperation', 'FAIL'),
-          );
-        }
-        const settleResult = await ports.a6T08SettleVerifiedOutcome({
+    if (a6T08Decision === 'SETTLE') {
+      // Look up the A6T05 external-operation record to extract
+      // the operationId (the A6T08 settlement command requires
+      // the A6T05 externalOperationId, not the
+      // externalOperationReference). The A7 product financial
+      // effect service reads the A6T05 record through the A6T05
+      // service consumer boundary (reused as-is, without
+      // modification).
+      const a6View = await ports.a6ExternalOperationLookup(command.a6ExternalOperationReference);
+      if (!a6View) {
+        throw new ServiceUnavailableException(
+          'The A6 external operation could not be read for settlement',
+        );
+      }
+      const settleResult = await ports.a6T08SettleVerifiedOutcome(
+        {
           externalOperationId: a6View.externalOperationId,
           decision: ExternalSettlementDecision.SETTLE,
-          expectedVersion: 1,
+          expectedVersion: a6View.version,
           evidence,
           requestContext: command.requestContext,
           ownerPrincipal: A7_PRODUCT_FINANCIAL_EFFECT_AUDIT_ACTOR,
-        });
-        a6T08SettlementView = settleResult.settlement;
-        a6T08SuspenseView = settleResult.suspense;
-        a5LedgerJournal = settleResult.settlement.journalId
-          ? await ports.a5LedgerJournalLookup(settleResult.settlement.journalId)
-          : null;
-      } else {
-        // SUSPENSE
-        const a6View = await ports.a6ExternalOperationLookup(command.a6ExternalOperationReference);
-        if (!a6View) {
-          return this.failure(
-            command,
-            A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A6_EXTERNAL_OPERATION_NOT_FOUND,
-            'The A6T05 external-operation record could not be read for A6T08 suspense',
-            checkWithFailed('a6ExternalOperation', 'FAIL'),
-          );
-        }
-        const suspenseReason = (
-          A7_PRODUCT_FINANCIAL_EFFECT_SUSPENSE_REASONS as Record<string, string>
-        )[command.outcome];
-        if (!suspenseReason) {
-          return this.failure(
-            command,
-            A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OUTCOME_MAPPING_MISSING,
-            'The A7 product financial effect outcome has no A6T08 suspense reason mapping',
-            checkWithFailed('outcomeMapping', 'FAIL'),
-          );
-        }
-        a6T08SuspenseView = await ports.a6T08RecordSuspense({
+        },
+        manager,
+      );
+      a6T08SettlementView = settleResult.settlement;
+      a6T08SuspenseView = settleResult.suspense;
+      a5LedgerJournal = settleResult.settlement.journalId
+        ? await ports.a5LedgerJournalLookup(settleResult.settlement.journalId, manager)
+        : null;
+      if (settleResult.settlement.journalId && !a5LedgerJournal)
+        throw new Error('Settlement journal is unavailable within its transaction');
+    } else {
+      // SUSPENSE
+      const a6View = await ports.a6ExternalOperationLookup(command.a6ExternalOperationReference);
+      if (!a6View) {
+        throw new ServiceUnavailableException(
+          'The A6 external operation could not be read for suspense',
+        );
+      }
+      const suspenseReason = (
+        A7_PRODUCT_FINANCIAL_EFFECT_SUSPENSE_REASONS as Record<string, string>
+      )[command.outcome];
+      if (!suspenseReason) {
+        throw new ConflictException('The A7 outcome has no suspense mapping');
+      }
+      a6T08SuspenseView = await ports.a6T08RecordSuspense(
+        {
           externalOperationId: a6View.externalOperationId,
           reason: suspenseReason as
             | 'PROVIDER_REJECTION'
@@ -1527,38 +1520,13 @@ export class A7ProductFinancialEffectService {
             | 'MANUAL_REVIEW'
             | 'PROVIDER_FAILURE',
           rejectionCode: 'SUSPENSE_REASON_INVALID' as ExternalSettlementRejectionCode,
-          expectedVersion: 1,
+          expectedVersion: a6View.version,
           evidence,
           requestContext: command.requestContext,
           owner: A7_PRODUCT_FINANCIAL_EFFECT_AUDIT_ACTOR,
           ownerPrincipal: A7_PRODUCT_FINANCIAL_EFFECT_AUDIT_ACTOR,
-        });
-      }
-    } catch (error) {
-      // The reservation is held by this transaction. Propagating a dependency
-      // outage rolls it back rather than committing a permanently in-progress key.
-      if (error instanceof ServiceUnavailableException) throw error;
-      if (this.isA6T08SettlementRejection(error)) {
-        return this.failure(
-          command,
-          A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A6T08_SETTLEMENT_REJECTED,
-          `The A6T08 settlement was rejected: ${(error as Error).message}`,
-          checkWithFailed('a6T08Settlement', 'FAIL'),
-        );
-      }
-      if (this.isA6T08SuspenseRejection(error)) {
-        return this.failure(
-          command,
-          A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_A6T08_SUSPENSE_REJECTED,
-          `The A6T08 suspense was rejected: ${(error as Error).message}`,
-          checkWithFailed('a6T08Settlement', 'FAIL'),
-        );
-      }
-      return this.failure(
-        command,
-        A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OPERATIONS_EVIDENCE_UNAVAILABLE,
-        `The A6T08 settlement / suspense submit failed: ${(error as Error).message}`,
-        checkWithFailed('a6T08Settlement', 'FAIL'),
+        },
+        manager,
       );
     }
 
@@ -1617,67 +1585,40 @@ export class A7ProductFinancialEffectService {
       version: 1,
     };
 
-    try {
-      await ports.operationsIdempotencyComplete(manager, reservation.record!.id, {
-        statusCode: 201,
-        responseBody: record as unknown as Record<string, unknown>,
-        resourceType: 'A7_PRODUCT_FINANCIAL_EFFECT',
-        resourceId: productFinancialEffectId,
-        key: command.idempotencyKey,
-        requestHash: canonicalHash,
-      });
-    } catch {
-      return this.failure(
+    await ports.operationsIdempotencyComplete(manager, reservation.record!.id, {
+      statusCode: 201,
+      responseBody: record as unknown as Record<string, unknown>,
+      resourceType: 'A7_PRODUCT_FINANCIAL_EFFECT',
+      resourceId: productFinancialEffectId,
+      key: command.idempotencyKey,
+      requestHash: canonicalHash,
+    });
+    await ports.operationsAudit(
+      manager,
+      this.buildAuditRecord(auditAction, productFinancialEffectId, command, record),
+    );
+    await ports.operationsAudit(
+      manager,
+      this.buildAuditRecord(
+        A7_PRODUCT_FINANCIAL_EFFECT_AUDIT_ACTION_RESERVED,
+        productFinancialEffectId,
         command,
-        A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OPERATIONS_EVIDENCE_UNAVAILABLE,
-        'The A7 internal idempotency record could not be completed',
-        checkWithFailed('idempotency', 'FAIL'),
-      );
-    }
-    try {
-      await ports.operationsAudit(
-        manager,
-        this.buildAuditRecord(auditAction, productFinancialEffectId, command, record),
-      );
-      await ports.operationsAudit(
-        manager,
-        this.buildAuditRecord(
-          A7_PRODUCT_FINANCIAL_EFFECT_AUDIT_ACTION_RESERVED,
-          productFinancialEffectId,
-          command,
-          record,
-        ),
-      );
-    } catch {
-      return this.failure(
-        command,
-        A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OPERATIONS_EVIDENCE_UNAVAILABLE,
-        'The A7 product financial effect audit could not be recorded',
-        checkWithFailed('idempotency', 'FAIL'),
-      );
-    }
-    try {
-      await ports.operationsOutboxEnqueue(manager, {
-        eventType: A7_PRODUCT_FINANCIAL_EFFECT_OUTBOX_EVENT_TYPE,
-        aggregateType: 'A7_PRODUCT_FINANCIAL_EFFECT',
-        aggregateId: productFinancialEffectId,
-        eventKey: `a7-product-financial-effect:${productFinancialEffectId}`,
-        schemaVersion: 1,
-        classification: A7_PRODUCT_FINANCIAL_EFFECT_OUTBOX_EVENT_CLASSIFICATION,
-        retentionClass: A7_PRODUCT_FINANCIAL_EFFECT_OUTBOX_EVENT_RETENTION_CLASS,
-        occurredAt: new Date(createdAt),
-        correlationId: command.requestContext.correlationId,
-        causationId: command.causationId,
-        payload: this.buildOutboxPayload(record, command, auditAction),
-      });
-    } catch {
-      return this.failure(
-        command,
-        A7_PRODUCT_FINANCIAL_EFFECT_FAILURE_OUTBOX_PUBLICATION_FAILED,
-        'The A7 product financial effect outbox fact could not be published',
-        checkWithFailed('idempotency', 'FAIL'),
-      );
-    }
+        record,
+      ),
+    );
+    await ports.operationsOutboxEnqueue(manager, {
+      eventType: A7_PRODUCT_FINANCIAL_EFFECT_OUTBOX_EVENT_TYPE,
+      aggregateType: 'A7_PRODUCT_FINANCIAL_EFFECT',
+      aggregateId: productFinancialEffectId,
+      eventKey: `a7-product-financial-effect:${productFinancialEffectId}`,
+      schemaVersion: 1,
+      classification: A7_PRODUCT_FINANCIAL_EFFECT_OUTBOX_EVENT_CLASSIFICATION,
+      retentionClass: A7_PRODUCT_FINANCIAL_EFFECT_OUTBOX_EVENT_RETENTION_CLASS,
+      occurredAt: new Date(createdAt),
+      correlationId: command.requestContext.correlationId,
+      causationId: command.causationId,
+      payload: this.buildOutboxPayload(record, command, auditAction),
+    });
     try {
       await ports.operationsMetricsIncrement(manager, A7_PRODUCT_FINANCIAL_EFFECT_METRIC_ADMITTED);
       await ports.operationsMetricsIncrement(manager, metricName);
@@ -1865,7 +1806,7 @@ export class A7ProductFinancialEffectService {
         externalOperationId: a6View.externalOperationId,
         settlementId: existingSettlement.settlementId,
         suspenseEntryId: firstSuspense.suspenseId,
-        expectedVersion: 1,
+        expectedVersion: a6View.version,
         requestContext: command.requestContext,
         reason: command.reversalReason ?? 'A7 product financial effect reversal',
       },
@@ -2600,75 +2541,6 @@ export class A7ProductFinancialEffectService {
     return `${A7_PRODUCT_FINANCIAL_EFFECT_REFERENCE_PREFIX}:v${A7_PRODUCT_FINANCIAL_EFFECT_CONTRACT_VERSION}:${this.sha256(
       `A7-PRODUCT-FINANCIAL-EFFECT:${productFinancialEffectId}`,
     )}`;
-  }
-
-  private isA6T08SettlementRejection(error: unknown): boolean {
-    if (!(error instanceof ConflictException)) {
-      return false;
-    }
-    const response = error.getResponse();
-    if (typeof response === 'object' && response !== null) {
-      const code = (response as { code?: unknown }).code;
-      if (typeof code === 'string') {
-        // Exclude suspense and compensating codes (they are checked
-        // by their dedicated detectors).
-        if (code.includes('SUSPENSE') || code.includes('COMPENSATING')) {
-          return false;
-        }
-        return (
-          code.includes('SETTLEMENT') ||
-          code.includes('REJECT') ||
-          code.includes('CURRENCY_MISMATCH') ||
-          code.includes('AMOUNT_MISMATCH') ||
-          code.includes('LOCK') ||
-          code.includes('INVARIANT')
-        );
-      }
-    }
-    if (typeof response === 'string') {
-      return /SETTLEMENT|REJECT|INVARIANT/i.test(response);
-    }
-    return false;
-  }
-
-  private isA6T08SuspenseRejection(error: unknown): boolean {
-    if (!(error instanceof ConflictException)) {
-      return false;
-    }
-    const response = error.getResponse();
-    if (typeof response === 'object' && response !== null) {
-      const code = (response as { code?: unknown }).code;
-      if (typeof code === 'string') {
-        if (!code.includes('SUSPENSE')) {
-          return false;
-        }
-        return code.includes('SUSPENSE') || code.includes('REJECT');
-      }
-    }
-    if (typeof response === 'string') {
-      return /SUSPENSE|REJECT/i.test(response);
-    }
-    return false;
-  }
-
-  private isA6T08CompensatingRejection(error: unknown): boolean {
-    if (!(error instanceof ConflictException)) {
-      return false;
-    }
-    const response = error.getResponse();
-    if (typeof response === 'object' && response !== null) {
-      const code = (response as { code?: unknown }).code;
-      if (typeof code === 'string') {
-        if (!code.includes('COMPENSATING')) {
-          return false;
-        }
-        return code.includes('COMPENSATING') || code.includes('REJECT');
-      }
-    }
-    if (typeof response === 'string') {
-      return /COMPENSATING|REJECT/i.test(response);
-    }
-    return false;
   }
 
   private isHashConflict(error: unknown): boolean {
