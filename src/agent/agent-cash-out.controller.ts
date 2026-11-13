@@ -1,6 +1,7 @@
-import { Body, Controller, HttpCode, Post, Req } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Req, UnauthorizedException } from '@nestjs/common';
 
 import { AgentCashOutService } from './agent-cash-out.service';
+import { RecoverCashOutDto } from './dto/recover-cash-out.dto';
 import { CashOutDto } from './dto/cash-out.dto';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
@@ -12,6 +13,15 @@ interface AuthenticatedRequest {
 @Controller('agents')
 export class AgentCashOutController {
   constructor(private readonly cashOutService: AgentCashOutService) {}
+
+  @Post('cash-out/recover')
+  @HttpCode(200)
+  async recover(@Body() dto: RecoverCashOutDto, @Req() req: AuthenticatedRequest) {
+    const principal = req.authorizationPrincipal;
+    if (!principal || principal.type !== 'AGENT' || !principal.agentId)
+      throw new UnauthorizedException('Agent authentication required');
+    return this.cashOutService.recoverReceipt(principal, dto.idempotencyKey);
+  }
 
   @Post('cash-out')
   @HttpCode(201)

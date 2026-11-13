@@ -42,7 +42,7 @@ function storageKeyFor(agentId: string, operationType: AgentOperationType): stri
   return `${STORAGE_KEY_PREFIX}:${agentId}:${operationType}`;
 }
 
-// A pending intent older than this is treated as abandoned and ignored (and dropped from
+// For non-cash-out flows, a pending intent older than this is treated as abandoned and ignored (and dropped from
 // storage) rather than resurrected against a much later, unrelated operation that happens to
 // reuse the same screen. Matches the customer-mobile precedent: comfortably exceeds any
 // realistic ambiguous-timeout recovery window without lingering indefinitely on the device.
@@ -78,7 +78,7 @@ function isPendingAgentOperation(value: unknown): value is PendingAgentOperation
 
 /**
  * Loads the persisted pending operation, but ONLY if it belongs to the given Agent and
- * operation type and has not exceeded the staleness window. Any mismatch, parse failure, or
+ * operation type and, except for cash-out, has not exceeded the staleness window. Any mismatch, parse failure, or
  * staleness returns null (staleness also clears the stale record) — never leaks one Agent's
  * (or one operation type's) pending key into another's.
  */
@@ -102,7 +102,7 @@ export async function loadPendingAgentOperation(
   if (parsed.agentId !== agentId || parsed.operationType !== operationType) return null;
 
   const ageMs = Date.now() - new Date(parsed.createdAt).getTime();
-  if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > MAX_PENDING_AGE_MS) {
+  if (operationType !== 'CASH_OUT' && (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > MAX_PENDING_AGE_MS)) {
     await clearPendingAgentOperation(agentId, operationType);
     return null;
   }

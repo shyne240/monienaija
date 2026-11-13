@@ -26,6 +26,7 @@ jest.mock('../src/services/agent-api', () => ({
   resolveCustomerRecipient: jest.fn(),
   requestAgentMfaChallenge: jest.fn(),
   agentCashOut: jest.fn(),
+  recoverAgentCashOut: jest.fn(),
   describeApiError: jest.requireActual('../src/services/agent-api').describeApiError,
   describeCashOutError: jest.requireActual('../src/services/agent-api').describeCashOutError,
   isAmbiguousOperationOutcome: jest.requireActual('../src/services/agent-api').isAmbiguousOperationOutcome,
@@ -35,6 +36,7 @@ const mockApi = jest.requireMock('../src/services/agent-api') as {
   resolveCustomerRecipient: jest.Mock;
   requestAgentMfaChallenge: jest.Mock;
   agentCashOut: jest.Mock;
+  recoverAgentCashOut: jest.Mock;
 };
 
 const mockNavigate = jest.fn();
@@ -748,32 +750,19 @@ describe('Wallet→Cash — Idempotency-Key durability across a simulated proces
     expect(persisted?.amountMinor).toBe('300000');
   });
 
-  test('2. a fresh Confirm instance after a simulated restart reuses the persisted key, not the freshly-minted route-param one', async () => {
-    // Precondition: left behind by an earlier ambiguous attempt (per test 1 above).
-    await savePendingAgentOperation({
-      agentId,
-      operationType: 'CASH_OUT',
-      idempotencyKey: 'w2c-restart-original',
-      counterpartyId: 'cust-uuid-12345',
-      amountMinor: '300000',
-      currency: 'NGN',
-      createdAt: new Date().toISOString(),
-    });
-
-    // "Reopen the app": a fresh Confirm instance with a BRAND NEW route-param key, exactly
-    // what WalletToCashAmountScreen would mint since its in-memory useRef cannot have
-    // survived the process kill.
-    mockApi.agentCashOut.mockResolvedValueOnce(cashOutResult);
-    mockRoute = {
-      key: 'k2',
-      name: 'WalletToCashConfirm',
-      params: { customer, amountMinor: '300000', idempotencyKey: 'w2c-restart-FRESH-K2' },
-    };
-    const second = wrap(<WalletToCashConfirmScreen />);
-    await fillAndSubmit(second);
-    await waitFor(() => expect(mockApi.agentCashOut).toHaveBeenCalledTimes(1));
-
-    expect(mockApi.agentCashOut.mock.calls[0][0].idempotencyKey).toBe('w2c-restart-original');
+  test('2. restart recovers the original receipt without new authorization', async () => {
+    await savePendingAgentOperation({ agentId, operationType:'CASH_OUT', idempotencyKey:'w2c-restart-original', counterpartyId:customer.customerId, amountMinor:'300000', currency:'NGN', createdAt:new Date().toISOString() });
+    mockRoute = { key:'k2', name:'WalletToCashConfirm', params:{customer, amountMinor:'300000', idempotencyKey:'fresh-key'} };
+    mockApi.recoverAgentCashOut.mockResolvedValueOnce({...cashOutResult, agentId, idempotencyKey:'w2c-restart-original', status:'REPLAYED', replayed:true});
+    const screen = wrap(<WalletToCashConfirmScreen />);
+    await waitFor(() => expect(screen.getByTestId('w2c-recovery-card')).toBeTruthy());
+    expect(screen.getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(screen.getByTestId('w2c-recover-button'));
+    await waitFor(() => expect(mockReset).toHaveBeenCalled());
+    expect(mockApi.recoverAgentCashOut).toHaveBeenCalledWith('w2c-restart-original');
+    expect(mockApi.agentCashOut).not.toHaveBeenCalled();
+    expect(mockApi.requestAgentMfaChallenge).not.toHaveBeenCalled();
+    expect(await loadPendingAgentOperation(agentId, 'CASH_OUT')).toBeNull();
   });
 
   test('3. success clears the persisted operation', async () => {
@@ -829,15 +818,14 @@ describe('Wallet→Cash — Idempotency-Key durability across a simulated proces
       createdAt: new Date().toISOString(),
     });
 
-    mockApi.agentCashOut.mockResolvedValueOnce({ ...cashOutResult, amountMinor: '700000' });
     mockRoute = {
       key: 'k2',
       name: 'WalletToCashConfirm',
       params: { customer, amountMinor: '700000', idempotencyKey: 'w2c-amount-b-own-key' },
     };
     const second = wrap(<WalletToCashConfirmScreen />);
-    await fillAndSubmit(second);
-    await waitFor(() => expect(mockApi.agentCashOut).toHaveBeenCalledTimes(1));
-    expect(mockApi.agentCashOut.mock.calls[0][0].idempotencyKey).toBe('w2c-amount-b-own-key');
+    await waitFor(() => expect(second.getByTestId('w2c-pending-mismatch')).toBeTruthy());
+    expect(second.getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(true);
+    expect(mockApi.agentCashOut).not.toHaveBeenCalled();
   });
 });

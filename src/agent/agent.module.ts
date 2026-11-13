@@ -48,6 +48,7 @@ import { AgentAppController } from './agent-app.controller';
 import { AgentTransactionHistoryService } from './agent-transaction-history.service';
 import { AgentDeskOtpController } from './agent-desk-otp.controller';
 import { AgentDeskOtpService } from './agent-desk-otp.service';
+import { CashOutInstitutionResolver } from './cash-out-institution.resolver';
 import { NotificationModule } from '../notification/notification.module';
 import { OutletModule } from '../outlet/outlet.module';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
@@ -106,6 +107,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     AgentDeskOtpController, // V1-AGENT-MFA-API-01 — issue-only desk OTP challenge surface
   ],
   providers: [
+    CashOutInstitutionResolver,
     AgentClassService,
     AgentApplicationService,
     AgentReceivingNumberService,

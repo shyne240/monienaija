@@ -1,3 +1,4 @@
+import { CashOutInstitutionResolver } from '../src/agent/cash-out-institution.resolver';
 import { CustomerFinancialEligibilityService } from '../src/kyc-verification/customer-financial-eligibility.service';
 import type { TierEvidenceSnapshot } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
@@ -67,6 +68,8 @@ beforeAll(async () => {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(DataSource)
     .useValue(db)
+    .overrideProvider(CashOutInstitutionResolver)
+    .useValue({ resolve: () => Promise.resolve('MONIENAIJA') })
     .overrideProvider(KycTierEvidenceReader)
     .useValue({ read: (_m: unknown, id: string) => Promise.resolve(snapshots.get(id) ?? null) })
     .overrideProvider(NOTIFICATION_PROVIDER_TOKEN)
@@ -870,6 +873,38 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     `agent-financial.v1:${agent.id}`,
     input.idempotencyKey,
   ]);
+  const newSession = randomUUID();
+  await db.query(
+    `INSERT INTO agent_authentication_sessions(id,agent_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at) VALUES($1,$2,$3,$4,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp())`,
+    [newSession, agent.id, agentCredential, randomBytes(32).toString('hex')],
+  );
+  const recovered = await service.recoverReceipt(
+    { ...input.agentPrincipal, sessionId: newSession },
+    input.idempotencyKey,
+  );
+  expect(recovered).toMatchObject({
+    journalId: result.journalId,
+    customerId,
+    agentId: agent.id,
+    amountMinor: '1000',
+    currency: 'NGN',
+  });
+  await expect(
+    service.recoverReceipt(
+      { ...input.agentPrincipal, agentId: randomUUID() },
+      input.idempotencyKey,
+    ),
+  ).rejects.toThrow();
+  await expect(
+    service.recoverReceipt(
+      { ...input.agentPrincipal, sessionId: randomUUID() },
+      input.idempotencyKey,
+    ),
+  ).rejects.toThrow();
+  await expect(
+    service.recoverReceipt({ ...input.agentPrincipal, sessionId: newSession }, randomUUID()),
+  ).rejects.toThrow();
+  expect((await ledger.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe('1000');
   const durableReplay = await service.execute(input);
   expect(durableReplay).toMatchObject({ status: 'REPLAYED', journalId: result.journalId });
   await expect(service.execute({ ...input, idempotencyKey: randomUUID() })).rejects.toThrow(

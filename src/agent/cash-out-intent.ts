@@ -6,6 +6,7 @@ import { reserveCashOutOtpIssuance } from './cash-out-otp-budget';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export interface CashOutIntentInput {
+  institutionScope: string;
   agentId: string;
   agentSessionId?: string;
   customerId: string;
@@ -28,6 +29,8 @@ export async function establishCashOutIntent(
     !input.currency
   )
     throw new BadRequestException('Cash-out transaction context is required');
+  if (input.institutionScope !== 'MONIENAIJA')
+    throw new BadRequestException('Institution integration not supported by current schema');
   await requireCashOutAgentSession(manager, input.agentId, input.agentSessionId);
   const key = input.operationKey.trim();
   const amount = parsePositiveMinorUnits(input.amountMinor).toString();

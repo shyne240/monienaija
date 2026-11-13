@@ -11,6 +11,7 @@ import { Input } from '../../../components/Input';
 import { MfaChallengeCard } from '../../../components/MfaChallengeCard';
 import {
   agentCashOut,
+  recoverAgentCashOut,
   describeCashOutError,
   isAmbiguousOperationOutcome,
   type AgentCashOutResult,
@@ -39,14 +40,8 @@ import type { RootStackParamList } from '../../../navigation/types';
  * Credentials are NEVER persisted, NEVER logged, NEVER put in navigation params,
  * and always wiped on success, error, or screen unmount.
  *
- * V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01: the Idempotency-Key minted on the Amount
- * screen is durably persisted (SecureStorage, Agent-scoped) immediately before the request
- * is sent. If the app process is killed before a response arrives and the Agent restarts the
- * flow for what they believe is the same Wallet→Cash withdrawal, the persisted key is
- * recognized (same customer + amount) and reused instead of a fresh key being minted. The
- * customer OTP itself remains single-use and credential re-entry is unaffected by this — only
- * the Idempotency-Key's lifecycle changes. On a definitive rejection (4xx) or success the
- * pending record is cleared; on an ambiguous outcome (network error / 5xx) it is left in place.
+ * A pending operation is persisted before submission without credentials. Ambiguous
+ * outcomes require read-only recovery before another authorization can be attempted.
  */
 export const WalletToCashConfirmScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -63,19 +58,70 @@ export const WalletToCashConfirmScreen: React.FC = () => {
   const [clientError, setClientError] = useState('');
   const effectiveKeyRef = useRef<string>(idempotencyKey);
   const [operationKey, setOperationKey] = useState<string | null>(null);
+  const [recoveryPending, setRecoveryPending] = useState(false);
+  const [recoveryError, setRecoveryError] = useState('');
+  const [pendingMismatch, setPendingMismatch] = useState(false);
 
   useEffect(() => {
     let active = true;
     const load = async () => {
       const pending = agentId ? await loadPendingAgentOperation(agentId, 'CASH_OUT') : null;
-      const params = {counterpartyId:customer.customerId, amountMinor, currency:'NGN'};
-      const key = pending && matchesPendingAgentOperation(pending, params) ? pending.idempotencyKey : idempotencyKey;
-      if (active) { effectiveKeyRef.current = key; setOperationKey(key); }
+      const params = { counterpartyId: customer.customerId, amountMinor, currency: 'NGN' };
+      const key =
+        pending && matchesPendingAgentOperation(pending, params)
+          ? pending.idempotencyKey
+          : idempotencyKey;
+      if (active) {
+        effectiveKeyRef.current = key;
+        setOperationKey(key);
+        setRecoveryPending(!!pending && matchesPendingAgentOperation(pending, params));
+        setPendingMismatch(!!pending && !matchesPendingAgentOperation(pending, params));
+      }
     };
     void load();
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [agentId, customer.customerId, amountMinor, idempotencyKey]);
   const submitInFlightRef = useRef(false);
+
+  const recoverReceipt = async () => {
+    if (!agentId || !operationKey) return;
+    setRecoveryError('');
+    try {
+      const result = await recoverAgentCashOut(operationKey);
+      if (
+        result.agentId !== agentId ||
+        result.customerId !== customer.customerId ||
+        result.amountMinor !== amountMinor ||
+        result.currency !== 'NGN' ||
+        result.idempotencyKey !== operationKey
+      )
+        throw new Error('Receipt does not match this transaction');
+      await clearPendingAgentOperation(agentId, 'CASH_OUT');
+      void queryClient.invalidateQueries({ queryKey: ['agent-financial-position', agentId] });
+      void queryClient.invalidateQueries({ queryKey: ['agent-transactions', agentId] });
+      void queryClient.invalidateQueries({ queryKey: ['agent-history', agentId] });
+      navigation.reset({
+        index: 0,
+        routes: [
+          {
+            name: 'WalletToCashSuccess',
+            params: {
+              result,
+              amountMinor,
+              customerDisplay: customer.display,
+              customerReceivingNumber: customer.receivingNumber,
+            },
+          },
+        ],
+      });
+    } catch {
+      setRecoveryError(
+        'Receipt is not available yet. Retry recovery or contact support; do not submit a new cash-out.',
+      );
+    }
+  };
 
   const cashOutMutation = useMutation<AgentCashOutResult, unknown, void>({
     mutationFn: () => {
@@ -125,7 +171,9 @@ export const WalletToCashConfirmScreen: React.FC = () => {
         setChallenge(null);
         setMfaInvalidatedRevision((rev) => rev + 1);
       }
-      if (agentId && !isAmbiguousOperationOutcome(err)) {
+      if (isAmbiguousOperationOutcome(err)) {
+        setRecoveryPending(true);
+      } else if (agentId) {
         await clearPendingAgentOperation(agentId, 'CASH_OUT');
       }
     },
@@ -142,6 +190,10 @@ export const WalletToCashConfirmScreen: React.FC = () => {
   );
 
   const handleSubmit = async () => {
+    if (recoveryPending || pendingMismatch) {
+      setClientError('Recover the previous receipt before submitting another cash-out.');
+      return;
+    }
     if (!challenge) {
       setClientError('Send customer verification code first');
       return;
@@ -223,13 +275,40 @@ export const WalletToCashConfirmScreen: React.FC = () => {
           </Text>
         </Card>
 
+        {pendingMismatch && (
+          <Card testID="w2c-pending-mismatch">
+            <Text>
+              A previous cash-out is unresolved. Return to its original details to recover the
+              receipt or contact support.
+            </Text>
+          </Card>
+        )}
         {/* Step 3A: Customer OTP Challenge */}
+        {recoveryPending && (
+          <Card testID="w2c-recovery-card">
+            <Text>Check the result of your previous cash-out before starting another.</Text>
+            <Button
+              label="Recover receipt"
+              onPress={() => {
+                void recoverReceipt();
+              }}
+              testID="w2c-recover-button"
+            />
+            {recoveryError ? <Text testID="w2c-recovery-error">{recoveryError}</Text> : null}
+          </Card>
+        )}
         <MfaChallengeCard
           customerId={customer.customerId}
           purpose="WALLET_TO_CASH"
-          cashOutContext={operationKey ? {amountMinor:String(amountMinor),currency:"NGN",operationKey} : undefined}
+          cashOutContext={
+            operationKey
+              ? { amountMinor: String(amountMinor), currency: 'NGN', operationKey }
+              : undefined
+          }
           invalidatedRevision={mfaInvalidatedRevision}
-          disabled={cashOutMutation.isPending || !operationKey}
+          disabled={
+            cashOutMutation.isPending || !operationKey || recoveryPending || pendingMismatch
+          }
           onChallengeReady={(issued) => {
             setChallenge(issued);
             setClientError('');
@@ -307,6 +386,7 @@ export const WalletToCashConfirmScreen: React.FC = () => {
 
           <Button
             loading={cashOutMutation.isPending}
+            disabled={cashOutMutation.isPending || !operationKey || recoveryPending || pendingMismatch}
             label={cashOutMutation.isPending ? 'Processing…' : 'Authorize cash-out'}
             onPress={handleSubmit}
             testID="w2c-confirm-submit"
