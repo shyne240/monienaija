@@ -1192,6 +1192,112 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
     notes:
       'Single-actor governance (no maker/checker) — see V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 report §5 for the documented reasoning: this action is structurally incapable of altering permissions, so dual control was judged unnecessary; fully audited via AuditService.',
   },
+
+  // ------------------------------------------------------------- INSTITUTION
+  // ARENA 4 — institutional foundation (Phase 1). These are the first catalogue functions for
+  // financial-institution identity and agent affiliation. `institution.attribution.view` is the
+  // ONLY marker of explicitly authorized platform-level staff: holding it permits reading any
+  // institution's record and the cross-institution attribution-gap report. Every other holder of
+  // `institution.view` still needs an ACTIVE `workforce_institution_assignments` row resolved at
+  // request time, so no existing operator silently gains access to every institution.
+  {
+    functionCode: 'institution.view',
+    domain: 'INSTITUTION',
+    name: 'View financial institutions',
+    description: 'View financial institutions within the workforce principal’s institution scope.',
+    sensitivity: READ,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    notes:
+      'Scoped at request time by workforce_institution_assignments; holding this function alone does not grant cross-institution access.',
+  },
+  {
+    functionCode: 'institution.manage',
+    domain: 'INSTITUTION',
+    name: 'Register and configure financial institutions',
+    description:
+      'Register a financial institution, record regulatory evidence and manage aggregator relationships. Never confers operational authority.',
+    sensitivity: OPERATIONAL,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    notes:
+      'Administrative only: registration and regulatory evidence never authorize financial services. Operational approval is a separate governed action.',
+  },
+  {
+    functionCode: 'institution.lifecycle.prepare',
+    domain: 'INSTITUTION',
+    name: 'Prepare institution lifecycle change',
+    description:
+      'Initiate a governed operational approval, suspension or closure of a financial institution.',
+    sensitivity: OPERATIONAL,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    makerCheckerRequired: true,
+    notes: 'Maker side of FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE.',
+  },
+  {
+    functionCode: 'institution.lifecycle.approve',
+    domain: 'INSTITUTION',
+    name: 'Approve institution lifecycle change',
+    description:
+      'Independently approve the operational approval, suspension or closure of a financial institution.',
+    sensitivity: SENSITIVE,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    financeClassRestricted: true,
+    makerCheckerRequired: true,
+    approvalRequired: true,
+    notes: 'Checker side of FINANCIAL_INSTITUTION_LIFECYCLE_CHANGE; self-approval prohibited.',
+  },
+  {
+    functionCode: 'institution.affiliation.prepare',
+    domain: 'INSTITUTION',
+    name: 'Prepare agent institution affiliation change',
+    description:
+      'Initiate a governed assign, transfer, suspend, reactivate or terminate of an agent’s institution affiliation.',
+    sensitivity: OPERATIONAL,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    makerCheckerRequired: true,
+    notes: 'Maker side of INSTITUTION_AGENT_AFFILIATION_CHANGE.',
+  },
+  {
+    functionCode: 'institution.affiliation.approve',
+    domain: 'INSTITUTION',
+    name: 'Approve agent institution affiliation change',
+    description:
+      'Independently approve an agent institution affiliation change, consuming the approval atomically with execution.',
+    sensitivity: SENSITIVE,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    financeClassRestricted: true,
+    makerCheckerRequired: true,
+    approvalRequired: true,
+    notes: 'Checker side of INSTITUTION_AGENT_AFFILIATION_CHANGE; self-approval prohibited.',
+  },
+  {
+    functionCode: 'institution.attribution.view',
+    domain: 'INSTITUTION',
+    name: 'View cross-institution attribution',
+    description:
+      'Read any institution and the platform-wide read-only attribution-gap report. Explicit platform-level staff marker.',
+    sensitivity: READ,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    notes:
+      'The only explicit platform-authority marker in this domain. Never inferred from a role name or token claim.',
+  },
+  {
+    functionCode: 'institution.workforce.assign',
+    domain: 'INSTITUTION',
+    name: 'Assign workforce institution scope',
+    description: 'Grant or revoke a workforce principal’s institution-scoped authority.',
+    sensitivity: SENSITIVE,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    notes:
+      'Platform-level administration. The resulting assignment is re-read on every request, so revocation applies to live sessions immediately.',
+  },
 ];
 
 export const AUTHORIZATION_ROLE_SEED: AuthorizationRoleSeed[] = [
@@ -1572,4 +1678,26 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   // administration remit. Neither function changes any role/permission grant.
   nowAssign('ADMINISTRATOR', 'workforce.dashboard.view', VIEW),
   nowAssign('ADMINISTRATOR', 'workforce.dashboard.assign', EXECUTE),
+  // ------------------------------------------------------------- INSTITUTION
+  // ARENA 4 Phase 1. Maker roles initiate, FINANCE_CONTROLLER independently approves, and only
+  // explicitly designated platform staff carry the cross-institution read marker.
+  nowAssign('SUPER_ADMIN', 'institution.view', VIEW),
+  nowAssign('SUPER_ADMIN', 'institution.manage', EXECUTE),
+  nowAssign('SUPER_ADMIN', 'institution.attribution.view', VIEW),
+  nowAssign('SUPER_ADMIN', 'institution.workforce.assign', EXECUTE),
+  nowAssign('OPERATIONS', 'institution.view', VIEW),
+  nowAssign('OPERATIONS', 'institution.manage', EXECUTE),
+  nowAssign('OPERATIONS', 'institution.lifecycle.prepare', INITIATE),
+  nowAssign('AGENT_NETWORK_MANAGER', 'institution.view', VIEW),
+  nowAssign('AGENT_NETWORK_MANAGER', 'institution.affiliation.prepare', INITIATE),
+  nowAssign('FINANCE_CONTROLLER', 'institution.view', VIEW),
+  nowAssign('FINANCE_CONTROLLER', 'institution.lifecycle.approve', APPROVE),
+  nowAssign('FINANCE_CONTROLLER', 'institution.affiliation.approve', APPROVE),
+  nowAssign('FINANCE_CONTROLLER', 'institution.attribution.view', VIEW),
+  nowAssign('FINANCE_AUDITOR', 'institution.view', VIEW),
+  nowAssign('FINANCE_AUDITOR', 'institution.attribution.view', VIEW),
+  nowAssign('COMPLIANCE', 'institution.view', VIEW),
+  nowAssign('COMPLIANCE', 'institution.attribution.view', VIEW),
+  nowAssign('TREASURY', 'institution.view', VIEW),
+  nowAssign('TREASURY', 'institution.attribution.view', VIEW),
 ];
