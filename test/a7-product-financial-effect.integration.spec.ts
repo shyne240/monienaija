@@ -832,6 +832,22 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
   // 5. OUTCOME_VERIFIED / SETTLE
   // =======================================================================================
   describe('OUTCOME_VERIFIED / SETTLE', () => {
+    it('does not debit outbound withdrawal funds for an inbound funding envelope', async () => {
+      const operation = await seedExternalOperation();
+      const before = await dbBalanceOf(customerLedgerAccountId);
+      const envelope = buildEnvelope('OUTCOME_VERIFIED');
+      await expect(a7Service.postProductFinancialEffect(envelope)).rejects.toThrow(
+        'cannot use the outbound withdrawal boundary',
+      );
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(before);
+      expect(await externalSettlement.getByOperation(operation.opId)).toBeNull();
+      const commitments = await dataSource.query(
+        'SELECT id FROM financial_commitments WHERE external_operation_id=$1',
+        [operation.opId],
+      );
+      expect(commitments).toHaveLength(0);
+    });
+
     it('rolls back the A7 reservation when settlement reports a temporary dependency outage', async () => {
       await seedExternalOperation();
       const envelope = buildEnvelope('OUTCOME_VERIFIED');
