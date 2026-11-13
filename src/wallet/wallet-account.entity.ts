@@ -11,7 +11,7 @@ import {
 } from 'typeorm';
 
 import { LedgerAccount } from '../ledger/ledger-account.entity';
-import { WalletStatus } from './wallet.enums';
+import { WalletOwnerClass, WalletStatus } from './wallet.enums';
 
 @Entity({ name: 'wallet_accounts' })
 @Unique('uq_wallet_accounts_id_ledger_account', ['id', 'ledgerAccountId'])
@@ -29,8 +29,8 @@ export class WalletAccount {
   @Column({ name: 'customer_id', type: 'varchar', length: 160 })
   customerId!: string;
 
-  @Column({ name: 'owner_class', type: 'varchar', length: 12, default: 'REVIEW' })
-  ownerClass!: 'CUSTOMER' | 'AGENT' | 'REVIEW';
+  @Column({ name: 'owner_class', type: 'varchar', length: 12, default: WalletOwnerClass.REVIEW })
+  ownerClass!: WalletOwnerClass;
 
   @Column({ type: 'varchar', length: 3 })
   currency!: string;

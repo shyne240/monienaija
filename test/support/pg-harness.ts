@@ -295,6 +295,24 @@ export async function truncateAllTables(dataSource: DataSource): Promise<void> {
   // "KYC foundation: DISABLED" and provider governance looks unconfigured — so restore them for
   // exactly the same reason as the catalogues above. Idempotent and insert-only.
   await restoreKycSingletons(dataSource);
+  // Migration 1785753600118 seeds the authoritative wallet system-owner registry. It is
+  // governance reference data (a SYSTEM ownership resolution may only target a registered code),
+  // not test-authored business data, so the wholesale TRUNCATE restores it exactly as migrated.
+  const systemOwners: Array<{ present: boolean }> = await dataSource.query(
+    `SELECT to_regclass('public.wallet_system_owners') IS NOT NULL AS present`,
+  );
+  if (systemOwners[0]?.present) {
+    await dataSource.query(
+      `INSERT INTO wallet_system_owners (code, name, description) VALUES
+         ('PLATFORM_SUSPENSE', 'Platform suspense custody',
+          'Wallet retained in platform custody pending reconciliation of unreconciled suspense movements.'),
+         ('PLATFORM_SETTLEMENT', 'Platform settlement custody',
+          'Wallet retained in platform custody for settlement/clearing designations with no customer or agent owner.'),
+         ('PLATFORM_LEGACY', 'Platform legacy custody',
+          'Legacy wallet with no identifiable customer or agent owner, preserved for operational reconciliation.')
+       ON CONFLICT (code) DO NOTHING`,
+    );
+  }
 }
 
 /**

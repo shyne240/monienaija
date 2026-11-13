@@ -16,6 +16,10 @@ import { CustomerFinancialAccountBindingService } from './customer-financial-acc
 import { CustomerFinancialAccountReadService } from './customer-financial-account-read.service';
 import { WalletAccount } from './wallet-account.entity';
 import { WalletController } from './wallet.controller';
+import { WalletOwnershipReconciliationController } from './wallet-ownership-reconciliation.controller';
+import { WalletOwnershipReconciliationService } from './wallet-ownership-reconciliation.service';
+import { WalletOwnershipResolutionService } from './wallet-ownership-resolution.service';
+import { WalletOwnershipController } from './wallet-ownership.controller';
 import { WalletService } from './wallet.service';
 
 @Module({
@@ -34,12 +38,18 @@ import { WalletService } from './wallet.service';
       CustomerFinancialAccountBinding,
     ]),
   ],
-  controllers: [WalletController],
+  controllers: [
+    WalletController,
+    WalletOwnershipController,
+    WalletOwnershipReconciliationController,
+  ],
   providers: [
     WalletService,
     CustomerFinancialAccountBindingService,
     CustomerFinancialAccountReadService,
     CustomerFinancialAccountBindingRepairService,
+    WalletOwnershipResolutionService,
+    WalletOwnershipReconciliationService,
   ],
   exports: [
     WalletService,
