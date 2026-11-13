@@ -980,21 +980,15 @@ describe('A7ProductLifecycleService (A7T07)', () => {
     expect(metricsCalls).toContain('a7.product-lifecycle.transitioned');
   });
 
-  it('returns the durable replayed A7 product lifecycle record for the same scope/key with the same hash', async () => {
+  it('does not manufacture a legacy replay from response-only reservation data', async () => {
     const { service } = makeService();
     const first = await service.transitionProductLifecycle(
       withHash(service, makeTransitionInput()),
     );
     expect(first.valid).toBe(true);
-    const second = await service.transitionProductLifecycle(
-      withHash(service, makeTransitionInput()),
-    );
-    expect(second.valid).toBe(true);
-    if (first.valid && second.valid) {
-      expect(second.reservation.kind).toBe('REPLAY');
-      expect(second.record.productLifecycleId).toBe(first.record.productLifecycleId);
-      expect(second.record.replayed).toBe(true);
-    }
+    await expect(
+      service.transitionProductLifecycle(withHash(service, makeTransitionInput())),
+    ).rejects.toThrow('Legacy A7 lifecycle replay has no authoritative persisted state');
   });
 
   it('schedules a bounded retry and increments the retry metric', async () => {
