@@ -90,6 +90,7 @@ export class LimitReservationRecoveryService {
           const rows: Array<{
             id: string;
             status: string;
+            idempotency_key: string;
             principal_type: string;
             principal_id: string;
             limit_profile_code: string;
@@ -102,7 +103,7 @@ export class LimitReservationRecoveryService {
             released_at: Date | null;
             correlation_id: string | null;
           }> = await manager.query(
-            `SELECT id, status, principal_type, principal_id, limit_profile_code, product, dimension, currency,
+            `SELECT id, status, idempotency_key, principal_type, principal_id, limit_profile_code, product, dimension, currency,
                     amount_minor::text AS amount_minor, count, limit_usage_id, released_at, correlation_id
                FROM limit_reservations
               WHERE id = $1
@@ -122,6 +123,17 @@ export class LimitReservationRecoveryService {
             // Idempotent acknowledgement — never decrement twice.
             return this.result(row, 'ALREADY_RELEASED', null);
           }
+
+          // A withdrawal limit reservation is part of a live financial commitment.
+          // The generic manual recovery route cannot decide its provider outcome.
+          const commitments = await manager.query<Array<{ id: string }>>(
+            `SELECT id FROM financial_commitments WHERE idempotency_key=$1 AND state='RESERVED' FOR SHARE`,
+            [row.idempotency_key],
+          );
+          if (commitments.length)
+            throw new ConflictException(
+              'Limit reservation belongs to an active financial commitment',
+            );
 
           // status === 'RESERVED' — the only releasable state.
           if (row.limit_usage_id) {
