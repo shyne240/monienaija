@@ -233,6 +233,7 @@ export class AgentCashToCashClaimService {
   }
 
   async execute(input: AgentCashToCashClaimInput): Promise<AgentCashToCashClaimResult> {
+    this.requireSafeClaimExecution();
     const transferId = input.transferId?.trim().toLowerCase();
     if (!transferId || !UUID_PATTERN.test(transferId)) {
       throw new BadRequestException('transferId must be a UUID');
@@ -1101,6 +1102,15 @@ export class AgentCashToCashClaimService {
       }
     }
     throw this.transactionContentionExhaustedException();
+  }
+
+  // Remove this containment only when transfer-bound OTP consumption and the financial
+  // effect are atomic and validated against real PostgreSQL. Receipt recovery is separate.
+  private requireSafeClaimExecution(): void {
+    throw new ServiceUnavailableException({
+      code: 'C2C_CLAIM_EXECUTION_UNAVAILABLE',
+      message: 'Claim execution temporarily unavailable; existing funds remain held',
+    });
   }
 
   /**
