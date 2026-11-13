@@ -32,3 +32,17 @@ idempotent replays remain available without invoking the new-funding authority. 
 must resolve and lock authoritative evidence and any commitment within the same transaction,
 validate the precise request and institution, and reject unavailable or stale evidence. This is
 an integration contract, not proof that funding is safe to enable.
+
+### Stage 2 funded-obligation evidence checkpoint
+
+Migration `1785753600202` adds immutable evidence for new funding only. Within the existing
+SERIALIZABLE initiation transaction the authority must return valid opaque identity, policy,
+institution and funding-authorization fingerprints; the service locks the active AGENT wallet,
+posts the existing agent-debit/unclaimed-liability-credit journal, inserts the transfer and
+records the journal and wallet links and those fingerprints before idempotency completion.
+This does not create a second debit or reservation and does not backfill historical transfers.
+The production authority still rejects initiation. The test authority is controlled, not an
+approved policy or evidence source. This is not a completed initiation lifecycle: authoritative
+adapters and real PostgreSQL initiation/rollback/concurrency acceptance are still required.
+Expiry keeps the principal in the unclaimed liability; cancellation or release cannot be
+implemented safely without an approved disposition authority and accounting policy.

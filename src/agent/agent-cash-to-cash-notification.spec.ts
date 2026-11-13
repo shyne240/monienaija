@@ -79,7 +79,15 @@ function createHarness(
   };
   const fundingAuthority = productionAuthority
     ? new CashToCashFundingAuthority()
-    : { require: jest.fn() };
+    : {
+        require: jest.fn().mockResolvedValue({
+          institutionId: AGENT_ID,
+          senderIdentityFingerprint: 'a'.repeat(64),
+          senderPolicyFingerprint: 'b'.repeat(64),
+          fundingAuthorizationFingerprint: 'c'.repeat(64),
+          institutionEvidenceFingerprint: 'd'.repeat(64),
+        }),
+      };
   const service = new AgentCashToCashService(
     dataSource as never,
     authorizationService as never,
@@ -141,6 +149,15 @@ describe('Cash-to-Cash initiation notification outbox', () => {
     expect(harness.idempotencyService.complete).not.toHaveBeenCalled();
   });
 
+  it('rejects missing authority evidence before posting', async () => {
+    const harness = createHarness();
+    jest.spyOn(harness.fundingAuthority, 'require').mockResolvedValueOnce(undefined as never);
+    await expect(harness.service.execute(input)).rejects.toThrow(
+      'Cash-to-cash funding evidence unavailable',
+    );
+    expect(harness.ledgerService.postJournalInTransaction).not.toHaveBeenCalled();
+  });
+
   it('enqueues one safe event in the initiation transaction and replay creates no journal or event', async () => {
     const harness = createHarness('Ada Example', 'https://locator.example.ng/agents');
     const initiation = { ...input, senderPhone: '8011111111' };
@@ -170,6 +187,11 @@ describe('Cash-to-Cash initiation notification outbox', () => {
       ([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO cash_to_cash_transfers'),
     );
     expect(transferInserts).toHaveLength(1);
+    const evidenceInserts = harness.manager.query.mock.calls.filter(
+      ([sql]) =>
+        typeof sql === 'string' && sql.includes('INSERT INTO cash_to_cash_funding_evidence'),
+    );
+    expect(evidenceInserts).toHaveLength(1);
     expect(harness.outboxCalls[0]).toMatchObject({
       eventType: 'cash_to_cash.created',
       eventKey: `cash_to_cash.created:${created.transferId}`,
