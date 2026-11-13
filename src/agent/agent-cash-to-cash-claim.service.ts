@@ -939,21 +939,25 @@ export class AgentCashToCashClaimService {
       throw new ForbiddenException('An authenticated Agent is required to recover this claim');
     }
 
-    const rows: Array<{
-      transfer_id: string;
-      journal_id: string;
-      beneficiary_phone: string;
-      principal_minor: string;
-      currency: string;
-      claimant_customer_id: string;
-      claim_idempotency_key: string;
-      redemption_method: string | null;
-      request_hash: string | null;
-      reference: string | null;
-      correlation_id: string | null;
-      claimed_at: Date | string;
-    }> = await this.dataSource.query(
-      `SELECT t.id::text AS transfer_id,
+    const rows = await this.dataSource.transaction(async (manager) => {
+      await this.assertAgentSessionWithManager(manager, principal);
+      return manager.query<
+        Array<{
+          transfer_id: string;
+          journal_id: string;
+          beneficiary_phone: string;
+          principal_minor: string;
+          currency: string;
+          claimant_customer_id: string;
+          claim_idempotency_key: string;
+          redemption_method: string | null;
+          request_hash: string | null;
+          reference: string | null;
+          correlation_id: string | null;
+          claimed_at: Date | string;
+        }>
+      >(
+        `SELECT t.id::text AS transfer_id,
               t.claim_journal_id::text AS journal_id,
               t.beneficiary_phone,
               t.principal_minor::text AS principal_minor,
@@ -974,10 +978,16 @@ export class AgentCashToCashClaimService {
        WHERE t.id=$1 AND t.status='CLAIMED'
        ORDER BY e.occurred_at DESC
        LIMIT 1`,
-      [transferId, principal.agentId.toLowerCase()],
-    );
+        [transferId, principal.agentId!.toLowerCase()],
+      );
+    });
     const claim = rows[0];
     if (!claim) throw new NotFoundException('Cash-to-Cash claim not found for this Agent');
+    if (
+      !claim.request_hash ||
+      !['AGENT_CASH', 'CUSTOMER_WALLET'].includes(claim.redemption_method ?? '')
+    )
+      throw new ConflictException('Claim evidence requires reconciliation');
 
     return {
       status: 'REPLAYED',
@@ -990,7 +1000,7 @@ export class AgentCashToCashClaimService {
       claimantCustomerId: claim.claimant_customer_id,
       redemptionMethod: claim.redemption_method === 'AGENT_CASH' ? 'AGENT_CASH' : 'CUSTOMER_WALLET',
       idempotencyKey: claim.claim_idempotency_key,
-      requestHash: claim.request_hash ?? '',
+      requestHash: claim.request_hash,
       replayed: true,
       ...(claim.correlation_id ? { correlationId: claim.correlation_id } : {}),
       ...(claim.reference ? { reference: claim.reference } : {}),
