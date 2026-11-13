@@ -51,6 +51,9 @@ export class MfaChallenge {
   @Column({ name: 'expires_at', type: 'timestamptz' })
   expiresAt!: Date;
 
+  @Column({ name: 'failed_attempts', type: 'integer', default: 0 })
+  failedAttempts!: number;
+
   @Column({ name: 'verified_at', type: 'timestamptz', nullable: true })
   verifiedAt!: Date | null;
 
