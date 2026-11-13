@@ -484,6 +484,15 @@ Additive only. **Nothing is backfilled in any phase.** New columns are nullable,
 | **3 — Financial isolation**                       | nullable `institution_id` on wallets/bindings/journals/accounts; `I4` trigger; customer enrolments; limit subject + usage dimension; fee rule identity; attribution views; per-channel enforcement ramp.                                                            | 2–3 migrations | new rows carry institution; enforcement per channel after attribution runway            |
 | **4 — Providers, classes, settlement, reporting** | institution provider configs, class enablement, `external_operations`/`external_settlements` institutional columns, institution statements.                                                                                                                         | 2–3 migrations | opt-in per institution                                                                  |
 
+**Delivered so far (status, not a new decision):** Phase 1b foundation — institutions, governed
+affiliation, request-time workforce scoping, `AgentInstitutionResolver`, attribution-gap report
+(`…0400`, commits `f3ebc9a`/`ca5b38d`) — and Phase 2 institutional financial ownership — governed
+wallet attribution, customer institution enrolment, database-level ledger isolation and the
+`FinancialContextResolver` contract (`…0401`, commit `1cf6ac7`). See
+`docs/ARENA4-INSTITUTIONAL-FINANCIAL-OWNERSHIP-IMPLEMENTATION-20261113.md`. Everything below
+(limits, fees, providers, settlement, reporting, and the `advisory`/`enforced` ramp) remains
+unimplemented.
+
 **Enforcement ramp (per channel, `I12`)**
 
 `off` → `advisory` (resolve, record, never block) → `enforced` (unresolved → deny). Promotion criteria for `enforced`: 100 % of active agents in that channel have a resolved affiliation, 100 % of wallets used by that channel carry a matching institution, reconciliation shows zero unexplained gaps, and the readiness gate requires it. `off` is a temporary migration state only; **production readiness must refuse `off`/`advisory` for channels already declared institutionally scoped.**
