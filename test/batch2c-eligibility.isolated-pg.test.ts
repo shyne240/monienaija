@@ -919,6 +919,23 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
   ]);
   expect((await ledger.getAccountBalance(customerWallet.ledgerAccountId)).balanceMinor).toBe('0');
   expect((await ledger.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe('1000');
+  await expect(
+    app
+      .get(AgentDeskOtpService)
+      .issue({
+        agentId: agent.id,
+        agentSessionId: deskSession,
+        customerId,
+        purpose: 'WALLET_TO_CASH',
+        amountMinor: '2000',
+        currency: 'NGN',
+        operationKey: randomUUID(),
+        supersedesOperationKey: operationKey,
+      }),
+  ).rejects.toThrow('Superseded cash-out unavailable');
+  expect(await db.query(`SELECT status FROM cash_out_intents WHERE id=$1`, [intentId])).toEqual([
+    { status: 'COMPLETED' },
+  ]);
   const replay = await service.execute(input);
   expect(replay).toMatchObject({ status: 'REPLAYED', journalId: result.journalId });
   expect(
