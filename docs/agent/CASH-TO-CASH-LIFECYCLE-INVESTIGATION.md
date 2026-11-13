@@ -61,3 +61,20 @@ journal and evidence insertion. The complete isolated suite passes 14/14. The ex
 controlled claim institution and KYC providers are likewise not production integration.
 This does not establish cancellation, mobile recovery, historical recovery or the full
 acceptance matrix.
+
+### Cancellation containment checkpoint
+
+Migration `1785753600203` adds a CANCELLED transfer state and immutable cancellation
+record. An authenticated funding agent with current session and transaction PIN can stop
+future claims for an unexpired UNCLAIMED transfer; the transition locks the same transfer
+row as claim and expiry. Cancellation is idempotent and produces no journal, refund,
+release or change to compliance holds. The original unclaimed liability remains outstanding
+and the workforce read-only transfer view can filter CANCELLED. A claim/cancellation race
+and concurrent repeated cancellation are covered through authenticated HTTP and isolated
+PostgreSQL, along with rejection of cancellation after claim and expiry skipping cancelled
+transfers. Production institution and identity authorities remain fail-closed.
+
+This is lifecycle containment, not approved disposition. Cancellation permissions and
+customer-facing messaging still require policy approval. Dedicated reconciliation handoff,
+historical evidence classification, mobile recovery and full expiry/claim race acceptance
+remain outstanding; initiation replay alone does not provide current lifecycle status.

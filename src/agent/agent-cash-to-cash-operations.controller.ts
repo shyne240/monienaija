@@ -33,7 +33,7 @@ interface CashToCashOperationRow {
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ALLOWED_STATUSES = new Set(['UNCLAIMED', 'CLAIMED', 'EXPIRED']);
+const ALLOWED_STATUSES = new Set(['UNCLAIMED', 'CLAIMED', 'EXPIRED', 'CANCELLED']);
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
@@ -73,7 +73,7 @@ export class AgentCashToCashOperationsController {
     );
     const status = statusRaw?.trim().toUpperCase();
     if (status && !ALLOWED_STATUSES.has(status)) {
-      throw new BadRequestException('status must be UNCLAIMED, CLAIMED, or EXPIRED');
+      throw new BadRequestException('status must be UNCLAIMED, CLAIMED, EXPIRED, or CANCELLED');
     }
     const agentId = this.validateOptionalUuid(agentIdRaw, 'agentId');
     const transferId = this.validateOptionalUuid(transferIdRaw, 'transferId');
