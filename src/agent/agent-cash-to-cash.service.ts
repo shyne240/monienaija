@@ -21,6 +21,7 @@ import { IdempotencyService } from '../operations/idempotency.service';
 import { OutboxService } from '../operations/outbox.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
+import { WalletStatus } from '../wallet/wallet.enums';
 import { LedgerAccount } from '../ledger/ledger-account.entity';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { parsePositiveMinorUnits, normalizeCurrency } from '../common/money';
@@ -82,12 +83,22 @@ export interface CashToCashFundingAuthorizationRequest {
   fundingLedgerAccountId: string;
   unclaimedLedgerAccountId: string;
 }
+/** Evidence must be obtained independently by the authority under the transaction lock.
+ * Fingerprints are opaque hashes of server-side identity, policy and authorization records. */
+export interface CashToCashFundingEvidence {
+  institutionId: string;
+  senderIdentityFingerprint: string;
+  senderPolicyFingerprint: string;
+  fundingAuthorizationFingerprint: string;
+  institutionEvidenceFingerprint: string;
+}
+
 @Injectable()
 export class CashToCashFundingAuthority {
   require(
     _manager: EntityManager,
     _request: CashToCashFundingAuthorizationRequest,
-  ): void | Promise<void> {
+  ): CashToCashFundingEvidence | Promise<CashToCashFundingEvidence> {
     void _manager;
     void _request;
     throw new ServiceUnavailableException('Cash-to-cash funding authorization unavailable');
@@ -428,7 +439,13 @@ export class AgentCashToCashService {
             throw new ServiceUnavailableException('Cash-to-cash funding authorization unavailable');
           // NEW — verify Agent wallet ownership inside same transaction (pessimistic)
           const walletInTx = await manager.getRepository(WalletAccount).findOne({
-            where: { customerId: agentId, currency: 'NGN' },
+            where: {
+              customerId: agentId,
+              currency: 'NGN',
+              ownerClass: 'AGENT',
+              status: WalletStatus.ACTIVE,
+            },
+            lock: { mode: 'pessimistic_write' },
           });
           if (!walletInTx) {
             throw new NotFoundException(`Agent wallet for ${agentId} not found`);
@@ -443,7 +460,7 @@ export class AgentCashToCashService {
           // This port must independently resolve identity, agent/session eligibility,
           // institutional ownership and the funding commitment under this manager.
           // Phone, purpose and evidence reference are lookup inputs, not verified facts.
-          await this.fundingAuthority.require(manager, {
+          const fundingEvidence = await this.fundingAuthority.require(manager, {
             agentId,
             agentPrincipal: principal,
             senderPhone: senderPhone ?? null,
@@ -458,6 +475,21 @@ export class AgentCashToCashService {
             fundingLedgerAccountId: walletInTx.ledgerAccountId,
             unclaimedLedgerAccountId: unclaimedAccount.id,
           });
+
+          if (
+            !fundingEvidence ||
+            !UUID_PATTERN.test(fundingEvidence.institutionId) ||
+            ![
+              fundingEvidence.senderIdentityFingerprint,
+              fundingEvidence.senderPolicyFingerprint,
+              fundingEvidence.fundingAuthorizationFingerprint,
+              fundingEvidence.institutionEvidenceFingerprint,
+            ].every(
+              (fingerprint) =>
+                typeof fingerprint === 'string' && /^[0-9a-f]{64}$/.test(fingerprint),
+            )
+          )
+            throw new ServiceUnavailableException('Cash-to-cash funding evidence unavailable');
 
           // V1-LIMIT-04: enforce limits for AGENT OUTGOING CASH_TO_CASH
           let limitIdempotencyKey: string | null = null;
@@ -590,6 +622,31 @@ export class AgentCashToCashService {
               idempotencyKey,
               correlationId ?? null,
               expiresAt.toISOString(),
+            ],
+          );
+
+          // The existing debit and unclaimed-liability credit secure this obligation;
+          // this immutable evidence is not a second reservation or financial posting.
+          await manager.query(
+            `INSERT INTO cash_to_cash_funding_evidence
+              (transfer_id, funding_agent_id, funding_wallet_id, funding_ledger_account_id,
+               unclaimed_ledger_account_id, funding_journal_id, institution_id, request_hash,
+               sender_identity_fingerprint, sender_policy_fingerprint,
+               funding_authorization_fingerprint, institution_evidence_fingerprint)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+            [
+              idForTransfer,
+              agentId,
+              walletInTx.id,
+              walletInTx.ledgerAccountId,
+              unclaimedAccount.id,
+              journalId,
+              fundingEvidence.institutionId,
+              requestHash,
+              fundingEvidence.senderIdentityFingerprint,
+              fundingEvidence.senderPolicyFingerprint,
+              fundingEvidence.fundingAuthorizationFingerprint,
+              fundingEvidence.institutionEvidenceFingerprint,
             ],
           );
 
