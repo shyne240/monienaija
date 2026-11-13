@@ -933,6 +933,23 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
     });
 
+    it('reports missing settlement evidence as suspense without a financial journal', async () => {
+      const op = await seedExternalOperation();
+      await dataSource.query(
+        'DELETE FROM external_operation_references WHERE external_operation_id=$1',
+        [op.opId],
+      );
+      const result = await a7Service.postProductFinancialEffect(buildEnvelope('OUTCOME_VERIFIED'));
+      expect(result.valid).toBe(true);
+      if (!result.valid) throw new Error('Expected an A7 suspense result');
+      expect(result.record.a6T08Decision).toBe('SUSPENSE');
+      expect(result.record.currentState).toBe('FINANCIAL_EFFECT_SUSPENSE_RECORDED');
+      expect(result.record.a6T08Settlement?.decision).toBe('REJECT');
+      expect(result.record.a6T08Suspense?.reason).toBe('EVIDENCE_REFERENCE_MISSING');
+      expect(result.record.a5LedgerJournal).toBeNull();
+      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
+    });
+
     it('uses the persisted operation version for settlement', async () => {
       operationVersion = 2;
       await seedExternalOperation();
