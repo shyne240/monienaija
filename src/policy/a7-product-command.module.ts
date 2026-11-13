@@ -43,6 +43,9 @@
 
 import { Module, Provider } from '@nestjs/common';
 
+import { AuthorizationModule } from '../authorization/authorization.module';
+import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
+import { A7ProductPersistenceService } from './a7-product-persistence.service';
 import { OperationsModule } from '../operations/operations.module';
 import { PartnerModule } from '../partner/partner.module';
 import { VirtualAccountModule } from '../virtual-account/virtual-account.module';
@@ -65,6 +68,7 @@ import { A7ProductPolicyModule } from './a7-product-policy.module';
 export const A7_PRODUCT_COMMAND_PROVIDERS: readonly Provider[] = Object.freeze([
   A7ProductCommandRepository,
   A7ProductCommandService,
+  A7ProductPersistenceService,
 ]);
 
 /**
@@ -76,6 +80,8 @@ export const A7_PRODUCT_COMMAND_PROVIDERS: readonly Provider[] = Object.freeze([
  */
 @Module({
   imports: [
+    AuthorizationModule,
+    CustomerAuthenticationModule,
     OperationsModule,
     PartnerModule,
     VirtualAccountModule,
@@ -84,6 +90,6 @@ export const A7_PRODUCT_COMMAND_PROVIDERS: readonly Provider[] = Object.freeze([
     A7ProductCustomerBindingModule,
   ],
   providers: A7_PRODUCT_COMMAND_PROVIDERS as Provider[],
-  exports: [A7ProductCommandService, A7ProductCommandRepository],
+  exports: [A7ProductCommandService, A7ProductCommandRepository, A7ProductPersistenceService],
 })
 export class A7ProductCommandModule {}

@@ -118,7 +118,6 @@ import { A7ProductLifecycleService } from './a7-product-lifecycle.service';
 import { A7ProductPolicyService } from './a7-product-policy.service';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 
 @Injectable()
 export class A7ProductFinancialEffectRepository {
@@ -303,21 +302,9 @@ export class A7ProductFinancialEffectRepository {
   private lookupA2AuthorizationContext(
     authorizationContextReference: string,
   ): Promise<A7ProductFinancialEffectA2AuthorizationContextView | null> {
-    const normalized = authorizationContextReference.trim();
-    if (!normalized) {
-      return Promise.resolve(null);
-    }
-    return Promise.resolve({
-      principalType: 'SERVICE',
-      principalId: 'a7-product-financial-effect',
-      customerId: null,
-      customerAccess: 'ANY',
-      evaluatedAt: new Date().toISOString(),
-      allowed: true,
-      action: 'a7-product-financial-effect',
-      resourceType: 'A7_PRODUCT_FINANCIAL_EFFECT',
-      resourceId: null,
-    });
+    // Legacy evidence is not reconstructible from caller-supplied references.
+    void [authorizationContextReference];
+    return Promise.resolve(null);
   }
 
   private async recheckA3Binding(command: {
@@ -363,29 +350,9 @@ export class A7ProductFinancialEffectRepository {
   private lookupA4ProductPolicyDecision(
     decisionReference: string,
   ): Promise<A7ProductFinancialEffectA4ProductPolicyDecisionView | null> {
-    const normalized = decisionReference.trim();
-    if (!normalized) {
-      return Promise.resolve(null);
-    }
-    const profileRegistration = this.a7ProductPolicyService.getProfileRegistration(
-      'product.virtual-account',
-      'lifecycle',
-    );
-    if (!profileRegistration) {
-      return Promise.resolve(null);
-    }
-    return Promise.resolve({
-      decisionReference: normalized,
-      productKey: 'VIRTUAL_ACCOUNT',
-      capability: profileRegistration.capability,
-      action: profileRegistration.action,
-      profileReference: profileRegistration.profileReference,
-      policyVersion: profileRegistration.policyVersion,
-      decision: 'ALLOW_WITH_LIMITS',
-      expiresAt: null,
-      reasonCodes: [],
-      maxAmountMinor: null,
-    });
+    // Legacy evidence is not reconstructible from caller-supplied references.
+    void [decisionReference];
+    return Promise.resolve(null);
   }
 
   private async lookupA6ExternalOperation(
@@ -554,67 +521,22 @@ export class A7ProductFinancialEffectRepository {
     action: string,
     productState: string,
   ): Promise<A7ProductFinancialEffectA7T04ProductCustomerBindingMapView | null> {
-    if (!SHA256_PATTERN.test(mapReference)) {
-      return Promise.resolve(null);
-    }
-    if (productKey !== 'VIRTUAL_ACCOUNT') {
-      return Promise.resolve(null);
-    }
-    if (
-      capabilityKey !== 'virtual-account.assign' &&
-      capabilityKey !== 'virtual-account.inbound-funding'
-    ) {
-      return Promise.resolve(null);
-    }
-    if (action !== 'assign' && action !== 'lifecycle') {
-      return Promise.resolve(null);
-    }
-    const allowedProductStates = new Set([
-      'ASSIGN_REQUESTED',
-      'ASSIGN_PENDING',
-      'ASSIGN_ACTIVE',
-      'ASSIGN_SUSPENDED',
-      'ASSIGN_FAILED',
-      'ASSIGN_CLOSED',
-      'FUNDING_REQUESTED',
-      'FUNDING_PENDING_VERIFICATION',
-      'FUNDING_SETTLED',
-      'FUNDING_UNKNOWN',
-      'FUNDING_SUSPENDED',
-      'FUNDING_FAILED',
-      'FUNDING_CLOSED',
-    ]);
-    if (!allowedProductStates.has(productState)) {
-      return Promise.resolve(null);
-    }
-    if (
-      !UUID_PATTERN.test(customerId) ||
-      !UUID_PATTERN.test(customerWalletId) ||
-      !UUID_PATTERN.test(bindingId)
-    ) {
-      return Promise.resolve(null);
-    }
-    if (!Number.isSafeInteger(bindingVersion) || bindingVersion < 1) {
-      return Promise.resolve(null);
-    }
-    void this.a7ProductCustomerBindingService;
-    return Promise.resolve({
-      mapReference: mapReference.toLowerCase(),
-      productKey: 'VIRTUAL_ACCOUNT',
-      productVersion: 1,
+    // Legacy evidence is not reconstructible from caller-supplied references.
+    void [
+      mapReference,
+      customerId,
+      customerWalletId,
+      bindingId,
+      bindingVersion,
+      productKey,
       capabilityKey,
       action,
       productState,
-      customerId: customerId.toLowerCase(),
-      customerWalletId: customerWalletId.toLowerCase(),
-      bindingId: bindingId.toLowerCase(),
-      bindingVersion,
-      a4ProductPolicyDecisionReference: 'a4-product-policy-decision',
-      a2AuthorizationContextReference: 'a2-authorization-context',
-    });
+    ];
+    return Promise.resolve(null);
   }
 
-  private async lookupA7T05ProductCommand(
+  private lookupA7T05ProductCommand(
     productCommandReference: string,
     customerId: string,
     customerWalletId: string,
@@ -628,31 +550,25 @@ export class A7ProductFinancialEffectRepository {
     currency: string,
     accountingUnit: string,
   ): Promise<A7ProductFinancialEffectA7T05ProductCommandView | null> {
-    const normalized = productCommandReference.trim();
-    if (!normalized) {
-      return Promise.resolve(null);
-    }
-    void this.a7ProductCommandService;
-    return Promise.resolve({
-      productCommandReference: normalized,
-      productOperationReference: normalized,
-      productKey,
-      productVersion: 1,
-      capabilityKey,
-      action,
-      productState,
-      operationState: 'COMMAND_ADMITTED',
+    // Legacy evidence is not reconstructible from caller-supplied references.
+    void [
+      productCommandReference,
       customerId,
       customerWalletId,
       bindingId,
       bindingVersion,
+      productKey,
+      capabilityKey,
+      action,
+      productState,
       amountMinor,
       currency,
       accountingUnit,
-    });
+    ];
+    return Promise.resolve(null);
   }
 
-  private async lookupA7T07ProductLifecycle(
+  private lookupA7T07ProductLifecycle(
     productLifecycleReference: string,
     customerId: string,
     customerWalletId: string,
@@ -663,25 +579,19 @@ export class A7ProductFinancialEffectRepository {
     action: string,
     productState: string,
   ): Promise<A7ProductFinancialEffectA7T07ProductLifecycleView | null> {
-    const normalized = productLifecycleReference.trim();
-    if (!normalized) {
-      return Promise.resolve(null);
-    }
-    void this.a7ProductLifecycleService;
-    return Promise.resolve({
-      productLifecycleReference: normalized,
-      productLifecycleId: normalized,
-      productKey,
-      capabilityKey,
-      action,
-      productState,
-      currentLifecycleState: 'LIFECYCLE_PENDING_VERIFICATION',
-      outcome: 'OUTCOME_VERIFIED',
+    // Legacy evidence is not reconstructible from caller-supplied references.
+    void [
+      productLifecycleReference,
       customerId,
       customerWalletId,
       bindingId,
       bindingVersion,
-    });
+      productKey,
+      capabilityKey,
+      action,
+      productState,
+    ];
+    return Promise.resolve(null);
   }
 
   private async lookupA6T08Settlement(

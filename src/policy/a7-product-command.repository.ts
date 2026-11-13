@@ -164,21 +164,9 @@ export class A7ProductCommandRepository {
   private lookupA2AuthorizationContext(
     authorizationContextReference: string,
   ): Promise<A7ProductCommandA2AuthorizationContextView | null> {
-    const normalized = authorizationContextReference.trim();
-    if (!normalized) {
-      return Promise.resolve(null);
-    }
-    return Promise.resolve({
-      principalType: 'SERVICE',
-      principalId: 'a7-product-command',
-      customerId: null,
-      customerAccess: 'ANY',
-      evaluatedAt: new Date().toISOString(),
-      allowed: true,
-      action: 'a7-product-command',
-      resourceType: 'A7_PRODUCT_COMMAND',
-      resourceId: null,
-    });
+    // Legacy evidence is not reconstructible from caller-supplied references.
+    void [authorizationContextReference];
+    return Promise.resolve(null);
   }
 
   private async recheckA3Binding(command: {
@@ -224,29 +212,9 @@ export class A7ProductCommandRepository {
   private lookupA4ProductPolicyDecision(
     decisionReference: string,
   ): Promise<A7ProductCommandA4ProductPolicyDecisionView | null> {
-    const normalized = decisionReference.trim();
-    if (!normalized) {
-      return Promise.resolve(null);
-    }
-    const profileRegistration = this.a7ProductPolicyService.getProfileRegistration(
-      'product.virtual-account',
-      'lifecycle',
-    );
-    if (!profileRegistration) {
-      return Promise.resolve(null);
-    }
-    return Promise.resolve({
-      decisionReference: normalized,
-      productKey: 'VIRTUAL_ACCOUNT',
-      capability: profileRegistration.capability,
-      action: profileRegistration.action,
-      profileReference: profileRegistration.profileReference,
-      policyVersion: profileRegistration.policyVersion,
-      decision: 'ALLOW_WITH_LIMITS',
-      expiresAt: null,
-      reasonCodes: [],
-      maxAmountMinor: null,
-    });
+    // Legacy evidence is not reconstructible from caller-supplied references.
+    void [decisionReference];
+    return Promise.resolve(null);
   }
 
   private async lookupA6ExternalOperation(
@@ -310,96 +278,19 @@ export class A7ProductCommandRepository {
     action: string,
     productState: string,
   ): Promise<A7ProductCommandA7T04ProductCustomerBindingMapView | null> {
-    const sha256Pattern = /^[a-f0-9]{64}$/i;
-    if (!sha256Pattern.test(mapReference)) {
-      return Promise.resolve(null);
-    }
-    if (productKey !== 'VIRTUAL_ACCOUNT') {
-      return Promise.resolve(null);
-    }
-    if (
-      capabilityKey !== 'virtual-account.assign' &&
-      capabilityKey !== 'virtual-account.inbound-funding'
-    ) {
-      return Promise.resolve(null);
-    }
-    if (action !== 'assign' && action !== 'lifecycle') {
-      return Promise.resolve(null);
-    }
-    const allowedProductStates = new Set([
-      'ASSIGN_REQUESTED',
-      'ASSIGN_PENDING',
-      'ASSIGN_ACTIVE',
-      'ASSIGN_SUSPENDED',
-      'ASSIGN_FAILED',
-      'ASSIGN_CLOSED',
-      'FUNDING_REQUESTED',
-      'FUNDING_PENDING_VERIFICATION',
-      'FUNDING_SETTLED',
-      'FUNDING_UNKNOWN',
-      'FUNDING_SUSPENDED',
-      'FUNDING_FAILED',
-      'FUNDING_CLOSED',
-    ]);
-    if (!allowedProductStates.has(productState)) {
-      return Promise.resolve(null);
-    }
-    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (
-      !uuidPattern.test(customerId) ||
-      !uuidPattern.test(customerWalletId) ||
-      !uuidPattern.test(bindingId)
-    ) {
-      return Promise.resolve(null);
-    }
-    if (!Number.isSafeInteger(bindingVersion) || bindingVersion < 1) {
-      return Promise.resolve(null);
-    }
-    // The A7 product command service records the A7T04 map reference
-    // as a correlation identifier. The A7T04 service (the only A7T04
-    // authority) is the producer of the A7T04 map reference; the A7
-    // product command service does not duplicate the A7T04 authority.
-    // The A7 product command service holds a reference to the A7T04
-    // service to make the A7/A7T04 consumer-boundary explicit.
-    void this.a7ProductCustomerBindingService;
-    return Promise.resolve({
-      mapReference: mapReference.toLowerCase(),
-      productKey: 'VIRTUAL_ACCOUNT',
-      productVersion: 1,
+    // Legacy evidence is not reconstructible from caller-supplied references.
+    void [
+      mapReference,
+      customerId,
+      customerWalletId,
+      bindingId,
+      bindingVersion,
+      productKey,
       capabilityKey,
       action,
       productState,
-      customerId: customerId.toLowerCase(),
-      customerWalletId: customerWalletId.toLowerCase(),
-      bindingId: bindingId.toLowerCase(),
-      bindingVersion,
-      walletAccountId: bindingId.toLowerCase(),
-      ledgerAccountId: bindingId.toLowerCase(),
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      a4ProductPolicyDecisionReference: 'a4-product-policy-decision',
-      a2AuthorizationContextReference: 'a2-authorization-context',
-      a6PartnerIdentity: {
-        partnerKey: 'NIBSS_NIP',
-        capabilityKey: 'external.wallet.withdrawal.settlement',
-        operationType: 'OUTBOUND_BANK_SETTLEMENT',
-        environment: 'sandbox',
-      },
-      a6PartnerCorrelation: {
-        partnerKey: 'NIBSS_NIP',
-        capabilityKey: 'external.wallet.withdrawal.settlement',
-        operationType: 'OUTBOUND_BANK_SETTLEMENT',
-        requestId: 'a7-product-command',
-        correlationId: customerId,
-        traceId: null,
-        externalOperationId: null,
-        a6CallbackReceiptId: null,
-        a6SettlementId: null,
-      },
-      a6PartnerReference: null,
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-    });
+    ];
+    return Promise.resolve(null);
   }
 
   private async reserveOperationsIdempotency(
