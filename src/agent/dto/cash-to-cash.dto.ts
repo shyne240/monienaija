@@ -19,6 +19,18 @@ export class CashToCashDto {
   @Length(1, 20)
   senderPhone!: string;
 
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }) => trimString(value))
+  @Length(1, 255)
+  senderEvidenceReference?: string;
+
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }) => trimString(value))
+  @Length(1, 255)
+  purpose?: string;
+
   @IsString()
   @Transform(({ value }) => trimString(value))
   @Length(1, 20)

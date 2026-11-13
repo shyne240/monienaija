@@ -24,6 +24,7 @@ function createHarness(
     ),
     getRepository: jest.fn().mockReturnValue({
       findOne: jest.fn().mockResolvedValue({
+        id: 'wallet-id',
         customerId: AGENT_ID,
         currency: 'NGN',
         ledgerAccountId: 'wallet-ledger-id',
@@ -76,6 +77,9 @@ function createHarness(
         },
       ),
   };
+  const fundingAuthority = productionAuthority
+    ? new CashToCashFundingAuthority()
+    : { require: jest.fn() };
   const service = new AgentCashToCashService(
     dataSource as never,
     authorizationService as never,
@@ -94,7 +98,7 @@ function createHarness(
     undefined,
     undefined,
     undefined,
-    productionAuthority ? new CashToCashFundingAuthority() : { require: jest.fn() },
+    fundingAuthority,
   );
   jest
     .spyOn(service as never, 'getUnclaimedAccount' as never)
@@ -112,6 +116,7 @@ function createHarness(
     outboxService,
     outboxCalls,
     manager,
+    fundingAuthority,
   };
 }
 
@@ -145,6 +150,20 @@ describe('Cash-to-Cash initiation notification outbox', () => {
 
     expect(created.status).toBe('COMPLETED');
     expect(replay.status).toBe('REPLAYED');
+    expect(harness.fundingAuthority.require).toHaveBeenCalledTimes(1);
+    expect(harness.fundingAuthority.require).toHaveBeenCalledWith(
+      harness.manager,
+      expect.objectContaining({
+        agentId: AGENT_ID,
+        senderPhone: '8011111111',
+        beneficiaryPhone: BENEFICIARY_PHONE,
+        fundingWalletId: 'wallet-id',
+        fundingLedgerAccountId: 'wallet-ledger-id',
+        unclaimedLedgerAccountId: 'unclaimed-id',
+        amountMinor: '250000',
+        currency: 'NGN',
+      }),
+    );
     expect(harness.outboxService.enqueueOnce).toHaveBeenCalledTimes(1);
     expect(harness.ledgerService.postJournalInTransaction).toHaveBeenCalledTimes(1);
     const transferInserts = harness.manager.query.mock.calls.filter(

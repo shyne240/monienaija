@@ -5,6 +5,8 @@ export interface AgentCashToCashInput {
   agentPrincipal: AuthorizationPrincipal;
   agentPin: string;
   senderPhone?: string;
+  senderEvidenceReference?: string;
+  purpose?: string;
   beneficiaryPhone: string;
   amountMinor: string;
   currency: string;

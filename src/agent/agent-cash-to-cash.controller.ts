@@ -25,6 +25,8 @@ export class AgentCashToCashController {
       agentPrincipal: principal,
       agentPin: dto.agentPin,
       senderPhone: dto.senderPhone,
+      senderEvidenceReference: dto.senderEvidenceReference,
+      purpose: dto.purpose,
       beneficiaryPhone: dto.beneficiaryPhone,
       amountMinor: dto.amountMinor,
       currency: dto.currency,

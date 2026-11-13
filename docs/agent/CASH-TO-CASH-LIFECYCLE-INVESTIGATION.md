@@ -20,3 +20,15 @@ Receipt recovery revalidates the agent session and requires recorded method and 
 4. Implement mobile initiation and claim recovery and reauthentication, durable receipts, complete PostgreSQL and HTTP acceptance, mobile harness and full regressions. No customer-wallet-funded Cash-to-Cash is introduced.
 
 No deployment, live provider, or real financial transaction was used. Local migration inventory was rescanned before allocation; re-scan before future allocations in 0200–0299.
+
+### Funding authorization integration seam
+
+New initiation passes a transaction manager and material request, sender evidence reference,
+agent principal and actual wallet/ledger identifiers to the funding authority before posting.
+The reference and purpose are untrusted lookup inputs, not identity or authorization proof;
+no sender identity policy, institution isolation, or commitment authority is supplied by this
+change. The registered production implementation still rejects all new funding. Completed
+idempotent replays remain available without invoking the new-funding authority. A real adapter
+must resolve and lock authoritative evidence and any commitment within the same transaction,
+validate the precise request and institution, and reject unavailable or stale evidence. This is
+an integration contract, not proof that funding is safe to enable.
