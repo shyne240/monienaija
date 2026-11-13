@@ -1,5 +1,9 @@
+import type { EntityManager } from 'typeorm';
+
 import type { AuthenticationExecutionResult } from './authentication-execution.service';
 import type { AuthenticationSessionStatus } from './authentication-session.enums';
+
+export type SessionValidationMode = 'READ' | 'MUTATION';
 
 export interface IssueAuthenticationSessionCommand {
   authentication: AuthenticationExecutionResult;
@@ -13,6 +17,23 @@ export interface ValidateAuthenticationSessionCommand {
   token: string;
   audience?: string;
   now?: Date;
+  mode?: SessionValidationMode;
+}
+
+export interface RevokeCredentialSessionsOptions {
+  exceptSessionId?: string;
+}
+
+export interface RevokeCustomerSessionsOptions {
+  audiences?: readonly string[];
+  preserveSelfLogout?: boolean;
+}
+
+export interface CustomerSessionValidator {
+  validateInManager(
+    manager: EntityManager,
+    command: ValidateAuthenticationSessionCommand,
+  ): Promise<AuthenticationSessionValidation>;
 }
 
 export interface RevokeAuthenticationSessionCommand {

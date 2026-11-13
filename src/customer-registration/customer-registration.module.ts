@@ -18,6 +18,8 @@ import { Customer } from '../customer/customer.entity';
 import { CustomerContactMethod } from '../customer/customer-contact-method.entity';
 import { CustomerProfile } from '../customer/customer-profile.entity';
 import { CustomerAuthenticationCredential } from '../customer-authentication/customer-authentication-credential.entity';
+import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
+import { AuthenticationSessionService } from '../customer-authentication/authentication-session.service';
 import { LedgerAccount } from '../ledger/ledger-account.entity';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletModule } from '../wallet/wallet.module';
@@ -57,6 +59,7 @@ import type { KycProvider } from '../kyc-verification/kyc.types';
       LedgerAccount,
     ]),
     forwardRef(() => KycTierModule),
+    forwardRef(() => CustomerAuthenticationModule),
     AuthorizationModule,
     NotificationModule,
     OperationsModule,
@@ -108,13 +111,15 @@ import type { KycProvider } from '../kyc-verification/kyc.types';
         AuditService,
         KycRegistrationCompletionService,
         CustomerFinancialEligibilityService,
+        AuthenticationSessionService,
       ],
       useFactory: (
         db: DataSource,
         audit: AuditService,
         completion: KycRegistrationCompletionService,
         eligibility: CustomerFinancialEligibilityService,
-      ) => new MobileOnboardingAuthService(db, audit, completion, eligibility),
+        sessions: AuthenticationSessionService,
+      ) => new MobileOnboardingAuthService(db, audit, completion, eligibility, sessions),
     },
     { provide: REGISTRATION_SYNTHETIC_PROVIDER, useClass: RegistrationSyntheticProvider },
     {

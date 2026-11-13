@@ -4,6 +4,19 @@ import { decideTier } from './kyc-tier-decision';
 import { KycTierEvidenceReader } from './kyc-tier-evidence.reader';
 import { KycTierPolicyService } from './kyc-tier-policy.service';
 
+export const TRUSTED_KYC_UNAVAILABLE_MESSAGE = 'Trusted KYC evidence is unavailable';
+
+/**
+ * Optional locking semantics for callers that already hold a transaction.
+ *
+ * `SHARE` is used by read-only session validation (it must not serialise concurrent requests on the
+ * customer row); the default `UPDATE` lock is used by anything that could change financial state.
+ */
+export interface FinancialEligibilityOptions {
+  readonly requireActive?: boolean;
+  readonly lockMode?: 'UPDATE' | 'SHARE';
+}
+
 /** Transactional gate for an identified customer. The trusted reader is intentionally
  * unavailable in production until provider provenance has been reviewed. */
 @Injectable()
@@ -13,7 +26,18 @@ export class CustomerFinancialEligibilityService {
     private readonly reader: KycTierEvidenceReader,
   ) {}
 
-  async require(manager: EntityManager, customerId: string, requireActive = true): Promise<void> {
+  async require(
+    manager: EntityManager,
+    customerId: string,
+    requireActiveOrOptions: boolean | FinancialEligibilityOptions = true,
+    options?: FinancialEligibilityOptions,
+  ): Promise<void> {
+    const resolved: FinancialEligibilityOptions =
+      typeof requireActiveOrOptions === 'boolean'
+        ? { ...options, requireActive: requireActiveOrOptions }
+        : { ...requireActiveOrOptions, ...options };
+    const requireActive = resolved.requireActive ?? true;
+    const rowLock = resolved.lockMode === 'SHARE' ? 'FOR SHARE' : 'FOR UPDATE';
     const customers = await manager.query<
       Array<{
         status: string;
@@ -23,7 +47,7 @@ export class CustomerFinancialEligibilityService {
         deleted_at: Date | null;
       }>
     >(
-      'SELECT status,kyc_status,kyc_level,is_synthetic,deleted_at FROM customers WHERE id=$1 FOR UPDATE',
+      `SELECT status,kyc_status,kyc_level,is_synthetic,deleted_at FROM customers WHERE id=$1 ${rowLock}`,
       [customerId],
     );
     const customer = customers[0];
@@ -47,7 +71,7 @@ export class CustomerFinancialEligibilityService {
     }
     if (!policy) throw new ServiceUnavailableException('Customer financial policy is unavailable');
     const holds = await manager.query<Array<{ customer_id: string }>>(
-      'SELECT customer_id FROM kyc_tier_manual_holds WHERE customer_id=$1 FOR UPDATE',
+      `SELECT customer_id FROM kyc_tier_manual_holds WHERE customer_id=$1 ${rowLock}`,
       [customerId],
     );
     if (holds.length) throw new ConflictException('Customer is not eligible for financial access');
@@ -69,7 +93,7 @@ export class CustomerFinancialEligibilityService {
     } catch {
       throw new ServiceUnavailableException('Trusted KYC evidence is unavailable');
     }
-    if (!source) throw new ServiceUnavailableException('Trusted KYC evidence is unavailable');
+    if (!source) throw new ServiceUnavailableException(TRUSTED_KYC_UNAVAILABLE_MESSAGE);
     const decision = decideTier({
       customerId,
       identityRevision: source.identityRevision,
