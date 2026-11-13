@@ -9,8 +9,13 @@ export async function lockCashOutOtpBudget(
   manager: EntityManager,
   customerId: string,
   destinationHash: string,
+  operationId?: string,
 ): Promise<{ keys: string[]; issuanceCount: number; failures: number }> {
-  const keys = [`customer:${customerId}`, `destination:${destinationHash}`].sort();
+  const keys = [
+    `customer:${customerId}`,
+    `destination:${destinationHash}`,
+    ...(operationId ? [`operation:${operationId}`] : []),
+  ].sort();
   for (const key of keys) {
     await manager.query(
       `INSERT INTO cash_out_otp_budgets(budget_key) VALUES($1) ON CONFLICT DO NOTHING`,
@@ -45,8 +50,9 @@ export async function reserveCashOutOtpIssuance(
   manager: EntityManager,
   customerId: string,
   destinationHash: string,
+  operationId?: string,
 ): Promise<void> {
-  const budget = await lockCashOutOtpBudget(manager, customerId, destinationHash);
+  const budget = await lockCashOutOtpBudget(manager, customerId, destinationHash, operationId);
   if (budget.issuanceCount >= MAX_ISSUANCES || budget.failures >= MAX_FAILURES) {
     throw new HttpException('Cash-out OTP temporarily unavailable', HttpStatus.TOO_MANY_REQUESTS);
   }
@@ -60,8 +66,9 @@ export async function cashOutOtpVerificationBudget(
   manager: EntityManager,
   customerId: string,
   destinationHash: string,
+  operationId?: string,
 ): Promise<string[] | null> {
-  const budget = await lockCashOutOtpBudget(manager, customerId, destinationHash);
+  const budget = await lockCashOutOtpBudget(manager, customerId, destinationHash, operationId);
   return budget.failures >= MAX_FAILURES ? null : budget.keys;
 }
 

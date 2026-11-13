@@ -490,7 +490,7 @@ test('desk OTP preflight denies withdrawn and unavailable evidence before challe
     [randomUUID(), customerId],
   );
   const otp = app.get(AgentDeskOtpService);
-  const command = { agentId: randomUUID(), customerId, purpose: 'WALLET_TO_CASH' as const };
+  const command = { agentId: randomUUID(), customerId, purpose: 'CASH_TO_CASH_CLAIM' as const };
   sms.clear();
   snapshots.get(customerId)!.evidence[0]!.status = 'REVOKED';
   await expect(otp.issue(command)).rejects.toThrow();
@@ -527,7 +527,7 @@ test('MFA transaction primitive rolls back with its caller and serializes concur
   const issued = await app.get(AgentDeskOtpService).issue({
     agentId: randomUUID(),
     customerId,
-    purpose: 'WALLET_TO_CASH',
+    purpose: 'CASH_TO_CASH_CLAIM',
   });
   const code = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
   const [row] = await db.query<Array<{ session_id: string }>>(
@@ -547,7 +547,7 @@ test('MFA transaction primitive rolls back with its caller and serializes concur
     challengeId: issued.challengeId,
     providedHash: code,
     actor: customerId,
-    expectedPurpose: 'WALLET_TO_CASH',
+    expectedPurpose: 'CASH_TO_CASH_CLAIM',
   };
   const mfa = app.get(MfaExecutionService);
   await expect(
@@ -700,10 +700,29 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     currency: 'NGN',
     idempotencyKey: randomUUID(),
   });
+  const deskSession = randomUUID();
+  const agentCredential = randomUUID();
+  await db.query(
+    `INSERT INTO agent_authentication_credentials(id,agent_id,password_hash,hash_algorithm,password_version,status,password_changed_at) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE',clock_timestamp()-interval '1 minute')`,
+    [agentCredential, agent.id],
+  );
+  await db.query(
+    `INSERT INTO agent_authentication_sessions(id,agent_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at) VALUES($1,$2,$3,$4,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp())`,
+    [deskSession, agent.id, agentCredential, randomBytes(32).toString('hex')],
+  );
+  const operationKey = randomUUID();
+  const issueForKey = (key: string) =>
+    app.get(AgentDeskOtpService).issue({
+      agentId: agent.id,
+      agentSessionId: deskSession,
+      customerId,
+      purpose: 'WALLET_TO_CASH',
+      amountMinor: '1000',
+      currency: 'NGN',
+      operationKey: key,
+    });
   sms.clear();
-  const challenge = await app
-    .get(AgentDeskOtpService)
-    .issue({ agentId: agent.id, customerId, purpose: 'WALLET_TO_CASH' });
+  const challenge = await issueForKey(operationKey);
   const code = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
   const input = {
     agentId: agent.id,
@@ -711,6 +730,7 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
       type: 'AGENT' as const,
       agentId: agent.id,
       principalId: agent.id,
+      sessionId: deskSession,
       roles: [],
       scopes: [],
       customerAccess: 'NONE' as const,
@@ -723,9 +743,59 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     otp: code,
     amountMinor: '1000',
     currency: 'NGN',
-    idempotencyKey: randomUUID(),
+    idempotencyKey: operationKey,
   };
   const service = app.get(AgentCashOutService);
+  const intentRows = await db.query<Array<{ cash_out_intent_id: string }>>(
+    `SELECT cash_out_intent_id FROM mfa_challenges WHERE id=$1`,
+    [challenge.challengeId],
+  );
+  const intentId = intentRows[0]!.cash_out_intent_id;
+  expect(
+    await db.query(
+      `SELECT status,customer_id,source_wallet_id,amount_minor,currency,agent_id,agent_session_id,institution_scope,operation_key FROM cash_out_intents WHERE id=$1`,
+      [intentId],
+    ),
+  ).toEqual([
+    {
+      status: 'ACTIVE',
+      customer_id: customerId,
+      source_wallet_id: customerWallet.id,
+      amount_minor: '1000',
+      currency: 'NGN',
+      agent_id: agent.id,
+      agent_session_id: deskSession,
+      institution_scope: 'MONIENAIJA',
+      operation_key: operationKey,
+    },
+  ]);
+  const { AuthenticationSessionService } = await import(
+    '../src/customer-authentication/authentication-session.service'
+  );
+  expect((await app.get(AuthenticationSessionService).validate({ token: intentId })).valid).toBe(
+    false,
+  );
+  expect(await db.query(`SELECT id FROM authentication_sessions WHERE id=$1`, [intentId])).toEqual(
+    [],
+  );
+  await expect(
+    db.query(`UPDATE cash_out_intents SET amount_minor=999 WHERE id=$1`, [intentId]),
+  ).rejects.toThrow('immutable');
+  await expect(service.execute({ ...input, amountMinor: '999' })).rejects.toThrow(
+    'intent unavailable',
+  );
+  await expect(service.execute({ ...input, idempotencyKey: randomUUID() })).rejects.toThrow(
+    'intent unavailable',
+  );
+  await expect(
+    service.execute({
+      ...input,
+      agentPrincipal: { ...input.agentPrincipal, sessionId: randomUUID() },
+    }),
+  ).rejects.toThrow('Agent session unavailable');
+  expect(
+    await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challenge.challengeId]),
+  ).toEqual([{ status: 'ACTIVE' }]);
   const snapshot = snapshots.get(customerId)!;
   snapshots.delete(customerId);
   await expect(service.execute(input)).rejects.toThrow('Trusted KYC evidence is unavailable');
@@ -781,6 +851,9 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
   expect(
     await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challenge.challengeId]),
   ).toEqual([{ status: 'VERIFIED' }]);
+  expect(await db.query(`SELECT status FROM cash_out_intents WHERE id=$1`, [intentId])).toEqual([
+    { status: 'COMPLETED' },
+  ]);
   expect((await ledger.getAccountBalance(customerWallet.ledgerAccountId)).balanceMinor).toBe('0');
   expect((await ledger.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe('1000');
   const replay = await service.execute(input);
@@ -800,7 +873,7 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
   const durableReplay = await service.execute(input);
   expect(durableReplay).toMatchObject({ status: 'REPLAYED', journalId: result.journalId });
   await expect(service.execute({ ...input, idempotencyKey: randomUUID() })).rejects.toThrow(
-    'OTP already used',
+    'Cash-out intent unavailable or mismatched',
   );
   await expect(
     service.execute({
@@ -828,15 +901,14 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     `UPDATE cash_out_otp_budgets SET window_started_at=clock_timestamp()-interval '16 minutes' WHERE budget_key LIKE 'destination:%'`,
   );
   sms.clear();
-  const another = await app
-    .get(AgentDeskOtpService)
-    .issue({ agentId: agent.id, customerId, purpose: 'WALLET_TO_CASH' });
+  const anotherKey = randomUUID();
+  const another = await issueForKey(anotherKey);
   const anotherCode = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
   const badCode = anotherCode === '000000' ? '000001' : '000000';
   const anotherInput = {
     ...input,
     mfaChallengeId: another.challengeId,
-    idempotencyKey: randomUUID(),
+    idempotencyKey: anotherKey,
   };
   for (let attempt = 0; attempt < 5; attempt++) {
     await expect(service.execute({ ...anotherInput, otp: badCode })).rejects.toThrow('OTP invalid');
@@ -847,11 +919,7 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     ]),
   ).toEqual([{ status: 'REVOKED', failed_attempts: 5 }]);
   await expect(service.execute({ ...anotherInput, otp: anotherCode })).rejects.toThrow();
-  await expect(
-    app
-      .get(AgentDeskOtpService)
-      .issue({ agentId: agent.id, customerId, purpose: 'WALLET_TO_CASH' }),
-  ).rejects.toThrow('temporarily unavailable');
+  await expect(issueForKey(randomUUID())).rejects.toThrow('temporarily unavailable');
   await db.query(
     `UPDATE cash_out_otp_budgets SET window_started_at=clock_timestamp()-interval '16 minutes' WHERE budget_key=$1`,
     [`customer:${customerId}`],
@@ -860,9 +928,8 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     `UPDATE cash_out_otp_budgets SET window_started_at=clock_timestamp()-interval '16 minutes' WHERE budget_key LIKE 'destination:%'`,
   );
   sms.clear();
-  const expired = await app
-    .get(AgentDeskOtpService)
-    .issue({ agentId: agent.id, customerId, purpose: 'WALLET_TO_CASH' });
+  const expiredKey = randomUUID();
+  const expired = await issueForKey(expiredKey);
   const expiredCode = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
   await db.query(
     `UPDATE mfa_challenges SET expires_at=clock_timestamp()-interval '1 second' WHERE id=$1`,
@@ -872,7 +939,7 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     service.execute({
       ...input,
       mfaChallengeId: expired.challengeId,
-      idempotencyKey: randomUUID(),
+      idempotencyKey: expiredKey,
       otp: expiredCode,
     }),
   ).rejects.toThrow('OTP expired');
@@ -881,18 +948,16 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
   ).toEqual([{ status: 'EXPIRED' }]);
   expect((await ledger.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe('1000');
   sms.clear();
-  const first = await app
-    .get(AgentDeskOtpService)
-    .issue({ agentId: agent.id, customerId, purpose: 'WALLET_TO_CASH' });
+  const firstKey = randomUUID();
+  const first = await issueForKey(firstKey);
   const firstCode = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
   sms.clear();
-  const second = await app
-    .get(AgentDeskOtpService)
-    .issue({ agentId: agent.id, customerId, purpose: 'WALLET_TO_CASH' });
+  const secondKey = firstKey;
+  const second = await issueForKey(secondKey);
   const secondCode = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
-  for (const [challengeId, code, count] of [
-    [first.challengeId, firstCode, 3],
-    [second.challengeId, secondCode, 2],
+  for (const [challengeId, code, count, key] of [
+    [first.challengeId, firstCode, 3, firstKey],
+    [second.challengeId, secondCode, 2, secondKey],
   ] as const) {
     const bad = code === '000000' ? '000001' : '000000';
     for (let i = 0; i < count; i++) {
@@ -900,7 +965,7 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
         service.execute({
           ...input,
           mfaChallengeId: challengeId,
-          idempotencyKey: randomUUID(),
+          idempotencyKey: key,
           otp: bad,
         }),
       ).rejects.toThrow('OTP invalid');
@@ -911,19 +976,25 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
       `customer:${customerId}`,
     ]),
   ).toEqual([{ failed_attempts: 5 }]);
+  const firstIntent = await db.query<Array<{ cash_out_intent_id: string }>>(
+    `SELECT cash_out_intent_id FROM mfa_challenges WHERE id=$1`,
+    [first.challengeId],
+  );
+  expect(
+    await db.query(
+      `SELECT failed_attempts,issuance_count FROM cash_out_otp_budgets WHERE budget_key=$1`,
+      [`operation:${firstIntent[0]!.cash_out_intent_id}`],
+    ),
+  ).toEqual([{ failed_attempts: 5, issuance_count: 2 }]);
   await expect(
     service.execute({
       ...input,
       mfaChallengeId: second.challengeId,
-      idempotencyKey: randomUUID(),
+      idempotencyKey: secondKey,
       otp: secondCode,
     }),
   ).rejects.toThrow('temporarily unavailable');
-  await expect(
-    app
-      .get(AgentDeskOtpService)
-      .issue({ agentId: agent.id, customerId, purpose: 'WALLET_TO_CASH' }),
-  ).rejects.toThrow('temporarily unavailable');
+  await expect(issueForKey(randomUUID())).rejects.toThrow('temporarily unavailable');
 });
 
 test('concurrent cash-out challenge issuance cannot reset the persisted issuance budget', async () => {
@@ -934,8 +1005,45 @@ test('concurrent cash-out challenge issuance cannot reset the persisted issuance
     `INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE')`,
     [randomUUID(), customerId],
   );
+  const agentId = randomUUID();
+  await db.query(`INSERT INTO agents(id,reference,status) VALUES($1,$2,'ACTIVE')`, [
+    agentId,
+    agentId,
+  ]);
+  const { AgentClassService } = await import('../src/agent/agent-class.service');
+  const { AgentService } = await import('../src/agent/agent-service.enum');
+  const cls = await app.get(AgentClassService).create({
+    reference: randomUUID(),
+    code: `C${randomUUID().slice(0, 8)}`,
+    name: 'Concurrency fixture',
+    isActive: true,
+    applicableServices: [AgentService.CASH_OUT],
+    actor: 'fixture',
+  });
+  await db.query(`UPDATE agents SET agent_class_id=$1 WHERE id=$2`, [cls.id, agentId]);
+  const deskSession = randomUUID(),
+    credential = randomUUID();
+  await db.query(
+    `INSERT INTO agent_authentication_credentials(id,agent_id,password_hash,hash_algorithm,password_version,status,password_changed_at) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE',clock_timestamp()-interval '1 minute')`,
+    [credential, agentId],
+  );
+  await db.query(
+    `INSERT INTO agent_authentication_sessions(id,agent_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at) VALUES($1,$2,$3,$4,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp())`,
+    [deskSession, agentId, credential, randomUUID().replace(/-/g, '').repeat(2)],
+  );
+  await app
+    .get(WalletService)
+    .createWallet({ customerId, currency: 'NGN', idempotencyKey: randomUUID() });
   const service = app.get(AgentDeskOtpService);
-  const command = { agentId: randomUUID(), customerId, purpose: 'WALLET_TO_CASH' as const };
+  const command = {
+    agentId,
+    agentSessionId: deskSession,
+    customerId,
+    purpose: 'WALLET_TO_CASH' as const,
+    amountMinor: '1000',
+    currency: 'NGN',
+    operationKey: randomUUID(),
+  };
   const results = await Promise.allSettled(Array.from({ length: 6 }, () => service.issue(command)));
   expect(results.filter((result) => result.status === 'fulfilled').length).toBeLessThanOrEqual(3);
   expect(

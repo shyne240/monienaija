@@ -70,7 +70,11 @@ describe('direct security notification diagnostics', () => {
         failingProvider(throws),
       );
       const warn = jest.spyOn((service as any).logger, 'warn').mockImplementation(() => undefined);
-      await service.issue({ customerId: 'customer', agentId: 'agent', purpose: 'WALLET_TO_CASH' });
+      await service.issue({
+        customerId: 'customer',
+        agentId: 'agent',
+        purpose: 'CASH_TO_CASH_CLAIM',
+      });
       expect(warn).toHaveBeenCalled();
       expect(JSON.stringify(warn.mock.calls)).not.toMatch(
         /OTP_SENTINEL|PASSWORD_SENTINEL|08012345678|PRIVATE_MESSAGE_SENTINEL/,

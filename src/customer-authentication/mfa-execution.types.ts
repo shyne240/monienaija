@@ -6,6 +6,8 @@ export interface IssueMfaChallengeCommand {
   principal: AuthenticatedPrincipal;
   enrollmentId: string;
   methodId: string;
+  /** Server-created, scoped cash-out intent; not a customer session. */
+  cashOutIntentId?: string;
   challengeHash: string;
   actor: string;
   ttlSeconds?: number;

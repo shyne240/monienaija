@@ -30,8 +30,11 @@ export class MfaChallenge {
   @Column({ name: 'method_id', type: 'uuid' })
   methodId!: string;
 
-  @Column({ name: 'session_id', type: 'uuid' })
-  sessionId!: string;
+  @Column({ name: 'session_id', type: 'uuid', nullable: true })
+  sessionId!: string | null;
+
+  @Column({ name: 'cash_out_intent_id', type: 'uuid', nullable: true })
+  cashOutIntentId!: string | null;
 
   @Column({ name: 'challenge_hash', type: 'varchar', length: 512 })
   challengeHash!: string;

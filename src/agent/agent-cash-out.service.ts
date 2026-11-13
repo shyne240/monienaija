@@ -18,6 +18,7 @@ import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletService } from '../wallet/wallet.service';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { parsePositiveMinorUnits, normalizeCurrency } from '../common/money';
+import { requireCashOutAgentSession } from './cash-out-intent';
 import { cashOutOtpVerificationBudget, recordCashOutOtpFailure } from './cash-out-otp-budget';
 import { AgentTransactionAuthorizationService } from './agent-transaction-authorization.service';
 import { AgentFinancialExecutionService } from './agent-financial-execution.service';
@@ -151,54 +152,20 @@ export class AgentCashOutService {
       throw new BadRequestException('otp is invalid');
     }
 
-    // Fetch challenge metadata to build the principal that MFA expects.
-    // This read does NOT verify OTP — it only resolves which session/credential
-    // the challenge is bound to, so that we can present the correct principal
-    // to the canonical service. All security decisions (customer binding,
-    // session binding, expiry, replay, hash equality, enrollment/method
-    // ENABLED, status transitions) remain inside MfaExecutionService.
-    const challengeMeta: Array<{ customer_id: string; session_id: string }> =
-      await this.dataSource.query(
-        `SELECT customer_id, session_id FROM mfa_challenges WHERE id = $1 LIMIT 1`,
-        [challengeId],
-      );
-    const meta = challengeMeta[0];
-    if (!meta) {
-      throw new BadRequestException('Invalid OTP challenge');
-    }
-    if (meta.customer_id !== customerId) {
-      // Do not reveal existence; treat as WRONG_CUSTOMER via canonical path
-      // but fail fast here to avoid leaking timing
-      throw new BadRequestException('OTP challenge does not belong to this Customer');
-    }
-
-    // Resolve credentialId for the challenge's session. The challenge is FK'd
-    // to a session; that session's credential is the one MFA expects.
-    const sessionRows: Array<{ credential_id: string }> = await this.dataSource.query(
-      `SELECT credential_id FROM authentication_sessions WHERE id = $1 LIMIT 1`,
-      [meta.session_id],
+    const challengeMeta = await this.dataSource.query<
+      Array<{ customer_id: string; cash_out_intent_id: string; credential_id: string }>
+    >(
+      `SELECT c.customer_id, c.cash_out_intent_id, i.credential_id FROM mfa_challenges c JOIN cash_out_intents i ON i.id=c.cash_out_intent_id WHERE c.id=$1 AND c.purpose='WALLET_TO_CASH'`,
+      [challengeId],
     );
-    let credentialId = sessionRows[0]?.credential_id;
-    if (!credentialId) {
-      // Fallback to the customer's active credential if session lookup fails
-      // (e.g., session was cleaned). This still enforces customer binding;
-      // session binding will be checked by MfaExecutionService and will
-      // correctly return WRONG_SESSION if mismatched.
-      const credRows: Array<{ id: string }> = await this.dataSource.query(
-        `SELECT id FROM customer_authentication_credentials WHERE customer_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL LIMIT 1`,
-        [customerId],
-      );
-      credentialId = credRows[0]?.id ?? '';
-      if (!credentialId || !UUID_PATTERN.test(credentialId)) {
-        throw new BadRequestException('OTP verification unavailable - no credential');
-      }
-    }
-
+    const meta = challengeMeta[0];
+    if (!meta || meta.customer_id !== customerId)
+      throw new BadRequestException('Invalid cash-out OTP challenge');
     const principalForMfa: any = {
       principalType: 'CUSTOMER',
       customerId,
-      sessionId: meta.session_id,
-      credentialId,
+      sessionId: meta.cash_out_intent_id,
+      credentialId: meta.credential_id,
     };
 
     // 5. Agent authorization via A11 — CASH_OUT + agentPin + agentPrincipal
@@ -303,7 +270,35 @@ export class AgentCashOutService {
         },
       },
       async (manager, replay, requestHash) => {
+        await requireCashOutAgentSession(manager, agentId, agentPrincipal.sessionId);
         await this.financialEligibility.require(manager, customerId, { lockMode: 'SHARE' });
+        const intents = await manager.query<Array<{ status: string; valid: boolean }>>(
+          `SELECT i.status, (i.expires_at>clock_timestamp()) AS valid
+             FROM cash_out_intents i
+             JOIN mfa_challenges c ON c.cash_out_intent_id=i.id
+             JOIN customer_authentication_credentials cred ON cred.id=i.credential_id AND cred.customer_id=i.customer_id AND cred.status='ACTIVE' AND cred.deleted_at IS NULL AND cred.password_version=i.credential_version
+             JOIN wallet_accounts w ON w.id=i.source_wallet_id AND w.ledger_account_id=i.source_ledger_id AND w.customer_id=i.customer_id::text AND w.currency=i.currency AND w.status='ACTIVE' AND w.owner_class='CUSTOMER'
+            WHERE i.id=$1 AND c.id=$2 AND i.customer_id=$3 AND i.agent_id=$4 AND i.agent_session_id=$5 AND i.operation_key=$6 AND i.amount_minor=$7 AND i.currency='NGN' AND i.purpose='WALLET_TO_CASH' AND i.institution_scope='MONIENAIJA' AND i.source_wallet_id=$8 AND i.source_ledger_id=$9 FOR UPDATE OF i`,
+          [
+            meta.cash_out_intent_id,
+            challengeId,
+            customerId,
+            agentId,
+            agentPrincipal.sessionId ?? null,
+            idempotencyKey,
+            amountString,
+            customerWallet.id,
+            customerWallet.ledgerAccountId,
+          ],
+        );
+        const intent = intents[0];
+        if (
+          !intent ||
+          (intent.status !== 'ACTIVE' && intent.status !== 'COMPLETED') ||
+          (intent.status === 'ACTIVE' && !intent.valid)
+        )
+          throw new ConflictException('Cash-out intent unavailable or mismatched');
+
         const records = await manager.query<
           Array<{
             customer_id: string;
@@ -317,6 +312,8 @@ export class AgentCashOutService {
         );
         const record = records[0];
         if (record) {
+          if (intent.status !== 'COMPLETED')
+            throw new ConflictException('Cash-out intent state mismatch');
           if (
             record.customer_id !== customerId ||
             record.challenge_id !== challengeId ||
@@ -332,17 +329,19 @@ export class AgentCashOutService {
           };
         }
         // Pre-migration idempotency receipts do not establish an OTP-to-journal binding.
-        if (replay) throw new ConflictException('Cash-out replay authorization record unavailable');
+        if (replay || intent.status !== 'ACTIVE')
+          throw new ConflictException('Cash-out replay authorization record unavailable');
         const challengeSecurity = await manager.query<Array<{ destination_hash: string }>>(
           `SELECT s.destination_hash FROM cash_out_otp_challenge_security s JOIN mfa_challenges c ON c.id=s.challenge_id
-           WHERE s.challenge_id=$1 AND s.customer_id=$2 AND c.customer_id=$2 AND c.purpose='WALLET_TO_CASH'`,
-          [challengeId, customerId],
+           WHERE s.challenge_id=$1 AND s.customer_id=$2 AND c.customer_id=$2 AND c.purpose='WALLET_TO_CASH' AND s.intent_id=$3 AND c.cash_out_intent_id=$3`,
+          [challengeId, customerId, meta.cash_out_intent_id],
         );
         if (!challengeSecurity[0]) return 'Cash-out OTP authorization unavailable';
         const budgetKeys = await cashOutOtpVerificationBudget(
           manager,
           customerId,
           challengeSecurity[0].destination_hash,
+          meta.cash_out_intent_id,
         );
         if (!budgetKeys) return 'Cash-out OTP temporarily unavailable';
         const result = await this.mfaExecutionService.verifyChallengeInManager(manager, {
@@ -362,6 +361,10 @@ export class AgentCashOutService {
         return `OTP verification failed: ${result.failureReason}`;
       },
       async (manager, requestHash, result) => {
+        await manager.query(
+          `UPDATE cash_out_intents SET status='COMPLETED' WHERE id=$1 AND status='ACTIVE'`,
+          [meta.cash_out_intent_id],
+        );
         await manager.query(
           `INSERT INTO cash_out_execution_records(agent_id,idempotency_key,customer_id,challenge_id,request_hash,journal_id,response_body)
            VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)`,

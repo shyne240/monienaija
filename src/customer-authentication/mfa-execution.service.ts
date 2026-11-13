@@ -68,6 +68,11 @@ export class MfaExecutionService {
     const ttlSeconds = this.normalizeTtl(command.ttlSeconds);
     const purpose = this.normalizePurpose(command.purpose);
     const expiresAt = new Date(now.getTime() + ttlSeconds * 1000);
+    if (
+      command.cashOutIntentId &&
+      (purpose !== 'WALLET_TO_CASH' || command.cashOutIntentId !== command.principal.sessionId)
+    )
+      throw new BadRequestException('Invalid cash-out challenge context');
 
     const challenge = await this.dataSource.transaction(async (manager) => {
       const customer = await manager.getRepository(Customer).findOne({
@@ -102,7 +107,8 @@ export class MfaExecutionService {
           customerId: command.principal.customerId,
           enrollmentId: enrollment.id,
           methodId: method.id,
-          sessionId: command.principal.sessionId,
+          sessionId: command.cashOutIntentId ? null : command.principal.sessionId,
+          cashOutIntentId: command.cashOutIntentId ?? null,
           challengeHash,
           status: MfaChallengeStatus.ACTIVE,
           purpose,
@@ -163,7 +169,7 @@ export class MfaExecutionService {
     if (challenge.customerId !== command.principal.customerId) {
       return this.failedChallenge(command.principal, challengeId, 'WRONG_CUSTOMER');
     }
-    if (challenge.sessionId !== command.principal.sessionId) {
+    if ((challenge.cashOutIntentId ?? challenge.sessionId) !== command.principal.sessionId) {
       return this.failedChallenge(command.principal, challengeId, 'WRONG_SESSION');
     }
     if (challenge.status !== MfaChallengeStatus.ACTIVE) {
@@ -286,7 +292,7 @@ export class MfaExecutionService {
     return {
       verified: true,
       customerId: verified.customerId,
-      sessionId: verified.sessionId,
+      sessionId: verified.cashOutIntentId ?? verified.sessionId!,
       challengeId: verified.id,
       enrollmentId: verified.enrollmentId,
       methodId: verified.methodId,
@@ -426,7 +432,7 @@ export class MfaExecutionService {
       customerId: challenge.customerId,
       enrollmentId: challenge.enrollmentId,
       methodId: challenge.methodId,
-      sessionId: challenge.sessionId,
+      sessionId: challenge.cashOutIntentId ?? challenge.sessionId!,
       methodType,
       status: challenge.status,
       purpose: challenge.purpose ?? null,

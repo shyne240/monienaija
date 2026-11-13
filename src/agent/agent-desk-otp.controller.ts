@@ -31,6 +31,10 @@ export class AgentDeskOtpController {
     const principal = this.requireAgentPrincipal(req);
     return this.deskOtpService.issue({
       agentId: principal.agentId!,
+      agentSessionId: principal.sessionId,
+      amountMinor: dto.amountMinor,
+      currency: dto.currency,
+      operationKey: dto.operationKey,
       customerId: dto.customerId,
       purpose: dto.purpose,
       ttlSeconds: dto.ttlSeconds,

@@ -276,6 +276,7 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     const { getByTestId, getByText } = wrap(<WalletToCashConfirmScreen />);
 
     // Request MFA challenge
+    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -303,6 +304,7 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
     // Request MFA
+    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -336,6 +338,7 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     );
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
+    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -357,6 +360,7 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockRejectedValue(apiError('Customer PIN invalid', 401));
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
+    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -381,6 +385,7 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockRejectedValue(apiError('Agent PIN invalid: PIN_INVALID', 401));
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
+    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -401,6 +406,7 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockRejectedValue(apiError('OTP invalid: MFA_INVALID_OTP', 400));
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
+    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -421,6 +427,7 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockRejectedValue(apiError('OTP expired', 400));
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
+    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -441,6 +448,7 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockRejectedValue(apiError('Insufficient available balance', 409));
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
+    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -461,6 +469,7 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockRejectedValue(apiError('Agent not permitted: AGENT_SUSPENDED', 403));
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
+    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -481,6 +490,7 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockRejectedValue(apiError('Database deadlock at tx_34', 500));
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
+    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -503,6 +513,7 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockRejectedValue(netErr);
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
+    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -525,6 +536,7 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     const { client, getByTestId } = wrap(<WalletToCashConfirmScreen />);
     const spy = jest.spyOn(client, 'invalidateQueries');
 
+    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -549,6 +561,7 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockResolvedValue(cashOutResult);
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
+    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -699,6 +712,7 @@ describe('Wallet→Cash — Idempotency-Key durability across a simulated proces
 
   const fillAndSubmit = async (screen: ReturnType<typeof wrap>) => {
     mockApi.requestAgentMfaChallenge.mockResolvedValue(mfaChallenge);
+    await waitFor(() => expect(screen.getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
     fireEvent.press(screen.getByTestId('mfa-request-button'));
     await waitFor(() => expect(screen.getByTestId('mfa-ready-title')).toBeTruthy());
     fireEvent.changeText(screen.getByTestId('w2c-otp-input'), '123456');
