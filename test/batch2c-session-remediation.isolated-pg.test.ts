@@ -17,17 +17,19 @@ import { KycTierTransitionService } from '../src/kyc-verification/kyc-tier-trans
 import { PostgresKycStore } from '../src/kyc-verification/postgres-kyc.store';
 import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
+import { assertIsolatedKycCluster, isolatedKycCluster } from './support/kyc-isolated-cluster';
 
-const socket = process.env.KYC_ISOLATED_TEST_SOCKET ?? '';
-if (!/^\/home\/user\/m25c-isolated-pgsocket\/kyc-batch1-[A-Za-z0-9]+$/.test(socket)) {
-  throw new Error('Disposable KYC socket required');
-}
+// Portable provenance: see test/support/kyc-isolated-cluster.ts. The cluster's identity is
+// proven from the runner-written marker + manifest and from the server's own settings, so no
+// machine-specific absolute path is embedded here and the suite is runnable in CI.
+const cluster = isolatedKycCluster();
+const socket = cluster.socketDirectory;
 
 const databaseName = `kyc_batch2c_auth_${randomUUID().replace(/-/g, '')}`;
 const admin = new DataSource({
   type: 'postgres',
   host: socket,
-  port: 55461,
+  port: cluster.port,
   username: 'kyc_synthetic',
   database: 'postgres',
   synchronize: false,
@@ -68,22 +70,15 @@ const kycReviewerPrincipal: AuthorizationPrincipal = {
 
 beforeAll(async () => {
   await admin.initialize();
-  const [location] = await admin.query<Array<{ data_directory: string }>>('SHOW data_directory');
-  const [listen] = await admin.query<Array<{ listen_addresses: string }>>('SHOW listen_addresses');
-  const [version] = await admin.query<Array<{ server_version: string }>>('SHOW server_version');
-  if (
-    !/^\/home\/user\/kyc-batch1-pg-[A-Za-z0-9]+$/.test(location?.data_directory ?? '') ||
-    listen?.listen_addresses !== '' ||
-    !version?.server_version.startsWith('16.')
-  ) {
-    throw new Error('Not an independently isolated PostgreSQL 16 cluster');
-  }
+  // Provenance (marker + manifest + data_directory match + socket-only + minimum server
+  // version) is asserted by the shared helper instead of a hardcoded path regex.
+  await assertIsolatedKycCluster(admin, cluster);
   await admin.query(`CREATE DATABASE "${databaseName}"`);
   created = true;
   db = new DataSource({
     type: 'postgres',
     host: socket,
-    port: 55461,
+    port: cluster.port,
     username: 'kyc_synthetic',
     database: databaseName,
     synchronize: false,
