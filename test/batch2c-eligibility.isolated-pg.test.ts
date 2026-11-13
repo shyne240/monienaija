@@ -566,3 +566,57 @@ test('MFA transaction primitive rolls back with its caller and serializes concur
     await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [issued.challengeId]),
   ).toEqual([{ status: 'VERIFIED' }]);
 });
+
+test('concurrent incorrect desk OTPs persist a challenge attempt limit', async () => {
+  const { AgentDeskOtpService } = await import('../src/agent/agent-desk-otp.service');
+  const { MfaExecutionService } = await import(
+    '../src/customer-authentication/mfa-execution.service'
+  );
+  const customerId = await subject('LEVEL_1', ['BVN']);
+  await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [customerId]);
+  const credentialId = randomUUID();
+  await db.query(
+    `INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE')`,
+    [credentialId, customerId],
+  );
+  sms.clear();
+  const issued = await app
+    .get(AgentDeskOtpService)
+    .issue({ agentId: randomUUID(), customerId, purpose: 'CASH_TO_CASH_CLAIM' });
+  const code = sms.sent[0]!.message.match(/code is (\d{6})/)![1]!;
+  const incorrect = code === '000000' ? '000001' : '000000';
+  const [row] = await db.query<Array<{ session_id: string }>>(
+    `SELECT session_id FROM mfa_challenges WHERE id=$1`,
+    [issued.challengeId],
+  );
+  const command = {
+    principal: {
+      principalType: 'CUSTOMER' as const,
+      customerId,
+      credentialId,
+      sessionId: row!.session_id,
+      audience: 'customer-api',
+      authenticatedAt: new Date(),
+      expiresAt: issued.expiresAt,
+    },
+    challengeId: issued.challengeId,
+    providedHash: incorrect,
+    actor: customerId,
+    expectedPurpose: 'CASH_TO_CASH_CLAIM',
+  };
+  const mfa = app.get(MfaExecutionService);
+  const results = await Promise.all(Array.from({ length: 5 }, () => mfa.verifyChallenge(command)));
+  expect(results.every((result) => !result.verified && result.failureReason === 'MISMATCH')).toBe(
+    true,
+  );
+  expect(
+    await db.query(
+      `SELECT failed_attempts,status,revoked_at IS NOT NULL AS revoked FROM mfa_challenges WHERE id=$1`,
+      [issued.challengeId],
+    ),
+  ).toEqual([{ failed_attempts: 5, status: 'REVOKED', revoked: true }]);
+  await expect(mfa.verifyChallenge({ ...command, providedHash: code })).resolves.toMatchObject({
+    verified: false,
+    failureReason: 'MFA_UNAVAILABLE',
+  });
+});

@@ -35,6 +35,8 @@ const DEFAULT_CHALLENGE_TTL_SECONDS = 300;
 const MIN_CHALLENGE_TTL_SECONDS = 30;
 const MAX_CHALLENGE_TTL_SECONDS = 900;
 const MAX_HASH_LENGTH = 512;
+const MAX_DESK_CHALLENGE_ATTEMPTS = 5;
+const DESK_PURPOSES = new Set(['WALLET_TO_CASH', 'CASH_TO_CASH_CLAIM']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 @Injectable()
@@ -221,6 +223,16 @@ export class MfaExecutionService {
     }
 
     if (!this.challengeMatches(challenge.challengeHash, command.providedHash)) {
+      // A caller using verifyChallengeInManager must commit a mismatch result before
+      // responding; throwing inside the transaction would roll this counter back.
+      if (challenge.purpose && DESK_PURPOSES.has(challenge.purpose)) {
+        challenge.failedAttempts = (challenge.failedAttempts ?? 0) + 1;
+        if (challenge.failedAttempts >= MAX_DESK_CHALLENGE_ATTEMPTS) {
+          challenge.status = MfaChallengeStatus.REVOKED;
+          challenge.revokedAt = now;
+        }
+        await manager.getRepository(MfaChallenge).save(challenge);
+      }
       await this.audit(manager, challenge.id, 'MFA_CHALLENGE', 'FAILED', actor, {
         customerId: challenge.customerId,
         enrollmentId: challenge.enrollmentId,
