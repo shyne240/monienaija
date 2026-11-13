@@ -165,6 +165,18 @@ describe('PrivilegedActionApprovalService', () => {
         now: new Date('2026-01-01T00:00:30.000Z'),
       }),
     ).resolves.toMatchObject({ approved: false, reason: 'SELF_APPROVAL_FORBIDDEN' });
+    // Identity separation still applies if the maker also has an approval-capable role and scope.
+    await expect(
+      testFixture.service.approve({
+        principal: {
+          ...requester,
+          roles: ['FINANCE_PREPARER', 'FINANCE_CONTROLLER'],
+          scopes: ['privileged:approve'],
+        },
+        approvalId: approvalId as string,
+        now: new Date('2026-01-01T00:00:30.000Z'),
+      }),
+    ).resolves.toMatchObject({ approved: false, reason: 'SELF_APPROVAL_FORBIDDEN' });
     const approved = await testFixture.service.approve({
       principal: approver,
       approvalId: approvalId as string,
