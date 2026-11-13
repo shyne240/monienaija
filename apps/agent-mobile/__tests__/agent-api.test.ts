@@ -88,6 +88,12 @@ describe('Agent operating-context API bindings', () => {
       expect(result.destinationMasked).toBe('******7801');
     });
 
+    test('cash-out issuance forwards the transaction context', async () => {
+      mockClient.post.mockResolvedValue({});
+      await requestAgentMfaChallenge('cust-1', 'WALLET_TO_CASH', undefined, { amountMinor: '2500', currency: 'NGN', operationKey: 'operation-1' });
+      expect(mockClient.post).toHaveBeenCalledWith('api/v1/agents/me/mfa-challenges', { customerId:'cust-1', purpose:'WALLET_TO_CASH', amountMinor:'2500', currency:'NGN', operationKey:'operation-1' });
+    });
+
     test('ttlSeconds is omitted unless the caller explicitly supplies it', async () => {
       mockClient.post.mockResolvedValue({});
       await requestAgentMfaChallenge('cust-2', 'CASH_TO_CASH_CLAIM');

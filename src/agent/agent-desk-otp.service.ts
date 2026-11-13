@@ -10,7 +10,9 @@ import {
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
-import { reserveCashOutOtpIssuance } from './cash-out-otp-budget';
+import { establishCashOutIntent } from './cash-out-intent';
+import { AgentServiceCapabilityService } from './agent-service-capability.service';
+import { AgentService } from './agent-service.enum';
 import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { AuditService } from '../operations/audit.service';
 import { MfaExecutionService } from '../customer-authentication/mfa-execution.service';
@@ -32,6 +34,10 @@ export interface IssueDeskOtpChallengeCommand {
   agentId: string;
   customerId: string;
   purpose: AgentDeskOtpPurpose;
+  agentSessionId?: string;
+  amountMinor?: string | number;
+  currency?: string;
+  operationKey?: string;
   ttlSeconds?: number;
   correlationId?: string;
 }
@@ -63,12 +69,8 @@ export interface IssueDeskOtpChallengeView {
  *  - purpose binding (§3 of the task): challenge carries `WALLET_TO_CASH` or
  *    `CASH_TO_CASH_CLAIM`; mismatched consumption fails WRONG_PURPOSE. Legacy
  *    purpose-NULL challenges are unaffected;
- *  - session binding: the challenge is bound to a customer-plane `authentication_sessions`
- *    row created here with a SHA-256 token hash that is NEVER issued to anyone (the row
- *    exists solely to satisfy the established customer+session MFA context; the token
- *    itself does not exist outside a discarded random value), mirroring the established
- *    test-fixture semantic and the verification-time session/credential reconstruction in
- *    the financial services;
+ *  - Cash-Out uses an intent-scoped context, never a customer authentication session.
+ *    The separate Cash-to-Cash claim path retains its legacy session context.
  *  - OTP hygiene: 6-digit CSPRNG code; at rest only a salted PBKDF2 digest (canonical
  *    `challenge_matches` extension accepts both this digest format and the legacy raw
  *    comparand, so pre-existing challenges keep verifying); the plaintext code is sent
@@ -91,6 +93,7 @@ export class AgentDeskOtpService {
     @Optional()
     @Inject(NOTIFICATION_PROVIDER_TOKEN)
     private readonly injectedProvider: NotificationProvider | null,
+    @Optional() private readonly agentCapabilities?: AgentServiceCapabilityService,
   ) {}
 
   private get provider(): NotificationProvider {
@@ -135,12 +138,6 @@ export class AgentDeskOtpService {
     }
 
     const destinationHash = createHash('sha256').update(destinationPhone).digest('hex');
-    if (command.purpose === 'WALLET_TO_CASH') {
-      await this.dataSource.transaction((manager) =>
-        reserveCashOutOtpIssuance(manager, customerId, destinationHash),
-      );
-    }
-
     // 3. An ACTIVE customer credential must exist — the canonical verifier reconstructs
     //    its principal from the challenge's session (and falls back to the active
     //    credential). Without one verification cannot succeed, so fail early.
@@ -154,6 +151,31 @@ export class AgentDeskOtpService {
     if (!credentialId) {
       throw new BadRequestException('Customer OTP verification unavailable');
     }
+
+    if (command.purpose === 'WALLET_TO_CASH') {
+      const capability = await this.agentCapabilities?.evaluate(
+        command.agentId,
+        AgentService.CASH_OUT,
+      );
+      if (!capability?.allowed) throw new BadRequestException('Cash-out agent unavailable');
+    }
+
+    const intentId =
+      command.purpose === 'WALLET_TO_CASH'
+        ? await this.dataSource.transaction(async (manager) => {
+            await this.financialEligibility.require(manager, customerId, { lockMode: 'SHARE' });
+            return establishCashOutIntent(manager, {
+              agentId: command.agentId,
+              agentSessionId: command.agentSessionId,
+              customerId,
+              credentialId,
+              destinationHash,
+              amountMinor: command.amountMinor,
+              currency: command.currency,
+              operationKey: command.operationKey,
+            });
+          })
+        : undefined;
 
     // 4. MFA context: ensure ENABLED enrollment + ENABLED SMS method exist for the
     //    customer (canonical issuance requires both; established idempotent semantic).
@@ -189,17 +211,17 @@ export class AgentDeskOtpService {
       methodId = methodInsert[0]!.id;
     }
 
-    // 5. Customer-plane session context row. The canonical challenge requires a session
-    //    binding; verification reconstructs credential from it. The row's token_hash is a
-    //    SHA-256 of a discarded random value — no live token is ever issued.
-    const sessionId = randomUUID();
-    const ghostTokenHash = createHash('sha256').update(randomBytes(32)).digest('hex');
-    await this.dataSource.query(
-      `INSERT INTO authentication_sessions
+    // Cash-Out uses the intent identifier; the existing claim path is unchanged.
+    const sessionId = intentId ?? randomUUID();
+    if (!intentId) {
+      const ghostTokenHash = createHash('sha256').update(randomBytes(32)).digest('hex');
+      await this.dataSource.query(
+        `INSERT INTO authentication_sessions
          (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at)
          VALUES ($1, $2, $3, $4, 'customer-api', 'ACTIVE', NOW(), NOW() + ($5 || ' seconds')::interval, NOW())`,
-      [sessionId, customerId, credentialId, ghostTokenHash, String(command.ttlSeconds ?? 300)],
-    );
+        [sessionId, customerId, credentialId, ghostTokenHash, String(command.ttlSeconds ?? 300)],
+      );
+    }
 
     // 6. OTP: CSPRNG 6-digit numeric; at rest ONLY its salted PBKDF2 digest (canonical
     //    comparand format supported by MfaExecutionService.challengeMatches).
@@ -223,6 +245,7 @@ export class AgentDeskOtpService {
       },
       enrollmentId,
       methodId,
+      cashOutIntentId: intentId,
       challengeHash,
       actor: `agent:${command.agentId}`,
       ttlSeconds: command.ttlSeconds,
@@ -231,8 +254,8 @@ export class AgentDeskOtpService {
     const challenge = await this.mfaExecutionService.issueChallenge(issueCommand);
     if (command.purpose === 'WALLET_TO_CASH') {
       await this.dataSource.query(
-        `INSERT INTO cash_out_otp_challenge_security(challenge_id,customer_id,destination_hash) VALUES($1,$2,$3)`,
-        [challenge.id, customerId, destinationHash],
+        `INSERT INTO cash_out_otp_challenge_security(challenge_id,customer_id,destination_hash,intent_id) VALUES($1,$2,$3,$4)`,
+        [challenge.id, customerId, destinationHash, intentId],
       );
     }
 

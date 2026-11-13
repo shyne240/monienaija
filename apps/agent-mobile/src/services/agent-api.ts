@@ -228,8 +228,9 @@ export async function requestAgentMfaChallenge(
   customerId: string,
   purpose: MfaChallengePurpose,
   ttlSeconds?: number,
+  cashOutContext?: { amountMinor: string; currency: string; operationKey: string },
 ): Promise<AgentMfaChallenge> {
-  const body: Record<string, unknown> = { customerId, purpose };
+  const body: Record<string, unknown> = { customerId, purpose, ...(cashOutContext ?? {}) };
   if (ttlSeconds !== undefined) {
     body.ttlSeconds = ttlSeconds;
   }

@@ -1,4 +1,14 @@
-import { IsIn, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsUUID,
+  IsString,
+  MaxLength,
+  Matches,
+  Max,
+  Min,
+} from 'class-validator';
 
 import { AGENT_DESK_OTP_PURPOSES, type AgentDeskOtpPurpose } from '../agent-desk-otp.constants';
 
@@ -15,6 +25,20 @@ export class IssueDeskOtpChallengeDto {
 
   @IsIn(AGENT_DESK_OTP_PURPOSES as unknown as string[])
   purpose!: AgentDeskOtpPurpose;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[0-9]+$/)
+  amountMinor?: string;
+
+  @IsOptional()
+  @IsIn(['NGN'])
+  currency?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  operationKey?: string;
 
   @IsOptional()
   @IsInt()

@@ -62,6 +62,19 @@ export const WalletToCashConfirmScreen: React.FC = () => {
   const [agentPin, setAgentPin] = useState('');
   const [clientError, setClientError] = useState('');
   const effectiveKeyRef = useRef<string>(idempotencyKey);
+  const [operationKey, setOperationKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      const pending = agentId ? await loadPendingAgentOperation(agentId, 'CASH_OUT') : null;
+      const params = {counterpartyId:customer.customerId, amountMinor, currency:'NGN'};
+      const key = pending && matchesPendingAgentOperation(pending, params) ? pending.idempotencyKey : idempotencyKey;
+      if (active) { effectiveKeyRef.current = key; setOperationKey(key); }
+    };
+    void load();
+    return () => { active = false; };
+  }, [agentId, customer.customerId, amountMinor, idempotencyKey]);
   const submitInFlightRef = useRef(false);
 
   const cashOutMutation = useMutation<AgentCashOutResult, unknown, void>({
@@ -159,14 +172,7 @@ export const WalletToCashConfirmScreen: React.FC = () => {
       currency: 'NGN',
     };
 
-    let effectiveKey = idempotencyKey;
-    if (agentId) {
-      const existing = await loadPendingAgentOperation(agentId, 'CASH_OUT');
-      if (existing && matchesPendingAgentOperation(existing, candidateParams)) {
-        effectiveKey = existing.idempotencyKey;
-      }
-    }
-    effectiveKeyRef.current = effectiveKey;
+    const effectiveKey = effectiveKeyRef.current;
 
     if (agentId) {
       await savePendingAgentOperation({
@@ -221,8 +227,9 @@ export const WalletToCashConfirmScreen: React.FC = () => {
         <MfaChallengeCard
           customerId={customer.customerId}
           purpose="WALLET_TO_CASH"
+          cashOutContext={operationKey ? {amountMinor:String(amountMinor),currency:"NGN",operationKey} : undefined}
           invalidatedRevision={mfaInvalidatedRevision}
-          disabled={cashOutMutation.isPending}
+          disabled={cashOutMutation.isPending || !operationKey}
           onChallengeReady={(issued) => {
             setChallenge(issued);
             setClientError('');
