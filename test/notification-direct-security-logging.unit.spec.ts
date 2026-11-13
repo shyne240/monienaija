@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/require-await */
 import { CustomerRegistrationService } from '../src/customer-registration/customer-registration.service';
 import { AgentDeskOtpService } from '../src/agent/agent-desk-otp.service';
+import * as claimAuthorization from '../src/agent/cash-to-cash-claim-authorization';
 import { AdminCustomerCredentialsController } from '../src/admin/admin-customer-credentials.controller';
 import type { NotificationProvider } from '../src/notification/notification.types';
 
@@ -43,6 +44,13 @@ describe('direct security notification diagnostics', () => {
   it.each([false, true])(
     'agent desk failures never log provider text (throws=%s)',
     async (throws) => {
+      // This unit test isolates delivery redaction; real transfer binding is covered by PostgreSQL acceptance.
+      const preflight = jest
+        .spyOn(claimAuthorization, 'preflightClaimContext')
+        .mockResolvedValue(undefined);
+      const binding = jest
+        .spyOn(claimAuthorization, 'bindClaimChallenge')
+        .mockResolvedValue(undefined);
       const query = jest
         .fn()
         .mockResolvedValueOnce([{ id: 'customer', status: 'ACTIVE' }])
@@ -68,13 +76,21 @@ describe('direct security notification diagnostics', () => {
         { record: async () => undefined } as never,
         { require: async () => undefined } as never,
         failingProvider(throws),
+        { evaluate: async () => ({ allowed: true }) } as never,
+        undefined,
+        {} as never,
       );
       const warn = jest.spyOn((service as any).logger, 'warn').mockImplementation(() => undefined);
       await service.issue({
         customerId: 'customer',
         agentId: 'agent',
         purpose: 'CASH_TO_CASH_CLAIM',
+        transferId: '11111111-1111-4111-8111-111111111111',
+        redemptionMethod: 'AGENT_CASH',
+        agentSessionId: '22222222-2222-4222-8222-222222222222',
       });
+      preflight.mockRestore();
+      binding.mockRestore();
       expect(warn).toHaveBeenCalled();
       expect(JSON.stringify(warn.mock.calls)).not.toMatch(
         /OTP_SENTINEL|PASSWORD_SENTINEL|08012345678|PRIVATE_MESSAGE_SENTINEL/,
