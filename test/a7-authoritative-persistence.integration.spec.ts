@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { ValidationPipe } from '@nestjs/common';
+import { ConflictException, ValidationPipe } from '@nestjs/common';
 import { AuditService } from '../src/operations/audit.service';
+import { OutboxService } from '../src/operations/outbox.service';
 import { ReconciliationService } from '../src/reconciliation/reconciliation.service';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
@@ -63,6 +64,7 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
   let app: NestFastifyApplication;
   const snapshots = new Map();
   const providerEvidence = new Map<string, InboundVerification>();
+  let executionUnavailable = false;
   beforeAll(async () => {
     db = await createIntegrationDataSource('a7persist');
     // Controlled, database-backed authority fixture. Production remains unavailable.
@@ -112,6 +114,7 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
     };
     const executionAuthority: A7InboundExecutionAuthority = {
       authorize: async (manager, input) => {
+        if (executionUnavailable) return { status: 'UNAVAILABLE' };
         const rows = await manager.query<
           Array<{
             id: string;
@@ -1449,13 +1452,11 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
     const evidence = providerEvidence.get(reference)!;
     if (evidence.state !== 'RECEIVED') throw new Error('missing test evidence');
     providerEvidence.set(reference, { ...evidence, amountMinor: '101' });
-    await app
-      .get(InboundFundingService)
-      .observe({
-        providerKey: 'TESTPROVIDER',
-        providerReference: reference,
-        correlationId: 'late-conflict',
-      });
+    await app.get(InboundFundingService).observe({
+      providerKey: 'TESTPROVIDER',
+      providerReference: reference,
+      correlationId: 'late-conflict',
+    });
     const unresolved = await app.get(ReconciliationService).getUnresolvedInboundObservations();
     expect(
       unresolved.some(
@@ -1472,6 +1473,216 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
         )
       )[0]?.n,
     ).toBe('1');
+  });
+
+  it('rolls back execution on a temporary authority outage and permits a verified retry', async () => {
+    const f = await inboundFixture(true);
+    await service.transition({
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 1,
+      nextState: 'LIFECYCLE_ADMITTED',
+      idempotencyKey: 'admit',
+    });
+    const cmd = {
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 2,
+      idempotencyKey: 'execute',
+    };
+    executionUnavailable = true;
+    try {
+      for (let i = 0; i < 2; i++)
+        await expect(service.executeInbound(cmd)).rejects.toThrow(
+          'execution authority unavailable',
+        );
+    } finally {
+      executionUnavailable = false;
+    }
+    expect(
+      (
+        await db.query<Array<{ n: string }>>(
+          'SELECT count(*) n FROM inbound_funding_receipts WHERE virtual_account_id=$1',
+          [f.routeId],
+        )
+      )[0]?.n,
+    ).toBe('0');
+    expect((await service.findLifecycle(f.created.lifecycle.lifecycle_reference))?.version).toBe(2);
+    expect((await service.executeInbound(cmd)).lifecycle.state).toBe('LIFECYCLE_CREDITED');
+  });
+  it('posts a verified inbound financial effect with immutable audit, outbox and balanced journal', async () => {
+    const f = await inboundFixture(true);
+    await service.transition({
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 1,
+      nextState: 'LIFECYCLE_ADMITTED',
+      idempotencyKey: 'admit',
+    });
+    const result = await service.executeInbound({
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 2,
+      idempotencyKey: 'execute',
+    });
+    const receipts = await db.query<Array<{ journal_id: string }>>(
+      'SELECT journal_id FROM inbound_funding_receipts WHERE id=$1',
+      [result.lifecycle.execution_receipt_id],
+    );
+    const lines = await db.query<Array<{ direction: string; amount_minor: string }>>(
+      'SELECT direction,amount_minor::text FROM ledger_lines WHERE journal_id=$1 ORDER BY direction',
+      [receipts[0]!.journal_id],
+    );
+    expect(lines).toEqual([
+      { direction: 'CREDIT', amount_minor: '100' },
+      { direction: 'DEBIT', amount_minor: '100' },
+    ]);
+    expect(
+      (
+        await db.query<Array<{ n: string }>>(
+          `SELECT count(*) n FROM audit_events WHERE entity_type='A7_PRODUCT_LIFECYCLE' AND entity_id=$1 AND action='CREDITED'`,
+          [f.created.lifecycle.id],
+        )
+      )[0]?.n,
+    ).toBe('1');
+    expect(
+      (
+        await db.query<Array<{ n: string }>>(
+          `SELECT count(*) n FROM outbox_events WHERE aggregate_id=$1 AND event_type='INBOUND_FUNDING_CREDITED'`,
+          [result.lifecycle.execution_receipt_id],
+        )
+      )[0]?.n,
+    ).toBe('1');
+    await expect(
+      db.query('UPDATE inbound_funding_receipts SET amount_minor=101 WHERE id=$1', [
+        result.lifecycle.execution_receipt_id,
+      ]),
+    ).rejects.toThrow();
+  });
+  it('replays a verified inbound execution and rejects same-key request hash conflicts', async () => {
+    const f = await inboundFixture(true);
+    await service.transition({
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 1,
+      nextState: 'LIFECYCLE_ADMITTED',
+      idempotencyKey: 'admit',
+    });
+    const cmd = {
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 2,
+      idempotencyKey: 'execute',
+    };
+    const first = await service.executeInbound(cmd);
+    const replay = await service.executeInbound(cmd);
+    expect(first.replayed).toBe(false);
+    expect(replay.replayed).toBe(true);
+    expect(replay.lifecycle.execution_receipt_id).toBe(first.lifecycle.execution_receipt_id);
+    await expect(service.executeInbound({ ...cmd, expectedVersion: 3 })).rejects.toThrow(
+      'idempotency conflict',
+    );
+    expect(
+      (
+        await db.query<Array<{ n: string }>>(
+          'SELECT count(*) n FROM inbound_funding_receipts WHERE virtual_account_id=$1',
+          [f.routeId],
+        )
+      )[0]?.n,
+    ).toBe('1');
+  });
+  it('rolls back posting and lifecycle after an injected receipt outbox failure and retries', async () => {
+    const f = await inboundFixture(true);
+    await service.transition({
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 1,
+      nextState: 'LIFECYCLE_ADMITTED',
+      idempotencyKey: 'admit',
+    });
+    const cmd = {
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 2,
+      idempotencyKey: 'execute',
+    };
+    const outbox = app.get(OutboxService);
+    const original = outbox.enqueue.bind(outbox);
+    const spy = jest
+      .spyOn(outbox, 'enqueue')
+      .mockImplementation((manager, event) =>
+        event.eventType === 'INBOUND_FUNDING_CREDITED'
+          ? Promise.reject(new Error('injected inbound outbox interruption'))
+          : original(manager, event),
+      );
+    try {
+      await expect(service.executeInbound(cmd)).rejects.toThrow(
+        'injected inbound outbox interruption',
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    expect(
+      (
+        await db.query<Array<{ n: string }>>(
+          'SELECT count(*) n FROM inbound_funding_receipts WHERE virtual_account_id=$1',
+          [f.routeId],
+        )
+      )[0]?.n,
+    ).toBe('0');
+    expect(
+      (
+        await db.query<Array<{ used_minor: string }>>(
+          'SELECT used_minor::text FROM test_a7_execution_authority WHERE id=$1',
+          [f.executionId],
+        )
+      )[0]?.used_minor,
+    ).toBe('0');
+    expect((await service.findLifecycle(f.created.lifecycle.lifecycle_reference))?.version).toBe(2);
+    expect((await service.executeInbound(cmd)).lifecycle.state).toBe('LIFECYCLE_CREDITED');
+  });
+
+  it('propagates receipt processor rejection and rolls back execution before a verified retry', async () => {
+    const f = await inboundFixture(true);
+    await service.transition({
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 1,
+      nextState: 'LIFECYCLE_ADMITTED',
+      idempotencyKey: 'admit',
+    });
+    const command = {
+      token: f.token,
+      lifecycleId: f.created.lifecycle.id,
+      expectedVersion: 2,
+      idempotencyKey: 'execute',
+    };
+    const processor = app.get(InboundFundingService);
+    const spy = jest
+      .spyOn(processor, 'receiveInTransaction')
+      .mockRejectedValue(new ConflictException('receipt processor rejected'));
+    try {
+      await expect(service.executeInbound(command)).rejects.toThrow('receipt processor rejected');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(
+      (
+        await db.query<Array<{ used_minor: string }>>(
+          'SELECT used_minor::text FROM test_a7_execution_authority WHERE id=$1',
+          [f.executionId],
+        )
+      )[0]?.used_minor,
+    ).toBe('0');
+    expect(
+      (
+        await db.query<Array<{ n: string }>>(
+          'SELECT count(*) n FROM inbound_funding_receipts WHERE virtual_account_id=$1',
+          [f.routeId],
+        )
+      )[0]?.n,
+    ).toBe('0');
+    expect((await service.executeInbound(command)).lifecycle.state).toBe('LIFECYCLE_CREDITED');
   });
   it('rejects a retired inbound policy profile', async () => {
     const f = await inboundFixture();

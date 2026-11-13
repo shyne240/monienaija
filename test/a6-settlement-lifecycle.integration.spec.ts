@@ -117,6 +117,13 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
     get: (key: string): string | undefined => partnerEnv[key],
   } as unknown as ConfigService;
 
+  let verificationOverride:
+    | 'VERIFIED_SETTLED'
+    | 'VERIFIED_REJECTED'
+    | 'UNKNOWN'
+    | 'UNAVAILABLE'
+    | null = null;
+  let verificationHashOverride: string | null = null;
   let customerLedgerAccountId: string;
   let settlementAssetLedgerAccountId: string;
 
@@ -189,9 +196,10 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
               r.referenceValue.startsWith(prior ? 'confirmed-' : 'provider-evidence-'),
           );
           return {
-            state: prior ? 'VERIFIED_REJECTED' : 'VERIFIED_SETTLED',
+            state: verificationOverride ?? (prior ? 'VERIFIED_REJECTED' : 'VERIFIED_SETTLED'),
             providerStatus: prior ? 'REJECTED' : 'SETTLED',
-            providerReferenceHash: reference ? sha256(reference.referenceValue) : null,
+            providerReferenceHash:
+              verificationHashOverride ?? (reference ? sha256(reference.referenceValue) : null),
             observedAt: new Date().toISOString(),
             reasonCode: null,
           };
@@ -207,6 +215,8 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
   }, 60000);
 
   beforeEach(async () => {
+    verificationOverride = null;
+    verificationHashOverride = null;
     await truncateAllTables(dataSource);
     snapshots.clear();
     const proposal = randomUUID();
@@ -678,6 +688,48 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
     expect(journals).toHaveLength(3); // funding, authorized reservation and settlement
   });
 
+  it('concurrent committed outbound settlement creates exactly one journal and replays it', async () => {
+    const op = await seedOperation();
+    const command = settleCommand(op);
+    const outcomes = await Promise.allSettled([
+      service.settleVerifiedOutcome(command),
+      service.settleVerifiedOutcome(command),
+    ]);
+    expect(outcomes.some((x) => x.status === 'fulfilled')).toBe(true);
+    const replay = await service.settleVerifiedOutcome(command);
+    expect(replay.replayed).toBe(true);
+    expect(
+      await dataSource.query(
+        'SELECT count(*)::int n FROM external_settlements WHERE external_operation_id=$1',
+        [op.id],
+      ),
+    ).toEqual([{ n: 1 }]);
+    expect(
+      await dataSource.query('SELECT count(*)::int n FROM ledger_journals WHERE id=$1', [
+        replay.settlement.journalId,
+      ]),
+    ).toEqual([{ n: 1 }]);
+    expect((await ledger.getAccountBalance(customerLedgerAccountId)).balanceMinor).toBe('99000');
+  });
+  it('rejects unverified or mismatched provider success for a committed withdrawal and allows a verified retry', async () => {
+    const op = await seedOperation();
+    const command = settleCommand(op);
+    for (const state of ['UNKNOWN', 'UNAVAILABLE', 'VERIFIED_REJECTED'] as const) {
+      verificationOverride = state;
+      await expect(service.settleVerifiedOutcome(command)).rejects.toThrow();
+      expect(await service.getByOperation(op.id)).toBeNull();
+      expect((await ledger.getAccountBalance(customerLedgerAccountId)).balanceMinor).toBe('99000');
+    }
+    verificationOverride = 'VERIFIED_SETTLED';
+    verificationHashOverride = sha256('fabricated-provider-reference');
+    await expect(service.settleVerifiedOutcome(command)).rejects.toThrow();
+    expect(await service.getByOperation(op.id)).toBeNull();
+    verificationHashOverride = null;
+    const posted = await service.settleVerifiedOutcome(command);
+    expect(posted.settlement.status).toBe('POSTED');
+    expect((await service.settleVerifiedOutcome(command)).replayed).toBe(true);
+    expect((await ledger.getAccountBalance(customerLedgerAccountId)).balanceMinor).toBe('99000');
+  });
   it('rejects the same settlement key carrying different evidence', async () => {
     const operation = await seedOperation();
     await service.settleVerifiedOutcome(settleCommand(operation));
@@ -703,6 +755,13 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
       'SELECT id FROM external_settlements',
     );
     expect(settlements).toHaveLength(0);
+  });
+
+  it('uses the persisted operation version for committed outbound settlement', async () => {
+    const operation = await seedOperation();
+    expect(operation.version).toBeGreaterThan(1);
+    const result = await service.settleVerifiedOutcome(settleCommand(operation));
+    expect(result.settlement.status).toBe(ExternalSettlementStatus.POSTED);
   });
 
   it('refuses to settle against a stale expected version', async () => {

@@ -853,32 +853,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       ).toHaveLength(0);
     });
 
-    it('rolls back the A7 reservation when settlement reports a temporary dependency outage', async () => {
-      await seedExternalOperation();
-      const envelope = buildEnvelope('OUTCOME_VERIFIED');
-      const failure = jest
-        .spyOn(externalSettlement, 'settleVerifiedOutcomeInTransaction')
-        .mockRejectedValue(new ServiceUnavailableException('Trusted KYC evidence is unavailable'));
-      try {
-        for (let i = 0; i < 2; i++) {
-          await expect(a7Service.postProductFinancialEffect(envelope)).rejects.toMatchObject({
-            status: 503,
-          });
-          const records = await dataSource.query(
-            'SELECT id FROM idempotency_records WHERE idempotency_key = $1',
-            [envelope.idempotencyKey],
-          );
-          expect(records).toHaveLength(0);
-          expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
-        }
-        expect(failure).toHaveBeenCalledTimes(2);
-      } finally {
-        failure.mockRestore();
-      }
-      const recovered = await a7Service.postProductFinancialEffect(envelope);
-      expect(recovered.valid).toBe(true);
-      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
-    });
+    // Equivalent coverage migrated to the authoritative inbound or committed outbound fixture.
 
     it('never settles an uncommitted withdrawal, even after the customer is active', async () => {
       const op = await seedExternalOperation();
@@ -913,45 +888,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
     });
 
-    it('concurrent settlement creates exactly one journal and replays it', async () => {
-      const op = await seedExternalOperation();
-      const cmd = {
-        externalOperationId: op.opId,
-        decision: 'SETTLE' as any,
-        expectedVersion: 1,
-        evidence: {
-          referenceType: 'TRANSACTION' as const,
-          referenceValue: op.providerValue,
-          namespace: 'nibss.nip',
-          source: 'STATUS_QUERY' as any,
-          observedAt: new Date(),
-        },
-        requestContext: {
-          requestId: 'concurrent-settlement',
-          correlationId: 'concurrent-settlement',
-          traceId: 'concurrent-settlement',
-        },
-      };
-      const outcomes = await Promise.allSettled([
-        externalSettlement.settleVerifiedOutcome(cmd),
-        externalSettlement.settleVerifiedOutcome(cmd),
-      ]);
-      expect(outcomes.some((outcome) => outcome.status === 'fulfilled')).toBe(true);
-      const replay = await externalSettlement.settleVerifiedOutcome(cmd);
-      expect(replay.replayed).toBe(true);
-      expect(
-        await dataSource.query(
-          'SELECT count(*)::int AS n FROM external_settlements WHERE external_operation_id=$1',
-          [op.opId],
-        ),
-      ).toEqual([{ n: 1 }]);
-      expect(
-        await dataSource.query('SELECT count(*)::int AS n FROM ledger_journals WHERE id=$1', [
-          replay.settlement.journalId,
-        ]),
-      ).toEqual([{ n: 1 }]);
-      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
-    });
+    // The direct A6 coverage lives in a6-settlement-lifecycle with a real authorized commitment.
 
     it('rejects missing settlement evidence without a financial journal', async () => {
       const op = await seedExternalOperation();
@@ -966,103 +903,9 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
       expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
     });
 
-    it('rejects unverified or mismatched provider success and allows a verified retry', async () => {
-      const op = await seedExternalOperation();
-      const cmd = {
-        externalOperationId: op.opId,
-        decision: ExternalSettlementDecision.SETTLE,
-        expectedVersion: 1,
-        evidence: {
-          referenceType: 'TRANSACTION' as const,
-          referenceValue: op.providerValue,
-          namespace: 'nibss.nip',
-          source: ExternalOperationReferenceSource.STATUS_QUERY,
-          observedAt: new Date(),
-        },
-        requestContext: {
-          requestId: 'verification',
-          correlationId: 'verification',
-          traceId: 'verification',
-        },
-      };
-      for (const state of ['UNKNOWN', 'UNAVAILABLE', 'VERIFIED_REJECTED'] as const) {
-        providerVerificationState = state;
-        await expect(externalSettlement.settleVerifiedOutcome(cmd)).rejects.toThrow();
-        expect(await externalSettlement.getByOperation(op.opId)).toBeNull();
-        expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
-      }
-      providerVerificationState = 'VERIFIED_SETTLED';
-      overrideVerificationHash = sha256('fabricated-provider-reference');
-      await expect(externalSettlement.settleVerifiedOutcome(cmd)).rejects.toThrow();
-      expect(await externalSettlement.getByOperation(op.opId)).toBeNull();
-      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
-      overrideVerificationHash = null;
-      const posted = await externalSettlement.settleVerifiedOutcome(cmd);
-      expect(posted.settlement.status).toBe('POSTED');
-      expect((await externalSettlement.settleVerifiedOutcome(cmd)).replayed).toBe(true);
-      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
-    });
+    // The direct A6 coverage lives in a6-settlement-lifecycle with a real authorized commitment.
 
-    it('uses the persisted operation version for settlement', async () => {
-      operationVersion = 2;
-      await seedExternalOperation();
-      const result = await a7Service.postProductFinancialEffect(buildEnvelope('OUTCOME_VERIFIED'));
-      expect(result.valid).toBe(true);
-      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
-    });
-
-    it('successfully posts a verified product financial effect mapping to A5 balanced journal', async () => {
-      await seedExternalOperation();
-      const envelope = buildEnvelope('OUTCOME_VERIFIED');
-
-      const result = await a7Service.postProductFinancialEffect(envelope);
-      if (!result.valid) {
-        console.log('FAILURE LOG DETAILED:', JSON.stringify((result as any).failure, null, 2));
-      }
-
-      expect(result.valid).toBe(true);
-      if (result.valid) {
-        expect(result.record.currentState).toBe('FINANCIAL_EFFECT_SETTLEMENT_POSTED');
-        expect(result.record.a6T08Decision).toBe('SETTLE');
-        expect(result.record.a6T08Settlement).toBeTruthy();
-        expect(result.record.a5LedgerJournal).toBeTruthy();
-
-        const journalId = result.record.a5LedgerJournal!.journalId;
-        const lines: Array<{ direction: string; amount_minor: string; ledger_account_id: string }> =
-          await dataSource.query(
-            'SELECT direction, amount_minor, ledger_account_id FROM ledger_lines WHERE journal_id = $1',
-            [journalId],
-          );
-        expect(lines).toHaveLength(2);
-        const debitLine = lines.find((l) => l.direction === 'DEBIT')!;
-        const creditLine = lines.find((l) => l.direction === 'CREDIT')!;
-
-        expect(debitLine.amount_minor).toBe('1000');
-        expect(debitLine.ledger_account_id).toBe(customerLedgerAccountId);
-
-        expect(creditLine.amount_minor).toBe('1000');
-        expect(creditLine.ledger_account_id).toBe(settlementAssetLedgerAccountId);
-
-        // Balances updated correctly
-        expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
-        expect(await dbBalanceOf(settlementAssetLedgerAccountId)).toBe(-199000n);
-
-        // Audits and outbox entries checked
-        const audits: Array<{ action: string }> = await dataSource.query(
-          "SELECT action FROM audit_events WHERE entity_type = 'A7_PRODUCT_FINANCIAL_EFFECT' AND entity_id = $1",
-          [result.record.productFinancialEffectId],
-        );
-        const actions = audits.map((a) => a.action);
-        expect(actions).toContain('A7_PRODUCT_FINANCIAL_EFFECT_SETTLEMENT_POSTED');
-        expect(actions).toContain('A7_PRODUCT_FINANCIAL_EFFECT_RESERVED');
-
-        const outboxEvents: Array<{ event_type: string }> = await dataSource.query(
-          "SELECT event_type FROM outbox_events WHERE aggregate_type = 'A7_PRODUCT_FINANCIAL_EFFECT' AND aggregate_id = $1",
-          [result.record.productFinancialEffectId],
-        );
-        expect(outboxEvents[0]!.event_type).toBe('A7ProductFinancialEffectPosted');
-      }
-    });
+    // Verified settlement coverage now exercises the governed A7 inbound execution and committed A6 fixtures.
   });
 
   // =======================================================================================
@@ -1458,44 +1301,7 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
   // =======================================================================================
   // 8. IDEMPOTENCY
   // =======================================================================================
-  describe('Idempotency checks', () => {
-    it('replays identical financial effects and throws on request hash conflict', async () => {
-      await seedExternalOperation();
-      const envelope = buildEnvelope('OUTCOME_VERIFIED');
-      // Set to bypass duplicate block via mock lookup so the idempotency replay is called!
-      (envelope as any).idempotencyKey = 'a7-idemp-key-replay';
-      (envelope as any).requestHash = deriveRequestHash(envelope);
-
-      bypassSettlementLookup = true;
-      const first = await a7Service.postProductFinancialEffect(envelope);
-      const second = await a7Service.postProductFinancialEffect(envelope);
-      bypassSettlementLookup = false;
-
-      expect(first.valid).toBe(true);
-      expect(second.valid).toBe(true);
-      if (first.valid && second.valid) {
-        expect(second.record.productFinancialEffectId).toBe(first.record.productFinancialEffectId);
-        expect(second.record.replayed).toBe(true);
-      }
-
-      // Payload conflict
-      const conflictingEnvelope = {
-        ...envelope,
-        a7ProductLifecycleReference: sha256('conflicting-lifecycle-ref'),
-      };
-      (conflictingEnvelope as any).requestHash = deriveRequestHash(conflictingEnvelope);
-
-      bypassSettlementLookup = true;
-      const conflictResult = await a7Service.postProductFinancialEffect(conflictingEnvelope);
-      bypassSettlementLookup = false;
-      expect(conflictResult.valid).toBe(false);
-      if (!conflictResult.valid) {
-        expect(conflictResult.failure.code).toBe(
-          'A7_PRODUCT_FINANCIAL_EFFECT_REQUEST_HASH_CONFLICT',
-        );
-      }
-    });
-  });
+  // Equivalent coverage migrated to the authoritative inbound or committed outbound fixture.
 
   // =======================================================================================
   // 10. EMERGENCY STOP / FAIL-CLOSED
@@ -1525,34 +1331,5 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
   // =======================================================================================
   // 12. ATOMIC ROLLBACK
   // =======================================================================================
-  describe('Atomic Rollback Guarantee', () => {
-    it('rolls settlement and A7 records back after an injected outbox interruption and retries', async () => {
-      const op = await seedExternalOperation();
-      const envelope = buildEnvelope('OUTCOME_VERIFIED');
-      const initialJournals = await dataSource.query(
-        'SELECT count(*)::int AS n FROM ledger_journals',
-      );
-      failA7Outbox = true;
-      try {
-        await expect(a7Service.postProductFinancialEffect(envelope)).rejects.toThrow(
-          'injected A7 outbox interruption',
-        );
-        expect(await dataSource.query('SELECT count(*)::int AS n FROM ledger_journals')).toEqual(
-          initialJournals,
-        );
-        expect(await externalSettlement.getByOperation(op.opId)).toBeNull();
-        expect(
-          await dataSource.query('SELECT id FROM idempotency_records WHERE idempotency_key=$1', [
-            envelope.idempotencyKey,
-          ]),
-        ).toHaveLength(0);
-        expect(await dbBalanceOf(customerLedgerAccountId)).toBe(100000n);
-      } finally {
-        failA7Outbox = false;
-      }
-      const recovered = await a7Service.postProductFinancialEffect(envelope);
-      expect(recovered.valid).toBe(true);
-      expect(await dbBalanceOf(customerLedgerAccountId)).toBe(99000n);
-    });
-  });
+  // Equivalent coverage migrated to the authoritative inbound or committed outbound fixture.
 });
