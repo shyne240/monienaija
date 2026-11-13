@@ -8,6 +8,11 @@ import {
 } from './agent-institution-resolver';
 import { CustomerInstitutionEnrolmentService } from './customer-institution-enrolment.service';
 import {
+  InstitutionAgentDirectoryController,
+  InstitutionConsoleReadController,
+} from './institution-console.controller';
+import { InstitutionConsoleService } from './institution-console.service';
+import {
   DatabaseFinancialContextResolver,
   FINANCIAL_CONTEXT_RESOLVER,
   NotConfiguredFinancialContextResolver,
@@ -45,6 +50,8 @@ import { InstitutionWorkforceScopeService } from './institution-workforce-scope.
     InstitutionLedgerController,
     InstitutionEnrolmentReadController,
     FinancialContextController,
+    InstitutionConsoleReadController,
+    InstitutionAgentDirectoryController,
   ],
   providers: [
     FinancialInstitutionService,
@@ -56,6 +63,7 @@ import { InstitutionWorkforceScopeService } from './institution-workforce-scope.
     CustomerInstitutionEnrolmentService,
     WalletInstitutionAttributionService,
     LedgerInstitutionScopeService,
+    InstitutionConsoleService,
     DatabaseFinancialContextResolver,
     NotConfiguredFinancialContextResolver,
     { provide: FINANCIAL_CONTEXT_RESOLVER, useExisting: DatabaseFinancialContextResolver },
@@ -70,6 +78,7 @@ import { InstitutionWorkforceScopeService } from './institution-workforce-scope.
     CustomerInstitutionEnrolmentService,
     WalletInstitutionAttributionService,
     LedgerInstitutionScopeService,
+    InstitutionConsoleService,
     FINANCIAL_CONTEXT_RESOLVER,
     DatabaseFinancialContextResolver,
   ],

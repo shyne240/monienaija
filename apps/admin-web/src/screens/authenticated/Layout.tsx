@@ -25,6 +25,8 @@ import { CommercialRulesScreen } from './CommercialRulesScreen';
 import { SuperAdminRecoveryScreen } from './SuperAdminRecoveryScreen';
 import { AuditTrailScreen } from './AuditTrailScreen';
 import { LimitAssignmentScreen } from './LimitAssignmentScreen';
+import { InstitutionDirectoryScreen } from './InstitutionDirectoryScreen';
+import { InstitutionWorkspaceScreen } from './InstitutionWorkspaceScreen';
 import { canonicalAdminView, canAccessAdminView, type AdminView } from './navigation-access';
 import './admin-shell.css';
 import './one-shell.css';
@@ -43,6 +45,7 @@ interface NavContext {
   customerId?: string;
   agentId?: string;
   openAgentApplications?: boolean;
+  institutionId?: string;
 }
 
 const FOCUSABLE_SELECTOR =
@@ -121,6 +124,7 @@ export const Layout: React.FC = () => {
     finance: false,
     commercial: false,
     compliance: false,
+    institutions: false,
     platform: false,
   });
 
@@ -258,6 +262,17 @@ export const Layout: React.FC = () => {
         { key: 'agents' as View, label: 'Agents & network', visible: isVisible('agents') },
         { key: 'agentClasses' as View, label: 'Agent classes', visible: isVisible('agentClasses') },
         { key: 'support' as View, label: 'Support Inbox', visible: isVisible('support') },
+      ],
+    },
+    {
+      id: 'institutions',
+      title: 'Institutions',
+      items: [
+        {
+          key: 'institutions' as View,
+          label: 'Institution directory',
+          visible: isVisible('institutions'),
+        },
       ],
     },
     {
@@ -445,6 +460,8 @@ export const Layout: React.FC = () => {
       case 'notifications': return <NotificationManagementScreen onNotificationGuardChange={reportNotificationGuard} />;
       case 'systemHealth': return <SystemHealthScreen onOpenNotifications={isVisible('notifications') ? () => handleNav('notifications') : undefined} />;
       case 'auditEvents': return <AuditTrailScreen initialCustomerId={navContext.customerId} />;
+      case 'institutions': return <InstitutionDirectoryScreen onOpenInstitution={(institutionId) => handleNav('institutionWorkspace', { institutionId })} />;
+      case 'institutionWorkspace': return <InstitutionWorkspaceScreen institutionId={navContext.institutionId} onBackToDirectory={() => handleNav('institutions')} />;
       default: return null;
     }
   };
@@ -509,7 +526,7 @@ export const Layout: React.FC = () => {
           <img src="/favicon.png" alt="MonieNaija" className="one-rail__logo" />
           {sections.filter(section => section.items.some(item => item.visible)).map((section) => (
             <button key={section.id} type="button" title={section.title} aria-label={`Open ${section.title} navigation`} aria-pressed={activeSection === section.id && !sidebarCollapsed} className={activeSection === section.id && !sidebarCollapsed ? 'one-rail__button one-rail__button--active' : 'one-rail__button'} onClick={() => { setSidebarCollapsed(false); setActiveSection(section.id); setExpandedSections({ [section.id]: true }); requestAnimationFrame(() => { const header = document.getElementById(`mn-nav-rail-header-${section.id}`); const nav = header?.closest('.mn-nav'); if (header && nav) nav.scrollTop = header.offsetTop - (nav as HTMLElement).offsetTop; }); }}>
-              <span aria-hidden="true">{({home:'▦',servicing:'♙',money:'⇄',finance:'◫',commercial:'▤',compliance:'◇',platform:'⚙'} as Record<string,string>)[section.id]}</span>
+              <span aria-hidden="true">{({home:'▦',servicing:'♙',institutions:'◈',money:'⇄',finance:'◫',commercial:'▤',compliance:'◇',platform:'⚙'} as Record<string,string>)[section.id]}</span>
             </button>
           ))}
         </div>

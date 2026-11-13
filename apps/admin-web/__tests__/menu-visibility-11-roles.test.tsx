@@ -31,19 +31,19 @@ jest.mock('../src/services/api-client', () => ({
 const ROLE_PRINCIPALS = {
   SUPER_ADMIN: {
     type: 'PRIVILEGED', roles: ['SUPER_ADMIN'],
-    scopes: ['agent.activate','agent.assign_limit','agent.manage_credentials','agent.manage_outlets_terminals','agent.reactivate','agent.review_application','agent.suspend','agent.terminate','agent.view','aggregator.manage','aggregator.view','audit.search','audit.view','commission_rule.view','compliance.manage_case','compliance.manage_risk_profile','customer.activate','customer.close','customer.create','customer.create_wallet','customer.manage_support_case','customer.suspend','customer.view','customer.view_address','customer.view_contact_methods','customer.view_identity_documents','customer.view_transactions','customer.view_wallets','diagnostics.view','fee_rule.view','kyc.approve','kyc.reject','kyc.review','kyc.view','ledger.view','limit.view','metrics.view','notification.provider.configure','notification.provider.view','notification.test_send','notification.view_deliveries','outbox.view','product.view','reconciliation.view','reporting.transaction_summary.view','reward_rule.view','transaction.view','workforce.dashboard.assign','workforce.dashboard.view','workforce.role.assign','workforce.role.assign_operational','workforce.role.create','workforce.role.modify','workforce.role.revoke','workforce.role.revoke_operational','workforce.role.view','workforce.user.create','workforce.user.suspend','workforce.user.view','privileged:execute'],
+    scopes: ['agent.activate','agent.assign_limit','agent.manage_credentials','agent.manage_outlets_terminals','agent.reactivate','agent.review_application','agent.suspend','agent.terminate','agent.view','aggregator.manage','aggregator.view','audit.search','audit.view','commission_rule.view','compliance.manage_case','compliance.manage_risk_profile','customer.activate','customer.close','customer.create','customer.create_wallet','customer.manage_support_case','customer.suspend','customer.view','customer.view_address','customer.view_contact_methods','customer.view_identity_documents','customer.view_transactions','customer.view_wallets','diagnostics.view','fee_rule.view','institution.attribution.view','institution.manage','institution.view','institution.workforce.assign','kyc.approve','kyc.reject','kyc.review','kyc.view','ledger.view','limit.view','metrics.view','notification.provider.configure','notification.provider.view','notification.test_send','notification.view_deliveries','outbox.view','product.view','reconciliation.view','reporting.transaction_summary.view','reward_rule.view','transaction.view','workforce.dashboard.assign','workforce.dashboard.view','workforce.role.assign','workforce.role.assign_operational','workforce.role.create','workforce.role.modify','workforce.role.revoke','workforce.role.revoke_operational','workforce.role.view','workforce.user.create','workforce.user.suspend','workforce.user.view','privileged:execute'],
   },
   FINANCE_PREPARER: {
     type: 'OPERATOR', roles: ['FINANCE_PREPARER'],
-    scopes: ['commission_rule.create','commission_rule.modify','commission_rule.view','fee_rule.create','fee_rule.modify','fee_rule.view','finance.control_policy.activate','ledger.post','ledger.reverse','ledger.view','limit.modify','limit.view','product.governance','product.modify','product.view','reporting.transaction_summary.view','reward_rule.create','reward_rule.modify','reward_rule.view','finance:prepare'],
+    scopes: ['commission_rule.create','commission_rule.modify','commission_rule.view','fee_rule.create','fee_rule.modify','fee_rule.view','finance.control_policy.activate','institution.attribution.prepare','institution.view','ledger.post','ledger.reverse','ledger.view','limit.modify','limit.view','product.governance','product.modify','product.view','reporting.transaction_summary.view','reward_rule.create','reward_rule.modify','reward_rule.view','finance:prepare'],
   },
   FINANCE_CONTROLLER: {
     type: 'OPERATOR', roles: ['FINANCE_CONTROLLER'],
-    scopes: ['agent.defund','agent.fund','commission_rule.create','commission_rule.modify','commission_rule.view','fee_rule.create','fee_rule.modify','fee_rule.view','finance.control_policy.activate','ledger.view','limit.modify','limit.view','notification.provider.configure','notification.provider.view','product.governance','product.modify','product.view','reporting.transaction_summary.view','reward_rule.create','reward_rule.modify','reward_rule.view','workforce.role.assign','workforce.role.create','workforce.role.modify','workforce.role.revoke','workforce.role.view','privileged:approve','privileged:execute'],
+    scopes: ['agent.defund','agent.fund','commission_rule.create','commission_rule.modify','commission_rule.view','fee_rule.create','fee_rule.modify','fee_rule.view','finance.control_policy.activate','institution.affiliation.approve','institution.attribution.approve','institution.attribution.view','institution.enrolment.approve','institution.lifecycle.approve','institution.view','ledger.view','limit.modify','limit.view','notification.provider.configure','notification.provider.view','product.governance','product.modify','product.view','reporting.transaction_summary.view','reward_rule.create','reward_rule.modify','reward_rule.view','workforce.role.assign','workforce.role.create','workforce.role.modify','workforce.role.revoke','workforce.role.view','privileged:approve','privileged:execute'],
   },
   FINANCE_AUDITOR: {
     type: 'OPERATOR', roles: ['FINANCE_AUDITOR'],
-    scopes: ['agent.view','aggregator.view','audit.search','audit.view','commission_rule.view','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','diagnostics.view','fee_rule.view','kyc.view','ledger.view','limit.view','metrics.view','notification.provider.view','notification.view_deliveries','outbox.view','product.view','reconciliation.view','reporting.transaction_summary.view','reward_rule.view','transaction.view','workforce.role.view','finance:audit'],
+    scopes: ['agent.view','aggregator.view','audit.search','audit.view','commission_rule.view','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','diagnostics.view','fee_rule.view','institution.attribution.view','institution.view','kyc.view','ledger.view','limit.view','metrics.view','notification.provider.view','notification.view_deliveries','outbox.view','product.view','reconciliation.view','reporting.transaction_summary.view','reward_rule.view','transaction.view','workforce.role.view','finance:audit'],
   },
   ADMINISTRATOR: {
     type: 'OPERATOR', roles: ['ADMINISTRATOR'],
@@ -51,15 +51,15 @@ const ROLE_PRINCIPALS = {
   },
   OPERATIONS: {
     type: 'OPERATOR', roles: ['OPERATIONS'],
-    scopes: ['aggregator.manage','aggregator.view','customer.activate','customer.close','customer.create','customer.create_wallet','customer.manage_support_case','customer.suspend','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','customer.view_wallets','diagnostics.view','metrics.view','notification.provider.view','notification.test_send','notification.view_deliveries','outbox.view','reporting.transaction_summary.view','transaction.view','workforce.user.create','workforce.user.suspend','workforce.user.view'],
+    scopes: ['aggregator.manage','aggregator.view','customer.activate','customer.close','customer.create','customer.create_wallet','customer.manage_support_case','customer.suspend','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','customer.view_wallets','diagnostics.view','institution.lifecycle.prepare','institution.manage','institution.view','metrics.view','notification.provider.view','notification.test_send','notification.view_deliveries','outbox.view','reporting.transaction_summary.view','transaction.view','workforce.user.create','workforce.user.suspend','workforce.user.view'],
   },
   AGENT_NETWORK_MANAGER: {
     type: 'OPERATOR', roles: ['AGENT_NETWORK_MANAGER'],
-    scopes: ['agent.activate','agent.assign_limit','agent.defund','agent.fund','agent.manage_credentials','agent.manage_outlets_terminals','agent.reactivate','agent.review_application','agent.suspend','agent.terminate','agent.view','limit.view'],
+    scopes: ['agent.activate','agent.assign_limit','agent.defund','agent.fund','agent.manage_credentials','agent.manage_outlets_terminals','agent.reactivate','agent.review_application','agent.suspend','agent.terminate','agent.view','institution.affiliation.prepare','institution.enrolment.prepare','institution.view','limit.view'],
   },
   COMPLIANCE: {
     type: 'OPERATOR', roles: ['COMPLIANCE'],
-    scopes: ['compliance.manage_case','compliance.manage_risk_profile','customer.view','customer.view_address','customer.view_contact_methods','customer.view_identity_documents','kyc.approve','kyc.reject','kyc.review','kyc.view'],
+    scopes: ['compliance.manage_case','compliance.manage_risk_profile','customer.view','customer.view_address','customer.view_contact_methods','customer.view_identity_documents','institution.attribution.view','institution.view','kyc.approve','kyc.reject','kyc.review','kyc.view'],
   },
   RISK_FRAUD: {
     type: 'OPERATOR', roles: ['RISK_FRAUD'], scopes: ['risk_fraud.manage_fraud_case'],
@@ -77,7 +77,7 @@ type RoleKey = keyof typeof ROLE_PRINCIPALS;
 const ALL_ROLES = Object.keys(ROLE_PRINCIPALS) as RoleKey[];
 
 const ALL_NAV_KEYS = [
-  'dashboard','dashboardSettings','customers','agents','agentClasses','support','transfers','cashIn','cashOut','cashToCashOps',
+  'dashboard','dashboardSettings','customers','agents','agentClasses','support','institutions','transfers','cashIn','cashOut','cashToCashOps',
   'ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue',
   'limitCatalogue','limitAssignments','kycQueue','complianceCases','fraudCases','workforceAccess',
   'roleGovernance','approvalsInbox','superAdminRecovery','notifications','systemHealth','auditEvents',
@@ -88,17 +88,17 @@ type NavKey = typeof ALL_NAV_KEYS[number];
 // legacy approval/execution scopes. Customer-service transaction history is contextual, not a
 // global sidebar route.
 const EXPECTED: Record<RoleKey, readonly NavKey[]> = {
-  SUPER_ADMIN: ['dashboard','dashboardSettings','customers','agents','agentClasses','support','transfers','cashIn','cashOut','cashToCashOps','ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','kycQueue','complianceCases','workforceAccess','roleGovernance','notifications','systemHealth','auditEvents'],
-  FINANCE_PREPARER: ['dashboard','ledgerExplorer','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments'],
+  SUPER_ADMIN: ['dashboard','dashboardSettings','customers','agents','agentClasses','support','institutions','transfers','cashIn','cashOut','cashToCashOps','ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','kycQueue','complianceCases','workforceAccess','roleGovernance','notifications','systemHealth','auditEvents'],
+  FINANCE_PREPARER: ['dashboard','institutions','ledgerExplorer','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments'],
   // INTEGRATION (Arena 3 Phase 5): FINANCE_CONTROLLER + privileged:approve is the notification
   // change-request CHECKER — the Arena 1 registry requireRead admits FC (MFA-verified per
   // request), so the console must be reachable to inspect frozen proposals before deciding.
-  FINANCE_CONTROLLER: ['dashboard','agents','ledgerExplorer','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','approvalsInbox','notifications'],
-  FINANCE_AUDITOR: ['dashboard','customers','agents','agentClasses','transfers','cashIn','cashOut','cashToCashOps','ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','kycQueue','notifications','systemHealth','auditEvents'],
+  FINANCE_CONTROLLER: ['dashboard','agents','institutions','ledgerExplorer','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','approvalsInbox','notifications'],
+  FINANCE_AUDITOR: ['dashboard','customers','agents','agentClasses','institutions','transfers','cashIn','cashOut','cashToCashOps','ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','kycQueue','notifications','systemHealth','auditEvents'],
   ADMINISTRATOR: ['dashboard','dashboardSettings','customers','agents','agentClasses','workforceAccess','roleGovernance','superAdminRecovery'],
-  OPERATIONS: ['dashboard','customers','support','transfers','cashIn','cashOut','cashToCashOps','workforceAccess','notifications','systemHealth'],
-  AGENT_NETWORK_MANAGER: ['dashboard','agents','agentClasses','limitCatalogue','limitAssignments'],
-  COMPLIANCE: ['dashboard','customers','kycQueue','complianceCases'],
+  OPERATIONS: ['dashboard','customers','support','institutions','transfers','cashIn','cashOut','cashToCashOps','workforceAccess','notifications','systemHealth'],
+  AGENT_NETWORK_MANAGER: ['dashboard','agents','agentClasses','institutions','limitCatalogue','limitAssignments'],
+  COMPLIANCE: ['dashboard','customers','institutions','kycQueue','complianceCases'],
   RISK_FRAUD: ['dashboard','fraudCases'],
   CUSTOMER_SERVICE: ['dashboard','customers','support'],
   TREASURY: ['dashboard','reconciliation'],
@@ -107,6 +107,8 @@ const EXPECTED: Record<RoleKey, readonly NavKey[]> = {
 const SECTION_KEYS: Record<string, readonly NavKey[]> = {
   home: ['dashboard','dashboardSettings'],
   servicing: ['customers','agents','agentClasses','support'],
+  // ARENA 4 — institutional administration console.
+  institutions: ['institutions'],
   money: ['transfers','cashIn','cashOut','cashToCashOps'],
   finance: ['ledgerExplorer','reconciliation'],
   commercial: ['feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments'],
@@ -143,6 +145,7 @@ const SCREEN_MARKERS: Record<NavKey, RegExp> = {
   notifications: /SMS & Email Notification Management/i,
   systemHealth: /System Health/i,
   auditEvents: /Audit & Security Events/i,
+  institutions: /their regulatory evidence and their operational approval state/i,
 };
 
 function setPrincipal(roleKey: RoleKey) {

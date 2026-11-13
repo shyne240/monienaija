@@ -361,3 +361,49 @@ export interface UnattributedFinancialAccountView {
   ledgerLineCount: number;
   balanceMinor: string;
 }
+
+// --------------------------------------------------- ARENA 4 Phase 3: console read models
+
+/**
+ * A governed-action request related to one institution, as shown in the console.
+ *
+ * Only metadata is exposed: the frozen approval payload stays server-side, and the console never
+ * re-derives a decision from it. `awaitingChecker` mirrors the approval status, so a maker can see
+ * that an independent checker has not yet decided and a checker can see what still needs execution.
+ */
+export interface InstitutionPendingApprovalView {
+  approvalId: string;
+  actionType: string;
+  resourceType: string;
+  resourceId: string | null;
+  requesterPrincipalId: string;
+  approvedBy: string | null;
+  status: 'REQUESTED' | 'APPROVED';
+  reason: string;
+  requestedAt: string;
+  expiresAt: string;
+  approvedAt: string | null;
+  awaitingChecker: boolean;
+}
+
+/**
+ * One agent's institutional relationship, for the affiliation directory.
+ *
+ * `relationship` is deliberately a three-way classification so the console can state plainly that
+ * an aggregator link is not an institutional affiliation:
+ *  - `INSTITUTION_AFFILIATED` — an authoritative ACTIVE affiliation row exists;
+ *  - `AGGREGATOR_LINKED` — only an aggregator assignment exists (never treated as affiliation);
+ *  - `INDEPENDENT` — neither exists.
+ */
+export interface AgentAffiliationDirectoryRow {
+  agentId: string;
+  agentReference: string;
+  agentStatus: string;
+  affiliationId: string | null;
+  affiliationInstitutionId: string | null;
+  affiliationStatus: 'ACTIVE' | null;
+  affiliationEffectiveFrom: string | null;
+  aggregatorId: string | null;
+  aggregatorReference: string | null;
+  relationship: 'INSTITUTION_AFFILIATED' | 'AGGREGATOR_LINKED' | 'INDEPENDENT';
+}

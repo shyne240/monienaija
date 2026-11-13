@@ -699,6 +699,29 @@ export class RoutePolicyRegistry {
     // ARENA 4 Phase 2 — institutional financial ownership support routes. Platform-level ledger
     // administration, cross-entity enrolment/attribution reads and the financial-context probe all
     // require the explicit platform markers; institution-scoped writes stay on the routes above.
+    // ARENA 4 Phase 3 — console read: the cross-agent affiliation directory answers questions
+    // about every institution's agents (and about unaffiliated agents), so it stays behind the
+    // explicit platform marker.
+    if (
+      path === '/api/v1/internal/institution-agent-directory' ||
+      path.startsWith('/api/v1/internal/institution-agent-directory/')
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'institution-agent-directory',
+        policy: {
+          resourceType: 'institution-agent-directory',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['institution.attribution.view'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     if (
       path === '/api/v1/internal/institution-ledger' ||
       path.startsWith('/api/v1/internal/institution-ledger/')
