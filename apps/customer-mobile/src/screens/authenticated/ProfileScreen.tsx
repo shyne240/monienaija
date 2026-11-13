@@ -135,7 +135,8 @@ export const ProfileScreen: React.FC = () => {
           // Profile detail is optional; identity alone is enough to render the screen.
         }
         try {
-          const limitsResponse = await ApiClient.get<CustomerLimitsResponse>('/customers/me/limits');
+          const limitsResponse =
+            await ApiClient.get<CustomerLimitsResponse>('/customers/me/limits');
           setLimits(limitsResponse.products ?? []);
         } catch {
           // Limits are informational only; their absence must never block the profile screen.
@@ -159,9 +160,7 @@ export const ProfileScreen: React.FC = () => {
       <View style={styles.content}>
         <View style={styles.header}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {(displayName || 'M').charAt(0).toUpperCase()}
-            </Text>
+            <Text style={styles.avatarText}>{(displayName || 'M').charAt(0).toUpperCase()}</Text>
           </View>
           <Text style={styles.name}>{displayName || 'MonieNaija Customer'}</Text>
           <Text style={styles.phone}>Ref: {identity?.reference || 'N/A'}</Text>
@@ -200,7 +199,8 @@ export const ProfileScreen: React.FC = () => {
           {identity?.status === 'SUSPENDED' && (
             <View style={styles.restrictionBanner}>
               <Text style={styles.restrictionText}>
-                Your account is suspended. Some actions may be unavailable. Please contact Support for help.
+                Your account is suspended. Some actions may be unavailable. Please contact Support
+                for help.
               </Text>
             </View>
           )}
@@ -226,7 +226,9 @@ export const ProfileScreen: React.FC = () => {
           <View style={styles.row}>
             <Text style={styles.label}>Registered On</Text>
             <Text style={styles.value}>
-              {identity?.createdAt ? new Date(identity.createdAt).toLocaleDateString('en-NG') : 'N/A'}
+              {identity?.createdAt
+                ? new Date(identity.createdAt).toLocaleDateString('en-NG')
+                : 'N/A'}
             </Text>
           </View>
         </Card>
@@ -245,8 +247,12 @@ export const ProfileScreen: React.FC = () => {
                     <View style={styles.row}>
                       <Text style={styles.label}>Per transaction</Text>
                       <Text style={styles.value}>
-                        {p.perTransactionMinMinor ? `Min ${formatNaira(p.perTransactionMinMinor)} · ` : ''}
-                        {p.perTransactionMaxMinor ? `Max ${formatNaira(p.perTransactionMaxMinor)}` : ''}
+                        {p.perTransactionMinMinor
+                          ? `Min ${formatNaira(p.perTransactionMinMinor)} · `
+                          : ''}
+                        {p.perTransactionMaxMinor
+                          ? `Max ${formatNaira(p.perTransactionMaxMinor)}`
+                          : ''}
                       </Text>
                     </View>
                   )}
@@ -254,7 +260,9 @@ export const ProfileScreen: React.FC = () => {
                     .filter((w) => w.kind === 'AMOUNT')
                     .map((w) => (
                       <View style={styles.row} key={w.dimension}>
-                        <Text style={styles.label}>{PERIOD_LABELS[w.period] || w.period} remaining</Text>
+                        <Text style={styles.label}>
+                          {PERIOD_LABELS[w.period] || w.period} remaining
+                        </Text>
                         <Text style={styles.value}>
                           {formatNaira(w.remainingMinor)} of {formatNaira(w.limitMinor)}
                         </Text>
@@ -264,7 +272,9 @@ export const ProfileScreen: React.FC = () => {
                     .filter((w) => w.kind === 'COUNT')
                     .map((w) => (
                       <View style={styles.row} key={w.dimension}>
-                        <Text style={styles.label}>{PERIOD_LABELS[w.period] || w.period} transactions left</Text>
+                        <Text style={styles.label}>
+                          {PERIOD_LABELS[w.period] || w.period} transactions left
+                        </Text>
                         <Text style={styles.value}>
                           {w.remainingCount} of {w.limitCount}
                         </Text>
@@ -273,12 +283,19 @@ export const ProfileScreen: React.FC = () => {
                 </View>
               ))}
             <Text style={styles.limitsFootnote}>
-              Limits are set and enforced by MonieNaija and may change. Figures reflect your account as of now.
+              Limits are set and enforced by MonieNaija and may change. Figures reflect your account
+              as of now.
             </Text>
           </Card>
         )}
 
         <View style={styles.actionsGroup}>
+          <Button
+            label="Verification & limits"
+            style={styles.actionBtn}
+            variant="outline"
+            onPress={() => navigation.navigate('KycStatus')}
+          />
           <Button
             label="Transaction PIN"
             style={styles.actionBtn}

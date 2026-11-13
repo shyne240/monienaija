@@ -11,6 +11,23 @@ export const colors = {
     light: '#FFD166',
     lightest: '#FFF8E6',
   },
+  /**
+   * ARENA 4 customer banking surface palette: forest green, cream/white neutrals and a restrained
+   * gold. Additive only — existing tokens are unchanged so no other screen shifts visually.
+   */
+  surface: {
+    cream: '#FBF7EC',
+    creamDeep: '#F4EDDC',
+    white: '#FFFFFF',
+    mist: '#EEF3EE',
+    forestDeep: '#052A18',
+    forest: '#0A3D25',
+    forestSoft: '#14512F',
+    gold: '#C8A44A',
+    goldSoft: '#F0E3C2',
+    goldInk: '#6B5320',
+    hairline: '#E4E0D2',
+  },
   neutral: {
     black: '#0A0F0D',
     charcoal: '#1E293B',

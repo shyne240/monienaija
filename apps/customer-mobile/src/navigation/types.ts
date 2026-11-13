@@ -20,6 +20,24 @@ export type RootStackParamList = {
   FundWallet: undefined;
   Withdraw: undefined;
   Transactions: undefined;
+  /** ARENA 4: single-transaction details/receipt, backed by GET /customers/me/transactions/:transferId. */
+  TransactionDetail: {
+    transactionId: string;
+    /** Optional list-row preview so the receipt can render while the detail read is in flight. */
+    preview?: {
+      type?: string | null;
+      narration?: string | null;
+      reference?: string | null;
+      amountMinor?: string | number | null;
+      currency?: string;
+      status?: string | null;
+      createdAt?: string | null;
+    };
+  };
+  /** ARENA 4: verification, tier and limits detail, backed by GET /customers/me/kyc + /me/limits. */
+  KycStatus: undefined;
+  /** ARENA 4: honest funding entry point (no in-app funding product exists yet). */
+  AddMoney: undefined;
   Profile: undefined;
   TransactionPin: undefined;
   Support: undefined;

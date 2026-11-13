@@ -5,6 +5,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Crypto from 'expo-crypto';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
+import { VerificationNotice, type VerificationState } from '../../components/VerificationNotice';
 import { RootStackParamList } from '../../navigation/types';
 import { ApiClient, ApiError } from '../../services/api-client';
 import { SecureStorage } from '../../services/secure-storage';
@@ -48,6 +49,32 @@ async function uuid(): Promise<string> {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
+interface RemainingRequirementsProps {
+  rows: Array<{ label: string; done: boolean }>;
+}
+
+/**
+ * ARENA 4 — an explicit checklist of onboarding requirements and which are fulfilled.
+ *
+ * `done` reflects only what the backend has already confirmed in this session (a verified phone, a
+ * recorded consent, a matched identity, saved credentials). Anything not confirmed — including the
+ * KYC assessment and financial activation — is shown outstanding rather than assumed.
+ */
+const RemainingRequirements: React.FC<RemainingRequirementsProps> = ({ rows }) => (
+  <View style={styles.checklist}>
+    <Text style={styles.checklistTitle}>Onboarding requirements</Text>
+    {rows.map((row) => (
+      <Text
+        key={row.label}
+        style={[styles.checklistRow, row.done ? styles.checklistDone : styles.checklistPending]}
+      >
+        {row.done ? '✓' : '○'} {row.label}
+        {row.done ? '' : ' — outstanding'}
+      </Text>
+    ))}
+  </View>
+);
+
 /** Phone-first entry. Synthetic registration remains test-only. */
 export const RegistrationScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'Registration'>>();
@@ -72,6 +99,10 @@ export const RegistrationScreen: React.FC = () => {
   const [pinConfirmation, setPinConfirmation] = useState('');
   const [onboardingToken, setOnboardingToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [verification, setVerification] = useState<{
+    state: VerificationState;
+    detail?: string;
+  } | null>(null);
   const [resendAt, setResendAt] = useState(0);
   const [now, setNow] = useState(Date.now());
   const post = <T,>(path: string, body: unknown, token: string | null = null) =>
@@ -92,6 +123,7 @@ export const RegistrationScreen: React.FC = () => {
     setPinConfirmation('');
     setAccepted(false);
     setError('');
+    setVerification(null);
     setStep('PHONE');
   };
   useEffect(() => {
@@ -249,7 +281,19 @@ export const RegistrationScreen: React.FC = () => {
         setError('Verification is unavailable. Please try again later.');
       else if (e instanceof ApiError && e.status === 401)
         setError('The code or session is invalid or expired. If needed, start again.');
-      else setError('We could not complete this step. Check your details or try again later.');
+      else if (e instanceof ApiError && e.status === 409) {
+        setVerification({ state: 'ADDITIONAL_INFO', detail: 'CONFLICT' });
+        setError('MonieNaija needs an additional detail before this step can complete.');
+      } else if (e instanceof ApiError && e.status === 422) {
+        setVerification({ state: 'ADDITIONAL_INFO', detail: 'VALIDATION' });
+        setError('Check the details you entered; something is missing or malformed.');
+      } else if (e instanceof ApiError && e.status === 503) {
+        setVerification({ state: 'UNAVAILABLE', detail: 'SERVICE_UNAVAILABLE' });
+        setError('Verification is unavailable. Nothing was verified. Please try again later.');
+      } else if (e instanceof ApiError && e.status >= 500) {
+        setVerification({ state: 'UNAVAILABLE', detail: 'UPSTREAM_ERROR' });
+        setError('The service did not respond as expected. Nothing was verified.');
+      } else setError('We could not complete this step. Check your details or try again later.');
     } finally {
       setBusy(false);
     }
@@ -366,14 +410,20 @@ export const RegistrationScreen: React.FC = () => {
           session.token,
         );
         if (response.status === 'MATCH') {
+          setVerification({ state: 'SUCCESS', detail: 'CLAIM_MATCH' });
           await save({ ...session, claimMatched: true });
           setClaimFlow(true);
           setStep('CREDENTIALS');
-        } else if (response.status === 'MISMATCH')
+        } else if (response.status === 'MISMATCH') {
+          setVerification({ state: 'MISMATCH', detail: 'CLAIM_MISMATCH' });
           setError('The identifier did not match. Check it and try again.');
-        else if (response.status === 'LOCKED')
+        } else if (response.status === 'LOCKED') {
+          setVerification({ state: 'MANUAL_REVIEW', detail: 'CLAIM_ATTEMPTS_LOCKED' });
           setError('Too many attempts. Wait before trying again.');
-        else setStep('ONBOARDING_PENDING');
+        } else {
+          setVerification({ state: 'PENDING', detail: 'CLAIM_PENDING' });
+          setStep('ONBOARDING_PENDING');
+        }
       } finally {
         setIdentifier('');
       }
@@ -469,15 +519,19 @@ export const RegistrationScreen: React.FC = () => {
       setIdentifier('');
       if (r.status === 'MATCH') {
         await save({ ...next, matchedAttemptId: r.id });
+        setVerification({ state: 'SUCCESS', detail: 'SIMULATED_MATCH' });
         setResult('Synthetic identity matched. Complete your test draft or retry if interrupted.');
-      } else if (r.status === 'REVIEW')
+      } else if (r.status === 'REVIEW') {
+        setVerification({ state: 'MISMATCH', detail: 'SIMULATED_REVIEW' });
         setResult(
           'The synthetic identity details did not match. Start a new session and check the fixture details.',
         );
-      else
+      } else {
+        setVerification({ state: 'PENDING', detail: 'SIMULATED_PENDING' });
         setResult(
           'Verification is pending. Do not submit another request; please try the same request again later.',
         );
+      }
       setStep('RESULT');
     });
   const cooldown = Math.max(0, Math.ceil((resendAt - now) / 1000));
@@ -504,6 +558,9 @@ export const RegistrationScreen: React.FC = () => {
         <Text accessibilityRole="alert" style={styles.error}>
           {error}
         </Text>
+      )}
+      {!!verification && !['CREDENTIALS', 'ONBOARDING_LOGIN'].includes(step) && (
+        <VerificationNotice state={verification.state} detail={verification.detail} />
       )}
       {step === 'PHONE' && (
         <View>
@@ -678,10 +735,20 @@ export const RegistrationScreen: React.FC = () => {
       )}
       {step === 'ONBOARDING_PENDING' && (
         <View>
-          <Text>
-            Verification or registration is pending. Please try again when verification is
-            available.
+          <Text style={styles.message}>
+            Your registration is not yet activated. Nothing financial has been enabled and no
+            duplicate customer record was created.
           </Text>
+          <RemainingRequirements
+            rows={[
+              { label: 'Phone verified', done: !!session?.phase && session.phase === 'VERIFIED' },
+              { label: 'Identity (BVN/NIN) verified', done: false },
+              { label: 'Verification consent recorded', done: !!session?.consentId },
+              { label: 'KYC assessment approved', done: false },
+              { label: 'Login passcode set', done: false },
+              { label: 'Transaction PIN set', done: false },
+            ]}
+          />
           <Button label="Start again" onPress={() => void reset()} />
         </View>
       )}
@@ -703,7 +770,21 @@ export const RegistrationScreen: React.FC = () => {
       )}
       {step === 'ONBOARDING_AUTHENTICATED' && (
         <View>
-          <Text>Signed in to onboarding only. Financial services remain unavailable.</Text>
+          <Text style={styles.message}>
+            You are signed in to onboarding only. Financial services remain unavailable because
+            onboarding eligibility is separate from financial eligibility.
+          </Text>
+          <RemainingRequirements
+            rows={[
+              { label: 'Phone verified', done: true },
+              { label: 'Login passcode set', done: true },
+              { label: 'Transaction PIN set', done: true },
+              {
+                label: 'KYC assessment approved (financial access)',
+                done: false,
+              },
+            ]}
+          />
           <Button label="Sign out of onboarding" loading={busy} onPress={onboardingLogout} />
         </View>
       )}
@@ -712,10 +793,28 @@ export const RegistrationScreen: React.FC = () => {
           <Text style={styles.message}>{result}</Text>
           {(result.startsWith('Test credentials saved') ||
             result.startsWith('Credentials saved')) && (
-            <Button
-              label="Continue to onboarding sign in"
-              onPress={() => setStep('ONBOARDING_LOGIN')}
-            />
+            <>
+              <RemainingRequirements
+                rows={[
+                  { label: 'Phone verified', done: true },
+                  {
+                    label: 'Identity (BVN/NIN) verified',
+                    done: claimFlow || !!session?.matchedAttemptId,
+                  },
+                  { label: 'Verification consent recorded', done: true },
+                  { label: 'Login passcode set', done: true },
+                  { label: 'Transaction PIN set', done: true },
+                  {
+                    label: 'KYC assessment approved (financial access)',
+                    done: false,
+                  },
+                ]}
+              />
+              <Button
+                label="Continue to onboarding sign in"
+                onPress={() => setStep('ONBOARDING_LOGIN')}
+              />
+            </>
           )}
           {result.startsWith('Synthetic identity matched') && (
             <Button label="Create test draft" loading={busy} onPress={completeDraft} />
@@ -755,4 +854,20 @@ const styles = StyleSheet.create({
     marginVertical: theme.spacing.md,
   },
   error: { color: theme.colors.feedback.error, marginVertical: theme.spacing.md },
+  checklist: {
+    backgroundColor: theme.colors.surface.cream,
+    borderRadius: 10,
+    padding: theme.spacing.md,
+    marginVertical: theme.spacing.md,
+    gap: theme.spacing.xxs,
+  },
+  checklistTitle: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.primary.dark,
+    marginBottom: theme.spacing.xxs,
+  },
+  checklistRow: { fontSize: theme.typography.sizes.xs, lineHeight: 18 },
+  checklistDone: { color: theme.colors.feedback.success },
+  checklistPending: { color: theme.colors.neutral.slate },
 });

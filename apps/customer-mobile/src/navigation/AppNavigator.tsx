@@ -19,6 +19,9 @@ import { TransactionPinScreen } from '../screens/authenticated/TransactionPinScr
 import { SupportScreen } from '../screens/authenticated/SupportScreen';
 import { CreateSupportTicketScreen } from '../screens/authenticated/CreateSupportTicketScreen';
 import { SupportTicketDetailScreen } from '../screens/authenticated/SupportTicketDetailScreen';
+import { TransactionDetailScreen } from '../screens/authenticated/TransactionDetailScreen';
+import { KycStatusScreen } from '../screens/authenticated/KycStatusScreen';
+import { AddMoneyScreen } from '../screens/authenticated/AddMoneyScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -51,16 +54,8 @@ export const AppNavigator: React.FC = () => {
       {!isAuthenticated ? (
         // Unauthenticated Stack
         <>
-          <Stack.Screen
-            name="Welcome"
-            component={WelcomeScreen}
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="Login"
-            component={LoginScreen}
-            options={{ title: 'Log In' }}
-          />
+          <Stack.Screen name="Welcome" component={WelcomeScreen} options={{ headerShown: false }} />
+          <Stack.Screen name="Login" component={LoginScreen} options={{ title: 'Log In' }} />
           <Stack.Screen
             name="Registration"
             component={RegistrationScreen}
@@ -70,11 +65,7 @@ export const AppNavigator: React.FC = () => {
       ) : (
         // Authenticated Stack
         <>
-          <Stack.Screen
-            name="Home"
-            component={HomeScreen}
-            options={{ title: 'MonieNaija' }}
-          />
+          <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'MonieNaija' }} />
           <Stack.Screen
             name="SendMoney"
             component={SendMoneyScreen}
@@ -86,20 +77,27 @@ export const AppNavigator: React.FC = () => {
             options={{ title: 'Transaction History' }}
           />
           <Stack.Screen
-            name="Profile"
-            component={ProfileScreen}
-            options={{ title: 'Profile' }}
+            name="TransactionDetail"
+            component={TransactionDetailScreen}
+            options={{ title: 'Receipt' }}
           />
+          <Stack.Screen
+            name="KycStatus"
+            component={KycStatusScreen}
+            options={{ title: 'Verification' }}
+          />
+          <Stack.Screen
+            name="AddMoney"
+            component={AddMoneyScreen}
+            options={{ title: 'Add Money' }}
+          />
+          <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
           <Stack.Screen
             name="TransactionPin"
             component={TransactionPinScreen}
             options={{ title: 'Transaction PIN' }}
           />
-          <Stack.Screen
-            name="Support"
-            component={SupportScreen}
-            options={{ title: 'Support' }}
-          />
+          <Stack.Screen name="Support" component={SupportScreen} options={{ title: 'Support' }} />
           <Stack.Screen
             name="CreateSupportTicket"
             component={CreateSupportTicketScreen}
