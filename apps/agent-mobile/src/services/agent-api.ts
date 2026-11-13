@@ -233,7 +233,7 @@ export async function requestAgentMfaChallenge(
     currency: string;
     operationKey: string;
     supersedesOperationKey?: string;
-  },
+  } | { senderPhone: string; transferNumber: string; redemptionMethod: 'AGENT_CASH' | 'CUSTOMER_WALLET' } | { transferId: string; redemptionMethod: 'AGENT_CASH' | 'CUSTOMER_WALLET' },
 ): Promise<AgentMfaChallenge> {
   const body: Record<string, unknown> = { customerId, purpose, ...(cashOutContext ?? {}) };
   if (ttlSeconds !== undefined) {

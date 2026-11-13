@@ -186,6 +186,17 @@ export class AgentCashToCashClaimService {
     });
   }
 
+  /** Resolve the protected locator before issuing a challenge; never trust a caller-supplied ID. */
+  async resolveLocatorForChallenge(
+    phone: string,
+    number: string,
+    principal: AuthorizationPrincipal,
+  ): Promise<string> {
+    const id = await this.resolveProtectedLocator(phone, number, principal);
+    if (!id) throw this.locatorUnavailable();
+    return id;
+  }
+
   private async resolveProtectedLocator(
     phone: string,
     number: string,

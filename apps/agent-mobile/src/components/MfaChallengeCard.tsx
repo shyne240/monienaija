@@ -42,6 +42,7 @@ export interface MfaChallengeCardProps {
   /** Optional override — forwarded only because the caller supplied it. */
   ttlSeconds?: number;
   cashOutContext?: { amountMinor: string; currency: string; operationKey: string };
+  claimContext?: { senderPhone: string; transferNumber: string; redemptionMethod: 'AGENT_CASH' | 'CUSTOMER_WALLET' } | { transferId: string; redemptionMethod: 'AGENT_CASH' | 'CUSTOMER_WALLET' };
   /**
    * Called with the server-issued challenge once delivered. The future
    * transaction flow uses this (challengeId) for its execution request.
@@ -80,6 +81,7 @@ export const MfaChallengeCard: React.FC<MfaChallengeCardProps> = ({
   purpose,
   ttlSeconds,
   cashOutContext,
+  claimContext,
   onChallengeReady,
   onChallengeInvalidated,
   invalidatedRevision = 0,
@@ -98,7 +100,7 @@ export const MfaChallengeCard: React.FC<MfaChallengeCardProps> = ({
   }, [invalidatedRevision]);
 
   const requestMutation = useMutation({
-    mutationFn: () => cashOutContext ? requestAgentMfaChallenge(customerId, purpose, ttlSeconds, cashOutContext) : requestAgentMfaChallenge(customerId, purpose, ttlSeconds),
+    mutationFn: () => cashOutContext || claimContext ? requestAgentMfaChallenge(customerId, purpose, ttlSeconds, cashOutContext ?? claimContext) : requestAgentMfaChallenge(customerId, purpose, ttlSeconds),
     onSuccess: (issued) => {
       setConsumedNotice(false);
       setChallenge(issued);

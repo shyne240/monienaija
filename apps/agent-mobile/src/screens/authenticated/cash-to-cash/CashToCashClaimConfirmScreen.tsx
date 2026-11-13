@@ -95,9 +95,6 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
     setAgentPin('');
     setPostSubmitRecoveryUnknown(false);
     setPostSubmitRecoveryNoticeError('');
-    if (isLocatorMode && agentId) {
-      await clearPendingCashToCashLocatorClaim(agentId);
-    }
     void queryClient.invalidateQueries({ queryKey: ['agent-financial-position', agentId] });
     void queryClient.invalidateQueries({ queryKey: ['agent-transactions', agentId] });
     void queryClient.invalidateQueries({ queryKey: ['agent-history', agentId] });
@@ -110,6 +107,7 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
             result,
             customerDisplay: customer.display,
             customerReceivingNumber: customer.receivingNumber,
+            ...(isLocatorMode ? { pendingLocatorClaim: true } : {}),
           },
         },
       ],
@@ -461,6 +459,7 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
                 ) {
                   return;
                 }
+                if (challenge && redemptionMethod !== 'CUSTOMER_WALLET') { setChallenge(null); setOtp(''); setMfaInvalidatedRevision((rev) => rev + 1); }
                 setRedemptionMethod('CUSTOMER_WALLET');
                 setAgentPin('');
                 setClientError('');
@@ -493,6 +492,7 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
                 ) {
                   return;
                 }
+                if (challenge && redemptionMethod !== 'AGENT_CASH') { setChallenge(null); setOtp(''); setMfaInvalidatedRevision((rev) => rev + 1); }
                 setRedemptionMethod('AGENT_CASH');
                 setClientError('');
               }}
@@ -565,6 +565,9 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
             <MfaChallengeCard
               customerId={customer.customerId}
               purpose="CASH_TO_CASH_CLAIM"
+              claimContext={isLocatorMode
+                ? { senderPhone: senderPhone!, transferNumber: transferNumber!, redemptionMethod }
+                : { transferId: legacyTransferId!, redemptionMethod }}
               invalidatedRevision={mfaInvalidatedRevision}
               disabled={postSubmitRecoveryUnknown || postSubmitChecking || claimMutation.isPending}
               onChallengeReady={(issued) => {

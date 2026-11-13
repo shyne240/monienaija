@@ -50,6 +50,15 @@ export class IssueDeskOtpChallengeDto {
   transferId?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  senderPhone?: string;
+
+  @IsOptional()
+  @Matches(/^[0-9]{6}$/)
+  transferNumber?: string;
+
+  @IsOptional()
   @IsIn(['AGENT_CASH', 'CUSTOMER_WALLET'])
   redemptionMethod?: 'AGENT_CASH' | 'CUSTOMER_WALLET';
 
