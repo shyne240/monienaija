@@ -67,9 +67,29 @@ const MAX_CASH_TO_CASH_EXPIRY_SECONDS = 31_536_000;
 
 // No deployment switch: this placeholder must be replaced by transactional authoritative
 // institution, identity-policy and commitment integration before funding can be enabled.
+export interface CashToCashFundingAuthorizationRequest {
+  agentId: string;
+  agentPrincipal: AuthorizationPrincipal;
+  senderPhone: string | null;
+  senderEvidenceReference: string | null;
+  beneficiaryPhone: string;
+  amountMinor: string;
+  currency: string;
+  purpose: string | null;
+  operationId: string;
+  requestHash: string;
+  fundingWalletId: string;
+  fundingLedgerAccountId: string;
+  unclaimedLedgerAccountId: string;
+}
 @Injectable()
 export class CashToCashFundingAuthority {
-  require(): void {
+  require(
+    _manager: EntityManager,
+    _request: CashToCashFundingAuthorizationRequest,
+  ): void | Promise<void> {
+    void _manager;
+    void _request;
     throw new ServiceUnavailableException('Cash-to-cash funding authorization unavailable');
   }
 }
@@ -282,6 +302,10 @@ export class AgentCashToCashService {
 
     const requestHash = this.computeRequestHash({
       ...(senderPhone ? { senderPhone } : {}),
+      ...(input.senderEvidenceReference
+        ? { senderEvidenceReference: input.senderEvidenceReference }
+        : {}),
+      ...(input.purpose ? { purpose: input.purpose } : {}),
       agentId,
       beneficiaryPhone: canonicalPhone,
       principalMinor: amountString,
@@ -402,8 +426,6 @@ export class AgentCashToCashService {
           // environment flag or caller-provided institutional evidence.
           if (!this.fundingAuthority)
             throw new ServiceUnavailableException('Cash-to-cash funding authorization unavailable');
-          this.fundingAuthority.require();
-
           // NEW — verify Agent wallet ownership inside same transaction (pessimistic)
           const walletInTx = await manager.getRepository(WalletAccount).findOne({
             where: { customerId: agentId, currency: 'NGN' },
@@ -417,6 +439,25 @@ export class AgentCashToCashService {
               'Agent financial execution must involve the Agent wallet ledger account',
             );
           }
+
+          // This port must independently resolve identity, agent/session eligibility,
+          // institutional ownership and the funding commitment under this manager.
+          // Phone, purpose and evidence reference are lookup inputs, not verified facts.
+          await this.fundingAuthority.require(manager, {
+            agentId,
+            agentPrincipal: principal,
+            senderPhone: senderPhone ?? null,
+            senderEvidenceReference: input.senderEvidenceReference ?? null,
+            beneficiaryPhone: canonicalPhone,
+            amountMinor: amountString,
+            currency,
+            purpose: input.purpose ?? null,
+            operationId: idempotencyKey,
+            requestHash,
+            fundingWalletId: walletInTx.id,
+            fundingLedgerAccountId: walletInTx.ledgerAccountId,
+            unclaimedLedgerAccountId: unclaimedAccount.id,
+          });
 
           // V1-LIMIT-04: enforce limits for AGENT OUTGOING CASH_TO_CASH
           let limitIdempotencyKey: string | null = null;
