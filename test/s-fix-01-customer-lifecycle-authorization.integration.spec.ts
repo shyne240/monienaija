@@ -386,8 +386,11 @@ describe('S-FIX-01 customer lifecycle authorization + session/status binding (re
       .set('Authorization', `Bearer ${token}`)
       .expect(401);
 
-    // Reactivation: current status is authoritative at request time, so the unexpired
-    // session is usable again without re-login (session was never revoked).
+    // Reactivation: `CustomerService.updateStatus` now revokes every session whenever the
+    // customer is suspended, closed, **or was suspended** (batch-2c session remediation), so a
+    // reactivated customer must re-authenticate. This is a deliberate strengthening of the old
+    // contract — previously the still-unexpired session silently became usable again — so the
+    // assertion follows the implemented rule instead of the pre-remediation one.
     await request(app.getHttpServer())
       .patch(`/api/v1/customers/${customerId}`)
       .set('Authorization', 'Bearer workforce-OPERATOR')
@@ -396,6 +399,17 @@ describe('S-FIX-01 customer lifecycle authorization + session/status binding (re
     await request(app.getHttpServer())
       .get('/api/v1/customers/me/profile')
       .set('Authorization', `Bearer ${token}`)
+      .expect(401);
+    const revokedSession = await dataSource.query<Array<{ status: string }>>(
+      `SELECT status FROM authentication_sessions WHERE customer_id=$1 ORDER BY issued_at DESC LIMIT 1`,
+      [customerId],
+    );
+    expect(revokedSession[0]!.status).toBe('REVOKED');
+    // Service itself is restored: a fresh login on the reactivated customer succeeds.
+    const freshToken = await login(customerId, password);
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me/profile')
+      .set('Authorization', `Bearer ${freshToken}`)
       .expect(200);
 
     // CLOSED is terminal: session denied, and no transition out exists.
