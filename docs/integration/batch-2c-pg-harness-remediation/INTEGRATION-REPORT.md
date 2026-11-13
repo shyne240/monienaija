@@ -67,6 +67,18 @@ uses, MAC-bound to the test trust anchor. `makeCustomerFinanciallyEligible` deli
 force `status='ACTIVE'`, so a suite that creates a suspended customer to assert rejection keeps its
 precondition.
 
+Two later corrections in the same helper (both found by real failures, not by inspection):
+
+- **The seeded MAC is now derived from the rows the database actually holds.** The helper used to
+  compute the identity MAC from the *requested* defaults, while `COALESCE` kept any identity value a
+  suite had already set (a suite that pinned its own date of birth, for example). The trusted reader
+  binds to the stored values, so those customers were permanently `IDENTITY_MISMATCH` → 409. The MAC
+  is now computed from the stored profile/contact rows.
+- **`allowDraft` (default `false`).** Activation (`PATCH /customers/:id` → `ACTIVE`) runs the gate with
+  `requireActive = false`, so a `DRAFT` customer must already be eligible *before* it is activated.
+  Suites proving that `DRAFT → ACTIVE` succeeds opt in; nothing else changes, so rejection
+  preconditions are preserved.
+
 ### 3.3 Trusted test evidence (`test/support/kyc-test-evidence-reader.ts`)
 
 Test-only subclass of `KycTierEvidenceReader`; refuses to construct outside `NODE_ENV=test`; per-process
@@ -95,6 +107,25 @@ accounting suites, the notification suites, the session-issuing customer suites,
 suites, and the remaining `randomUUID` wallet owners. Every batch was compiled (`tsc`), linted and
 spot-run before it was committed.
 
+### 3.7 Fixtures that had to be corrected rather than adopted
+
+- `test/support/mission15a-fixture.ts` grew an **opt-in** `trustedEvidence` option: suites that need a
+  real customer session (session issuance passes the financial gate) install the test reader
+  explicitly; suites that do not, keep the fail-closed production reader. Used by
+  `mission-16a-agent-read-authorization` only.
+- `v1-admin-authorization-kyc-01` now sends the body shape the assessment contract actually accepts:
+  `APPROVED` carries the requested tier and is evaluated from locked evidence; `PENDING`/`REJECTED`
+  are **manual holds** and must carry `level: 'NONE'` plus one of `EVIDENCE_REVOKED` /
+  `IDENTITY_CONFLICT` / `MANUAL_REVIEW`. Approving also needs real evidence, so the suite seeds the
+  governed policy and MAC-bound evidence. Tier 2 additionally required dropping the default policy's
+  `PHONE` rule, a type the trusted read path cannot produce from `kyc_verification_attempts` — noted
+  here because it is a real limitation of the fixture default, not a test trick.
+- `scripts/local-dev-seed-11-roles.js` required `../dist/*` unconditionally, so in a source checkout
+  every invocation died with `MODULE_NOT_FOUND` (that was the entire `local-dev-11-roles` failure).
+  It now uses the compiled build when one exists and otherwise registers `ts-node`
+  (`transpileOnly`) and loads the TypeScript sources. Seeding logic and every refusal guard are
+  unchanged.
+
 ---
 
 ## 4. Coordination with Arena 1 and Arena 2
@@ -111,66 +142,91 @@ spot-run before it was committed.
 
 ## 5. Verification
 
+All figures below were produced **at the final commit of this branch**, on a disposable local
+PostgreSQL cluster, with no live provider, no production secret and no real transaction.
+
 | Check | Result |
 |---|---|
-| `tsc --noEmit` | exit 0 |
-| `eslint "{src,test}/**/*.ts"` | exit 0 |
-| Isolated KYC (`KYC_ISOLATED_CONFIRM_DISPOSABLE=yes node scripts/run-isolated-kyc-tests.js`) | **8/8 suites, 88/88 tests, exit 0** |
-| Full bounded PG inventory, baseline (before this session's fixes) | 139 discovered, **87 passed / 52 failed**, 0 memory failures, 0 timeouts, 0 crashed batches, 41.7 min, 1 992/2 517 tests |
-| Full bounded PG inventory, after the fixture work | 139 discovered, **124 passed / 15 failed**, 0 memory failures, 0 timeouts, 0 crashed batches, 52.6 min, **2 447/2 516 tests** |
-| Suites re-verified individually after that inventory | +6 green (`p0-p1` 41/41, `v1-hardening-06` 15/15, `transfer-notification-producer-01` 4/4, `v1-agent-mfa-api-01` 13/13, `v1-admin-authorization-customer-read-01` 54/54, `s-fix-01` 7/7) |
-| **Current standing** | **130 / 139 suites** (see the caveat in §6) |
+| `tsc --noEmit` | **exit 0** |
+| `eslint "{src,test}/**/*.ts"` | **exit 0** (0 errors, 0 warnings) |
+| Isolated KYC (`KYC_ISOLATED_CONFIRM_DISPOSABLE=yes node scripts/run-isolated-kyc-tests.js`) | **8/8 suites, 88/88 tests, exit 0**, 38.8 s |
+| Full bounded PG inventory (single consolidated run, runId `rc2952a987db0`) | **139 discovered / 139 reported — 136 passed, 3 failed**, 0 memory failures, 0 timeouts, 0 unexplained crashes, 23/24 batches green, **71.8 min**, **2 484 / 2 516 tests** |
+| Failure categories in that run | `HTTP_STATUS=30`, `ASSERTION=2`, 4 `UNCLASSIFIED` console-capture entries (not test failures) |
+| Baseline for comparison (same harness, before this work) | 87 passed / 52 failed of 139, 1 992/2 517 tests, 41.7 min |
+| Intermediate inventory (before this last pass) | 124 passed / 15 failed, 2 447/2 516 tests, 52.6 min |
 
-Individual suites verified green after remediation (real PostgreSQL):
+The 3 remaining failures are **one cause**, and it is not a fixture defect — see §6.
 
-`a12` 19/19 · `a24` 19/19 · `a13`–`a17` 33/33 · `a23` (failures fixed, suite remains red for one
-Arena-1 item, §6) · `hardening-04` 26/26 · `v1-003` 21/21 · `v1-005` 23/23 · `v1-006` 23/23 ·
-`v1-007` 31/31 · `v1-001` · `v1-commercial-accounting-01` 33/33 · `v1-commercial-scenario-matrix-01`
-27/27 · `v1-commission-runtime-wiring` 24/24 · `v1-fee-runtime-wiring` 14/14 ·
-`v1-hardening-01-customer-beneficiary` 30/30 · `v1-limit-02` (migration head fixed) ·
-`v1-limit-04` 28/28 · `v1-limit-05-flow-matrix` 205/205 · `v1-commercial-decision-02` 10/10 ·
-`v1-commercial-decision-03a` 8/8 · `v1-system-01` 5/5 · `sms-v1-01` 12/12 ·
-`notification-reliability` 21/21 · `mission-25g` 19/19 · `h04-h06-notification-upgrade` 1/1 ·
-`notification-migration-upgrade-01` 2/2 · `mission-25o-credential-binding-upgrade` 2/2 ·
-`kyc-fixture-contract` 8/8.
+Fixed in this last pass, each verified individually before the consolidated run:
+
+| Suite | Was | Cause | Now |
+|---|---|---|---|
+| `v1-limit-02-limit-assignment` | 17/18 | limit profiles `ASSIGN_A..D` were never seeded, so the assignment write returned 404 | **18/18** |
+| `s-fix-01-customer-lifecycle-authorization` | 6/7 | activation gate on a raw-SQL customer | **7/7** |
+| `v1-admin-authorization-kyc-01` | 23/29 | review body shape (`NONE` + governed reason for manual holds) and missing approval evidence | **29/29** |
+| `v1-admin-authorization-hardening-01` | 34/36 | `SUSPENDED → ACTIVE` runs the eligibility gate; customer built outside the helper | **36/36** |
+| `mission-16a-agent-read-authorization` | 0/4 | customer session issuance gated; suite minted tokens from a raw-SQL customer | **4/4** |
+| `batch-01-customer-servicing` | 2/4 | `IDENTITY_MISMATCH` from the helper MAC bug (§3.2) + `DRAFT → ACTIVE` eligibility | **4/4** |
+| `local-dev-11-roles` | 0/5 | seed script required `dist/` (§3.7) | **5/5** |
+
+Earlier passes on this branch took the inventory from 87 → 124 green (§3.6); this pass took it to 136.
+
+Regression safety: the shared helpers changed in this pass (`kyc-test-fixtures`,
+`mission15a-fixture`, the seed script), so 9 suites that lean on them were re-run as a bounded batch
+before the consolidated run — all 9 green (`p0-p1` 41/41, `s-fix-01` 7/7,
+`transfer-notification-producer-01` 4/4, `v1-admin-authorization-customer-read-01`,
+`v1-agent-mfa-api-01`, `v1-hardening-01` 30/30, `v1-hardening-06` 15/15, `v1-limit-02` 18/18,
+`v1-limit-05-flow-matrix` 205/205) — and the consolidated run itself re-covered all 139.
+
+Individual suites verified green at some point after remediation (real PostgreSQL): `a12` 19/19 ·
+`a24` 19/19 · `a13`–`a17` 33/33 · `hardening-04` 26/26 · `v1-003` 21/21 · `v1-005` 23/23 ·
+`v1-006` 23/23 · `v1-007` 31/31 · `v1-commercial-accounting-01` 33/33 ·
+`v1-commercial-scenario-matrix-01` 27/27 · `v1-commission-runtime-wiring` 24/24 ·
+`v1-fee-runtime-wiring` 14/14 · `v1-limit-04` 28/28 · `v1-limit-05-flow-matrix` 205/205 ·
+`v1-commercial-decision-02` 10/10 · `v1-commercial-decision-03a` 8/8 · `v1-system-01` 5/5 ·
+`sms-v1-01` 12/12 · `notification-reliability` 21/21 · `mission-25g` 19/19 ·
+`h04-h06-notification-upgrade` 1/1 · `notification-migration-upgrade-01` 2/2 ·
+`mission-25o-credential-binding-upgrade` 2/2 · `kyc-fixture-contract` 8/8.
+
+One observed flake, recorded for honesty: in an **aborted** earlier attempt of the consolidated run
+(killed for time-box reasons, superseded by runId `rc2952a987db0`), `v1-limit-04-limit-runtime`
+failed once on "23 WALLET_TRANSFER concurrent identical idempotencyKey" (`expected 5 successes,
+received 4`). It passed in the previous inventory, in the regression batch, and in the final
+consolidated run. It is a genuine concurrency-timing flake in the suite, not a fixture dependency,
+and it was not touched.
 
 ---
 
 ## 6. Remaining failures and their causes
 
-**Caveat, stated plainly:** the 130/139 figure is composed of the last complete inventory (124) plus the
-six suites that were re-verified individually after it. It is **not** a single consolidated run of the
-finished tree; re-running the whole inventory would take ~55 minutes and was not done again in this
-session. 124/139 is the number from one real, complete, bounded run.
+**136 / 139 suites, 2 484 / 2 516 tests, from one complete bounded run — not a composed figure.**
 
-Remaining 9 suites and their observed causes:
+The remaining 3 suites and all 32 failing tests share a single cause, and it is Arena 1's:
 
-| Suite | Observed symptom | Cause classification |
+| Suite | Failing tests | Observed symptom |
 |---|---|---|
-| `v1-customer-onboarding-01` | 8× `201 → 503` | **Arena 1 behaviour**: `CustomerRegistrationService.completeRegistration` always fails closed (commit `05a38f4`, "Fail closed legacy onboarding pending trusted KYC"). The suite exercises the legacy route. |
-| `v1-customer-onboarding-02` | 8× `201 → 503` | same |
-| `v1-customer-credentials-01` | 13× `201 → 503` | same |
-| `v1-admin-authorization-kyc-01` | 5× `201 → 409` | KYC-assessment write for a raw-SQL customer; the assessment/eligibility invariants are not yet satisfied by that suite's own fixture |
-| `v1-admin-authorization-hardening-01` | 2 assertions `Expected: 200` | customer session issuance now gated; that suite builds its customer outside the shared helper |
-| `mission-16a-agent-read-authorization` | 4× `Expected 200 / Received 409` | customer-token flow gated on eligibility; suite mints tokens directly |
-| `batch-01-customer-servicing` | 1× `Trusted KYC evidence is unavailable`, 1× `200 → 409` | its seed helper inserts customers with an arbitrary status passed in by the caller, so it was deliberately **not** blanket-completed (that would break its own rejection cases) |
-| `v1-limit-02-limit-assignment` | 1× `Expected 201 / Received 404` on `POST /internal/limit-assignments` | the subject is a raw-SQL customer; the assignment write now reports the subject as not found |
-| `local-dev-11-roles` | 5 deep-equality assertions on a seed subprocess result | role-seed fixture drift, unrelated to KYC eligibility |
+| `v1-customer-onboarding-01` | 11 | `201 → 503` on registration (2 of them assert side effects of the blocked call) |
+| `v1-customer-onboarding-02` | 8 | `201 → 503` on registration/activation setup |
+| `v1-customer-credentials-01` | 13 | `201 → 503` on credential provisioning setup |
 
-None of these was made green by deleting, skipping or weakening a test, and none involved a
-production-code change. They are left visible for the follow-up that owns them (Arena 1 for the
-registration behaviour; a further fixture pass for the last four).
+`CustomerRegistrationService.completeRegistration` fails closed by design (Arena 1 commit `05a38f4`,
+"Fail closed legacy onboarding pending trusted KYC"): every request answers 503
+"Customer registration is temporarily unavailable". These three suites drive that legacy route as
+*setup* for their real assertions, so they cannot pass while the route is closed. Re-opening it, or
+asserting around the 503, would be a production/behaviour change — explicitly out of this mission's
+scope (§8) and left to Arena 1.
 
-- **Arena-1-attributable behaviour change (not a fixture defect, deliberately not worked around):**
-  the legacy customer-registration path is hard-disabled in production code
-  (`CustomerRegistrationService.completeRegistration` always fails closed with 503
-  "Customer registration is temporarily unavailable", commit `05a38f4`). `v1-customer-onboarding-01`,
-  `v1-customer-onboarding-02` and `v1-customer-credentials-01` exercise that legacy route and now
-  correctly receive 503. Re-enabling it, or asserting around it, would be a production/behaviour change
-  and belongs to Arena 1's scope.
-- **Remaining assertion failures** in the admin-authorization and support suites are reported as they
-  stand, with the exact first symptom recorded in the run summary; they were not "fixed" by relaxing
-  expectations.
+Everything else that was red at the start of the remediation is green, and none of it was made green
+by deleting, skipping, or weakening a test:
+
+- No test was removed, renamed away, `xit`/`skip`ped, or given a looser expectation to pass.
+- One assertion was **updated with a written reason** where the business contract
+  genuinely changed (`v1-admin-authorization-kyc-01` F1: a customer that must be financially eligible
+  to hold a session now legitimately has a current APPROVED assessment, so its own `/kyc` read is
+  `200` with `status: APPROVED` instead of the historic `404`; the property under test — "the CUSTOMER
+  request reached the service, it was not blocked by the function check" — is unchanged).
+- No production authorization, eligibility or KYC rule was relaxed. The only production-source change
+  on this branch remains the worker configuration surface (§3.4).
 
 ---
 
@@ -205,3 +261,5 @@ PG_TEST_SUMMARY_PATH=pg-summary.json npm run test:pg
   fail-closed evidence unless they explicitly ask for eligible evidence.
 - No live provider, secret, real transaction or deployment; no merge into `main` or into another
   arena's branch; no force-push or history rewrite.
+- The three still-red suites were **not** touched: their blocker is Arena 1's fail-closed legacy
+  registration, and working around it here would hide a real behaviour change owned by another arena.
