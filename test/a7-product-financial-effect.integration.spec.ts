@@ -846,6 +846,11 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
         [operation.opId],
       );
       expect(commitments).toHaveLength(0);
+      expect(
+        await dataSource.query('SELECT id FROM idempotency_records WHERE idempotency_key=$1', [
+          envelope.idempotencyKey,
+        ]),
+      ).toHaveLength(0);
     });
 
     it('rolls back the A7 reservation when settlement reports a temporary dependency outage', async () => {

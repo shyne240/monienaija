@@ -1287,18 +1287,6 @@ export class A7ProductFinancialEffectService {
         checkWithFailed('requestHash', 'FAIL'),
       );
     }
-    // These capabilities describe assignment or inbound funding, while the
-    // historical A6 mapping is an outbound debit. Do not confuse a verified
-    // inbound outcome with authority to spend a customer's reserved funds.
-    if (
-      command.outcome === A7_PRODUCT_FINANCIAL_EFFECT_OUTCOME_VERIFIED &&
-      (command.capabilityKey === CAPABILITY_ASSIGN ||
-        command.capabilityKey === CAPABILITY_INBOUND_FUNDING)
-    ) {
-      throw new ServiceUnavailableException(
-        'Virtual-account settlement cannot use the outbound withdrawal boundary',
-      );
-    }
     let reservation: {
       readonly kind: A7ProductFinancialEffectReservationKind;
       readonly record: { id: string; responseBody: Record<string, unknown> | null } | null;
@@ -1335,11 +1323,7 @@ export class A7ProductFinancialEffectService {
     }
     const productFinancialEffectId = this.generateProductFinancialEffectId();
     if (reservation.kind === 'REPLAY') {
-      const replayed = this.replayedRecordFromReservation(
-        productFinancialEffectId,
-        command,
-        reservation,
-      );
+      const replayed = this.replayedRecordFromReservation(command, reservation);
       // Mark the replayed record as a replay; this overrides the
       // stored `replayed: false` from the original creation.
       const replayedRecord: A7ProductFinancialEffectRecordV1 = {
@@ -1399,6 +1383,18 @@ export class A7ProductFinancialEffectService {
       };
     }
 
+    // These capabilities describe assignment or inbound funding, while the
+    // historical A6 mapping is an outbound debit. Do not confuse a verified
+    // inbound outcome with authority to spend a customer's reserved funds.
+    if (
+      command.outcome === A7_PRODUCT_FINANCIAL_EFFECT_OUTCOME_VERIFIED &&
+      (command.capabilityKey === CAPABILITY_ASSIGN ||
+        command.capabilityKey === CAPABILITY_INBOUND_FUNDING)
+    ) {
+      throw new ServiceUnavailableException(
+        'Virtual-account settlement cannot use the outbound withdrawal boundary',
+      );
+    }
     // Reserve and post the financial effect. The A7 product
     // financial effect envelope may dispatch to one of three A6T08
     // outcomes: SETTLE, SUSPENSE, or REVERSE. The A7 product
@@ -1739,11 +1735,7 @@ export class A7ProductFinancialEffectService {
     }
     const productFinancialEffectId = this.generateProductFinancialEffectId();
     if (reservation.kind === 'REPLAY') {
-      const replayed = this.replayedRecordFromReservation(
-        productFinancialEffectId,
-        command,
-        reservation,
-      );
+      const replayed = this.replayedRecordFromReservation(command, reservation);
       const replayedRecord: A7ProductFinancialEffectRecordV1 = {
         ...replayed,
         replayed: true,
@@ -1993,76 +1985,31 @@ export class A7ProductFinancialEffectService {
   }
 
   private replayedRecordFromReservation(
-    productFinancialEffectId: string,
     command: NormalizedA7ProductFinancialEffectV1,
     reservation: {
       readonly record: { id: string; responseBody: Record<string, unknown> | null } | null;
     },
   ): A7ProductFinancialEffectRecordV1 {
-    if (!reservation.record) {
-      throw new Error(
-        'The A7 product financial effect replay reservation is missing the idempotency record',
+    // A replay is an observation of a previously recorded effect, never a way
+    // to invent a successful historical settlement from an empty/failed record.
+    const stored = reservation.record?.responseBody;
+    if (
+      !stored ||
+      typeof stored.productFinancialEffectId !== 'string' ||
+      !stored.productFinancialEffectId ||
+      stored.requestHash !== command.requestHash ||
+      stored.idempotencyKey !== command.idempotencyKey ||
+      stored.customerId !== command.customerId ||
+      stored.amountMinor !== command.amountMinor ||
+      stored.currency !== command.currency ||
+      stored.a6ExternalOperationReference !== command.a6ExternalOperationReference ||
+      typeof stored.version !== 'number' ||
+      !Number.isSafeInteger(stored.version)
+    )
+      throw new ConflictException(
+        'Historical financial effect replay evidence is incomplete or mismatched',
       );
-    }
-    const stored = reservation.record.responseBody;
-    if (stored && typeof stored === 'object' && 'productFinancialEffectId' in stored) {
-      return stored as unknown as A7ProductFinancialEffectRecordV1;
-    }
-    const createdAt = new Date().toISOString();
-    return {
-      contractName: A7_PRODUCT_FINANCIAL_EFFECT_CONTRACT_NAME,
-      contractVersion: A7_PRODUCT_FINANCIAL_EFFECT_CONTRACT_VERSION,
-      productFinancialEffectId,
-      productFinancialEffectReference:
-        this.productFinancialEffectReference(productFinancialEffectId),
-      productKey: PRODUCT_KEY,
-      productVersion: PRODUCT_VERSION,
-      capabilityKey: command.capabilityKey,
-      action: command.action,
-      productState: command.productState,
-      customerId: command.customerId,
-      customerWalletId: command.customerWalletId,
-      bindingId: command.bindingId,
-      bindingVersion: command.bindingVersion,
-      walletAccountId: command.bindingId,
-      ledgerAccountId: command.bindingId,
-      amountMinor: command.amountMinor,
-      currency: CURRENCY,
-      accountingUnit: ACCOUNTING_UNIT,
-      outcome: command.outcome,
-      category: A7_PRODUCT_FINANCIAL_EFFECT_CATEGORY_SETTLEMENT,
-      currentState: A7_PRODUCT_FINANCIAL_EFFECT_STATE_SETTLEMENT_POSTED,
-      a6T08Decision: 'SETTLE',
-      a6T08Settlement: null,
-      a6T08Suspense: null,
-      a6T08Compensating: null,
-      a5LedgerJournal: null,
-      a7ProductLifecycleReference: command.a7ProductLifecycleReference,
-      a7ProductCommandReference: command.a7ProductCommandReference,
-      a7T04ProductCustomerBindingMapReference: command.a7T04ProductCustomerBindingMapReference,
-      a6ExternalOperationReference: command.a6ExternalOperationReference,
-      a6LifecycleState: command.a6LifecycleState,
-      a6ProviderIdempotencyScope: command.a6ProviderIdempotencyScope,
-      a6ProviderIdempotencyKey: command.a6ProviderIdempotencyKey,
-      a2AuthorizationContextReference: command.a2AuthorizationContextReference,
-      a4ProductPolicyDecisionReference: command.a4ProductPolicyDecisionReference,
-      recoveryReference: command.recoveryReference,
-      reversalReason: command.reversalReason,
-      failureCode: command.failureCode,
-      failureMessage: command.failureMessage,
-      providerStatus: command.providerStatus,
-      idempotencyScope: A7_PRODUCT_FINANCIAL_EFFECT_INTERNAL_IDEMPOTENCY_SCOPE,
-      idempotencyKey: command.idempotencyKey,
-      requestHash: command.requestHash,
-      requestContext: command.requestContext,
-      causationId: command.causationId,
-      replayed: true,
-      conflict: false,
-      conflictReason: null,
-      createdAt,
-      updatedAt: createdAt,
-      version: 1,
-    };
+    return stored as unknown as A7ProductFinancialEffectRecordV1;
   }
 
   private buildHandoff(
