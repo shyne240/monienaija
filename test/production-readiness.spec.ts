@@ -48,6 +48,9 @@ class ReadinessDataSource {
     if (sql === 'SELECT 1') {
       return Promise.resolve([{ '?column?': 1 }]);
     }
+    if (sql.includes('AS unsafe')) {
+      return Promise.resolve([{ unsafe: false }]);
+    }
     if (sql.includes('LIMIT 1')) {
       return Promise.resolve([{ timestamp: this.head.timestamp, name: this.head.name }]);
     }
@@ -124,6 +127,51 @@ describe('M8 production readiness', () => {
       new ReconciliationStub() as never,
     );
     await expect(incompatible.verifyStartup()).rejects.toThrow('schema_incompatible');
+  });
+
+  it('fails production readiness closed while protected checker authority is unavailable', async () => {
+    const original = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const readiness = new ProductionReadinessService(
+        new ReadinessDataSource() as unknown as DataSource,
+        new ReconciliationStub() as never,
+      );
+      await expect(readiness.getReadiness()).resolves.toMatchObject({
+        status: 'error',
+        reason: 'protected_checker_authority_unavailable',
+        protectedCheckerAuthority: { status: 'unavailable' },
+      });
+      await expect(readiness.verifyStartup()).rejects.toThrow(
+        'protected_checker_authority_unavailable',
+      );
+    } finally {
+      process.env.NODE_ENV = original;
+    }
+  });
+
+  it('fails production readiness closed if database role inspection cannot complete', async () => {
+    const original = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      class NoRoleInspection extends ReadinessDataSource {
+        override query(sql: string): Promise<unknown[]> {
+          if (sql.includes('AS unsafe')) return Promise.reject(new Error('inspection unavailable'));
+          return super.query(sql);
+        }
+      }
+      const readiness = new ProductionReadinessService(
+        new NoRoleInspection() as unknown as DataSource,
+        new ReconciliationStub() as never,
+      );
+      await expect(readiness.getReadiness()).resolves.toMatchObject({
+        status: 'error',
+        reason: 'runtime_database_role_unsafe',
+        runtimeDatabaseRole: { status: 'unavailable' },
+      });
+    } finally {
+      process.env.NODE_ENV = original;
+    }
   });
 
   it('tracks request draining and waits for active requests', async () => {

@@ -1,4 +1,5 @@
 import { readdirSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
@@ -74,6 +75,70 @@ describe('V1-RELEASE-01 production readiness vs. real migration chain', () => {
     expect(readiness.status).not.toBe('error');
     if (readiness.status === 'error') {
       expect(readiness.reason).not.toBe('schema_incompatible');
+    }
+  });
+
+  it('fails production startup even with a fully migrated database until checker authority is available', async () => {
+    const original = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const readiness = await readinessService.getReadiness();
+      expect(readiness.migrations.compatible).toBe(true);
+      expect(readiness.status).toBe('error');
+      // The disposable application's connection is also its superuser/database owner.
+      expect(readiness.reason).toBe('runtime_database_role_unsafe');
+      expect(readiness.runtimeDatabaseRole.status).toBe('unsafe');
+      expect(readiness.protectedCheckerAuthority.status).toBe('unavailable');
+      await expect(readinessService.verifyStartup()).rejects.toThrow(
+        'runtime_database_role_unsafe',
+      );
+    } finally {
+      process.env.NODE_ENV = original;
+    }
+  });
+
+  it('still fails closed with a separate non-owner login and no protected authority', async () => {
+    const role = `readiness_${randomUUID().replace(/-/g, '')}`;
+    const password = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
+    const options = dataSource.options;
+    if (options.type !== 'postgres') throw new Error('PostgreSQL required');
+    const runtime = new DataSource({
+      type: 'postgres',
+      host: options.host,
+      port: options.port,
+      database: options.database,
+      username: role,
+      password,
+      synchronize: false,
+    });
+    await dataSource.query(
+      `CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '${password}'`,
+    );
+    const original = process.env.NODE_ENV;
+    try {
+      await dataSource.query(`GRANT USAGE ON SCHEMA public TO ${role}`);
+      await dataSource.query(`GRANT SELECT ON ALL TABLES IN SCHEMA public TO ${role}`);
+      await runtime.initialize();
+      const attr = await runtime.query<Array<{ name: string; superuser: boolean }>>(
+        'SELECT current_user AS name, rolsuper AS superuser FROM pg_roles WHERE rolname=current_user',
+      );
+      expect(attr).toEqual([{ name: role, superuser: false }]);
+      process.env.NODE_ENV = 'production';
+      const checker = new ProductionReadinessService(runtime, {
+        runReconciliation: () => Promise.resolve({ status: 'PASS' }),
+      } as never);
+      const readiness = await checker.getReadiness();
+      expect(readiness.runtimeDatabaseRole.status).toBe('no_obvious_escalation');
+      expect(readiness.protectedCheckerAuthority.status).toBe('unavailable');
+      expect(readiness.reason).toBe('protected_checker_authority_unavailable');
+      await expect(checker.verifyStartup()).rejects.toThrow(
+        'protected_checker_authority_unavailable',
+      );
+    } finally {
+      process.env.NODE_ENV = original;
+      if (runtime.isInitialized) await runtime.destroy();
+      await dataSource.query(`DROP OWNED BY ${role}`);
+      await dataSource.query(`DROP ROLE ${role}`);
     }
   });
 

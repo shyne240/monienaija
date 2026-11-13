@@ -50,11 +50,23 @@ export class ProductionReadinessService {
       }
     }
     const pendingOutbox = await this.pendingOutboxCount();
+    // The institutional candidate currently has no independent protected checker authority.
+    // Do not make an environment flag a substitute for that security boundary: production
+    // must remain unavailable until its real authority and DB-role checks are implemented.
+    const protectedCheckerAuthority =
+      process.env.NODE_ENV === 'production' ? 'unavailable' : 'not_evaluated';
+    const runtimeDatabaseRole =
+      process.env.NODE_ENV === 'production' && database.status === 'ok'
+        ? await this.checkRuntimeDatabaseRole()
+        : { status: 'not_evaluated' as const };
     const status =
       database.status === 'ok' &&
       migrations.compatible &&
       reconciliation !== 'ERROR' &&
-      pendingOutbox >= 0
+      pendingOutbox >= 0 &&
+      protectedCheckerAuthority !== 'unavailable' &&
+      runtimeDatabaseRole.status !== 'unsafe' &&
+      runtimeDatabaseRole.status !== 'unavailable'
         ? 'ok'
         : 'error';
     const reason =
@@ -66,7 +78,12 @@ export class ProductionReadinessService {
             ? 'schema_incompatible'
             : reconciliation === 'ERROR'
               ? 'reconciliation_not_ready'
-              : 'outbox_unavailable';
+              : pendingOutbox < 0
+                ? 'outbox_unavailable'
+                : runtimeDatabaseRole.status === 'unsafe' ||
+                    runtimeDatabaseRole.status === 'unavailable'
+                  ? 'runtime_database_role_unsafe'
+                  : 'protected_checker_authority_unavailable';
     return {
       status,
       reason,
@@ -75,6 +92,8 @@ export class ProductionReadinessService {
       database,
       migrations,
       reconciliation: { status: reconciliation },
+      protectedCheckerAuthority: { status: protectedCheckerAuthority },
+      runtimeDatabaseRole,
       pendingOutbox,
       checkedAt: new Date().toISOString(),
     };
@@ -86,6 +105,43 @@ export class ProductionReadinessService {
       return { status: 'ok' };
     } catch {
       return { status: 'error' };
+    }
+  }
+
+  /** A preliminary negative check only; a safe result is not proof of authority isolation. */
+  private async checkRuntimeDatabaseRole(): Promise<{
+    status: 'no_obvious_escalation' | 'unsafe' | 'unavailable';
+  }> {
+    try {
+      const result: unknown = await this.dataSource.query(`
+        SELECT (active_role.rolsuper OR active_role.rolcreaterole OR active_role.rolcreatedb
+          OR active_role.rolreplication OR active_role.rolbypassrls
+          OR login_role.rolsuper OR login_role.rolcreaterole OR login_role.rolcreatedb
+          OR login_role.rolreplication OR login_role.rolbypassrls
+          OR pg_has_role(session_user, db.datdba, 'MEMBER')
+          OR pg_has_role(session_user, ns.nspowner, 'MEMBER')
+          OR has_schema_privilege(session_user, ns.oid, 'CREATE')
+          OR EXISTS (SELECT 1 FROM pg_class c
+            WHERE c.relnamespace=ns.oid AND c.relkind IN ('r','p','v','m','S')
+              AND c.relname IN ('privileged_action_approvals', 'a2_workforce_sessions',
+                'a2_finance_role_assignments', 'financial_institutions',
+                'institution_agent_affiliations', 'governed_institution_affiliations',
+                'governed_institution_lifecycle_executions', 'institution_affiliation_transition_evidence',
+                'governed_institution_affiliation_replay_results', 'governed_wallet_ownership_resolutions')
+              AND pg_has_role(session_user, c.relowner, 'MEMBER'))
+        ) AS unsafe
+        FROM pg_roles active_role JOIN pg_roles login_role ON login_role.rolname=session_user
+        JOIN pg_database db ON db.datname=current_database()
+        JOIN pg_namespace ns ON ns.nspname='public'
+        WHERE active_role.rolname=current_user
+      `);
+      const value = rowsOf(result)[0]?.unsafe;
+      return {
+        status:
+          value === false ? 'no_obvious_escalation' : value === true ? 'unsafe' : 'unavailable',
+      };
+    } catch {
+      return { status: 'unavailable' };
     }
   }
 

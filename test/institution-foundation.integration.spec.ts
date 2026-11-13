@@ -16,7 +16,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
@@ -621,8 +621,8 @@ describe('Institutional foundation (ARENA 4 Phase 1) — real PostgreSQL + real 
     const institutionId = await approvedInstitution();
     const agent = await createAgent();
     const body = affiliationBody(institutionId, 'ASSIGN', {
-      evidenceReference: 'Reference \"quoted\" \\ slash café 東京 💳',
-      reason: 'Reviewed: ₦10; line one\nline two\t✓ and \"quotes\"',
+      evidenceReference: 'Reference "quoted" \\ slash café 東京 💳',
+      reason: 'Reviewed: ₦10; line one\nline two\t✓ and "quotes"',
     });
     const result = await governedAffiliation(agent.id, body);
     expect(result.executed.status).toBe(201);
@@ -818,7 +818,7 @@ describe('Institutional foundation (ARENA 4 Phase 1) — real PostgreSQL + real 
       ),
     ]);
     expect(results.map((r) => r.status)).toEqual([201, 201]);
-    expect(results[0]!.body).toEqual(results[1]!.body);
+    expect(results[0].body).toEqual(results[1].body);
     const rows = await dataSource.query<Array<{ count: string }>>(
       'SELECT count(*)::text AS count FROM governed_institution_lifecycle_executions WHERE approval_id=$1',
       [created.body.approvalId],
@@ -935,6 +935,64 @@ describe('Institutional foundation (ARENA 4 Phase 1) — real PostgreSQL + real 
         }),
       ).rejects.toThrow();
     } finally {
+      await dataSource.query(`DROP OWNED BY ${role}`);
+      await dataSource.query(`DROP ROLE ${role}`);
+    }
+  });
+
+  it('rejects checker session impersonation by an ordinary DML role', async () => {
+    const institutionId = await approvedInstitution();
+    const { operator, controller } = await roles();
+    const created = await requestLifecycle(
+      operator.token,
+      institutionId,
+      'SUSPENDED',
+      'Review institutional regulatory status',
+    );
+    expect(created.status).toBe(201);
+    const attackerToken = randomUUID() + randomUUID();
+    const role = `inst_auth_${randomUUID().replace(/-/g, '')}`;
+    const password = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
+    const options = dataSource.options;
+    if (options.type !== 'postgres') throw new Error('PostgreSQL required');
+    const runtime = new DataSource({
+      type: 'postgres',
+      host: options.host,
+      port: options.port,
+      database: options.database,
+      username: role,
+      password,
+      synchronize: false,
+    });
+    await dataSource.query(
+      `CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '${password}'`,
+    );
+    try {
+      await dataSource.query(`GRANT USAGE ON SCHEMA public TO ${role}`);
+      await dataSource.query(`GRANT SELECT ON a2_workforce_sessions TO ${role}`);
+      await dataSource.query(`GRANT UPDATE (token_hash) ON a2_workforce_sessions TO ${role}`);
+      await runtime.initialize();
+      const attributes = await runtime.query<
+        Array<{
+          current_user: string;
+          rolsuper: boolean;
+          rolcreaterole: boolean;
+          rolcreatedb: boolean;
+        }>
+      >(
+        `SELECT current_user, rolsuper, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname=current_user`,
+      );
+      expect(attributes).toEqual([
+        { current_user: role, rolsuper: false, rolcreaterole: false, rolcreatedb: false },
+      ]);
+      await runtime.query(
+        `UPDATE a2_workforce_sessions SET token_hash=$1 WHERE principal_id=$2 AND status='ACTIVE'`,
+        [createHash('sha256').update(attackerToken).digest('hex'), controller.principalId],
+      );
+      const result = await approve(attackerToken, created.body.approvalId);
+      expect(result.status).not.toBe(201);
+    } finally {
+      if (runtime.isInitialized) await runtime.destroy();
       await dataSource.query(`DROP OWNED BY ${role}`);
       await dataSource.query(`DROP ROLE ${role}`);
     }

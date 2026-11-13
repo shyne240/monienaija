@@ -404,6 +404,72 @@ describe('Governed wallet ownership resolution — real PostgreSQL + real HTTP',
 
   // ------------------------------------------------------------------ successful resolutions
 
+  it('rejects a wallet resolution whose checker decision was forged by a SQL DML role', async () => {
+    const { preparer, controller } = await roles();
+    const customer = await customerFixture();
+    const wallet = await insertWallet({ ownerReference: randomUUID() });
+    const body = {
+      resolutionClass: 'CUSTOMER',
+      targetOwnerId: customer.id,
+      evidenceType: 'CUSTOMER_RECORD_REFERENCE',
+      evidenceReference: customer.reference,
+      reason: 'Legacy owner reference reconciled to the authoritative customer record',
+    };
+    const created = await requestResolution(preparer.token, wallet.id, body);
+    expect(created.status).toBe(201);
+    const role = `wallet_app_${randomUUID().replace(/-/g, '')}`;
+    const password = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
+    const options = dataSource.options;
+    if (options.type !== 'postgres') throw new Error('PostgreSQL required');
+    const runtime = new DataSource({
+      type: 'postgres',
+      host: options.host,
+      port: options.port,
+      database: options.database,
+      username: role,
+      password,
+      synchronize: false,
+    });
+    await dataSource.query(
+      `CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '${password}'`,
+    );
+    try {
+      await dataSource.query(`GRANT USAGE ON SCHEMA public TO ${role}`);
+      await dataSource.query(`GRANT SELECT ON privileged_action_approvals TO ${role}`);
+      await dataSource.query(
+        `GRANT UPDATE (status,approved_by,approved_at) ON privileged_action_approvals TO ${role}`,
+      );
+      await runtime.initialize();
+      const attributes = await runtime.query<
+        Array<{
+          current_user: string;
+          rolsuper: boolean;
+          rolcreaterole: boolean;
+          rolcreatedb: boolean;
+        }>
+      >(
+        `SELECT current_user, rolsuper, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname=current_user`,
+      );
+      expect(attributes).toEqual([
+        { current_user: role, rolsuper: false, rolcreaterole: false, rolcreatedb: false },
+      ]);
+      await runtime.query(
+        `UPDATE privileged_action_approvals SET status='APPROVED', approved_by=$2, approved_at=now() WHERE id=$1`,
+        [created.body.approvalId, controller.principalId],
+      );
+      const executed = await executeResolution(controller.token, wallet.id, {
+        ...body,
+        approvalId: created.body.approvalId,
+      });
+      expect(executed.status).not.toBe(201);
+      expect((await walletRow(wallet.id)).owner_class).toBe(WalletOwnerClass.REVIEW);
+    } finally {
+      if (runtime.isInitialized) await runtime.destroy();
+      await dataSource.query(`DROP OWNED BY ${role}`);
+      await dataSource.query(`DROP ROLE ${role}`);
+    }
+  });
+
   it('resolves REVIEW -> CUSTOMER atomically and preserves id, ledger account, balance and history', async () => {
     const { controller } = await roles();
     const customer = await customerFixture();
