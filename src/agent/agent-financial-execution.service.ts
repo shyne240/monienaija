@@ -97,7 +97,16 @@ export class AgentFinancialExecutionService {
    */
   async execute(
     rawInput: AgentFinancialExecutionInput,
-    authorization?: (manager: EntityManager, replay: boolean) => Promise<string | null>,
+    authorization?: (
+      manager: EntityManager,
+      replay: boolean,
+      requestHash: string,
+    ) => Promise<string | AgentFinancialExecutionResult | null>,
+    onCompleted?: (
+      manager: EntityManager,
+      requestHash: string,
+      result: AgentFinancialExecutionResult,
+    ) => Promise<void>,
   ): Promise<AgentFinancialExecutionResult> {
     // Report 26 (N-02): normalize the caller-supplied correlation identifier ONCE at the
     // execution boundary so every downstream sink (journal, limit decisions, commercial
@@ -179,12 +188,27 @@ export class AgentFinancialExecutionService {
           // For a denied proof, commit the verifier's failure counter while removing
           // the new reservation. No journal or success result can commit in this branch.
           if (authorization) {
-            const denied = await authorization(manager, reservation.kind === 'REPLAY');
-            if (denied) {
+            const authorizationResult = await authorization(
+              manager,
+              reservation.kind === 'REPLAY',
+              requestHash,
+            );
+            if (typeof authorizationResult === 'string') {
               if (reservation.kind === 'NEW') {
                 await manager.getRepository(IdempotencyRecord).remove(reservation.record);
               }
-              return { authorizationDenied: denied } as const;
+              return { authorizationDenied: authorizationResult } as const;
+            }
+            if (authorizationResult) {
+              if (reservation.kind === 'NEW') {
+                await this.idempotencyService.complete(manager, reservation.record.id, {
+                  statusCode: 200,
+                  responseBody: authorizationResult as unknown as Record<string, unknown>,
+                  resourceType: 'LEDGER_JOURNAL',
+                  resourceId: authorizationResult.journalId,
+                });
+              }
+              return authorizationResult;
             }
           }
 
@@ -393,6 +417,7 @@ export class AgentFinancialExecutionService {
             },
           });
 
+          if (onCompleted) await onCompleted(manager, requestHash, result);
           return result;
         });
         if ('authorizationDenied' in outcome) {

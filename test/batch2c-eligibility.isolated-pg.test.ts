@@ -785,6 +785,30 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
   expect((await ledger.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe('1000');
   const replay = await service.execute(input);
   expect(replay).toMatchObject({ status: 'REPLAYED', journalId: result.journalId });
+  expect(
+    await db.query(
+      `SELECT customer_id,challenge_id,journal_id FROM cash_out_execution_records WHERE agent_id=$1 AND idempotency_key=$2`,
+      [agent.id, input.idempotencyKey],
+    ),
+  ).toEqual([
+    { customer_id: customerId, challenge_id: challenge.challengeId, journal_id: result.journalId },
+  ]);
+  await db.query(`DELETE FROM idempotency_records WHERE scope=$1 AND idempotency_key=$2`, [
+    `agent-financial.v1:${agent.id}`,
+    input.idempotencyKey,
+  ]);
+  const durableReplay = await service.execute(input);
+  expect(durableReplay).toMatchObject({ status: 'REPLAYED', journalId: result.journalId });
+  await expect(service.execute({ ...input, idempotencyKey: randomUUID() })).rejects.toThrow(
+    'OTP already used',
+  );
+  await expect(
+    service.execute({
+      ...input,
+      agentPrincipal: { ...input.agentPrincipal, agentId: randomUUID() },
+    }),
+  ).rejects.toThrow();
+
   await expect(service.execute({ ...input, amountMinor: '999' })).rejects.toThrow();
   snapshot.evidence[0]!.status = 'REVOKED';
   await expect(service.execute(input)).rejects.toThrow();
