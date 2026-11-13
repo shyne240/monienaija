@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { DataSource } from 'typeorm';
 import {
@@ -160,11 +160,21 @@ export class MobileOnboardingAuthService {
         [r.credential_id],
       );
       let audience = AUDIENCE;
+      // Restore the transaction after a dependency query fails; restricted onboarding is
+      // safe, whereas an unusable financial session must never be issued on uncertainty.
+      await m.query('SAVEPOINT mobile_financial_eligibility');
       try {
         await this.financialEligibility.require(m, r.customer_id);
         audience = DEFAULT_SESSION_AUDIENCE;
+        await m.query('RELEASE SAVEPOINT mobile_financial_eligibility');
       } catch (error) {
-        if (!(error instanceof ConflictException)) throw error;
+        if (
+          !(error instanceof ConflictException) &&
+          !(error instanceof ServiceUnavailableException)
+        )
+          throw error;
+        await m.query('ROLLBACK TO SAVEPOINT mobile_financial_eligibility');
+        await m.query('RELEASE SAVEPOINT mobile_financial_eligibility');
       }
 
       if (audience === DEFAULT_SESSION_AUDIENCE) {

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 
 import { LedgerEntryDirection } from '../src/ledger/ledger.enums';
 import type { LedgerJournal } from '../src/ledger/ledger-journal.entity';
@@ -775,6 +775,23 @@ describe('ExternalSettlementService', () => {
     await expect(fixture.service.settleVerifiedOutcome(settleCommand())).rejects.toMatchObject({
       code: 'PARTNER_DISABLED',
     });
+  });
+
+  it('propagates retryable evidence unavailability without completing a failed idempotency record', async () => {
+    const fixture = makeService();
+    jest
+      .spyOn(fixture.ledgerService, 'postJournalInTransaction')
+      .mockRejectedValueOnce(
+        new ServiceUnavailableException('Trusted KYC evidence is unavailable'),
+      );
+    await expect(fixture.service.settleVerifiedOutcome(settleCommand())).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(fixture.ledgerService.journals).toHaveLength(0);
+    expect(fixture.settlements.records.size).toBe(0);
+    expect(
+      [...fixture.idempotency.records.values()].some((record) => record.status === 'FAILED'),
+    ).toBe(false);
   });
 
   it('rolls back the failed settlement and preserves no journal on Ledger post failure', async () => {
