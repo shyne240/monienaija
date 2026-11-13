@@ -2,8 +2,8 @@
 
 **Branch:** `arena/8e59e188-monienaija` (Arena-assigned; never renamed, never merged into another arena)
 **Base:** `3d05aaec1d569dc8a5200ebb3b350e2cc1f78510`
-**Final pushed SHA:** `LAST_CODE_SHA` — the last code/test commit; the only commit after it is the
-one-line docs update that records this number, so the branch tip is `LAST_CODE_SHA`+1.
+**Final pushed SHA:** `c08c208` (last code/test commit) · branch tip: the docs commit that records
+this line — `git log -1 arena/8e59e188-monienaija` is authoritative.
 **Scope:** integration of Arena 2, fixture remediation, migration of the legacy-registration suites, and
 full verification. No financial business logic was authored here, no production authorization was
 weakened, no test was deleted, skipped or loosened.
