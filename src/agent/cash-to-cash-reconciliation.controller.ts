@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UnauthorizedException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { IsIn, IsUUID } from 'class-validator';
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
@@ -37,6 +46,9 @@ export class CashToCashReconciliationController {
       'internal-reconciliation',
       ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
     );
-    return this.service.lookup(id);
+    // A function grant alone does not establish institution-scoped entitlement.
+    // Do not expose a cross-institution handoff until authoritative workforce scope exists.
+    void id;
+    throw new ServiceUnavailableException('Institutional reconciliation authorization unavailable');
   }
 }
