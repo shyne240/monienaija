@@ -43,6 +43,9 @@ import { WalletFinancialBoundaryService } from '../src/wallet/wallet-financial-b
 import { WalletOwnershipResolutionService } from '../src/wallet/wallet-ownership-resolution.service';
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 import { walletOwnershipResolutionFingerprint } from '../src/wallet/wallet-ownership-resolution.service';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
@@ -61,6 +64,7 @@ describe('Governed wallet ownership resolution — real PostgreSQL + real HTTP',
   let ledger: LedgerService;
   let sessions: A2WorkforceSessionService;
   let boundary: WalletFinancialBoundaryService;
+  let evidence: ReturnType<typeof createTestEvidenceReader>;
   let provisioned: { preparer: Role; controller: Role; auditor: Role } | undefined;
   const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
@@ -72,10 +76,13 @@ describe('Governed wallet ownership resolution — real PostgreSQL + real HTTP',
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
     dataSource = await createIntegrationDataSource('w08ownership');
+    evidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(KycTierEvidenceReader)
+      .useValue(evidence.reader)
       .compile();
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
@@ -1306,7 +1313,7 @@ describe('Governed wallet ownership resolution — real PostgreSQL + real HTTP',
 
     const resolved = await walletRow(wallet.id);
     expect(resolved.owner_class).toBe(WalletOwnerClass.CUSTOMER);
-    // The fixture customer has no governed KYC evidence, so the eligibility gate still refuses.
+    // No verified contact or KYC evidence was provisioned as part of ownership resolution.
     await expect(
       boundary.requireCustomerWallet(
         dataSource.manager,
@@ -1314,6 +1321,32 @@ describe('Governed wallet ownership resolution — real PostgreSQL + real HTTP',
         wallet.id,
         wallet.ledgerAccountId,
       ),
-    ).rejects.toThrow(/not eligible for financial access|financial policy is unavailable/);
+    ).rejects.toThrow('Customer is not eligible for financial access');
+
+    // Explicitly provision governed, test-only evidence and an approved assessment; resolution
+    // is usable only while every real eligibility prerequisite remains satisfied.
+    await makeCustomerFinanciallyEligible(dataSource, customer.id, evidence);
+    await expect(
+      boundary.requireCustomerWallet(
+        dataSource.manager,
+        customer.id,
+        wallet.id,
+        wallet.ledgerAccountId,
+      ),
+    ).resolves.toBeUndefined();
+
+    // Withdrawal of the current approved assessment must immediately deny the resolved wallet.
+    await dataSource.query(
+      'UPDATE customer_kyc_assessments SET is_current=false WHERE customer_id=$1 AND is_current=true',
+      [customer.id],
+    );
+    await expect(
+      boundary.requireCustomerWallet(
+        dataSource.manager,
+        customer.id,
+        wallet.id,
+        wallet.ledgerAccountId,
+      ),
+    ).rejects.toThrow('Customer is not eligible for financial access');
   });
 });

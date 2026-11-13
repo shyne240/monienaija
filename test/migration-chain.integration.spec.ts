@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DataSource } from 'typeorm';
@@ -218,4 +219,109 @@ describe('migration chain (real PostgreSQL)', () => {
     }
     expect(missing).toEqual([]);
   });
+});
+
+/** Exercise upgrade from real pre-118 data, not just fresh installation. */
+describe('governed wallet ownership migration with historical data (real PostgreSQL)', () => {
+  type HistoricalWallet = {
+    id: string;
+    customer_id: string;
+    owner_class: string;
+    [column: string]: unknown;
+  };
+  async function pre118(
+    label: string,
+  ): Promise<{ ds: DataSource; migrations: DataSource['migrations'] }> {
+    const ds = await createEmptyIntegrationDataSource(label);
+    await ds.initialize();
+    const migrations = ds.migrations.slice();
+    ds.migrations.splice(
+      0,
+      ds.migrations.length,
+      ...migrations.filter((m) => m.name !== 'GovernedWalletOwnershipResolution1785753600118'),
+    );
+    expect(ds.migrations.length).toBe(migrations.length - 1);
+    await ds.runMigrations({ transaction: 'all' });
+    return { ds, migrations };
+  }
+
+  async function insertHistorical(ds: DataSource, owner: string, suffix: string): Promise<string> {
+    const ledgerId = randomUUID();
+    const walletId = randomUUID();
+    await ds.query(
+      `INSERT INTO ledger_accounts (id, code, name, account_type, normal_balance, currency)
+       VALUES ($1,$2,'historical test','LIABILITY','CREDIT','NGN')`,
+      [ledgerId, `HIST_${suffix}_${randomUUID().slice(0, 8)}`],
+    );
+    await ds.query(
+      `INSERT INTO wallet_accounts (id, customer_id, currency, status, ledger_account_id)
+       VALUES ($1,$2,'NGN','ACTIVE',$3)`,
+      [walletId, owner, ledgerId],
+    );
+    return walletId;
+  }
+
+  it('canonicalises an unambiguous historical reference in place without resolving ownership', async () => {
+    const { ds, migrations } = await pre118('wallet_hist_a');
+    try {
+      const original = '3F2504E0-4F89-41D3-9A0C-0305E82C3301';
+      const id = await insertHistorical(ds, original, 'A');
+      const before = await ds.query<HistoricalWallet[]>(
+        'SELECT * FROM wallet_accounts WHERE id=$1',
+        [id],
+      );
+      ds.migrations.splice(0, ds.migrations.length, ...migrations);
+      const executed = await ds.runMigrations({ transaction: 'all' });
+      expect(executed.map((m) => m.name)).toEqual([
+        'GovernedWalletOwnershipResolution1785753600118',
+      ]);
+      const after = await ds.query<HistoricalWallet[]>(
+        'SELECT * FROM wallet_accounts WHERE id=$1',
+        [id],
+      );
+      expect(after).toHaveLength(1);
+      expect(after[0]).toEqual({ ...before[0], customer_id: original.toLowerCase() });
+      expect(after[0]!.owner_class).toBe('REVIEW');
+    } finally {
+      await destroyIntegrationDataSource(ds);
+    }
+  }, 120000);
+
+  it('rejects historical canonical collisions atomically without merging or deleting wallets', async () => {
+    const { ds, migrations } = await pre118('wallet_hist_b');
+    try {
+      const first = await insertHistorical(ds, 'AAAAAAAA-1111-4111-8111-111111111111', 'B1');
+      const second = await insertHistorical(ds, 'aaaaaaaa-1111-4111-8111-111111111111', 'B2');
+      const before = await ds.query<HistoricalWallet[]>(
+        'SELECT * FROM wallet_accounts WHERE id = ANY($1::uuid[]) ORDER BY id',
+        [[first, second]],
+      );
+      ds.migrations.splice(0, ds.migrations.length, ...migrations);
+      // With the pre-existing case-sensitive unique constraint, canonicalisation itself can
+      // fail before 118's later explicit duplicate diagnostic. Either way the chain is atomic.
+      await expect(ds.runMigrations({ transaction: 'all' })).rejects.toThrow(
+        /duplicate key|canonical wallet ownership collisions/i,
+      );
+      const after = await ds.query<HistoricalWallet[]>(
+        'SELECT * FROM wallet_accounts WHERE id = ANY($1::uuid[]) ORDER BY id',
+        [[first, second]],
+      );
+      expect(after).toEqual(before);
+      expect(after).toHaveLength(2);
+      expect(after.map((r: { owner_class: string }) => r.owner_class)).toEqual([
+        'REVIEW',
+        'REVIEW',
+      ]);
+      const ledger = await ds.query<Array<{ name: string }>>(
+        `SELECT name FROM typeorm_migrations WHERE timestamp='1785753600118'`,
+      );
+      expect(ledger).toHaveLength(0);
+      const objects = await ds.query<Array<{ registry: string | null }>>(
+        `SELECT to_regclass('public.wallet_system_owners') AS registry`,
+      );
+      expect(objects[0]!.registry).toBeNull();
+    } finally {
+      await destroyIntegrationDataSource(ds);
+    }
+  }, 120000);
 });
