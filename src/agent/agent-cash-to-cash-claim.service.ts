@@ -1,5 +1,5 @@
 import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unused-vars */
 import { setTimeout as delay } from 'node:timers/promises';
 import { createHash, pbkdf2Sync, randomUUID, timingSafeEqual } from 'node:crypto';
 
@@ -421,7 +421,7 @@ export class AgentCashToCashClaimService {
       }
     }
 
-    // 2. OTP verification via canonical MfaExecutionService (outside SERIALIZABLE, before financial)
+    // 2. Resolve challenge principal; verification occurs inside the posting transaction.
     // Fetch challenge meta to build principal
     const challengeMetaPre: Array<{ customer_id: string; session_id: string }> =
       await this.dataSource.query(
@@ -452,121 +452,6 @@ export class AgentCashToCashClaimService {
       sessionId: metaPre.session_id,
       credentialId: credentialIdPre,
     };
-    const verifyResultPre = await this.mfaExecutionService.verifyChallenge({
-      principal: principalForMfaPre,
-      challengeId: mfaChallengeId,
-      providedHash: otp,
-      actor: customerId,
-      expectedPurpose: AGENT_DESK_OTP_PURPOSE_CASH_TO_CASH_CLAIM,
-    } as any);
-    if (!verifyResultPre.verified) {
-      const reason = verifyResultPre.failureReason;
-      if (reason === 'REPLAYED') {
-        // Check if this is an idempotent replay (same transferId + same idempotencyKey already completed)
-        const existingIdem: Array<{ status: string; response_body: any; request_hash: string }> =
-          await this.dataSource.query(
-            `SELECT status, response_body, request_hash FROM idempotency_records WHERE scope=$1 AND idempotency_key=$2 LIMIT 1`,
-            [`${CLAIM_IDEMPOTENCY_PREFIX}${transferId}`, idempotencyKey],
-          );
-        if (
-          existingIdem[0] &&
-          (existingIdem[0].status === 'COMPLETED' || existingIdem[0].status === 'IN_PROGRESS')
-        ) {
-          // A consumed OTP may only recover the exact completed destination, request, and Agent.
-          const claimed: Array<{
-            claim_journal_id: string | null;
-            claimant_customer_id: string;
-            beneficiary_phone: string;
-            principal_minor: string;
-            currency: string;
-          }> = await this.dataSource.query(
-            `SELECT claim_journal_id, claimant_customer_id, beneficiary_phone, principal_minor, currency
-             FROM cash_to_cash_transfers WHERE id=$1`,
-            [transferId],
-          );
-          const claimedTransfer = claimed[0];
-          if (claimedTransfer?.claim_journal_id) {
-            const actorRows: Array<{ actor: string }> = await this.dataSource.query(
-              `SELECT actor FROM audit_events
-               WHERE entity_type='AGENT_CASH_TO_CASH_CLAIM' AND action='CASH_TO_CASH_CLAIMED' AND entity_id=$1
-               LIMIT 1`,
-              [claimedTransfer.claim_journal_id],
-            );
-            if (
-              !actorRows[0]?.actor ||
-              actorRows[0].actor.toLowerCase() !== claimantActor.toLowerCase()
-            ) {
-              throw new ConflictException('Idempotency key belongs to a different claimant Agent');
-            }
-            const body = existingIdem[0]
-              .response_body as unknown as AgentCashToCashClaimResult | null;
-            const recordedMethod = body?.redemptionMethod ?? 'CUSTOMER_WALLET';
-            if (recordedMethod !== redemptionMethod) {
-              throw new ConflictException(
-                'Idempotency key already used with a different redemption method',
-              );
-            }
-            const settlementWallet = await this.dataSource.getRepository(WalletAccount).findOne({
-              where: { customerId: settlementWalletOwnerId, currency: 'NGN' },
-            });
-            if (!settlementWallet)
-              throw new ConflictException('Prior claim destination cannot be verified for replay');
-            const fingerprintInput: ClaimRequestFingerprintInput = {
-              transferId,
-              beneficiaryPhone: canonicalPhone,
-              claimantCustomerId: customerId,
-              claimantAgentId,
-              redemptionMethod,
-              principalMinor: claimedTransfer.principal_minor,
-              currency: claimedTransfer.currency,
-              unclaimedAccountId: unclaimedAccount.id,
-              settlementWalletLedgerId: settlementWallet.ledgerAccountId,
-              reference,
-              correlationId: correlationId ?? null,
-              metadata: input.metadata ?? {},
-            };
-            const expectedHash = this.computeClaimRequestHash(fingerprintInput);
-            const legacyWalletHash =
-              redemptionMethod === 'CUSTOMER_WALLET'
-                ? this.computeLegacyWalletClaimRequestHash(fingerprintInput)
-                : null;
-            if (
-              existingIdem[0].request_hash !== expectedHash &&
-              existingIdem[0].request_hash !== legacyWalletHash
-            ) {
-              throw new ConflictException(
-                'Idempotency key already used with different financial parameters',
-              );
-            }
-            if (body && body.journalId) {
-              return { ...body, redemptionMethod, status: 'REPLAYED' as const, replayed: true };
-            }
-            return {
-              status: 'REPLAYED',
-              transferId,
-              journalId: claimedTransfer.claim_journal_id,
-              beneficiaryPhone: claimedTransfer.beneficiary_phone,
-              principalMinor: claimedTransfer.principal_minor,
-              currency: claimedTransfer.currency,
-              amountMinor: claimedTransfer.principal_minor,
-              claimantCustomerId: claimedTransfer.claimant_customer_id,
-              redemptionMethod,
-              idempotencyKey,
-              requestHash: existingIdem[0].request_hash,
-              replayed: true,
-              correlationId,
-              reference,
-              claimedAt: new Date(),
-            };
-          }
-        }
-        throw new BadRequestException('OTP already used');
-      }
-      if (reason === 'EXPIRED') throw new BadRequestException('OTP expired');
-      if (reason === 'MISMATCH') throw new BadRequestException('OTP invalid');
-      throw new BadRequestException(`OTP invalid: ${reason}`);
-    }
-
     // Prepare the server-selected destination wallet before SERIALIZABLE. For cash redemption this
     // is Agent B's float; for wallet redemption it is the verified beneficiary Customer's wallet.
     await this.ensureWalletAccountExists(settlementWalletOwnerId);
@@ -575,7 +460,7 @@ export class AgentCashToCashClaimService {
 
     for (let attempt = 0; attempt < MAX_SERIALIZABLE_ATTEMPTS; attempt += 1) {
       try {
-        return await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+        const outcome = await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
           // Lock transfer row
           const transfers: Array<{
             id: string;
@@ -633,69 +518,7 @@ export class AgentCashToCashClaimService {
           }
 
           if (transfer.status === 'CLAIMED') {
-            if (transfer.claim_idempotency_key === idempotencyKey && transfer.claim_journal_id) {
-              const settlementWalletForHash = await this.resolveWalletAccount(
-                manager,
-                settlementWalletOwnerId,
-              );
-              const fingerprintInput: ClaimRequestFingerprintInput = {
-                transferId,
-                beneficiaryPhone: canonicalPhone,
-                claimantCustomerId: customerId,
-                claimantAgentId,
-                redemptionMethod,
-                principalMinor: transfer.principal_minor,
-                currency: transfer.currency,
-                unclaimedAccountId: unclaimedAccount.id,
-                settlementWalletLedgerId: settlementWalletForHash.ledgerAccountId,
-                reference,
-                correlationId: correlationId ?? null,
-                metadata: input.metadata ?? {},
-              };
-              const expectedHash = this.computeClaimRequestHash(fingerprintInput);
-              const legacyWalletHash =
-                redemptionMethod === 'CUSTOMER_WALLET'
-                  ? this.computeLegacyWalletClaimRequestHash(fingerprintInput)
-                  : null;
-              const idemRows: Array<{ request_hash: string; response_body: any }> =
-                await manager.query(
-                  `SELECT request_hash, response_body FROM idempotency_records WHERE scope=$1 AND idempotency_key=$2 LIMIT 1`,
-                  [scope, idempotencyKey],
-                );
-              const storedHash = idemRows[0]?.request_hash;
-              if (storedHash && storedHash !== expectedHash && storedHash !== legacyWalletHash) {
-                throw new ConflictException(
-                  'Idempotency key already used with different financial parameters',
-                );
-              }
-              const result: AgentCashToCashClaimResult = {
-                status: 'REPLAYED',
-                transferId,
-                journalId: transfer.claim_journal_id!,
-                beneficiaryPhone: transfer.beneficiary_phone,
-                principalMinor: transfer.principal_minor,
-                currency: transfer.currency,
-                amountMinor: transfer.principal_minor,
-                claimantCustomerId: transfer.claimant_customer_id!,
-                redemptionMethod,
-                idempotencyKey,
-                requestHash: storedHash ?? expectedHash,
-                replayed: true,
-                correlationId,
-                reference: transfer.claim_journal_id ? reference : undefined,
-                claimedAt: new Date(
-                  transfer.claim_journal_id
-                    ? ((
-                        await manager.query(`SELECT created_at FROM ledger_journals WHERE id=$1`, [
-                          transfer.claim_journal_id,
-                        ])
-                      )[0]?.created_at ?? new Date())
-                    : new Date(),
-                ),
-              };
-              return result;
-            }
-            throw new ConflictException('Transfer already claimed');
+            throw new ConflictException('Transfer already claimed; use receipt recovery');
           }
 
           if (transfer.status !== 'UNCLAIMED') {
@@ -777,6 +600,20 @@ export class AgentCashToCashClaimService {
             err.failedCodeHash = transfer.transfer_code_hash;
             err.transferId = transferId;
             throw err;
+          }
+
+          // The verifier locks the challenge and writes the successful consumption in the
+          // same transaction as the ledger. Failure is returned rather than thrown here so
+          // wrong-code attempt counters and audit records commit without any financial effect.
+          const verification = await this.mfaExecutionService.verifyChallengeInManager(manager, {
+            principal: principalForMfaPre,
+            challengeId: mfaChallengeId,
+            providedHash: otp,
+            actor: customerId,
+            expectedPurpose: AGENT_DESK_OTP_PURPOSE_CASH_TO_CASH_CLAIM,
+          });
+          if (!verification.verified) {
+            return { otpFailure: verification.failureReason ?? 'MFA_UNAVAILABLE' } as const;
           }
 
           // Resolve only the server-owned destination selected by the mode: beneficiary Customer
@@ -863,46 +700,9 @@ export class AgentCashToCashClaimService {
           });
 
           if (reservation.kind === 'REPLAY') {
-            const existing = reservation.record;
-            if (existing.requestHash !== requestHash) {
-              throw new ConflictException('Idempotency key already used with different request');
-            }
-            const body = existing.responseBody as unknown as AgentCashToCashClaimResult | null;
-            if (body && (body as any).journalId) {
-              const claimed = await manager.query(
-                `SELECT claim_journal_id, claimant_customer_id FROM cash_to_cash_transfers WHERE id=$1`,
-                [transferId],
-              );
-              if (claimed[0]?.claim_journal_id === (body as any).journalId) {
-                return { ...(body as any), status: 'REPLAYED' as const, replayed: true };
-              }
-              return {
-                ...(body as any),
-                status: 'REPLAYED' as const,
-                replayed: true,
-                journalId: existing.resourceId ?? (body as any).journalId,
-              } as AgentCashToCashClaimResult;
-            }
-            if (existing.resourceId) {
-              return {
-                status: 'REPLAYED',
-                transferId,
-                journalId: existing.resourceId,
-                beneficiaryPhone: transfer.beneficiary_phone,
-                principalMinor: transfer.principal_minor,
-                currency: transfer.currency,
-                amountMinor: transfer.principal_minor,
-                claimantCustomerId: customerId,
-                redemptionMethod,
-                idempotencyKey,
-                requestHash,
-                replayed: true,
-                correlationId,
-                reference,
-                claimedAt: existing.updatedAt,
-              };
-            }
-            throw new ConflictException('Idempotency replay missing resource linkage');
+            // UNCLAIMED with a pre-existing claim reservation is inconsistent.
+            // Throw to roll back OTP consumption; recover via reconciliation.
+            throw new ConflictException('Claim reservation requires reconciliation');
           }
 
           // Financial: one atomic redemption. Wallet mode credits the beneficiary Customer;
@@ -1085,6 +885,10 @@ export class AgentCashToCashClaimService {
 
           return result;
         });
+        if ('otpFailure' in outcome) {
+          throw new BadRequestException(`OTP verification failed: ${outcome.otpFailure}`);
+        }
+        return outcome;
       } catch (error: any) {
         if (error?.failedCodeHash && error?.transferId) {
           if (await this.recordFailedCode(error.transferId, error.failedCodeHash)) {
