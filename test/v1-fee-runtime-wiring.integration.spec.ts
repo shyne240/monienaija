@@ -41,9 +41,6 @@ import { DataSource } from 'typeorm';
 import { randomUUID, randomBytes, pbkdf2Sync } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
-import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
-import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
-import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { OutboxService } from '../src/operations/outbox.service';
 import { WalletService } from '../src/wallet/wallet.service';
 import { TransferService } from '../src/transfer/transfer.service';
@@ -74,6 +71,17 @@ import {
 } from './support/pg-harness';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import {
+  ensureCustomerCredential,
+  governedDeskProviderOverride,
+  startGovernedDesk,
+  type GovernedDeskHarness,
+} from './support/cash-out-lifecycle-fixture';
+import { RecordingSmsProvider } from './support/desk-otp-fixture';
+import {
+  createControlledFundingPolicy,
+  overrideCashToCashFundingPolicy,
+} from './support/controlled-funding-policy';
 import {
   createEligibleCustomer,
   makeCustomerFinanciallyEligible,
@@ -115,50 +123,6 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-01 Fee runtime wiring (real PG)', () => {
   // snapshot was recorded, forcing rollback of snapshot+journal+fee together.
   let failCompletedOutbox = false;
 
-  const workforceConfig: A2WorkforceConfigurationV1 = {
-    enabled: true,
-    oidcIssuer: 'https://workforce.test',
-    oidcJwksUri: 'https://workforce.test/jwks',
-    oidcAudience: 'workforce',
-    oidcClientId: 'test-client',
-    internalAudience: 'workforce-admin',
-    sessionTtlSeconds: 900,
-    jwksJson: [],
-    financeRoles: [],
-    makerCheckerRules: [],
-    rateLimits: [],
-    trustedProxies: ['127.0.0.1'],
-  } as unknown as A2WorkforceConfigurationV1;
-
-  const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-')) {
-        throw new UnauthorizedException('invalid workforce token');
-      }
-      const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = [
-        'SUPPORT',
-        'OPERATOR',
-        'SERVICE',
-        'PRIVILEGED',
-        'AGENT',
-        'CUSTOMER',
-        'AGGREGATOR',
-      ];
-      if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
-      return {
-        type,
-        principalId: `workforce-${type.toLowerCase()}-1`,
-        audience,
-        roles: [],
-        scopes: [],
-        customerAccess: 'NONE',
-        agentAccess: 'NONE',
-        aggregatorAccess: 'NONE',
-      } as any;
-    },
-  };
-
   const throwingOutbox = {
     enqueue: async (_manager: unknown, event: { eventType: string }) => {
       if (failCompletedOutbox && event.eventType === 'transfer.completed') {
@@ -176,20 +140,23 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-01 Fee runtime wiring (real PG)', () => {
     },
   };
 
+  const smsProvider = new RecordingSmsProvider();
+  let governed: GovernedDeskHarness;
+  const fundingPolicy = createControlledFundingPolicy();
+
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('v1-fee-runtime-01');
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    const baseBuilder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
       .useValue(kycEvidence.reader)
-      .overrideProvider(A2WorkforceSessionService)
-      .useValue(mockWorkforceSessions)
-      .overrideProvider(A2_WORKFORCE_CONFIG)
-      .useValue(workforceConfig)
       .overrideProvider(OutboxService)
-      .useValue(throwingOutbox)
-      .compile();
+      .useValue(throwingOutbox);
+    const moduleRef = await overrideCashToCashFundingPolicy(
+      governedDeskProviderOverride(baseBuilder, smsProvider),
+      fundingPolicy,
+    ).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(
@@ -233,6 +200,8 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-01 Fee runtime wiring (real PG)', () => {
       allowNegativeBalance: true,
     });
     systemLedgerAccountId = sys.id;
+    governed = await startGovernedDesk({ app, dataSource, smsProvider, label: 'feewire' });
+    await governed.fixture.openInstitutionCashToCashSuspenseAccount(governed.institutionId);
     await ledgerService.createAccount({
       code: 'CASH_TO_CASH-UNCLAIMED-NGN',
       name: 'Cash-to-Cash Unclaimed NGN',
@@ -846,12 +815,14 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-01 Fee runtime wiring (real PG)', () => {
       currency: 'NGN',
       idempotencyKey: `agent-wallet-${agent.id}-${randomUUID()}`,
     });
+    await governed.provisionAgent(agent.id, wallet.id);
     return { cls, agent, appEntity, wallet };
   }
 
   function agentPrincipal(agentId: string) {
     return {
       type: 'AGENT' as const,
+      sessionId: governed.sessionFor(agentId),
       agentId,
       principalId: agentId,
       roles: [],
@@ -866,22 +837,8 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-01 Fee runtime wiring (real PG)', () => {
   }
 
   async function fundAgent(agentWalletLedgerId: string, amount: string): Promise<void> {
-    await ledgerService.postJournal({
-      idempotencyKey: `fund-agent-${agentWalletLedgerId}-${amount}-${randomUUID()}`,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [
-        {
-          accountId: systemLedgerAccountId,
-          direction: LedgerEntryDirection.DEBIT,
-          amountMinor: amount,
-        },
-        {
-          accountId: agentWalletLedgerId,
-          direction: LedgerEntryDirection.CREDIT,
-          amountMinor: amount,
-        },
-      ],
+    await governed.fixture.fundLedgerAccount(agentWalletLedgerId, amount, {
+      institutionId: governed.institutionId,
     });
   }
 
@@ -907,6 +864,7 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-01 Fee runtime wiring (real PG)', () => {
       currency: 'NGN',
       idempotencyKey: `cust-wallet-${customerId}-${randomUUID()}`,
     });
+    await governed.provisionCustomer(customerId, wallet.id);
     return { customerId, wallet };
   }
 
@@ -1026,15 +984,26 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-01 Fee runtime wiring (real PG)', () => {
       customerId,
       'CASH_TO_CASH',
     );
-    const otp = 'fee13-otp';
-    const { challengeId } = await createMfaChallenge(customerId, otp);
+    await ensureCustomerCredential(dataSource, customerId);
+    const claimOtp = await governed.deskOtp.issue({
+      agentId: agent.id,
+      customerId,
+      purpose: 'CASH_TO_CASH_CLAIM',
+      redemptionMethod: 'CUSTOMER_WALLET',
+      agentSessionId: governed.sessionFor(agent.id)!,
+      transferId: init.transferId,
+      amountMinor: '20000',
+      currency: 'NGN',
+      operationKey: `fee-13-claim-${randomUUID()}`,
+    });
     const claim = await claimService.execute({
       transferId: init.transferId,
       beneficiaryPhone: phone,
       transferCode: init.transferCode!,
       customerId,
-      mfaChallengeId: challengeId,
-      otp,
+      mfaChallengeId: claimOtp.challengeId,
+      otp: claimOtp.otp,
+      claimantPrincipal: agentPrincipal(agent.id) as any,
       idempotencyKey: `fee-13-claim-${randomUUID()}`,
     });
     expect(claim.status).toBe('COMPLETED');

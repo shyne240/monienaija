@@ -1020,11 +1020,13 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
       `SELECT COUNT(*)::text as cnt FROM limit_reservations`,
     );
     expect(resCnt[0]!.cnt).toBe('0');
-    // also no commercial decision tables mutated via assignment — now 3 limit migrations
+    // also no commercial decision tables mutated via assignment — the limit-related migration
+    // inventory is exactly: profile catalogue + assignments + usages (V1-LIMIT-03) + the desk MFA
+    // attempt limit introduced with the governed OTP surface.
     const hasDecisions: Array<{ cnt: string }> = await dataSource.query(
       `SELECT count(*)::text as cnt FROM typeorm_migrations WHERE name LIKE '%Limit%'`,
     );
-    expect(Number(hasDecisions[0]!.cnt)).toBe(3); // profile catalogue + assignments + usages (V1-LIMIT-03)
+    expect(Number(hasDecisions[0]!.cnt)).toBe(4);
   });
 
   it('12. legacy preservation — customer_limit_profiles & AgentClass.applicableLimits untouched', async () => {
