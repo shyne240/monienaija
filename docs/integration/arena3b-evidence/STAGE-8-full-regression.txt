@@ -1,0 +1,67 @@
+=== ARENA 3B Stage 8 — full repository PostgreSQL integration ===
+tested commit: 34ee502 (working tree = this checkpoint; no uncommitted source changes)
+command: NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
+         PG_TEST_CONCURRENCY=1 PG_TEST_BATCH_SIZE=6 PG_TEST_MAX_OLD_SPACE_MB=2560 \
+         node scripts/run-pg-integration-tests.js
+environment: 2 vCPU, 3.8 GiB RAM, no swap, embedded PostgreSQL 18.4, synthetic data only
+
+files discovered ......... 145   (144 pre-existing + the new fixture acceptance suite)
+suites passed ............ 127
+suites failed ............  18
+suites without a result ..   0
+tests .................... 2,616  (2,360 passed / 256 failed)
+batches ..................  25 (16 passing, 9 failing)
+memory failures ..........   0
+timeouts .................   0
+unexplained crashes ......   0
+duration ................. 3,341,534 ms  (~55.7 min)
+exit status .............. 1  -> RESULT: FAILED (not accepted)
+
+Expected negative-path console output is classified, not counted as failure: the runner's
+failure-category lines include normal console output (console_simulated SMS events, the
+intentional duplicate-key migration probe "GovernedWalletOwnershipResolution1785753600118",
+and the M19A_LIVE_HTTP self-revoke line). suitesFailed = 18 is the authoritative count.
+
+FAILING SUITES (18) — none skipped, none disabled, none marked todo:
+  test/a14-agent-cash-out.integration.spec.ts
+  test/a14-otp-hardening.integration.spec.ts
+  test/a16-agent-cash-to-cash-claim.integration.spec.ts
+  test/a17-agent-cash-to-cash-expiry.integration.spec.ts
+  test/v1-agent-05-transaction-pin-security.integration.spec.ts
+  test/v1-agent-history-01.integration.spec.ts
+  test/v1-agent-mfa-api-01.integration.spec.ts
+  test/v1-agent-mobile-idempotency-persistence-01.integration.spec.ts
+  test/v1-commercial-accounting-01.integration.spec.ts
+  test/v1-commercial-decision-03b-wallet-to-cash-snapshot.integration.spec.ts
+  test/v1-commercial-decision-03c-cash-to-cash-snapshot.integration.spec.ts
+  test/v1-commercial-scenario-matrix-01.integration.spec.ts
+  test/v1-commission-runtime-wiring.integration.spec.ts
+  test/v1-commission-settlement-01.integration.spec.ts
+  test/v1-fee-runtime-wiring.integration.spec.ts
+  test/v1-limit-02-limit-assignment.integration.spec.ts
+  test/v1-limit-04-limit-runtime.integration.spec.ts
+  test/v1-limit-05-flow-matrix.integration.spec.ts
+
+ROOT-CAUSE CLASSIFICATION (from the captured log):
+  A. Legacy Cash-Out fixtures with intent-less fabricated MFA challenges
+     ("Invalid cash-out OTP challenge"): 103 occurrences
+     -> a14-agent-cash-out, a14-otp-hardening, v1-agent-05, v1-commercial-accounting-01,
+        v1-commercial-decision-03b, v1-fee-runtime-wiring, v1-commission-*, v1-limit-*
+     Classification C/A: the accepted lifecycle requires a persisted cash_out_intents row bound
+     to an authenticated agent session; the suites were written before commit 1b95ba5.
+  B. Cash-to-Cash funding/claim without governed institutional context
+     ("Institutional financial context unavailable: UNATTRIBUTED_WALLET,..."): 121 occurrences
+     -> access, a16, a17, v1-agent-mfa-api-01, v1-agent-mobile-idempotency-persistence-01,
+        v1-commercial-decision-03c, v1-limit-04
+     Classification A: supported behaviour that needs the canonical fixture (A15 shows it works:
+     23/23 after migration).
+  C. Cash-to-Cash claim challenge binding
+     ("Claim authorization context unavailable"): the claim requires an MFA challenge bound to
+     the transfer via cash_to_cash_claim_challenge_bindings, produced only by the real
+     AgentDeskOtpService.issue({ purpose: 'CASH_TO_CASH_CLAIM' }). Fabricating the binding is
+     prohibited, so a16/a17 must migrate onto test/support/desk-otp-fixture.ts.
+  D. No failure in this run was caused by the Stage 2 funding-policy fail-closed default;
+     funding that reaches the policy authority in these suites is already blocked earlier by
+     (A) or (B).
+
+This group is RED. The mission's final acceptance criteria 4, 5 and 14 are therefore not met.

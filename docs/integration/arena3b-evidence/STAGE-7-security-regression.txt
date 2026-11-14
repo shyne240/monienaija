@@ -1,0 +1,26 @@
+=== ARENA 3B Stage 7 — protected authority and institutional security regression ===
+tested commit: fd3e4cd (protected-authority code unchanged by this mission)
+command: NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
+         npx jest --config jest.integration.config.js \
+         test/protected-authority-boundary.integration.spec.ts \
+         test/wallet-ownership-resolution.integration.spec.ts \
+         test/institution-foundation.integration.spec.ts \
+         test/institution-financial-ownership.integration.spec.ts --runInBand
+
+Test Suites: 4 passed, 4 total
+Tests:       76 passed, 76 total
+Exit:        0
+
+The four original reproductions remain rejected:
+  1. direct-SQL checker approval forgery                                  -> rejected
+  2. checker forgery with ordinary non-owner DML credentials              -> rejected
+  3. MFA checker impersonation by mutating the session hash               -> rejected
+  4. forged wallet-ownership approval by runtime SQL                      -> rejected
+
+Additional proof from test/governed-financial-fixture.integration.spec.ts (12/12):
+  - UPDATE of a protected approval to APPROVED without protected evidence -> refused by guard
+  - DELETE of protected_authority.checker_decisions                       -> refused (immutable)
+  - zero checker decisions exist without their approval row               -> asserted
+No trigger, RLS policy, ownership guard, role grant or protected function was weakened,
+disabled or bypassed during this mission. Role separation (migrator/runtime/authority) is
+unchanged and still exercised by the boundary suite against real provisioned logins.
