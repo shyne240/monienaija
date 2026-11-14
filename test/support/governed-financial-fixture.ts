@@ -664,6 +664,9 @@ export class GovernedFinancialFixture {
     options: {
       allowNegativeBalance?: boolean;
       purpose?: 'SETTLEMENT' | 'SUSPENSE' | 'CLEARING';
+      /** Explicit control-account code (e.g. the payment settlement asset the services resolve). */
+      code?: string;
+      name?: string;
     } = {},
   ): Promise<string> {
     const cached = this.settlementAccounts.get(institutionId);
@@ -674,8 +677,8 @@ export class GovernedFinancialFixture {
       .post(this.url(`/internal/institutions/${institutionId}/ledger-accounts`))
       .set(this.bearer(operator))
       .send({
-        code: `GF-SETTLE-${suffix}`,
-        name: `Governed fixture settlement ${suffix}`,
+        code: options.code ?? `GF-SETTLE-${suffix}`,
+        name: options.name ?? `Governed fixture settlement ${suffix}`,
         accountType: 'ASSET',
         normalBalance: 'DEBIT',
         currency: 'NGN',
