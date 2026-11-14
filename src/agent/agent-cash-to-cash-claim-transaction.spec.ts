@@ -31,6 +31,21 @@ function harness(verified: boolean) {
       if (sql.includes('FROM customers')) return Promise.resolve([customer]);
       if (sql.includes('cash_to_cash_claim_challenge_bindings'))
         return Promise.resolve([{ destination_hash: 'a'.repeat(64) }]);
+      // Stage 4 (transaction-bound claim authority): the claimant Agent must itself be ACTIVE and
+      // hold a live class whose `applicable_services` covers CASH_TO_CASH, re-read inside the
+      // transaction. Without an answer here the claim is refused before posting is attempted.
+      if (sql.includes('LEFT JOIN agent_classes'))
+        return Promise.resolve([
+          {
+            status: 'ACTIVE',
+            deleted_at: null,
+            agent_class_id: 'class-id',
+            class_id: 'class-id',
+            class_active: true,
+            class_deleted_at: null,
+            applicable_services: ['CASH_TO_CASH'],
+          },
+        ]);
       return Promise.resolve([]);
     }),
   };
