@@ -40,7 +40,6 @@ import { AgentLifecycleService } from '../src/agent/agent-lifecycle.service';
 import { AgentAuthenticationService } from '../src/agent-authentication/agent-authentication.service';
 import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-authentication.enums';
 import { AgentStatus } from '../src/agent/agent.enums';
-import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
 import { CustomerTransactionPinService } from '../src/customer/customer-transaction-pin.service';
 import {
   createIntegrationDataSource,
@@ -92,7 +91,6 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
   let appService: AgentApplicationService;
   let lifecycleService: AgentLifecycleService;
   let pinService: AgentAuthenticationService;
-  let mfaService: MfaExecutionService;
   let customerPinService: CustomerTransactionPinService;
   let systemLedgerAccountId: string;
 
@@ -141,7 +139,6 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
     appService = app.get(AgentApplicationService);
     lifecycleService = app.get(AgentLifecycleService);
     pinService = app.get(AgentAuthenticationService);
-    mfaService = app.get(MfaExecutionService);
     customerPinService = app.get(CustomerTransactionPinService);
   }, 180000);
 
