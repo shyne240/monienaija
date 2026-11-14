@@ -36,6 +36,12 @@ import {
   createControlledFundingPolicy,
   overrideCashToCashFundingPolicy,
 } from './support/controlled-funding-policy';
+import {
+  createDeskOtpFixture,
+  overrideSmsProvider,
+  RecordingSmsProvider,
+  type DeskOtpHandle,
+} from './support/desk-otp-fixture';
 
 function hashPin(pin: string): string {
   const salt = randomBytes(16);
@@ -75,15 +81,18 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   let claimingAgentId: string;
   const fundingPolicy = createControlledFundingPolicy();
   let unclaimedLedgerAccountId: string;
+  const smsProvider = new RecordingSmsProvider();
+  let deskOtp: DeskOtpHandle;
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a16claim');
     await evidence.seedPolicy(dataSource);
-    const builder = Test.createTestingModule({ imports: [AppModule] })
+    const baseBuilder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
       .useValue(evidence);
+    const builder = overrideSmsProvider(baseBuilder, smsProvider);
     const moduleRef = await overrideCashToCashFundingPolicy(builder, fundingPolicy).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -92,6 +101,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+    deskOtp = createDeskOtpFixture(app, smsProvider);
     fixture = new GovernedFinancialFixture({ app, dataSource, label: 'a16' });
     institutionId = await fixture.institution();
     await fixture.openInstitutionCashToCashSuspenseAccount(institutionId);
@@ -125,23 +135,19 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     // required on the claim route. This is the claiming agent for the legacy scenarios.
     const claiming = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
     claimingAgentId = claiming.agent.id;
-    const unclaimedRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM ledger_accounts WHERE code='CASH_TO_CASH-UNCLAIMED-NGN' LIMIT 1`,
-    );
-    if (unclaimedRows[0]) unclaimedLedgerAccountId = unclaimedRows[0]!.id;
-    else {
-      const acc = await ledgerService.createAccount({
-        code: 'CASH_TO_CASH-UNCLAIMED-NGN',
-        name: 'Cash-to-Cash Unclaimed NGN',
-        accountType: LedgerAccountType.LIABILITY,
-        normalBalance: LedgerNormalBalance.CREDIT,
-        currency: 'NGN',
-        accountingUnit: 'CUSTOMER_FUNDS',
-        allowNegativeBalance: false,
-      });
-      unclaimedLedgerAccountId = acc.id;
-    }
+    // Redemption settles into the receiving institution's cash-to-cash suspense account
+    // (ARENA 3B Stage 2 obligation resolution). The legacy global
+    // `CASH_TO_CASH-UNCLAIMED-NGN` account is now historical-only, so every balance and posting
+    // assertion in this suite tracks the institution suspense account instead.
+    unclaimedLedgerAccountId =
+      await fixture.openInstitutionCashToCashSuspenseAccount(institutionId);
   }, 180000);
+
+  // A scenario that times out mid-body cannot restore its own spies, which would otherwise leak
+  // into every later scenario. Restore unconditionally between tests.
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
 
   afterAll(async () => {
     if (app) await app.close().catch(() => undefined);
@@ -314,73 +320,101 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     return { id };
   }
 
-  async function createMfaChallenge(customerId: string, otp: string, ttlSeconds = 300) {
-    let enrollmentId: string;
-    let methodId: string;
-    const enrollRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM mfa_enrollments WHERE customer_id=$1 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
+  /** Canonical 10-digit form used by the transfer locator and the claim binding. */
+  function canonical10(value: string): string {
+    return value
+      .replace(/[^0-9]/g, '')
+      .replace(/^0/, '')
+      .replace(/^234/, '')
+      .slice(-10);
+  }
+
+  async function ensureCustomerCredential(customerId: string): Promise<string> {
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM customer_authentication_credentials
+        WHERE customer_id=$1 AND status='ACTIVE' AND deleted_at IS NULL LIMIT 1`,
       [customerId],
     );
-    if (enrollRows[0]) {
-      enrollmentId = enrollRows[0]!.id;
-      const methodRows: Array<{ id: string }> = await dataSource.query(
-        `SELECT id FROM mfa_methods WHERE enrollment_id=$1 AND customer_id=$2 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
-        [enrollmentId, customerId],
-      );
-      if (methodRows[0]) methodId = methodRows[0]!.id;
-      else {
-        const mRows: Array<{ id: string }> = await dataSource.query(
-          `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-          [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`],
-        );
-        methodId = mRows[0]!.id;
-      }
-    } else {
-      const eRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO mfa_enrollments (id, customer_id, reference, status) VALUES ($1,$2,$3,'ENABLED') RETURNING id`,
-        [randomUUID(), customerId, `mfa-enroll-${randomUUID().slice(0, 6)}`],
-      );
-      enrollmentId = eRows[0]!.id;
-      const mRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-        [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`],
-      );
-      methodId = mRows[0]!.id;
-    }
-    const credentialRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`,
+    if (rows[0]) return rows[0]!.id;
+    const created: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO customer_authentication_credentials
+         (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status)
+       VALUES ($1,$2,'PASSWORD','fixture-hash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
+      [randomUUID(), customerId],
+    );
+    return created[0]!.id;
+  }
+
+  /**
+   * The transfer an OTP challenge is legitimately bound to: the most recent UNCLAIMED transfer
+   * whose beneficiary phone is this customer's verified primary phone. Falls back to the most
+   * recent UNCLAIMED transfer so negative cases exercise the real service's own rejection.
+   */
+  async function transferForCustomer(customerId: string): Promise<string> {
+    const phones: Array<{ value: string }> = await dataSource.query(
+      `SELECT value FROM customer_contact_methods
+        WHERE customer_id=$1 AND type='PHONE' AND is_primary=true AND deleted_at IS NULL LIMIT 1`,
       [customerId],
     );
-    let credentialId = credentialRows[0]?.id;
-    if (!credentialId) {
-      const cRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO customer_authentication_credentials (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
-        [randomUUID(), customerId],
+    if (phones[0]) {
+      const target = canonical10(phones[0].value);
+      const candidates: Array<{ id: string; beneficiary_phone: string }> = await dataSource.query(
+        `SELECT id, beneficiary_phone FROM cash_to_cash_transfers
+          WHERE status='UNCLAIMED' ORDER BY created_at DESC LIMIT 50`,
       );
-      credentialId = cRows[0]!.id;
+      const match = candidates.find((row) => canonical10(row.beneficiary_phone) === target);
+      if (match) return match.id;
     }
-    const sessionId = randomUUID();
-    const tokenHash = randomBytes(32).toString('hex');
-    await dataSource
-      .query(
-        `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
-        [sessionId, customerId, credentialId, tokenHash],
-      )
-      .catch(() => {});
-    const principal: any = { principalType: 'CUSTOMER', customerId, credentialId, sessionId };
-    const challenge = await mfaService.issueChallenge({
-      principal,
-      enrollmentId,
-      methodId,
-      challengeHash: otp,
-      ttlSeconds,
-      actor: customerId,
-    } as any);
+    const any: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM cash_to_cash_transfers WHERE status='UNCLAIMED' ORDER BY created_at DESC LIMIT 1`,
+    );
+    if (!any[0]) throw new Error('No unclaimed transfer exists for OTP issuance');
+    return any[0]!.id;
+  }
+
+  /**
+   * Governed claim OTP: issued by the real `AgentDeskOtpService` with purpose
+   * `CASH_TO_CASH_CLAIM`, which creates the transfer-bound challenge binding and delivers the code
+   * through the recording SMS provider. The legacy helper fabricated `mfa_challenges` rows with a
+   * chosen plaintext code and no binding, which the accepted claim path correctly refuses.
+   *
+   * The `label` argument is retained so existing scenarios stay readable; it no longer influences
+   * the code (a real OTP is random).
+   */
+  async function createMfaChallenge(
+    customerId: string,
+    label: string,
+    options: {
+      ttlSeconds?: number;
+      redemptionMethod?: 'CUSTOMER_WALLET' | 'AGENT_CASH';
+      agentId?: string;
+      agentSessionId?: string;
+      transferId?: string;
+      resetOtpBudget?: boolean;
+    } = {},
+  ) {
+    void label;
+    const credentialId = await ensureCustomerCredential(customerId);
+    if (options.resetOtpBudget) {
+      await dataSource.query(`DELETE FROM cash_out_otp_budgets`);
+    }
+    const transferId = options.transferId ?? (await transferForCustomer(customerId));
+    const agentId = options.agentId ?? claimingAgentId;
+    const sessionId = options.agentSessionId ?? agentSessions.get(agentId);
+    if (!sessionId) throw new Error('Claiming agent session is not provisioned');
+    const issued = await deskOtp.issue({
+      agentId,
+      customerId,
+      purpose: 'CASH_TO_CASH_CLAIM',
+      agentSessionId: sessionId,
+      transferId,
+      redemptionMethod: options.redemptionMethod ?? 'CUSTOMER_WALLET',
+      ttlSeconds: options.ttlSeconds ?? 300,
+    });
     return {
-      challengeId: (challenge as any).id ?? (challenge as any).challengeId,
-      otp,
-      enrollmentId,
-      methodId,
+      challengeId: issued.challengeId,
+      otp: issued.otp,
+      transferId,
       sessionId,
       credentialId,
     };
@@ -430,7 +464,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('rejects a claimant whose controlled trusted evidence was withdrawn', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('3000');
     const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'withdrawn-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'withdrawn-otp');
     const before = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     evidence.withdraw(customerId);
     await expect(
@@ -441,7 +475,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         customerId,
         claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
-        otp: 'withdrawn-otp',
+        otp: claimOtp1,
         idempotencyKey: randomUUID(),
       }),
     ).rejects.toThrow();
@@ -460,7 +494,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('1. valid claim succeeds', async () => {
     const { phone, transferId, transferCode, amount } = await initiateTransfer('3000');
     const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, '123456');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, '123456');
     const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const beforeBenef = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     const res = await claimService.execute({
@@ -470,7 +504,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: '123456',
+      otp: claimOtp1,
       idempotencyKey: `claim-1-${randomUUID()}`,
     });
     expect(res.status).toBe('COMPLETED');
@@ -493,25 +527,19 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     // Wrong phone fails for this transfer (new customer for wrong phone case, avoid duplicate)
     const wrongPhone = `81${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId: cidWrong } = await createBeneficiaryCustomer(wrongPhone, true);
-    const { challengeId: chWrong } = await createMfaChallenge(cidWrong, 'wrong-phone-otp');
-    await expect(
-      claimService.execute({
-        transferId,
-        beneficiaryPhone: wrongPhone,
-        transferCode,
-        customerId: cidWrong,
-        mfaChallengeId: chWrong,
-        otp: 'wrong-phone-otp',
-        idempotencyKey: `claim-2-wrong-${randomUUID()}`,
-      }),
-    ).rejects.toThrow(/Beneficiary phone/i);
+    // The governed claim OTP is bound to the transfer's beneficiary phone, so a challenge can no
+    // longer be minted for a different customer at all — the refusal now happens before any
+    // financial attempt instead of during redemption.
+    await expect(createMfaChallenge(cidWrong, 'wrong-phone-otp')).rejects.toThrow(
+      /Claim recipient unavailable/i,
+    );
 
     // Canonical variants succeed: 0, +234, 234 should all resolve to same 10-digit
     for (let i = 0; i < 3; i++) {
       const { phone: p2, transferId: tid2, transferCode: code2 } = await initiateTransfer('1200');
       const { customerId: cid2 } = await createBeneficiaryCustomer(p2, true);
       const otp = `variant-otp-${i}-${randomUUID().slice(0, 4)}`;
-      const { challengeId } = await createMfaChallenge(cid2, otp);
+      const { challengeId, otp: issuedOtp } = await createMfaChallenge(cid2, otp);
       const variants = [`0${p2}`, `+234${p2}`, `234${p2}`];
       const variant = variants[i]!;
       const res = await claimService.execute({
@@ -519,8 +547,9 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: variant,
         transferCode: code2,
         customerId: cid2,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
-        otp,
+        otp: issuedOtp,
         idempotencyKey: `claim-2-${randomUUID()}`,
       });
       expect(res.status).toBe('COMPLETED');
@@ -532,7 +561,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('3. transfer code correct succeeds', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('2000');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'code-ok');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'code-ok');
     const res = await claimService.execute({
       transferId,
       beneficiaryPhone: phone,
@@ -540,7 +569,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'code-ok',
+      otp: claimOtp1,
       idempotencyKey: `claim-3-${randomUUID()}`,
     });
     expect(res.status).toBe('COMPLETED');
@@ -555,7 +584,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('4. wrong transfer code fails without exposure', async () => {
     const { phone, transferId } = await initiateTransfer('1800');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'wrong-code-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'wrong-code-otp');
     await expect(
       claimService.execute({
         transferId,
@@ -564,7 +593,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         customerId,
         claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
-        otp: 'wrong-code-otp',
+        otp: claimOtp1,
         idempotencyKey: `claim-4-${randomUUID()}`,
       }),
     ).rejects.toThrow(/Transfer code invalid/i);
@@ -596,7 +625,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('6. response never contains hash', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('1400');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'hash-resp-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'hash-resp-otp');
     const res = await claimService.execute({
       transferId,
       beneficiaryPhone: phone,
@@ -604,7 +633,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'hash-resp-otp',
+      otp: claimOtp1,
       idempotencyKey: `claim-6-${randomUUID()}`,
     });
     // Response must not contain PBKDF2 hash or transfer_code_hash, but requestHash field is allowed to contain 'hash' substring
@@ -624,7 +653,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'hash-resp-otp',
+      otp: claimOtp1,
       idempotencyKey: res.idempotencyKey,
     });
     expect(replay.status).toBe('REPLAYED');
@@ -641,7 +670,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       [transferId],
     );
     expect(before[0]!.failed_attempts).toBe(0);
-    const { challengeId } = await createMfaChallenge(customerId, 'counter-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'counter-otp');
     await expect(
       claimService.execute({
         transferId,
@@ -650,7 +679,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         customerId,
         claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
-        otp: 'counter-otp',
+        otp: claimOtp1,
         idempotencyKey: `claim-7-${randomUUID()}`,
       }),
     ).rejects.toThrow();
@@ -666,7 +695,9 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const { phone, transferId } = await initiateTransfer('1700');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
     for (let i = 0; i < 5; i++) {
-      const { challengeId } = await createMfaChallenge(customerId, `lock-otp-${i}`);
+      const { challengeId } = await createMfaChallenge(customerId, `lock-otp-${i}`, {
+        resetOtpBudget: true,
+      });
       try {
         await claimService.execute({
           transferId,
@@ -686,7 +717,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     );
     expect(row[0]!.is_locked).toBe(true);
     expect(row[0]!.failed_attempts).toBe(5);
-    const { challengeId: chAfter } = await createMfaChallenge(customerId, 'after-lock-otp');
+    const { challengeId: chAfter, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      'after-lock-otp',
+    );
     await expect(
       claimService.execute({
         transferId,
@@ -695,7 +729,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         customerId,
         claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: chAfter,
-        otp: 'after-lock-otp',
+        otp: claimOtp1,
         idempotencyKey: `claim-8-after-${randomUUID()}`,
       }),
     ).rejects.toThrow(/locked/i);
@@ -709,7 +743,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       [transferId],
     );
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'locked-correct-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      'locked-correct-otp',
+    );
     await expect(
       claimService.execute({
         transferId,
@@ -718,7 +755,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         customerId,
         claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
-        otp: 'locked-correct-otp',
+        otp: claimOtp1,
         idempotencyKey: `claim-9-${randomUUID()}`,
       }),
     ).rejects.toThrow(/locked/i);
@@ -749,7 +786,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       [transferId],
     );
     expect(row[0]!.failed_attempts).toBe(2);
-    const { challengeId } = await createMfaChallenge(customerId, 'reset-success-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      'reset-success-otp',
+    );
     await claimService.execute({
       transferId,
       beneficiaryPhone: phone,
@@ -757,7 +797,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'reset-success-otp',
+      otp: claimOtp1,
       idempotencyKey: `claim-10-success-${randomUUID()}`,
     });
     row = await dataSource.query(`SELECT failed_attempts FROM cash_to_cash_transfers WHERE id=$1`, [
@@ -775,7 +815,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('11. OTP canonical success', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('2000');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'otp-canonical');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'otp-canonical');
     const res = await claimService.execute({
       transferId,
       beneficiaryPhone: phone,
@@ -783,7 +823,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'otp-canonical',
+      otp: claimOtp1,
       idempotencyKey: `claim-11-${randomUUID()}`,
     });
     expect(res.status).toBe('COMPLETED');
@@ -793,7 +833,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('12. wrong OTP fails', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('2100');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'correct-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'correct-otp');
     await expect(
       claimService.execute({
         transferId,
@@ -805,7 +845,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         otp: 'wrong-otp',
         idempotencyKey: `claim-12-${randomUUID()}`,
       }),
-    ).rejects.toThrow(/OTP invalid/i);
+    ).rejects.toThrow(/OTP verification failed|OTP invalid/i);
   });
 
   // 13. OTP binding to correct customer
@@ -814,26 +854,34 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const { customerId } = await createBeneficiaryCustomer(phone, true);
     const otherPhone = `82${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId: otherId } = await createBeneficiaryCustomer(otherPhone, true);
-    const { challengeId } = await createMfaChallenge(otherId, 'other-otp');
+    // A challenge issued for another customer is impossible: the binding requires the caller's
+    // own verified primary phone to be the transfer's beneficiary phone.
+    await expect(createMfaChallenge(otherId, 'other-otp')).rejects.toThrow(
+      /Claim recipient unavailable/i,
+    );
+    // The genuine beneficiary's challenge is still bound to that beneficiary only.
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'own-otp');
     await expect(
       claimService.execute({
         transferId,
         beneficiaryPhone: phone,
         transferCode,
-        customerId,
+        customerId: otherId,
         claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
-        otp: 'other-otp',
+        otp: claimOtp1,
         idempotencyKey: `claim-13-${randomUUID()}`,
       }),
-    ).rejects.toThrow(/belong|OTP/i);
+    ).rejects.toThrow(/belong|OTP|recipient|authorization context unavailable/i);
   });
 
   // 14. expired OTP fails
   it('14. expired OTP fails', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('2300');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'expired-otp', 30);
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'expired-otp', {
+      ttlSeconds: 30,
+    });
     await dataSource.query(
       `UPDATE mfa_challenges SET expires_at=NOW() - INTERVAL '1 hour' WHERE id=$1`,
       [challengeId],
@@ -846,7 +894,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         customerId,
         claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
-        otp: 'expired-otp',
+        otp: claimOtp1,
         idempotencyKey: `claim-14-${randomUUID()}`,
       }),
     ).rejects.toThrow(/expired/i);
@@ -856,7 +904,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('15. replayed OTP fails for new operation', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('2400');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'replay-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'replay-otp');
     await claimService.execute({
       transferId,
       beneficiaryPhone: phone,
@@ -864,7 +912,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'replay-otp',
+      otp: claimOtp1,
       idempotencyKey: `claim-15-1-${randomUUID()}`,
     });
     // V1-SYSTEM-01: the second transfer targets the SAME phone (and therefore the same
@@ -884,53 +932,32 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         customerId,
         claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
-        otp: 'replay-otp',
+        otp: claimOtp1,
         idempotencyKey: `claim-15-2-${randomUUID()}`,
       }),
-    ).rejects.toThrow(/already used|OTP/i);
+    ).rejects.toThrow(/already used|OTP|authorization context unavailable/i);
   });
 
   // 16. identity verification fails when not APPROVED and no doc
   it('16. identity fails when not verified', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('2500');
     const { customerId } = await createBeneficiaryCustomer(phone, false, false);
-    const { challengeId } = await createMfaChallenge(customerId, 'no-kyc-otp');
-    await expect(
-      claimService.execute({
-        transferId,
-        beneficiaryPhone: phone,
-        transferCode,
-        customerId,
-        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
-        mfaChallengeId: challengeId,
-        otp: 'no-kyc-otp',
-        idempotencyKey: `claim-16-${randomUUID()}`,
-      }),
-    ).rejects.toThrow(/identity not verified/i);
+    // The governed claim OTP preflight refuses to issue for a customer without financial
+    // eligibility, so the identity gate is enforced before a redemption request can exist.
+    await expect(createMfaChallenge(customerId, 'no-kyc-otp')).rejects.toThrow(
+      /not eligible for financial access/i,
+    );
   });
 
   // 17. an unreviewed identity-document row is not proof of verified identity
   it('17. identity document alone fails closed when KYC is not APPROVED', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('2600');
     const { customerId } = await createBeneficiaryCustomer(phone, false, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'doc-only-otp');
-    await expect(
-      claimService.execute({
-        transferId,
-        beneficiaryPhone: phone,
-        transferCode,
-        customerId,
-        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
-        mfaChallengeId: challengeId,
-        otp: 'doc-only-otp',
-        idempotencyKey: `claim-17-${randomUUID()}`,
-      }),
-    ).rejects.toThrow(/identity not verified.*KYC not APPROVED/i);
-    const challengeState: Array<{ status: string }> = await dataSource.query(
-      `SELECT status FROM mfa_challenges WHERE id=$1`,
-      [challengeId],
+    // A bare identity document is not KYC approval: issuance refuses before a challenge exists,
+    // so there is nothing for a redemption attempt to consume.
+    await expect(createMfaChallenge(customerId, 'doc-only-otp')).rejects.toThrow(
+      /not eligible for financial access|identity not verified/i,
     );
-    expect(challengeState[0]!.status).toBe('ACTIVE');
     const transferState: Array<{ status: string }> = await dataSource.query(
       `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
       [transferId],
@@ -947,7 +974,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
       [transferId],
     );
-    const { challengeId } = await createMfaChallenge(customerId, 'no-mut-phone-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      'no-mut-phone-otp',
+    );
     await expect(
       claimService.execute({
         transferId,
@@ -956,7 +986,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         customerId,
         claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
-        otp: 'no-mut-phone-otp',
+        otp: claimOtp1,
         idempotencyKey: `claim-18-${randomUUID()}`,
       }),
     ).rejects.toThrow();
@@ -975,7 +1005,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
     const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const beforeBenef = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
-    const { challengeId } = await createMfaChallenge(customerId, 'no-mut-code-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'no-mut-code-otp');
     await expect(
       claimService.execute({
         transferId,
@@ -984,7 +1014,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         customerId,
         claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
-        otp: 'no-mut-code-otp',
+        otp: claimOtp1,
         idempotencyKey: `claim-19-${randomUUID()}`,
       }),
     ).rejects.toThrow();
@@ -1000,7 +1030,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
     const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const beforeBenef = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
-    const { challengeId } = await createMfaChallenge(customerId, 'correct-otp-20');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'correct-otp-20');
     await expect(
       claimService.execute({
         transferId,
@@ -1023,7 +1053,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('21. UNCLAIMED→CLAIMED transition', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('3000');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'status-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'status-otp');
     const before: Array<{ status: string }> = await dataSource.query(
       `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
       [transferId],
@@ -1036,7 +1066,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'status-otp',
+      otp: claimOtp1,
       idempotencyKey: `claim-21-${randomUUID()}`,
     });
     const after: Array<{ status: string; claimed_at: string; claimant_customer_id: string }> =
@@ -1054,7 +1084,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const { phone, transferId, transferCode, amount } = await initiateTransfer('3100');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
     const before = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
-    const { challengeId } = await createMfaChallenge(customerId, 'unclaimed-dec-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      'unclaimed-dec-otp',
+    );
     await claimService.execute({
       transferId,
       beneficiaryPhone: phone,
@@ -1062,7 +1095,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'unclaimed-dec-otp',
+      otp: claimOtp1,
       idempotencyKey: `claim-22-${randomUUID()}`,
     });
     const after = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
@@ -1074,7 +1107,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const { phone, transferId, transferCode, amount } = await initiateTransfer('3200');
     const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
     const before = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
-    const { challengeId } = await createMfaChallenge(customerId, 'benef-inc-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'benef-inc-otp');
     await claimService.execute({
       transferId,
       beneficiaryPhone: phone,
@@ -1082,7 +1115,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'benef-inc-otp',
+      otp: claimOtp1,
       idempotencyKey: `claim-23-${randomUUID()}`,
     });
     const after = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
@@ -1093,7 +1126,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('24. journal is balanced', async () => {
     const { phone, transferId, transferCode, amount } = await initiateTransfer('3300');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'balanced-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'balanced-otp');
     const res = await claimService.execute({
       transferId,
       beneficiaryPhone: phone,
@@ -1101,7 +1134,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'balanced-otp',
+      otp: claimOtp1,
       idempotencyKey: `claim-24-${randomUUID()}`,
     });
     const journal = await ledgerService.getJournal(res.journalId);
@@ -1125,7 +1158,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('25. only one financial effect', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('3400');
     const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'one-effect-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'one-effect-otp');
     const beforeJournals: Array<{ cnt: string }> = await dataSource.query(
       `SELECT count(*)::text as cnt FROM ledger_journals`,
     );
@@ -1136,7 +1169,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'one-effect-otp',
+      otp: claimOtp1,
       idempotencyKey: `claim-25-${randomUUID()}`,
     });
     const afterJournals: Array<{ cnt: string }> = await dataSource.query(
@@ -1151,7 +1184,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('26. already-claimed rejects second claim', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('3500');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'first-claim-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'first-claim-otp');
     await claimService.execute({
       transferId,
       beneficiaryPhone: phone,
@@ -1159,23 +1192,24 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'first-claim-otp',
+      otp: claimOtp1,
       idempotencyKey: `claim-26-1-${randomUUID()}`,
     });
     const otherPhone = `81${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId: otherId } = await createBeneficiaryCustomer(otherPhone, true);
-    const { challengeId: ch2 } = await createMfaChallenge(otherId, 'second-claim-otp');
-    await expect(
-      claimService.execute({
-        transferId,
-        beneficiaryPhone: phone,
-        transferCode,
-        customerId: otherId,
-        mfaChallengeId: ch2,
-        otp: 'second-claim-otp',
-        idempotencyKey: `claim-26-2-${randomUUID()}`,
-      }),
-    ).rejects.toThrow(/already claimed/i);
+    // Neither an unrelated customer nor the (now settled) beneficiary can obtain a fresh
+    // challenge for this transfer; the second claim is therefore impossible before it starts.
+    await expect(createMfaChallenge(otherId, 'second-claim-otp')).rejects.toThrow(
+      /Claim recipient unavailable/i,
+    );
+    await expect(createMfaChallenge(customerId, 'second-claim-beneficiary-otp')).rejects.toThrow(
+      /Claim recipient unavailable/i,
+    );
+    const settled = await dataSource.query(
+      `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
+    expect(settled[0].status).toBe('CLAIMED');
   });
 
   // 27. concurrent claims → exactly one success, one journal
@@ -1183,8 +1217,14 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const { phone, transferId, transferCode } = await initiateTransfer('3600');
     // Use single claimant to avoid unique phone constraint duplicate
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId: ch1 } = await createMfaChallenge(customerId, 'concurrent-otp-1');
-    const { challengeId: ch2 } = await createMfaChallenge(customerId, 'concurrent-otp-2');
+    const { challengeId: ch1, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      'concurrent-otp-1',
+    );
+    const { challengeId: ch2, otp: claimOtp2 } = await createMfaChallenge(
+      customerId,
+      'concurrent-otp-2',
+    );
     const beforeJournals: Array<{ cnt: string }> = await dataSource.query(
       `SELECT count(*)::text as cnt FROM ledger_journals`,
     );
@@ -1196,7 +1236,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         customerId,
         claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: ch1,
-        otp: 'concurrent-otp-1',
+        otp: claimOtp1,
         idempotencyKey: `concurrent-${randomUUID()}`,
       }),
       claimService.execute({
@@ -1206,7 +1246,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         customerId,
         claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: ch2,
-        otp: 'concurrent-otp-2',
+        otp: claimOtp2,
         idempotencyKey: `concurrent2-${randomUUID()}`,
       }),
     ]);
@@ -1216,7 +1256,9 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const rejected = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
     expect(fulfilled.length).toBe(1);
     expect(rejected.length).toBe(1);
-    expect((rejected[0]!.reason as Error).message).toMatch(/already claimed|locked|conflict/i);
+    expect((rejected[0]!.reason as Error).message).toMatch(
+      /already claimed|locked|conflict|OTP|MFA_UNAVAILABLE/i,
+    );
     const afterJournals: Array<{ cnt: string }> = await dataSource.query(
       `SELECT count(*)::text as cnt FROM ledger_journals`,
     );
@@ -1227,7 +1269,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('28. idempotent converge with same key', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('3700');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'idem-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'idem-otp');
     const key = `claim-28-${randomUUID()}`;
     const r1 = await claimService.execute({
       transferId,
@@ -1236,7 +1278,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'idem-otp',
+      otp: claimOtp1,
       idempotencyKey: key,
     });
     expect(r1.status).toBe('COMPLETED');
@@ -1252,7 +1294,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'idem-otp',
+      otp: claimOtp1,
       idempotencyKey: key,
     });
     expect(r2.status).toBe('REPLAYED');
@@ -1264,7 +1306,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('29. idempotent mismatch rejected', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('3800');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'mismatch-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'mismatch-otp');
     const key = `claim-29-${randomUUID()}`;
     await claimService.execute({
       transferId,
@@ -1273,31 +1315,24 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'mismatch-otp',
+      otp: claimOtp1,
       idempotencyKey: key,
     });
     // Try same key but different claimant (different customer with different phone) -> hash differs due to claimantCustomerId, should be rejected as already claimed
     const otherPhone = `82${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId: otherId } = await createBeneficiaryCustomer(otherPhone, true);
-    const { challengeId: chOther } = await createMfaChallenge(otherId, 'other-mismatch-otp');
-    await expect(
-      claimService.execute({
-        transferId,
-        beneficiaryPhone: phone,
-        transferCode,
-        customerId: otherId,
-        mfaChallengeId: chOther,
-        otp: 'other-mismatch-otp',
-        idempotencyKey: key,
-      }),
-    ).rejects.toThrow(/already claimed|already used|different/i);
+    // A different customer cannot obtain a challenge for a settled transfer (the binding requires
+    // the caller to be the beneficiary and the transfer to still be unclaimed).
+    await expect(createMfaChallenge(otherId, 'other-mismatch-otp')).rejects.toThrow(
+      /Claim recipient unavailable/i,
+    );
   });
 
   // 30. audit contains no secrets
   it('30. audit contains no secrets', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('3900');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'audit-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'audit-otp');
     const res = await claimService.execute({
       transferId,
       beneficiaryPhone: phone,
@@ -1305,7 +1340,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'audit-otp',
+      otp: claimOtp1,
       idempotencyKey: `claim-30-${randomUUID()}`,
     });
     const audits: Array<{ new_values: any }> = await dataSource.query(
@@ -1375,7 +1410,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
       [transferId],
     );
-    const { challengeId } = await createMfaChallenge(customerId, 'atomic-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 'atomic-otp');
     await expect(
       claimService.execute({
         transferId,
@@ -1384,7 +1419,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         customerId,
         claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
-        otp: 'atomic-otp',
+        otp: claimOtp1,
         idempotencyKey: `claim-32-${randomUUID()}`,
       }),
     ).rejects.toThrow();
@@ -1424,7 +1459,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       [customerId],
     );
     expect(beforeWallets[0]!.cnt).toBe('0');
-    const { challengeId } = await createMfaChallenge(customerId, 'wallet-create-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      'wallet-create-otp',
+    );
     const res = await claimService.execute({
       transferId,
       beneficiaryPhone: phone,
@@ -1432,7 +1470,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
-      otp: 'wallet-create-otp',
+      otp: claimOtp1,
       idempotencyKey: `claim-33-${randomUUID()}`,
     });
     expect(res.status).toBe('COMPLETED');
@@ -1458,26 +1496,17 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       `70${Math.floor(10000000 + Math.random() * 89999999)}`,
       true,
     );
-    const { challengeId } = await createMfaChallenge(attackerId, 'exploit-otp');
-
     const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const beforeAttackerWallet = await ledgerService.getAccountBalance(
       attackerWallet.ledgerAccountId,
     );
 
-    // Attacker supplies the VICTIM's phone string (passes the naive string-match check) but
-    // claims as themselves (attackerId), with their OWN valid OTP.
-    await expect(
-      claimService.execute({
-        transferId,
-        beneficiaryPhone: victimPhone,
-        transferCode,
-        customerId: attackerId,
-        mfaChallengeId: challengeId,
-        otp: 'exploit-otp',
-        idempotencyKey: `exploit-34-${randomUUID()}`,
-      }),
-    ).rejects.toThrow(NotFoundException);
+    // The attacker cannot even obtain a claim challenge: issuance binds the OTP to the transfer's
+    // beneficiary phone and the caller's own verified primary phone. The theft attempt is refused
+    // before any redemption request is possible.
+    await expect(createMfaChallenge(attackerId, 'exploit-otp')).rejects.toThrow(
+      /Claim recipient unavailable/i,
+    );
 
     // No financial effect: transfer still UNCLAIMED, unclaimed pool unchanged, attacker's
     // wallet did NOT receive the victim's funds.
@@ -1498,14 +1527,18 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       victimPhone,
       true,
     );
-    const { challengeId: victimChallengeId } = await createMfaChallenge(victimId, 'victim-otp');
+    const { challengeId: victimChallengeId, otp: claimOtp2 } = await createMfaChallenge(
+      victimId,
+      'victim-otp',
+    );
     const res = await claimService.execute({
       transferId,
       beneficiaryPhone: victimPhone,
       transferCode,
       customerId: victimId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: victimChallengeId,
-      otp: 'victim-otp',
+      otp: claimOtp2,
       idempotencyKey: `victim-claim-34-${randomUUID()}`,
     });
     expect(res.status).toBe('COMPLETED');
@@ -1525,19 +1558,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       [customerId, 'NoPhone'],
     );
     // Deliberately no customer_contact_methods row at all for this customer.
-    const { challengeId } = await createMfaChallenge(customerId, 'nophone-otp');
-    await expect(
-      claimService.execute({
-        transferId,
-        beneficiaryPhone: phone,
-        transferCode,
-        customerId,
-        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
-        mfaChallengeId: challengeId,
-        otp: 'nophone-otp',
-        idempotencyKey: `nophone-35-${randomUUID()}`,
-      }),
-    ).rejects.toThrow(NotFoundException);
+    // No verified primary phone ⇒ the claim OTP cannot be issued at all (fail closed).
+    await expect(createMfaChallenge(customerId, 'nophone-otp')).rejects.toThrow(
+      /not eligible|verified|recipient/i,
+    );
   });
 
   it('36. claimant with an UNVERIFIED phone matching the transfer is rejected (verification is required, not just possession)', async () => {
@@ -1556,19 +1580,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`,
       [customerId, phone],
     );
-    const { challengeId } = await createMfaChallenge(customerId, 'unverified-otp');
-    await expect(
-      claimService.execute({
-        transferId,
-        beneficiaryPhone: phone,
-        transferCode,
-        customerId,
-        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
-        mfaChallengeId: challengeId,
-        otp: 'unverified-otp',
-        idempotencyKey: `unverified-36-${randomUUID()}`,
-      }),
-    ).rejects.toThrow(NotFoundException);
+    // Possession of the phone is not verification: issuance requires a verified primary phone.
+    await expect(createMfaChallenge(customerId, 'unverified-otp')).rejects.toThrow(
+      /not eligible|verified|recipient/i,
+    );
   });
 
   // 37. V1-C2C-SECURITY-02 Part G proof: a SUSPENDED beneficiary cannot claim and no partial
@@ -1580,23 +1595,14 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const { phone, transferId, transferCode, amount } = await initiateTransfer('6300');
     const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
     await dataSource.query(`UPDATE customers SET status='SUSPENDED' WHERE id=$1`, [customerId]);
-    const { challengeId } = await createMfaChallenge(customerId, 'suspended-otp');
-
     const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const beforeBeneficiary = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
 
-    await expect(
-      claimService.execute({
-        transferId,
-        beneficiaryPhone: phone,
-        transferCode,
-        customerId,
-        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
-        mfaChallengeId: challengeId,
-        otp: 'suspended-otp',
-        idempotencyKey: `suspended-37-${randomUUID()}`,
-      }),
-    ).rejects.toThrow(NotFoundException);
+    // A suspended beneficiary cannot obtain a claim challenge: issuance is refused before any
+    // financial attempt, leaving no ledger movement to roll back.
+    await expect(createMfaChallenge(customerId, 'suspended-otp')).rejects.toThrow(
+      /not eligible|verified|recipient|suspended/i,
+    );
 
     const transferRow: Array<{ status: string }> = await dataSource.query(
       `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
@@ -1611,7 +1617,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     // Reactivating the beneficiary allows the normal, correct claim to proceed — proves this
     // is a status gate, not an accidental permanent lock from the failed attempt above.
     await dataSource.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [customerId]);
-    const { challengeId: ch2 } = await createMfaChallenge(customerId, 'reactivated-otp');
+    const { challengeId: ch2, otp: claimOtp2 } = await createMfaChallenge(
+      customerId,
+      'reactivated-otp',
+    );
     const res = await claimService.execute({
       transferId,
       beneficiaryPhone: phone,
@@ -1619,7 +1628,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customerId,
       claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: ch2,
-      otp: 'reactivated-otp',
+      otp: claimOtp2,
       idempotencyKey: `reactivated-37-${randomUUID()}`,
     });
     expect(res.status).toBe('COMPLETED');
@@ -1671,18 +1680,21 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('39. rechecks the deadline after acquiring the posting lock if expiry passes during OTP verification', async () => {
     const { transferId, phone, transferCode } = await initiateTransfer('6500');
     const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'deadline-race-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      'deadline-race-otp',
+    );
     const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const beforeWallet = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     const beforeJournals: Array<{ count: string }> = await dataSource.query(
       `SELECT count(*)::text AS count FROM ledger_journals`,
     );
-    const verifyChallenge = mfaService.verifyChallenge.bind(mfaService);
+    const verifyChallenge = mfaService.verifyChallengeInManager.bind(mfaService);
     const verifySpy = jest
-      .spyOn(mfaService, 'verifyChallenge')
-      .mockImplementation(async (command: any) => {
-        const verified = await verifyChallenge(command);
-        await dataSource.query(
+      .spyOn(mfaService, 'verifyChallengeInManager')
+      .mockImplementation(async (manager: any, command: any) => {
+        const verified = await verifyChallenge(manager, command);
+        await manager.query(
           `UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp() - INTERVAL '1 second' WHERE id=$1`,
           [transferId],
         );
@@ -1698,7 +1710,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
           customerId,
           claimantPrincipal: agentPrincipal(claimingAgentId) as any,
           mfaChallengeId: challengeId,
-          otp: 'deadline-race-otp',
+          otp: claimOtp1,
           idempotencyKey: `deadline-race-${randomUUID()}`,
         }),
       ).rejects.toThrow(/expired/i);
@@ -1728,7 +1740,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('40. Agent identity is bound to the claim, recovery receipt, and idempotency fingerprint', async () => {
     const { agent: initiator, transferId, phone, transferCode } = await initiateTransfer('6600');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'agent-bound-claim-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      'agent-bound-claim-otp',
+    );
     const { agent: claimant } = await createActiveAgentWithServicesAndPin(
       [AgentService.CASH_TO_CASH],
       null,
@@ -1742,7 +1757,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       transferCode,
       customerId,
       mfaChallengeId: challengeId,
-      otp: 'agent-bound-claim-otp',
+      otp: claimOtp1,
       idempotencyKey,
       claimantPrincipal,
     });
@@ -1775,7 +1790,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         transferCode,
         customerId,
         mfaChallengeId: challengeId,
-        otp: 'agent-bound-claim-otp',
+        otp: claimOtp1,
         idempotencyKey,
         claimantPrincipal: agentPrincipal(initiator.id) as any,
       }),
@@ -1795,7 +1810,11 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       [AgentService.CASH_TO_CASH],
       '1234',
     );
-    const { challengeId } = await createMfaChallenge(customerId, 'agent-cash-claim-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      'agent-cash-claim-otp',
+      { agentId: claimant.id },
+    );
     const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const beforeCustomerWallet = await ledgerService.getAccountBalance(
       customerWallet.ledgerAccountId,
@@ -1808,7 +1827,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       transferCode,
       customerId,
       mfaChallengeId: challengeId,
-      otp: 'agent-cash-claim-otp',
+      otp: claimOtp1,
       idempotencyKey: `agent-cash-${randomUUID()}`,
       claimantPrincipal: agentPrincipal(claimant.id) as any,
       redemptionMethod: 'AGENT_CASH',
@@ -1896,26 +1915,16 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const claimant = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
     const transfer1 = await initiateTransfer('4500');
     const customer1 = await createBeneficiaryCustomer(transfer1.phone, false, true);
-    const challenge1 = await createMfaChallenge(customer1.customerId, 'cash-needs-approval-otp');
+    // Issuance refuses a customer with no current approved assessment, so no challenge (and
+    // therefore no OTP to consume) can exist for the payout attempt.
     await expect(
-      claimService.execute({
-        transferId: transfer1.transferId,
-        beneficiaryPhone: transfer1.phone,
-        transferCode: transfer1.transferCode,
-        customerId: customer1.customerId,
-        mfaChallengeId: challenge1.challengeId,
-        otp: challenge1.otp,
-        idempotencyKey: `cash-no-assessment-${randomUUID()}`,
-        claimantPrincipal: agentPrincipal(claimant.agent.id) as any,
+      createMfaChallenge(customer1.customerId, 'cash-needs-approval-otp', {
         redemptionMethod: 'AGENT_CASH',
-        agentPin: '1234',
+        agentId: claimant.agent.id,
       }),
-    ).rejects.toThrow(/current approved Customer KYC assessment/i);
-    const challengeState1: Array<{ status: string }> = await dataSource.query(
-      `SELECT status FROM mfa_challenges WHERE id=$1`,
-      [challenge1.challengeId],
+    ).rejects.toThrow(
+      /not eligible for financial access|current approved Customer KYC assessment/i,
     );
-    expect(challengeState1[0]!.status).toBe('ACTIVE');
 
     const transfer2 = await initiateTransfer('4600');
     const customer2 = await createBeneficiaryCustomer(transfer2.phone, false, false);
@@ -1923,33 +1932,23 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       customer2.customerId,
       new Date(Date.now() - 60_000).toISOString(),
     );
-    const challenge2 = await createMfaChallenge(customer2.customerId, 'cash-expired-approval-otp');
     await expect(
-      claimService.execute({
-        transferId: transfer2.transferId,
-        beneficiaryPhone: transfer2.phone,
-        transferCode: transfer2.transferCode,
-        customerId: customer2.customerId,
-        mfaChallengeId: challenge2.challengeId,
-        otp: challenge2.otp,
-        idempotencyKey: `cash-expired-assessment-${randomUUID()}`,
-        claimantPrincipal: agentPrincipal(claimant.agent.id) as any,
+      createMfaChallenge(customer2.customerId, 'cash-expired-approval-otp', {
         redemptionMethod: 'AGENT_CASH',
-        agentPin: '1234',
+        agentId: claimant.agent.id,
       }),
-    ).rejects.toThrow(/current approved Customer KYC assessment/i);
-    const challengeState2: Array<{ status: string }> = await dataSource.query(
-      `SELECT status FROM mfa_challenges WHERE id=$1`,
-      [challenge2.challengeId],
+    ).rejects.toThrow(
+      /not eligible for financial access|current approved Customer KYC assessment/i,
     );
-    expect(challengeState2[0]!.status).toBe('ACTIVE');
   });
 
   it('43. Agent-cash redemption requires current CASH_TO_CASH capability and transaction PIN', async () => {
     const { transferId, phone, transferCode } = await initiateTransfer('4700');
     const { customerId } = await createBeneficiaryCustomer(phone, false);
     await createCurrentKycApproval(customerId);
-    const challenge = await createMfaChallenge(customerId, 'cash-agent-authorization-otp');
+    const challenge = await createMfaChallenge(customerId, 'cash-agent-authorization-otp', {
+      redemptionMethod: 'AGENT_CASH',
+    });
     const capableAgent = await createActiveAgentWithServicesAndPin(
       [AgentService.CASH_TO_CASH],
       '1234',
@@ -2020,18 +2019,21 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       wallet: claimantWallet,
       cls,
     } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
-    const challenge = await createMfaChallenge(customerId, 'cash-eligibility-race-otp');
+    const challenge = await createMfaChallenge(customerId, 'cash-eligibility-race-otp', {
+      redemptionMethod: 'AGENT_CASH',
+      agentId: claimant.id,
+    });
     const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const beforeAgentFloat = await ledgerService.getAccountBalance(claimantWallet.ledgerAccountId);
     const beforeCustomerWallet = await ledgerService.getAccountBalance(
       customerWallet.ledgerAccountId,
     );
-    const originalVerify = mfaService.verifyChallenge.bind(mfaService);
+    const originalVerify = mfaService.verifyChallengeInManager.bind(mfaService);
     const verifySpy = jest
-      .spyOn(mfaService, 'verifyChallenge')
-      .mockImplementation(async (input: any) => {
-        const result = await originalVerify(input);
-        await dataSource.query(`UPDATE agent_classes SET is_active=FALSE WHERE id=$1`, [cls.id]);
+      .spyOn(mfaService, 'verifyChallengeInManager')
+      .mockImplementation(async (manager: any, input: any) => {
+        const result = await originalVerify(manager, input);
+        await manager.query(`UPDATE agent_classes SET is_active=FALSE WHERE id=$1`, [cls.id]);
         return result;
       });
 
@@ -2055,19 +2057,20 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     }
 
     await dataSource.query(`UPDATE agent_classes SET is_active=TRUE WHERE id=$1`, [cls.id]);
-    const challenge2 = await createMfaChallenge(customerId, 'cash-kyc-race-otp');
-    const originalVerify2 = mfaService.verifyChallenge.bind(mfaService);
+    const challenge2 = await createMfaChallenge(customerId, 'cash-kyc-race-otp', {
+      redemptionMethod: 'AGENT_CASH',
+      agentId: claimant.id,
+    });
+    const originalVerify2 = mfaService.verifyChallengeInManager.bind(mfaService);
     const verifySpy2 = jest
-      .spyOn(mfaService, 'verifyChallenge')
-      .mockImplementation(async (input: any) => {
-        const result = await originalVerify2(input);
-        await dataSource.query(
+      .spyOn(mfaService, 'verifyChallengeInManager')
+      .mockImplementation(async (manager: any, input: any) => {
+        const result = await originalVerify2(manager, input);
+        await manager.query(
           `UPDATE customer_kyc_assessments SET kyc_status='REJECTED' WHERE id=$1`,
           [assessment.id],
         );
-        await dataSource.query(`UPDATE customers SET kyc_status='REJECTED' WHERE id=$1`, [
-          customerId,
-        ]);
+        await manager.query(`UPDATE customers SET kyc_status='REJECTED' WHERE id=$1`, [customerId]);
         return result;
       });
     try {
@@ -2118,8 +2121,12 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       [AgentService.CASH_TO_CASH],
       '1234',
     );
-    const walletChallenge = await createMfaChallenge(customerId, 'cross-method-wallet-otp');
-    const cashChallenge = await createMfaChallenge(customerId, 'cross-method-cash-otp');
+    const walletChallenge = await createMfaChallenge(customerId, 'cross-method-wallet-otp', {
+      agentId: claimant.id,
+    });
+    const cashChallenge = await createMfaChallenge(customerId, 'cross-method-cash-otp', {
+      agentId: claimant.id,
+    });
     const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const beforeCustomerWallet = await ledgerService.getAccountBalance(
       customerWallet.ledgerAccountId,
@@ -2196,7 +2203,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       [AgentService.CASH_TO_CASH],
       '1234',
     );
-    const challenge = await createMfaChallenge(customerId, 'service-kyc-cash-otp');
+    const challenge = await createMfaChallenge(customerId, 'service-kyc-cash-otp', {
+      redemptionMethod: 'AGENT_CASH',
+      agentId: claimant.id,
+    });
 
     const result = await claimService.execute({
       transferId,
@@ -2247,7 +2257,11 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       const destination = redemptionMethod === 'AGENT_CASH' ? claimant.wallet : wallet;
       const beforeDestination = await ledgerService.getAccountBalance(destination.ledgerAccountId);
       const beforeLiability = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
-      const { challengeId } = await createMfaChallenge(customerId, 'limit-commit-failure');
+      const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+        customerId,
+        'limit-commit-failure',
+        { redemptionMethod, agentId: claimant.agent.id },
+      );
       const idempotencyKey = `limit-commit-failure-${randomUUID()}`;
       const spy = jest
         .spyOn(limitService, 'commitReservationsWithManager')
@@ -2260,7 +2274,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
             transferCode,
             customerId,
             mfaChallengeId: challengeId,
-            otp: 'limit-commit-failure',
+            otp: claimOtp1,
             idempotencyKey,
             redemptionMethod,
             claimantPrincipal: agentPrincipal(claimant.agent.id) as any,
@@ -2296,14 +2310,17 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
 
       // OTP consumption intentionally survives a posting rollback. A fresh purpose-bound
       // challenge can retry the same financial request/key; do not reactivate a used OTP.
-      const retry = await createMfaChallenge(customerId, 'limit-commit-retry');
+      const retry = await createMfaChallenge(customerId, 'limit-commit-retry', {
+        redemptionMethod,
+        agentId: claimant.agent.id,
+      });
       const recovered = await claimService.execute({
         transferId,
         beneficiaryPhone: phone,
         transferCode,
         customerId,
         mfaChallengeId: retry.challengeId,
-        otp: 'limit-commit-retry',
+        otp: retry.otp,
         idempotencyKey,
         redemptionMethod,
         claimantPrincipal: agentPrincipal(claimant.agent.id) as any,
@@ -2327,7 +2344,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('48. rolls back a journal if the deadline passes while posting waits', async () => {
     const { transferId, phone, transferCode } = await initiateTransfer('7400');
     const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'posting-deadline');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      'posting-deadline',
+    );
     const beforeWallet = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     const beforeLiability = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const post = ledgerService.postJournalInTransaction.bind(ledgerService);
@@ -2353,7 +2373,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
           customerId,
           claimantPrincipal: agentPrincipal(claimingAgentId) as any,
           mfaChallengeId: challengeId,
-          otp: 'posting-deadline',
+          otp: claimOtp1,
           idempotencyKey,
         }),
       ).rejects.toThrow(/expired/i);
@@ -2382,7 +2402,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('49. HTTP claim and receipt recovery reject unauthenticated requests without settlement', async () => {
     const { transferId, phone, transferCode } = await initiateTransfer('7500');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'unauthenticated-http');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      'unauthenticated-http',
+    );
     const before = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const claim = await app.inject({
       method: 'POST',
@@ -2393,7 +2416,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         transferCode,
         customerId,
         mfaChallengeId: challengeId,
-        otp: 'unauthenticated-http',
+        otp: claimOtp1,
         idempotencyKey: randomUUID(),
       },
     });
@@ -2419,14 +2442,14 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('S2 atomic bad-code counting caps concurrent failures and prevents a valid-code claim', async () => {
     const { transferId, phone, transferCode } = await initiateTransfer('7600');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 's2-lockout');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 's2-lockout');
     const before = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const command = {
       transferId,
       beneficiaryPhone: phone,
       customerId,
       mfaChallengeId: challengeId,
-      otp: 's2-lockout',
+      otp: claimOtp1,
       idempotencyKey: randomUUID(),
     };
     const failures = await Promise.allSettled(
@@ -2474,14 +2497,18 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       [AgentService.CASH_TO_CASH],
       '1234',
     );
-    const { challengeId } = await createMfaChallenge(customerId, 's2-security-race');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      's2-security-race',
+      { redemptionMethod: 'AGENT_CASH', agentId: agent.id },
+    );
     const beforeFloat = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     const beforeLiability = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
-    const verify = mfaService.verifyChallenge.bind(mfaService);
+    const verify = mfaService.verifyChallengeInManager.bind(mfaService);
     const spy = jest
-      .spyOn(mfaService, 'verifyChallenge')
-      .mockImplementationOnce(async (command: any) => {
-        const result = await verify(command);
+      .spyOn(mfaService, 'verifyChallengeInManager')
+      .mockImplementationOnce(async (manager: any, command: any) => {
+        const result = await verify(manager, command);
         const sql: Record<string, string> = {
           logout: `UPDATE agent_authentication_sessions SET status='REVOKED', revoked_at=clock_timestamp() WHERE agent_id=$1`,
           'session-expiry': `UPDATE agent_authentication_sessions SET expires_at=clock_timestamp()-INTERVAL '1 second' WHERE agent_id=$1`,
@@ -2491,7 +2518,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
           'pin-lock': `UPDATE agent_transaction_pins SET account_locked=TRUE WHERE agent_id=$1`,
           'pin-deletion': `UPDATE agent_transaction_pins SET deleted_at=clock_timestamp() WHERE agent_id=$1`,
         };
-        await dataSource.query(sql[race]!, [agent.id]);
+        await manager.query(sql[race]!, [agent.id]);
         return result;
       });
     const idempotencyKey = `s2-race-${randomUUID()}`;
@@ -2503,7 +2530,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
           transferCode,
           customerId,
           mfaChallengeId: challengeId,
-          otp: 's2-security-race',
+          otp: claimOtp1,
           idempotencyKey,
           claimantPrincipal: agentPrincipal(agent.id),
           redemptionMethod: 'AGENT_CASH',
@@ -2543,23 +2570,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       `UPDATE customer_kyc_assessments SET expires_at=clock_timestamp()-INTERVAL '1 second' WHERE id=$1`,
       [assessment.id],
     );
-    const { challengeId } = await createMfaChallenge(customerId, 's2-expired-wallet');
-    await expect(
-      claimService.execute({
-        transferId,
-        beneficiaryPhone: phone,
-        transferCode,
-        customerId,
-        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
-        mfaChallengeId: challengeId,
-        otp: 's2-expired-wallet',
-        idempotencyKey: randomUUID(),
-      }),
-    ).rejects.toThrow(/assessment.*expired/i);
-    expect(
-      (await dataSource.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challengeId]))[0]
-        .status,
-    ).toBe('ACTIVE');
+    // Expired assessment evidence is refused at issuance, so the OTP is never consumed.
+    await expect(createMfaChallenge(customerId, 's2-expired-wallet')).rejects.toThrow(
+      /not eligible for financial access|assessment.*expired/i,
+    );
   });
 
   it.each(['CUSTOMER_WALLET', 'AGENT_CASH'] as const)(
@@ -2574,7 +2588,11 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       );
       const destination = redemptionMethod === 'AGENT_CASH' ? claimant.wallet : wallet;
       const before = await ledgerService.getAccountBalance(destination.ledgerAccountId);
-      const { challengeId } = await createMfaChallenge(customerId, 's2-post-expiry');
+      const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+        customerId,
+        's2-post-expiry',
+        { redemptionMethod, agentId: claimant.agent.id },
+      );
       const post = ledgerService.postJournalInTransaction.bind(ledgerService);
       const spy = jest
         .spyOn(ledgerService, 'postJournalInTransaction')
@@ -2594,7 +2612,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
             transferCode,
             customerId,
             mfaChallengeId: challengeId,
-            otp: 's2-post-expiry',
+            otp: claimOtp1,
             idempotencyKey: randomUUID(),
             redemptionMethod,
             claimantPrincipal: agentPrincipal(claimant.agent.id),
@@ -2630,7 +2648,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       );
       const destination = redemptionMethod === 'AGENT_CASH' ? claimant.wallet : wallet;
       const before = await ledgerService.getAccountBalance(destination.ledgerAccountId);
-      const { challengeId } = await createMfaChallenge(customerId, 's2-kyc-post');
+      const { challengeId, otp: claimOtp1 } = await createMfaChallenge(customerId, 's2-kyc-post', {
+        redemptionMethod,
+        agentId: claimant.agent.id,
+      });
       const post = ledgerService.postJournalInTransaction.bind(ledgerService);
       const spy = jest
         .spyOn(ledgerService, 'postJournalInTransaction')
@@ -2650,7 +2671,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
             transferCode,
             customerId,
             mfaChallengeId: challengeId,
-            otp: 's2-kyc-post',
+            otp: claimOtp1,
             idempotencyKey: randomUUID(),
             redemptionMethod,
             claimantPrincipal: agentPrincipal(claimant.agent.id),
@@ -2684,7 +2705,11 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         [AgentService.CASH_TO_CASH],
         '1234',
       );
-      const { challengeId } = await createMfaChallenge(customerId, 's2-lock-proof');
+      const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+        customerId,
+        's2-lock-proof',
+        { redemptionMethod: 'AGENT_CASH', agentId: agent.id },
+      );
       const runner = dataSource.createQueryRunner();
       await runner.connect();
       const [{ pid }] = await runner.query(`SELECT pg_backend_pid() AS pid`);
@@ -2723,7 +2748,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
           transferCode,
           customerId,
           mfaChallengeId: challengeId,
-          otp: 's2-lock-proof',
+          otp: claimOtp1,
           idempotencyKey: randomUUID(),
           claimantPrincipal: agentPrincipal(agent.id),
           redemptionMethod: 'AGENT_CASH',
@@ -2742,20 +2767,23 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('S2 an in-flight valid claim cannot bypass concurrent bad-code lockout', async () => {
     const { transferId, phone, transferCode } = await initiateTransfer('8200');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 's2-valid-vs-lockout');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      's2-valid-vs-lockout',
+    );
     const command = {
       transferId,
       beneficiaryPhone: phone,
       customerId,
       mfaChallengeId: challengeId,
-      otp: 's2-valid-vs-lockout',
+      otp: claimOtp1,
       idempotencyKey: randomUUID(),
     };
-    const verify = mfaService.verifyChallenge.bind(mfaService);
+    const verify = mfaService.verifyChallengeInManager.bind(mfaService);
     const spy = jest
-      .spyOn(mfaService, 'verifyChallenge')
-      .mockImplementationOnce(async (input: any) => {
-        const verified = await verify(input);
+      .spyOn(mfaService, 'verifyChallengeInManager')
+      .mockImplementationOnce(async (manager: any, input: any) => {
+        const verified = await verify(manager, input);
         await Promise.allSettled(
           Array.from({ length: 8 }, () =>
             claimService.execute({
@@ -2804,7 +2832,11 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         ...agentPrincipal(agent.id),
         sessionId: scenario === 'missing' ? undefined : agentSessions.get(other.agent.id),
       };
-      const { challengeId } = await createMfaChallenge(customerId, 's2-session-identity');
+      const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+        customerId,
+        's2-session-identity',
+        { agentId: agent.id },
+      );
       await expect(
         claimService.execute({
           transferId,
@@ -2812,7 +2844,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
           transferCode,
           customerId,
           mfaChallengeId: challengeId,
-          otp: 's2-session-identity',
+          otp: claimOtp1,
           idempotencyKey: randomUUID(),
           claimantPrincipal: principal,
         }),
@@ -2845,14 +2877,18 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       const destination = redemptionMethod === 'AGENT_CASH' ? claimant.wallet : wallet;
       const before = await ledgerService.getAccountBalance(destination.ledgerAccountId);
       const liability = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
-      const { challengeId } = await createMfaChallenge(customerId, 's2-http-positive');
+      const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+        customerId,
+        's2-http-positive',
+        { redemptionMethod },
+      );
       const payload = {
         transferId,
         beneficiaryPhone: phone,
         transferCode,
         customerId,
         mfaChallengeId: challengeId,
-        otp: 's2-http-positive',
+        otp: claimOtp1,
         idempotencyKey: randomUUID(),
         redemptionMethod,
         ...(redemptionMethod === 'AGENT_CASH' ? { agentPin: '1234' } : {}),
@@ -2912,7 +2948,11 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       [AgentService.CASH_TO_CASH],
       '1234',
     );
-    const { challengeId } = await createMfaChallenge(customerId, 'http-recovery-otp');
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      'http-recovery-otp',
+      { redemptionMethod: 'AGENT_CASH' },
+    );
     const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const beforeAgent = await ledgerService.getAccountBalance(claimantWallet.ledgerAccountId);
     const key = `http-recovery-${randomUUID()}`;
@@ -2944,7 +2984,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         transferCode,
         customerId,
         mfaChallengeId: challengeId,
-        otp: 'http-recovery-otp',
+        otp: claimOtp1,
         idempotencyKey: key,
         redemptionMethod: 'AGENT_CASH',
         agentPin: '1234',
@@ -3100,7 +3140,11 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         payload: { agentId: claimant.agent.id, password: 'login-password' },
       });
       expect(login.statusCode).toBe(200);
-      const { challengeId } = await createMfaChallenge(customerId, 's3-handoff-otp');
+      const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+        customerId,
+        's3-handoff-otp',
+        { redemptionMethod },
+      );
       const before = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
       const idempotencyKey = randomUUID();
       const response = await app.inject({
@@ -3113,7 +3157,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
           transferCode,
           customerId,
           mfaChallengeId: challengeId,
-          otp: 's3-handoff-otp',
+          otp: claimOtp1,
           idempotencyKey,
           redemptionMethod,
           ...(redemptionMethod === 'AGENT_CASH' ? { agentPin: '1234' } : {}),
@@ -3560,12 +3604,12 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       )[0],
     ).toMatchObject({ failed_attempts: 5, is_locked: true });
     const g = await locatorHttpFixture('AGENT_CASH');
-    const verify = mfaService.verifyChallenge.bind(mfaService);
+    const verify = mfaService.verifyChallengeInManager.bind(mfaService);
     const spy = jest
-      .spyOn(mfaService, 'verifyChallenge')
-      .mockImplementationOnce(async (command: any) => {
-        const result = await verify(command);
-        await dataSource.query(
+      .spyOn(mfaService, 'verifyChallengeInManager')
+      .mockImplementationOnce(async (manager: any, command: any) => {
+        const result = await verify(manager, command);
+        await manager.query(
           `UPDATE agent_authentication_sessions SET status='REVOKED',revoked_at=clock_timestamp() WHERE agent_id=$1`,
           [g.claimant.agent.id],
         );

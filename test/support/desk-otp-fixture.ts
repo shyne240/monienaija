@@ -56,7 +56,7 @@ export class RecordingSmsProvider implements NotificationProvider {
       const match = /(\d{6})/.exec(entry.message);
       if (match) return match[1]!;
     }
-    throw new Error('No delivered OTP code was recorded');
+    throw new Error(`No delivered OTP code was recorded (${this.sent.length} messages captured)`);
   }
 }
 
@@ -79,12 +79,21 @@ export interface DeskOtpCommand {
   ttlSeconds?: number;
 }
 
-export function createDeskOtpFixture(app: NestFastifyApplication): DeskOtpHandle {
+export function createDeskOtpFixture(
+  app: NestFastifyApplication,
+  boundProvider?: RecordingSmsProvider,
+): DeskOtpHandle {
   if (process.env.NODE_ENV !== 'test') {
     throw new Error('The recording OTP provider may only be used under NODE_ENV=test');
   }
-  const provider = new RecordingSmsProvider();
+  const provider = boundProvider ?? new RecordingSmsProvider();
   const service = app.get(AgentDeskOtpService);
+  const resolved = app.get<NotificationProvider>(NOTIFICATION_PROVIDER_TOKEN, { strict: false });
+  if (resolved !== provider) {
+    throw new Error(
+      `Recording SMS provider was not bound (resolved: ${resolved?.constructor?.name ?? 'none'})`,
+    );
+  }
   return {
     provider,
     async issue(command: DeskOtpCommand) {
