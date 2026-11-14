@@ -231,8 +231,12 @@ Observed on this implementation:
 - `test/migration-chain.integration.spec.ts` — **20/20** (fresh chain, historical
   0400→0401→0500→0501→0502 upgrade, historical reservations).
 - Workforce session, bootstrap, super-admin recovery, role-definition governance, notification
-  provider governance, agent funding, A5/A19/A8/A20 and B2F targeted suites passed (see the
-  turn's saved logs under `/home/user/authority-*.log` in the workspace; they are not committed).
+  provider governance, agent funding, A5/A19/A8/A20 and B2F targeted suites passed. Those interim
+  runs were **superseded** by the consolidated Phase 5 regression, whose committed summaries live
+  in [`phase5-evidence/`](phase5-evidence/) and are reported in
+  [INSTITUTIONAL-CONSOLIDATION-STATUS.md](INSTITUTIONAL-CONSOLIDATION-STATUS.md) §4: full
+  PostgreSQL suite 144/144 files and 2,604/2,604 tests, backend units 241 suites / 2,869 tests,
+  isolated KYC 9 suites / 98 tests.
 - Backend unit suite: **240 suites / 2,863 tests** passed.
 - `tsc --noEmit` passed; targeted Prettier/ESLint passed on the changed files.
 

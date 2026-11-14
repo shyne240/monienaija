@@ -1,3 +1,8 @@
+SUPERSEDED (historical record) — temporary 0401/0500 ordering probe against the ARENA 4
+source candidate. It is not part of the test suite and is not acceptance evidence.
+The supported ordering is covered by test/migration-chain.integration.spec.ts (20/20).
+Current status: INSTITUTIONAL-CONSOLIDATION-STATUS.md
+
 import { CreateInstitutionalFinancialOwnership1785753600401 } from './support/temporary-phase2-0401';
 import { createEmptyIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 

@@ -1,5 +1,11 @@
 # Institutional governance remediation — work in progress, NOT ACCEPTED
 
+> **SUPERSEDED — historical record.** This document describes a state that has since been
+> resolved and is retained for provenance only. It is **not** current acceptance evidence.
+> Current status and results: [INSTITUTIONAL-CONSOLIDATION-STATUS.md](INSTITUTIONAL-CONSOLIDATION-STATUS.md).
+> Phases 1–5 are accepted at the local/disposable-PostgreSQL level (Phase 1 `2cfeda6`,
+> Phase 5 `a52602d`). Do not cite this file as evidence of the current implementation.
+
 The last accepted application checkpoint remains `1acdf5085c77b3b299dea24f2b3eed614efeb8a1`. The preceding blocker documentation checkpoint is `d013ddf8dde5f8587620add22b3036119bfcf32c`. **No corrected Phase 1 checkpoint is accepted or released.** Phases 2 and 3, consolidated migration readiness and the full regression matrix remain NOT VERIFIED. This document and the attached patch preserve work; they do not integrate the patch into the application.
 
 ## Recovery and allocation

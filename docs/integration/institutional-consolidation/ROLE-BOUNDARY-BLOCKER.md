@@ -1,5 +1,11 @@
 # Institutional Phase 1 remains blocked: SQL checker forgery
 
+> **SUPERSEDED — historical record.** This document describes a state that has since been
+> resolved and is retained for provenance only. It is **not** current acceptance evidence.
+> Current status and results: [INSTITUTIONAL-CONSOLIDATION-STATUS.md](INSTITUTIONAL-CONSOLIDATION-STATUS.md).
+> Phases 1–5 are accepted at the local/disposable-PostgreSQL level (Phase 1 `2cfeda6`,
+> Phase 5 `a52602d`). Do not cite this file as evidence of the current implementation.
+
 The institutional application candidate is durably committed as **unaccepted WIP** `8290c9194d6a088be886c5c71404538c7e84c9bb`. The last accepted application baseline remains `1acdf5085c77b3b299dea24f2b3eed614efeb8a1`. The source candidate was recovered from the `11d745e` patch after another sandbox reset; the pre-existing dirty checkout was separately stashed locally (`661597e2fc6c961166ae18a1d90bbaa8b56583c6`). Local stashes are not assumed durable. No main merge, deployment, live provider calls or real financial transactions occurred.
 
 ## Confirmed blocker

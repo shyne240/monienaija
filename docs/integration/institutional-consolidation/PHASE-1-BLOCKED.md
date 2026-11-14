@@ -1,5 +1,11 @@
 # Institutional consolidation: Phase 1 blocked
 
+> **SUPERSEDED — historical record.** This document describes a state that has since been
+> resolved and is retained for provenance only. It is **not** current acceptance evidence.
+> Current status and results: [INSTITUTIONAL-CONSOLIDATION-STATUS.md](INSTITUTIONAL-CONSOLIDATION-STATUS.md).
+> Phases 1–5 are accepted at the local/disposable-PostgreSQL level (Phase 1 `2cfeda6`,
+> Phase 5 `a52602d`). Do not cite this file as evidence of the current implementation.
+
 ## Decision and preserved baseline
 
 **Do not integrate Phase 1 yet.** Independent real-PostgreSQL tests found approval-integrity and database-governance failures described below. The accepted application checkpoint `1acdf5085c77b3b299dea24f2b3eed614efeb8a1` is preserved; this report commit adds documentation and evidence only. Stages 2–5 were not started, and their acceptance and final consolidated regression are **NOT VERIFIED**.

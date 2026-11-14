@@ -1,5 +1,11 @@
 # Protected checker authority — WIP record (superseded by the implementation)
 
+> **SUPERSEDED — historical record.** This document describes a state that has since been
+> resolved and is retained for provenance only. It is **not** current acceptance evidence.
+> Current status and results: [INSTITUTIONAL-CONSOLIDATION-STATUS.md](INSTITUTIONAL-CONSOLIDATION-STATUS.md).
+> Phases 1–5 are accepted at the local/disposable-PostgreSQL level (Phase 1 `2cfeda6`,
+> Phase 5 `a52602d`). Do not cite this file as evidence of the current implementation.
+
 > **Status: implemented.** The boundary described here as missing is now implemented by migration
 > `1785753600501-ProtectedAuthorityBoundary`, the `ProtectedAuthorityModule`/authority credential,
 > and `scripts/provision-database-roles.js`. See `PROTECTED-AUTHORITY.md` for the accepted design,
