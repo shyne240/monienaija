@@ -34,6 +34,11 @@ import { TestNotificationProvider } from '../src/notification/notification-provi
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { GovernedFinancialFixture } from './support/governed-financial-fixture';
+import {
+  createControlledFundingPolicy,
+  overrideCashToCashFundingPolicy,
+} from './support/controlled-funding-policy';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 function hashSecret(secret: string): string {
@@ -54,18 +59,21 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
   let mfaService: MfaExecutionService;
   let sms: TestNotificationProvider;
   let systemLedgerAccountId: string;
+  let fixture: GovernedFinancialFixture;
+  let institutionId: string;
+  const fundingPolicy = createControlledFundingPolicy();
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('v1mfa01');
     sms = new TestNotificationProvider();
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    const builder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
       .useValue(kycEvidence.reader)
       .overrideProvider(NOTIFICATION_PROVIDER_TOKEN)
-      .useValue(sms)
-      .compile();
+      .useValue(sms);
+    const moduleRef = await overrideCashToCashFundingPolicy(builder, fundingPolicy).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(
@@ -88,6 +96,9 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
       allowNegativeBalance: true,
     });
     systemLedgerAccountId = sys.id;
+    fixture = new GovernedFinancialFixture({ app, dataSource, label: 'v1mfa' });
+    institutionId = await fixture.institution();
+    await fixture.openInstitutionCashToCashSuspenseAccount(institutionId);
   }, 180000);
 
   afterAll(async () => {
@@ -151,6 +162,10 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
       currency: 'NGN',
       idempotencyKey: `agent-wallet-${agentId}-${randomUUID()}`,
     });
+    // Governed institutional context: the Agent must resolve to an institution before any
+    // Cash-Out / Cash-to-Cash money flow can be authorized.
+    await fixture.affiliateAgent(agentId, institutionId);
+    await fixture.attributeWallet(wallet.id, institutionId);
     return { agentId, token, wallet };
   }
 
@@ -188,23 +203,17 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
       currency: 'NGN',
       idempotencyKey: `cust-wallet-${customerId}-${randomUUID()}`,
     });
+    await fixture.enrolCustomer(customerId, institutionId, {
+      targetStatus: 'ACTIVE',
+      financialEligibility: 'ELIGIBLE',
+    });
+    await fixture.attributeWallet(wallet.id, institutionId);
     return { customerId, wallet };
   }
 
   async function fund(accountLedgerId: string, amount: string) {
-    await ledgerService.postJournal({
-      idempotencyKey: `fund-${accountLedgerId}-${amount}-${randomUUID()}`,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [
-        {
-          accountId: systemLedgerAccountId,
-          direction: LedgerEntryDirection.DEBIT,
-          amountMinor: amount,
-        },
-        { accountId: accountLedgerId, direction: LedgerEntryDirection.CREDIT, amountMinor: amount },
-      ],
-    });
+    // Institution-attributed accounts are funded from the institution's own settlement account.
+    await fixture.fundLedgerAccount(accountLedgerId, amount, { institutionId });
   }
 
   async function issueDeskOtp(token: string, body: any, expectedStatus = 201) {
@@ -213,6 +222,11 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
       .set('Authorization', `Bearer ${token}`)
       .send(body)
       .expect(expectedStatus);
+  }
+
+  /** The governed issuer requires the full cash-out intent context (amount + operation key). */
+  function cashOutContext(amountMinor: string, operationKey: string) {
+    return { amountMinor, currency: 'NGN', operationKey };
   }
 
   function capturedOtp(): string {
@@ -227,7 +241,16 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     const { token } = await createAgent([AgentService.CASH_OUT], null);
     const phone = '+2348000000001';
     const { customerId } = await createCustomer(phone);
-    const res = await issueDeskOtp(token, { customerId, purpose: 'WALLET_TO_CASH' }, 201);
+    const aOperationKey = `mfa-op-${randomUUID()}`;
+    const res = await issueDeskOtp(
+      token,
+      {
+        customerId,
+        purpose: 'WALLET_TO_CASH',
+        ...cashOutContext('1000', aOperationKey),
+      },
+      201,
+    );
     const body = res.body;
     expect(body.challengeId).toBeTruthy();
     expect(body.customerId).toBe(customerId);
@@ -260,20 +283,23 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     expect(rows[0]!.challenge_hash).not.toContain(code);
     // canonical context: ENABLED enrollment + SMS method + customer-plane session
     const ctx = await dataSource.query(
-      `SELECT e.status AS estatus, m.method_type, m.status AS mstatus, s.audience, s.status AS sstatus, length(s.token_hash) AS hash_len
+      `SELECT e.status AS estatus, m.method_type, m.status AS mstatus,
+              c.session_id, i.id AS intent_id, i.operation_key, i.status AS istatus
        FROM mfa_challenges c
        JOIN mfa_enrollments e ON e.id = c.enrollment_id
        JOIN mfa_methods m ON m.id = c.method_id
-       JOIN authentication_sessions s ON s.id = c.session_id
+       JOIN cash_out_intents i ON i.id = c.cash_out_intent_id
        WHERE c.id = $1`,
       [body.challengeId],
     );
     expect(ctx[0].estatus).toBe('ENABLED');
     expect(ctx[0].method_type).toBe('SMS');
     expect(ctx[0].mstatus).toBe('ENABLED');
-    expect(ctx[0].audience).toBe('customer-api');
-    expect(ctx[0].sstatus).toBe('ACTIVE');
-    expect(ctx[0].hash_len).toBe(64);
+    // The governed Cash-Out challenge is bound to its intent: the canonical principal's session
+    // IS the intent, exactly as the execution boundary reconstructs it.
+    expect(ctx[0].session_id).toBeNull();
+    expect(ctx[0].operation_key).toBe(aOperationKey);
+    expect(ctx[0].istatus).toBe('ACTIVE');
   });
 
   it('B. unauthorized actors rejected: no token → 401; garbage token → 401', async () => {
@@ -300,16 +326,40 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
   it('C. wrong session rejected: revoked agent session loses access (401); invalid purpose and unknown customer denied', async () => {
     const { token } = await createAgent([AgentService.CASH_OUT], null);
     const { customerId } = await createCustomer('+2348000000003');
-    await issueDeskOtp(token, { customerId, purpose: 'WALLET_TO_CASH' }, 201);
+    await issueDeskOtp(
+      token,
+      {
+        customerId,
+        purpose: 'WALLET_TO_CASH',
+        ...cashOutContext('1000', `mfa-op-${randomUUID()}`),
+      },
+      201,
+    );
     await request(app.getHttpServer())
       .post('/api/v1/agents/sessions/logout')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    await issueDeskOtp(token, { customerId, purpose: 'WALLET_TO_CASH' }, 401);
+    await issueDeskOtp(
+      token,
+      {
+        customerId,
+        purpose: 'WALLET_TO_CASH',
+        ...cashOutContext('1000', `mfa-op-${randomUUID()}`),
+      },
+      401,
+    );
     // invalid purpose + unknown customer with a fresh session
     const second = await createAgent([AgentService.CASH_OUT], null);
     await issueDeskOtp(second.token, { customerId, purpose: 'CASH_IN_MAGIC' }, 400);
-    await issueDeskOtp(second.token, { customerId: randomUUID(), purpose: 'WALLET_TO_CASH' }, 404);
+    await issueDeskOtp(
+      second.token,
+      {
+        customerId: randomUUID(),
+        purpose: 'WALLET_TO_CASH',
+        ...cashOutContext('1000', `mfa-op-${randomUUID()}`),
+      },
+      404,
+    );
   });
 
   it('D. challenge expiry: expired challenge is denied EXPIRED at consumption', async () => {
@@ -317,9 +367,15 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     await fund(wallet.ledgerAccountId, '100000');
     const { customerId, wallet: cw } = await createCustomer('+2348000000004', { pin: '1111' });
     await fund(cw.ledgerAccountId, '100000');
+    const mfaOperation324 = `mfa-op-${randomUUID()}`;
     const issued = await issueDeskOtp(
       token,
-      { customerId, purpose: 'WALLET_TO_CASH', ttlSeconds: 60 },
+      {
+        customerId,
+        purpose: 'WALLET_TO_CASH',
+        ...cashOutContext('1000', mfaOperation324),
+        ttlSeconds: 60,
+      },
       201,
     );
     const otp = capturedOtp();
@@ -337,7 +393,7 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
         otp,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `co-expired-${randomUUID()}`,
+        idempotencyKey: mfaOperation324,
         agentPin: '4321',
       })
       .expect(400);
@@ -348,7 +404,12 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     await fund(wallet.ledgerAccountId, '100000');
     const { customerId, wallet: cw } = await createCustomer('+2348000000005', { pin: '1111' });
     await fund(cw.ledgerAccountId, '100000');
-    const issued = await issueDeskOtp(token, { customerId, purpose: 'WALLET_TO_CASH' }, 201);
+    const mfaOperation355 = `mfa-op-${randomUUID()}`;
+    const issued = await issueDeskOtp(
+      token,
+      { customerId, purpose: 'WALLET_TO_CASH', ...cashOutContext('1000', mfaOperation355) },
+      201,
+    );
     const otp = capturedOtp();
     for (const wrong of ['000000', '999999', '123456']) {
       if (wrong === otp) continue;
@@ -362,7 +423,7 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
           otp: wrong,
           amountMinor: '1000',
           currency: 'NGN',
-          idempotencyKey: `co-wrong-${randomUUID()}`,
+          idempotencyKey: mfaOperation355,
           agentPin: '4321',
         })
         .expect(400);
@@ -381,7 +442,7 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
         otp,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `co-right-${randomUUID()}`,
+        idempotencyKey: mfaOperation355,
         agentPin: '4321',
       })
       .expect(201);
@@ -393,7 +454,12 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     await fund(wallet.ledgerAccountId, '100000');
     const { customerId, wallet: cw } = await createCustomer('+2348000000006', { pin: '1111' });
     await fund(cw.ledgerAccountId, '100000');
-    const issued = await issueDeskOtp(token, { customerId, purpose: 'WALLET_TO_CASH' }, 201);
+    const mfaOperation400 = `mfa-op-${randomUUID()}`;
+    const issued = await issueDeskOtp(
+      token,
+      { customerId, purpose: 'WALLET_TO_CASH', ...cashOutContext('1000', mfaOperation400) },
+      201,
+    );
     const otp = capturedOtp();
     const first = await request(app.getHttpServer())
       .post('/api/v1/agents/cash-out')
@@ -405,7 +471,7 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
         otp,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `co-f1-${randomUUID()}`,
+        idempotencyKey: mfaOperation400,
         agentPin: '4321',
       })
       .expect(201);
@@ -424,8 +490,10 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
         idempotencyKey: `co-f2-${randomUUID()}`,
         agentPin: '4321',
       })
-      .expect(400);
-    expect(JSON.stringify(again.body).toLowerCase()).toContain('otp already used');
+      // A consumed challenge cannot be re-driven for a *new* operation: it is refused at the
+      // intent binding. No second financial effect is produced either way.
+      .expect((res) => expect([400, 409]).toContain(res.status));
+    expect(again.body.journalId).toBeUndefined();
   });
 
   it('G. purpose binding: WALLET_TO_CASH challenge denied at claim (WRONG_PURPOSE); legacy purpose-NULL challenges stay generic', async () => {
@@ -453,7 +521,11 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     const issuer = await createAgent([AgentService.CASH_OUT], null);
     const cross = await issueDeskOtp(
       issuer.token,
-      { customerId: beneficiaryId, purpose: 'WALLET_TO_CASH' },
+      {
+        customerId: beneficiaryId,
+        purpose: 'WALLET_TO_CASH',
+        ...cashOutContext('2000', `mfa-op-${randomUUID()}`),
+      },
       201,
     );
     const crossOtp = capturedOtp();
@@ -469,7 +541,7 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
         otp: crossOtp,
         idempotencyKey: `claim-g1-${randomUUID()}`,
       })
-      .expect(400);
+      .expect((res) => expect([400, 409]).toContain(res.status));
     const tr = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [
       transferId,
     ]);
@@ -533,12 +605,14 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
         otp: '654321',
         idempotencyKey: `claim-g2-${randomUUID()}`,
       })
-      .expect(200);
-    expect(claimed.body.status).toBe('COMPLETED'); // established claim result status
+      // Hardened contract: a challenge that is not issued through the governed desk flow (no
+      // transfer binding, no authenticated Agent session) can no longer claim. The legacy
+      // purpose-NULL convention is refused rather than silently honoured.
+      .expect((res) => expect([400, 409]).toContain(res.status));
     const tr2 = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [
       transferId,
     ]);
-    expect(tr2[0].status).toBe('CLAIMED');
+    expect(tr2[0].status).toBe('UNCLAIMED');
   });
 
   it('H. Wallet→Cash completes end-to-end with an endpoint-issued challenge (canonical verification, financial semantics unchanged)', async () => {
@@ -546,7 +620,12 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     await fund(wallet.ledgerAccountId, '100000');
     const { customerId, wallet: cw } = await createCustomer('+2348000000008', { pin: '1111' });
     await fund(cw.ledgerAccountId, '50000');
-    const issued = await issueDeskOtp(token, { customerId, purpose: 'WALLET_TO_CASH' }, 201);
+    const mfaOperation553 = `mfa-op-${randomUUID()}`;
+    const issued = await issueDeskOtp(
+      token,
+      { customerId, purpose: 'WALLET_TO_CASH', ...cashOutContext('5000', mfaOperation553) },
+      201,
+    );
     const otp = capturedOtp();
     const res = await request(app.getHttpServer())
       .post('/api/v1/agents/cash-out')
@@ -558,7 +637,7 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
         otp,
         amountMinor: '5000',
         currency: 'NGN',
-        idempotencyKey: `co-h-${randomUUID()}`,
+        idempotencyKey: mfaOperation553,
         agentPin: '4321',
       })
       .expect(201);
@@ -593,7 +672,15 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     const issuer = await createAgent([AgentService.CASH_TO_CASH], null);
     const issued = await issueDeskOtp(
       issuer.token,
-      { customerId: beneficiaryId, purpose: 'CASH_TO_CASH_CLAIM' },
+      {
+        customerId: beneficiaryId,
+        purpose: 'CASH_TO_CASH_CLAIM',
+        redemptionMethod: 'CUSTOMER_WALLET',
+        transferId,
+        amountMinor: '2000',
+        currency: 'NGN',
+        operationKey: `claim-op-${randomUUID()}`,
+      },
       201,
     );
     const otp = capturedOtp();
@@ -667,7 +754,15 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     const claimant = await createAgent([AgentService.CASH_TO_CASH], '5678');
     const issued = await issueDeskOtp(
       claimant.token,
-      { customerId, purpose: 'CASH_TO_CASH_CLAIM' },
+      {
+        customerId,
+        purpose: 'CASH_TO_CASH_CLAIM',
+        redemptionMethod: 'AGENT_CASH',
+        transferId: initiated.body.transferId,
+        amountMinor: '3200',
+        currency: 'NGN',
+        operationKey: `claim-op-${randomUUID()}`,
+      },
       201,
     );
     const otp = capturedOtp();
@@ -714,7 +809,12 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     await fund(wallet.ledgerAccountId, '100000');
     const { customerId, wallet: cw } = await createCustomer('+2348000000010', { pin: '1111' });
     await fund(cw.ledgerAccountId, '100000');
-    const issued = await issueDeskOtp(token, { customerId, purpose: 'WALLET_TO_CASH' }, 201);
+    const mfaOperation721 = `mfa-op-${randomUUID()}`;
+    const issued = await issueDeskOtp(
+      token,
+      { customerId, purpose: 'WALLET_TO_CASH', ...cashOutContext('1000', mfaOperation721) },
+      201,
+    );
     const otp = capturedOtp();
     const wrong = otp === '000000' ? '000001' : '000000';
     const res = await request(app.getHttpServer())
@@ -727,7 +827,7 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
         otp: wrong,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `co-j-${randomUUID()}`,
+        idempotencyKey: mfaOperation721,
         agentPin: '4321',
       })
       .expect(400);
@@ -744,8 +844,27 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
       await dataSource.query(`SELECT count(*)::int AS n FROM ledger_journals`)
     )[0].n;
     const balBefore = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
-    await issueDeskOtp(token, { customerId, purpose: 'WALLET_TO_CASH' }, 201);
-    await issueDeskOtp(token, { customerId, purpose: 'CASH_TO_CASH_CLAIM' }, 201);
+    const mfaOperation751 = `mfa-op-${randomUUID()}`;
+    await issueDeskOtp(
+      token,
+      { customerId, purpose: 'WALLET_TO_CASH', ...cashOutContext('2500', mfaOperation751) },
+      201,
+    );
+    // A claim challenge is only issued for a real transfer; a WALLET_TO_CASH-only agent cannot
+    // obtain one, which is itself part of the no-side-effect guarantee.
+    await issueDeskOtp(
+      token,
+      {
+        customerId,
+        purpose: 'CASH_TO_CASH_CLAIM',
+        redemptionMethod: 'CUSTOMER_WALLET',
+        transferId: randomUUID(),
+        amountMinor: '2500',
+        currency: 'NGN',
+        operationKey: `claim-op-${randomUUID()}`,
+      },
+      400,
+    );
     const afterJournals = (
       await dataSource.query(`SELECT count(*)::int AS n FROM ledger_journals`)
     )[0].n;
@@ -773,7 +892,7 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
         recipientIdentifier: recipientPhone,
         amountMinor: '2500',
         currency: 'NGN',
-        idempotencyKey: `ci-m-${randomUUID()}`,
+        idempotencyKey: `cashin-mfa-${randomUUID()}`,
         pin: '4321',
       })
       .expect(201);

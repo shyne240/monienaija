@@ -1,0 +1,41 @@
+ARENA 3B — LEGACY SUITE MIGRATION (STAGE B)
+===========================================
+Migrated and green
+------------------
+- test/v1-agent-mobile-idempotency-persistence-01.integration.spec.ts — 4/4
+- test/v1-agent-mfa-api-01.integration.spec.ts — 13/13
+- test/a14-agent-cash-out.integration.spec.ts — 33/33
+- test/a14-otp-hardening.integration.spec.ts — 13/13
+- test/a17-agent-cash-to-cash-expiry.integration.spec.ts — 30/30
+
+New shared helper
+-----------------
+test/support/cash-out-lifecycle-fixture.ts — `startGovernedDesk()` returns a harness that
+provisions the institutional context (affiliation, wallet attribution, agent credential/session,
+customer enrolment) and issues real intent-bound Cash-Out OTPs through AgentDeskOtpService. It is
+a thin composition of the existing fixtures; it adds no production bypass.
+
+Contract corrections made (all fail-closed)
+-------------------------------------------
+- Cash-Out issuance now requires the intent context (amountMinor + currency + operationKey) and the
+  redemption must use that same operation key. Suites that issued a context-free challenge were
+  updated (class B: obsolete request contract).
+- A WALLET_TO_CASH challenge is bound to its cash_out_intent (the challenge's own session column is
+  NULL; the canonical principal uses the intent id). Assertions on the legacy customer-plane session
+  were replaced with the real binding.
+- A legacy purpose-NULL challenge can no longer claim: it has no transfer binding and no
+  authenticated Agent session, so the claim is refused and the transfer stays UNCLAIMED. Previously
+  the test asserted a successful legacy claim; that convention is no longer supported.
+- Cash-to-Cash funding requires the controlled approved policy in-suite; unclaimed liability lands on
+  the institution's suspense account.
+
+KNOWN BLOCKER — v1-agent-history-01 (8 of 17 failing, unchanged)
+---------------------------------------------------------------
+That suite replaces A2WorkforceSessionService with a validate-only double. The governed fixture
+needs `establish()` with role-derived function scopes to run the institution maker-checker flow; a
+token double cannot supply them without re-implementing authorization in a test (explicitly
+forbidden). Adding a function-scope stub produced `Authorization denied: FUNCTION_MISSING`, and
+minting per-principal tokens would require encoding the role catalogue into the double. Decision
+needed: either run that suite against the real workforce service (it then loses its `workforce-<type>`
+token shorthand tests) or keep the mock and accept that its two Cash-Out / Cash-to-Cash scenarios
+stay red. Reverted to the pre-migration state rather than regressing the suite.
