@@ -7,8 +7,8 @@ import { GovernedFinancialFixture } from './governed-financial-fixture';
 import {
   createDeskOtpFixture,
   overrideSmsProvider,
-  RecordingSmsProvider,
   type DeskOtpHandle,
+  type RecordingSmsProvider,
 } from './desk-otp-fixture';
 
 /**
@@ -146,7 +146,7 @@ export async function ensureCustomerCredential(
       WHERE customer_id=$1 AND status='ACTIVE' AND deleted_at IS NULL LIMIT 1`,
     [customerId],
   );
-  if (rows[0]) return rows[0]!.id;
+  if (rows[0]) return rows[0].id;
   const created: Array<{ id: string }> = await dataSource.query(
     `INSERT INTO customer_authentication_credentials
        (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status)
