@@ -1,0 +1,68 @@
+ARENA 3B — INSTITUTIONAL ATTRIBUTION OF COMMERCIAL ACCOUNTS (STAGE B2)
+======================================================================
+Context
+-------
+Arena 3B made the ledger institution-aware: `LedgerService.resolveJournalInstitution()` derives a
+journal's institution from its accounts and refuses a journal that mixes an INSTITUTION-attributed
+account with an UNATTRIBUTED/PLATFORM one ("Ledger account <id> is not attributed to the journal's
+institution"), and refuses cross-institution postings outright.
+
+Consequently every account that participates in an institutional flow must carry an explicit
+classification. This file records the classification decided for each account family, with the
+economic owner, and the one family that has NO classification yet (fail-closed).
+
+Decision per account
+--------------------
+1. Payment settlement asset — `PAYMENT-SETTLEMENT_ASSET-NGN`
+   Owner: the receiving institution (it holds the customer funds being settled).
+   Classification: INSTITUTION, opened through the governed institution-ledger endpoint
+   (`POST /internal/institutions/:id/ledger-accounts`, purpose SETTLEMENT).
+   Note: `SettlementAccountService` resolves this control account by CODE, so exactly one account per
+   currency/accounting-unit can exist; the migration seed is unattributed and cannot be re-attributed
+   in place (the ledger guard requires a governed attribution record and forbids attributing an
+   account that already carries posted history). Suites therefore provision the account through the
+   governed path instead of using the seed.
+
+2. Cash-to-Cash unclaimed liability — institutional suspense account
+   Owner: the funding institution that holds the unclaimed cash.
+   Classification: INSTITUTION, `openInstitutionCashToCashSuspenseAccount()` (purpose SUSPENSE).
+   The legacy global `CASH_TO_CASH-UNCLAIMED-NGN` row is NOT the settlement obligation any more.
+
+3. Commercial families — FEE_REVENUE, VAT_PAYABLE, COMMISSION_EXPENSE, COMMISSION_PAYABLE
+   Owner: the receiving institution that collects the fee/VAT and owes the commission.
+   Classification: INSTITUTION (institution_id = the trans acting institution). The commercial
+   accounting registry stays code-based; the ledger accounts behind those codes are institutional.
+   Migration 1785753600076 provisions them unattributed (platform-era shape); institution-scoped
+   provisioning happens per institution through the governed ledger path.
+
+4. Agent funding pool — `AGENT_FUNDING_POOL-NGN`
+   Owner: arguably the platform treasury; NO institution classification exists.
+   Classification: UNATTRIBUTED (unchanged). Behaviour: FAIL-CLOSED.
+   `AgentFundingService` resolves the pool by hard-coded code, so AGENT_FUNDING / AGENT_DEFUNDING
+   can only post platform⇄platform journals. For an institution-attributed agent wallet the ledger
+   guard refuses the journal (`ConflictException: Ledger account ... is not attributed to the
+   journal's institution`), and no journal, no wallet movement and NO commission-payable movement
+   occurs. This is a genuine missing-policy boundary in Arena 3B, not a test defect:
+   - test/v1-commission-settlement-01 S06 asserts the refusal explicitly and then proves on the
+     platform rail that defunding never touches COMMISSION_PAYABLE;
+   - test/v1-commercial-scenario-matrix-01 P02 and test/v1-limit-05-flow-matrix use platform-level
+     agents for funding so the limit/accounting property under test stays measurable;
+   - test/v1-agent-history-01 uses `platformAgentBundle()` for AGENT_FUNDING/AGENT_DEFUNDING.
+   A future stage must either provision an institution funding pool (and make
+   AgentFundingService institution-aware) or approve platform-level agent wallets as the funding
+   rail. Until then the behaviour stays fail-closed and no policy is invented here.
+
+5. Platform float / system float and platform-level agent wallets
+   Classification: UNATTRIBUTED/PLATFORM. They keep the platform⇄platform rail and never join an
+   institutional journal.
+
+6. Foreign-currency and per-institution settlement accounts
+   Out of scope for this stage: `SettlementAccountService` still resolves by code only, so a
+   multi-institution production rollout needs per-institution settlement identities. Recorded as a
+   known limitation, not silently changed.
+
+Evidence of the corrections
+---------------------------
+Every suite listed in STAGE-B-legacy-suite-migration.txt now provisions the classification its flows
+need (governed settlement account, institutional suspense, institution-scoped commercial families)
+and asserts the fail-closed boundary where a classification is missing.

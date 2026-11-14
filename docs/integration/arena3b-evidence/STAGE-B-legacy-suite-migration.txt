@@ -1,13 +1,26 @@
 ARENA 3B — LEGACY SUITE MIGRATION (STAGE B)
 ===========================================
-Migrated and green
-------------------
+Migrated and green (real PostgreSQL, every suite's own disposable database)
+--------------------------------------------------------------------------
 - test/v1-agent-mobile-idempotency-persistence-01.integration.spec.ts — 4/4
 - test/v1-agent-mfa-api-01.integration.spec.ts — 13/13
 - test/v1-agent-05-transaction-pin-security.integration.spec.ts — 16/16
 - test/a14-agent-cash-out.integration.spec.ts — 33/33
 - test/a14-otp-hardening.integration.spec.ts — 13/13
+- test/a15-agent-cash-to-cash.integration.spec.ts — 23/23
+- test/a16-agent-cash-to-cash-claim.integration.spec.ts — 88/88
 - test/a17-agent-cash-to-cash-expiry.integration.spec.ts — 30/30
+- test/v1-commercial-decision-03b-wallet-to-cash-snapshot.integration.spec.ts — 8/8
+- test/v1-commercial-decision-03c-cash-to-cash-snapshot.integration.spec.ts — 13/13
+- test/v1-fee-runtime-wiring.integration.spec.ts — 14/14
+- test/v1-commission-settlement-01.integration.spec.ts — 8/8
+- test/v1-commission-runtime-wiring.integration.spec.ts — 24/24
+- test/v1-commercial-accounting-01.integration.spec.ts — 33/33
+- test/v1-commercial-scenario-matrix-01.integration.spec.ts — 27/27
+- test/v1-limit-02-limit-assignment.integration.spec.ts — 18/18
+- test/v1-limit-04-limit-enforcement.integration.spec.ts — 28/28
+- test/v1-limit-05-flow-matrix.integration.spec.ts — 205/205
+- test/v1-agent-history-01.integration.spec.ts — 17/17
 
 New shared helper
 -----------------
@@ -28,19 +41,45 @@ Contract corrections made (all fail-closed)
   authenticated Agent session, so the claim is refused and the transfer stays UNCLAIMED. Previously
   the test asserted a successful legacy claim; that convention is no longer supported.
 - Cash-to-Cash funding requires the controlled approved policy in-suite; unclaimed liability lands on
-  the institution's suspense account.
+  the institution's suspense account (never the legacy global `CASH_TO_CASH-UNCLAIMED-NGN` row).
+- A Cash-to-Cash claim now carries `claimantPrincipal` (authenticated Agent session) and its OTP is
+  issued through `AgentDeskOtpService.issue({purpose:'CASH_TO_CASH_CLAIM'})` with the redemption
+  operation key equal to the claim idempotency key.
+- Every migrated suite builds its module with
+  `overrideCashToCashFundingPolicy(governedDeskProviderOverride(builder, smsProvider), policy)`;
+  the workforce double and `A2_WORKFORCE_CONFIG` override were deleted everywhere (a token double
+  cannot supply role-derived function scopes). Workforce HTTP calls use real
+  `governed.fixture.workforce()` tokens.
 - v1-agent-05 keeps its PIN-security focus but its Cash-Out leg (`cashOutAs`) now runs the governed
   lifecycle; the suite truncates tables per test, so the institutional context is provisioned in
   `beforeEach`. The shared harness reuses an existing ACTIVE agent credential (the suite logs in over
   HTTP first) instead of inserting a duplicate.
 
-KNOWN BLOCKER — v1-agent-history-01 (8 of 17 failing, unchanged)
----------------------------------------------------------------
-That suite replaces A2WorkforceSessionService with a validate-only double. The governed fixture
-needs `establish()` with role-derived function scopes to run the institution maker-checker flow; a
-token double cannot supply them without re-implementing authorization in a test (explicitly
-forbidden). Adding a function-scope stub produced `Authorization denied: FUNCTION_MISSING`, and
-minting per-principal tokens would require encoding the role catalogue into the double. Decision
-needed: either run that suite against the real workforce service (it then loses its `workforce-<type>`
-token shorthand tests) or keep the mock and accept that its two Cash-Out / Cash-to-Cash scenarios
-stay red. Reverted to the pre-migration state rather than regressing the suite.
+v1-agent-history-01 — the former blocker, now green (17/17)
+-----------------------------------------------------------
+The suite no longer mocks A2WorkforceSessionService. It runs the real workforce service, so the
+institution maker-checker flow works. Specific corrections:
+
+- Class B (obsolete request contract): the Cash-Out legs (cases 4 and 15) issue governed
+  WALLET_TO_CASH intents in `ah01-out-*` / `ah01-c15-*` operation keys; case 6 claims through a
+  governed CASH_TO_CASH_CLAIM issuance with `claimantPrincipal`.
+- Class B (obsolete fixture): `agentLoginToken` used to INSERT a second ACTIVE credential; it now
+  installs the password on the single ACTIVE credential the governed provisioning created (the
+  schema allows exactly one).
+- Class B (obsolete fixture): `agentBundle` seeds float from the institution's settlement float
+  instead of the platform funding pool, because an institution-attributed agent wallet can only
+  join journals of its own institution.
+- Class A (obsolete expectation, funding rail boundary): AGENT_FUNDING / AGENT_DEFUNDING are
+  platform-rail operations (`AGENT_FUNDING_POOL-NGN` carries no institution classification, so the
+  institutional ledger contract fails closed for an attributed agent). Cases 2, 3, 11 and 13 use a
+  new `platformAgentBundle()`; case 10 proves isolation across the two rails (agent A = platform
+  funding, agent B = institutional Cash-to-Cash).
+- Class A (obsolete expectation): cases 7 and 8 mixed funding and institutional flows on ONE agent.
+  That combination is no longer reachable, so both now stack only institutional flows (two
+  Cash-to-Cash initiations + a cash-in) and assert the same chronological/pagination properties.
+- Class B: the internal workforce history route requires the real `agent.view` function, so case 13
+  uses the AGENT_NETWORK_MANAGER token instead of the literal `workforce-operator` string, and 12
+  uses the FINANCE_AUDITOR token. Suspension now revokes every ACTIVE session for the agent (the
+  governed fixture legitimately holds more than one), so 13 asserts "all REVOKED, at least one".
+
+No production behaviour was changed to make any of these pass.
