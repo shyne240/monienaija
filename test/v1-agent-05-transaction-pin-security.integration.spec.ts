@@ -32,6 +32,12 @@ import {
 } from './support/pg-harness';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import {
+  governedDeskProviderOverride,
+  startGovernedDesk,
+  type GovernedDeskHarness,
+} from './support/cash-out-lifecycle-fixture';
+import { RecordingSmsProvider } from './support/desk-otp-fixture';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 function encodePbkdf2(secret: string): string {
@@ -76,15 +82,17 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
   let mfaService: MfaExecutionService;
   let walletService: WalletService;
   let ledgerService: LedgerService;
+  const smsProvider = new RecordingSmsProvider();
+  let governed: GovernedDeskHarness;
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('v1a05pin');
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    const baseBuilder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
-      .useValue(kycEvidence.reader)
-      .compile();
+      .useValue(kycEvidence.reader);
+    const moduleRef = await governedDeskProviderOverride(baseBuilder, smsProvider).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(
@@ -114,6 +122,9 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
+    // Institutional context is (re)created per test because the harness truncates every table.
+    governed = await startGovernedDesk({ app, dataSource, smsProvider, label: 'v1a05' });
+    await governed.fixture.openInstitutionCashToCashSuspenseAccount(governed.institutionId);
   });
 
   // ── Helpers ─────────────────────────────────────────────────────────────
@@ -160,12 +171,14 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `agent-wallet-${agent.id}-${randomUUID()}`,
     });
+    await governed.provisionAgent(agent.id, wallet.id);
     return { agentId: agent.id, token, wallet };
   }
 
   function agentPrincipal(agentId: string) {
     return {
       type: 'AGENT' as const,
+      sessionId: governed.sessionFor(agentId),
       agentId,
       principalId: agentId,
       roles: [],
@@ -207,99 +220,15 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `cust-wallet-${customerId}-${randomUUID()}`,
     });
+    await governed.provisionCustomer(customerId, wallet.id);
     return { customerId, wallet };
   }
 
-  async function createMfaChallenge(customerId: string, otp: string, ttlSeconds = 300) {
-    let enrollmentId: string;
-    let methodId: string;
-    const enrollRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM mfa_enrollments WHERE customer_id=$1 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
-      [customerId],
-    );
-    if (enrollRows[0]) {
-      enrollmentId = enrollRows[0].id;
-      const methodRows: Array<{ id: string }> = await dataSource.query(
-        `SELECT id FROM mfa_methods WHERE enrollment_id=$1 AND customer_id=$2 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
-        [enrollmentId, customerId],
-      );
-      if (methodRows[0]) {
-        methodId = methodRows[0].id;
-      } else {
-        const mRows: Array<{ id: string }> = await dataSource.query(
-          `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-          [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`],
-        );
-        methodId = mRows[0]!.id;
-      }
-    } else {
-      const eRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO mfa_enrollments (id, customer_id, reference, status) VALUES ($1,$2,$3,'ENABLED') RETURNING id`,
-        [randomUUID(), customerId, `mfa-enroll-${randomUUID().slice(0, 6)}`],
-      );
-      enrollmentId = eRows[0]!.id;
-      const mRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-        [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`],
-      );
-      methodId = mRows[0]!.id;
-    }
-    const credentialRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`,
-      [customerId],
-    );
-    let credentialId = credentialRows[0]?.id;
-    if (!credentialId) {
-      const cRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO customer_authentication_credentials (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
-        [randomUUID(), customerId],
-      );
-      credentialId = cRows[0]!.id;
-    }
-    const sessionId = randomUUID();
-    const tokenHash = randomBytes(32).toString('hex');
-    await dataSource
-      .query(
-        `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
-        [sessionId, customerId, credentialId, tokenHash],
-      )
-      .catch(() => {});
-    const principal: any = { principalType: 'CUSTOMER', customerId, credentialId, sessionId };
-    const challenge = await mfaService.issueChallenge({
-      principal,
-      enrollmentId,
-      methodId,
-      challengeHash: otp,
-      ttlSeconds,
-      actor: customerId,
-    } as any);
-    return { challengeId: (challenge as any).id ?? (challenge as any).challengeId };
-  }
-
   async function fundCustomer(customerWalletLedgerId: string, amount: string) {
-    // Fresh system float account per call — `beforeEach` truncates all tables between tests,
-    // so a `beforeAll`-created shared account would not survive to later tests.
-    const sys = await ledgerService.createAccount({
-      code: `SYS-FLOAT-NGN-${randomUUID().slice(0, 8)}`,
-      name: 'System Float NGN',
-      accountType: LedgerAccountType.ASSET,
-      normalBalance: LedgerNormalBalance.DEBIT,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      allowNegativeBalance: true,
-    });
-    await ledgerService.postJournal({
-      idempotencyKey: `fund-cust-${customerWalletLedgerId}-${amount}-${randomUUID()}`,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [
-        { accountId: sys.id, direction: LedgerEntryDirection.DEBIT, amountMinor: amount },
-        {
-          accountId: customerWalletLedgerId,
-          direction: LedgerEntryDirection.CREDIT,
-          amountMinor: amount,
-        },
-      ],
+    // The customer wallet is institution-attributed: fund it from the institution's own
+    // settlement account (never from platform float).
+    await governed.fixture.fundLedgerAccount(customerWalletLedgerId, amount, {
+      institutionId: governed.institutionId,
     });
   }
 
@@ -318,19 +247,19 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
     customerId: string,
     amountMinor: string,
   ) {
-    const otp = String(100000 + Math.floor(Math.random() * 899999));
-    const { challengeId } = await createMfaChallenge(customerId, otp);
+    // Real intent-bound OTP: the intent fixes the amount and the operation key.
+    const issued = await governed.issueCashOutOtp({ agentId, customerId, amountMinor });
     return cashOutService.execute({
       agentId,
       agentPrincipal: agentPrincipal(agentId) as any,
       agentPin,
       customerId,
       customerPin: '1234',
-      mfaChallengeId: challengeId,
-      otp,
+      mfaChallengeId: issued.challengeId,
+      otp: issued.otp,
       amountMinor,
       currency: 'NGN',
-      idempotencyKey: `v1a05-cashout-${randomUUID()}`,
+      idempotencyKey: issued.operationKey,
     });
   }
 

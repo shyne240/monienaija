@@ -4,6 +4,7 @@ Migrated and green
 ------------------
 - test/v1-agent-mobile-idempotency-persistence-01.integration.spec.ts — 4/4
 - test/v1-agent-mfa-api-01.integration.spec.ts — 13/13
+- test/v1-agent-05-transaction-pin-security.integration.spec.ts — 16/16
 - test/a14-agent-cash-out.integration.spec.ts — 33/33
 - test/a14-otp-hardening.integration.spec.ts — 13/13
 - test/a17-agent-cash-to-cash-expiry.integration.spec.ts — 30/30
@@ -28,6 +29,10 @@ Contract corrections made (all fail-closed)
   the test asserted a successful legacy claim; that convention is no longer supported.
 - Cash-to-Cash funding requires the controlled approved policy in-suite; unclaimed liability lands on
   the institution's suspense account.
+- v1-agent-05 keeps its PIN-security focus but its Cash-Out leg (`cashOutAs`) now runs the governed
+  lifecycle; the suite truncates tables per test, so the institutional context is provisioned in
+  `beforeEach`. The shared harness reuses an existing ACTIVE agent credential (the suite logs in over
+  HTTP first) instead of inserting a duplicate.
 
 KNOWN BLOCKER — v1-agent-history-01 (8 of 17 failing, unchanged)
 ---------------------------------------------------------------

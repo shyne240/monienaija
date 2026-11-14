@@ -90,18 +90,29 @@ export async function startGovernedDesk(
     async provisionAgent(agentId, agentWalletId) {
       await fixture.affiliateAgent(agentId, institutionId);
       await fixture.attributeWallet(agentWalletId, institutionId);
-      const [credential] = await dataSource.query<Array<{ id: string }>>(
-        `INSERT INTO agent_authentication_credentials
-           (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status)
-         VALUES ($1,'fixture-login-hash','PBKDF2',1,clock_timestamp(),'ACTIVE') RETURNING id`,
+      // An Agent may already hold an ACTIVE credential (e.g. it logged in over HTTP); the schema
+      // allows exactly one, so reuse it instead of inserting a duplicate.
+      const existing = await dataSource.query<Array<{ id: string }>>(
+        `SELECT id FROM agent_authentication_credentials
+          WHERE agent_id=$1 AND status='ACTIVE' AND deleted_at IS NULL LIMIT 1`,
         [agentId],
       );
+      const credential = existing[0]
+        ? existing[0]
+        : (
+            await dataSource.query<Array<{ id: string }>>(
+              `INSERT INTO agent_authentication_credentials
+                 (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status)
+               VALUES ($1,'fixture-login-hash','PBKDF2',1,clock_timestamp(),'ACTIVE') RETURNING id`,
+              [agentId],
+            )
+          )[0]!;
       const [session] = await dataSource.query<Array<{ id: string }>>(
         `INSERT INTO agent_authentication_sessions
            (agent_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at)
          VALUES ($1,$2,$3,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+INTERVAL '1 hour',clock_timestamp())
          RETURNING id`,
-        [agentId, credential!.id, randomBytes(32).toString('hex')],
+        [agentId, credential.id, randomBytes(32).toString('hex')],
       );
       sessions.set(agentId, session!.id);
       return session!.id;
