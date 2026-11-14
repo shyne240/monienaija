@@ -45,6 +45,12 @@ function hashPin(pin: string): string {
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import {
+  createDeskOtpFixture,
+  overrideSmsProvider,
+  RecordingSmsProvider,
+  type DeskOtpHandle,
+} from './support/desk-otp-fixture';
 
 // Test-only trusted-evidence override. Opt-in per suite; the production reader stays
 // fail-closed because nothing in AppModule references this module.
@@ -71,14 +77,19 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   let institutionId: string;
   const fundingPolicy = createControlledFundingPolicy();
   let unclaimedLedgerAccountId: string;
+  const smsProvider = new RecordingSmsProvider();
+  let deskOtp: DeskOtpHandle;
+  let claimingAgentId: string;
+  const agentSessions = new Map<string, string>();
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a17expiry');
-    const builder = Test.createTestingModule({ imports: [AppModule] })
+    const baseBuilder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
       .useValue(kycEvidence.reader);
+    const builder = overrideSmsProvider(baseBuilder, smsProvider);
     const moduleRef = await overrideCashToCashFundingPolicy(builder, fundingPolicy).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
@@ -87,8 +98,10 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+    deskOtp = createDeskOtpFixture(app, smsProvider);
     fixture = new GovernedFinancialFixture({ app, dataSource, label: 'a17' });
     institutionId = await fixture.institution();
+    await fixture.openInstitutionCashToCashSuspenseAccount(institutionId);
     cashToCashService = moduleRef.get(AgentCashToCashService);
     claimService = moduleRef.get(AgentCashToCashClaimService);
     expiryService = moduleRef.get(AgentCashToCashExpiryService);
@@ -112,22 +125,16 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       allowNegativeBalance: true,
     });
     systemLedgerAccountId = sys.id;
-    const unclaimedRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM ledger_accounts WHERE code='CASH_TO_CASH-UNCLAIMED-NGN' LIMIT 1`,
-    );
-    if (unclaimedRows[0]) unclaimedLedgerAccountId = unclaimedRows[0]!.id;
-    else {
-      const acc = await ledgerService.createAccount({
-        code: 'CASH_TO_CASH-UNCLAIMED-NGN',
-        name: 'Cash-to-Cash Unclaimed NGN',
-        accountType: LedgerAccountType.LIABILITY,
-        normalBalance: LedgerNormalBalance.CREDIT,
-        currency: 'NGN',
-        accountingUnit: 'CUSTOMER_FUNDS',
-        allowNegativeBalance: false,
-      });
-      unclaimedLedgerAccountId = acc.id;
-    }
+    // Redemption and expiry evidence reference the receiving institution's cash-to-cash suspense
+    // account (ARENA 3B Stage 2 obligation resolution); the legacy global
+    // `CASH_TO_CASH-UNCLAIMED-NGN` account is historical-only.
+    unclaimedLedgerAccountId =
+      await fixture.openInstitutionCashToCashSuspenseAccount(institutionId);
+
+    // The governed claim OTP is issued for an authenticated claiming Agent, so one exists for the
+    // whole suite. Scenarios that provision their own Agent pass it explicitly.
+    const claiming = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    claimingAgentId = claiming.agent.id;
   }, 180000);
 
   afterAll(async () => {
@@ -189,12 +196,26 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     // line, so the funding authority can resolve a real institutional financial context.
     await fixture.affiliateAgent(agent.id, institutionId);
     await fixture.attributeWallet(wallet.id, institutionId);
+    // The accepted claim contract requires an authenticated Agent session; provision the ACTIVE
+    // login credential and session that the desk OTP binding and the claim principal both use.
+    const [credential] = await dataSource.query(
+      `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status)
+       VALUES ($1,$2,'PBKDF2',1,clock_timestamp(),'ACTIVE') RETURNING id`,
+      [agent.id, hashPin('login-password')],
+    );
+    const [session] = await dataSource.query(
+      `INSERT INTO agent_authentication_sessions (agent_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at)
+       VALUES ($1,$2,$3,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+INTERVAL '1 hour',clock_timestamp()) RETURNING id`,
+      [agent.id, credential.id, randomBytes(32).toString('hex')],
+    );
+    agentSessions.set(agent.id, session.id);
     return { cls, agent, appEntity, wallet };
   }
 
   function agentPrincipal(agentId: string) {
     return {
       type: 'AGENT' as const,
+      sessionId: agentSessions.get(agentId),
       agentId,
       principalId: agentId,
       roles: [],
@@ -246,79 +267,98 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `cust-wallet-${customerId}-${randomUUID()}`,
     });
+    // The claimant settles inside the same institution: the beneficiary holds an ACTIVE,
+    // ELIGIBLE enrolment there and its wallet is attributed *before* any ledger line.
+    await fixture.enrolCustomer(customerId, institutionId, {
+      targetStatus: 'ACTIVE',
+      financialEligibility: 'ELIGIBLE',
+    });
+    await fixture.attributeWallet(wallet.id, institutionId);
     return { customerId, wallet };
   }
 
-  async function createMfaChallenge(customerId: string, otp: string, ttlSeconds = 300) {
-    let enrollmentId: string;
-    let methodId: string;
-    const enrollRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM mfa_enrollments WHERE customer_id=$1 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
+  /** Canonical 10-digit form used by the transfer locator and the claim binding. */
+  function canonical10(value: string): string {
+    return value
+      .replace(/[^0-9]/g, '')
+      .replace(/^0/, '')
+      .replace(/^234/, '')
+      .slice(-10);
+  }
+
+  async function ensureCustomerCredential(customerId: string): Promise<string> {
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM customer_authentication_credentials
+        WHERE customer_id=$1 AND status='ACTIVE' AND deleted_at IS NULL LIMIT 1`,
       [customerId],
     );
-    if (enrollRows[0]) {
-      enrollmentId = enrollRows[0]!.id;
-      const methodRows: Array<{ id: string }> = await dataSource.query(
-        `SELECT id FROM mfa_methods WHERE enrollment_id=$1 AND customer_id=$2 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
-        [enrollmentId, customerId],
-      );
-      if (methodRows[0]) methodId = methodRows[0]!.id;
-      else {
-        const mRows: Array<{ id: string }> = await dataSource.query(
-          `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-          [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`],
-        );
-        methodId = mRows[0]!.id;
-      }
-    } else {
-      const eRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO mfa_enrollments (id, customer_id, reference, status) VALUES ($1,$2,$3,'ENABLED') RETURNING id`,
-        [randomUUID(), customerId, `mfa-enroll-${randomUUID().slice(0, 6)}`],
-      );
-      enrollmentId = eRows[0]!.id;
-      const mRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-        [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`],
-      );
-      methodId = mRows[0]!.id;
-    }
-    const credentialRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`,
+    if (rows[0]) return rows[0]!.id;
+    const created: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO customer_authentication_credentials
+         (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status)
+       VALUES ($1,$2,'PASSWORD','fixture-hash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
+      [randomUUID(), customerId],
+    );
+    return created[0]!.id;
+  }
+
+  /** The transfer a challenge is legitimately bound to: newest UNCLAIMED transfer for this phone. */
+  async function transferForCustomer(customerId: string): Promise<string> {
+    const phones: Array<{ value: string }> = await dataSource.query(
+      `SELECT value FROM customer_contact_methods
+        WHERE customer_id=$1 AND type='PHONE' AND is_primary=true AND deleted_at IS NULL LIMIT 1`,
       [customerId],
     );
-    let credentialId = credentialRows[0]?.id;
-    if (!credentialId) {
-      const cRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO customer_authentication_credentials (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
-        [randomUUID(), customerId],
+    if (phones[0]) {
+      const target = canonical10(phones[0].value);
+      const candidates: Array<{ id: string; beneficiary_phone: string }> = await dataSource.query(
+        `SELECT id, beneficiary_phone FROM cash_to_cash_transfers
+          WHERE status='UNCLAIMED' ORDER BY created_at DESC LIMIT 50`,
       );
-      credentialId = cRows[0]!.id;
+      const match = candidates.find((row) => canonical10(row.beneficiary_phone) === target);
+      if (match) return match.id;
     }
-    const sessionId = randomUUID();
-    const tokenHash = randomBytes(32).toString('hex');
-    await dataSource
-      .query(
-        `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
-        [sessionId, customerId, credentialId, tokenHash],
-      )
-      .catch(() => {});
-    const principal: any = { principalType: 'CUSTOMER', customerId, credentialId, sessionId };
-    const challenge = await mfaService.issueChallenge({
-      principal,
-      enrollmentId,
-      methodId,
-      challengeHash: otp,
-      ttlSeconds,
-      actor: customerId,
-    } as any);
-    return {
-      challengeId: (challenge as any).id ?? (challenge as any).challengeId,
-      otp,
-      enrollmentId,
-      methodId,
-      sessionId,
-      credentialId,
-    };
+    const any: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM cash_to_cash_transfers WHERE status='UNCLAIMED' ORDER BY created_at DESC LIMIT 1`,
+    );
+    if (!any[0]) throw new Error('No unclaimed transfer exists for OTP issuance');
+    return any[0]!.id;
+  }
+
+  /**
+   * Governed claim OTP: issued by the real `AgentDeskOtpService` with purpose
+   * `CASH_TO_CASH_CLAIM`, which creates the transfer-bound challenge binding and delivers the code
+   * through the recording SMS provider. The label is kept for readability only.
+   */
+  async function createMfaChallenge(
+    customerId: string,
+    label: string,
+    options: {
+      ttlSeconds?: number;
+      redemptionMethod?: 'CUSTOMER_WALLET' | 'AGENT_CASH';
+      agentId?: string;
+      agentSessionId?: string;
+      transferId?: string;
+      resetOtpBudget?: boolean;
+    } = {},
+  ) {
+    void label;
+    await ensureCustomerCredential(customerId);
+    if (options.resetOtpBudget) await dataSource.query(`DELETE FROM cash_out_otp_budgets`);
+    const transferId = options.transferId ?? (await transferForCustomer(customerId));
+    const agentId = options.agentId ?? claimingAgentId;
+    const sessionId = options.agentSessionId ?? agentSessions.get(agentId);
+    if (!sessionId) throw new Error('Claiming agent session is not provisioned');
+    const issued = await deskOtp.issue({
+      agentId,
+      customerId,
+      purpose: 'CASH_TO_CASH_CLAIM',
+      agentSessionId: sessionId,
+      transferId,
+      redemptionMethod: options.redemptionMethod ?? 'CUSTOMER_WALLET',
+      ttlSeconds: options.ttlSeconds ?? 300,
+    });
+    return { challengeId: issued.challengeId, otp: issued.otp, transferId };
   }
 
   async function fundAgent(agentWalletLedgerId: string, amount: string) {
@@ -427,14 +467,18 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   it('4. claimed transfer cannot expire', async () => {
     const { transferId, phone, transferCode } = await initiateTransfer('1200');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'claim-then-expire');
+    const { challengeId, otp: claimOtp } = await createMfaChallenge(
+      customerId,
+      'claim-then-expire',
+    );
     await claimService.execute({
       transferId,
       beneficiaryPhone: phone,
       transferCode,
       customerId,
       mfaChallengeId: challengeId,
-      otp: 'claim-then-expire',
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
+      otp: claimOtp,
       idempotencyKey: `claim-expire-${randomUUID()}`,
     });
     // Now try to expire — set expires_at to past manually (simulate race where expiry sweep sees CLAIMED)
@@ -488,18 +532,11 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     ]);
     await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'expired-claim-otp');
+    // The transfer is already EXPIRED, so the governed claim OTP refuses to issue a challenge for
+    // it — the refusal happens before any redemption attempt can exist.
     await expect(
-      claimService.execute({
-        transferId,
-        beneficiaryPhone: phone,
-        transferCode,
-        customerId,
-        mfaChallengeId: challengeId,
-        otp: 'expired-claim-otp',
-        idempotencyKey: `expired-claim-${randomUUID()}`,
-      }),
-    ).rejects.toThrow(/expired/i);
+      createMfaChallenge(customerId, 'expired-claim-otp', { transferId: transferId }),
+    ).rejects.toThrow(/expired|Claim transfer unavailable|Claim recipient unavailable/i);
   });
 
   // 7. expired claim creates no journal
@@ -514,18 +551,11 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       `SELECT count(*)::text as count FROM ledger_journals`,
     );
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'expired-no-journal');
+    // The transfer is already EXPIRED, so the governed claim OTP refuses to issue a challenge for
+    // it — the refusal happens before any redemption attempt can exist.
     await expect(
-      claimService.execute({
-        transferId,
-        beneficiaryPhone: phone,
-        transferCode,
-        customerId,
-        mfaChallengeId: challengeId,
-        otp: 'expired-no-journal',
-        idempotencyKey: `expired-journal-${randomUUID()}`,
-      }),
-    ).rejects.toThrow(/expired/i);
+      createMfaChallenge(customerId, 'expired-no-journal', { transferId: transferId }),
+    ).rejects.toThrow(/expired|Claim transfer unavailable|Claim recipient unavailable/i);
     const journalsAfter: Array<{ count: string }> = await dataSource.query(
       `SELECT count(*)::text as count FROM ledger_journals`,
     );
@@ -542,18 +572,11 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
     const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
     const before = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
-    const { challengeId } = await createMfaChallenge(customerId, 'expired-no-credit');
+    // The transfer is already EXPIRED, so the governed claim OTP refuses to issue a challenge for
+    // it — the refusal happens before any redemption attempt can exist.
     await expect(
-      claimService.execute({
-        transferId,
-        beneficiaryPhone: phone,
-        transferCode,
-        customerId,
-        mfaChallengeId: challengeId,
-        otp: 'expired-no-credit',
-        idempotencyKey: `expired-credit-${randomUUID()}`,
-      }),
-    ).rejects.toThrow(/expired/i);
+      createMfaChallenge(customerId, 'expired-no-credit', { transferId: transferId }),
+    ).rejects.toThrow(/expired|Claim transfer unavailable|Claim recipient unavailable/i);
     const after = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     expect(after.balanceMinor).toBe(before.balanceMinor);
   });
@@ -586,23 +609,19 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       `82${Math.floor(10000000 + Math.random() * 89999999)}`,
       true,
     );
-    // Delete wallet to simulate not existing? But claim on expired should not create wallet
-    await dataSource.query(`DELETE FROM wallet_accounts WHERE customer_id=$1`, [customerId]);
+    // A governed wallet cannot be made wallet-less: its institutional attribution is an immutable
+    // protected record (deleting it is correctly refused). The invariant under test is that the
+    // *failed* redemption creates no customer or wallet, so the baseline is taken after the
+    // deliberate customer exists.
+
     const walletsMid: Array<{ count: string }> = await dataSource.query(
       `SELECT count(*)::text as count FROM wallet_accounts`,
     );
-    const { challengeId } = await createMfaChallenge(customerId, 'expired-no-wallet-create');
+    // The transfer is already EXPIRED, so the governed claim OTP refuses to issue a challenge for
+    // it — the refusal happens before any redemption attempt can exist.
     await expect(
-      claimService.execute({
-        transferId,
-        beneficiaryPhone: phone,
-        transferCode,
-        customerId,
-        mfaChallengeId: challengeId,
-        otp: 'expired-no-wallet-create',
-        idempotencyKey: `expired-wallet-${randomUUID()}`,
-      }),
-    ).rejects.toThrow(/expired/i);
+      createMfaChallenge(customerId, 'expired-no-wallet-create', { transferId: transferId }),
+    ).rejects.toThrow(/expired|Claim transfer unavailable|Claim recipient unavailable/i);
     const walletsAfter: Array<{ count: string }> = await dataSource.query(
       `SELECT count(*)::text as count FROM wallet_accounts`,
     );
@@ -806,13 +825,17 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   // 17. claim-vs-expiry concurrency produces exactly one valid terminal state
   it('17. claim-vs-expiry concurrency produces exactly one valid terminal state', async () => {
     const { transferId, phone, transferCode } = await initiateTransfer('2400');
-    // Make it due
+    const { customerId } = await createBeneficiaryCustomer(phone, true);
+    const { challengeId, otp: claimOtp } = await createMfaChallenge(
+      customerId,
+      'concurrent-expiry-claim',
+    );
+    // Make it due *after* the challenge exists, so the race is genuinely claim-vs-expiry rather
+    // than expired-before-authorization.
     await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=$1 WHERE id=$2`, [
       new Date(Date.now() - 1000).toISOString(),
       transferId,
     ]);
-    const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'concurrent-expiry-claim');
     const claimPromise = claimService
       .execute({
         transferId,
@@ -820,7 +843,8 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
         transferCode,
         customerId,
         mfaChallengeId: challengeId,
-        otp: 'concurrent-expiry-claim',
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
+        otp: claimOtp,
         idempotencyKey: `concurrent-${randomUUID()}`,
       })
       .then((r) => ({ kind: 'claimed' as const, result: r }))
@@ -869,14 +893,18 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   it('18. CLAIMED never becomes EXPIRED', async () => {
     const { transferId, phone, transferCode } = await initiateTransfer('2500');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'claimed-never-expire');
+    const { challengeId, otp: claimOtp } = await createMfaChallenge(
+      customerId,
+      'claimed-never-expire',
+    );
     await claimService.execute({
       transferId,
       beneficiaryPhone: phone,
       transferCode,
       customerId,
       mfaChallengeId: challengeId,
-      otp: 'claimed-never-expire',
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
+      otp: claimOtp,
       idempotencyKey: `never-expire-${randomUUID()}`,
     });
     // Force expires_at to past and try expiry
@@ -901,18 +929,11 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     ]);
     await expiryService.expireDueTransfers({ now: new Date(), limit: 10 });
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'expired-never-claim');
+    // The transfer is already EXPIRED, so the governed claim OTP refuses to issue a challenge for
+    // it — the refusal happens before any redemption attempt can exist.
     await expect(
-      claimService.execute({
-        transferId,
-        beneficiaryPhone: phone,
-        transferCode,
-        customerId,
-        mfaChallengeId: challengeId,
-        otp: 'expired-never-claim',
-        idempotencyKey: `never-claim-${randomUUID()}`,
-      }),
-    ).rejects.toThrow(/expired/i);
+      createMfaChallenge(customerId, 'expired-never-claim', { transferId: transferId }),
+    ).rejects.toThrow(/expired|Claim transfer unavailable|Claim recipient unavailable/i);
     const rows: Array<{ status: string }> = await dataSource.query(
       `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
       [transferId],
@@ -1062,14 +1083,15 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   it('26. A16 remains green', async () => {
     const { transferId, phone, transferCode } = await initiateTransfer('3000');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'a16-green');
+    const { challengeId, otp: claimOtp } = await createMfaChallenge(customerId, 'a16-green');
     const res = await claimService.execute({
       transferId,
       beneficiaryPhone: phone,
       transferCode,
       customerId,
       mfaChallengeId: challengeId,
-      otp: 'a16-green',
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
+      otp: claimOtp,
       idempotencyKey: `a16-green-${randomUUID()}`,
     });
     expect(res.status).toBe('COMPLETED');

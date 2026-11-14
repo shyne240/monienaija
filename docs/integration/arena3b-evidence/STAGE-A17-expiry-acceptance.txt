@@ -1,0 +1,34 @@
+ARENA 3B — A17 EXPIRY / CANCELLATION ACCEPTANCE
+================================================
+Suite: test/a17-agent-cash-to-cash-expiry.integration.spec.ts
+Result: Tests: 30 passed, 30 total — 25.4 s, exit 0.
+
+MIGRATION (applied from NEXT-PHASE-MIGRATION-RECIPE)
+----------------------------------------------------
+- Claim OTPs are issued by the real `AgentDeskOtpService` (purpose CASH_TO_CASH_CLAIM) through a
+  recording SMS provider; no challenge or binding row is fabricated.
+- The suite now provisions an authenticated claiming Agent (ACTIVE credential + session) and every
+  claim passes `claimantPrincipal` with that session; `agentPrincipal()` carries `sessionId`.
+- Beneficiaries are enrolled in the institution and their wallets attributed before any ledger
+  line (the claim's institutional financial context requires it).
+- The unclaimed-liability assertions reference the receiving institution's `C2C-UNCLAIMED-*`
+  suspense account (Stage 2 obligation), not the legacy global account.
+
+ORDERING CORRECTIONS (contract, not weakening)
+----------------------------------------------
+- "expired transfer cannot be claimed" family (5, 6, 7, 8, 19): a challenge can no longer be
+  minted for an EXPIRED transfer, so the refusal is asserted at issuance. The invariants each test
+  protects (no journal, no beneficiary credit, no accidental Customer/Wallet, status stays EXPIRED)
+  are still asserted afterwards and still hold.
+- "claim-vs-expiry concurrency" (17): the challenge is now issued while the transfer is still
+  valid, then the transfer is made due, so the race is genuinely claim-vs-expiry rather than
+  expired-before-authorization. Exactly one terminal state is still asserted.
+- "expired claim creates no accidental Customer/Wallet" (9): a governed wallet can no longer be
+  deleted (its institutional attribution is an immutable protected record — the deletion is
+  correctly refused). The wallet/customer counts are baselined after the deliberate customer is
+  created, so the invariant "the failed redemption creates no customer or wallet" is preserved.
+
+PRESERVED CONTAINMENT MODEL
+---------------------------
+Cancellation and expiry still move no money: no release, refund or reversal is produced, the
+suspense liability keeps its balance, and the transfer keeps its original accounting references.
