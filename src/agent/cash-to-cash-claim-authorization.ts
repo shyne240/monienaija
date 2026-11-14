@@ -156,8 +156,24 @@ async function context(
     `SELECT l.ledger_account_id,w.id AS wallet_id,l.direction,l.amount_minor::text,l.currency FROM ledger_lines l LEFT JOIN wallet_accounts w ON w.ledger_account_id=l.ledger_account_id WHERE l.journal_id=$1`,
     [transfer.journal_id],
   );
+  // The funding journal must have credited the transfer's own obligation account: the institution
+  // suspense liability for evidenced funding, or the legacy platform account for historical
+  // transfers. The account is derived from the transfer, never from the caller.
   const unclaimed = await manager.query<Array<{ id: string }>>(
-    `SELECT id FROM ledger_accounts WHERE code='CASH_TO_CASH-UNCLAIMED-NGN' AND is_active=TRUE FOR SHARE`,
+    `SELECT a.id
+       FROM ledger_accounts a
+      WHERE a.is_active = TRUE
+        AND (
+          (EXISTS (SELECT 1 FROM cash_to_cash_funding_evidence e
+                    WHERE e.transfer_id = $1 AND e.institution_id = a.institution_id)
+            AND a.institutional_scope = 'INSTITUTION'
+            AND a.institutional_purpose = 'SUSPENSE'
+            AND a.code LIKE 'C2C-UNCLAIMED-%')
+          OR (NOT EXISTS (SELECT 1 FROM cash_to_cash_funding_evidence e WHERE e.transfer_id = $1)
+            AND a.code = 'CASH_TO_CASH-UNCLAIMED-NGN')
+        )
+      FOR SHARE`,
+    [input.transferId],
   );
   if (
     wallets.length !== 1 ||

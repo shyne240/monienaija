@@ -18,6 +18,11 @@ import { DataSource, EntityManager } from 'typeorm';
 
 import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { canonical, sha256 } from '../authorization/workforce-crypto';
+import {
+  CASH_TO_CASH_FUNDING_POLICY_AUTHORITY,
+  type CashToCashFundingPolicyAuthority,
+} from './cash-to-cash-funding-policy';
+import { requireInstitutionCashToCashSuspenseAccount } from './cash-to-cash-institution-suspense';
 import { AGENT_INSTITUTION_RESOLVER } from '../institution/agent-institution-resolver';
 import type { AgentInstitutionResolver } from '../institution/agent-institution-resolver';
 import {
@@ -32,7 +37,6 @@ import { OutboxService } from '../operations/outbox.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletOwnerClass, WalletStatus } from '../wallet/wallet.enums';
-import { LedgerAccount } from '../ledger/ledger-account.entity';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { parsePositiveMinorUnits, normalizeCurrency } from '../common/money';
 import {
@@ -70,7 +74,11 @@ import {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IDEMPOTENCY_SCOPE_PREFIX = 'agent-financial.v1:';
 const RETENTION_SECONDS = 86400;
-const UNCLAIMED_CODE = 'CASH_TO_CASH-UNCLAIMED-NGN';
+/**
+ * Stable logical marker for the institution unclaimed suspense liability in the idempotency
+ * request hash. The concrete account is institution-scoped and resolved transactionally.
+ */
+const CASH_TO_CASH_UNCLAIMED_HASH_MARKER = 'CASH_TO_CASH_UNCLAIMED';
 const TRANSFER_CODE_ITERATIONS = 10000;
 const DEFAULT_CASH_TO_CASH_EXPIRY_SECONDS = 604800;
 const MIN_CASH_TO_CASH_EXPIRY_SECONDS = 60;
@@ -91,7 +99,11 @@ export interface CashToCashFundingAuthorizationRequest {
   requestHash: string;
   fundingWalletId: string;
   fundingLedgerAccountId: string;
-  unclaimedLedgerAccountId: string;
+  /**
+   * Deprecated input. The obligation account is institution-scoped and resolved by the service
+   * after authorization; the authority must never treat a caller-supplied account as authority.
+   */
+  unclaimedLedgerAccountId?: string;
 }
 /** Evidence must be obtained independently by the authority under the transaction lock.
  * Fingerprints are opaque hashes of server-side identity, policy and authorization records. */
@@ -130,6 +142,9 @@ export class CashToCashFundingAuthority {
     @Optional()
     @Inject(AGENT_INSTITUTION_RESOLVER)
     private readonly affiliations?: AgentInstitutionResolver,
+    @Optional()
+    @Inject(CASH_TO_CASH_FUNDING_POLICY_AUTHORITY)
+    private readonly fundingPolicy?: CashToCashFundingPolicyAuthority,
   ) {}
 
   async require(
@@ -167,9 +182,12 @@ export class CashToCashFundingAuthority {
 
     // The funded wallet must still be the funding agent's own active AGENT wallet, and its
     // ledger account must carry the same institutional attribution the context resolved.
-    const walletRows: Array<{ id: string; ledger_account_id: string; institution_id: string | null }> =
-      await manager.query(
-        `SELECT w.id, w.ledger_account_id, w.institution_id
+    const walletRows: Array<{
+      id: string;
+      ledger_account_id: string;
+      institution_id: string | null;
+    }> = await manager.query(
+      `SELECT w.id, w.ledger_account_id, w.institution_id
            FROM wallet_accounts w
            JOIN ledger_accounts l ON l.id = w.ledger_account_id
           WHERE w.id = $1 AND w.customer_id = $2 AND w.owner_class = 'AGENT'
@@ -177,32 +195,46 @@ export class CashToCashFundingAuthority {
             AND w.institution_id = $4
             AND l.institution_id = $4 AND l.institutional_scope = 'INSTITUTION'
           FOR SHARE OF w, l`,
-        [request.fundingWalletId, request.agentId, request.currency, context.institutionId],
-      );
+      [request.fundingWalletId, request.agentId, request.currency, context.institutionId],
+    );
     if (walletRows.length !== 1)
       throw new ConflictException('Funding wallet is not compatible with the funding agent');
 
     const institutionEvidenceFingerprint = context.evidenceFingerprint;
+
+    // Sender identity binds only sender-scoped facts: the authenticated funding agent, the exact
+    // wallet and ledger account the debit lands on, and the phone used solely as a lookup input.
+    // Institutional ownership belongs to institution evidence and is deliberately not hashed
+    // here, so identity evidence cannot be satisfied by unrelated ownership records.
     const senderIdentityFingerprint = sha256(
       canonical({
         kind: 'AGENT_FUNDED_CASH_TO_CASH',
         agentId: request.agentId,
-        affiliationId: affiliation.affiliationId,
-        institutionId: context.institutionId,
         walletId: walletRows[0]!.id,
         ledgerAccountId: walletRows[0]!.ledger_account_id,
         senderPhone: request.senderPhone,
       }),
     );
-    const senderPolicyFingerprint = sha256(
-      canonical({
-        affiliationOutcome: affiliation.outcome,
-        affiliationId: affiliation.affiliationId,
-        institutionId: context.institutionId,
-        institutionStatus: context.institutionStatus,
-        purposes: [...context.parties.map((party) => `${party.kind}:${party.id}`)].sort(),
-      }),
-    );
+
+    // Sender policy binds the *approved funding policy* that authorizes this institution's
+    // agent-funded Cash-to-Cash — not the affiliation or the institution status, which are
+    // ownership evidence. No approved policy means no funding (503), never a substituted one.
+    const at = (await manager.query<Array<{ now: Date }>>('SELECT clock_timestamp() AS now'))[0]!
+      .now;
+    const policyAuthority = this.fundingPolicy;
+    if (!policyAuthority)
+      throw new ServiceUnavailableException('Cash-to-cash funding policy unavailable');
+    const policyResolution = await policyAuthority.resolve(manager, {
+      agentId: request.agentId,
+      institutionId: context.institutionId,
+      currency: request.currency,
+      at,
+    });
+    if (policyResolution.outcome !== 'RESOLVED')
+      throw new ServiceUnavailableException(
+        `Cash-to-cash funding policy unavailable: ${policyResolution.reason}`,
+      );
+    const senderPolicyFingerprint = policyResolution.fingerprint;
     const fundingAuthorizationFingerprint = sha256(
       canonical({
         operationId: request.operationId,
@@ -404,24 +436,20 @@ export class AgentCashToCashService {
     // business correlation id (legitimate ids preserved byte-for-byte).
     const correlationId = sanitizeDiagnosticIdentifier(input.correlationId);
 
-    // For ledger post, we need unclaimed account id. Fetch outside transaction or inside.
-    const unclaimedAccount = await this.getUnclaimedAccount();
-    if (!unclaimedAccount) {
-      throw new BadRequestException('Unclaimed ledger account not provisioned');
-    }
-
     const agentWallet = await this.ensureWalletAccount(agentId, 'NGN');
 
-    // Build lines: DEBIT Agent, CREDIT Unclaimed (principal)
-    // If fee >0, would add fee lines: DEBIT Agent for total, CREDIT Unclaimed for principal, CREDIT fee account for fee+vat
-    const lines = [
+    // The posted lines debit the Agent wallet and credit the *institution's* unclaimed suspense
+    // liability. That account is resolved transactionally from the authoritative funding
+    // evidence, so the request-hash lines use a stable logical marker for it: the same request
+    // from the same agent is the same operation independent of which suspense account is used.
+    const hashLines = [
       {
         accountId: agentWallet.ledgerAccountId,
         direction: LedgerEntryDirection.DEBIT as const,
         amountMinor: totalString,
       },
       {
-        accountId: unclaimedAccount.id,
+        accountId: CASH_TO_CASH_UNCLAIMED_HASH_MARKER,
         direction: LedgerEntryDirection.CREDIT as const,
         amountMinor: amountString,
       },
@@ -446,7 +474,7 @@ export class AgentCashToCashService {
       totalMinor: totalString,
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
-      lines,
+      lines: hashLines,
       reference,
       description,
       correlationId: correlationId ?? null,
@@ -571,13 +599,6 @@ export class AgentCashToCashService {
           if (!walletInTx) {
             throw new NotFoundException(`Agent wallet for ${agentId} not found`);
           }
-          const involved = lines.some((l) => l.accountId === walletInTx.ledgerAccountId);
-          if (!involved) {
-            throw new BadRequestException(
-              'Agent financial execution must involve the Agent wallet ledger account',
-            );
-          }
-
           // This port must independently resolve identity, agent/session eligibility,
           // institutional ownership and the funding commitment under this manager.
           // Phone, purpose and evidence reference are lookup inputs, not verified facts.
@@ -594,7 +615,6 @@ export class AgentCashToCashService {
             requestHash,
             fundingWalletId: walletInTx.id,
             fundingLedgerAccountId: walletInTx.ledgerAccountId,
-            unclaimedLedgerAccountId: unclaimedAccount.id,
           });
 
           if (
@@ -611,6 +631,30 @@ export class AgentCashToCashService {
             )
           )
             throw new ServiceUnavailableException('Cash-to-cash funding evidence unavailable');
+
+          // The obligation is held as the funding institution's own unclaimed suspense liability.
+          const unclaimedAccount = await requireInstitutionCashToCashSuspenseAccount(
+            manager,
+            fundingEvidence.institutionId,
+          );
+          const lines = [
+            {
+              accountId: walletInTx.ledgerAccountId,
+              direction: LedgerEntryDirection.DEBIT as const,
+              amountMinor: totalString,
+            },
+            {
+              accountId: unclaimedAccount.id,
+              direction: LedgerEntryDirection.CREDIT as const,
+              amountMinor: amountString,
+            },
+          ];
+          const involved = lines.some((l) => l.accountId === walletInTx.ledgerAccountId);
+          if (!involved) {
+            throw new BadRequestException(
+              'Agent financial execution must involve the Agent wallet ledger account',
+            );
+          }
 
           // V1-LIMIT-04: enforce limits for AGENT OUTGOING CASH_TO_CASH
           let limitIdempotencyKey: string | null = null;
@@ -1217,12 +1261,6 @@ export class AgentCashToCashService {
       // Sender enrichment is best-effort; a profile lookup must never block financial execution.
       return null;
     }
-  }
-
-  private async getUnclaimedAccount(): Promise<LedgerAccount | null> {
-    return this.dataSource.getRepository(LedgerAccount).findOne({
-      where: { code: UNCLAIMED_CODE },
-    });
   }
 
   private async ensureWalletAccount(customerId: string, currency: string): Promise<WalletAccount> {

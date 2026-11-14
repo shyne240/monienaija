@@ -27,6 +27,11 @@ import {
 } from '../src/ledger/ledger.enums';
 
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
+import { GovernedFinancialFixture } from './support/governed-financial-fixture';
+import {
+  createControlledFundingPolicy,
+  overrideCashToCashFundingPolicy,
+} from './support/controlled-funding-policy';
 
 function hashPin(pin: string): string {
   const salt = randomBytes(16);
@@ -57,18 +62,20 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
 
   let systemLedgerAccountId: string;
   let unclaimedLedgerAccountId: string;
+  let fixture: GovernedFinancialFixture;
+  let institutionId: string;
+  let suspenseLedgerAccountId: string;
+  const fundingPolicy = createControlledFundingPolicy();
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a15cashtocash');
     await evidence.seedPolicy(dataSource);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    const builder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
-      .useValue(kycEvidence.reader)
-      .overrideProvider(KycTierEvidenceReader)
-      .useValue(evidence)
-      .compile();
+      .useValue(evidence);
+    const moduleRef = await overrideCashToCashFundingPolicy(builder, fundingPolicy).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(
@@ -76,6 +83,11 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
     );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+    fixture = new GovernedFinancialFixture({ app, dataSource, label: 'a15' });
+    institutionId = await fixture.institution();
+    // Cash-to-Cash obligations are held by the funding institution, so the institution owns the
+    // unclaimed suspense liability that the funding journal credits.
+    suspenseLedgerAccountId = await fixture.openInstitutionCashToCashSuspenseAccount(institutionId);
     cashToCashService = moduleRef.get(AgentCashToCashService);
     cashInService = moduleRef.get(AgentCashInService);
     cashOutService = moduleRef.get(AgentCashOutService);
@@ -170,6 +182,11 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `agent-wallet-${agent.id}-${randomUUID()}`,
     });
+    // Governed institutional context: the funding agent is affiliated to the institution and its
+    // funding wallet is attributed *before* the first ledger line, so the funding authority can
+    // resolve a real institutional financial context.
+    await fixture.affiliateAgent(agent.id, institutionId);
+    await fixture.attributeWallet(wallet.id, institutionId);
     return { cls, agent, appEntity, wallet };
   }
 
@@ -213,23 +230,9 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
   }
 
   async function fundAgent(agentWalletLedgerId: string, amount: string) {
-    await ledgerService.postJournal({
-      idempotencyKey: `fund-agent-${agentWalletLedgerId}-${amount}-${randomUUID()}`,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [
-        {
-          accountId: systemLedgerAccountId,
-          direction: LedgerEntryDirection.DEBIT,
-          amountMinor: amount,
-        },
-        {
-          accountId: agentWalletLedgerId,
-          direction: LedgerEntryDirection.CREDIT,
-          amountMinor: amount,
-        },
-      ],
-    });
+    // The funded wallet is institution-attributed, so the counterparty must be an account of the
+    // same institution; the institutional ledger isolation refuses a platform-float mix.
+    await fixture.fundLedgerAccount(agentWalletLedgerId, amount, { institutionId });
   }
 
   // 1. valid Cash→Cash initiation succeeds
@@ -321,7 +324,9 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
     // ensure no customer wallet credit via unclaimed instead
     const journal = await ledgerService.getJournal(res.journalId);
     const creditLine = journal!.lines.find((l) => l.direction === LedgerEntryDirection.CREDIT)!;
-    expect(creditLine.accountId).toBe(unclaimedLedgerAccountId);
+    // Stage 3 contract update: the unclaimed liability is institution-scoped (the funding
+    // institution's suspense account), never the legacy platform-wide account.
+    expect(creditLine.accountId).toBe(suspenseLedgerAccountId);
     expect(creditLine.accountId).not.toBe(custWallet.ledgerAccountId);
   });
 
@@ -476,12 +481,12 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
     expect(
       journal!.lines.some(
         (l) =>
-          l.accountId === unclaimedLedgerAccountId &&
+          l.accountId === suspenseLedgerAccountId &&
           l.direction === LedgerEntryDirection.CREDIT &&
           l.amountMinor === '1800',
       ),
     ).toBe(true);
-    const unclaimedBal = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    const unclaimedBal = await ledgerService.getAccountBalance(suspenseLedgerAccountId);
     expect(BigInt(unclaimedBal.balanceMinor) >= 1800n).toBe(true);
   });
 

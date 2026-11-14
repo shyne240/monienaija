@@ -29,6 +29,11 @@ import {
 import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
 import { CustomerService } from '../src/customer/customer.service';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
+import { GovernedFinancialFixture } from './support/governed-financial-fixture';
+import {
+  createControlledFundingPolicy,
+  overrideCashToCashFundingPolicy,
+} from './support/controlled-funding-policy';
 import { validateEnvironment } from '../src/config/environment';
 
 function hashPin(pin: string): string {
@@ -62,16 +67,19 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
 
   let auditService: AuditService;
   let systemLedgerAccountId: string;
+  let fixture: GovernedFinancialFixture;
+  let institutionId: string;
+  const fundingPolicy = createControlledFundingPolicy();
   let unclaimedLedgerAccountId: string;
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a17expiry');
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    const builder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
-      .useValue(kycEvidence.reader)
-      .compile();
+      .useValue(kycEvidence.reader);
+    const moduleRef = await overrideCashToCashFundingPolicy(builder, fundingPolicy).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(
@@ -79,6 +87,8 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+    fixture = new GovernedFinancialFixture({ app, dataSource, label: 'a17' });
+    institutionId = await fixture.institution();
     cashToCashService = moduleRef.get(AgentCashToCashService);
     claimService = moduleRef.get(AgentCashToCashClaimService);
     expiryService = moduleRef.get(AgentCashToCashExpiryService);
@@ -175,6 +185,10 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `agent-wallet-${agent.id}-${randomUUID()}`,
     });
+    // Governed institutional context: affiliation + wallet attribution before the first ledger
+    // line, so the funding authority can resolve a real institutional financial context.
+    await fixture.affiliateAgent(agent.id, institutionId);
+    await fixture.attributeWallet(wallet.id, institutionId);
     return { cls, agent, appEntity, wallet };
   }
 
@@ -308,23 +322,9 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   }
 
   async function fundAgent(agentWalletLedgerId: string, amount: string) {
-    await ledgerService.postJournal({
-      idempotencyKey: `fund-agent-${agentWalletLedgerId}-${amount}-${randomUUID()}`,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [
-        {
-          accountId: systemLedgerAccountId,
-          direction: LedgerEntryDirection.DEBIT,
-          amountMinor: amount,
-        },
-        {
-          accountId: agentWalletLedgerId,
-          direction: LedgerEntryDirection.CREDIT,
-          amountMinor: amount,
-        },
-      ],
-    });
+    // Institution-attributed wallets can only be funded from an account of the same
+    // institution, so funding goes through the institution's governed settlement account.
+    await fixture.fundLedgerAccount(agentWalletLedgerId, amount, { institutionId });
   }
 
   async function initiateTransfer(amount = '4000') {

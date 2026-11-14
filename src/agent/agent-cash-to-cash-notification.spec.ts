@@ -15,13 +15,25 @@ function createHarness(
     payload: Record<string, unknown>;
   }> = [];
   const manager = {
-    query: jest.fn((sql: string) =>
-      Promise.resolve(
+    query: jest.fn((sql: string) => {
+      // ARENA 3B Stage 3: the unclaimed liability is institution-scoped and resolved
+      // transactionally from the authoritative funding evidence.
+      if (sql.includes('institutional_purpose')) {
+        return Promise.resolve([
+          {
+            id: 'unclaimed-id',
+            institution_id: '22222222-2222-4222-8222-222222222222',
+            code: 'C2C-UNCLAIMED-TEST',
+          },
+        ]);
+      }
+      if (sql.includes('clock_timestamp() AS now')) return Promise.resolve([{ now: new Date() }]);
+      return Promise.resolve(
         sql.includes('SELECT cp.legal_name') && verifiedSenderName
           ? [{ legal_name: verifiedSenderName }]
           : [],
-      ),
-    ),
+      );
+    }),
     getRepository: jest.fn().mockReturnValue({
       findOne: jest.fn().mockResolvedValue({
         id: 'wallet-id',
@@ -109,9 +121,6 @@ function createHarness(
     fundingAuthority,
   );
   jest
-    .spyOn(service as never, 'getUnclaimedAccount' as never)
-    .mockResolvedValue({ id: 'unclaimed-id' } as never);
-  jest
     .spyOn(service as never, 'ensureWalletAccount' as never)
     .mockResolvedValue({ ledgerAccountId: 'wallet-ledger-id' } as never);
   jest.spyOn(service as never, 'allocateLocator' as never).mockResolvedValue('123456' as never);
@@ -176,7 +185,8 @@ describe('Cash-to-Cash initiation notification outbox', () => {
         beneficiaryPhone: BENEFICIARY_PHONE,
         fundingWalletId: 'wallet-id',
         fundingLedgerAccountId: 'wallet-ledger-id',
-        unclaimedLedgerAccountId: 'unclaimed-id',
+        // The obligation account is resolved by the service from the institution evidence and is
+        // deliberately not part of the authority request any more.
         amountMinor: '250000',
         currency: 'NGN',
       }),

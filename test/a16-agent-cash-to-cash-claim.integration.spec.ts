@@ -31,6 +31,11 @@ import {
 import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
 import { CustomerService } from '../src/customer/customer.service';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
+import { GovernedFinancialFixture } from './support/governed-financial-fixture';
+import {
+  createControlledFundingPolicy,
+  overrideCashToCashFundingPolicy,
+} from './support/controlled-funding-policy';
 
 function hashPin(pin: string): string {
   const salt = randomBytes(16);
@@ -65,19 +70,21 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
 
   const agentSessions = new Map<string, string>();
   let systemLedgerAccountId: string;
+  let fixture: GovernedFinancialFixture;
+  let institutionId: string;
+  let claimingAgentId: string;
+  const fundingPolicy = createControlledFundingPolicy();
   let unclaimedLedgerAccountId: string;
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a16claim');
     await evidence.seedPolicy(dataSource);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    const builder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
-      .useValue(kycEvidence.reader)
-      .overrideProvider(KycTierEvidenceReader)
-      .useValue(evidence)
-      .compile();
+      .useValue(evidence);
+    const moduleRef = await overrideCashToCashFundingPolicy(builder, fundingPolicy).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(
@@ -85,6 +92,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+    fixture = new GovernedFinancialFixture({ app, dataSource, label: 'a16' });
+    institutionId = await fixture.institution();
+    await fixture.openInstitutionCashToCashSuspenseAccount(institutionId);
+
     limitService = moduleRef.get(LimitEnforcementService);
     cashToCashService = moduleRef.get(AgentCashToCashService);
     claimService = moduleRef.get(AgentCashToCashClaimService);
@@ -109,6 +120,11 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       allowNegativeBalance: true,
     });
     systemLedgerAccountId = sys.id;
+
+    // Cash-to-Cash redemption is agent-mediated: a current authenticated agent session is
+    // required on the claim route. This is the claiming agent for the legacy scenarios.
+    const claiming = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    claimingAgentId = claiming.agent.id;
     const unclaimedRows: Array<{ id: string }> = await dataSource.query(
       `SELECT id FROM ledger_accounts WHERE code='CASH_TO_CASH-UNCLAIMED-NGN' LIMIT 1`,
     );
@@ -182,6 +198,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `agent-wallet-${agent.id}-${randomUUID()}`,
     });
+    // Governed institutional context: affiliation + wallet attribution before the first ledger
+    // line, so the funding authority can resolve a real institutional financial context.
+    await fixture.affiliateAgent(agent.id, institutionId);
+    await fixture.attributeWallet(wallet.id, institutionId);
     const [credential] = await dataSource.query(
       `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status)
        VALUES ($1,$2,'PBKDF2',1,clock_timestamp(),'ACTIVE') RETURNING id`,
@@ -252,6 +272,13 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `cust-wallet-${customerId}-${randomUUID()}`,
     });
+    // The claimant settles inside the same institution: the beneficiary holds an ACTIVE,
+    // ELIGIBLE enrolment there and its wallet is attributed *before* any ledger line.
+    await fixture.enrolCustomer(customerId, institutionId, {
+      targetStatus: 'ACTIVE',
+      financialEligibility: 'ELIGIBLE',
+    });
+    await fixture.attributeWallet(wallet.id, institutionId);
     if (!withKyc) {
       await dataSource.query(
         `UPDATE customer_kyc_assessments SET is_current=false WHERE customer_id=$1`,
@@ -360,23 +387,9 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   }
 
   async function fundAgent(agentWalletLedgerId: string, amount: string) {
-    await ledgerService.postJournal({
-      idempotencyKey: `fund-agent-${agentWalletLedgerId}-${amount}-${randomUUID()}`,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [
-        {
-          accountId: systemLedgerAccountId,
-          direction: LedgerEntryDirection.DEBIT,
-          amountMinor: amount,
-        },
-        {
-          accountId: agentWalletLedgerId,
-          direction: LedgerEntryDirection.CREDIT,
-          amountMinor: amount,
-        },
-      ],
-    });
+    // Institution-attributed wallets can only be funded from an account of the same
+    // institution, so funding goes through the institution's governed settlement account.
+    await fixture.fundLedgerAccount(agentWalletLedgerId, amount, { institutionId });
   }
 
   async function initiateTransfer(
@@ -426,6 +439,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode,
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'withdrawn-otp',
         idempotencyKey: randomUUID(),
@@ -454,6 +468,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: '123456',
       idempotencyKey: `claim-1-${randomUUID()}`,
@@ -523,6 +538,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'code-ok',
       idempotencyKey: `claim-3-${randomUUID()}`,
@@ -546,6 +562,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode: '99999999',
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'wrong-code-otp',
         idempotencyKey: `claim-4-${randomUUID()}`,
@@ -585,6 +602,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'hash-resp-otp',
       idempotencyKey: `claim-6-${randomUUID()}`,
@@ -604,6 +622,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'hash-resp-otp',
       idempotencyKey: res.idempotencyKey,
@@ -629,6 +648,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode: '00000000',
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'counter-otp',
         idempotencyKey: `claim-7-${randomUUID()}`,
@@ -653,6 +673,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
           beneficiaryPhone: phone,
           transferCode: '11111111',
           customerId,
+          claimantPrincipal: agentPrincipal(claimingAgentId) as any,
           mfaChallengeId: challengeId,
           otp: `lock-otp-${i}`,
           idempotencyKey: `claim-8-${i}-${randomUUID()}`,
@@ -672,6 +693,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode: '11111111',
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: chAfter,
         otp: 'after-lock-otp',
         idempotencyKey: `claim-8-after-${randomUUID()}`,
@@ -694,6 +716,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode,
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'locked-correct-otp',
         idempotencyKey: `claim-9-${randomUUID()}`,
@@ -714,6 +737,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
           beneficiaryPhone: phone,
           transferCode: '00000000',
           customerId,
+          claimantPrincipal: agentPrincipal(claimingAgentId) as any,
           mfaChallengeId: challengeId,
           otp: `reset-fail-${i}`,
           idempotencyKey: `claim-10-fail-${i}-${randomUUID()}`,
@@ -731,6 +755,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'reset-success-otp',
       idempotencyKey: `claim-10-success-${randomUUID()}`,
@@ -756,6 +781,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'otp-canonical',
       idempotencyKey: `claim-11-${randomUUID()}`,
@@ -774,6 +800,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode,
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'wrong-otp',
         idempotencyKey: `claim-12-${randomUUID()}`,
@@ -794,6 +821,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode,
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'other-otp',
         idempotencyKey: `claim-13-${randomUUID()}`,
@@ -816,6 +844,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode,
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'expired-otp',
         idempotencyKey: `claim-14-${randomUUID()}`,
@@ -833,6 +862,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'replay-otp',
       idempotencyKey: `claim-15-1-${randomUUID()}`,
@@ -852,6 +882,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: p2,
         transferCode: code2,
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'replay-otp',
         idempotencyKey: `claim-15-2-${randomUUID()}`,
@@ -870,6 +901,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode,
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'no-kyc-otp',
         idempotencyKey: `claim-16-${randomUUID()}`,
@@ -888,6 +920,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode,
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'doc-only-otp',
         idempotencyKey: `claim-17-${randomUUID()}`,
@@ -921,6 +954,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: `81${Math.floor(10000000 + Math.random() * 89999999)}`,
         transferCode,
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'no-mut-phone-otp',
         idempotencyKey: `claim-18-${randomUUID()}`,
@@ -948,6 +982,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode: '00000000',
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'no-mut-code-otp',
         idempotencyKey: `claim-19-${randomUUID()}`,
@@ -972,6 +1007,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode,
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'wrong-otp-20',
         idempotencyKey: `claim-20-${randomUUID()}`,
@@ -998,6 +1034,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'status-otp',
       idempotencyKey: `claim-21-${randomUUID()}`,
@@ -1023,6 +1060,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'unclaimed-dec-otp',
       idempotencyKey: `claim-22-${randomUUID()}`,
@@ -1042,6 +1080,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'benef-inc-otp',
       idempotencyKey: `claim-23-${randomUUID()}`,
@@ -1060,6 +1099,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'balanced-otp',
       idempotencyKey: `claim-24-${randomUUID()}`,
@@ -1094,6 +1134,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'one-effect-otp',
       idempotencyKey: `claim-25-${randomUUID()}`,
@@ -1116,6 +1157,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'first-claim-otp',
       idempotencyKey: `claim-26-1-${randomUUID()}`,
@@ -1152,6 +1194,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode,
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: ch1,
         otp: 'concurrent-otp-1',
         idempotencyKey: `concurrent-${randomUUID()}`,
@@ -1161,6 +1204,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode,
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: ch2,
         otp: 'concurrent-otp-2',
         idempotencyKey: `concurrent2-${randomUUID()}`,
@@ -1190,6 +1234,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'idem-otp',
       idempotencyKey: key,
@@ -1205,6 +1250,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'idem-otp',
       idempotencyKey: key,
@@ -1225,6 +1271,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'mismatch-otp',
       idempotencyKey: key,
@@ -1256,6 +1303,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'audit-otp',
       idempotencyKey: `claim-30-${randomUUID()}`,
@@ -1334,6 +1382,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode: '00000000',
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'atomic-otp',
         idempotencyKey: `claim-32-${randomUUID()}`,
@@ -1381,6 +1430,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: challengeId,
       otp: 'wallet-create-otp',
       idempotencyKey: `claim-33-${randomUUID()}`,
@@ -1482,6 +1532,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode,
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'nophone-otp',
         idempotencyKey: `nophone-35-${randomUUID()}`,
@@ -1512,6 +1563,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode,
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'unverified-otp',
         idempotencyKey: `unverified-36-${randomUUID()}`,
@@ -1539,6 +1591,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode,
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 'suspended-otp',
         idempotencyKey: `suspended-37-${randomUUID()}`,
@@ -1564,6 +1617,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       beneficiaryPhone: phone,
       transferCode,
       customerId,
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
       mfaChallengeId: ch2,
       otp: 'reactivated-otp',
       idempotencyKey: `reactivated-37-${randomUUID()}`,
@@ -1642,6 +1696,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
           beneficiaryPhone: phone,
           transferCode,
           customerId,
+          claimantPrincipal: agentPrincipal(claimingAgentId) as any,
           mfaChallengeId: challengeId,
           otp: 'deadline-race-otp',
           idempotencyKey: `deadline-race-${randomUUID()}`,
@@ -2296,6 +2351,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
           beneficiaryPhone: phone,
           transferCode,
           customerId,
+          claimantPrincipal: agentPrincipal(claimingAgentId) as any,
           mfaChallengeId: challengeId,
           otp: 'posting-deadline',
           idempotencyKey,
@@ -2494,6 +2550,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         beneficiaryPhone: phone,
         transferCode,
         customerId,
+        claimantPrincipal: agentPrincipal(claimingAgentId) as any,
         mfaChallengeId: challengeId,
         otp: 's2-expired-wallet',
         idempotencyKey: randomUUID(),

@@ -35,6 +35,10 @@ import { CustomerAuthenticationModule } from '../customer-authentication/custome
 import { AgentCashOutService } from './agent-cash-out.service';
 import { AgentCashOutController } from './agent-cash-out.controller';
 import { AgentCashToCashService, CashToCashFundingAuthority } from './agent-cash-to-cash.service';
+import {
+  CASH_TO_CASH_FUNDING_POLICY_AUTHORITY,
+  UnavailableCashToCashFundingPolicyAuthority,
+} from './cash-to-cash-funding-policy';
 import { AgentCashToCashController } from './agent-cash-to-cash.controller';
 import { AgentCashToCashClaimService } from './agent-cash-to-cash-claim.service';
 import { AgentCashToCashOperationHandoffService } from './agent-cash-to-cash-operation-handoff.service';
@@ -147,6 +151,11 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     AgentCashOutService,
     AgentCashToCashService,
     CashToCashFundingAuthority,
+    UnavailableCashToCashFundingPolicyAuthority,
+    {
+      provide: CASH_TO_CASH_FUNDING_POLICY_AUTHORITY,
+      useExisting: UnavailableCashToCashFundingPolicyAuthority,
+    },
     AgentCashToCashClaimService,
     AgentCashToCashCancellationService,
     AgentCashToCashRecoveryService,

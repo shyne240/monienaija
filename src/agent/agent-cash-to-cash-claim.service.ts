@@ -62,7 +62,7 @@ import type {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RETENTION_SECONDS = 86400;
-const UNCLAIMED_CODE = 'CASH_TO_CASH-UNCLAIMED-NGN';
+import { resolveObligationAccountForTransfer } from './cash-to-cash-institution-suspense';
 const MAX_FAILED_ATTEMPTS = 5;
 const CLAIM_IDEMPOTENCY_PREFIX = 'cash-to-cash-claim.v1:';
 
@@ -359,9 +359,9 @@ export class AgentCashToCashClaimService {
     // business correlation id (legitimate ids preserved byte-for-byte).
     const correlationId = sanitizeDiagnosticIdentifier(input.correlationId);
 
-    const unclaimedAccount = await this.getUnclaimedAccount();
-    if (!unclaimedAccount)
-      throw new BadRequestException('Unclaimed ledger account not provisioned');
+    // The obligation account follows the transfer: institution suspense for evidenced funding,
+    // the legacy platform account for historical transfers. Never re-attributed.
+    const unclaimedAccount = await resolveObligationAccountForTransfer(this.dataSource, transferId);
 
     // Pre-checks outside SERIALIZABLE to avoid wasting OTP and to handle code lockout persistence cleanly.
     // 1. Fetch transfer (without lock) for phone/code/identity pre-checks.
@@ -1502,12 +1502,6 @@ export class AgentCashToCashClaimService {
     } catch {
       return false;
     }
-  }
-
-  private async getUnclaimedAccount(): Promise<LedgerAccount | null> {
-    return this.dataSource
-      .getRepository(LedgerAccount)
-      .findOne({ where: { code: UNCLAIMED_CODE } });
   }
 
   private async ensureWalletAccountExists(ownerId: string): Promise<void> {

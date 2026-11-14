@@ -42,6 +42,10 @@ function harness(verified: boolean) {
         return Promise.resolve([{ customer_id: customerId, session_id: sessionId }]);
       if (sql.includes('FROM authentication_sessions'))
         return Promise.resolve([{ credential_id: credentialId }]);
+      // ARENA 3B Stage 3: the obligation account follows the transfer's funding evidence; a
+      // historical transfer with no evidence uses the legacy platform account.
+      if (sql.includes('cash_to_cash_funding_evidence')) return Promise.resolve([]);
+      if (sql.includes('FROM ledger_accounts')) return Promise.resolve([{ id: 'unclaimed-id' }]);
       return Promise.resolve([]);
     }),
     transaction: jest.fn(

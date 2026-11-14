@@ -41,10 +41,7 @@ import {
 } from '../../src/ledger/ledger.enums';
 import { InstitutionAttributionEvidenceType } from '../../src/institution/institution.enums';
 import { WalletService } from '../../src/wallet/wallet.service';
-import {
-  makeCustomerFinanciallyEligible,
-  type EligibleEvidenceSource,
-} from './kyc-test-fixtures';
+import { makeCustomerFinanciallyEligible, type EligibleEvidenceSource } from './kyc-test-fixtures';
 
 export const GOVERNED_SETUP_ORDER = [
   'institutional-authority',
@@ -155,6 +152,7 @@ export class GovernedFinancialFixture {
   private sequence = 0;
   private floatAccountId?: string;
   private readonly settlementAccounts = new Map<string, string>();
+  private readonly cashToCashSuspenseAccounts = new Map<string, string>();
 
   constructor(options: GovernedFixtureOptions) {
     this.app = options.app;
@@ -691,6 +689,36 @@ export class GovernedFinancialFixture {
   }
 
   /**
+   * The institution's Cash-to-Cash unclaimed liability ("suspense") account.
+   *
+   * Cash-to-Cash obligations are held by the funding institution, so each institution needs its
+   * own suspense liability. It is opened through the same governed institution-ledger endpoint an
+   * operator uses (`purpose: SUSPENSE`), never inserted by the fixture.
+   */
+  async openInstitutionCashToCashSuspenseAccount(institutionId: string): Promise<string> {
+    const cached = this.cashToCashSuspenseAccounts.get(institutionId);
+    if (cached) return cached;
+    const { operator } = await this.workforce();
+    const suffix = randomUUID().slice(0, 8).toUpperCase();
+    const response = await request(this.app.getHttpServer())
+      .post(this.url(`/internal/institutions/${institutionId}/ledger-accounts`))
+      .set(this.bearer(operator))
+      .send({
+        code: `C2C-UNCLAIMED-${suffix}`,
+        name: `Cash-to-cash unclaimed NGN ${suffix}`,
+        accountType: 'LIABILITY',
+        normalBalance: 'CREDIT',
+        currency: 'NGN',
+        purpose: 'SUSPENSE',
+        allowNegativeBalance: true,
+      });
+    this.assertStatus(response, 201, 'institution cash-to-cash suspense account open');
+    const accountId: string = response.body.id;
+    this.cashToCashSuspenseAccounts.set(institutionId, accountId);
+    return accountId;
+  }
+
+  /**
    * Legitimate initial funding: a balanced, idempotent journal posted through `LedgerService`.
    *
    * Funding must only be called after the destination account has been institutionally
@@ -857,6 +885,7 @@ export class GovernedFinancialFixture {
     this.institutions.clear();
     this.floatAccountId = undefined;
     this.settlementAccounts.clear();
+    this.cashToCashSuspenseAccounts.clear();
     this.workforceCache = undefined;
   }
 }

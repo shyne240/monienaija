@@ -1,0 +1,51 @@
+=== ARENA 3B Stage 2 — Cash-to-Cash funding-authority evidence review ===
+Evidence contract corrections (src/agent/cash-to-cash-funding-policy.ts):
+  - senderIdentityFingerprint now binds ONLY sender-scoped facts (funding agent, its wallet,
+    its ledger account, the phone used as a lookup input). Institutional ownership fields were
+    removed; identity is no longer satisfied by unrelated ownership records.
+  - senderPolicyFingerprint now binds an APPROVED FUNDING POLICY record (policy id, reference,
+    institution, approver, effective window) plus the scope it is applied to. It previously
+    hashed affiliation/institution-status, i.e. ownership evidence, as if it were policy.
+  - Production binding is UnavailableCashToCashFundingPolicyAuthority -> RESOLVED is impossible
+    -> funding fails closed (503). No environment flag, no caller-supplied policy.
+  - Controlled acceptance uses an explicitly declared policy (test/support/controlled-funding-policy.ts,
+    NODE_ENV=test only) that applies the same institution-match and effective-window rules.
+  - fundingAuthorizationFingerprint and institutionEvidenceFingerprint are unchanged.
+  - Preserved: RESOLVED-only admission, transaction-bound resolution, SHARE locks, revalidation,
+    409 incompatible / 503 unavailable, no default institution, no aggregator inference.
+
+=== ARENA 3B Stage 3 — Cash-to-Cash institutional liability integration finding ===
+Finding (classification C - genuine architectural conflict):
+  The pre-institutional implementation credited ONE platform-wide unclaimed account
+  (CASH_TO_CASH-UNCLAIMED-NGN, institutional_scope=UNATTRIBUTED). Once the funding wallet is
+  institution-attributed, LedgerService.resolveJournalInstitution correctly refuses the journal
+  (it would mix an institution account with an unattributed one). Cash-to-Cash could therefore
+  never post institutionally.
+Resolution (no new financial policy invented):
+  - src/agent/cash-to-cash-institution-suspense.ts: the obligation is the funding institution's
+    own SUSPENSE liability (C2C-UNCLAIMED-*), opened through the existing governed
+    institution-ledger path. Missing => 503, never a fallback to the platform account.
+  - Historical transfers with no funding evidence keep the legacy account they were posted to;
+    they are not re-attributed and no institution is inferred.
+  - Reconciliation read models accept both the institution suspense and the legacy account.
+  - Claim authorization validates the obligation account derived from the transfer itself.
+
+=== Stage 3 targeted acceptance: A15 (agent-funded Cash-to-Cash) ===
+tested commit: (this checkpoint)
+command: NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
+         PG_TEST_RUN_ID=a15fix05 npx jest --config jest.integration.config.js \
+         test/a15-agent-cash-to-cash.integration.spec.ts --runInBand
+Test Suites: 1 passed, 1 total
+Tests:       23 passed, 23 total   (was 7/23 at the recovered checkpoint)
+Exit:        0
+Remaining assertion changes in A15 (classification A - supported behaviour, updated contract):
+  - test 3 and test 8 asserted the legacy platform-wide unclaimed account id; they now assert the
+    funding institution's suspense liability. The financial invariant they protect (a Customer
+    phone lookup does not credit a Customer wallet; the principal is reserved and identifiable as
+    an unclaimed liability) is unchanged and still asserted.
+
+=== Security regression after the integration change ===
+institution-foundation + institution-financial-ownership ... 2 suites / 48 tests passed
+protected-authority-boundary + wallet-ownership-resolution .... 2 suites / 28 tests passed
+backend unit suite ......................................... 247 suites / 2,899 tests passed
+TypeScript (root, src+test) ................................ 0 errors
