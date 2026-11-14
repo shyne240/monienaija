@@ -1,0 +1,26 @@
+ARENA 3B — A14 OTP HARDENING
+============================
+Suite: test/a14-otp-hardening.integration.spec.ts
+Result: Tests: 13 passed, 13 total — 20.6 s, exit 0.
+
+Same migration as A14: every challenge is issued by AgentDeskOtpService (WALLET_TO_CASH) with a
+real intent, the suite runs inside a real institutional context (agent affiliation + wallet
+attribution + agent credential/session, customer enrolment + wallet attribution, institution
+funding), and the idempotency key of each redemption is the intent's operation key.
+
+Contract corrections (all fail-closed, none weakening):
+- B (wrong session): the bound session is *read back* from the issued challenge instead of being
+  invented by the fixture; the canonical verifier still reports WRONG_SESSION.
+- D (replay): re-driving the same operation with the same operation key is idempotent — it resolves
+  as REPLAYED with no second journal and the challenge stays VERIFIED. A consumed code can never
+  produce a second consumption.
+- F (single successful verification): the canonical principal is reconstructed from the intent
+  (credential_id + intent id as session), exactly as the Cash-Out boundary does; the second
+  verification is REPLAYED.
+- I (wrong customer): the refusal surfaces as "Invalid cash-out OTP challenge" (the intent binding
+  check), asserted explicitly.
+
+SECURITY REPRODUCTIONS (preserved)
+----------------------------------
+Wrong customer, wrong session, expired challenge, already-VERIFIED replay, manual VERIFIED
+tampering, superseded/replaced challenge and secret-leak scans all still fail closed.

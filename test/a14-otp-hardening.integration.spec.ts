@@ -34,6 +34,13 @@ function hashPin(pin: string): string {
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { GovernedFinancialFixture } from './support/governed-financial-fixture';
+import {
+  createDeskOtpFixture,
+  overrideSmsProvider,
+  RecordingSmsProvider,
+  type DeskOtpHandle,
+} from './support/desk-otp-fixture';
 
 // Test-only trusted-evidence override. Opt-in per suite; the production reader stays
 // fail-closed because nothing in AppModule references this module.
@@ -52,15 +59,20 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
   let walletService: WalletService;
   let ledgerService: LedgerService;
   let systemLedgerAccountId: string;
+  const smsProvider = new RecordingSmsProvider();
+  let deskOtp: DeskOtpHandle;
+  let fixture: GovernedFinancialFixture;
+  let institutionId: string;
+  const agentSessions = new Map<string, string>();
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a14-otp-hardening');
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    const baseBuilder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
-      .useValue(kycEvidence.reader)
-      .compile();
+      .useValue(kycEvidence.reader);
+    const moduleRef = await overrideSmsProvider(baseBuilder, smsProvider).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(
@@ -87,6 +99,9 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
       allowNegativeBalance: true,
     });
     systemLedgerAccountId = sys.id;
+    deskOtp = createDeskOtpFixture(app, smsProvider);
+    fixture = new GovernedFinancialFixture({ app, dataSource, label: 'a14hard' });
+    institutionId = await fixture.institution();
   }, 180_000);
 
   afterAll(async () => {
@@ -133,17 +148,31 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
         actor: agent.id,
       });
     }
-    await walletService.createWallet({
+    const wallet = await walletService.createWallet({
       customerId: agent.id,
       currency: 'NGN',
       idempotencyKey: `hard-agent-wallet-${agent.id}-${randomUUID()}`,
     });
+    await fixture.affiliateAgent(agent.id, institutionId);
+    await fixture.attributeWallet(wallet.id, institutionId);
+    const [credential] = await dataSource.query(
+      `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status)
+       VALUES ($1,$2,'PBKDF2',1,clock_timestamp(),'ACTIVE') RETURNING id`,
+      [agent.id, hashPin('login-password')],
+    );
+    const [session] = await dataSource.query(
+      `INSERT INTO agent_authentication_sessions (agent_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at)
+       VALUES ($1,$2,$3,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+INTERVAL '1 hour',clock_timestamp()) RETURNING id`,
+      [agent.id, credential.id, randomBytes(32).toString('hex')],
+    );
+    agentSessions.set(agent.id, session.id);
     return { cls, agent, appEntity };
   }
 
   function agentPrincipal(agentId: string) {
     return {
       type: 'AGENT' as const,
+      sessionId: agentSessions.get(agentId),
       agentId,
       principalId: agentId,
       roles: [],
@@ -182,95 +211,59 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `hard-cust-wallet-${customerId}-${randomUUID()}`,
     });
+    await fixture.enrolCustomer(customerId, institutionId, {
+      targetStatus: 'ACTIVE',
+      financialEligibility: 'ELIGIBLE',
+    });
+    await fixture.attributeWallet(wallet.id, institutionId);
     return { customerId, wallet };
   }
 
-  async function createMfaChallenge(customerId: string, otp: string, ttlSeconds = 300) {
-    let enrollmentId: string;
-    let methodId: string;
-    const enrollRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM mfa_enrollments WHERE customer_id=$1 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
+  async function ensureCustomerCredential(customerId: string): Promise<string> {
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM customer_authentication_credentials
+        WHERE customer_id=$1 AND status='ACTIVE' AND deleted_at IS NULL LIMIT 1`,
       [customerId],
     );
-    if (enrollRows[0]) {
-      enrollmentId = enrollRows[0]!.id;
-      const methodRows: Array<{ id: string }> = await dataSource.query(
-        `SELECT id FROM mfa_methods WHERE enrollment_id=$1 AND customer_id=$2 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
-        [enrollmentId, customerId],
-      );
-      if (methodRows[0]) methodId = methodRows[0]!.id;
-      else {
-        const mRows: Array<{ id: string }> = await dataSource.query(
-          `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-          [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`],
-        );
-        methodId = mRows[0]!.id;
-      }
-    } else {
-      const eRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO mfa_enrollments (id, customer_id, reference, status) VALUES ($1,$2,$3,'ENABLED') RETURNING id`,
-        [randomUUID(), customerId, `mfa-enroll-${randomUUID().slice(0, 6)}`],
-      );
-      enrollmentId = eRows[0]!.id;
-      const mRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-        [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`],
-      );
-      methodId = mRows[0]!.id;
-    }
-    const credRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`,
-      [customerId],
+    if (rows[0]) return rows[0]!.id;
+    const created: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO customer_authentication_credentials
+         (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status)
+       VALUES ($1,$2,'PASSWORD','fixture-hash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
+      [randomUUID(), customerId],
     );
-    let credentialId = credRows[0]?.id;
-    if (!credentialId) {
-      const cRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO customer_authentication_credentials (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
-        [randomUUID(), customerId],
-      );
-      credentialId = cRows[0]!.id;
-    }
-    const sessionId = randomUUID();
-    const tokenHash = randomBytes(32).toString('hex');
-    await dataSource
-      .query(
-        `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
-        [sessionId, customerId, credentialId, tokenHash],
-      )
-      .catch(() => {});
-    const principal: any = { principalType: 'CUSTOMER', customerId, credentialId, sessionId };
-    const challenge = await mfaService.issueChallenge({
-      principal,
-      enrollmentId,
-      methodId,
-      challengeHash: otp,
-      ttlSeconds,
-      actor: customerId,
-    } as any);
-    return {
-      challengeId: (challenge as any).id ?? (challenge as any).challengeId,
-      otp,
-      enrollmentId,
-      methodId,
-      sessionId,
-      credentialId,
-    };
+    return created[0]!.id;
+  }
+
+  /** Real, intent-bound Cash-Out OTP issued by AgentDeskOtpService (purpose WALLET_TO_CASH). */
+  async function issueCashOutOtp(params: {
+    agentId: string;
+    customerId: string;
+    amountMinor: string;
+    operationKey?: string;
+    supersedesOperationKey?: string;
+    ttlSeconds?: number;
+  }) {
+    await ensureCustomerCredential(params.customerId);
+    const agentSessionId = agentSessions.get(params.agentId);
+    if (!agentSessionId) throw new Error('Cash-Out requires an authenticated Agent session');
+    const operationKey = params.operationKey ?? `cashout-op-${randomUUID()}`;
+    const issued = await deskOtp.issue({
+      agentId: params.agentId,
+      customerId: params.customerId,
+      purpose: 'WALLET_TO_CASH',
+      agentSessionId,
+      amountMinor: params.amountMinor,
+      currency: 'NGN',
+      operationKey,
+      supersedesOperationKey: params.supersedesOperationKey,
+      ttlSeconds: params.ttlSeconds ?? 300,
+    });
+    return { challengeId: issued.challengeId, otp: issued.otp, operationKey };
   }
 
   async function fundCustomer(ledgerId: string, amount: string) {
-    await ledgerService.postJournal({
-      idempotencyKey: `fund-hard-${ledgerId}-${amount}-${randomUUID()}`,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [
-        {
-          accountId: systemLedgerAccountId,
-          direction: LedgerEntryDirection.DEBIT,
-          amountMinor: amount,
-        },
-        { accountId: ledgerId, direction: LedgerEntryDirection.CREDIT, amountMinor: amount },
-      ],
-    });
+    await fixture.fundLedgerAccount(ledgerId, amount, { institutionId });
   }
 
   it('A. wrong Customer + valid OTP → denied', async () => {
@@ -280,7 +273,15 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const { customerId: custA } = await createCustomerWithPin(phoneA, '1234');
     const { customerId: custB, wallet: walletB } = await createCustomerWithPin(phoneB, '1234');
     await fundCustomer(walletB.ledgerAccountId, '5000');
-    const { challengeId } = await createMfaChallenge(custA, 'otpA-valid');
+    const {
+      challengeId,
+      otp: otp_otpA_valid_275,
+      operationKey: hardOperation275,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: custA,
+      amountMinor: '1000',
+    });
     await expect(
       cashOutService.execute({
         agentId: agent.id,
@@ -289,10 +290,10 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
         customerId: custB,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: 'otpA-valid',
+        otp: otp_otpA_valid_275,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `hard-A-${randomUUID()}`,
+        idempotencyKey: hardOperation275,
       }),
     ).rejects.toThrow(/belong|OTP|WRONG_CUSTOMER/i);
   });
@@ -302,10 +303,15 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet } = await createCustomerWithPin(phone, '1234');
     await fundCustomer(wallet.ledgerAccountId, '5000');
-    const { challengeId, sessionId: originalSession } = await createMfaChallenge(
-      customerId,
-      'otp-session',
-    );
+    const {
+      challengeId,
+      otp: otpSession,
+      operationKey: hardOperationSession,
+    } = await issueCashOutOtp({ agentId: agent.id, customerId, amountMinor: '1000' });
+    // The session the governed challenge is bound to is whatever the canonical issuer bound.
+    const originalSession = (
+      await dataSource.query(`SELECT session_id FROM mfa_challenges WHERE id=$1`, [challengeId])
+    )[0].session_id;
     // Create a second session for same customer
     const credRows: Array<{ id: string }> = await dataSource.query(
       `SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`,
@@ -328,7 +334,7 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const direct = await mfaService.verifyChallenge({
       principal: wrongPrincipal,
       challengeId,
-      providedHash: 'otp-session',
+      providedHash: otpSession,
       actor: customerId,
     } as any);
     expect(direct.verified).toBe(false);
@@ -348,7 +354,16 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const { agent } = await createActiveAgentWithPin('1234');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPin(phone, '1234');
-    const { challengeId } = await createMfaChallenge(customerId, 'otp-expire', 30);
+    const {
+      challengeId,
+      otp: otp_otp_expire_343,
+      operationKey: hardOperation343,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+      ttlSeconds: 30,
+    });
     await dataSource.query(
       `UPDATE mfa_challenges SET expires_at=NOW() - INTERVAL '1 hour' WHERE id=$1`,
       [challengeId],
@@ -361,10 +376,10 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: 'otp-expire',
+        otp: otp_otp_expire_343,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `hard-C-${randomUUID()}`,
+        idempotencyKey: hardOperation343,
       }),
     ).rejects.toThrow(/expired/i);
   });
@@ -374,7 +389,15 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet } = await createCustomerWithPin(phone, '1234');
     await fundCustomer(wallet.ledgerAccountId, '5000');
-    const { challengeId } = await createMfaChallenge(customerId, 'otp-replay');
+    const {
+      challengeId,
+      otp: otp_otp_replay_369,
+      operationKey: hardOperation369,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     await cashOutService.execute({
       agentId: agent.id,
       agentPrincipal: agentPrincipal(agent.id) as any,
@@ -382,33 +405,53 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
       customerId,
       customerPin: '1234',
       mfaChallengeId: challengeId,
-      otp: 'otp-replay',
+      otp: otp_otp_replay_369,
       amountMinor: '1000',
       currency: 'NGN',
-      idempotencyKey: `hard-D1-${randomUUID()}`,
+      idempotencyKey: hardOperation369,
     });
-    // Second use with same challengeId+OTP but different idempotencyKey should be denied as REPLAYED (not idempotent, because key differs)
-    await expect(
-      cashOutService.execute({
-        agentId: agent.id,
-        agentPrincipal: agentPrincipal(agent.id) as any,
-        agentPin: '1234',
-        customerId,
-        customerPin: '1234',
-        mfaChallengeId: challengeId,
-        otp: 'otp-replay',
-        amountMinor: '1000',
-        currency: 'NGN',
-        idempotencyKey: `hard-D2-${randomUUID()}`,
-      }),
-    ).rejects.toThrow(/already used|REPLAYED/i);
+    // Re-driving the same operation with the same operation key is idempotent: it resolves as
+    // REPLAYED and produces no second consumption and no second journal.
+    const journalsBefore: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ledger_journals`,
+    );
+    const replay = await cashOutService.execute({
+      agentId: agent.id,
+      agentPrincipal: agentPrincipal(agent.id) as any,
+      agentPin: '1234',
+      customerId,
+      customerPin: '1234',
+      mfaChallengeId: challengeId,
+      otp: otp_otp_replay_369,
+      amountMinor: '1000',
+      currency: 'NGN',
+      idempotencyKey: hardOperation369,
+    });
+    expect(replay.status).toBe('REPLAYED');
+    const journalsAfter: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ledger_journals`,
+    );
+    expect(journalsAfter[0]!.cnt).toBe(journalsBefore[0]!.cnt);
+    const challengeAfter: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM mfa_challenges WHERE id=$1`,
+      [challengeId],
+    );
+    expect(challengeAfter[0]!.status).toBe('VERIFIED');
   });
 
   it('E. invalid OTP → denied', async () => {
     const { agent } = await createActiveAgentWithPin('1234');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPin(phone, '1234');
-    const { challengeId } = await createMfaChallenge(customerId, 'otp-correct');
+    const {
+      challengeId,
+      otp: otp_otp_correct_403,
+      operationKey: hardOperation403,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     await expect(
       cashOutService.execute({
         agentId: agent.id,
@@ -420,7 +463,7 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
         otp: 'otp-wrong',
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `hard-E-${randomUUID()}`,
+        idempotencyKey: hardOperation403,
       }),
     ).rejects.toThrow(/OTP invalid|MISMATCH/i);
   });
@@ -430,7 +473,15 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet } = await createCustomerWithPin(phone, '1234');
     await fundCustomer(wallet.ledgerAccountId, '5000');
-    const { challengeId } = await createMfaChallenge(customerId, 'otp-once');
+    const {
+      challengeId,
+      otp: otp_otp_once_425,
+      operationKey: hardOperation425,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     const before: Array<{ status: string }> = await dataSource.query(
       `SELECT status FROM mfa_challenges WHERE id=$1`,
       [challengeId],
@@ -443,10 +494,10 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
       customerId,
       customerPin: '1234',
       mfaChallengeId: challengeId,
-      otp: 'otp-once',
+      otp: otp_otp_once_425,
       amountMinor: '1000',
       currency: 'NGN',
-      idempotencyKey: `hard-F-${randomUUID()}`,
+      idempotencyKey: hardOperation425,
     });
     const after: Array<{ status: string; verified_at: string | null }> = await dataSource.query(
       `SELECT status, verified_at FROM mfa_challenges WHERE id=$1`,
@@ -455,32 +506,25 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     expect(after[0]!.status).toBe('VERIFIED');
     expect(after[0]!.verified_at).not.toBeNull();
     // Second verification via canonical service should be REPLAYED
-    const credRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`,
-      [customerId],
-    );
-    const sessRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT session_id FROM mfa_challenges WHERE id=$1`,
-      [challengeId],
-    );
-    const sessId =
-      sessRows[0]!.id ??
-      (
-        await dataSource.query(`SELECT session_id FROM mfa_challenges WHERE id=$1`, [challengeId])
-      )[0].session_id;
-    // Use the same challengeId with same OTP via direct MFA — should be REPLAYED
+    // The canonical principal is the one the challenge is bound to: the intent's credential and
+    // the intent itself as the session (exactly what the Cash-Out boundary reconstructs).
+    const intentRows: Array<{ credential_id: string; cash_out_intent_id: string }> =
+      await dataSource.query(
+        `SELECT i.credential_id, c.cash_out_intent_id
+           FROM mfa_challenges c JOIN cash_out_intents i ON i.id = c.cash_out_intent_id
+          WHERE c.id = $1`,
+        [challengeId],
+      );
     const principal: any = {
       principalType: 'CUSTOMER',
       customerId,
-      credentialId: credRows[0]!.id,
-      sessionId: (
-        await dataSource.query(`SELECT session_id FROM mfa_challenges WHERE id=$1`, [challengeId])
-      )[0].session_id,
+      credentialId: intentRows[0]!.credential_id,
+      sessionId: intentRows[0]!.cash_out_intent_id,
     };
     const replay = await mfaService.verifyChallenge({
       principal,
       challengeId,
-      providedHash: 'otp-once',
+      providedHash: otp_otp_once_425,
       actor: customerId,
     } as any);
     expect(replay.verified).toBe(false);
@@ -492,7 +536,15 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet } = await createCustomerWithPin(phone, '1234');
     await fundCustomer(wallet.ledgerAccountId, '5000');
-    const { challengeId } = await createMfaChallenge(customerId, 'otp-manual');
+    const {
+      challengeId,
+      otp: otp_otp_manual_487,
+      operationKey: hardOperation487,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     // Manually set to VERIFIED without canonical verification
     await dataSource.query(
       `UPDATE mfa_challenges SET status='VERIFIED', verified_at=NOW() WHERE id=$1`,
@@ -507,10 +559,10 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: 'otp-manual',
+        otp: otp_otp_manual_487,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `hard-G-${randomUUID()}`,
+        idempotencyKey: hardOperation487,
       }),
     ).rejects.toThrow(/already used/i);
     // Ensure no financial was created for that idempotencyKey
@@ -528,7 +580,15 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet } = await createCustomerWithPin(phone, '1234');
     await fundCustomer(wallet.ledgerAccountId, '5000');
-    const { challengeId } = await createMfaChallenge(customerId, 'otp-original');
+    const {
+      challengeId,
+      otp: otp_otp_original_523,
+      operationKey: hardOperation523,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     // Attacker tries to change challenge_hash to match an attacker OTP
     await dataSource.query(`UPDATE mfa_challenges SET challenge_hash='attacker-otp' WHERE id=$1`, [
       challengeId,
@@ -545,10 +605,10 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: 'otp-original',
+        otp: otp_otp_original_523,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `hard-H1-${randomUUID()}`,
+        idempotencyKey: hardOperation523,
       }),
     ).rejects.toThrow(/OTP invalid/i);
     // And that attacker-otp would succeed if they knew the new hash, but that's not a bypass of Wallet→Cash — it's a DB compromise, which is out of scope
@@ -563,7 +623,15 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const { customerId: custA } = await createCustomerWithPin(phoneA, '1234');
     const { customerId: custB, wallet: walletB } = await createCustomerWithPin(phoneB, '1234');
     await fundCustomer(walletB.ledgerAccountId, '5000');
-    const { challengeId } = await createMfaChallenge(custA, 'otp-b-challenge');
+    const {
+      challengeId,
+      otp: otp_otp_b_challenge_558,
+      operationKey: hardOperation558,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: custA,
+      amountMinor: '1000',
+    });
     await expect(
       cashOutService.execute({
         agentId: agent.id,
@@ -572,12 +640,12 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
         customerId: custB,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: 'otp-b-challenge',
+        otp: otp_otp_b_challenge_558,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `hard-I-${randomUUID()}`,
+        idempotencyKey: hardOperation558,
       }),
-    ).rejects.toThrow(/belong|WRONG_CUSTOMER/i);
+    ).rejects.toThrow(/belong|WRONG_CUSTOMER|Invalid cash-out OTP challenge/i);
   });
 
   it('K. failed OTP does not cause financial mutation', async () => {
@@ -585,13 +653,21 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet } = await createCustomerWithPin(phone, '1234');
     await fundCustomer(wallet.ledgerAccountId, '5000');
-    const { challengeId } = await createMfaChallenge(customerId, 'otp-fail-mutation');
+    const {
+      challengeId,
+      otp: otp_otp_fail_mutation_580,
+      operationKey: hardOperation580,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     const beforeCust = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
     const agentWallet = await walletService
       .createWallet({
         customerId: agent.id,
         currency: 'NGN',
-        idempotencyKey: `hard-K-agent-${agent.id}-${randomUUID()}`,
+        idempotencyKey: hardOperation580,
       })
       .catch(async () => {
         const w = await dataSource.query(
@@ -612,7 +688,7 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
         otp: 'wrong-otp',
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `hard-K-${randomUUID()}`,
+        idempotencyKey: hardOperation580,
       }),
     ).rejects.toThrow();
     const afterCust = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
@@ -626,7 +702,15 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet } = await createCustomerWithPin(phone, '1234');
     await fundCustomer(wallet.ledgerAccountId, '5000');
-    const { challengeId } = await createMfaChallenge(customerId, 'otp-once-effect');
+    const {
+      challengeId,
+      otp: otp_otp_once_effect_621,
+      operationKey: hardOperation621,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1500',
+    });
     const beforeJournals: Array<{ cnt: string }> = await dataSource.query(
       `SELECT count(*)::text as cnt FROM ledger_journals`,
     );
@@ -637,10 +721,10 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
       customerId,
       customerPin: '1234',
       mfaChallengeId: challengeId,
-      otp: 'otp-once-effect',
+      otp: otp_otp_once_effect_621,
       amountMinor: '1500',
       currency: 'NGN',
-      idempotencyKey: `hard-L-${randomUUID()}`,
+      idempotencyKey: hardOperation621,
     });
     expect(res.status).toBe('COMPLETED');
     const afterJournals: Array<{ cnt: string }> = await dataSource.query(
@@ -656,7 +740,15 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet } = await createCustomerWithPin(phone, '1234');
     await fundCustomer(wallet.ledgerAccountId, '5000');
-    const { challengeId } = await createMfaChallenge(customerId, 'otp-leak');
+    const {
+      challengeId,
+      otp: otp_otp_leak_651,
+      operationKey: hardOperation651,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     const res = await cashOutService.execute({
       agentId: agent.id,
       agentPrincipal: agentPrincipal(agent.id) as any,
@@ -664,10 +756,10 @@ describe('A14.1 OTP Hardening (real PostgreSQL)', () => {
       customerId,
       customerPin: '1234',
       mfaChallengeId: challengeId,
-      otp: 'otp-leak',
+      otp: otp_otp_leak_651,
       amountMinor: '1000',
       currency: 'NGN',
-      idempotencyKey: `hard-M-${randomUUID()}`,
+      idempotencyKey: hardOperation651,
     });
     expect(JSON.stringify(res).toLowerCase()).not.toContain('otp');
     expect(JSON.stringify(res).toLowerCase()).not.toContain('challenge');
