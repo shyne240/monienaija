@@ -48,15 +48,29 @@ import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-au
 import { AgentStatus } from '../src/agent/agent.enums';
 import { CustomerFundingService } from '../src/customer-funding/customer-funding.service';
 import { CustomerTransactionPinService } from '../src/customer/customer-transaction-pin.service';
-import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
 import { TransferService } from '../src/transfer/transfer.service';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { LedgerEntryDirection } from '../src/ledger/ledger.enums';
+import {
+  LedgerAccountType,
+  LedgerEntryDirection,
+  LedgerNormalBalance,
+} from '../src/ledger/ledger.enums';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+import {
+  ensureCustomerCredential,
+  governedDeskProviderOverride,
+  startGovernedDesk,
+  type GovernedDeskHarness,
+} from './support/cash-out-lifecycle-fixture';
+import { RecordingSmsProvider } from './support/desk-otp-fixture';
+import {
+  createControlledFundingPolicy,
+  overrideCashToCashFundingPolicy,
+} from './support/controlled-funding-policy';
 
 function hashPin(pin: string): string {
   const salt = randomBytes(16);
@@ -120,8 +134,11 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
   let lifecycleService: AgentLifecycleService;
   let agentPinService: AgentAuthenticationService;
   let customerPinService: CustomerTransactionPinService;
-  let mfaService: MfaExecutionService;
-  let settlementAccountId: string;
+
+  const smsProvider = new RecordingSmsProvider();
+  let governed: GovernedDeskHarness;
+  let platformFloatAccountId: string | undefined;
+  const fundingPolicy = createControlledFundingPolicy();
 
   const privilegedPrincipal: any = {
     type: 'OPERATOR',
@@ -154,12 +171,15 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('v1-limit-05-matrix');
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    const baseBuilder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
-      .useValue(kycEvidence.reader)
-      .compile();
+      .useValue(kycEvidence.reader);
+    const moduleRef = await overrideCashToCashFundingPolicy(
+      governedDeskProviderOverride(baseBuilder, smsProvider),
+      fundingPolicy,
+    ).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(
@@ -184,13 +204,26 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
     lifecycleService = moduleRef.get(AgentLifecycleService);
     agentPinService = moduleRef.get(AgentAuthenticationService);
     customerPinService = moduleRef.get(CustomerTransactionPinService);
-    mfaService = moduleRef.get(MfaExecutionService);
 
-    const rows: Array<{ id: string }> = await dataSource.query(
+    // Governed institutional context (synthetic, disposable per-process database only).
+    governed = await startGovernedDesk({ app, dataSource, smsProvider, label: 'l5' });
+    const seeded: Array<{ id: string }> = await dataSource.query(
       `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
     );
-    if (!rows[0]) throw new Error('PAYMENT-SETTLEMENT_ASSET-NGN missing — migrations must seed it');
-    settlementAccountId = rows[0].id;
+    if (!seeded[0])
+      throw new Error('PAYMENT-SETTLEMENT_ASSET-NGN missing — migrations must seed it');
+    // Under Arena 3B the settlement asset is the institution's own control account: the platform
+    // seed (unattributed) is replaced by the governed institution-scoped account of the same code.
+    // The migration seed is not deleted anywhere else, and this database is disposable.
+    await dataSource.query(
+      `DELETE FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' AND institutional_scope='UNATTRIBUTED'`,
+    );
+    await governed.fixture.openInstitutionCashToCashSuspenseAccount(governed.institutionId);
+    await governed.fixture.openInstitutionSettlementAccount(governed.institutionId, {
+      code: 'PAYMENT-SETTLEMENT_ASSET-NGN',
+      name: 'Payment settlement asset NGN',
+      allowNegativeBalance: true,
+    });
   }, 180000);
 
   afterAll(async () => {
@@ -202,6 +235,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
 
   async function createAgent(
     services: unknown,
+    options: { govern?: boolean } = {},
   ): Promise<{ agentId: string; walletLedgerAccountId: string }> {
     const cls = await classService.create({
       reference: `cls-l5-${randomUUID().slice(0, 8)}`,
@@ -240,12 +274,14 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
       `SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`,
       [wallet.id],
     );
+    if (options.govern !== false) await governed.provisionAgent(agent.id, wallet.id);
     return { agentId: agent.id, walletLedgerAccountId: rows[0]!.ledger_account_id };
   }
 
   function agentPrincipal(agentId: string): any {
     return {
       type: 'AGENT',
+      sessionId: governed.sessionFor(agentId),
       agentId,
       principalId: agentId,
       roles: [],
@@ -295,99 +331,80 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
       `SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`,
       [wallet.id],
     );
+    await governed.provisionCustomer(customerId, wallet.id);
     return { customerId, walletLedgerAccountId: rows[0]!.ledger_account_id, phone };
   }
 
   async function fundAccount(ledgerAccountId: string, amountMinor: string): Promise<void> {
+    const rows: Array<{ institutional_scope: string }> = await dataSource.query(
+      `SELECT institutional_scope FROM ledger_accounts WHERE id=$1`,
+      [ledgerAccountId],
+    );
+    if (rows[0]?.institutional_scope === 'INSTITUTION') {
+      // Institution-attributed wallets are funded from the institution's own float: the ledger
+      // contract refuses a journal that mixes institutional and platform accounts.
+      await governed.fixture.fundLedgerAccount(ledgerAccountId, amountMinor, {
+        institutionId: governed.institutionId,
+      });
+      return;
+    }
+    // Platform-level (unattributed) wallets keep the platform float rail.
+    if (!platformFloatAccountId) {
+      const float = await ledgerService.createAccount({
+        code: `L5-PLATFORM-FLOAT-NGN-${randomUUID().slice(0, 6)}`,
+        name: 'L5 platform float NGN',
+        accountType: LedgerAccountType.ASSET,
+        normalBalance: LedgerNormalBalance.DEBIT,
+        currency: 'NGN',
+        accountingUnit: 'CUSTOMER_FUNDS',
+        allowNegativeBalance: true,
+      });
+      platformFloatAccountId = float.id;
+    }
     await ledgerService.postJournal({
       idempotencyKey: `l5-fund-${randomUUID()}`,
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
       reference: `L5FUND-${randomUUID().slice(0, 8)}`,
       lines: [
-        { accountId: settlementAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor },
+        {
+          accountId: platformFloatAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor,
+        },
         { accountId: ledgerAccountId, direction: LedgerEntryDirection.CREDIT, amountMinor },
       ],
     });
   }
 
-  function randOtp(): string {
-    return String(Math.floor(100000 + Math.random() * 900000));
-  }
-
-  async function createMfaChallenge(
-    customerId: string,
-  ): Promise<{ challengeId: string; otp: string }> {
-    const otp = randOtp();
-    const enrollRows: Array<{ id: string }> = await dataSource.query(
+  /**
+   * Pre-creates the ENABLED enrollment + ENABLED SMS method the governed desk-OTP issuance needs.
+   * Concurrent issuances for the same customer would otherwise race on those inserts.
+   */
+  async function warmDeskOtpEnrollment(customerId: string): Promise<void> {
+    const enroll: Array<{ id: string }> = await dataSource.query(
       `SELECT id FROM mfa_enrollments WHERE customer_id=$1 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
       [customerId],
     );
-    let enrollmentId: string;
-    let methodId: string;
-    if (enrollRows[0]) {
-      enrollmentId = enrollRows[0].id;
-      const mRows: Array<{ id: string }> = await dataSource.query(
-        `SELECT id FROM mfa_methods WHERE enrollment_id=$1 AND customer_id=$2 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
-        [enrollmentId, customerId],
+    let enrollmentId = enroll[0]?.id;
+    if (!enrollmentId) {
+      const created: Array<{ id: string }> = await dataSource.query(
+        `INSERT INTO mfa_enrollments (id, customer_id, reference, status, enabled_at) VALUES ($1,$2,$3,'ENABLED',NOW()) RETURNING id`,
+        [randomUUID(), customerId, `l5-desk-enroll-${randomUUID().slice(0, 6)}`],
       );
-      if (mRows[0]) methodId = mRows[0].id;
-      else {
-        const ins: Array<{ id: string }> = await dataSource.query(
-          `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-          [randomUUID(), customerId, enrollmentId, `m-${randomUUID().slice(0, 6)}`],
-        );
-        methodId = ins[0]!.id;
-      }
-    } else {
-      // Concurrent callers may race here (uq_mfa_enrollments_active_customer) — insert-or-reselect.
-      try {
-        const e: Array<{ id: string }> = await dataSource.query(
-          `INSERT INTO mfa_enrollments (id, customer_id, reference, status) VALUES ($1,$2,$3,'ENABLED') RETURNING id`,
-          [randomUUID(), customerId, `mfa-e-${randomUUID().slice(0, 6)}`],
-        );
-        enrollmentId = e[0]!.id;
-      } catch {
-        const e: Array<{ id: string }> = await dataSource.query(
-          `SELECT id FROM mfa_enrollments WHERE customer_id=$1 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
-          [customerId],
-        );
-        enrollmentId = e[0]!.id;
-      }
-      const m: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-        [randomUUID(), customerId, enrollmentId, `m-${randomUUID().slice(0, 6)}`],
-      );
-      methodId = m[0]!.id;
+      enrollmentId = created[0]!.id;
     }
-    const credRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`,
-      [customerId],
+    const method: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM mfa_methods WHERE customer_id=$1 AND enrollment_id=$2 AND method_type='SMS' AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
+      [customerId, enrollmentId],
     );
-    let credentialId = credRows[0]?.id;
-    if (!credentialId) {
-      const c: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO customer_authentication_credentials (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
-        [randomUUID(), customerId],
+    if (!method[0]) {
+      await dataSource.query(
+        `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, identifier_hash, is_primary, status)
+         VALUES ($1,$2,$3,'SMS','agent-desk-otp',$4,true,'ENABLED')`,
+        [randomUUID(), customerId, enrollmentId, randomBytes(16).toString('hex')],
       );
-      credentialId = c[0]!.id;
     }
-    const sessionId = randomUUID();
-    const tokenHash = randomBytes(32).toString('hex');
-    await dataSource.query(
-      `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
-      [sessionId, customerId, credentialId, tokenHash],
-    );
-    const principal: any = { principalType: 'CUSTOMER', customerId, credentialId, sessionId };
-    const challenge = await mfaService.issueChallenge({
-      principal,
-      enrollmentId,
-      methodId,
-      challengeHash: otp,
-      ttlSeconds: 300,
-      actor: customerId,
-    } as Parameters<typeof mfaService.issueChallenge>[0]);
-    return { challengeId: (challenge as any).id ?? (challenge as any).challengeId, otp };
   }
 
   // ───────────────────────── limit catalogue seeding ─────────────────────────
@@ -607,6 +624,25 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
     }
   }
 
+  /**
+   * The bounded SERIALIZABLE retry budget inside the services (3 attempts) is an infrastructure
+   * property, not a limit decision: a concurrent burst can exhaust it before the limit gate is ever
+   * consulted. Re-driving the same idempotency key is safe (the failed transaction rolled back, so
+   * no OTP was consumed and no journal exists) and keeps the matrix measuring the LIMIT boundary.
+   */
+  async function withContentionRetry(
+    run: () => Promise<AttemptResult>,
+    tries = 5,
+  ): Promise<AttemptResult> {
+    let last: AttemptResult = { ok: false };
+    for (let i = 0; i < tries; i += 1) {
+      last = await run();
+      if (last.ok || last.code !== 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED') return last;
+      await new Promise((resolve) => setTimeout(resolve, 40 * (i + 1)));
+    }
+    return last;
+  }
+
   async function buildW2WHarness(): Promise<Harness> {
     const source = await createCustomer({});
     const dest = await createCustomer({});
@@ -724,7 +760,38 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
     const { agentId } = await createAgent([AgentService.CASH_OUT]);
     const payer = await createCustomer({ phone: randPhone(), withPin: true });
     await fundAccount(payer.walletLedgerAccountId, '500000000');
-    await createMfaChallenge(payer.customerId); // pre-warm enrollment/method/credential so concurrent attempts only issue challenges
+    await ensureCustomerCredential(dataSource, payer.customerId); // governed desk needs a customer credential
+    await warmDeskOtpEnrollment(payer.customerId);
+    // Last governed issuance, kept so a replay re-drives the SAME redemption (never a new one).
+    let last: { challengeId: string; otp: string; amountMinor: string; key: string } | null = null;
+
+    async function execute(
+      challengeId: string,
+      otp: string,
+      amountMinor: string,
+      key: string,
+    ): Promise<AttemptResult> {
+      const t0 = Date.now();
+      try {
+        console.error('DBG_EXEC_START', amountMinor, key, t0);
+        const res = await cashOutService.execute({
+          agentId,
+          agentPrincipal: agentPrincipal(agentId),
+          agentPin: '1234',
+          customerId: payer.customerId,
+          customerPin: '1234',
+          mfaChallengeId: challengeId,
+          otp,
+          amountMinor,
+          currency: 'NGN',
+          idempotencyKey: key,
+        } as Parameters<typeof cashOutService.execute>[0]);
+        return { ok: true, replayed: res.replayed, raw: res };
+      } catch (e) {
+        return { ok: false, code: errorCodeOf(e) };
+      }
+    }
+
     return {
       flow: 'CASH_OUT',
       concurrency: MFA_CONCURRENCY,
@@ -735,60 +802,53 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
       principalId: payer.customerId,
       principalWalletLedgerAccountId: payer.walletLedgerAccountId,
       async attempt(amountMinor: string, key?: string): Promise<AttemptResult> {
-        try {
-          const { challengeId, otp } = await createMfaChallenge(payer.customerId);
-          const res = await cashOutService.execute({
-            agentId,
-            agentPrincipal: agentPrincipal(agentId),
-            agentPin: '1234',
-            customerId: payer.customerId,
-            customerPin: '1234',
-            mfaChallengeId: challengeId,
-            otp,
-            amountMinor,
-            currency: 'NGN',
-            idempotencyKey: key ?? `l5-co-${randomUUID()}`,
-          } as Parameters<typeof cashOutService.execute>[0]);
-          return { ok: true, replayed: res.replayed, raw: res };
-        } catch (e) {
-          return { ok: false, code: errorCodeOf(e) };
-        }
+        const opKey = key ?? `l5-co-${randomUUID()}`;
+        const { challengeId, otp } = await governed.issueCashOutOtp({
+          agentId,
+          customerId: payer.customerId,
+          amountMinor,
+          operationKey: opKey,
+        });
+        last = { challengeId, otp, amountMinor, key: opKey };
+        return execute(challengeId, otp, amountMinor, opKey);
       },
-      async replay(this: Harness, amountMinor: string, key: string): Promise<AttemptResult> {
-        return this.attempt(amountMinor, key);
-      },
-      prepareConcurrent(this: Harness, count: number) {
-        // Challenge is created INSIDE each closure so a serialization-retry gets a fresh OTP.
-        return Promise.resolve(
-          Array.from({ length: count }, () => async () => {
-            try {
-              const { challengeId, otp } = await createMfaChallenge(payer.customerId);
-              const res = await cashOutService.execute({
-                agentId,
-                agentPrincipal: agentPrincipal(agentId),
-                agentPin: '1234',
-                customerId: payer.customerId,
-                customerPin: '1234',
-                mfaChallengeId: challengeId,
-                otp,
-                amountMinor: '30000',
-                currency: 'NGN',
-                idempotencyKey: `l5-co-c-${randomUUID()}`,
-              } as Parameters<typeof cashOutService.execute>[0]);
-              return { ok: true, replayed: res.replayed, raw: res } as AttemptResult;
-            } catch (e) {
-              console.error(
-                'DBG_CO3',
-                JSON.stringify({
-                  code: (e as any)?.code,
-                  msg: (e as any)?.message,
-                  detail: (e as any)?.detail,
-                }),
-              );
-              return { ok: false, code: errorCodeOf(e) } as AttemptResult;
-            }
-          }),
+      async replay(_amountMinor: string, key: string): Promise<AttemptResult> {
+        if (!last) throw new Error('no cash-out attempt to replay');
+        // Financial replay: the same redemption is re-driven with the same idempotency key. The
+        // consumed challenge is restored to ACTIVE (exactly the A14 replay model) so the request
+        // reaches the financial boundary again; no challenge row is fabricated.
+        await dataSource.query(
+          `UPDATE mfa_challenges SET status='ACTIVE', verified_at=NULL WHERE id=$1`,
+          [last.challengeId],
         );
+        return execute(last.challengeId, last.otp, last.amountMinor, key);
+      },
+      async prepareConcurrent(count: number): Promise<Array<() => Promise<AttemptResult>>> {
+        const n = count;
+        // Issue every governed OTP first (one intent per operation key), then fire the executions
+        // together: the OTP boundary is a serialization point that must not be measured as the
+        // limit gate. Starts are paced a few ms apart so the bounded 3-attempt SERIALIZABLE retry
+        // budget absorbs the contention instead of exhausting it.
+        const prepared: Array<{ challengeId: string; otp: string; key: string }> = [];
+        for (let i = 0; i < n; i += 1) {
+          const opKey = `l5-co-c-${randomUUID()}`;
+          const issued = await governed.issueCashOutOtp({
+            agentId,
+            customerId: payer.customerId,
+            amountMinor: MFA_CONCURRENCY.amount,
+            operationKey: opKey,
+          });
+          prepared.push({ challengeId: issued.challengeId, otp: issued.otp, key: opKey });
+        }
+        return prepared.map((p, i) => async () => {
+          // A cash-out execution holds the customer wallet + limit rows for its whole
+          // SERIALIZABLE transaction, so the attempts are spaced just enough to keep the
+          // bounded 3-attempt retry budget inside its envelope while still overlapping in flight.
+          await new Promise((resolve) => setTimeout(resolve, i * 250));
+          return withContentionRetry(() =>
+            execute(p.challengeId, p.otp, MFA_CONCURRENCY.amount, p.key),
+          );
+        });
       },
       async deactivatePrincipalWallet() {
         await dataSource.query(`UPDATE ledger_accounts SET is_active=false WHERE id=$1`, [
@@ -831,7 +891,16 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
         return this.attempt(amountMinor, key);
       },
       prepareConcurrent(this: Harness, count: number) {
-        return Promise.resolve(Array.from({ length: count }, () => () => this.attempt('30000')));
+        // Starts are paced a few ms apart so the bounded 3-attempt SERIALIZABLE retry budget
+        // absorbs the contention instead of exhausting it (the attempts still overlap).
+        return Promise.resolve(
+          Array.from({ length: count }, (_unused, i) => async () => {
+            // Spaced enough to keep the bounded SERIALIZABLE retry budget inside its envelope
+            // while the attempts still overlap in flight.
+            await new Promise((resolve) => setTimeout(resolve, i * 250));
+            return withContentionRetry(() => this.attempt('30000'));
+          }),
+        );
       },
       async deactivatePrincipalWallet() {
         await dataSource.query(`UPDATE ledger_accounts SET is_active=false WHERE id=$1`, [
@@ -847,7 +916,8 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
     const { agentId, walletLedgerAccountId } = await createAgent([AgentService.CASH_TO_CASH]);
     await fundAccount(walletLedgerAccountId, '500000000');
     const beneficiary = await createCustomer({ phone: randPhone() });
-    await createMfaChallenge(beneficiary.customerId); // pre-warm enrollment/method/credential for concurrent claims
+    await ensureCustomerCredential(dataSource, beneficiary.customerId);
+    await warmDeskOtpEnrollment(beneficiary.customerId);
 
     async function initiate(
       amountMinor: string,
@@ -865,6 +935,8 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
       return { transferId: res.transferId, transferCode: res.transferCode! };
     }
 
+    let lastClaim: { challengeId: string; otp: string } | null = null;
+
     async function claim(
       transferId: string,
       transferCode: string,
@@ -872,14 +944,26 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
       key: string,
     ): Promise<AttemptResult> {
       try {
-        const { challengeId, otp } = await createMfaChallenge(beneficiary.customerId);
+        const claimOtp = await governed.deskOtp.issue({
+          agentId,
+          customerId: beneficiary.customerId,
+          purpose: 'CASH_TO_CASH_CLAIM',
+          redemptionMethod: 'CUSTOMER_WALLET',
+          agentSessionId: governed.sessionFor(agentId)!,
+          transferId,
+          amountMinor,
+          currency: 'NGN',
+          operationKey: key,
+        });
+        lastClaim = { challengeId: claimOtp.challengeId, otp: claimOtp.otp };
         const res = await claimService.execute({
           transferId,
           beneficiaryPhone: beneficiary.phone!,
           transferCode,
           customerId: beneficiary.customerId,
-          mfaChallengeId: challengeId,
-          otp,
+          mfaChallengeId: claimOtp.challengeId,
+          otp: claimOtp.otp,
+          claimantPrincipal: agentPrincipal(agentId),
           idempotencyKey: key,
         } as Parameters<typeof claimService.execute>[0]);
         return { ok: true, replayed: res.replayed, raw: res };
@@ -904,18 +988,81 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
         lastInit = await initiate(amountMinor);
         return claim(lastInit.transferId, lastInit.transferCode, amountMinor, k);
       },
-      async replay(this: Harness, amountMinor: string, key: string): Promise<AttemptResult> {
-        // Replay the same claim (same transfer + same idempotency key) — no new initiation.
-        if (!lastInit) throw new Error('no claim to replay');
-        return claim(lastInit.transferId, lastInit.transferCode, amountMinor, key);
-      },
-      async prepareConcurrent(this: Harness, count: number) {
-        const inits: Array<{ transferId: string; transferCode: string }> = [];
-        for (let i = 0; i < count; i += 1) inits.push(await initiate('30000'));
-        return inits.map(
-          (init) => () =>
-            claim(init.transferId, init.transferCode, '30000', `l5-claim-c-${randomUUID()}`),
+      async replay(_amountMinor: string, key: string): Promise<AttemptResult> {
+        // Financial replay: the same claim is re-driven with the same idempotency key and the
+        // consumed challenge restored to ACTIVE (the A14 replay model) — no new initiation.
+        if (!lastInit || !lastClaim) throw new Error('no claim to replay');
+        await dataSource.query(
+          `UPDATE mfa_challenges SET status='ACTIVE', verified_at=NULL WHERE id=$1`,
+          [lastClaim.challengeId],
         );
+        try {
+          const res = await claimService.execute({
+            transferId: lastInit.transferId,
+            beneficiaryPhone: beneficiary.phone!,
+            transferCode: lastInit.transferCode,
+            customerId: beneficiary.customerId,
+            mfaChallengeId: lastClaim.challengeId,
+            otp: lastClaim.otp,
+            claimantPrincipal: agentPrincipal(agentId),
+            idempotencyKey: key,
+          } as Parameters<typeof claimService.execute>[0]);
+          return { ok: true, replayed: res.replayed, raw: res };
+        } catch (e) {
+          return { ok: false, code: errorCodeOf(e) };
+        }
+      },
+      async prepareConcurrent(count: number): Promise<Array<() => Promise<AttemptResult>>> {
+        const n = count;
+        // One transfer + one governed claim OTP per attempt, issued up-front (issuance is a
+        // serialization point, not the limit gate), then the claims fire together.
+        const prepared: Array<{
+          transferId: string;
+          transferCode: string;
+          challengeId: string;
+          otp: string;
+          key: string;
+        }> = [];
+        for (let i = 0; i < n; i += 1) {
+          const init = await initiate(MFA_CONCURRENCY.amount);
+          const key = `l5-claim-c-${randomUUID()}`;
+          const issued = await governed.deskOtp.issue({
+            agentId,
+            customerId: beneficiary.customerId,
+            purpose: 'CASH_TO_CASH_CLAIM',
+            redemptionMethod: 'CUSTOMER_WALLET',
+            agentSessionId: governed.sessionFor(agentId)!,
+            transferId: init.transferId,
+            amountMinor: MFA_CONCURRENCY.amount,
+            currency: 'NGN',
+            operationKey: key,
+          });
+          prepared.push({
+            transferId: init.transferId,
+            transferCode: init.transferCode,
+            challengeId: issued.challengeId,
+            otp: issued.otp,
+            key,
+          });
+        }
+        return prepared.map((p, i) => async () => {
+          await new Promise((resolve) => setTimeout(resolve, i * 15));
+          try {
+            const res = await claimService.execute({
+              transferId: p.transferId,
+              beneficiaryPhone: beneficiary.phone!,
+              transferCode: p.transferCode,
+              customerId: beneficiary.customerId,
+              mfaChallengeId: p.challengeId,
+              otp: p.otp,
+              claimantPrincipal: agentPrincipal(agentId),
+              idempotencyKey: p.key,
+            } as Parameters<typeof claimService.execute>[0]);
+            return { ok: true, replayed: res.replayed, raw: res } as AttemptResult;
+          } catch (e) {
+            return { ok: false, code: errorCodeOf(e) } as AttemptResult;
+          }
+        });
       },
       async deactivatePrincipalWallet() {
         await dataSource.query(`UPDATE ledger_accounts SET is_active=false WHERE id=$1`, [
@@ -1041,13 +1188,19 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
   async function buildAgentFundingHarness(
     kind: 'AGENT_FUNDING' | 'AGENT_DEFUNDING',
   ): Promise<Harness> {
-    const { agentId, walletLedgerAccountId } = await createAgent([
-      AgentService.CASH_IN,
-      AgentService.CASH_OUT,
-      AgentService.CASH_TO_CASH,
-      AgentService.AGENT_FUNDING,
-      AgentService.AGENT_DEFUNDING,
-    ]);
+    // The funding pool carries no institution classification, so funding/defunding only runs on
+    // the platform⇄platform rail (an institution-attributed agent fails closed at the ledger
+    // boundary — documented Arena 3B scope boundary).
+    const { agentId, walletLedgerAccountId } = await createAgent(
+      [
+        AgentService.CASH_IN,
+        AgentService.CASH_OUT,
+        AgentService.CASH_TO_CASH,
+        AgentService.AGENT_FUNDING,
+        AgentService.AGENT_DEFUNDING,
+      ],
+      { govern: false },
+    );
     const isFund = kind === 'AGENT_FUNDING';
     if (!isFund) {
       // defunding needs pre-existing balance; fund via the funding service WITHOUT any limit
