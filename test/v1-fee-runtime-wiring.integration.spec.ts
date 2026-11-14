@@ -34,7 +34,7 @@
  * and the journal remains exactly DEBIT/CREDIT principal-only. No ledger account codes were
  * invented; fee revenue posting awaits provisioning of the authoritative revenue family.
  */
-import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
@@ -45,11 +45,7 @@ import { OutboxService } from '../src/operations/outbox.service';
 import { WalletService } from '../src/wallet/wallet.service';
 import { TransferService } from '../src/transfer/transfer.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import {
-  LedgerAccountType,
-  LedgerEntryDirection,
-  LedgerNormalBalance,
-} from '../src/ledger/ledger.enums';
+import { LedgerAccountType, LedgerNormalBalance } from '../src/ledger/ledger.enums';
 import { FeeRuleRegistryService } from '../src/fee-rules/fee-rule-registry.service';
 import { ProductCatalogSeedService } from '../src/product-catalog/product-catalog-seed.service';
 import { CustomerFundingService } from '../src/customer-funding/customer-funding.service';
@@ -63,7 +59,6 @@ import { AgentLifecycleService } from '../src/agent/agent-lifecycle.service';
 import { AgentAuthenticationService } from '../src/agent-authentication/agent-authentication.service';
 import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-authentication.enums';
 import { AgentStatus } from '../src/agent/agent.enums';
-import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
 import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
@@ -115,7 +110,6 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-01 Fee runtime wiring (real PG)', () => {
   let appService: AgentApplicationService;
   let lifecycleService: AgentLifecycleService;
   let pinService: AgentAuthenticationService;
-  let mfaService: MfaExecutionService;
 
   let systemLedgerAccountId: string;
 
@@ -866,42 +860,6 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-01 Fee runtime wiring (real PG)', () => {
     });
     await governed.provisionCustomer(customerId, wallet.id);
     return { customerId, wallet };
-  }
-
-  async function createMfaChallenge(customerId: string, otp: string, ttlSeconds = 300) {
-    const eRows: Array<{ id: string }> = await dataSource.query(
-      `INSERT INTO mfa_enrollments (id, customer_id, reference, status) VALUES ($1,$2,$3,'ENABLED') RETURNING id`,
-      [randomUUID(), customerId, `mfa-enroll-${randomUUID().slice(0, 6)}`],
-    );
-    const enrollmentId = eRows[0].id;
-    const mRows: Array<{ id: string }> = await dataSource.query(
-      `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-      [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`],
-    );
-    const methodId = mRows[0].id;
-    const cRows: Array<{ id: string }> = await dataSource.query(
-      `INSERT INTO customer_authentication_credentials (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
-      [randomUUID(), customerId],
-    );
-    const credentialId = cRows[0].id;
-    const sessionId = randomUUID();
-    const tokenHash = randomBytes(32).toString('hex');
-    await dataSource
-      .query(
-        `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
-        [sessionId, customerId, credentialId, tokenHash],
-      )
-      .catch(() => {});
-    const principal: any = { principalType: 'CUSTOMER', customerId, credentialId, sessionId };
-    const challenge = await mfaService.issueChallenge({
-      principal,
-      enrollmentId,
-      methodId,
-      challengeHash: otp,
-      ttlSeconds,
-      actor: customerId,
-    } as any);
-    return { challengeId: (challenge as any).id ?? (challenge as any).challengeId, otp };
   }
 
   it('12. CASH_TO_CASH initiation: rule computes APPLIED fee snapshot; journal stays principal-only', async () => {
