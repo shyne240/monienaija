@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/require-await, @typescript-eslint/ban-ts-comment, @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/ban-ts-comment, @typescript-eslint/no-require-imports */
 // @ts-nocheck
 /**
  * V1-COMMERCIAL-DECISION-03C — CASH_TO_CASH commercial snapshot wiring (real PostgreSQL).
@@ -17,7 +17,7 @@
  * TEST-ONLY fee rule captured without charging on both operations, immutability ×2, wiring
  * boundary (no other flow touched), zero production fee rules.
  */
-import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
@@ -36,20 +36,23 @@ import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-au
 import { AgentStatus } from '../src/agent/agent.enums';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import {
-  LedgerAccountType,
-  LedgerEntryDirection,
-  LedgerNormalBalance,
-} from '../src/ledger/ledger.enums';
-import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
+import {} from '../src/ledger/ledger.enums';
 import { FeeRuleRegistryService } from '../src/fee-rules/fee-rule-registry.service';
 import { ProductCatalogSeedService } from '../src/product-catalog/product-catalog-seed.service';
-import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
-import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
-import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import {
+  ensureCustomerCredential,
+  governedDeskProviderOverride,
+  startGovernedDesk,
+  type GovernedDeskHarness,
+} from './support/cash-out-lifecycle-fixture';
+import { RecordingSmsProvider } from './support/desk-otp-fixture';
+import {
+  createControlledFundingPolicy,
+  overrideCashToCashFundingPolicy,
+} from './support/controlled-funding-policy';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 function hashPin(pin: string): string {
@@ -69,69 +72,28 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
   let appService: AgentApplicationService;
   let lifecycleService: AgentLifecycleService;
   let pinService: AgentAuthenticationService;
-  let mfaService: MfaExecutionService;
   let walletService: WalletService;
   let ledgerService: LedgerService;
   let feeRuleRegistry: FeeRuleRegistryService;
-  let systemLedgerAccountId: string;
   let unclaimedLedgerAccountId: string;
   let syntheticRuleId: string | null = null;
 
-  const workforceConfig: A2WorkforceConfigurationV1 = {
-    enabled: true,
-    oidcIssuer: 'https://workforce.test',
-    oidcJwksUri: 'https://workforce.test/jwks',
-    oidcAudience: 'workforce',
-    oidcClientId: 'test-client',
-    internalAudience: 'workforce-admin',
-    sessionTtlSeconds: 900,
-    jwksJson: [],
-    financeRoles: [],
-    makerCheckerRules: [],
-    rateLimits: [],
-    trustedProxies: ['127.0.0.1'],
-  } as unknown as A2WorkforceConfigurationV1;
-
-  const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-'))
-        throw new UnauthorizedException('invalid workforce token');
-      const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = [
-        'SUPPORT',
-        'OPERATOR',
-        'SERVICE',
-        'PRIVILEGED',
-        'AGENT',
-        'CUSTOMER',
-        'AGGREGATOR',
-      ];
-      if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
-      return {
-        type,
-        principalId: `workforce-${type.toLowerCase()}-1`,
-        audience,
-        roles: [],
-        scopes: [],
-        customerAccess: 'NONE',
-        agentAccess: 'NONE',
-        aggregatorAccess: 'NONE',
-      } as any;
-    },
-  };
+  const smsProvider = new RecordingSmsProvider();
+  let governed: GovernedDeskHarness;
+  let govWorkforce: Awaited<ReturnType<GovernedDeskHarness['fixture']['workforce']>>;
+  const fundingPolicy = createControlledFundingPolicy();
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('v1-comm-decision-03c');
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    const baseBuilder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
-      .useValue(kycEvidence.reader)
-      .overrideProvider(A2WorkforceSessionService)
-      .useValue(mockWorkforceSessions)
-      .overrideProvider(A2_WORKFORCE_CONFIG)
-      .useValue(workforceConfig)
-      .compile();
+      .useValue(kycEvidence.reader);
+    const moduleRef = await overrideCashToCashFundingPolicy(
+      governedDeskProviderOverride(baseBuilder, smsProvider),
+      fundingPolicy,
+    ).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(
@@ -145,40 +107,19 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
     appService = moduleRef.get(AgentApplicationService);
     lifecycleService = moduleRef.get(AgentLifecycleService);
     pinService = moduleRef.get(AgentAuthenticationService);
-    mfaService = moduleRef.get(MfaExecutionService);
     walletService = moduleRef.get(WalletService);
     ledgerService = moduleRef.get(LedgerService);
     feeRuleRegistry = moduleRef.get(FeeRuleRegistryService);
     await moduleRef.get(ProductCatalogSeedService).seedIfEmpty();
 
-    const sys = await ledgerService.createAccount({
-      code: `SYS-FLOAT-NGN-${randomUUID().slice(0, 6)}`,
-      name: 'System Float NGN',
-      accountType: LedgerAccountType.ASSET,
-      normalBalance: LedgerNormalBalance.DEBIT,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      allowNegativeBalance: true,
-    });
-    systemLedgerAccountId = sys.id;
     // Reserved/unclaimed liability account (a15 convention)
-    const unclaimedRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM ledger_accounts WHERE code='CASH_TO_CASH-UNCLAIMED-NGN' LIMIT 1`,
+    governed = await startGovernedDesk({ app, dataSource, smsProvider, label: 'c03c' });
+    govWorkforce = await governed.fixture.workforce();
+    // Cash-to-Cash holds the unclaimed liability in the receiving institution's suspense account;
+    // the legacy global unclaimed account is no longer the settlement obligation.
+    unclaimedLedgerAccountId = await governed.fixture.openInstitutionCashToCashSuspenseAccount(
+      governed.institutionId,
     );
-    if (unclaimedRows[0]) {
-      unclaimedLedgerAccountId = unclaimedRows[0].id;
-    } else {
-      const acc = await ledgerService.createAccount({
-        code: 'CASH_TO_CASH-UNCLAIMED-NGN',
-        name: 'Cash-to-Cash Unclaimed NGN',
-        accountType: LedgerAccountType.LIABILITY,
-        normalBalance: LedgerNormalBalance.CREDIT,
-        currency: 'NGN',
-        accountingUnit: 'CUSTOMER_FUNDS',
-        allowNegativeBalance: false,
-      });
-      unclaimedLedgerAccountId = acc.id;
-    }
   }, 180_000);
 
   afterAll(async () => {
@@ -228,12 +169,14 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
       currency: 'NGN',
       idempotencyKey: `agent-wallet-${agent.id}-${randomUUID()}`,
     });
+    await governed.provisionAgent(agent.id, wallet.id);
     return { cls, agent, appEntity, wallet };
   }
 
   function agentPrincipal(agentId: string) {
     return {
       type: 'AGENT' as const,
+      sessionId: governed.sessionFor(agentId),
       agentId,
       principalId: agentId,
       roles: [],
@@ -265,92 +208,13 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
       currency: 'NGN',
       idempotencyKey: `cust-wallet-${customerId}-${randomUUID()}`,
     });
+    await governed.provisionCustomer(customerId, wallet.id);
     return { customerId, wallet };
   }
 
-  async function createMfaChallenge(customerId: string, otp: string, ttlSeconds = 300) {
-    let enrollmentId: string;
-    let methodId: string;
-    const enrollRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM mfa_enrollments WHERE customer_id=$1 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
-      [customerId],
-    );
-    if (enrollRows[0]) {
-      enrollmentId = enrollRows[0].id;
-      const methodRows: Array<{ id: string }> = await dataSource.query(
-        `SELECT id FROM mfa_methods WHERE enrollment_id=$1 AND customer_id=$2 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
-        [enrollmentId, customerId],
-      );
-      if (methodRows[0]) {
-        methodId = methodRows[0].id;
-      } else {
-        const mRows: Array<{ id: string }> = await dataSource.query(
-          `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-          [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`],
-        );
-        methodId = mRows[0].id;
-      }
-    } else {
-      const eRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO mfa_enrollments (id, customer_id, reference, status) VALUES ($1,$2,$3,'ENABLED') RETURNING id`,
-        [randomUUID(), customerId, `mfa-enroll-${randomUUID().slice(0, 6)}`],
-      );
-      enrollmentId = eRows[0].id;
-      const mRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-        [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`],
-      );
-      methodId = mRows[0].id;
-    }
-    const credentialRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`,
-      [customerId],
-    );
-    let credentialId = credentialRows[0]?.id;
-    if (!credentialId) {
-      const cRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO customer_authentication_credentials (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
-        [randomUUID(), customerId],
-      );
-      credentialId = cRows[0].id;
-    }
-    const sessionId = randomUUID();
-    const tokenHash = randomBytes(32).toString('hex');
-    await dataSource
-      .query(
-        `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
-        [sessionId, customerId, credentialId, tokenHash],
-      )
-      .catch(() => {});
-    const principal: any = { principalType: 'CUSTOMER', customerId, credentialId, sessionId };
-    const challenge = await mfaService.issueChallenge({
-      principal,
-      enrollmentId,
-      methodId,
-      challengeHash: otp,
-      ttlSeconds,
-      actor: customerId,
-    } as any);
-    return { challengeId: (challenge as any).id ?? (challenge as any).challengeId, otp };
-  }
-
   async function fundAgent(agentWalletLedgerId: string, amount: string) {
-    await ledgerService.postJournal({
-      idempotencyKey: `fund-agent-${agentWalletLedgerId}-${amount}-${randomUUID()}`,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [
-        {
-          accountId: systemLedgerAccountId,
-          direction: LedgerEntryDirection.DEBIT,
-          amountMinor: amount,
-        },
-        {
-          accountId: agentWalletLedgerId,
-          direction: LedgerEntryDirection.CREDIT,
-          amountMinor: amount,
-        },
-      ],
+    await governed.fixture.fundLedgerAccount(agentWalletLedgerId, amount, {
+      institutionId: governed.institutionId,
     });
   }
 
@@ -758,8 +622,18 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
     await seedLimitProfile(profile, 'CUSTOMER', customerId);
     const dailyRule = await seedLimitRule(profile, 'DAILY_AMOUNT', '5000000', null);
 
-    const otp = 'c03c-otp-07';
-    const { challengeId } = await createMfaChallenge(customerId, otp);
+    await ensureCustomerCredential(dataSource, customerId);
+    const { challengeId, otp } = await governed.deskOtp.issue({
+      agentId: agent.id,
+      customerId: customerId,
+      purpose: 'CASH_TO_CASH_CLAIM',
+      redemptionMethod: 'CUSTOMER_WALLET',
+      agentSessionId: governed.sessionFor(agent.id)!,
+      transferId: init.transferId,
+      amountMinor: '20000',
+      currency: 'NGN',
+      operationKey: `c03c-claim-${randomUUID()}`,
+    });
     const claimKey = `c03c-07-claim-${randomUUID()}`;
     const unclaimedBefore = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const custBefore = await ledgerService.getAccountBalance(custWallet.ledgerAccountId);
@@ -772,6 +646,7 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
       mfaChallengeId: challengeId,
       otp,
       idempotencyKey: claimKey,
+      claimantPrincipal: agentPrincipal(agent.id) as any,
     });
     expect(claim.status).toBe('COMPLETED');
 
@@ -843,8 +718,18 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
     const phone = newPhone();
     const init = await initiateTransfer(agent, phone, '12000');
     const { customerId, wallet: custWallet } = await createCustomerWithPhone(phone);
-    const otp = 'c03c-otp-08';
-    const { challengeId } = await createMfaChallenge(customerId, otp);
+    await ensureCustomerCredential(dataSource, customerId);
+    const { challengeId, otp } = await governed.deskOtp.issue({
+      agentId: agent.id,
+      customerId: customerId,
+      purpose: 'CASH_TO_CASH_CLAIM',
+      redemptionMethod: 'CUSTOMER_WALLET',
+      agentSessionId: governed.sessionFor(agent.id)!,
+      transferId: init.transferId,
+      amountMinor: '12000',
+      currency: 'NGN',
+      operationKey: `c03c-claim-${randomUUID()}`,
+    });
     const claimKey = `c03c-08-claim-${randomUUID()}`;
     const payload = {
       transferId: init.transferId,
@@ -854,6 +739,7 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
       mfaChallengeId: challengeId,
       otp,
       idempotencyKey: claimKey,
+      claimantPrincipal: agentPrincipal(agent.id) as any,
     };
     const first = await claimService.execute(payload);
     expect(first.status).toBe('COMPLETED');
@@ -888,31 +774,43 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
     const { customerId } = await createCustomerWithPhone(phone);
     const claimKey = `c03c-09-claim-${randomUUID()}`;
 
-    const otp1 = 'c03c-otp-09a';
-    const { challengeId: ch1 } = await createMfaChallenge(customerId, otp1);
+    await ensureCustomerCredential(dataSource, customerId);
+    const claimOtp1 = await governed.deskOtp.issue({
+      agentId: agent.id,
+      customerId,
+      purpose: 'CASH_TO_CASH_CLAIM',
+      redemptionMethod: 'CUSTOMER_WALLET',
+      agentSessionId: governed.sessionFor(agent.id)!,
+      transferId: init.transferId,
+      amountMinor: '9000',
+      currency: 'NGN',
+      operationKey: `c03c-claim-${randomUUID()}`,
+    });
     const first = await claimService.execute({
       transferId: init.transferId,
       beneficiaryPhone: phone,
       transferCode: init.transferCode!,
       customerId,
-      mfaChallengeId: ch1,
-      otp: otp1,
+      mfaChallengeId: claimOtp1.challengeId,
+      otp: claimOtp1.otp,
+      claimantPrincipal: agentPrincipal(agent.id) as any,
       idempotencyKey: claimKey,
     });
     expect(first.status).toBe('COMPLETED');
 
-    const otp2 = 'c03c-otp-09b';
-    const { challengeId: ch2 } = await createMfaChallenge(customerId, otp2);
+    // The same claim key with different financial parameters is refused before a second claim
+    // authorization can exist: the transfer is already claimed.
     await expect(
-      claimService.execute({
-        transferId: init.transferId,
-        beneficiaryPhone: phone,
-        transferCode: init.transferCode!,
+      governed.deskOtp.issue({
+        agentId: agent.id,
         customerId,
-        mfaChallengeId: ch2,
-        otp: otp2,
-        idempotencyKey: claimKey,
-        reference: `different-reference-${randomUUID()}`, // different financial parameter under same key
+        purpose: 'CASH_TO_CASH_CLAIM',
+        redemptionMethod: 'CUSTOMER_WALLET',
+        agentSessionId: governed.sessionFor(agent.id)!,
+        transferId: init.transferId,
+        amountMinor: '9000',
+        currency: 'NGN',
+        operationKey: `c03c-claim-${randomUUID()}`,
       }),
     ).rejects.toMatchObject({ status: 409 });
     expect(
@@ -934,8 +832,18 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
     await seedLimitProfile(profile, 'CUSTOMER', customerId);
     await seedLimitRule(profile, 'DAILY_AMOUNT', '5000000', null);
 
-    const otp = 'c03c-otp-10';
-    const { challengeId } = await createMfaChallenge(customerId, otp);
+    await ensureCustomerCredential(dataSource, customerId);
+    const { challengeId, otp } = await governed.deskOtp.issue({
+      agentId: agent.id,
+      customerId: customerId,
+      purpose: 'CASH_TO_CASH_CLAIM',
+      redemptionMethod: 'CUSTOMER_WALLET',
+      agentSessionId: governed.sessionFor(agent.id)!,
+      transferId: init.transferId,
+      amountMinor: '14000',
+      currency: 'NGN',
+      operationKey: `c03c-claim-${randomUUID()}`,
+    });
     const claimKey = `c03c-10-claim-${randomUUID()}`;
     const journalsBefore: Array<{ cnt: string }> = await dataSource.query(
       `SELECT count(*)::text AS cnt FROM ledger_journals`,
@@ -952,6 +860,7 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
         mfaChallengeId: challengeId,
         otp,
         idempotencyKey: claimKey,
+        claimantPrincipal: agentPrincipal(agent.id) as any,
         _simulateFailureAfterJournal: true, // fails AFTER snapshot, BEFORE commit
       }),
     ).rejects.toThrow('Simulated failure after journal');
@@ -1008,8 +917,18 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
     await seedLimitProfile(profile, 'CUSTOMER', customerId);
     await seedLimitRule(profile, 'DAILY_AMOUNT', '20000', null); // tighter than the transfer principal
 
-    const otp = 'c03c-otp-11';
-    const { challengeId } = await createMfaChallenge(customerId, otp);
+    await ensureCustomerCredential(dataSource, customerId);
+    const { challengeId, otp } = await governed.deskOtp.issue({
+      agentId: agent.id,
+      customerId: customerId,
+      purpose: 'CASH_TO_CASH_CLAIM',
+      redemptionMethod: 'CUSTOMER_WALLET',
+      agentSessionId: governed.sessionFor(agent.id)!,
+      transferId: init.transferId,
+      amountMinor: '30000',
+      currency: 'NGN',
+      operationKey: `c03c-claim-${randomUUID()}`,
+    });
     const claimKey = `c03c-11-claim-${randomUUID()}`;
     await expect(
       claimService.execute({
@@ -1020,6 +939,7 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
         mfaChallengeId: challengeId,
         otp,
         idempotencyKey: claimKey,
+        claimantPrincipal: agentPrincipal(agent.id) as any,
       }),
     ).rejects.toMatchObject({ status: 422 });
 
@@ -1068,8 +988,18 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
     const phone = newPhone();
     const init = await initiateTransfer(agent, phone, '11000');
     const { customerId, wallet: custWallet } = await createCustomerWithPhone(phone);
-    const otp = 'c03c-otp-12';
-    const { challengeId } = await createMfaChallenge(customerId, otp);
+    await ensureCustomerCredential(dataSource, customerId);
+    const { challengeId, otp } = await governed.deskOtp.issue({
+      agentId: agent.id,
+      customerId: customerId,
+      purpose: 'CASH_TO_CASH_CLAIM',
+      redemptionMethod: 'CUSTOMER_WALLET',
+      agentSessionId: governed.sessionFor(agent.id)!,
+      transferId: init.transferId,
+      amountMinor: '11000',
+      currency: 'NGN',
+      operationKey: `c03c-claim-${randomUUID()}`,
+    });
 
     const claim = await claimService.execute({
       transferId: init.transferId,
@@ -1079,6 +1009,7 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
       mfaChallengeId: challengeId,
       otp,
       idempotencyKey: `c03c-12-claim-${randomUUID()}`,
+      claimantPrincipal: agentPrincipal(agent.id) as any,
     });
     expect(claim.status).toBe('COMPLETED');
 
@@ -1123,8 +1054,18 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
     const phone = newPhone();
     const init = await initiateTransfer(agent, phone, '8000');
     const { customerId } = await createCustomerWithPhone(phone);
-    const otp = 'c03c-otp-13';
-    const { challengeId } = await createMfaChallenge(customerId, otp);
+    await ensureCustomerCredential(dataSource, customerId);
+    const { challengeId, otp } = await governed.deskOtp.issue({
+      agentId: agent.id,
+      customerId: customerId,
+      purpose: 'CASH_TO_CASH_CLAIM',
+      redemptionMethod: 'CUSTOMER_WALLET',
+      agentSessionId: governed.sessionFor(agent.id)!,
+      transferId: init.transferId,
+      amountMinor: '8000',
+      currency: 'NGN',
+      operationKey: `c03c-claim-${randomUUID()}`,
+    });
     const claim = await claimService.execute({
       transferId: init.transferId,
       beneficiaryPhone: phone,
@@ -1133,6 +1074,7 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
       mfaChallengeId: challengeId,
       otp,
       idempotencyKey: `c03c-13-claim-${randomUUID()}`,
+      claimantPrincipal: agentPrincipal(agent.id) as any,
     });
     const initSnap = (await snapshotsFor({ journalId: init.journalId }))[0];
     const claimSnap = (await snapshotsFor({ journalId: claim.journalId }))[0];
@@ -1180,7 +1122,7 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
     // workforce diagnostic API lists both operations under the one product code
     const list = await request(app.getHttpServer())
       .get('/api/v1/internal/commercial-decision-snapshots?product=CASH_TO_CASH')
-      .set('Authorization', 'Bearer workforce-operator')
+      .set('Authorization', `Bearer ${govWorkforce.operator.token}`)
       .expect(200);
     const items = Array.isArray(list.body) ? list.body : (list.body.data ?? []);
     expect(

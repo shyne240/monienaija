@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/require-await, @typescript-eslint/ban-ts-comment, @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any, @typescript-eslint/ban-ts-comment, @typescript-eslint/no-require-imports */
 // @ts-nocheck
 /**
  * V1-COMMERCIAL-DECISION-03B — WALLET_TO_CASH commercial snapshot wiring (real PostgreSQL).
@@ -22,8 +22,9 @@
  * NO production fee rules are seeded: the synthetic rule exists only in the disposable
  * per-process test database.
  */
-import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { LedgerEntryDirection } from '../src/ledger/ledger.enums';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID, pbkdf2Sync, randomBytes } from 'node:crypto';
@@ -42,18 +43,10 @@ import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-au
 import { AgentStatus } from '../src/agent/agent.enums';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import {
-  LedgerAccountType,
-  LedgerEntryDirection,
-  LedgerNormalBalance,
-} from '../src/ledger/ledger.enums';
+import {} from '../src/ledger/ledger.enums';
 import { CustomerTransactionPinService } from '../src/customer/customer-transaction-pin.service';
-import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
 import { FeeRuleRegistryService } from '../src/fee-rules/fee-rule-registry.service';
 import { ProductCatalogSeedService } from '../src/product-catalog/product-catalog-seed.service';
-import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
-import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
-import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
@@ -62,7 +55,7 @@ import {
   startGovernedDesk,
   type GovernedDeskHarness,
 } from './support/cash-out-lifecycle-fixture';
-import { GovernedFinancialFixture } from './support/governed-financial-fixture';
+import type { GovernedFinancialFixture } from './support/governed-financial-fixture';
 import { RecordingSmsProvider } from './support/desk-otp-fixture';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
@@ -85,26 +78,9 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
   let lifecycleService: AgentLifecycleService;
   let pinService: AgentAuthenticationService;
   let customerPinService: CustomerTransactionPinService;
-  let mfaService: MfaExecutionService;
   let walletService: WalletService;
   let ledgerService: LedgerService;
   let feeRuleRegistry: FeeRuleRegistryService;
-  let systemLedgerAccountId: string;
-
-  const workforceConfig: A2WorkforceConfigurationV1 = {
-    enabled: true,
-    oidcIssuer: 'https://workforce.test',
-    oidcJwksUri: 'https://workforce.test/jwks',
-    oidcAudience: 'workforce',
-    oidcClientId: 'test-client',
-    internalAudience: 'workforce-admin',
-    sessionTtlSeconds: 900,
-    jwksJson: [],
-    financeRoles: [],
-    makerCheckerRules: [],
-    rateLimits: [],
-    trustedProxies: ['127.0.0.1'],
-  } as unknown as A2WorkforceConfigurationV1;
 
   const smsProvider = new RecordingSmsProvider();
   let governed: GovernedDeskHarness;
@@ -134,22 +110,11 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
     lifecycleService = moduleRef.get(AgentLifecycleService);
     pinService = moduleRef.get(AgentAuthenticationService);
     customerPinService = moduleRef.get(CustomerTransactionPinService);
-    mfaService = moduleRef.get(MfaExecutionService);
     walletService = moduleRef.get(WalletService);
     ledgerService = moduleRef.get(LedgerService);
     feeRuleRegistry = moduleRef.get(FeeRuleRegistryService);
     await moduleRef.get(ProductCatalogSeedService).seedIfEmpty();
 
-    const sys = await ledgerService.createAccount({
-      code: `SYS-FLOAT-NGN-${randomUUID().slice(0, 6)}`,
-      name: 'System Float NGN',
-      accountType: LedgerAccountType.ASSET,
-      normalBalance: LedgerNormalBalance.DEBIT,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      allowNegativeBalance: true,
-    });
-    systemLedgerAccountId = sys.id;
     governed = await startGovernedDesk({ app, dataSource, smsProvider, label: 'c03b' });
     governanceFixture = governed.fixture;
     govWorkforce = await governanceFixture.workforce();
