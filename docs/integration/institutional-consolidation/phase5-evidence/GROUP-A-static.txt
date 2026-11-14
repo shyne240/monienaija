@@ -1,0 +1,12 @@
+tested_commit=a52602d056521fa4e78cd77e1a3735a6a1ccf9ed
+date=2026-11-14
+tsc_backend_exit=0
+build_backend_exit=0
+lint_repo_exit=0
+format_check_exit=1
+format_check_files=30
+format_check_all_ours=false
+format_check_note=All 30 unformatted files predate this mission (last touched 2026-11-12 by pre-existing Arena 1/2 integration commits). Every file changed by this mission passes Prettier.
+unit_suites=241 passed, 241 total
+unit_tests=2869 passed, 2869 total
+unit_exit=0

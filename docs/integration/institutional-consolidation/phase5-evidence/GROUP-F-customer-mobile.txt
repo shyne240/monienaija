@@ -1,0 +1,10 @@
+tested_commit=a52602d056521fa4e78cd77e1a3735a6a1ccf9ed
+npm_ci_exit=1
+npm_ci_error=EUSAGE package.json and package-lock.json out of sync (missing @babel/* entries)
+npm_ci_diagnosis=PRE-EXISTING. apps/customer-mobile/package-lock.json was last changed by d4db6be (2026-11-13 12:22), before this mission; no checkpoint touches apps/customer-mobile.
+install_used=npm install --no-audit --no-fund (exit 0); committed lockfile restored afterwards with git checkout --
+tsc_exit=0
+jest_suites=14 passed, 14 total
+jest_tests=125 passed, 125 total
+jest_exit=0
+tree_after=clean (lockfile restored)

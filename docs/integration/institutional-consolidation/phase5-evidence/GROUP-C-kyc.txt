@@ -1,0 +1,12 @@
+PASS test/batch2-legacy-registration.isolated-pg.test.ts (36.711 s)
+PASS test/batch2c-session-remediation.isolated-pg.test.ts (5.349 s)
+PASS test/kyc-foundation.isolated-pg.test.ts
+PASS test/kyc-registration-api.isolated-pg.test.ts (5.685 s)
+PASS test/batch2c-eligibility.isolated-pg.test.ts (5.374 s)
+PASS test/kyc-tier-transition.isolated-pg.test.ts
+PASS test/kyc-registration-session.isolated-pg.test.ts
+PASS test/kyc-provider-governance.isolated-pg.test.ts
+PASS test/kyc-tier-policy.isolated-pg.test.ts
+Test Suites: 9 passed, 9 total
+Tests:       98 passed, 98 total
+kyc_exit=0

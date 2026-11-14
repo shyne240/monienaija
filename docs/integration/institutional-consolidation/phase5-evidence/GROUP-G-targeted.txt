@@ -1,0 +1,6 @@
+tested_commit=a52602d056521fa4e78cd77e1a3735a6a1ccf9ed
+command=NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes PG_TEST_RUN_ID=p5targeted npx jest --config jest.integration.config.js <7 suites> --runInBand
+suites=7 passed, 7 total
+tests=108 passed, 108 total
+targeted_exit=0
+suites_list=protected-authority-boundary(7), institution-foundation(32), wallet-ownership-resolution(21), institution-financial-ownership(16), institution-console(6), migration-chain(20), v1-release-01-production-readiness-migration-sync(6)

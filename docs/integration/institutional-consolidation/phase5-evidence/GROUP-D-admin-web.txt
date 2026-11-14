@@ -1,0 +1,8 @@
+tested_commit=a52602d056521fa4e78cd77e1a3735a6a1ccf9ed
+npm_ci_exit=0
+tsc_exit=0
+jest_suites=85 passed, 85 total
+jest_tests=868 passed, 868 total
+jest_exit=0
+vite_build_exit=0
+note=vite emitted a chunk-size warning only

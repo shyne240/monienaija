@@ -1,0 +1,9 @@
+commit=a52602d056521fa4e78cd77e1a3735a6a1ccf9ed
+date=2026-11-14T11:13:44Z
+command=NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes PG_TEST_CONCURRENCY=1 PG_TEST_BATCH_SIZE=6 PG_TEST_MAX_OLD_SPACE_MB=2560 node scripts/run-pg-integration-tests.js
+pg_exit=0
+suites=144/144 passed, 0 failed, 0 without result
+tests=2604/2604 passed (sum of per-batch jest tallies)
+batch_es=24 concurrency=1
+crashes=0 memory_failures=0 timeouts=0
+console_failure_lines=5 (expected negative-path console output; 0 test failures)
