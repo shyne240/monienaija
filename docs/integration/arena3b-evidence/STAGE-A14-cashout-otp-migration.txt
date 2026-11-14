@@ -1,0 +1,41 @@
+ARENA 3B — A14 CASH-OUT OTP MIGRATION
+=====================================
+Suite: test/a14-agent-cash-out.integration.spec.ts
+Result: Tests: 33 passed, 33 total — 33.1 s, exit 0.
+Before: the suite minted its own mfa_challenges rows with a caller-chosen code and executed
+Cash-Out with no cash_out_intent at all.
+
+WHAT CHANGED
+------------
+- Every Cash-Out redemption now runs the production lifecycle: AgentDeskOtpService.issue({
+  purpose: 'WALLET_TO_CASH' }) establishes the cash_out_intent (institution scope, agent session,
+  credential version, source wallet/ledger, operation key, amount) and issues a single-use code
+  delivered through a recording SMS provider. No challenge, binding or intent row is fabricated.
+- The suite provisions a real institutional context per scenario: agent affiliation + wallet
+  attribution + an ACTIVE agent credential/session, customer enrolment + wallet attribution, and
+  funding from the institution's own settlement account (never platform float, never a mixed
+  journal).
+- One operation = one intent = one operation key: the idempotency key passed to `execute` is the
+  key the intent was established with. Replay (test U) drives the same intent again; distinct
+  operations get distinct keys (tests X, Y, W).
+
+CONTRACT CORRECTIONS (fail-closed, not weakening)
+-------------------------------------------------
+- M (Agent without CASH_OUT) and Q (PENDING agent): the capability/session check now refuses at
+  issuance, so the negative assertion is made on `issueCashOutOtp` — the redemption can no longer
+  be attempted at all.
+- K (consumed OTP) and V (conflicting idempotency): a consumed code or a re-used operation key
+  with different material details is refused as an intent/context conflict before any financial
+  effect ("intent unavailable or mismatched" / "operation context does not match").
+- W (concurrent duplicate): one intent, one challenge, one key driven twice concurrently converges
+  on a single journal — one COMPLETED and one REPLAYED.
+- AC/AD/AE: wallet→wallet and Agent cash-in funding moved onto the institution's accounts, so no
+  journal mixes attributed and unattributed accounts.
+
+AUTHORIZATION DEFECT CHECK (Cash-Out)
+-------------------------------------
+Cash-Out already re-reads authority inside its settlement transaction: capability, PIN state,
+customer eligibility, credential version, wallet/ledger identity, intent status/expiry and the
+challenge binding are all matched under `FOR UPDATE OF i` in the same transaction that posts the
+journal (src/agent/agent-cash-out.service.ts ~470-570). No equivalent of the Cash-to-Cash
+pre-flight-only defect exists here, so no parallel authorization path was added.

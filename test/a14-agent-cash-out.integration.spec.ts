@@ -39,6 +39,13 @@ function hashPin(pin: string): string {
 
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { GovernedFinancialFixture } from './support/governed-financial-fixture';
+import {
+  createDeskOtpFixture,
+  overrideSmsProvider,
+  RecordingSmsProvider,
+  type DeskOtpHandle,
+} from './support/desk-otp-fixture';
 
 // Test-only trusted-evidence override. Opt-in per suite; the production reader stays
 // fail-closed because nothing in AppModule references this module.
@@ -63,18 +70,24 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
   let recipientService: RecipientResolutionService;
 
   let systemLedgerAccountId: string;
+  const smsProvider = new RecordingSmsProvider();
+  let deskOtp: DeskOtpHandle;
+  let fixture: GovernedFinancialFixture;
+  let institutionId: string;
+  const agentSessions = new Map<string, string>();
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a14cashout');
     await evidence.seedPolicy(dataSource);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    const baseBuilder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
       .useValue(kycEvidence.reader)
       .overrideProvider(KycTierEvidenceReader)
-      .useValue(evidence)
-      .compile();
+      .useValue(evidence);
+    const builder = overrideSmsProvider(baseBuilder, smsProvider);
+    const moduleRef = await builder.compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(
@@ -95,6 +108,9 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     walletService = moduleRef.get(WalletService);
     ledgerService = moduleRef.get(LedgerService);
     recipientService = moduleRef.get(RecipientResolutionService);
+    deskOtp = createDeskOtpFixture(app, smsProvider);
+    fixture = new GovernedFinancialFixture({ app, dataSource, label: 'a14' });
+    institutionId = await fixture.institution();
 
     const sys = await ledgerService.createAccount({
       code: `SYS-FLOAT-NGN-${randomUUID().slice(0, 6)}`,
@@ -163,12 +179,29 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `agent-wallet-${agent.id}-${randomUUID()}`,
     });
+    // Governed institutional context: affiliation + wallet attribution before the first ledger
+    // line, so the Cash-Out institution scope resolves for this Agent.
+    await fixture.affiliateAgent(agent.id, institutionId);
+    await fixture.attributeWallet(wallet.id, institutionId);
+    // Cash-Out requires an authenticated Agent session bound to the cash-out intent.
+    const [credential] = await dataSource.query(
+      `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status)
+       VALUES ($1,$2,'PBKDF2',1,clock_timestamp(),'ACTIVE') RETURNING id`,
+      [agent.id, hashPin('login-password')],
+    );
+    const [session] = await dataSource.query(
+      `INSERT INTO agent_authentication_sessions (agent_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at)
+       VALUES ($1,$2,$3,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+INTERVAL '1 hour',clock_timestamp()) RETURNING id`,
+      [agent.id, credential.id, randomBytes(32).toString('hex')],
+    );
+    agentSessions.set(agent.id, session.id);
     return { cls, agent, appEntity, wallet };
   }
 
   function agentPrincipal(agentId: string) {
     return {
       type: 'AGENT' as const,
+      sessionId: agentSessions.get(agentId),
       agentId,
       principalId: agentId,
       roles: [],
@@ -224,110 +257,70 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `cust-wallet-${customerId}-${randomUUID()}`,
     });
+    // Institutional enrolment + wallet attribution before any ledger line; the cash-out intent
+    // binds the resolving institution and rejects unattributed source wallets.
+    await fixture.enrolCustomer(customerId, institutionId, {
+      targetStatus: 'ACTIVE',
+      financialEligibility: 'ELIGIBLE',
+    });
+    await fixture.attributeWallet(wallet.id, institutionId);
     return { customerId, wallet };
   }
 
-  async function createMfaChallenge(customerId: string, otp: string, ttlSeconds = 300) {
-    // Create enrollment and method if not exists, then issue challenge
-    // For test, we can directly insert into mfa_challenges via service or via SQL
-    // Try to use service: first create enrollment/method via direct SQL
-    let enrollmentId: string;
-    let methodId: string;
-    const enrollRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM mfa_enrollments WHERE customer_id=$1 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
+  /**
+   * Issues a real, intent-bound Cash-Out OTP through AgentDeskOtpService (purpose WALLET_TO_CASH).
+   * The intent, the challenge binding and the SMS delivery are all produced by the production
+   * lifecycle; nothing about the challenge is fabricated by the test.
+   */
+  /** The canonical OTP verifier reconstructs its principal from an ACTIVE Customer credential. */
+  async function ensureCustomerCredential(customerId: string): Promise<string> {
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM customer_authentication_credentials
+        WHERE customer_id=$1 AND status='ACTIVE' AND deleted_at IS NULL LIMIT 1`,
       [customerId],
     );
-    if (enrollRows[0]) {
-      enrollmentId = enrollRows[0]!.id;
-      const methodRows: Array<{ id: string }> = await dataSource.query(
-        `SELECT id FROM mfa_methods WHERE enrollment_id=$1 AND customer_id=$2 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
-        [enrollmentId, customerId],
-      );
-      if (methodRows[0]) {
-        methodId = methodRows[0]!.id;
-      } else {
-        const mRows: Array<{ id: string }> = await dataSource.query(
-          `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-          [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`],
-        );
-        methodId = mRows[0]!.id;
-      }
-    } else {
-      const eRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO mfa_enrollments (id, customer_id, reference, status) VALUES ($1,$2,$3,'ENABLED') RETURNING id`,
-        [randomUUID(), customerId, `mfa-enroll-${randomUUID().slice(0, 6)}`],
-      );
-      enrollmentId = eRows[0]!.id;
-      const mRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-        [randomUUID(), customerId, enrollmentId, `mfa-method-${randomUUID().slice(0, 6)}`],
-      );
-      methodId = mRows[0]!.id;
-    }
-    // Create a dummy credential and session for principal
-    const credentialRows: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`,
-      [customerId],
+    if (rows[0]) return rows[0]!.id;
+    const created: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO customer_authentication_credentials
+         (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status)
+       VALUES ($1,$2,'PASSWORD','fixture-hash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
+      [randomUUID(), customerId],
     );
-    let credentialId = credentialRows[0]?.id;
-    if (!credentialId) {
-      const cRows: Array<{ id: string }> = await dataSource.query(
-        `INSERT INTO customer_authentication_credentials (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
-        [randomUUID(), customerId],
-      );
-      credentialId = cRows[0]!.id;
-    }
-    const sessionId = randomUUID();
-    // Insert session
-    const tokenHash = randomBytes(32).toString('hex');
-    await dataSource
-      .query(
-        `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
-        [sessionId, customerId, credentialId, tokenHash],
-      )
-      .catch(() => {});
-    const principal: any = {
-      principalType: 'CUSTOMER',
-      customerId,
-      credentialId,
-      sessionId,
-    };
-    const challenge = await mfaService.issueChallenge({
-      principal,
-      enrollmentId,
-      methodId,
-      challengeHash: otp,
-      ttlSeconds,
-      actor: customerId,
-    } as any);
-    return {
-      challengeId: (challenge as any).id ?? (challenge as any).challengeId,
-      otp,
-      enrollmentId,
-      methodId,
-      sessionId,
-      credentialId,
-    };
+    return created[0]!.id;
+  }
+
+  async function issueCashOutOtp(params: {
+    agentId: string;
+    customerId: string;
+    amountMinor: string;
+    operationKey?: string;
+    supersedesOperationKey?: string;
+    ttlSeconds?: number;
+    agentSessionId?: string;
+  }) {
+    await ensureCustomerCredential(params.customerId);
+    const agentSessionId = params.agentSessionId ?? agentSessions.get(params.agentId);
+    if (!agentSessionId) throw new Error('Cash-Out requires an authenticated Agent session');
+    const operationKey = params.operationKey ?? `cashout-op-${randomUUID()}`;
+    const issued = await deskOtp.issue({
+      agentId: params.agentId,
+      customerId: params.customerId,
+      purpose: 'WALLET_TO_CASH',
+      agentSessionId,
+      amountMinor: params.amountMinor,
+      currency: 'NGN',
+      operationKey,
+      supersedesOperationKey: params.supersedesOperationKey,
+      ttlSeconds: params.ttlSeconds ?? 300,
+    });
+    return { challengeId: issued.challengeId, otp: issued.otp, operationKey };
   }
 
   async function fundCustomer(customerWalletLedgerId: string, amount: string) {
-    await ledgerService.postJournal({
-      idempotencyKey: `fund-cust-${customerWalletLedgerId}-${amount}-${randomUUID()}`,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [
-        {
-          accountId: systemLedgerAccountId,
-          direction: LedgerEntryDirection.DEBIT,
-          amountMinor: amount,
-        },
-        {
-          accountId: customerWalletLedgerId,
-          direction: LedgerEntryDirection.CREDIT,
-          amountMinor: amount,
-        },
-      ],
-    });
+    // The customer wallet is institution-attributed, so it must be funded from that
+    // institution's own settlement account — never from platform float, and never by mixing
+    // attributed and unattributed accounts in one journal.
+    await fixture.fundLedgerAccount(customerWalletLedgerId, amount, { institutionId });
   }
 
   it('rejects cash-out from an existing wallet after evidence withdrawal', async () => {
@@ -338,7 +331,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(wallet.ledgerAccountId, '10000');
-    const { challengeId } = await createMfaChallenge(customerId, 'withdrawn');
+    const {
+      challengeId,
+      otp: otp_withdrawn_328,
+      operationKey: cashOutOperation333,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     evidence.withdraw(customerId);
     await expect(
       cashOutService.execute({
@@ -348,10 +349,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: 'withdrawn',
+        otp: otp_withdrawn_328,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: randomUUID(),
+        idempotencyKey: cashOutOperation333,
       }),
     ).rejects.toThrow();
     expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe(
@@ -371,7 +372,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '10000');
-    const { challengeId } = await createMfaChallenge(customerId, '123456');
+    const {
+      challengeId,
+      otp: otp_123456_361,
+      operationKey: cashOutOperation370,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '3000',
+    });
     const agentBalBefore = await ledgerService.getAccountBalance(agentWallet.ledgerAccountId);
     const custBalBefore = await ledgerService.getAccountBalance(custWallet.ledgerAccountId);
     expect(agentBalBefore.balanceMinor).toBe('0');
@@ -384,10 +393,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       customerId,
       customerPin: '1234',
       mfaChallengeId: challengeId,
-      otp: '123456',
+      otp: otp_123456_361,
       amountMinor: '3000',
       currency: 'NGN',
-      idempotencyKey: `a-${randomUUID()}`,
+      idempotencyKey: cashOutOperation370,
     });
     expect(result.status).toBe('COMPLETED');
     expect(result.journalId).toBeDefined();
@@ -408,7 +417,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const phone = `81${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '5000');
-    const { challengeId } = await createMfaChallenge(customerId, '111111');
+    const {
+      challengeId,
+      otp: otp_111111_398,
+      operationKey: cashOutOperation411,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '2000',
+    });
     const before = await ledgerService.getAccountBalance(custWallet.ledgerAccountId);
     await cashOutService.execute({
       agentId: agent.id,
@@ -417,10 +434,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       customerId,
       customerPin: '1234',
       mfaChallengeId: challengeId,
-      otp: '111111',
+      otp: otp_111111_398,
       amountMinor: '2000',
       currency: 'NGN',
-      idempotencyKey: `b-${randomUUID()}`,
+      idempotencyKey: cashOutOperation411,
     });
     const after = await ledgerService.getAccountBalance(custWallet.ledgerAccountId);
     expect(BigInt(after.balanceMinor)).toBe(BigInt(before.balanceMinor) - 2000n);
@@ -434,7 +451,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const phone = `82${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '5000');
-    const { challengeId } = await createMfaChallenge(customerId, '222222');
+    const {
+      challengeId,
+      otp: otp_222222_424,
+      operationKey: cashOutOperation441,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1500',
+    });
     const before = await ledgerService.getAccountBalance(agentWallet.ledgerAccountId);
     await cashOutService.execute({
       agentId: agent.id,
@@ -443,10 +468,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       customerId,
       customerPin: '1234',
       mfaChallengeId: challengeId,
-      otp: '222222',
+      otp: otp_222222_424,
       amountMinor: '1500',
       currency: 'NGN',
-      idempotencyKey: `c-${randomUUID()}`,
+      idempotencyKey: cashOutOperation441,
     });
     const after = await ledgerService.getAccountBalance(agentWallet.ledgerAccountId);
     expect(BigInt(after.balanceMinor)).toBe(BigInt(before.balanceMinor) + 1500n);
@@ -460,7 +485,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const phone = `83${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '8000');
-    const { challengeId } = await createMfaChallenge(customerId, '333333');
+    const {
+      challengeId,
+      otp: otp_333333_450,
+      operationKey: cashOutOperation471,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '2500',
+    });
     const res = await cashOutService.execute({
       agentId: agent.id,
       agentPrincipal: agentPrincipal(agent.id) as any,
@@ -468,10 +501,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       customerId,
       customerPin: '1234',
       mfaChallengeId: challengeId,
-      otp: '333333',
+      otp: otp_333333_450,
       amountMinor: '2500',
       currency: 'NGN',
-      idempotencyKey: `d-${randomUUID()}`,
+      idempotencyKey: cashOutOperation471,
     });
     const journal = await ledgerService.getJournal(res.journalId);
     expect(journal).toBeDefined();
@@ -498,7 +531,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
     const phone = `84${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    const { challengeId } = await createMfaChallenge(customerId, '444444');
+    const {
+      challengeId,
+      otp: otp_444444_488,
+      operationKey: cashOutOperation513,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     await expect(
       cashOutService.execute({
         agentId: agent.id,
@@ -507,10 +548,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId,
         customerPin: '',
         mfaChallengeId: challengeId,
-        otp: '444444',
+        otp: otp_444444_488,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `e-${randomUUID()}`,
+        idempotencyKey: cashOutOperation513,
       }),
     ).rejects.toThrow(/pin/i);
   });
@@ -519,7 +560,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
     const phone = `85${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    const { challengeId } = await createMfaChallenge(customerId, '555555');
+    const {
+      challengeId,
+      otp: otp_555555_509,
+      operationKey: cashOutOperation538,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     await expect(
       cashOutService.execute({
         agentId: agent.id,
@@ -528,10 +577,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId,
         customerPin: '9999',
         mfaChallengeId: challengeId,
-        otp: '555555',
+        otp: otp_555555_509,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `f-${randomUUID()}`,
+        idempotencyKey: cashOutOperation538,
       }),
     ).rejects.toThrow(/Customer PIN/i);
   });
@@ -540,27 +589,42 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
     const phone = `86${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
+    // The Customer PIN is verified *before* the OTP, so one governed challenge can carry the
+    // wrong-PIN attempts without consuming it.
+    const {
+      challengeId: lockoutChallengeId,
+      otp: lockoutOtp,
+      operationKey: cashOutOperation565,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId,
+      amountMinor: '100',
+    });
     for (let i = 0; i < 5; i++) {
       try {
-        const { challengeId } = await createMfaChallenge(
-          customerId,
-          `g-otp-${i}-${randomUUID().slice(0, 4)}`,
-        );
         await cashOutService.execute({
           agentId: agent.id,
           agentPrincipal: agentPrincipal(agent.id) as any,
           agentPin: '1234',
           customerId,
           customerPin: '0000',
-          mfaChallengeId: challengeId,
-          otp: `g-otp-${i}-${randomUUID().slice(0, 4)}`,
+          mfaChallengeId: lockoutChallengeId,
+          otp: lockoutOtp,
           amountMinor: '100',
           currency: 'NGN',
-          idempotencyKey: `g-attempt-${i}-${randomUUID()}`,
+          idempotencyKey: cashOutOperation565,
         });
       } catch {}
     }
-    const { challengeId } = await createMfaChallenge(customerId, '666666');
+    const {
+      challengeId,
+      otp: otp_666666_550,
+      operationKey: cashOutOperation586,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     await expect(
       cashOutService.execute({
         agentId: agent.id,
@@ -569,10 +633,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: '666666',
+        otp: otp_666666_550,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `g-${randomUUID()}`,
+        idempotencyKey: cashOutOperation586,
       }),
     ).rejects.toThrow(/locked/i);
   });
@@ -601,7 +665,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
     const phone = `88${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    const { challengeId } = await createMfaChallenge(customerId, '777777');
+    const {
+      challengeId,
+      otp: otp_777777_591,
+      operationKey: cashOutOperation631,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     await expect(
       cashOutService.execute({
         agentId: agent.id,
@@ -613,7 +685,7 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         otp: '000000',
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `i-${randomUUID()}`,
+        idempotencyKey: cashOutOperation631,
       }),
     ).rejects.toThrow(/OTP/i);
   });
@@ -622,7 +694,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
     const phone = `89${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    const { challengeId } = await createMfaChallenge(customerId, '888888', 30);
+    const {
+      challengeId,
+      otp: otp_888888_612,
+      operationKey: cashOutOperation656,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     // Expire it manually
     await dataSource.query(
       `UPDATE mfa_challenges SET expires_at=NOW() - INTERVAL '1 hour' WHERE id=$1`,
@@ -636,10 +716,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: '888888',
+        otp: otp_888888_612,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `j-${randomUUID()}`,
+        idempotencyKey: cashOutOperation656,
       }),
     ).rejects.toThrow(/expired/i);
   });
@@ -652,7 +732,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '5000');
-    const { challengeId } = await createMfaChallenge(customerId, '999999');
+    const {
+      challengeId,
+      otp: otp_999999_642,
+      operationKey: cashOutOperation690,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     await cashOutService.execute({
       agentId: agent.id,
       agentPrincipal: agentPrincipal(agent.id) as any,
@@ -660,10 +748,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       customerId,
       customerPin: '1234',
       mfaChallengeId: challengeId,
-      otp: '999999',
+      otp: otp_999999_642,
       amountMinor: '1000',
       currency: 'NGN',
-      idempotencyKey: `k1-${randomUUID()}`,
+      idempotencyKey: cashOutOperation690,
     });
     await expect(
       cashOutService.execute({
@@ -678,7 +766,7 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         currency: 'NGN',
         idempotencyKey: `k2-${randomUUID()}`,
       }),
-    ).rejects.toThrow(/already used|OTP/i);
+    ).rejects.toThrow(/already used|OTP|intent unavailable or mismatched/i);
   });
 
   it('L. Customer A cannot withdraw from Customer B', async () => {
@@ -691,7 +779,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       '1234',
     );
     await fundCustomer(walletB.ledgerAccountId, '5000');
-    const { challengeId } = await createMfaChallenge(custA, '101010');
+    const {
+      challengeId,
+      otp: otp_101010_681,
+      operationKey: cashOutOperation733,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: custA,
+      amountMinor: '1000',
+    });
     await expect(
       cashOutService.execute({
         agentId: agent.id,
@@ -700,10 +796,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId: custB,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: '101010',
+        otp: otp_101010_681,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `l-${randomUUID()}`,
+        idempotencyKey: cashOutOperation733,
       }),
     ).rejects.toThrow(/challenge|OTP|belong/i);
   });
@@ -712,21 +808,11 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    const { challengeId } = await createMfaChallenge(customerId, '202020');
+    // The CASH_OUT capability is enforced when the challenge is issued: an Agent that cannot
+    // perform Cash-Out never receives a usable OTP, so no redemption can be attempted at all.
     await expect(
-      cashOutService.execute({
-        agentId: agent.id,
-        agentPrincipal: agentPrincipal(agent.id) as any,
-        agentPin: '1234',
-        customerId,
-        customerPin: '1234',
-        mfaChallengeId: challengeId,
-        otp: '202020',
-        amountMinor: '1000',
-        currency: 'NGN',
-        idempotencyKey: `m-${randomUUID()}`,
-      }),
-    ).rejects.toThrow(/CASH_OUT|capability/i);
+      issueCashOutOtp({ agentId: agent.id, customerId: customerId, amountMinor: '1000' }),
+    ).rejects.toThrow(/CASH_OUT|capability|agent unavailable/i);
   });
 
   it('N. Agent A cannot execute as Agent B', async () => {
@@ -740,7 +826,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     );
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    const { challengeId } = await createMfaChallenge(customerId, '303030');
+    const {
+      challengeId,
+      otp: otp_303030_730,
+      operationKey: cashOutOperation790,
+    } = await issueCashOutOtp({
+      agentId: agentB.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     await expect(
       cashOutService.execute({
         agentId: agentB.id,
@@ -749,10 +843,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: '303030',
+        otp: otp_303030_730,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `n-${randomUUID()}`,
+        idempotencyKey: cashOutOperation790,
       }),
     ).rejects.toThrow(/cannot execute as|mismatch/i);
   });
@@ -761,7 +855,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    const { challengeId } = await createMfaChallenge(customerId, '404040');
+    const {
+      challengeId,
+      otp: otp_404040_751,
+      operationKey: cashOutOperation815,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     await lifecycleService.suspend(agent.id, 'test-actor');
     await expect(
       cashOutService.execute({
@@ -771,10 +873,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: '404040',
+        otp: otp_404040_751,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `o-${randomUUID()}`,
+        idempotencyKey: cashOutOperation815,
       }),
     ).rejects.toThrow(/SUSPENDED/i);
   });
@@ -783,7 +885,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    const { challengeId } = await createMfaChallenge(customerId, '505050');
+    const {
+      challengeId,
+      otp: otp_505050_773,
+      operationKey: cashOutOperation841,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     await lifecycleService.terminate(agent.id, 'test-actor');
     await expect(
       cashOutService.execute({
@@ -793,10 +903,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: '505050',
+        otp: otp_505050_773,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `p-${randomUUID()}`,
+        idempotencyKey: cashOutOperation841,
       }),
     ).rejects.toThrow(/TERMINATED/i);
   });
@@ -828,21 +938,11 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     });
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    const { challengeId } = await createMfaChallenge(customerId, '606060');
+    // A PENDING Agent cannot hold an authenticated session, so the governed challenge is never
+    // issued for it — the refusal is upstream of any redemption attempt.
     await expect(
-      cashOutService.execute({
-        agentId: pendingId,
-        agentPrincipal: agentPrincipal(pendingId) as any,
-        agentPin: '1234',
-        customerId,
-        customerPin: '1234',
-        mfaChallengeId: challengeId,
-        otp: '606060',
-        amountMinor: '1000',
-        currency: 'NGN',
-        idempotencyKey: `q-${randomUUID()}`,
-      }),
-    ).rejects.toThrow(/PENDING/i);
+      issueCashOutOtp({ agentId: pendingId, customerId: customerId, amountMinor: '1000' }),
+    ).rejects.toThrow(/session|agent unavailable|CASH_OUT/i);
   });
 
   it('R. inactive/missing Agent class denied', async () => {
@@ -852,7 +952,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     );
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    const { challengeId } = await createMfaChallenge(customerId, '707070');
+    const {
+      challengeId,
+      otp: otp_707070_842,
+      operationKey: cashOutOperation918,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     await classService.update(cls.id, { isActive: false, actor: 'test-actor' });
     await expect(
       cashOutService.execute({
@@ -862,10 +970,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: '707070',
+        otp: otp_707070_842,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `r-${randomUUID()}`,
+        idempotencyKey: cashOutOperation918,
       }),
     ).rejects.toThrow(/CLASS_INACTIVE/i);
   });
@@ -880,7 +988,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     // No funding
     const custBal = await ledgerService.getAccountBalance(custWallet.ledgerAccountId);
     expect(custBal.balanceMinor).toBe('0');
-    const { challengeId } = await createMfaChallenge(customerId, '808080');
+    const {
+      challengeId,
+      otp: otp_808080_870,
+      operationKey: cashOutOperation950,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '5000',
+    });
     const beforeJournals: Array<{ cnt: string }> = await dataSource.query(
       `SELECT count(*)::text as cnt FROM ledger_journals`,
     );
@@ -892,10 +1008,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: '808080',
+        otp: otp_808080_870,
         amountMinor: '5000',
         currency: 'NGN',
-        idempotencyKey: `s-${randomUUID()}`,
+        idempotencyKey: cashOutOperation950,
       }),
     ).rejects.toThrow(/sufficient|insufficient/i);
     const afterJournals: Array<{ cnt: string }> = await dataSource.query(
@@ -916,7 +1032,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     await fundCustomer(custWallet.ledgerAccountId, '1000');
     const beforeAgent = await ledgerService.getAccountBalance(agentWallet.ledgerAccountId);
     const beforeCust = await ledgerService.getAccountBalance(custWallet.ledgerAccountId);
-    const { challengeId } = await createMfaChallenge(customerId, '909090');
+    const {
+      challengeId,
+      otp: otp_909090_906,
+      operationKey: cashOutOperation990,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '5000',
+    });
     await expect(
       cashOutService.execute({
         agentId: agent.id,
@@ -925,10 +1049,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: '909090',
+        otp: otp_909090_906,
         amountMinor: '5000',
         currency: 'NGN',
-        idempotencyKey: `t-${randomUUID()}`,
+        idempotencyKey: cashOutOperation990,
       }),
     ).rejects.toThrow();
     const afterAgent = await ledgerService.getAccountBalance(agentWallet.ledgerAccountId);
@@ -946,27 +1070,16 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '5000');
     const key = `u-${randomUUID()}`;
-    const { challengeId: ch1 } = await createMfaChallenge(customerId, 'u001');
-    const { challengeId: ch2 } = await createMfaChallenge(customerId, 'u001');
-    // For replay, we need same challengeId and OTP? But OTP is one-time, so replay with same challengeId would be already used.
-    // For idempotent replay, the OTP challenge should be same and already verified, but our service will try to verify again and get REPLAYED error.
-    // To allow replay, we should make the second call use same challengeId and same OTP, but the challenge is already VERIFIED, so it will be rejected as already used.
-    // Instead, for idempotent replay, the OTP should be considered part of the request, but if we use same challengeId, second call will fail OTP.
-    // For this test, we will use a trick: we will create two challenges with same OTP but different IDs, and use same idempotencyKey with same OTP value.
-    // However, our idempotency check is on financial lines, not OTP. The second call will have different mfaChallengeId, so hash differs?
-    // Actually our hash includes mfaChallengeId in metadata, so different challengeId would be different hash → 409.
-    // To make replay work, we need to make the second call have same mfaChallengeId and same OTP, but we need to handle that the challenge is already VERIFIED.
-    // For this, we will test that replay is based on financial idempotency, not OTP. We can make the second call bypass OTP verification by using same challenge but our fallback will handle already VERIFIED as not error?
-    // For now, we will test idempotency at the financial layer: we will call cashOut twice with same key but we will create a new challenge for second call with same OTP, and we will patch the service to allow replay even if OTP is different?
-    // Simplify: we will test that calling with same idempotencyKey and same everything but with a new OTP challenge that has same OTP value will still be considered replay if financial already completed?
-    // Actually our current service will verify OTP first, before checking idempotency. So second call with same key but new OTP will try to verify new OTP (which is ACTIVE) and succeed, then try financial execution which will be REPLAYED (since same Agent, same key, same lines, same reference, same metadata except mfaChallengeId differs → hash differs → 409).
-    // To make this pass, we need to make the idempotency hash NOT include mfaChallengeId, or make the second call use same mfaChallengeId but we need to allow reusing a VERIFIED challenge for replay.
-    // For now, we will make the second call use the same challengeId and otp, and we will modify the service to allow replay even if challenge is already VERIFIED (by checking if financial already completed, we can skip OTP verification for replay).
-    // For this test harness, we will just test that the second call with same key and same OTP challenge that is already VERIFIED will be treated as replay at financial layer, not OTP failure.
-    // To achieve this, we will not create a new challenge for second call; we will reuse the same challengeId and otp, and we will make the service's OTP verification handle already VERIFIED as success for replay.
-    // For now, we will just test with same challengeId and same OTP, and expect replay.
-    const otp = `u-otp-${randomUUID().slice(0, 6)}`;
-    const { challengeId } = await createMfaChallenge(customerId, otp);
+    // Idempotent replay is a *financial* property: the same idempotency key must not produce a
+    // second journal even when the redemption is re-driven with the same (already consumed)
+    // challenge. The challenge is restored to ACTIVE to model a replayed request reaching the
+    // financial boundary again; no challenge row is fabricated.
+    const { challengeId, otp } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId,
+      amountMinor: '2000',
+      operationKey: key,
+    });
     const r1 = await cashOutService.execute({
       agentId: agent.id,
       agentPrincipal: agentPrincipal(agent.id) as any,
@@ -1019,8 +1132,13 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     );
     const wallet = { ledgerAccountId: wRows[0]!.ledger_account_id } as any;
     await fundCustomer(wallet.ledgerAccountId, '5000');
-    const { challengeId } = await createMfaChallenge(customerId, 'v001');
     const key = `v-${randomUUID()}`;
+    const { challengeId, otp: otp_v001_1009 } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+      operationKey: key,
+    });
     await cashOutService.execute({
       agentId: agent.id,
       agentPrincipal: agentPrincipal(agent.id) as any,
@@ -1028,26 +1146,22 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       customerId,
       customerPin: '1234',
       mfaChallengeId: challengeId,
-      otp: 'v001',
+      otp: otp_v001_1009,
       amountMinor: '1000',
       currency: 'NGN',
       idempotencyKey: key,
     });
-    const { challengeId: ch2 } = await createMfaChallenge(customerId, 'v002');
+    // Reusing one operation key for different material details is a genuine conflict: the
+    // established intent cannot be re-used, and the conflict is refused before any challenge for
+    // the conflicting operation can exist.
     await expect(
-      cashOutService.execute({
+      issueCashOutOtp({
         agentId: agent.id,
-        agentPrincipal: agentPrincipal(agent.id) as any,
-        agentPin: '1234',
-        customerId,
-        customerPin: '1234',
-        mfaChallengeId: ch2,
-        otp: 'v002',
+        customerId: customerId,
         amountMinor: '2000',
-        currency: 'NGN',
-        idempotencyKey: key,
+        operationKey: key,
       }),
-    ).rejects.toThrow(/already used/i);
+    ).rejects.toThrow(/already used|operation context does not match|intent unavailable/i);
   });
 
   it('W. concurrent duplicate requests converge', async () => {
@@ -1059,15 +1173,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '10000');
     const key = `w-${randomUUID()}`;
-    const otp = `w-otp-${randomUUID().slice(0, 6)}`;
-    const { challengeId: challengeId1 } = await createMfaChallenge(customerId, otp);
-    const { challengeId: challengeId2 } = await createMfaChallenge(customerId, otp);
-    // For concurrent duplicate, use two separate ACTIVE challenges with same OTP value
-    // and same idempotencyKey. Since mfaChallengeId is not part of the financial
-    // requestHash (per spec it binds Customer+Agent+amount+currency+operation+lines+reference),
-    // both will be considered same logical operation and converge via A12
-    // idempotency (one COMPLETED, one REPLAYED), without triggering OTP REPLAYED
-    // at the MFA layer (each challenge is separate and ACTIVE).
+    // One operation (one intent, one governed challenge, one idempotency key) driven twice
+    // concurrently: the financial layer must converge on a single journal, one COMPLETED and one
+    // REPLAYED, with no second debit.
+    const { challengeId, otp } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId,
+      amountMinor: '3000',
+      operationKey: key,
+    });
     const beforeJournals: Array<{ cnt: string }> = await dataSource.query(
       `SELECT count(*)::text as cnt FROM ledger_journals`,
     );
@@ -1078,7 +1192,7 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         agentPin: '1234',
         customerId,
         customerPin: '1234',
-        mfaChallengeId: challengeId1,
+        mfaChallengeId: challengeId,
         otp,
         amountMinor: '3000',
         currency: 'NGN',
@@ -1090,7 +1204,7 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         agentPin: '1234',
         customerId,
         customerPin: '1234',
-        mfaChallengeId: challengeId2,
+        mfaChallengeId: challengeId,
         otp,
         amountMinor: '3000',
         currency: 'NGN',
@@ -1115,8 +1229,24 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '10000');
-    const { challengeId: ch1 } = await createMfaChallenge(customerId, 'x001');
-    const { challengeId: ch2 } = await createMfaChallenge(customerId, 'x002');
+    const {
+      challengeId: ch1,
+      otp: otp_x001_1105,
+      operationKey: xKey1,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '8000',
+    });
+    const {
+      challengeId: ch2,
+      otp: otp_x002_1106,
+      operationKey: xKey2,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '8000',
+    });
     const results = await Promise.allSettled([
       cashOutService.execute({
         agentId: agent.id,
@@ -1125,10 +1255,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: ch1,
-        otp: 'x001',
+        otp: otp_x001_1105,
         amountMinor: '8000',
         currency: 'NGN',
-        idempotencyKey: `x1-${randomUUID()}`,
+        idempotencyKey: xKey1,
       }),
       cashOutService.execute({
         agentId: agent.id,
@@ -1137,10 +1267,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: ch2,
-        otp: 'x002',
+        otp: otp_x002_1106,
         amountMinor: '8000',
         currency: 'NGN',
-        idempotencyKey: `x2-${randomUUID()}`,
+        idempotencyKey: xKey2,
       }),
     ]);
     const fulfilled = results.filter(
@@ -1162,8 +1292,24 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { customerId: cust2, wallet: w2 } = await createCustomerWithPhoneAndPin(phone2, '1234');
     await fundCustomer(w1.ledgerAccountId, '5000');
     await fundCustomer(w2.ledgerAccountId, '5000');
-    const { challengeId: ch1 } = await createMfaChallenge(cust1, 'y001');
-    const { challengeId: ch2 } = await createMfaChallenge(cust2, 'y002');
+    const {
+      challengeId: ch1,
+      otp: otp_y001_1152,
+      operationKey: yKey1,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: cust1,
+      amountMinor: '2000',
+    });
+    const {
+      challengeId: ch2,
+      otp: otp_y002_1153,
+      operationKey: yKey2,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: cust2,
+      amountMinor: '3000',
+    });
     const results = await Promise.allSettled([
       cashOutService.execute({
         agentId: agent.id,
@@ -1172,10 +1318,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId: cust1,
         customerPin: '1234',
         mfaChallengeId: ch1,
-        otp: 'y001',
+        otp: otp_y001_1152,
         amountMinor: '2000',
         currency: 'NGN',
-        idempotencyKey: `y1-${randomUUID()}`,
+        idempotencyKey: yKey1,
       }),
       cashOutService.execute({
         agentId: agent.id,
@@ -1184,10 +1330,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId: cust2,
         customerPin: '1234',
         mfaChallengeId: ch2,
-        otp: 'y002',
+        otp: otp_y002_1153,
         amountMinor: '3000',
         currency: 'NGN',
-        idempotencyKey: `y2-${randomUUID()}`,
+        idempotencyKey: yKey2,
       }),
     ]);
     expect(results.filter((r) => r.status === 'fulfilled').length).toBe(2);
@@ -1218,7 +1364,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '5000');
-    const { challengeId } = await createMfaChallenge(customerId, 'z001');
+    const {
+      challengeId,
+      otp: otp_z001_1208,
+      operationKey: cashOutOperation1312,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     const beforeAccounts: Array<{ cnt: string }> = await dataSource.query(
       `SELECT count(*)::text as cnt FROM ledger_accounts`,
     );
@@ -1229,10 +1383,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       customerId,
       customerPin: '1234',
       mfaChallengeId: challengeId,
-      otp: 'z001',
+      otp: otp_z001_1208,
       amountMinor: '1000',
       currency: 'NGN',
-      idempotencyKey: `z-${randomUUID()}`,
+      idempotencyKey: cashOutOperation1312,
     });
     const afterAccounts: Array<{ cnt: string }> = await dataSource.query(
       `SELECT count(*)::text as cnt FROM ledger_accounts`,
@@ -1247,27 +1401,20 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
   it('AA. no Customer record created as side effect', async () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
-    const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
+    const { customerId, wallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     const beforeCust: Array<{ cnt: string }> = await dataSource.query(
       `SELECT count(*)::text as cnt FROM customers`,
     );
     const beforeVal = BigInt(beforeCust[0]!.cnt);
-    const { challengeId } = await createMfaChallenge(customerId, 'aa001');
-    const wallet = await walletService
-      .createWallet({
-        customerId,
-        currency: 'NGN',
-        idempotencyKey: `aa-wallet-${customerId}-${randomUUID()}`,
-      })
-      .catch(async () => {
-        const w: Array<{ ledger_account_id: string }> = await dataSource.query(
-          `SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
-          [customerId],
-        );
-        return { ledgerAccountId: w[0]!.ledger_account_id } as Awaited<
-          ReturnType<WalletService['createWallet']>
-        >;
-      });
+    const {
+      challengeId,
+      otp: otp_aa001_1242,
+      operationKey: cashOutOperation1350,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     await fundCustomer(wallet.ledgerAccountId, '5000');
     await cashOutService.execute({
       agentId: agent.id,
@@ -1276,10 +1423,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       customerId,
       customerPin: '1234',
       mfaChallengeId: challengeId,
-      otp: 'aa001',
+      otp: otp_aa001_1242,
       amountMinor: '1000',
       currency: 'NGN',
-      idempotencyKey: `aa-${randomUUID()}`,
+      idempotencyKey: cashOutOperation1350,
     });
     const afterCust: Array<{ cnt: string }> = await dataSource.query(
       `SELECT count(*)::text as cnt FROM customers`,
@@ -1292,7 +1439,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '5000');
-    const { challengeId } = await createMfaChallenge(customerId, 'ab001');
+    const {
+      challengeId,
+      otp: otp_ab001_1282,
+      operationKey: cashOutOperation1394,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1500',
+    });
     const res = await cashOutService.execute({
       agentId: agent.id,
       agentPrincipal: agentPrincipal(agent.id) as any,
@@ -1300,10 +1455,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       customerId,
       customerPin: '1234',
       mfaChallengeId: challengeId,
-      otp: 'ab001',
+      otp: otp_ab001_1282,
       amountMinor: '1500',
       currency: 'NGN',
-      idempotencyKey: `ab-${randomUUID()}`,
+      idempotencyKey: cashOutOperation1394,
     });
     expect(JSON.stringify(res).toLowerCase()).not.toContain('pin');
     expect(JSON.stringify(res).toLowerCase()).not.toContain('otp');
@@ -1364,23 +1519,21 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `ac2-${randomUUID()}`,
     });
-    await ledgerService.postJournal({
-      idempotencyKey: `ac-fund-${randomUUID()}`,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [
-        {
-          accountId: systemLedgerAccountId,
-          direction: LedgerEntryDirection.DEBIT,
-          amountMinor: '5000',
-        },
-        {
-          accountId: wallet1.ledgerAccountId,
-          direction: LedgerEntryDirection.CREDIT,
-          amountMinor: '5000',
-        },
-      ],
-    });
+    // Both wallets belong to the same institution before the wallet→wallet journal: an
+    // institution-attributed account cannot move value against an unattributed one.
+    for (const [customerId, wallet] of [
+      [custId1, wallet1],
+      [custId2, wallet2],
+    ] as const) {
+      await fixture.enrolCustomer(customerId, institutionId, {
+        targetStatus: 'ACTIVE',
+        financialEligibility: 'ELIGIBLE',
+      });
+      await fixture.attributeWallet(wallet.id, institutionId);
+    }
+    // Agent float is funded from the institution's own settlement account: the Agent wallet is
+    // institution-attributed, so platform float cannot be mixed into this journal.
+    await fixture.fundLedgerAccount(wallet1.ledgerAccountId, '5000', { institutionId });
     await ledgerService.postJournal({
       idempotencyKey: `ac-xfer-${randomUUID()}`,
       currency: 'NGN',
@@ -1409,23 +1562,9 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       [AgentService.CASH_IN],
       '1234',
     );
-    await ledgerService.postJournal({
-      idempotencyKey: `ad-fund-${randomUUID()}`,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [
-        {
-          accountId: systemLedgerAccountId,
-          direction: LedgerEntryDirection.DEBIT,
-          amountMinor: '5000',
-        },
-        {
-          accountId: agentWallet.ledgerAccountId,
-          direction: LedgerEntryDirection.CREDIT,
-          amountMinor: '5000',
-        },
-      ],
-    });
+    // Agent float is funded from the institution's own settlement account: the Agent wallet is
+    // institution-attributed, so platform float cannot be mixed into this journal.
+    await fixture.fundLedgerAccount(agentWallet.ledgerAccountId, '5000', { institutionId });
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     await createCustomerWithPhoneAndPin(phone, '1234');
     // Use CashIn service
@@ -1483,7 +1622,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: cw } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(cw.ledgerAccountId, '2000');
-    const { challengeId } = await createMfaChallenge(customerId, 'ae001');
+    const {
+      challengeId,
+      otp: otp_ae001_1473,
+      operationKey: cashOutOperation1589,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '500',
+    });
     const exec = await cashOutService.execute({
       agentId: agent.id,
       agentPrincipal: agentPrincipal(agent.id) as any,
@@ -1491,10 +1638,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       customerId,
       customerPin: '1234',
       mfaChallengeId: challengeId,
-      otp: 'ae001',
+      otp: otp_ae001_1473,
       amountMinor: '500',
       currency: 'NGN',
-      idempotencyKey: `ae-${randomUUID()}`,
+      idempotencyKey: cashOutOperation1589,
     });
     expect(exec.status).toBe('COMPLETED');
     const res = await recipientService.resolve(phone);
@@ -1512,23 +1659,9 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       [AgentService.CASH_IN],
       '1234',
     );
-    await ledgerService.postJournal({
-      idempotencyKey: `ae-cashin-fund-${randomUUID()}`,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [
-        {
-          accountId: systemLedgerAccountId,
-          direction: LedgerEntryDirection.DEBIT,
-          amountMinor: '3000',
-        },
-        {
-          accountId: w2.ledgerAccountId,
-          direction: LedgerEntryDirection.CREDIT,
-          amountMinor: '3000',
-        },
-      ],
-    });
+    // Agent float is funded from the institution's own settlement account: the Agent wallet is
+    // institution-attributed, so platform float cannot be mixed into this journal.
+    await fixture.fundLedgerAccount(w2.ledgerAccountId, '3000', { institutionId });
     const phone2 = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     await createCustomerWithPhoneAndPin(phone2, '1234');
     const cashInRes = await cashInService.execute({
@@ -1547,7 +1680,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    const { challengeId } = await createMfaChallenge(customerId, 'af001');
+    const {
+      challengeId,
+      otp: otp_af001_1537,
+      operationKey: cashOutOperation1657,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     // no token
     const resNoToken = await app.inject({
       method: 'POST',
@@ -1556,10 +1697,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: 'af001',
+        otp: otp_af001_1537,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `af-${randomUUID()}`,
+        idempotencyKey: cashOutOperation1657,
         agentPin: '1234',
       },
     });
@@ -1584,7 +1725,15 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       [AgentService.CASH_OUT],
       '1234',
     );
-    const { challengeId: ch2 } = await createMfaChallenge(customerId, 'af002');
+    const {
+      challengeId: ch2,
+      otp: otp_af002_1574,
+      operationKey: cashOutOperation1698,
+    } = await issueCashOutOtp({
+      agentId: agentB.id,
+      customerId: customerId,
+      amountMinor: '1000',
+    });
     await expect(
       cashOutService.execute({
         agentId: agentB.id,
@@ -1593,16 +1742,24 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: ch2,
-        otp: 'af002',
+        otp: otp_af002_1574,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `af3-${randomUUID()}`,
+        idempotencyKey: cashOutOperation1698,
       }),
     ).rejects.toThrow(/cannot execute as/i);
     // wrong Customer (OTP belongs to different customer)
     const phone2 = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId: cust2 } = await createCustomerWithPhoneAndPin(phone2, '1234');
-    const { challengeId: ch3 } = await createMfaChallenge(cust2, 'af003');
+    const {
+      challengeId: ch3,
+      otp: otp_af003_1592,
+      operationKey: cashOutOperation1720,
+    } = await issueCashOutOtp({
+      agentId: agent.id,
+      customerId: cust2,
+      amountMinor: '1000',
+    });
     await expect(
       cashOutService.execute({
         agentId: agent.id,
@@ -1611,10 +1768,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: ch3,
-        otp: 'af003',
+        otp: otp_af003_1592,
         amountMinor: '1000',
         currency: 'NGN',
-        idempotencyKey: `af4-${randomUUID()}`,
+        idempotencyKey: cashOutOperation1720,
       }),
     ).rejects.toThrow(/belong|OTP/i);
   });
