@@ -1,0 +1,67 @@
+ARENA 3B — A16 ACCEPTANCE AND EXECUTION-AUTHORITY CORRECTION
+============================================================
+Application commit tested: this checkpoint
+Suites: test/a16-agent-cash-to-cash-claim.integration.spec.ts (88 tests)
+        test/a15-agent-cash-to-cash.integration.spec.ts (23 tests, regression)
+
+A16: Tests: 88 passed, 88 total — 81.2 s, exit 0.
+A15: Tests: 23 passed, 23 total — 17.9 s, exit 0 (no regression).
+
+1. EXECUTION-AUTHORITY DEFECT (corrected)
+-----------------------------------------
+Four scenarios proved that a claim could settle after its authorization had been revoked while
+the OTP was being verified:
+  - 44. Agent and KYC eligibility rechecked after OTP
+  - S2 pin-rotation / pin-lock / pin-deletion committed during OTP verification
+
+Root cause: `AgentCashToCashClaimService.execute()` validated agent cash authority (PIN, class,
+capability, session) and customer eligibility *before* opening the settlement transaction, and
+verified the OTP *inside* it. Every one of those authorities could change in the window between,
+and nothing re-read them before posting.
+
+Correction (single, narrow, inside the existing transaction — no parallel authorization system):
+`assertExecutionAuthority(manager, …)` is now called immediately after OTP consumption and before
+destination resolution, limit enforcement and posting. It re-reads, under `FOR SHARE`:
+  - agent row, credential and session  (reuses `assertAgentSessionWithManager`);
+  - agent lifecycle status, agent-class state and `applicable_services` containing CASH_TO_CASH
+    (mirrors `AgentServiceCapabilityService` semantics, but scoped to the transaction so it sees
+    policy changes committed mid-claim);
+  - the Agent PIN row for AGENT_CASH: existence, `deleted_at`, `account_locked`, and exact
+    match of `id`/`pin_hash`/`pin_version`/`last_changed_at` against the values captured before
+    authorization (a rotation during verification now fails closed);
+  - customer financial eligibility (`financialEligibility.require`) and KYC evidence
+    (`assertCurrentApprovedKyc` for AGENT_CASH, `assertWalletAssessmentUnexpired` for
+    CUSTOMER_WALLET).
+
+Serialization semantics: an authority change that commits *before* this boundary is observed and
+the claim is refused with no journal, no wallet credit, no settled transfer and no consumed
+obligation. A change that commits *after* a successful claim transaction cannot retroactively
+invalidate the settled claim — the revocation serializes behind the posting transaction. The suite
+now covers both directions (hook-driven mutations inside the claim transaction, and real
+cross-connection updates).
+
+2. LOCATOR LIFECYCLE (corrected — contract, not weakened)
+---------------------------------------------------------
+The two remaining failures were test-contract errors, not a retirement bug. The governed claim OTP
+is single-use and only one challenge may be active for a transfer, so a scenario that issued two
+challenges and raced them could never produce a settlement:
+  - "number and UUID claims racing": both routes now redeem the SAME transfer-bound challenge, and
+    exactly one settlement occurs (the other attempt gets the non-disclosing conflict).
+  - "locator settlement failure … retry": the retry now issues its challenge for the Agent/session
+    that actually drives the locator route; the locator itself was never retired — the 404 was the
+    route masking a 409 binding mismatch as `C2C_CLAIM_NOT_AVAILABLE`.
+
+No locator retirement rule was weakened, no attempt budget was reset, and the number route keeps
+returning the non-disclosing `C2C_CLAIM_NOT_AVAILABLE` for client-side failures.
+
+3. INVENTORY RECONCILIATION (33 → 88)
+-------------------------------------
+The suite was 33 `it()` declarations at the time of the original mission inventory. It now reports
+88 tests because of:
+  - `it.each` parameterisation (redemption method × session/credential/PIN/assessment race ×
+    locator method) — each parameter is a distinct financial invariant;
+  - scenarios previously unreachable because the fabricated challenge died at
+    `Claim authorization context unavailable` and are now executed end-to-end;
+  - new coverage added during this mission (institutional suspense accounting, cross-institution
+    rejection, authenticated receipt recovery, replay and idempotency).
+All 88 are real assertions; none are skipped.

@@ -3428,7 +3428,9 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
 
   it('number and UUID claims racing settle exactly once', async () => {
     const f = await locatorHttpFixture('CUSTOMER_WALLET');
-    const second = await createMfaChallenge(f.customerId, `race-${randomUUID()}`);
+    // Both routes redeem the *same* transfer-bound challenge: the claim OTP is single-use and
+    // only one challenge may be active for a transfer, so racing two separately issued challenges
+    // would test supersession, not concurrent settlement.
     const before = await ledgerService.getAccountBalance(f.wallet.ledgerAccountId);
     const { senderPhone, transferNumber, ...uuidPayload } = f.payload;
     const results = await Promise.all([
@@ -3445,8 +3447,6 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         payload: {
           ...uuidPayload,
           transferId: f.transfer.transferId,
-          mfaChallengeId: second.challengeId,
-          otp: second.otp,
           idempotencyKey: randomUUID(),
         },
       }),
@@ -3487,7 +3487,11 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         `claim:${f.transfer.transferId}:${f.payload.idempotencyKey}`,
       ]),
     ).toEqual([]);
-    const fresh = await createMfaChallenge(f.customerId, `retry-${randomUUID()}`);
+    // The retry must authenticate as the same Agent/session that drives the locator route.
+    const fresh = await createMfaChallenge(f.customerId, `retry-${randomUUID()}`, {
+      agentId: f.claimant.agent.id,
+      agentSessionId: await latestAgentSession(f.claimant.agent.id),
+    });
     const retry = await app.inject({
       method: 'POST',
       url: '/api/v1/agents/cash-to-cash/claim-by-number',

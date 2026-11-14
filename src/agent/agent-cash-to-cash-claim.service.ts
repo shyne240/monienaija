@@ -689,6 +689,23 @@ export class AgentCashToCashClaimService {
             return { otpFailure: verification.failureReason ?? 'MFA_UNAVAILABLE' } as const;
           }
 
+          // ARENA 3B — authoritative execution boundary.
+          //
+          // Everything below posts money. The pre-flight checks above run before the OTP is
+          // consumed, so they cannot, by themselves, stop an authorization change that commits
+          // while the challenge is being verified (PIN rotation/lock/deletion, agent
+          // suspension/class deactivation, customer KYC withdrawal, session or credential
+          // revocation). Re-read every mutable authority that this claim depends on, inside this
+          // transaction and after OTP consumption, under FOR SHARE locks, so the decision and the
+          // posting are serialized against each other.
+          await this.assertExecutionAuthority(manager, {
+            claimantAgentId,
+            customerId,
+            redemptionMethod,
+            principal: input.claimantPrincipal,
+            authorizedPin,
+          });
+
           // Resolve only the server-owned destination selected by the mode: beneficiary Customer
           // wallet or authenticated Agent B float. No client-provided account id is accepted.
           const settlementWallet = await this.resolveWalletAccount(
@@ -1069,6 +1086,133 @@ export class AgentCashToCashClaimService {
       ...(claim.reference ? { reference: claim.reference } : {}),
       claimedAt: new Date(claim.claimed_at),
     };
+  }
+
+  /**
+   * Revalidate the complete mutable authorization surface at the financial execution boundary.
+   *
+   * Called inside the settlement transaction, immediately after the transfer-bound OTP has been
+   * consumed and before any posting. Every read is `FOR SHARE`, so a concurrent revocation either
+   * commits before this point (and is seen here, refusing the claim) or waits for the posting
+   * transaction to finish (and therefore cannot retroactively invalidate a settled claim).
+   *
+   * Reuses the accepted authorization primitives rather than duplicating them:
+   *   - `assertAgentSessionWithManager` — agent row, credential and session state;
+   *   - `financialEligibility.require` — customer financial eligibility;
+   *   - `assertCurrentApprovedKyc` / `assertWalletAssessmentUnexpired` — KYC evidence;
+   *   - the agent-class/service policy read here mirrors `AgentServiceCapabilityService`
+   *     (ACTIVE agent, active non-deleted class, `applicable_services` containing CASH_TO_CASH),
+   *     scoped to this transaction so it observes uncommitted policy changes.
+   */
+  private async assertExecutionAuthority(
+    manager: EntityManager,
+    input: {
+      claimantAgentId: string | null;
+      customerId: string;
+      redemptionMethod: 'CUSTOMER_WALLET' | 'AGENT_CASH';
+      principal?: AuthorizationPrincipal;
+      authorizedPin?: {
+        id: string;
+        pin_hash: string;
+        hash_algorithm: string;
+        pin_version: number;
+        last_changed_at: string;
+      };
+    },
+  ): Promise<void> {
+    if (input.claimantAgentId && input.principal) {
+      await this.assertAgentSessionWithManager(manager, input.principal);
+
+      const agentRows = await manager.query<
+        Array<{
+          status: string;
+          deleted_at: Date | null;
+          agent_class_id: string | null;
+          class_id: string | null;
+          class_active: boolean | null;
+          class_deleted_at: Date | null;
+          applicable_services: unknown;
+        }>
+      >(
+        `SELECT a.status, a.deleted_at, a.agent_class_id,
+                c.id AS class_id, c.is_active AS class_active, c.deleted_at AS class_deleted_at,
+                c.applicable_services
+           FROM agents a
+           LEFT JOIN agent_classes c ON c.id = a.agent_class_id
+          WHERE a.id = $1
+          FOR SHARE OF a`,
+        [input.claimantAgentId],
+      );
+      const agent = agentRows[0];
+      if (!agent || agent.deleted_at !== null) {
+        throw new UnauthorizedException('Agent session expired or revoked during claim');
+      }
+      if (agent.status !== 'ACTIVE') {
+        throw new ForbiddenException(`Agent not permitted: AGENT_${agent.status}`);
+      }
+      if (!agent.class_id) {
+        throw new ForbiddenException('Agent class invalid: MISSING_AGENT_CLASS');
+      }
+      if (agent.class_deleted_at !== null) {
+        throw new ForbiddenException('Agent class invalid: AGENT_CLASS_DELETED');
+      }
+      if (agent.class_active !== true) {
+        throw new ForbiddenException('Agent class is not active');
+      }
+      const services = Array.isArray(agent.applicable_services)
+        ? agent.applicable_services.map((value) => String(value).toUpperCase())
+        : [];
+      if (!services.includes(AgentService.CASH_TO_CASH)) {
+        throw new ForbiddenException('Agent does not have CASH_TO_CASH capability');
+      }
+    }
+
+    if (input.redemptionMethod === 'AGENT_CASH') {
+      if (!input.authorizedPin) {
+        throw new UnauthorizedException('Agent PIN invalid: PIN_NOT_FOUND');
+      }
+      const pinRows = await manager.query<
+        Array<{
+          id: string;
+          pin_hash: string;
+          pin_version: number;
+          last_changed_at: string;
+          deleted_at: Date | null;
+          account_locked: boolean;
+        }>
+      >(
+        `SELECT id, pin_hash, pin_version, last_changed_at::text AS last_changed_at,
+                deleted_at, account_locked
+           FROM agent_transaction_pins
+          WHERE agent_id = $1
+          FOR SHARE`,
+        [input.claimantAgentId],
+      );
+      const pin = pinRows[0];
+      if (!pin || pin.deleted_at !== null) {
+        throw new UnauthorizedException('Agent PIN invalid: PIN_NOT_FOUND');
+      }
+      if (pin.account_locked === true) {
+        throw new UnauthorizedException('Agent PIN is locked');
+      }
+      if (
+        pin.id !== input.authorizedPin.id ||
+        pin.pin_hash !== input.authorizedPin.pin_hash ||
+        Number(pin.pin_version) !== Number(input.authorizedPin.pin_version) ||
+        pin.last_changed_at !== input.authorizedPin.last_changed_at
+      ) {
+        throw new UnauthorizedException('Agent PIN changed during claim');
+      }
+    }
+
+    // Customer financial eligibility and KYC evidence can be withdrawn while the OTP is being
+    // verified; both are authoritative for settlement.
+    await this.financialEligibility.require(manager, input.customerId);
+    if (input.redemptionMethod === 'AGENT_CASH') {
+      await this.assertCurrentApprovedKyc(manager, input.customerId);
+    } else {
+      await this.assertWalletAssessmentUnexpired(manager, input.customerId);
+    }
   }
 
   private async assertAgentSessionWithManager(
