@@ -56,6 +56,7 @@ import { AgentCashToCashClaimService } from '../src/agent/agent-cash-to-cash-cla
 import { AgentClassService } from '../src/agent/agent-class.service';
 import { AgentApplicationService } from '../src/agent/agent-application.service';
 import { AgentLifecycleService } from '../src/agent/agent-lifecycle.service';
+import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
 import { AgentAuthenticationService } from '../src/agent-authentication/agent-authentication.service';
 import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-authentication.enums';
 import { AgentStatus } from '../src/agent/agent.enums';
@@ -110,6 +111,7 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-01 Fee runtime wiring (real PG)', () => {
   let appService: AgentApplicationService;
   let lifecycleService: AgentLifecycleService;
   let pinService: AgentAuthenticationService;
+  let mfaService: MfaExecutionService;
 
   let systemLedgerAccountId: string;
 
