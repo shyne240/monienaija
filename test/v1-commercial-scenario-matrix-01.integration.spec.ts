@@ -37,16 +37,13 @@
  * PROVISIONAL TEST CONFIGURATION ONLY — every rule/env/rate here exists solely inside this
  * disposable per-process database. Nothing is a production rate or policy.
  */
-import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID, randomBytes, pbkdf2Sync } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
-import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
-import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
-import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { WalletService } from '../src/wallet/wallet.service';
 import { TransferService } from '../src/transfer/transfer.service';
 import { LedgerService } from '../src/ledger/ledger.service';
@@ -68,7 +65,6 @@ import { AgentLifecycleService } from '../src/agent/agent-lifecycle.service';
 import { AgentAuthenticationService } from '../src/agent-authentication/agent-authentication.service';
 import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-authentication.enums';
 import { AgentStatus } from '../src/agent/agent.enums';
-import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
 import { CustomerTransactionPinService } from '../src/customer/customer-transaction-pin.service';
 import { CommercialAccountingService } from '../src/commercial-accounting/commercial-accounting.service';
 import { CommercialAccountingBlockedError } from '../src/commercial-accounting/commercial-accounting-registry.service';
@@ -83,6 +79,17 @@ import {
   createEligibleCustomer,
   makeCustomerFinanciallyEligible,
 } from './support/kyc-test-fixtures';
+import {
+  ensureCustomerCredential,
+  governedDeskProviderOverride,
+  startGovernedDesk,
+  type GovernedDeskHarness,
+} from './support/cash-out-lifecycle-fixture';
+import { RecordingSmsProvider } from './support/desk-otp-fixture';
+import {
+  createControlledFundingPolicy,
+  overrideCashToCashFundingPolicy,
+} from './support/controlled-funding-policy';
 
 function hashPin(pin: string): string {
   const salt = randomBytes(16);
@@ -120,54 +127,13 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
   let appService: AgentApplicationService;
   let lifecycleService: AgentLifecycleService;
   let pinService: AgentAuthenticationService;
-  let mfaService: MfaExecutionService;
   let customerPinService: CustomerTransactionPinService;
   let accountingService: CommercialAccountingService;
   let systemLedgerAccountId: string;
 
-  const workforceConfig: A2WorkforceConfigurationV1 = {
-    enabled: true,
-    oidcIssuer: 'https://workforce.test',
-    oidcJwksUri: 'https://workforce.test/jwks',
-    oidcAudience: 'workforce',
-    oidcClientId: 'test-client',
-    internalAudience: 'workforce-admin',
-    sessionTtlSeconds: 900,
-    jwksJson: [],
-    financeRoles: [],
-    makerCheckerRules: [],
-    rateLimits: [],
-    trustedProxies: ['127.0.0.1'],
-  } as unknown as A2WorkforceConfigurationV1;
-
-  const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-')) {
-        throw new UnauthorizedException('invalid workforce token');
-      }
-      const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = [
-        'SUPPORT',
-        'OPERATOR',
-        'SERVICE',
-        'PRIVILEGED',
-        'AGENT',
-        'CUSTOMER',
-        'AGGREGATOR',
-      ];
-      if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
-      return {
-        type,
-        principalId: `workforce-${type.toLowerCase()}-1`,
-        audience,
-        roles: [],
-        scopes: [],
-        customerAccess: 'NONE',
-        agentAccess: 'NONE',
-        aggregatorAccess: 'NONE',
-      } as any;
-    },
-  };
+  const smsProvider = new RecordingSmsProvider();
+  let governed: GovernedDeskHarness;
+  const fundingPolicy = createControlledFundingPolicy();
 
   const ENV_KEYS = [
     'COMMERCIAL_ACCOUNTING_ENABLED',
@@ -193,16 +159,15 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('v1-commercial-scenario-matrix-01');
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    const baseBuilder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
-      .useValue(kycEvidence.reader)
-      .overrideProvider(A2WorkforceSessionService)
-      .useValue(mockWorkforceSessions)
-      .overrideProvider(A2_WORKFORCE_CONFIG)
-      .useValue(workforceConfig)
-      .compile();
+      .useValue(kycEvidence.reader);
+    const moduleRef = await overrideCashToCashFundingPolicy(
+      governedDeskProviderOverride(baseBuilder, smsProvider),
+      fundingPolicy,
+    ).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(
@@ -227,7 +192,6 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     appService = app.get(AgentApplicationService);
     lifecycleService = app.get(AgentLifecycleService);
     pinService = app.get(AgentAuthenticationService);
-    mfaService = app.get(MfaExecutionService);
     customerPinService = app.get(CustomerTransactionPinService);
     accountingService = app.get(CommercialAccountingService);
   }, 180000);
@@ -252,15 +216,10 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       allowNegativeBalance: true,
     });
     systemLedgerAccountId = sys.id;
-    await ledgerService.createAccount({
-      code: 'CASH_TO_CASH-UNCLAIMED-NGN',
-      name: 'Cash-to-Cash Unclaimed NGN',
-      accountType: LedgerAccountType.LIABILITY,
-      normalBalance: LedgerNormalBalance.CREDIT,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      allowNegativeBalance: false,
-    });
+    // Governed institutional context (synthetic, per-process database only).
+    governed = await startGovernedDesk({ app, dataSource, smsProvider, label: 'csm' });
+    // Cash-to-Cash holds the unclaimed liability in the receiving institution's suspense account.
+    await governed.fixture.openInstitutionCashToCashSuspenseAccount(governed.institutionId);
     await provisionAccountingFamilies();
   });
 
@@ -287,11 +246,12 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       },
     ];
     for (const f of families) {
+      // Economic owner of every commercial family account is the receiving institution.
       await dataSource.query(
-        `INSERT INTO ledger_accounts (id, code, name, account_type, normal_balance, currency, accounting_unit, allow_negative_balance, is_active)
-         VALUES (gen_random_uuid(), $1, $2, $3, $4, 'NGN', 'CUSTOMER_FUNDS', FALSE, TRUE)
+        `INSERT INTO ledger_accounts (id, code, name, account_type, normal_balance, currency, accounting_unit, allow_negative_balance, is_active, institutional_scope, institution_id)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, 'NGN', 'CUSTOMER_FUNDS', FALSE, TRUE, 'INSTITUTION', $5)
          ON CONFLICT (code) DO NOTHING`,
-        [f.code, `${f.code} (test fixture)`, f.type, f.normal],
+        [f.code, `${f.code} (test fixture)`, f.type, f.normal, governed.institutionId],
       );
       await dataSource.query(
         `INSERT INTO commercial_accounting_registry (
@@ -389,21 +349,13 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       `SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`,
       [view.id],
     );
+    await governed.provisionCustomer(customerId, view.id);
     return { id: view.id, ledgerAccountId: rows[0].ledger_account_id };
   }
 
   async function fundWallet(walletLedgerAccountId: string, amountMinor: string): Promise<void> {
-    await dataSource.transaction(async (manager) => {
-      await ledgerService.postJournalInTransaction(manager, {
-        idempotencyKey: `csm01-fund-${randomUUID()}`,
-        currency: 'NGN',
-        accountingUnit: 'CUSTOMER_FUNDS',
-        reference: `CSMF-${walletLedgerAccountId.slice(0, 8)}`,
-        lines: [
-          { accountId: systemLedgerAccountId, direction: 'DEBIT', amountMinor },
-          { accountId: walletLedgerAccountId, direction: 'CREDIT', amountMinor },
-        ],
-      });
+    await governed.fixture.fundLedgerAccount(walletLedgerAccountId, amountMinor, {
+      institutionId: governed.institutionId,
     });
   }
 
@@ -507,7 +459,11 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     }
   }
 
-  async function createActiveAgentWithPin(services: unknown, pin: string | null) {
+  async function createActiveAgentWithPin(
+    services: unknown,
+    pin: string | null,
+    options: { govern?: boolean } = {},
+  ) {
     const cls = await classService.create({
       reference: `cls-csm01-${randomUUID().slice(0, 8)}`,
       code: `CSM01-${randomUUID().slice(0, 6)}`,
@@ -547,12 +503,14 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       `SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`,
       [wallet.id],
     );
+    if (options.govern !== false) await governed.provisionAgent(agent.id, wallet.id);
     return { cls, agent, appEntity, wallet, walletLedgerAccountId: rows[0].ledger_account_id };
   }
 
   function agentPrincipal(agentId: string) {
     return {
       type: 'AGENT' as const,
+      sessionId: governed.sessionFor(agentId),
       agentId,
       principalId: agentId,
       roles: [],
@@ -594,43 +552,8 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       pinVersion: 1,
       actor: customerId,
     });
+    await governed.provisionCustomer(customerId, wallet.id);
     return { customerId, wallet, walletLedgerAccountId: rows[0].ledger_account_id };
-  }
-
-  async function createMfaChallenge(customerId: string, otp: string, ttlSeconds = 300) {
-    const eRows: Array<{ id: string }> = await dataSource.query(
-      `INSERT INTO mfa_enrollments (id, customer_id, reference, status) VALUES ($1,$2,$3,'ENABLED') RETURNING id`,
-      [randomUUID(), customerId, `mfa-enroll-${randomUUID().slice(0, 6)}`],
-    );
-    const enrollmentId = eRows[0]!.id;
-    const mRows: Array<{ id: string }> = await dataSource.query(
-      `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-      [randomUUID(), customerId, enrollmentId, `csm01-${randomUUID().slice(0, 6)}`],
-    );
-    const methodId = mRows[0]!.id;
-    const cRows: Array<{ id: string }> = await dataSource.query(
-      `INSERT INTO customer_authentication_credentials (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
-      [randomUUID(), customerId],
-    );
-    const credentialId = cRows[0]!.id;
-    const sessionId = randomUUID();
-    const tokenHash = randomBytes(32).toString('hex');
-    await dataSource
-      .query(
-        `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
-        [sessionId, customerId, credentialId, tokenHash],
-      )
-      .catch(() => {});
-    const principal: any = { principalType: 'CUSTOMER', customerId, credentialId, sessionId };
-    const challenge = await mfaService.issueChallenge({
-      principal,
-      enrollmentId,
-      methodId,
-      challengeHash: otp,
-      ttlSeconds,
-      actor: customerId,
-    } as any);
-    return { challengeId: (challenge as any).id ?? (challenge as any).challengeId, otp };
   }
 
   async function runCashOut(input: { amountMinor?: string; key?: string } = {}) {
@@ -645,9 +568,16 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       customerId,
       'WALLET_TO_CASH',
     );
-    const otp = 'csm01-otp';
-    const { challengeId } = await createMfaChallenge(customerId, otp);
     const key = input.key ?? `csm01-out-${randomUUID()}`;
+    await ensureCustomerCredential(dataSource, customerId);
+    const issued = await governed.issueCashOutOtp({
+      agentId: bundle.agent.id,
+      customerId,
+      amountMinor: input.amountMinor ?? '30000',
+      operationKey: key,
+    });
+    const challengeId = issued.challengeId;
+    const otp = issued.otp;
     const result = await cashOutService.execute({
       agentId: bundle.agent.id,
       agentPrincipal: agentPrincipal(bundle.agent.id) as any,
@@ -686,10 +616,15 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       currency: 'NGN',
       idempotencyKey: key,
     });
-    return { ...bundle, agentWallet, result, key, beneficiaryPhone };
+    return { ...bundle, agentWallet, result, key, beneficiaryPhone, agentId: agent.id };
   }
 
-  async function runClaim(initResult: any, phone: string): Promise<any> {
+  async function runClaim(
+    initResult: any,
+    phone: string,
+    agentId: string,
+    amountMinor = '30000',
+  ): Promise<any> {
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
     await seedLimitProfile(
       `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
@@ -697,16 +632,28 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       customerId,
       'CASH_TO_CASH',
     );
-    const otp = 'csm01-claim-otp';
-    const { challengeId } = await createMfaChallenge(customerId, otp);
+    await ensureCustomerCredential(dataSource, customerId);
+    const claimKey = `csm01-claim-${randomUUID()}`;
+    const claimOtp = await governed.deskOtp.issue({
+      agentId,
+      customerId,
+      purpose: 'CASH_TO_CASH_CLAIM',
+      redemptionMethod: 'CUSTOMER_WALLET',
+      agentSessionId: governed.sessionFor(agentId)!,
+      transferId: initResult.transferId,
+      amountMinor,
+      currency: 'NGN',
+      operationKey: claimKey,
+    });
     const claim = await claimService.execute({
       transferId: initResult.transferId,
       beneficiaryPhone: phone,
       transferCode: initResult.transferCode,
       customerId,
-      mfaChallengeId: challengeId,
-      otp,
-      idempotencyKey: `csm01-claim-${randomUUID()}`,
+      mfaChallengeId: claimOtp.challengeId,
+      otp: claimOtp.otp,
+      claimantPrincipal: agentPrincipal(agentId) as any,
+      idempotencyKey: claimKey,
     });
     expect(claim.status).toBe('COMPLETED');
     return claim;
@@ -1084,7 +1031,7 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     expect(await walletBalance(run.walletLedgerAccountId)).toBe(469100n);
     const snap = await snapshotsFor(`product='CASH_TO_CASH' AND direction='OUTGOING'`, []);
     expect(snap[0].commission_decision.commissionEvent).toBe('CASH_TO_CASH_INITIATION');
-    await runClaim(run.result, run.beneficiaryPhone);
+    await runClaim(run.result, run.beneficiaryPhone, run.agentId, '30000');
     expect((await accountingJournals()).length).toBe(1);
   });
 
@@ -1112,7 +1059,14 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       customerId,
       'WALLET_TO_CASH',
     );
-    const { challengeId } = await createMfaChallenge(customerId, 'csm01-x');
+    const c03Key = `csm01-c03-${randomUUID()}`;
+    await ensureCustomerCredential(dataSource, customerId);
+    const c03Otp = await governed.issueCashOutOtp({
+      agentId: bundle.agent.id,
+      customerId,
+      amountMinor: '30000',
+      operationKey: c03Key,
+    });
     try {
       await cashOutService.execute({
         agentId: bundle.agent.id,
@@ -1120,11 +1074,11 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
         agentPin: '1234',
         customerId,
         customerPin: '1234',
-        mfaChallengeId: challengeId,
-        otp: 'csm01-x',
+        mfaChallengeId: c03Otp.challengeId,
+        otp: c03Otp.otp,
         amountMinor: '30000',
         currency: 'NGN',
-        idempotencyKey: `csm01-c03-${randomUUID()}`,
+        idempotencyKey: c03Key,
       });
       throw new Error('expected CONTRA blocker');
     } catch (e) {
@@ -1181,7 +1135,14 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       customerId,
       'WALLET_TO_CASH',
     );
-    const { challengeId } = await createMfaChallenge(customerId, 'csm01-y');
+    const y01Key = `csm01-y01-${randomUUID()}`;
+    await ensureCustomerCredential(dataSource, customerId);
+    const y01Otp = await governed.issueCashOutOtp({
+      agentId: bundle.agent.id,
+      customerId,
+      amountMinor: '30000',
+      operationKey: y01Key,
+    });
     await expect(
       cashOutService.execute({
         agentId: bundle.agent.id,
@@ -1189,11 +1150,11 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
         agentPin: '1234',
         customerId,
         customerPin: '1234',
-        mfaChallengeId: challengeId,
-        otp: 'csm01-y',
+        mfaChallengeId: y01Otp.challengeId,
+        otp: y01Otp.otp,
         amountMinor: '30000',
         currency: 'NGN',
-        idempotencyKey: `csm01-y01-${randomUUID()}`,
+        idempotencyKey: y01Key,
       }),
     ).rejects.toThrow();
     expect((await accountingJournals()).length).toBe(0);
@@ -1219,7 +1180,14 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       customerId,
       'WALLET_TO_CASH',
     );
-    const { challengeId } = await createMfaChallenge(customerId, 'csm01-y2a');
+    const y02Key = `csm01-y02a-${randomUUID()}`;
+    await ensureCustomerCredential(dataSource, customerId);
+    const y02Otp = await governed.issueCashOutOtp({
+      agentId: bundle.agent.id,
+      customerId,
+      amountMinor: '30000',
+      operationKey: y02Key,
+    });
     try {
       await cashOutService.execute({
         agentId: bundle.agent.id,
@@ -1227,11 +1195,11 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
         agentPin: '1234',
         customerId,
         customerPin: '1234',
-        mfaChallengeId: challengeId,
-        otp: 'csm01-y2a',
+        mfaChallengeId: y02Otp.challengeId,
+        otp: y02Otp.otp,
         amountMinor: '30000',
         currency: 'NGN',
-        idempotencyKey: `csm01-y02a-${randomUUID()}`,
+        idempotencyKey: y02Key,
       });
       throw new Error('expected VAT rate blocker');
     } catch (e) {
@@ -1343,10 +1311,23 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     const pool: Array<{ id: string }> = await dataSource.query(
       `SELECT id FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN'`,
     );
-    await fundWallet(pool[0].id, '1000000');
+    // Platform ⇄ platform journal: the funding pool carries no institution classification.
+    await ledgerService.postJournal({
+      idempotencyKey: `csm01-p02-pool-${randomUUID()}`,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+      lines: [
+        { accountId: systemLedgerAccountId, direction: 'DEBIT', amountMinor: '1000000' },
+        { accountId: pool[0].id, direction: 'CREDIT', amountMinor: '1000000' },
+      ],
+    });
+    // Platform-level agent wallet: an institution-attributed agent is refused at the ledger
+    // boundary because the funding pool has no institution classification (documented scope
+    // boundary). The accounting question is independent of that boundary.
     const bundle = await createActiveAgentWithPin(
       ['CASH_IN', 'CASH_OUT', 'CASH_TO_CASH', 'AGENT_FUNDING', 'AGENT_DEFUNDING'],
       null,
+      { govern: false },
     );
     const privilegedPrincipal: any = {
       type: 'OPERATOR',
@@ -1392,7 +1373,7 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
 
     const t1 = await runC2cInitiation({ amountMinor: '30000' });
     expect(t1.result.status).toBe('COMPLETED');
-    await runClaim(t1.result, t1.beneficiaryPhone);
+    await runClaim(t1.result, t1.beneficiaryPhone, t1.agentId, '30000');
 
     const t2 = await runC2cInitiation({ amountMinor: '20000' });
     expect(t2.result.status).toBe('COMPLETED');
