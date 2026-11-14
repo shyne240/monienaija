@@ -21,8 +21,12 @@ document is deployment evidence and nothing here claims production authorization
 | **Canonical governed fixture checkpoint**                               | **`182eda9`**                                                                                                       |
 | **Funding-authority + institutional obligation checkpoint (A15 green)** | **`fd3e4cd`**                                                                                                       |
 | **Governed agent-desk OTP fixture checkpoint**                          | **`34ee502`**                                                                                                       |
+| **A16 claim-suite migration checkpoint (82/88)**                        | **`c6df0ad`** (evidence: `docs/integration/arena3b-evidence/STAGE-A16-claim-migration.txt`)                         |
 | Cash-Out integration checkpoint                                         | `5acc9c8` (recovered; targeted acceptance passed before this mission)                                               |
-| Cash-to-Cash integration checkpoint                                     | `fd3e4cd` — funding path accepted (A15 23/23); claim/expiry not accepted                                            |
+| Cash-to-Cash integration checkpoint                                     | `fd3e4cd` — funding path accepted (A15 23/23)                                                                       |
+| Cash-to-Cash **claim** acceptance                                       | **not accepted** — `c6df0ad` migrates A16 to governed OTP issuance: 82/88 pass, 6 red (see §A16 below)              |
+| Cash-to-Cash **expiry** acceptance (A17)                                | **not started** — suite still fabricates challenges and has no claiming agent session                               |
+| Cash-Out acceptance (A14 + A14-OTP-hardening)                           | **not started** — ~40 intent-less `execute` calls remain                                                            |
 | Final accepted application checkpoint                                   | **not established** — Stage 4 legacy regression is unfinished                                                       |
 | Documentation + evidence checkpoint                                     | this commit (`docs/integration/arena2-financial-operations-consolidation.md`, `docs/integration/arena3b-evidence/`) |
 
@@ -315,3 +319,34 @@ No Arena 1 A6/A7 or Arena 4 customer-app integration, no ledger-reversal redesig
 refunds, no replacement transfer codes, no invented financial policies, no customer-wallet-funded
 Cash-to-Cash, no new products, no production credentials, no live provider calls, no real financial
 transactions, no deployment, no merge into `main`, and no repository-wide reformatting.
+
+---
+
+## Appendix A16 — Cash-to-Cash claim suite migration (checkpoint `c6df0ad`)
+
+`test/a16-agent-cash-to-cash-claim.integration.spec.ts`: **82 passed / 6 failed / 88 total**,
+84.6 s, no timeouts. Baseline at `b43ea30`: 12 of 33 pre-existing scenarios could reach the claim
+service at all.
+
+The suite no longer fabricates challenges. `createMfaChallenge()` now drives the real
+`AgentDeskOtpService.issue({ purpose: 'CASH_TO_CASH_CLAIM' })` and reads the delivered code from a
+recording SMS provider (`test/support/desk-otp-fixture.ts`); the bindings it creates record the
+agent, agent session, redemption method, transfer and destination hash that the scenario will
+actually redeem. Balance and posting assertions track the receiving institution's
+`C2C-UNCLAIMED-*` suspense account instead of the legacy global unclaimed account.
+
+Six scenarios remain red, and none of them was relaxed:
+
+| Scenario                                                                                      | Classification                                                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `44. Agent and KYC eligibility are rechecked after OTP and before cash settlement`            | **Product gap (pre-existing).** The claim completes when agent/KYC eligibility is revoked during OTP verification. Session, credential and session-expiry revocations _are_ re-checked (those S2 scenarios pass). |
+| `S2 rejects pin-rotation committed during OTP verification without settlement`                | **Product gap (pre-existing).** No PIN-state re-read after verification; the claim posts.                                                                                                                         |
+| `S2 rejects pin-lock committed during OTP verification without settlement`                    | Same gap.                                                                                                                                                                                                         |
+| `S2 rejects pin-deletion committed during OTP verification without settlement`                | Same gap.                                                                                                                                                                                                         |
+| `number and UUID claims racing settle exactly once`                                           | **Locator-lifecycle decision.** The number route retires the locator on the first (failed) attempt, so the racing UUID request answers 404 and nothing settles.                                                   |
+| `locator settlement failure rolls back and retries with fresh OTP and the same financial key` | Same decision: after an injected settlement failure the locator is refused (404) instead of reusable for the 200 retry.                                                                                           |
+
+`docs/integration/arena3b-evidence/NEXT-PHASE-MIGRATION-RECIPE.txt` records the exact procedure
+that produced this result so A17, A14/A14-OTP-hardening and the remaining red suites can follow the
+same path. A17 and A14 additionally need a claiming agent session: their claims currently pass no
+`claimantPrincipal`, which the accepted claim/redemption contract requires.
