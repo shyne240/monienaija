@@ -4,10 +4,12 @@ import { CashToCashClaimFinancialContext } from './cash-to-cash-claim-authorizat
 import type { AgentCashToCashClaimInput } from './agent-cash-to-cash-claim.types';
 
 describe('Cash-to-Cash claim containment', () => {
-  it('does not manufacture production institutional authority', () => {
-    expect(() => new CashToCashClaimFinancialContext().resolve({} as never, {} as never)).toThrow(
-      ServiceUnavailableException,
-    );
+  it('does not manufacture production institutional authority', async () => {
+    // The authority is now the authoritative FINANCIAL_CONTEXT_RESOLVER; when it is not wired the
+    // seam still fails closed rather than inventing an institution.
+    await expect(
+      new CashToCashClaimFinancialContext().resolve({} as never, {} as never),
+    ).rejects.toThrow(ServiceUnavailableException);
   });
   it('blocks claim before accessing any dependency, consuming an OTP or posting', async () => {
     const service = Object.create(

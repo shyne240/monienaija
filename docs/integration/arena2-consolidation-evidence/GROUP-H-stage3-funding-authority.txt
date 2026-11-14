@@ -1,0 +1,26 @@
+=== TypeScript (root) ===
+npx tsc --noEmit -p tsconfig.json -> 0 errors
+
+=== Backend unit suite ===
+Test Suites: 247 passed, 247 total
+Tests:       2899 passed, 2899 total
+exit=0
+
+=== Isolated KYC (real PG) ===
+Test Suites: 9 passed, 9 total
+Tests:       107 passed, 107 total
+exit=0
+
+=== Institutional PG regression ===
+Test Suites: 7 passed, 7 total
+Tests:       108 passed, 108 total
+exit=0
+
+=== agent-mobile ===
+Test Suites: 20 passed, 20 total
+Tests:       310 passed, 310 total
+tsc: 0 errors
+
+=== A15 after the real Cash-to-Cash funding authority ===
+Tests:       16 failed, 7 passed, 23 total
+dominant failure: Institutional financial context unavailable: UNATTRIBUTED_WALLET,UNATTRIBUTED_LEDGER_ACCOUNT,NO_INSTITUTION_CONTEXT

@@ -6,6 +6,7 @@ import {
   ConflictException,
   ForbiddenException,
   HttpException,
+  Inject,
   Injectable,
   NotFoundException,
   Optional,
@@ -16,12 +17,21 @@ import { ConfigService } from '@nestjs/config';
 import { DataSource, EntityManager } from 'typeorm';
 
 import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
+import { canonical, sha256 } from '../authorization/workforce-crypto';
+import { AGENT_INSTITUTION_RESOLVER } from '../institution/agent-institution-resolver';
+import type { AgentInstitutionResolver } from '../institution/agent-institution-resolver';
+import {
+  assertFinancialContextCompatible,
+  FINANCIAL_CONTEXT_RESOLVER,
+} from '../institution/financial-context-resolver';
+import type { FinancialContextResolver } from '../institution/financial-context-resolver';
+import type { FinancialContext } from '../institution/institution.types';
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
 import { OutboxService } from '../operations/outbox.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
-import { WalletStatus } from '../wallet/wallet.enums';
+import { WalletOwnerClass, WalletStatus } from '../wallet/wallet.enums';
 import { LedgerAccount } from '../ledger/ledger-account.entity';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { parsePositiveMinorUnits, normalizeCurrency } from '../common/money';
@@ -93,15 +103,126 @@ export interface CashToCashFundingEvidence {
   institutionEvidenceFingerprint: string;
 }
 
+/**
+ * The authoritative funding boundary for agent-funded Cash-to-Cash.
+ *
+ * It replaces the former controlled seam. Every fact is read from persisted records inside the
+ * caller's transaction, under SHARE locks:
+ *
+ *  - the funding agent's institutional affiliation (`institution_agent_affiliations`,
+ *    `financial_institutions`) and its operational status;
+ *  - the funding wallet's institutional attribution (`wallet_accounts.institution_id`,
+ *    `ledger_accounts.institution_id/institutional_scope`);
+ *  - compatibility of those records with each other and with the funding agent.
+ *
+ * There is no default institution, no aggregator-inferred authority and no platform fallback. An
+ * unavailable context is a 503, an incompatible one a 409, and the caller never posts funding
+ * without all four fingerprints. Cash-to-Cash remains agent-funded: the sender is the funding
+ * agent's own wallet, so `senderPhone` stays a lookup input and is never treated as verified
+ * identity.
+ */
 @Injectable()
 export class CashToCashFundingAuthority {
-  require(
-    _manager: EntityManager,
-    _request: CashToCashFundingAuthorizationRequest,
-  ): CashToCashFundingEvidence | Promise<CashToCashFundingEvidence> {
-    void _manager;
-    void _request;
-    throw new ServiceUnavailableException('Cash-to-cash funding authorization unavailable');
+  constructor(
+    @Optional()
+    @Inject(FINANCIAL_CONTEXT_RESOLVER)
+    private readonly financialContext?: FinancialContextResolver,
+    @Optional()
+    @Inject(AGENT_INSTITUTION_RESOLVER)
+    private readonly affiliations?: AgentInstitutionResolver,
+  ) {}
+
+  async require(
+    manager: EntityManager,
+    request: CashToCashFundingAuthorizationRequest,
+  ): Promise<CashToCashFundingEvidence> {
+    if (!this.financialContext)
+      throw new ServiceUnavailableException('Cash-to-cash funding authorization unavailable');
+
+    let context: FinancialContext;
+    try {
+      context = await this.financialContext.resolve(manager, {
+        agentId: request.agentId,
+        walletIds: [request.fundingWalletId],
+        ledgerAccountIds: [request.fundingLedgerAccountId],
+        lock: 'SHARE',
+      });
+      // RESOLVED is the only permissive outcome; INCOMPATIBLE is a 409, everything else a 503.
+      assertFinancialContextCompatible(context);
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new ServiceUnavailableException('Cash-to-cash funding authorization unavailable');
+    }
+
+    const affiliation = context.agentAffiliation;
+    if (
+      context.outcome !== 'RESOLVED' ||
+      !context.institutionId ||
+      !UUID_PATTERN.test(context.institutionId) ||
+      affiliation?.outcome !== 'RESOLVED' ||
+      affiliation.institutionId !== context.institutionId ||
+      !affiliation.affiliationId
+    )
+      throw new ServiceUnavailableException('Cash-to-cash funding authorization unavailable');
+
+    // The funded wallet must still be the funding agent's own active AGENT wallet, and its
+    // ledger account must carry the same institutional attribution the context resolved.
+    const walletRows: Array<{ id: string; ledger_account_id: string; institution_id: string | null }> =
+      await manager.query(
+        `SELECT w.id, w.ledger_account_id, w.institution_id
+           FROM wallet_accounts w
+           JOIN ledger_accounts l ON l.id = w.ledger_account_id
+          WHERE w.id = $1 AND w.customer_id = $2 AND w.owner_class = 'AGENT'
+            AND w.status = 'ACTIVE' AND w.currency = $3
+            AND w.institution_id = $4
+            AND l.institution_id = $4 AND l.institutional_scope = 'INSTITUTION'
+          FOR SHARE OF w, l`,
+        [request.fundingWalletId, request.agentId, request.currency, context.institutionId],
+      );
+    if (walletRows.length !== 1)
+      throw new ConflictException('Funding wallet is not compatible with the funding agent');
+
+    const institutionEvidenceFingerprint = context.evidenceFingerprint;
+    const senderIdentityFingerprint = sha256(
+      canonical({
+        kind: 'AGENT_FUNDED_CASH_TO_CASH',
+        agentId: request.agentId,
+        affiliationId: affiliation.affiliationId,
+        institutionId: context.institutionId,
+        walletId: walletRows[0]!.id,
+        ledgerAccountId: walletRows[0]!.ledger_account_id,
+        senderPhone: request.senderPhone,
+      }),
+    );
+    const senderPolicyFingerprint = sha256(
+      canonical({
+        affiliationOutcome: affiliation.outcome,
+        affiliationId: affiliation.affiliationId,
+        institutionId: context.institutionId,
+        institutionStatus: context.institutionStatus,
+        purposes: [...context.parties.map((party) => `${party.kind}:${party.id}`)].sort(),
+      }),
+    );
+    const fundingAuthorizationFingerprint = sha256(
+      canonical({
+        operationId: request.operationId,
+        requestHash: request.requestHash,
+        agentId: request.agentId,
+        walletId: request.fundingWalletId,
+        ledgerAccountId: request.fundingLedgerAccountId,
+        amountMinor: request.amountMinor,
+        currency: request.currency,
+        institutionId: context.institutionId,
+      }),
+    );
+
+    return {
+      institutionId: context.institutionId,
+      senderIdentityFingerprint,
+      senderPolicyFingerprint,
+      fundingAuthorizationFingerprint,
+      institutionEvidenceFingerprint,
+    };
   }
 }
 
@@ -442,7 +563,7 @@ export class AgentCashToCashService {
             where: {
               customerId: agentId,
               currency: 'NGN',
-              ownerClass: 'AGENT',
+              ownerClass: WalletOwnerClass.AGENT,
               status: WalletStatus.ACTIVE,
             },
             lock: { mode: 'pessimistic_write' },

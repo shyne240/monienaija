@@ -7,6 +7,7 @@ import { NotFoundException } from '@nestjs/common';
 jest.mock('react-native', () => ({ Platform: { OS: 'test' } }), { virtual: true });
 jest.mock('expo-secure-store', () => ({}), { virtual: true });
 import { CashOutInstitutionResolver } from '../src/agent/cash-out-institution.resolver';
+import { FinancialInstitutionStatus } from '../src/institution/institution.enums';
 import {
   CashToCashFundingAuthority,
   type CashToCashFundingAuthorizationRequest,
@@ -105,9 +106,9 @@ beforeAll(async () => {
         Promise.resolve({
           outcome: 'RESOLVED',
           agentId,
-          institutionId: 'MONIENAIJA',
+          institutionId: '11111111-1111-4111-8111-111111111111',
           affiliationId: 'test-affiliation',
-          institutionStatus: 'APPROVED',
+          institutionStatus: FinancialInstitutionStatus.APPROVED,
           resolvedAt: new Date().toISOString(),
           evidenceFingerprint: 'fixture',
         }),
@@ -1069,7 +1070,7 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
       currency: 'NGN',
       agent_id: agent.id,
       agent_session_id: deskSession,
-      institution_scope: 'MONIENAIJA',
+      institution_scope: '11111111-1111-4111-8111-111111111111',
       operation_key: operationKey,
     },
   ]);
@@ -1117,11 +1118,13 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     agentId: agent.id,
     institutionId: randomUUID(),
     affiliationId: randomUUID(),
-    institutionStatus: 'APPROVED',
+    institutionStatus: FinancialInstitutionStatus.APPROVED,
     resolvedAt: new Date().toISOString(),
     evidenceFingerprint: 'fixture',
   });
-  await expect(service.execute(input)).rejects.toThrow('Institution');
+  // A resolver that now returns a *different* institution can never execute the stored intent:
+  // the intent-scope predicate rejects it as a mismatch rather than posting against a new scope.
+  await expect(service.execute(input)).rejects.toThrow('Cash-out intent unavailable or mismatched');
   scopeSpy.mockRejectedValueOnce(new Error('Institution suspended'));
   await expect(service.execute(input)).rejects.toThrow('suspended');
   scopeSpy.mockRestore();
@@ -1273,13 +1276,15 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     agentId: agent.id,
     institutionId: randomUUID(),
     affiliationId: randomUUID(),
-    institutionStatus: 'APPROVED',
+    institutionStatus: FinancialInstitutionStatus.APPROVED,
     resolvedAt: new Date().toISOString(),
     evidenceFingerprint: 'fixture',
   });
+  // The receipt is bound to the institution recorded on its intent; a resolver that now answers
+  // with a different institution makes the receipt unavailable rather than movable.
   await expect(
     service.recoverReceipt({ ...input.agentPrincipal, sessionId: newSession }, operationKey),
-  ).rejects.toThrow('Institution');
+  ).rejects.toThrow('Cash-out receipt unavailable');
   resolverSpy.mockRejectedValueOnce(new Error('Affiliation unresolved'));
   await expect(
     service.recoverReceipt({ ...input.agentPrincipal, sessionId: newSession }, operationKey),
@@ -2348,6 +2353,11 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
       })
     ).statusCode,
   ).toBe(401);
+  const resolver = app.get(CashOutInstitutionResolver);
+  const recoveryResolver = jest.spyOn(resolver, 'resolve');
+  // The authoritative resolver is genuinely wired in this fixture, so an unavailable authority
+  // has to be simulated explicitly before asserting the fail-closed path.
+  recoveryResolver.mockRejectedValueOnce(new Error('Institution authority unavailable'));
   const unavailableRecovery = await server.inject({
     method: 'POST',
     url: recoverUrl,
@@ -2355,13 +2365,12 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     payload: { idempotencyKey: fundingPayload.idempotencyKey },
   });
   expect(unavailableRecovery.statusCode).toBe(503);
-  const resolver = app.get(CashOutInstitutionResolver);
-  const recoveryResolver = jest.spyOn(resolver, 'resolve');
   const affiliation = {
     outcome: 'RESOLVED' as const,
     agentId,
     institutionId: '11111111-1111-4111-8111-111111111111',
     affiliationId: randomUUID(),
+    institutionStatus: FinancialInstitutionStatus.APPROVED,
     resolvedAt: new Date().toISOString(),
     evidenceFingerprint: 'a'.repeat(64),
   };
@@ -3656,7 +3665,7 @@ test('historical 0201 to 0205 upgrades preserve funded, claim, cancellation and 
     historical = new DataSource({
       type: 'postgres',
       host: socket,
-      port: 55461,
+      port: cluster.port,
       username: 'kyc_synthetic',
       database: historicalName,
       synchronize: false,
@@ -3856,11 +3865,18 @@ test('historical 0201 to 0205 upgrades preserve funded, claim, cancellation and 
         ).toEqual([{ evidence: { historical: true } }]);
     }
     expect(await h.showMigrations()).toBe(false);
-    expect((await readiness(h).getReadiness()).migrations).toMatchObject({
-      compatible: true,
+    // Under the consolidated inventory a database migrated only to 0205 is *not* schema
+    // compatible: the institutional and protected-authority migrations are still missing, and
+    // readiness must say so rather than accept the old Arena 2 head as the target schema.
+    const consolidated = (await readiness(h).getReadiness()).migrations;
+    expect(consolidated).toMatchObject({
+      compatible: false,
       latestTimestamp: '1785753600205',
       latestName: 'CashToCashOperationHandoffs1785753600205',
     });
+    // This fixture builds its DataSource from the pre-institutional files only, so `missing` is
+    // legitimately empty; incompatibility comes from the head not being the consolidated target.
+    expect(consolidated.missing).toEqual([]);
     expect(
       await h.query(
         `SELECT timestamp::text,name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,

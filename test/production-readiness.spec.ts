@@ -205,6 +205,7 @@ describe('M8 production readiness', () => {
         { name: 'InstitutionGovernanceExecutionIntegrity1785753600500' },
         { name: 'ProtectedAuthorityBoundary1785753600501' },
         { name: 'ProtectedAuthorityInstitutionalOwnership1785753600502' },
+        { name: 'CashOutInstitutionalScope1785753600503' },
       ];
       override query(sql: string): Promise<unknown[]> {
         if (sql.includes('ORDER BY timestamp ASC')) {

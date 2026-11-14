@@ -3,6 +3,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { OperationsModule } from '../operations/operations.module';
+import { InstitutionModule } from '../institution/institution.module';
 import { Agent } from './agent.entity';
 import { AgentApplication } from './agent-application.entity';
 import { AgentClass } from './agent-class.entity';
@@ -73,6 +74,11 @@ import { AuthorizationModule } from '../authorization/authorization.module';
 @Module({
   imports: [
     forwardRef(() => KycTierModule),
+    // ARENA 3 / Arena 2 consolidation — publishes AGENT_INSTITUTION_RESOLVER,
+    // FINANCIAL_CONTEXT_RESOLVER and InstitutionWorkforceScopeService as the single authoritative
+    // institutional boundary. Cash-Out and Cash-to-Cash consume these tokens instead of local
+    // placeholders; no module in this file derives an institution by itself.
+    forwardRef(() => InstitutionModule),
     OperationsModule,
     // V1-ADMIN-AUTHORIZATION-HARDENING-01: AgentLifecycleController now calls
     // AuthorizationService.requireFunction() for catalogue-backed function checks.

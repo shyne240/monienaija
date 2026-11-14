@@ -1,70 +1,96 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Inject, Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
-import { canonical, sha256 } from '../authorization/workforce-crypto';
 
-/** Structural subset of Arena 4's published AgentInstitutionResolver contract.
- * Integration must replace this placeholder with InstitutionModule's exported token;
- * the actual foundation owns the authoritative types and implementation. */
+import {
+  AGENT_INSTITUTION_RESOLVER,
+  type AgentInstitutionResolver,
+} from '../institution/agent-institution-resolver';
+import type {
+  InstitutionResolution,
+  ResolveInstitutionOptions,
+} from '../institution/institution.types';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Cash-Out's institutional dependency.
+ *
+ * This is no longer a placeholder: it delegates to the single authoritative
+ * {@link AGENT_INSTITUTION_RESOLVER} exported by `InstitutionModule`, so the answer is derived only
+ * from the authenticated agent identity and the `institution_agent_affiliations` /
+ * `financial_institutions` rows — never from an aggregator, outlet, terminal, caller-supplied
+ * identifier, token claim or configuration default (ARENA 4 contract §1–§6).
+ *
+ * Resolution is bound to the caller's transaction (`manager`) and holds SHARE locks, so an
+ * affiliation or lifecycle change cannot commit between authorization and the financial posting.
+ *
+ * When the resolver is not wired at all (unit construction outside Nest), it fails closed as
+ * `NOT_CONFIGURED`; it never invents an institution.
+ */
 export interface CashOutAgentInstitutionPort {
   resolve(
     manager: EntityManager,
     agentId: string,
-    options?: { readonly lock?: 'SHARE' | 'NONE' },
-  ): Promise<{
-    readonly outcome:
-      | 'RESOLVED'
-      | 'UNRESOLVED'
-      | 'NOT_CONFIGURED'
-      | 'INSTITUTION_INACTIVE'
-      | 'INVALID_AFFILIATION';
-    readonly agentId: string;
-    readonly institutionId: string | null;
-    readonly affiliationId: string | null;
-    readonly resolvedAt: string;
-    readonly evidenceFingerprint: string;
-    readonly reason?: string;
-    readonly institutionStatus?: string;
-  }>;
+    options?: ResolveInstitutionOptions,
+  ): Promise<InstitutionResolution>;
 }
 
-/** Missing foundation never invents an institution. */
 @Injectable()
 export class CashOutInstitutionResolver implements CashOutAgentInstitutionPort {
-  resolve(
-    _manager: EntityManager,
+  constructor(
+    @Optional()
+    @Inject(AGENT_INSTITUTION_RESOLVER)
+    private readonly resolver?: AgentInstitutionResolver,
+  ) {}
+
+  async resolve(
+    manager: EntityManager,
     agentId: string,
-    _options?: { readonly lock?: 'SHARE' | 'NONE' },
-  ): ReturnType<CashOutAgentInstitutionPort['resolve']> {
-    void _options;
-    const normalized = agentId.trim().toLowerCase();
-    const evidence = {
-      agentId: normalized,
-      outcome: 'NOT_CONFIGURED' as const,
-      institutionId: null,
-      affiliationId: null,
-      reason: 'SCHEMA_NOT_CONFIGURED',
-    };
-    return Promise.resolve({
-      ...evidence,
-      resolvedAt: new Date().toISOString(),
-      evidenceFingerprint: sha256(canonical(evidence)),
-    });
+    options?: ResolveInstitutionOptions,
+  ): Promise<InstitutionResolution> {
+    if (!this.resolver) {
+      return {
+        outcome: 'NOT_CONFIGURED',
+        agentId: agentId.trim().toLowerCase(),
+        institutionId: null,
+        affiliationId: null,
+        reason: 'SCHEMA_NOT_CONFIGURED',
+        resolvedAt: new Date().toISOString(),
+        evidenceFingerprint: '0'.repeat(64),
+      };
+    }
+    return this.resolver.resolve(manager, agentId, options ?? { lock: 'SHARE' });
   }
 }
 
-/** Current database schema is a test-only sentinel, not an institutional identity.
- * Even RESOLVED real affiliations must fail closed until wallet isolation is integrated. */
-export async function requireTransitionalCashOutScope(
+/**
+ * Fail-closed institutional scope for a Cash-Out operation.
+ *
+ * Returns the resolved institution's UUID. Any outcome other than `RESOLVED` — no affiliation, an
+ * inactive institution, an invalid affiliation, an unavailable authority — is a 503, and a
+ * malformed identity is rejected rather than coerced. There is no default institution and no
+ * `MONIENAIJA` sentinel.
+ */
+export async function requireCashOutInstitutionScope(
   resolver: CashOutAgentInstitutionPort,
   manager: EntityManager,
   agentId: string,
 ): Promise<string> {
-  const result = await resolver.resolve(manager, agentId, { lock: 'SHARE' });
-  if (
-    result.outcome !== 'RESOLVED' ||
-    result.agentId !== agentId ||
-    result.institutionId !== 'MONIENAIJA'
-  )
+  let result: InstitutionResolution;
+  try {
+    result = await resolver.resolve(manager, agentId, { lock: 'SHARE' });
+  } catch (error) {
+    // An authority that cannot answer is unavailable, not a server fault: keep it a 503 so the
+    // caller never proceeds on an unresolved institutional context. The reason is preserved so an
+    // operator can tell an inactive institution from a revoked affiliation.
+    const detail = error instanceof Error ? error.message.slice(0, 200) : 'unknown';
+    throw new ServiceUnavailableException(`Institution authorization unavailable: ${detail}`);
+  }
+  if (result.outcome !== 'RESOLVED') {
     throw new ServiceUnavailableException('Institution authorization unavailable');
-  return 'MONIENAIJA';
+  }
+  if (result.agentId !== agentId || !result.institutionId || !UUID.test(result.institutionId)) {
+    throw new ServiceUnavailableException('Institution authorization unavailable');
+  }
+  return result.institutionId;
 }

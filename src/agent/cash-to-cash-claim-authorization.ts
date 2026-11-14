@@ -1,10 +1,17 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
+import {
+  FINANCIAL_CONTEXT_RESOLVER,
+  type FinancialContextResolver,
+} from '../institution/financial-context-resolver';
+import { CashToCashInstitutionAdapter } from './cash-to-cash-institution-adapter';
 import { AgentReceivingNumberService } from './agent-receiving-number.service';
 import { requireCashOutAgentSession } from './cash-out-intent';
 import {
@@ -26,16 +33,51 @@ export interface ClaimFinancialContextRequest {
   ledgerAccountIds: string[];
   lock: 'SHARE';
 }
-/** Production has no trusted context implementation. Arena 3 must wire Arena 4's contract. */
+/**
+ * Institutional financial context for a Cash-to-Cash claim, backed by the authoritative
+ * {@link FINANCIAL_CONTEXT_RESOLVER} (ARENA 4 Phase 2 §5).
+ *
+ * The claimant agent, the funding agent, the recipient customer, the destination wallet and the
+ * unclaimed-liability ledger account are all resolved from persisted rows inside the caller's
+ * transaction under SHARE locks. Two parties in different institutions produce
+ * `CROSS_INSTITUTION` → `INCOMPATIBLE` → 409; an unattributed wallet or ledger account produces
+ * `UNRESOLVED`; an absent authority is a 503. Nothing is inferred from a client-supplied
+ * institution and there is no default institution.
+ */
 @Injectable()
 export class CashToCashClaimFinancialContext {
-  resolve(
-    _manager: EntityManager,
-    _request: ClaimFinancialContextRequest,
+  constructor(
+    @Optional()
+    @Inject(FINANCIAL_CONTEXT_RESOLVER)
+    private readonly financialContext?: FinancialContextResolver,
+  ) {}
+
+  async resolve(
+    manager: EntityManager,
+    request: ClaimFinancialContextRequest,
   ): Promise<{ institutionId: string; evidenceFingerprint: string }> {
-    void _manager;
-    void _request;
-    throw new ServiceUnavailableException('Cash-to-cash institutional authorization unavailable');
+    const resolver = this.financialContext;
+    if (!resolver) {
+      throw new ServiceUnavailableException('Cash-to-cash institutional authorization unavailable');
+    }
+    const adapter = new CashToCashInstitutionAdapter({
+      resolve: async (m, req) => {
+        const context = await resolver.resolve(m, {
+          institutionId: req.institutionId,
+          agentId: req.agentId,
+          customerId: req.customerId,
+          walletIds: req.walletIds,
+          ledgerAccountIds: req.ledgerAccountIds,
+          lock: req.lock ?? 'SHARE',
+        });
+        return {
+          outcome: context.outcome,
+          institutionId: context.institutionId,
+          evidenceFingerprint: context.evidenceFingerprint,
+        };
+      },
+    });
+    return adapter.resolve(manager, request);
   }
 }
 

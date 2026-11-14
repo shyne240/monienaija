@@ -32,6 +32,7 @@ describe('migration inventory', () => {
       '1785753600500',
       '1785753600501',
       '1785753600502',
+      '1785753600503',
     ];
     const timestamps = migrations.map((migration) => migration.timestamp);
     for (const timestamp of institutional) expect(timestamps).toContain(timestamp);
@@ -45,21 +46,34 @@ describe('migration inventory', () => {
     expect(timestamps).toEqual([...timestamps].sort());
   });
 
-  it('does not fabricate the intentionally absent 0117 or 0120–0132 range', () => {
+  it('adopts the published Arena 2 range without fabricating 0117', () => {
     const timestamps = new Set(migrations.map((migration) => migration.timestamp));
+    // Arena 1's governed ledger reversal owns `0117`; this branch still excludes it and must not
+    // invent it. The remaining lower-numbered Arena 2 evidence migrations are now adopted with
+    // their published identifiers (ARENA 3 consolidation, Phase 4).
     expect(timestamps.has('1785753600117')).toBe(false);
-    for (let id = 120; id <= 132; id += 1) {
-      expect(timestamps.has(`1785753600${id}`)).toBe(false);
+    for (const id of [120, 130, 131, 132, 200, 201, 202, 203, 204, 205]) {
+      expect(timestamps.has(`1785753600${id}`)).toBe(true);
     }
     // The adjacent published migrations that the supported upgrade path does use remain present.
     expect(timestamps.has('1785753600116')).toBe(true);
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at the protected authority ownership correction', () => {
+  it('ends at the Cash-Out institutional scope correction', () => {
     expect(migrations.at(-1)).toMatchObject({
-      timestamp: '1785753600502',
-      name: 'ProtectedAuthorityInstitutionalOwnership1785753600502',
+      timestamp: '1785753600503',
+      name: 'CashOutInstitutionalScope1785753600503',
     });
+  });
+
+  it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {
+    const timestamps = migrations.map((migration) => migration.timestamp);
+    const arena2 = ['1785753600205', '1785753600400', '1785753600503'];
+    const positions = arena2.map((timestamp) => timestamps.indexOf(timestamp));
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+    // A newly adopted lower-numbered migration must never be inserted after a higher published
+    // one in file order: the supported upgrade applies them in timestamp order.
+    expect(timestamps).toEqual([...timestamps].sort());
   });
 });

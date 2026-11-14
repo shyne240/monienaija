@@ -37,7 +37,13 @@ export class AgentCashToCashRecoveryService {
       throw new UnauthorizedException('Agent authentication required');
     const agentId = principal.agentId;
     await requireCashOutAgentSession(manager, agentId, principal.sessionId);
-    const affiliation = await this.institution.resolve(manager, agentId, { lock: 'SHARE' });
+    let affiliation: Awaited<ReturnType<CashOutInstitutionResolver['resolve']>>;
+    try {
+      affiliation = await this.institution.resolve(manager, agentId, { lock: 'SHARE' });
+    } catch {
+      // Fail closed: recovery must never proceed without an authoritative institutional answer.
+      throw new ServiceUnavailableException('Institutional recovery unavailable');
+    }
     if (
       affiliation.outcome !== 'RESOLVED' ||
       affiliation.agentId !== agentId ||

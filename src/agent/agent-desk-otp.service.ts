@@ -12,7 +12,7 @@ import { DataSource } from 'typeorm';
 
 import {
   CashOutInstitutionResolver,
-  requireTransitionalCashOutScope,
+  requireCashOutInstitutionScope,
 } from './cash-out-institution.resolver';
 import { establishCashOutIntent } from './cash-out-intent';
 import {
@@ -209,7 +209,7 @@ export class AgentDeskOtpService {
             await this.financialEligibility.require(manager, customerId, { lockMode: 'SHARE' });
             if (!this.institutionResolver)
               throw new BadRequestException('Institution authorization unavailable');
-            const institutionScope = await requireTransitionalCashOutScope(
+            const institutionScope = await requireCashOutInstitutionScope(
               this.institutionResolver,
               manager,
               command.agentId,

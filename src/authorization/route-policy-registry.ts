@@ -1534,6 +1534,28 @@ export class RoutePolicyRegistry {
     // agents, customers, aggregators (when not caught above), reconciliation,
     // audit, metrics, diagnostics, outbox, version (non-public), configuration,
     // readiness, deployment etc. Must be before the generic agents check.
+    if (
+      lookedUpMethod === 'GET' &&
+      (path.startsWith('/api/v1/internal/reconciliation/cash-to-cash/') ||
+        path.startsWith('/api/v1/internal/reconciliation/cash-out/'))
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
+        resourceType: 'internal-reconciliation',
+        policy: {
+          resourceType: 'internal-reconciliation',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['reconciliation.view'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     if (path.startsWith('/api/v1/internal/')) {
       return {
         public: false,
@@ -1579,27 +1601,6 @@ export class RoutePolicyRegistry {
           resourceType: 'workforce-observability',
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
-          customerAccess: 'NONE',
-          agentAccess: 'NONE',
-          aggregatorAccess: 'NONE',
-        },
-      };
-    }
-
-    if (
-      lookedUpMethod === 'GET' &&
-      path.startsWith('/api/v1/internal/reconciliation/cash-to-cash/')
-    ) {
-      return {
-        public: false,
-        authenticationMode: 'WORKFORCE_SESSION',
-        auditDeniedWorkforceFunction: true,
-        resourceType: 'internal-reconciliation',
-        policy: {
-          resourceType: 'internal-reconciliation',
-          action: `${method}:${path}`,
-          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
-          requiredFunctions: ['reconciliation.view'],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',

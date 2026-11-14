@@ -20,7 +20,7 @@ import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { parsePositiveMinorUnits, normalizeCurrency } from '../common/money';
 import {
   CashOutInstitutionResolver,
-  requireTransitionalCashOutScope,
+  requireCashOutInstitutionScope,
 } from './cash-out-institution.resolver';
 import { requireCashOutAgentSession } from './cash-out-intent';
 import { cashOutOtpVerificationBudget, recordCashOutOtpFailure } from './cash-out-otp-budget';
@@ -97,12 +97,12 @@ export class AgentCashOutService {
         throw new NotFoundException(
           'Replacement outcome unavailable; reconciliation may be required',
         );
-      const scope = await requireTransitionalCashOutScope(
+      const scope = await requireCashOutInstitutionScope(
         this.institutionResolver,
         manager,
         agentId,
       );
-      if (scope !== 'MONIENAIJA' || scope !== row.institution_scope)
+      if (scope !== row.institution_scope)
         throw new ConflictException('Institution authorization unavailable');
       return {
         status: 'REPLACED' as const,
@@ -139,12 +139,12 @@ export class AgentCashOutService {
       );
       const intent = rows[0];
       if (!intent) throw new NotFoundException('Cash-out unavailable; reconciliation required');
-      const scope = await requireTransitionalCashOutScope(
+      const scope = await requireCashOutInstitutionScope(
         this.institutionResolver,
         manager,
         agentId,
       );
-      if (scope !== 'MONIENAIJA' || intent.institution_scope !== scope)
+      if (intent.institution_scope !== scope)
         throw new ConflictException('Institution authorization unavailable');
       const records = await manager.query<Array<{ agent_id: string }>>(
         `SELECT agent_id FROM cash_out_execution_records WHERE agent_id=$1 AND idempotency_key=$2`,
@@ -190,6 +190,11 @@ export class AgentCashOutService {
       throw new UnauthorizedException('Agent authentication required');
     return this.dataSource.transaction(async (manager) => {
       await requireCashOutAgentSession(manager, agentId, principal.sessionId);
+      const institution = await requireCashOutInstitutionScope(
+        this.institutionResolver,
+        manager,
+        agentId,
+      );
       const rows = await manager.query<
         Array<{
           customer_id: string;
@@ -215,19 +220,12 @@ export class AgentCashOutService {
           AND j.metadata->>'canonicalService'='CASH_OUT' AND j.metadata->>'agentId'=$1::text AND j.metadata->>'requestHash'=r.request_hash
           AND EXISTS(SELECT 1 FROM ledger_lines l JOIN wallet_accounts w ON w.ledger_account_id=l.ledger_account_id WHERE l.journal_id=j.id AND l.direction='DEBIT' AND w.customer_id=r.customer_id::text AND w.owner_class='CUSTOMER' AND l.amount_minor=j.total_minor)
           AND EXISTS(SELECT 1 FROM ledger_lines l JOIN wallet_accounts w ON w.ledger_account_id=l.ledger_account_id WHERE l.journal_id=j.id AND l.direction='CREDIT' AND w.customer_id=r.agent_id::text AND w.owner_class='AGENT' AND l.amount_minor=j.total_minor)
-          AND (c.cash_out_intent_id IS NULL OR (i.status='COMPLETED' AND i.agent_id=r.agent_id AND i.customer_id=r.customer_id AND i.operation_key=r.idempotency_key AND i.institution_scope='MONIENAIJA'))`,
-        [agentId, key],
+          AND (c.cash_out_intent_id IS NULL OR (i.status='COMPLETED' AND i.agent_id=r.agent_id AND i.customer_id=r.customer_id AND i.operation_key=r.idempotency_key AND i.institution_scope=$3))`,
+        [agentId, key, institution],
       );
       const row = rows[0];
       if (!row)
         throw new NotFoundException('Cash-out receipt unavailable; reconciliation may be required');
-      const institution = await requireTransitionalCashOutScope(
-        this.institutionResolver,
-        manager,
-        agentId,
-      );
-      if (institution !== 'MONIENAIJA')
-        throw new ConflictException('Institution integration not supported by current schema');
       return {
         status: 'REPLAYED',
         journalId: row.journal_id,
@@ -469,13 +467,11 @@ export class AgentCashOutService {
       },
       async (manager, replay, requestHash) => {
         await requireCashOutAgentSession(manager, agentId, agentPrincipal.sessionId);
-        const institutionScope = await requireTransitionalCashOutScope(
+        const institutionScope = await requireCashOutInstitutionScope(
           this.institutionResolver,
           manager,
           agentId,
         );
-        if (institutionScope !== 'MONIENAIJA')
-          throw new ConflictException('Institution integration not supported by current schema');
         await this.financialEligibility.require(manager, customerId, { lockMode: 'SHARE' });
         const intents = await manager.query<Array<{ status: string; valid: boolean }>>(
           `SELECT i.status, (i.expires_at>clock_timestamp()) AS valid
@@ -483,7 +479,7 @@ export class AgentCashOutService {
              JOIN mfa_challenges c ON c.cash_out_intent_id=i.id
              JOIN customer_authentication_credentials cred ON cred.id=i.credential_id AND cred.customer_id=i.customer_id AND cred.status='ACTIVE' AND cred.deleted_at IS NULL AND cred.password_version=i.credential_version
              JOIN wallet_accounts w ON w.id=i.source_wallet_id AND w.ledger_account_id=i.source_ledger_id AND w.customer_id=i.customer_id::text AND w.currency=i.currency AND w.status='ACTIVE' AND w.owner_class='CUSTOMER'
-            WHERE i.id=$1 AND c.id=$2 AND i.customer_id=$3 AND i.agent_id=$4 AND i.agent_session_id=$5 AND i.operation_key=$6 AND i.amount_minor=$7 AND i.currency='NGN' AND i.purpose='WALLET_TO_CASH' AND i.institution_scope='MONIENAIJA' AND i.source_wallet_id=$8 AND i.source_ledger_id=$9 FOR UPDATE OF i`,
+            WHERE i.id=$1 AND c.id=$2 AND i.customer_id=$3 AND i.agent_id=$4 AND i.agent_session_id=$5 AND i.operation_key=$6 AND i.amount_minor=$7 AND i.currency='NGN' AND i.purpose='WALLET_TO_CASH' AND i.institution_scope=$10 AND i.source_wallet_id=$8 AND i.source_ledger_id=$9 FOR UPDATE OF i`,
           [
             meta.cash_out_intent_id,
             challengeId,
@@ -494,6 +490,7 @@ export class AgentCashOutService {
             amountString,
             customerWallet.id,
             customerWallet.ledgerAccountId,
+            institutionScope,
           ],
         );
         const intent = intents[0];

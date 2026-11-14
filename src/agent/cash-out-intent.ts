@@ -30,8 +30,11 @@ export async function establishCashOutIntent(
     !input.currency
   )
     throw new BadRequestException('Cash-out transaction context is required');
-  if (input.institutionScope !== 'MONIENAIJA')
-    throw new BadRequestException('Institution integration not supported by current schema');
+  // Institutional scope is the authoritative resolved institution (a financial_institutions id).
+  // There is no sentinel, default institution or platform fallback: an unresolved or malformed
+  // scope is rejected before any intent row is written.
+  if (!UUID.test(input.institutionScope))
+    throw new BadRequestException('Institution authorization unavailable');
   await requireCashOutAgentSession(manager, input.agentId, input.agentSessionId);
   const key = input.operationKey.trim();
   const amount = parsePositiveMinorUnits(input.amountMinor).toString();
@@ -128,7 +131,7 @@ export async function establishCashOutIntent(
   } else {
     id = randomUUID();
     await manager.query(
-      `INSERT INTO cash_out_intents(id,customer_id,credential_id,credential_version,source_wallet_id,source_ledger_id,agent_id,agent_session_id,institution_scope,operation_key,amount_minor,currency,purpose,status,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'MONIENAIJA',$9,$10,'NGN','WALLET_TO_CASH','ACTIVE',clock_timestamp()+interval '15 minutes')`,
+      `INSERT INTO cash_out_intents(id,customer_id,credential_id,credential_version,source_wallet_id,source_ledger_id,agent_id,agent_session_id,institution_scope,operation_key,amount_minor,currency,purpose,status,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$11,$9,$10,'NGN','WALLET_TO_CASH','ACTIVE',clock_timestamp()+interval '15 minutes')`,
       [
         id,
         input.customerId,
@@ -140,6 +143,7 @@ export async function establishCashOutIntent(
         input.agentSessionId,
         key,
         amount,
+        input.institutionScope,
       ],
     );
   }
