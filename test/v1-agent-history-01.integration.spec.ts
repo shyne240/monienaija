@@ -9,7 +9,7 @@
  * query boundary, authenticated-context identity, suspended-session revocation with workforce
  * oversight, read-only (zero mutation) and safe projection. All financial flows use the real services.
  */
-import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
@@ -17,9 +17,6 @@ import { randomUUID, randomBytes, pbkdf2Sync } from 'node:crypto';
 import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
-import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
-import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
-import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
 import { LedgerAccountType, LedgerNormalBalance } from '../src/ledger/ledger.enums';
@@ -53,6 +50,17 @@ import {
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+import {
+  ensureCustomerCredential,
+  governedDeskProviderOverride,
+  startGovernedDesk,
+  type GovernedDeskHarness,
+} from './support/cash-out-lifecycle-fixture';
+import { RecordingSmsProvider } from './support/desk-otp-fixture';
+import {
+  createControlledFundingPolicy,
+  overrideCashToCashFundingPolicy,
+} from './support/controlled-funding-policy';
 
 function hashPin(pin: string): string {
   const salt = randomBytes(16);
@@ -88,49 +96,9 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
   let customerPinService: CustomerTransactionPinService;
   let systemLedgerAccountId: string;
 
-  const workforceConfig: A2WorkforceConfigurationV1 = {
-    enabled: true,
-    oidcIssuer: 'https://workforce.test',
-    oidcJwksUri: 'https://workforce.test/jwks',
-    oidcAudience: 'workforce',
-    oidcClientId: 'test-client',
-    internalAudience: 'workforce-admin',
-    sessionTtlSeconds: 900,
-    jwksJson: [],
-    financeRoles: [],
-    makerCheckerRules: [],
-    rateLimits: [],
-    trustedProxies: ['127.0.0.1'],
-  } as unknown as A2WorkforceConfigurationV1;
-
-  const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-')) {
-        throw new UnauthorizedException('invalid workforce token');
-      }
-      const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = [
-        'SUPPORT',
-        'OPERATOR',
-        'SERVICE',
-        'PRIVILEGED',
-        'AGENT',
-        'CUSTOMER',
-        'AGGREGATOR',
-      ];
-      if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
-      return {
-        type,
-        principalId: `workforce-${type.toLowerCase()}-1`,
-        audience,
-        roles: [],
-        scopes: type === 'OPERATOR' ? ['agent.view'] : [],
-        customerAccess: 'NONE',
-        agentAccess: 'NONE',
-        aggregatorAccess: 'NONE',
-      } as any;
-    },
-  };
+  const smsProvider = new RecordingSmsProvider();
+  let governed: GovernedDeskHarness;
+  const fundingPolicy = createControlledFundingPolicy();
 
   const ENV_KEYS = [
     'COMMERCIAL_ACCOUNTING_ENABLED',
@@ -141,16 +109,15 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('v1-agent-history-01');
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    const baseBuilder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
-      .useValue(kycEvidence.reader)
-      .overrideProvider(A2WorkforceSessionService)
-      .useValue(mockWorkforceSessions)
-      .overrideProvider(A2_WORKFORCE_CONFIG)
-      .useValue(workforceConfig)
-      .compile();
+      .useValue(kycEvidence.reader);
+    const moduleRef = await overrideCashToCashFundingPolicy(
+      governedDeskProviderOverride(baseBuilder, smsProvider),
+      fundingPolicy,
+    ).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(
@@ -197,15 +164,10 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       allowNegativeBalance: true,
     });
     systemLedgerAccountId = sys.id;
-    await ledgerService.createAccount({
-      code: 'CASH_TO_CASH-UNCLAIMED-NGN',
-      name: 'Cash-to-Cash Unclaimed NGN',
-      accountType: LedgerAccountType.LIABILITY,
-      normalBalance: LedgerNormalBalance.CREDIT,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      allowNegativeBalance: false,
-    });
+    // Governed institutional context (synthetic, per-process database only).
+    governed = await startGovernedDesk({ app, dataSource, smsProvider, label: 'ah01' });
+    // Cash-to-Cash holds the unclaimed liability in the receiving institution's suspense account.
+    await governed.fixture.openInstitutionCashToCashSuspenseAccount(governed.institutionId);
     await dataSource.query(
       `INSERT INTO ledger_accounts (id, code, name, account_type, normal_balance, currency, accounting_unit, allow_negative_balance, is_active)
        VALUES (gen_random_uuid(),'AGENT_FUNDING_POOL-NGN','Agent Funding Pool NGN','LIABILITY','CREDIT','NGN','CUSTOMER_FUNDS',FALSE,TRUE)
@@ -268,7 +230,11 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
     }
   }
 
-  async function createActiveAgentWithPin(services: unknown, pin: string | null) {
+  async function createActiveAgentWithPin(
+    services: unknown,
+    pin: string | null,
+    options: { govern?: boolean } = {},
+  ) {
     const cls = await classService.create({
       reference: `cls-ah01-${randomUUID().slice(0, 8)}`,
       code: `AH01-${randomUUID().slice(0, 6)}`,
@@ -304,6 +270,7 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       currency: 'NGN',
       idempotencyKey: `ah01-agent-wallet-${agent.id}-${randomUUID()}`,
     });
+    if (options.govern !== false) await governed.provisionAgent(agent.id, wallet.id);
     const rows: Array<{ ledger_account_id: string }> = await dataSource.query(
       `SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`,
       [wallet.id],
@@ -314,10 +281,26 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
   /** Real agent login (a21 convention): credential insert + POST /agents/sessions. */
   const agentSessions = new Map<string, string>();
   async function agentLoginToken(agentId: string, password = 'correct-password'): Promise<string> {
-    await dataSource.query(
-      `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE')`,
-      [agentId, encodePassword(password)],
+    // The governed provisioning path may already have created the single ACTIVE credential, so
+    // the login fixture installs the password on it instead of inserting a duplicate.
+    const existing: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM agent_authentication_credentials
+        WHERE agent_id=$1 AND status='ACTIVE' AND deleted_at IS NULL LIMIT 1`,
+      [agentId],
     );
+    if (existing[0]) {
+      await dataSource.query(
+        `UPDATE agent_authentication_credentials
+            SET password_hash=$2, hash_algorithm='PBKDF2', password_changed_at=now()
+          WHERE id=$1`,
+        [existing[0].id, encodePassword(password)],
+      );
+    } else {
+      await dataSource.query(
+        `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE')`,
+        [agentId, encodePassword(password)],
+      );
+    }
     const login = await request(app.getHttpServer())
       .post('/api/v1/agents/sessions')
       .send({ agentId, password })
@@ -369,6 +352,7 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       `SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`,
       [wallet.id],
     );
+    await governed.provisionCustomer(customerId, wallet.id);
     await customerPinService.setTransactionPin(customerId, {
       pinHash: hashPin(pin),
       hashAlgorithm: 'PBKDF2',
@@ -379,53 +363,9 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
   }
 
   async function fundWalletDirect(ledgerAccountId: string, amountMinor: string) {
-    await dataSource.transaction(async (manager) => {
-      await ledgerService.postJournalInTransaction(manager, {
-        idempotencyKey: `ah01-fund-${randomUUID()}`,
-        currency: 'NGN',
-        accountingUnit: 'CUSTOMER_FUNDS',
-        reference: `AHF-${ledgerAccountId.slice(0, 8)}`,
-        lines: [
-          { accountId: systemLedgerAccountId, direction: 'DEBIT', amountMinor },
-          { accountId: ledgerAccountId, direction: 'CREDIT', amountMinor },
-        ],
-      });
+    await governed.fixture.fundLedgerAccount(ledgerAccountId, amountMinor, {
+      institutionId: governed.institutionId,
     });
-  }
-
-  async function createMfaChallenge(customerId: string, otp: string) {
-    const eRows: Array<{ id: string }> = await dataSource.query(
-      `INSERT INTO mfa_enrollments (id, customer_id, reference, status) VALUES ($1,$2,$3,'ENABLED') RETURNING id`,
-      [randomUUID(), customerId, `mfa-enroll-${randomUUID().slice(0, 6)}`],
-    );
-    const enrollmentId = eRows[0]!.id;
-    const mRows: Array<{ id: string }> = await dataSource.query(
-      `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-      [randomUUID(), customerId, enrollmentId, `ah01-${randomUUID().slice(0, 6)}`],
-    );
-    const methodId = mRows[0]!.id;
-    const cRows: Array<{ id: string }> = await dataSource.query(
-      `INSERT INTO customer_authentication_credentials (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
-      [randomUUID(), customerId],
-    );
-    const credentialId = cRows[0]!.id;
-    const sessionId = randomUUID();
-    await dataSource
-      .query(
-        `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
-        [sessionId, customerId, credentialId, randomBytes(32).toString('hex')],
-      )
-      .catch(() => {});
-    const principal: any = { principalType: 'CUSTOMER', customerId, credentialId, sessionId };
-    const challenge = await mfaService.issueChallenge({
-      principal,
-      enrollmentId,
-      methodId,
-      challengeHash: otp,
-      ttlSeconds: 300,
-      actor: customerId,
-    } as any);
-    return (challenge as any).id ?? (challenge as any).challengeId;
   }
 
   const privilegedPrincipal = agentNetworkManagerPrincipal('test-agent-network-manager');
@@ -436,6 +376,24 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       ['CASH_IN', 'CASH_OUT', 'CASH_TO_CASH', 'AGENT_FUNDING', 'AGENT_DEFUNDING'],
       '1234',
     );
+    if (opts.floatMinor && opts.floatMinor !== '0') {
+      // Float comes from the institution's own settlement float: an institution-attributed agent
+      // wallet can only join journals of its own institution.
+      await fundWalletDirect(bundle.walletLedgerAccountId, opts.floatMinor);
+    }
+    const token = await agentLoginToken(bundle.agent.id);
+    return { ...bundle, token };
+  }
+
+  /**
+   * Platform-level agent (no institution attribution). AGENT_FUNDING / AGENT_DEFUNDING run only on
+   * the platform⇄pool rail because AGENT_FUNDING_POOL-NGN carries no institution classification;
+   * an institution-attributed agent is refused at the ledger boundary (fail-closed, documented).
+   */
+  async function platformAgentBundle(opts: { floatMinor?: string } = {}) {
+    const bundle = await createActiveAgentWithPin(['AGENT_FUNDING', 'AGENT_DEFUNDING'], '1234', {
+      govern: false,
+    });
     if (opts.floatMinor && opts.floatMinor !== '0') {
       const fund = await fundingService.fund({
         agentId: bundle.agent.id,
@@ -471,7 +429,8 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
   });
 
   it('2. AGENT_FUNDING appears as CREDIT with WORKFORCE counterparty', async () => {
-    const { agent, token } = await agentBundle({ floatMinor: '5000' });
+    // Funding/defunding are platform-rail operations (the pool has no institution classification).
+    const { agent, token } = await platformAgentBundle({ floatMinor: '5000' });
     const res = await request(app.getHttpServer())
       .get('/api/v1/agents/me/transactions')
       .set('Authorization', `Bearer ${token}`)
@@ -486,7 +445,7 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
   });
 
   it('3. AGENT_DEFUNDING appears as DEBIT', async () => {
-    const { agent, token } = await agentBundle({ floatMinor: '5000' });
+    const { agent, token } = await platformAgentBundle({ floatMinor: '5000' });
     const defund = await fundingService.defund({
       agentId: agent.id,
       amountMinor: '2000',
@@ -520,18 +479,26 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       customerId,
       'WALLET_TO_CASH',
     );
-    const challengeId = await createMfaChallenge(customerId, 'ah01-otp');
+    const outKey = `ah01-out-${randomUUID()}`;
+    await ensureCustomerCredential(dataSource, customerId);
+    const outOtp = await governed.issueCashOutOtp({
+      agentId: agent.id,
+      customerId,
+      amountMinor: '30000',
+      operationKey: outKey,
+      agentSessionId: agentSessions.get(agent.id),
+    });
     const out = await cashOutService.execute({
       agentId: agent.id,
       agentPrincipal: agentPrincipal(agent.id) as any,
       agentPin: '1234',
       customerId,
       customerPin: '1234',
-      mfaChallengeId: challengeId,
-      otp: 'ah01-otp',
+      mfaChallengeId: outOtp.challengeId,
+      otp: outOtp.otp,
       amountMinor: '30000',
       currency: 'NGN',
-      idempotencyKey: `ah01-out-${randomUUID()}`,
+      idempotencyKey: outKey,
     });
     expect(out.status).toBe('COMPLETED');
     const res = await request(app.getHttpServer())
@@ -615,15 +582,27 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       customerId,
       'CASH_TO_CASH',
     );
-    const challengeId = await createMfaChallenge(customerId, 'ah01-claim');
+    await ensureCustomerCredential(dataSource, customerId);
+    const claimKey = `ah01-claim-${randomUUID()}`;
+    const claimOtp = await governed.deskOtp.issue({
+      agentId: agent.id,
+      customerId,
+      purpose: 'CASH_TO_CASH_CLAIM',
+      redemptionMethod: 'CUSTOMER_WALLET',
+      agentSessionId: agentSessions.get(agent.id)!,
+      transferId: init.transferId,
+      amountMinor: '11000',
+      currency: 'NGN',
+      operationKey: claimKey,
+    });
     const claim = await claimService.execute({
       transferId: init.transferId,
       beneficiaryPhone: init.beneficiaryPhone,
       transferCode: init.transferCode,
       customerId,
-      mfaChallengeId: challengeId,
-      otp: 'ah01-claim',
-      idempotencyKey: `ah01-claim-${randomUUID()}`,
+      mfaChallengeId: claimOtp.challengeId,
+      otp: claimOtp.otp,
+      idempotencyKey: claimKey,
       claimantPrincipal: agentPrincipal(agent.id) as any,
     });
     expect(claim.status).toBe('COMPLETED');
@@ -677,14 +656,16 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       currency: 'NGN',
       idempotencyKey: `ah01-m1-${randomUUID()}`,
     });
-    // Defunding
-    await fundingService.defund({
+    // Second institutional flow (agent defunding only exists on the platform rail — the funding
+    // pool carries no institution classification, so an institution-attributed agent cannot use it)
+    await cashToCashService.execute({
       agentId: agent.id,
+      agentPrincipal: agentPrincipal(agent.id) as any,
+      agentPin: '1234',
+      beneficiaryPhone: newPhone(),
       amountMinor: '4000',
       currency: 'NGN',
       idempotencyKey: `ah01-m2-${randomUUID()}`,
-      principal: privilegedPrincipal,
-      actor: 'test-actor',
     });
     // C2W
     const phone = newPhone();
@@ -715,11 +696,9 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       .get('/api/v1/agents/me/transactions')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    // funding (from bundle) + C2C + defunding + cash-in = 4 items
-    expect(res.body.pagination.total).toBe(4);
+    // two CASH_TO_CASH initiations + cash-in = 3 items (funding entries live on the platform rail)
+    expect(res.body.pagination.total).toBe(3);
     const types = res.body.items.map((i: any) => i.type);
-    expect(types).toContain('AGENT_FUNDING');
-    expect(types).toContain('AGENT_DEFUNDING');
     expect(types).toContain('CASH_TO_CASH');
     expect(types).toContain('CASH_IN');
     const times = res.body.items.map((i: any) => new Date(i.createdAt).getTime());
@@ -744,13 +723,33 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       currency: 'NGN',
       idempotencyKey: `ah01-p1-${randomUUID()}`,
     });
-    await fundingService.defund({
+    await cashToCashService.execute({
       agentId: agent.id,
+      agentPrincipal: agentPrincipal(agent.id) as any,
+      agentPin: '1234',
+      beneficiaryPhone: newPhone(),
       amountMinor: '1000',
       currency: 'NGN',
       idempotencyKey: `ah01-p2-${randomUUID()}`,
-      principal: privilegedPrincipal,
-      actor: 'test-actor',
+    });
+    // third institutional entry (a cash-in) so pagination still spans three pages
+    const phone = newPhone();
+    await createCustomerWithPhoneAndPin(phone, '1234');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'CASH_TO_WALLET',
+    );
+    await cashInService.execute({
+      agentId: agent.id,
+      principal: agentPrincipal(agent.id) as any,
+      pin: '1234',
+      recipientIdentifier: phone,
+      amountMinor: '1000',
+      currency: 'NGN',
+      idempotencyKey: `ah01-p3-${randomUUID()}`,
+      reference: `ref-${randomUUID().slice(0, 6)}`,
     });
     const page1 = await request(app.getHttpServer())
       .get('/api/v1/agents/me/transactions?page=1&limit=1')
@@ -828,7 +827,7 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
   });
 
   it('10. cross-agent isolation: agent A never sees agent B activity', async () => {
-    const a = await agentBundle({ floatMinor: '5000' });
+    const a = await platformAgentBundle({ floatMinor: '5000' });
     const b = await agentBundle({ floatMinor: '50000' });
     await seedLimitProfile(
       `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
@@ -855,15 +854,16 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       .get('/api/v1/agents/me/transactions')
       .set('Authorization', `Bearer ${b.token}`)
       .expect(200);
-    expect(resB.body.items).toHaveLength(2);
+    expect(resB.body.items).toHaveLength(1);
+    expect(resB.body.items[0].type).toBe('CASH_TO_CASH');
     // No id overlap between the two agents' histories.
     const idsA = new Set(resA.body.items.map((i: any) => i.id));
     for (const item of resB.body.items) expect(idsA.has(item.id)).toBe(false);
   });
 
   it('11. forged agentId query param is ignored — identity comes from the session', async () => {
-    const a = await agentBundle({ floatMinor: '5000' });
-    const b = await agentBundle({ floatMinor: '7000' });
+    const a = await platformAgentBundle({ floatMinor: '5000' });
+    const b = await platformAgentBundle({ floatMinor: '7000' });
     const res = await request(app.getHttpServer())
       .get(`/api/v1/agents/me/transactions?agentId=${b.agent.id}`)
       .set('Authorization', `Bearer ${a.token}`)
@@ -876,15 +876,19 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
   it('12. unauthenticated 401; non-agent principal cannot read agent history', async () => {
     await request(app.getHttpServer()).get('/api/v1/agents/me/transactions').expect(401);
     const a = await agentBundle({ floatMinor: '1000' });
+    const { auditor } = await governed.fixture.workforce();
     await request(app.getHttpServer())
       .get('/api/v1/agents/me/transactions')
-      .set('Authorization', 'Bearer workforce-service')
+      .set('Authorization', `Bearer ${auditor.token}`)
       .expect((r) => expect([401, 403]).toContain(r.status));
     void a;
   });
 
   it('13. suspension revokes Agent history access while authorized workforce oversight remains available', async () => {
-    const a = await agentBundle({ floatMinor: '5000' });
+    // AGENT_NETWORK_MANAGER holds `agent.view`, the function the internal history route requires.
+    const { networkManager } = await governed.fixture.workforce();
+    const operatorToken = networkManager.token;
+    const a = await platformAgentBundle({ floatMinor: '5000' });
     await lifecycleService.suspend(a.agent.id, 'test-actor');
     await request(app.getHttpServer())
       .get('/api/v1/agents/me/transactions')
@@ -894,10 +898,13 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       `SELECT status FROM agent_authentication_sessions WHERE agent_id=$1`,
       [a.agent.id],
     );
-    expect(sessions.map((row: { status: string }) => row.status)).toEqual(['REVOKED']);
+    // Every session the suspension touches must end REVOKED (the governed fixture may hold more
+    // than one ACTIVE session for the same agent).
+    expect(sessions.length).toBeGreaterThan(0);
+    expect(sessions.every((row: { status: string }) => row.status === 'REVOKED')).toBe(true);
     const res = await request(app.getHttpServer())
       .get(`/api/v1/internal/agents/${a.agent.id}/transactions`)
-      .set('Authorization', 'Bearer workforce-operator')
+      .set('Authorization', `Bearer ${operatorToken}`)
       .expect(200);
     expect(res.body.items).toHaveLength(1);
     expect(res.body.items[0].type).toBe('AGENT_FUNDING');
@@ -1012,18 +1019,26 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       customerId,
       'WALLET_TO_CASH',
     );
-    const challengeId = await createMfaChallenge(customerId, 'ah01-c15');
+    const c15Key = `ah01-c15-${randomUUID()}`;
+    await ensureCustomerCredential(dataSource, customerId);
+    const c15Otp = await governed.issueCashOutOtp({
+      agentId: agent.id,
+      customerId,
+      amountMinor: '30000',
+      operationKey: c15Key,
+      agentSessionId: agentSessions.get(agent.id),
+    });
     const out = await cashOutService.execute({
       agentId: agent.id,
       agentPrincipal: agentPrincipal(agent.id) as any,
       agentPin: '1234',
       customerId,
       customerPin: '1234',
-      mfaChallengeId: challengeId,
-      otp: 'ah01-c15',
+      mfaChallengeId: c15Otp.challengeId,
+      otp: c15Otp.otp,
       amountMinor: '30000',
       currency: 'NGN',
-      idempotencyKey: `ah01-c15-${randomUUID()}`,
+      idempotencyKey: c15Key,
     });
     expect(out.status).toBe('COMPLETED');
     const res = await request(app.getHttpServer())
