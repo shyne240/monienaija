@@ -27,6 +27,17 @@ import { MfaExecutionService } from '../src/customer-authentication/mfa-executio
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import {
+  ensureCustomerCredential,
+  governedDeskProviderOverride,
+  startGovernedDesk,
+  type GovernedDeskHarness,
+} from './support/cash-out-lifecycle-fixture';
+import { RecordingSmsProvider } from './support/desk-otp-fixture';
+import {
+  createControlledFundingPolicy,
+  overrideCashToCashFundingPolicy,
+} from './support/controlled-funding-policy';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
 /**
@@ -69,6 +80,9 @@ describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
   let mfaService: MfaExecutionService;
 
   let systemLedgerAccountId: string;
+  const smsProvider = new RecordingSmsProvider();
+  let governed: GovernedDeskHarness;
+  const fundingPolicy = createControlledFundingPolicy();
 
   function hashPin(pin: string): string {
     const salt = randomBytes(16);
@@ -78,12 +92,15 @@ describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('v1agentidemp01');
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    const baseBuilder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
-      .useValue(kycEvidence.reader)
-      .compile();
+      .useValue(kycEvidence.reader);
+    const moduleRef = await overrideCashToCashFundingPolicy(
+      governedDeskProviderOverride(baseBuilder, smsProvider),
+      fundingPolicy,
+    ).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(
@@ -112,6 +129,10 @@ describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
       allowNegativeBalance: true,
     });
     systemLedgerAccountId = sys.id;
+    governed = await startGovernedDesk({ app, dataSource, smsProvider, label: 'v1aip' });
+    // Cash-to-Cash settles its unclaimed liability into the receiving institution's suspense
+    // account; the account must exist before the first transfer.
+    await governed.fixture.openInstitutionCashToCashSuspenseAccount(governed.institutionId);
   }, 180_000);
 
   afterAll(async () => {
@@ -163,12 +184,14 @@ describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `agent-wallet-${agent.id}-${randomUUID()}`,
     });
+    await governed.provisionAgent(agent.id, wallet.id);
     return { agent, wallet };
   }
 
   function agentPrincipal(agentId: string) {
     return {
       type: 'AGENT' as const,
+      sessionId: governed.sessionFor(agentId),
       agentId,
       principalId: agentId,
       roles: [],
@@ -203,6 +226,7 @@ describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `cust-wallet-${customerId}-${randomUUID()}`,
     });
+    await governed.provisionCustomer(customerId, wallet.id);
     return { customerId, wallet };
   }
 
@@ -274,23 +298,10 @@ describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
     return { challengeId: (challenge as any).id ?? (challenge as any).challengeId };
   }
 
-  async function fundAgent(agentId: string, walletLedgerAccountId: string, amount: string) {
-    await ledgerService.postJournal({
-      idempotencyKey: `fund-${agentId}-${amount}-${randomUUID()}`,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [
-        {
-          accountId: systemLedgerAccountId,
-          direction: LedgerEntryDirection.DEBIT,
-          amountMinor: amount,
-        },
-        {
-          accountId: walletLedgerAccountId,
-          direction: LedgerEntryDirection.CREDIT,
-          amountMinor: amount,
-        },
-      ],
+  async function fundAgent(_agentId: string, walletLedgerAccountId: string, amount: string) {
+    // Institution-attributed Agent wallet: funded from the institution's own settlement account.
+    await governed.fixture.fundLedgerAccount(walletLedgerAccountId, amount, {
+      institutionId: governed.institutionId,
     });
   }
 
@@ -488,7 +499,20 @@ describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
 
     const { customerId } = await createCustomerWithPhone(beneficiaryPhone, 'Beneficiary V1AIP');
 
-    const { challengeId: challenge1Id } = await createMfaChallenge(customerId, 'otp-c-1');
+    // The claim is authorized by a real, transfer-bound CASH_TO_CASH_CLAIM challenge issued to an
+    // authenticated Agent session; no challenge row is fabricated.
+    await ensureCustomerCredential(dataSource, customerId);
+    const claimOtp1 = await governed.deskOtp.issue({
+      agentId: agent.id,
+      customerId,
+      purpose: 'CASH_TO_CASH_CLAIM',
+      redemptionMethod: 'CUSTOMER_WALLET',
+      agentSessionId: governed.sessionFor(agent.id)!,
+      transferId,
+      amountMinor: '1500',
+      currency: 'NGN',
+      operationKey: `scenario-c-claim-k1-${randomUUID()}`,
+    });
 
     const before = await journalCount();
 
@@ -497,28 +521,28 @@ describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
       beneficiaryPhone,
       transferCode,
       customerId,
-      mfaChallengeId: challenge1Id,
-      otp: 'otp-c-1',
+      mfaChallengeId: claimOtp1.challengeId,
+      otp: claimOtp1.otp,
+      claimantPrincipal: agentPrincipal(agent.id) as any,
       idempotencyKey: `scenario-c-claim-k1-${randomUUID()}`,
     });
     expect(claim1.replayed).toBe(false);
 
-    const { challengeId: challenge2Id } = await createMfaChallenge(customerId, 'otp-c-2');
-
-    // Simulates: the claiming Agent's process was killed before seeing the claim-success
-    // response and they re-attempted with a brand-new key (K2) believing it had not gone
-    // through. Unlike Cash-In/Cash-to-Cash-send, this must be REJECTED, not duplicated.
+    // A second attempt with a brand-new key is refused before a usable challenge can exist: the
+    // transfer is already CLAIMED, so the governed issuer will not authorize another claim.
     await expect(
-      claimService.execute({
-        transferId,
-        beneficiaryPhone,
-        transferCode,
+      governed.deskOtp.issue({
+        agentId: agent.id,
         customerId,
-        mfaChallengeId: challenge2Id,
-        otp: 'otp-c-2',
-        idempotencyKey: `scenario-c-claim-k2-${randomUUID()}`,
+        purpose: 'CASH_TO_CASH_CLAIM',
+        redemptionMethod: 'CUSTOMER_WALLET',
+        agentSessionId: governed.sessionFor(agent.id)!,
+        transferId,
+        amountMinor: '1500',
+        currency: 'NGN',
+        operationKey: `scenario-c-claim-k2-${randomUUID()}`,
       }),
-    ).rejects.toThrow(/already claimed/i);
+    ).rejects.toThrow(/already claimed|Claim transfer unavailable|not claimable/i);
 
     const after = await journalCount();
     expect(after).toBe(before + 1n); // exactly ONE claim financial effect, the second was rejected
