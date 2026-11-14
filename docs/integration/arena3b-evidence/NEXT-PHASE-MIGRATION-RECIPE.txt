@@ -1,0 +1,75 @@
+ARENA 3B — MIGRATION RECIPE PROVEN ON A16 (apply to A17, A14, A14-OTP-HARDENING, and the
+fourteen remaining red suites)
+================================================================================================
+
+WHY THE RED SUITES ARE RED
+--------------------------
+Every remaining suite fabricates a challenge instead of asking the desk OTP service for one:
+
+    INSERT INTO mfa_enrollments / mfa_methods / authentication_sessions
+    mfaService.issueChallenge({ challengeHash: '<caller-chosen code>', ... })
+
+The accepted Cash-Out and Cash-to-Cash paths require a *bound* challenge
+(`cash_out_intents` for Cash-Out, `cash_to_cash_claim_challenge_bindings` for claims) whose
+purpose, agent, agent session, redemption method, transfer and destination hash all match the
+redemption request. A hand-made challenge therefore dies at
+`Invalid cash-out OTP challenge` / `Claim authorization context unavailable`, and an intent-less
+Cash-Out `execute` dies the same way. This is the product refusing forged authorisation, not a
+bug to patch around.
+
+STEPS THAT WORKED (A16: 12/33 → 82/88)
+--------------------------------------
+1. Provider wiring (before `compile()`):
+       const smsProvider = new RecordingSmsProvider();
+       const builder = overrideSmsProvider(baseBuilder, smsProvider);
+   and after `app.init()`:
+       deskOtp = createDeskOtpFixture(app, smsProvider);   // pass the bound instance
+
+2. Replace the fabricated-challenge helper with governed issuance
+   (`AgentDeskOtpService.issue`, purpose `CASH_TO_CASH_CLAIM` or `WALLET_TO_CASH`), returning
+   `{ challengeId, otp }` where `otp` is the code read from the recording provider. Keep a
+   `label` argument for readability; it no longer influences the code.
+
+3. Bind exactly what the request will use:
+       { agentId, agentSessionId, redemptionMethod, ttlSeconds, transferId, resetOtpBudget }
+   - use the agent the scenario will authenticate as;
+   - for HTTP scenarios use the session the login created (newest ACTIVE session row);
+   - `resetOtpBudget` only where a scenario legitimately issues more than five challenges for
+     one customer (the issuance budget is a real rate limiter, not the property under test).
+
+4. Replace the caller-chosen literal with the returned code:
+       const { challengeId, otp } = await createMfaChallenge(customer, 'label');
+       ... otp,
+   A label literal that the scenario passed as a *wrong* code stays as it is (it is still wrong).
+
+5. Assert on the institution suspense account
+   (`fixture.openInstitutionCashToCashSuspenseAccount(institutionId)`), not the legacy
+   `CASH_TO_CASH-UNCLAIMED-NGN` account.
+
+6. Move "should be refused" scenarios to the gate that actually enforces them. A challenge
+   cannot be minted for a non-recipient, an ineligible/suspended customer, a customer without
+   a verified primary phone or a current approved assessment, or (claim) a customer with no
+   destination wallet. Assert the issuance refusal — do not delete the scenario and do not
+   relax it into a weaker assertion.
+
+7. Post-verification hooks: spy `MfaExecutionService.verifyChallengeInManager`, and mutate
+   state through the claim's own `EntityManager`. Mutating through `dataSource` from inside the
+   hook deadlocks against the claim's row locks (symptom: the scenario hangs to the 120 s test
+   timeout and every later scenario fails with "Invalid workforce session").
+
+8. Add `afterEach(() => jest.restoreAllMocks())` so a timed-out scenario cannot leak a spy.
+
+9. Races: the challenge is single-use and one active challenge per transfer/operation exists.
+   A race must share ONE challenge, or issue sequential challenges. Issuing two challenges for
+   the same transfer and racing them yields `MFA_UNAVAILABLE` plus a superseded binding.
+
+A17 AND A14 NEED ONE EXTRA STEP
+-------------------------------
+Neither suite has a claiming agent session at all: their claims call
+`claimService.execute({ ... })` without `claimantPrincipal`, so after the OTP migration they
+fail with `A current Agent session is required for claim`. Provision one claiming agent per
+scenario (`createActiveAgentWithServicesAndPin([CASH_TO_CASH], '1234')`), pass
+`claimantPrincipal: agentPrincipal(agentId)`, and issue the challenge for that agent and its
+session. For A14 (Cash-Out) the equivalent is `purpose: 'WALLET_TO_CASH'` plus a persisted
+`cash_out_intents` row — the intent is created by the Cash-Out initiation path, never inserted
+by the test.
