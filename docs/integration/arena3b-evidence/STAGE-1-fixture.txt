@@ -1,0 +1,12 @@
+=== ARENA 3B Stage 1 — canonical governed financial fixture ===
+tested commit: (this checkpoint)
+command: NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
+         PG_TEST_RUN_ID=govfix06 npx jest --config jest.integration.config.js \
+         test/governed-financial-fixture.integration.spec.ts --runInBand
+Test Suites: 1 passed, 1 total
+Tests:       12 passed, 12 total
+Failures:    0
+Exit:        0
+Runtime:     PostgreSQL 18.4 embedded local cluster, synthetic data, sequential
+Notes:       every institutional fact produced by consumed protected approvals and
+             trigger-generated evidence; no fabricated approval/evidence rows.
