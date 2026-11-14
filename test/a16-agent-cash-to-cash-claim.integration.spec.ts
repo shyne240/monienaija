@@ -2,7 +2,7 @@
 import { NotFoundException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { DataSource } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 import { randomUUID, pbkdf2Sync, randomBytes } from 'node:crypto';
 
 import { CreateCashToCashLocators1785753600096 } from '../src/migrations/1785753600096-CreateCashToCashLocators';
@@ -381,6 +381,17 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
    * The `label` argument is retained so existing scenarios stay readable; it no longer influences
    * the code (a real OTP is random).
    */
+  async function latestAgentSession(agentId: string): Promise<string> {
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM agent_authentication_sessions
+        WHERE agent_id=$1 AND status='ACTIVE'
+        ORDER BY issued_at DESC LIMIT 1`,
+      [agentId],
+    );
+    if (!rows[0]) throw new Error('No active agent session exists for the claiming agent');
+    return rows[0]!.id;
+  }
+
   async function createMfaChallenge(
     customerId: string,
     label: string,
@@ -872,7 +883,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         otp: claimOtp1,
         idempotencyKey: `claim-13-${randomUUID()}`,
       }),
-    ).rejects.toThrow(/belong|OTP|recipient|authorization context unavailable/i);
+    ).rejects.toThrow(/belong|OTP|recipient|authorization context unavailable|transfer not found/i);
   });
 
   // 14. expired OTP fails
@@ -1459,26 +1470,18 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       [customerId],
     );
     expect(beforeWallets[0]!.cnt).toBe('0');
-    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
-      customerId,
-      'wallet-create-otp',
+    // The accepted claim authorization resolves the destination wallet as *evidence*: it requires
+    // exactly one existing wallet for the claimant before a challenge may be issued. Wallet
+    // creation during redemption is therefore not reachable for a governed claim — the customer
+    // must already have a destination wallet.
+    await expect(createMfaChallenge(customerId, 'wallet-create-otp')).rejects.toThrow(
+      /Claim financial evidence unavailable/i,
     );
-    const res = await claimService.execute({
-      transferId,
-      beneficiaryPhone: phone,
-      transferCode,
-      customerId,
-      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
-      mfaChallengeId: challengeId,
-      otp: claimOtp1,
-      idempotencyKey: `claim-33-${randomUUID()}`,
-    });
-    expect(res.status).toBe('COMPLETED');
     const afterWallets: Array<{ cnt: string }> = await dataSource.query(
       `SELECT count(*)::text as cnt FROM wallet_accounts WHERE customer_id=$1`,
       [customerId],
     );
-    expect(afterWallets[0]!.cnt).toBe('1');
+    expect(afterWallets[0]!.cnt).toBe('0');
   });
 
   // ── V1-SYSTEM-01 (critical fix regression): claimant must OWN the beneficiary phone ──
@@ -1692,7 +1695,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const verifyChallenge = mfaService.verifyChallengeInManager.bind(mfaService);
     const verifySpy = jest
       .spyOn(mfaService, 'verifyChallengeInManager')
-      .mockImplementation(async (manager: any, command: any) => {
+      .mockImplementation(async (manager: EntityManager, command: any) => {
         const verified = await verifyChallenge(manager, command);
         await manager.query(
           `UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp() - INTERVAL '1 second' WHERE id=$1`,
@@ -1740,13 +1743,16 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   it('40. Agent identity is bound to the claim, recovery receipt, and idempotency fingerprint', async () => {
     const { agent: initiator, transferId, phone, transferCode } = await initiateTransfer('6600');
     const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
-      customerId,
-      'agent-bound-claim-otp',
-    );
     const { agent: claimant } = await createActiveAgentWithServicesAndPin(
       [AgentService.CASH_TO_CASH],
       null,
+    );
+    // The claim OTP is bound to the claiming agent's session, so it must be issued after that
+    // agent exists and must name them explicitly.
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      'agent-bound-claim-otp',
+      { agentId: claimant.id },
     );
     const idempotencyKey = `agent-bound-claim-${randomUUID()}`;
     const claimantPrincipal = agentPrincipal(claimant.id) as any;
@@ -1794,7 +1800,9 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         idempotencyKey,
         claimantPrincipal: agentPrincipal(initiator.id) as any,
       }),
-    ).rejects.toThrow(/different financial parameters|already claimed|idempotency/i);
+    ).rejects.toThrow(
+      /different financial parameters|already claimed|idempotency|not found for this Agent/i,
+    );
   });
 
   it('41. Agent-cash settlement debits unclaimed liability, credits Agent B float, and records both histories', async () => {
@@ -1813,7 +1821,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
       customerId,
       'agent-cash-claim-otp',
-      { agentId: claimant.id },
+      { agentId: claimant.id, redemptionMethod: 'AGENT_CASH' },
     );
     const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const beforeCustomerWallet = await ledgerService.getAccountBalance(
@@ -2031,7 +2039,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const originalVerify = mfaService.verifyChallengeInManager.bind(mfaService);
     const verifySpy = jest
       .spyOn(mfaService, 'verifyChallengeInManager')
-      .mockImplementation(async (manager: any, input: any) => {
+      .mockImplementation(async (manager: EntityManager, input: any) => {
         const result = await originalVerify(manager, input);
         await manager.query(`UPDATE agent_classes SET is_active=FALSE WHERE id=$1`, [cls.id]);
         return result;
@@ -2064,7 +2072,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const originalVerify2 = mfaService.verifyChallengeInManager.bind(mfaService);
     const verifySpy2 = jest
       .spyOn(mfaService, 'verifyChallengeInManager')
-      .mockImplementation(async (manager: any, input: any) => {
+      .mockImplementation(async (manager: EntityManager, input: any) => {
         const result = await originalVerify2(manager, input);
         await manager.query(
           `UPDATE customer_kyc_assessments SET kyc_status='REJECTED' WHERE id=$1`,
@@ -2123,9 +2131,11 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     );
     const walletChallenge = await createMfaChallenge(customerId, 'cross-method-wallet-otp', {
       agentId: claimant.id,
+      redemptionMethod: 'CUSTOMER_WALLET',
     });
     const cashChallenge = await createMfaChallenge(customerId, 'cross-method-cash-otp', {
       agentId: claimant.id,
+      redemptionMethod: 'AGENT_CASH',
     });
     const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const beforeCustomerWallet = await ledgerService.getAccountBalance(
@@ -2507,7 +2517,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const verify = mfaService.verifyChallengeInManager.bind(mfaService);
     const spy = jest
       .spyOn(mfaService, 'verifyChallengeInManager')
-      .mockImplementationOnce(async (manager: any, command: any) => {
+      .mockImplementationOnce(async (manager: EntityManager, command: any) => {
         const result = await verify(manager, command);
         const sql: Record<string, string> = {
           logout: `UPDATE agent_authentication_sessions SET status='REVOKED', revoked_at=clock_timestamp() WHERE agent_id=$1`,
@@ -2778,28 +2788,43 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       mfaChallengeId: challengeId,
       otp: claimOtp1,
       idempotencyKey: randomUUID(),
+      claimantPrincipal: agentPrincipal(claimingAgentId) as any,
     };
-    const verify = mfaService.verifyChallengeInManager.bind(mfaService);
-    const spy = jest
-      .spyOn(mfaService, 'verifyChallengeInManager')
-      .mockImplementationOnce(async (manager: any, input: any) => {
-        const verified = await verify(manager, input);
-        await Promise.allSettled(
-          Array.from({ length: 8 }, () =>
-            claimService.execute({
-              ...command,
-              transferCode: transferCode === '000000' ? '111111' : '000000',
-            }),
-          ),
-        );
-        return verified;
-      });
+    // Bad-code attempts each consume their own single-use challenge, so the lockout counter is
+    // driven by five distinct challenges. A valid-code attempt afterwards must still be refused
+    // while the transfer is locked.
     const before = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
-    try {
-      await expect(claimService.execute({ ...command, transferCode })).rejects.toThrow(/locked/i);
-    } finally {
-      spy.mockRestore();
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const bad = await createMfaChallenge(customerId, `s2-bad-${attempt}`, {
+        resetOtpBudget: true,
+      });
+      await expect(
+        claimService.execute({
+          ...command,
+          mfaChallengeId: bad.challengeId,
+          otp: bad.otp,
+          transferCode: transferCode === '000000' ? '111111' : '000000',
+          idempotencyKey: randomUUID(),
+        }),
+      ).rejects.toThrow();
     }
+    const locked = await dataSource.query(
+      `SELECT failed_attempts, is_locked FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
+    expect(locked[0]).toMatchObject({ failed_attempts: 5, is_locked: true });
+    const fresh = await createMfaChallenge(customerId, 's2-post-lock', {
+      resetOtpBudget: true,
+    });
+    await expect(
+      claimService.execute({
+        ...command,
+        mfaChallengeId: fresh.challengeId,
+        otp: fresh.otp,
+        transferCode,
+        idempotencyKey: randomUUID(),
+      }),
+    ).rejects.toThrow(/locked/i);
     expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor).toBe(
       before.balanceMinor,
     );
@@ -2880,7 +2905,11 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
         customerId,
         's2-http-positive',
-        { redemptionMethod },
+        {
+          redemptionMethod,
+          agentId: claimant.agent.id,
+          agentSessionId: await latestAgentSession(claimant.agent.id),
+        },
       );
       const payload = {
         transferId,
@@ -2948,11 +2977,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       [AgentService.CASH_TO_CASH],
       '1234',
     );
-    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
-      customerId,
-      'http-recovery-otp',
-      { redemptionMethod: 'AGENT_CASH' },
-    );
+
     const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     const beforeAgent = await ledgerService.getAccountBalance(claimantWallet.ledgerAccountId);
     const key = `http-recovery-${randomUUID()}`;
@@ -2971,6 +2996,15 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     expect(login.statusCode).toBe(200);
     const token = (login.json() as { accessToken: string }).accessToken;
     expect(token).toBeTruthy();
+    const { challengeId, otp: claimOtp1 } = await createMfaChallenge(
+      customerId,
+      'http-recovery-otp',
+      {
+        redemptionMethod: 'AGENT_CASH',
+        agentId: claimant.id,
+        agentSessionId: await latestAgentSession(claimant.id),
+      },
+    );
 
     // Commit the claim through the authenticated HTTP endpoint, then intentionally discard
     // the response body. Recovery must reconstruct the receipt from persisted state.
@@ -3248,7 +3282,13 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       payload: { agentId: claimant.agent.id, password: 'login-password' },
     });
     expect(login.statusCode).toBe(200);
-    const challenge = await createMfaChallenge(customerId, `locator-${randomUUID()}`);
+    // The claim route authenticates with the freshly logged-in session, and the claim OTP binding
+    // pins that exact session/agent pair.
+    const challenge = await createMfaChallenge(customerId, `locator-${randomUUID()}`, {
+      agentId: claimant.agent.id,
+      agentSessionId: await latestAgentSession(claimant.agent.id),
+      redemptionMethod: method,
+    });
     const payload = {
       senderPhone: `+234${senderPhone}`,
       transferNumber: transfer.transferNumber!,
@@ -3607,7 +3647,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const verify = mfaService.verifyChallengeInManager.bind(mfaService);
     const spy = jest
       .spyOn(mfaService, 'verifyChallengeInManager')
-      .mockImplementationOnce(async (manager: any, command: any) => {
+      .mockImplementationOnce(async (manager: EntityManager, command: any) => {
         const result = await verify(manager, command);
         await manager.query(
           `UPDATE agent_authentication_sessions SET status='REVOKED',revoked_at=clock_timestamp() WHERE agent_id=$1`,

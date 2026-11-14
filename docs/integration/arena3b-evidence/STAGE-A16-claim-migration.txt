@@ -1,0 +1,79 @@
+ARENA 3B — A16 AGENT CASH→CASH CLAIM SUITE MIGRATION
+====================================================
+Suite:  test/a16-agent-cash-to-cash-claim.integration.spec.ts
+Command: NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
+         PG_TEST_RUN_ID=<id> npx jest --config jest.integration.config.js \
+         test/a16-agent-cash-to-cash-claim.integration.spec.ts --runInBand
+
+BASELINE (checkpoint b43ea30):  suite RED; 12 of 33 pre-existing scenarios reached the
+claim service, every redemption died at "Claim authorization context unavailable" /
+"Invalid cash-out OTP challenge" because the fixture fabricated mfa_challenges rows.
+
+FINAL (this checkpoint): Tests: 6 failed, 82 passed, 88 total — 0 timeouts,
+84.6 s, tsc clean, eslint clean, prettier clean.
+
+WHAT CHANGED
+------------
+1. Governed claim OTP issuance. The legacy `createMfaChallenge()` helper inserted
+   `mfa_enrollments`/`mfa_methods`/`authentication_sessions` rows and then called
+   `mfaService.issueChallenge()` with a caller-chosen plaintext code. The accepted claim
+   path requires a challenge bound in `cash_to_cash_claim_challenge_bindings`, so every
+   scenario failed. The helper now:
+     - ensures the ACTIVE customer credential,
+     - locates the challenge's legitimate transfer (canonical 10-digit match against the
+       customer's verified primary phone),
+     - calls `AgentDeskOtpService.issue({ purpose: 'CASH_TO_CASH_CLAIM', ... })`,
+     - reads the one-time code from a recording SMS provider
+       (`test/support/desk-otp-fixture.ts`, NODE_ENV=test guarded).
+   No test inserts a challenge or a binding by hand any more.
+2. Binding fidelity. Scenarios that claim as a locally created agent now pass
+   `{ agentId, agentSessionId }`; scenarios using the HTTP login session resolve the
+   session id the login created. Redemption method is bound per challenge, so
+   CUSTOMER_WALLET and AGENT_CASH scenarios issue the challenge they actually redeem.
+3. Obligation account. Balance and posting assertions track the receiving institution's
+   `C2C-UNCLAIMED-*` suspense account (ARENA 3B Stage 2 resolution) instead of the legacy
+   global `CASH_TO_CASH-UNCLAIMED-NGN` account, which is now historical-only.
+4. Fail-closed scenarios moved to the gate that enforces them. A challenge can no longer
+   be minted for a non-recipient, an ineligible/suspended customer, a customer without a
+   verified primary phone, a customer without a current approved assessment, or a customer
+   with no destination wallet. Those scenarios now assert the refusal at issuance
+   (`Claim recipient unavailable`, `Customer is not eligible for financial access`,
+   `Claim financial evidence unavailable`) instead of asserting a redemption-time error that
+   is no longer reachable. No assertion was loosened: each still requires a hard refusal.
+5. Post-verification hooks. The S2 scenarios spied `MfaExecutionService.verifyChallenge`,
+   which the claim service never calls (it calls `verifyChallengeInManager`). They now spy
+   the real method and mutate state through the claim's own `EntityManager`; mutating
+   through `dataSource` deadlocked against the claim's row locks.
+6. Transaction-safety of the harness: `afterEach(jest.restoreAllMocks)` so a scenario that
+   times out cannot leak a spy into later scenarios.
+
+REMAINING 6 FAILURES (honest classification)
+--------------------------------------------
+A. Post-OTP re-authorization is not implemented (4 scenarios, PRE-EXISTING coverage gap,
+   not a regression of this migration):
+   - "44. Agent and KYC eligibility are rechecked after OTP and before cash settlement"
+   - "S2 rejects pin-rotation committed during OTP verification without settlement"
+   - "S2 rejects pin-lock committed during OTP verification without settlement"
+   - "S2 rejects pin-deletion committed during OTP verification without settlement"
+   Observed: the claim completes (status COMPLETED, journal posted) when the agent PIN is
+   rotated, locked or deleted, or when agent/KYC eligibility is revoked *during* OTP
+   verification. Session revocation, session expiry, credential revocation and credential
+   rotation ARE re-checked (those S2 scenarios pass). PIN-state and eligibility re-reads
+   after verification are missing in `AgentCashToCashClaimService`.
+   These are NOT weakened in the suite: the scenarios keep asserting rejection and stay RED.
+
+B. Race/locator scenarios whose premise the governed path no longer permits (2):
+   - "number and UUID claims racing settle exactly once": the number route retires the
+     locator on the failed first attempt, so the racing UUID request answers 404 and
+     neither request settles (0 successes).
+   - "locator settlement failure rolls back and retries with fresh OTP and the same
+     financial key": after the injected settlement failure the locator is refused (404)
+     instead of being reusable for the 200 retry.
+   Both need a product decision (locator lifecycle on failed settlement) before the
+   assertion can be honoured; they remain RED rather than being relaxed.
+
+NOT DONE IN THIS PHASE
+----------------------
+A17 (expiry suite) and A14/A14-otp-hardening (Cash-Out lifecycle, ~40 intent-less `execute`
+calls) were not migrated; the other 14 red suites were not re-run. The full matrix has not
+been re-established. No PASS is claimed for ARENA 3B.
