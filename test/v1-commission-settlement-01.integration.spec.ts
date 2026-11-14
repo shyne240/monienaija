@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any, @typescript-eslint/require-await, @typescript-eslint/ban-ts-comment, @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any, @typescript-eslint/ban-ts-comment, @typescript-eslint/no-unsafe-argument */
 // @ts-nocheck
 /**
  * V1-COMMISSION-SETTLEMENT-VERIFICATION-01 — COMMISSION_PAYABLE lifecycle (real PG).
@@ -27,16 +27,13 @@
  * PROVISIONAL TEST CONFIGURATION ONLY — fixtures exist solely inside this disposable per-process
  * database. Nothing here is a production rate, policy, or payout behaviour.
  */
-import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID, randomBytes, pbkdf2Sync } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
-import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
-import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
-import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
 import { LedgerAccountType, LedgerNormalBalance } from '../src/ledger/ledger.enums';
@@ -57,7 +54,6 @@ import { AgentLifecycleService } from '../src/agent/agent-lifecycle.service';
 import { AgentAuthenticationService } from '../src/agent-authentication/agent-authentication.service';
 import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-authentication.enums';
 import { AgentStatus } from '../src/agent/agent.enums';
-import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
 import { CustomerTransactionPinService } from '../src/customer/customer-transaction-pin.service';
 import { CommercialAccountingService } from '../src/commercial-accounting/commercial-accounting.service';
 import { CommercialAccountingBlockedError } from '../src/commercial-accounting/commercial-accounting-registry.service';
@@ -69,6 +65,17 @@ import {
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+import {
+  ensureCustomerCredential,
+  governedDeskProviderOverride,
+  startGovernedDesk,
+  type GovernedDeskHarness,
+} from './support/cash-out-lifecycle-fixture';
+import { RecordingSmsProvider } from './support/desk-otp-fixture';
+import {
+  createControlledFundingPolicy,
+  overrideCashToCashFundingPolicy,
+} from './support/controlled-funding-policy';
 
 function hashPin(pin: string): string {
   const salt = randomBytes(16);
@@ -101,57 +108,16 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
   let appService: AgentApplicationService;
   let lifecycleService: AgentLifecycleService;
   let pinService: AgentAuthenticationService;
-  let mfaService: MfaExecutionService;
   let customerPinService: CustomerTransactionPinService;
   let accountingService: CommercialAccountingService;
   let systemLedgerAccountId: string;
 
+  const smsProvider = new RecordingSmsProvider();
+  let governed: GovernedDeskHarness;
+  const fundingPolicy = createControlledFundingPolicy();
+
   const expectLine = (lines: Array<any>, expected: Record<string, unknown>): void => {
     expect(lines).toEqual(expect.arrayContaining([expect.objectContaining(expected)]));
-  };
-
-  const workforceConfig: A2WorkforceConfigurationV1 = {
-    enabled: true,
-    oidcIssuer: 'https://workforce.test',
-    oidcJwksUri: 'https://workforce.test/jwks',
-    oidcAudience: 'workforce',
-    oidcClientId: 'test-client',
-    internalAudience: 'workforce-admin',
-    sessionTtlSeconds: 900,
-    jwksJson: [],
-    financeRoles: [],
-    makerCheckerRules: [],
-    rateLimits: [],
-    trustedProxies: ['127.0.0.1'],
-  } as unknown as A2WorkforceConfigurationV1;
-
-  const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-')) {
-        throw new UnauthorizedException('invalid workforce token');
-      }
-      const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = [
-        'SUPPORT',
-        'OPERATOR',
-        'SERVICE',
-        'PRIVILEGED',
-        'AGENT',
-        'CUSTOMER',
-        'AGGREGATOR',
-      ];
-      if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
-      return {
-        type,
-        principalId: `workforce-${type.toLowerCase()}-1`,
-        audience,
-        roles: [],
-        scopes: [],
-        customerAccess: 'NONE',
-        agentAccess: 'NONE',
-        aggregatorAccess: 'NONE',
-      } as any;
-    },
   };
 
   const ENV_KEYS = [
@@ -178,16 +144,15 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('v1-commission-settlement-01');
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    const baseBuilder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
       .overrideProvider(KycTierEvidenceReader)
-      .useValue(kycEvidence.reader)
-      .overrideProvider(A2WorkforceSessionService)
-      .useValue(mockWorkforceSessions)
-      .overrideProvider(A2_WORKFORCE_CONFIG)
-      .useValue(workforceConfig)
-      .compile();
+      .useValue(kycEvidence.reader);
+    const moduleRef = await overrideCashToCashFundingPolicy(
+      governedDeskProviderOverride(baseBuilder, smsProvider),
+      fundingPolicy,
+    ).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(
@@ -211,7 +176,6 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
     appService = app.get(AgentApplicationService);
     lifecycleService = app.get(AgentLifecycleService);
     pinService = app.get(AgentAuthenticationService);
-    mfaService = app.get(MfaExecutionService);
     customerPinService = app.get(CustomerTransactionPinService);
     accountingService = app.get(CommercialAccountingService);
   }, 180000);
@@ -236,15 +200,10 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
       allowNegativeBalance: true,
     });
     systemLedgerAccountId = sys.id;
-    await ledgerService.createAccount({
-      code: 'CASH_TO_CASH-UNCLAIMED-NGN',
-      name: 'Cash-to-Cash Unclaimed NGN',
-      accountType: LedgerAccountType.LIABILITY,
-      normalBalance: LedgerNormalBalance.CREDIT,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      allowNegativeBalance: false,
-    });
+    // Governed institutional context (synthetic, per-process database only).
+    governed = await startGovernedDesk({ app, dataSource, smsProvider, label: 'csv01' });
+    // Cash-to-Cash holds the unclaimed liability in the receiving institution's suspense account.
+    await governed.fixture.openInstitutionCashToCashSuspenseAccount(governed.institutionId);
     await provisionAccountingFamilies();
   });
 
@@ -271,11 +230,13 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
       },
     ];
     for (const f of families) {
+      // Economic owner of every commercial family account is the receiving institution that
+      // collects the fee/VAT and owes the commission — never an unattributed global account.
       await dataSource.query(
-        `INSERT INTO ledger_accounts (id, code, name, account_type, normal_balance, currency, accounting_unit, allow_negative_balance, is_active)
-         VALUES (gen_random_uuid(), $1, $2, $3, $4, 'NGN', 'CUSTOMER_FUNDS', FALSE, TRUE)
+        `INSERT INTO ledger_accounts (id, code, name, account_type, normal_balance, currency, accounting_unit, allow_negative_balance, is_active, institutional_scope, institution_id)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, 'NGN', 'CUSTOMER_FUNDS', FALSE, TRUE, 'INSTITUTION', $5)
          ON CONFLICT (code) DO NOTHING`,
-        [f.code, `${f.code} (test fixture)`, f.type, f.normal],
+        [f.code, `${f.code} (test fixture)`, f.type, f.normal, governed.institutionId],
       );
       await dataSource.query(
         `INSERT INTO commercial_accounting_registry (
@@ -346,17 +307,8 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
   }
 
   async function fundWallet(walletLedgerAccountId: string, amountMinor: string): Promise<void> {
-    await dataSource.transaction(async (manager) => {
-      await ledgerService.postJournalInTransaction(manager, {
-        idempotencyKey: `csv01-fund-${randomUUID()}`,
-        currency: 'NGN',
-        accountingUnit: 'CUSTOMER_FUNDS',
-        reference: `CSVF-${walletLedgerAccountId.slice(0, 8)}`,
-        lines: [
-          { accountId: systemLedgerAccountId, direction: 'DEBIT', amountMinor },
-          { accountId: walletLedgerAccountId, direction: 'CREDIT', amountMinor },
-        ],
-      });
+    await governed.fixture.fundLedgerAccount(walletLedgerAccountId, amountMinor, {
+      institutionId: governed.institutionId,
     });
   }
 
@@ -458,7 +410,11 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
     }
   }
 
-  async function createActiveAgentWithPin(services: unknown, pin: string | null) {
+  async function createActiveAgentWithPin(
+    services: unknown,
+    pin: string | null,
+    options: { govern?: boolean } = {},
+  ) {
     const cls = await classService.create({
       reference: `cls-csv01-${randomUUID().slice(0, 8)}`,
       code: `CSV01-${randomUUID().slice(0, 6)}`,
@@ -498,12 +454,14 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
       `SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`,
       [wallet.id],
     );
+    if (options.govern !== false) await governed.provisionAgent(agent.id, wallet.id);
     return { cls, agent, appEntity, wallet, walletLedgerAccountId: rows[0].ledger_account_id };
   }
 
   function agentPrincipal(agentId: string) {
     return {
       type: 'AGENT' as const,
+      sessionId: governed.sessionFor(agentId),
       agentId,
       principalId: agentId,
       roles: [],
@@ -539,6 +497,7 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
       `SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`,
       [wallet.id],
     );
+    await governed.provisionCustomer(customerId, wallet.id);
     await customerPinService.setTransactionPin(customerId, {
       pinHash: hashPin(pin),
       hashAlgorithm: 'PBKDF2',
@@ -546,42 +505,6 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
       actor: customerId,
     });
     return { customerId, wallet, walletLedgerAccountId: rows[0].ledger_account_id };
-  }
-
-  async function createMfaChallenge(customerId: string, otp: string, ttlSeconds = 300) {
-    const eRows: Array<{ id: string }> = await dataSource.query(
-      `INSERT INTO mfa_enrollments (id, customer_id, reference, status) VALUES ($1,$2,$3,'ENABLED') RETURNING id`,
-      [randomUUID(), customerId, `mfa-enroll-${randomUUID().slice(0, 6)}`],
-    );
-    const enrollmentId = eRows[0]!.id;
-    const mRows: Array<{ id: string }> = await dataSource.query(
-      `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
-      [randomUUID(), customerId, enrollmentId, `csv01-${randomUUID().slice(0, 6)}`],
-    );
-    const methodId = mRows[0]!.id;
-    const cRows: Array<{ id: string }> = await dataSource.query(
-      `INSERT INTO customer_authentication_credentials (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
-      [randomUUID(), customerId],
-    );
-    const credentialId = cRows[0]!.id;
-    const sessionId = randomUUID();
-    const tokenHash = randomBytes(32).toString('hex');
-    await dataSource
-      .query(
-        `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
-        [sessionId, customerId, credentialId, tokenHash],
-      )
-      .catch(() => {});
-    const principal: any = { principalType: 'CUSTOMER', customerId, credentialId, sessionId };
-    const challenge = await mfaService.issueChallenge({
-      principal,
-      enrollmentId,
-      methodId,
-      challengeHash: otp,
-      ttlSeconds,
-      actor: customerId,
-    } as any);
-    return { challengeId: (challenge as any).id ?? (challenge as any).challengeId, otp };
   }
 
   /** One WALLET_TO_CASH execution; returns the run context (fee 1000 / commission 100 under the test rules). */
@@ -597,9 +520,16 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
       customerId,
       'WALLET_TO_CASH',
     );
-    const otp = 'csv01-otp';
-    const { challengeId } = await createMfaChallenge(customerId, otp);
     const key = input.key ?? `csv01-out-${randomUUID()}`;
+    await ensureCustomerCredential(dataSource, customerId);
+    const issued = await governed.issueCashOutOtp({
+      agentId: bundle.agent.id,
+      customerId,
+      amountMinor: input.amountMinor ?? '30000',
+      operationKey: key,
+    });
+    const challengeId = issued.challengeId;
+    const otp = issued.otp;
     const result = await cashOutService.execute({
       agentId: bundle.agent.id,
       agentPrincipal: agentPrincipal(bundle.agent.id) as any,
@@ -733,15 +663,28 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
       customerId,
       'CASH_TO_CASH',
     );
-    const { challengeId } = await createMfaChallenge(customerId, 'csv01-claim');
+    await ensureCustomerCredential(dataSource, customerId);
+    const claimKey = `csv01-s02-claim-${randomUUID()}`;
+    const claimOtp = await governed.deskOtp.issue({
+      agentId: bundle.agent.id,
+      customerId,
+      purpose: 'CASH_TO_CASH_CLAIM',
+      redemptionMethod: 'CUSTOMER_WALLET',
+      agentSessionId: governed.sessionFor(bundle.agent.id)!,
+      transferId: init.transferId,
+      amountMinor: '30000',
+      currency: 'NGN',
+      operationKey: claimKey,
+    });
     const claim = await claimService.execute({
       transferId: init.transferId,
       beneficiaryPhone,
       transferCode: init.transferCode,
       customerId,
-      mfaChallengeId: challengeId,
-      otp: 'csv01-claim',
-      idempotencyKey: `csv01-s02-claim-${randomUUID()}`,
+      mfaChallengeId: claimOtp.challengeId,
+      otp: claimOtp.otp,
+      claimantPrincipal: agentPrincipal(bundle.agent.id) as any,
+      idempotencyKey: claimKey,
     });
     expect(claim.status).toBe('COMPLETED');
 
@@ -829,7 +772,15 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
       customerId,
       'WALLET_TO_CASH',
     );
-    const { challengeId } = await createMfaChallenge(customerId, 'csv01-s04');
+    const s04Key = `csv01-s04-${randomUUID()}`;
+    await ensureCustomerCredential(dataSource, customerId);
+    const s04Otp = await governed.issueCashOutOtp({
+      agentId: bundle.agent.id,
+      customerId,
+      amountMinor: '30000',
+      operationKey: s04Key,
+    });
+    const challengeId = s04Otp.challengeId;
     try {
       await cashOutService.execute({
         agentId: bundle.agent.id,
@@ -838,10 +789,10 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
         customerId,
         customerPin: '1234',
         mfaChallengeId: challengeId,
-        otp: 'csv01-s04',
+        otp: s04Otp.otp,
         amountMinor: '30000',
         currency: 'NGN',
-        idempotencyKey: `csv01-s04-${randomUUID()}`,
+        idempotencyKey: s04Key,
       });
       throw new Error('expected aggregator blocker');
     } catch (e) {
@@ -902,21 +853,30 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
     expect(run.result.status).toBe('COMPLETED');
     expect(await pooledBalance(ACCOUNT_LEGEND.COMMISSION_PAYABLE)).toBe(100n);
 
-    // Give the agent float headroom, then defund — a pure pool⇄wallet movement.
+    // The funding pool is the platform treasury account created by migration 1785753600061. It
+    // carries NO institution classification: funding it from the platform float is the only
+    // journal the ledger contract accepts (platform ⇄ platform).
     await dataSource.query(
       `INSERT INTO ledger_accounts (id, code, name, account_type, normal_balance, currency, accounting_unit, allow_negative_balance, is_active)
        VALUES (gen_random_uuid(),'AGENT_FUNDING_POOL-NGN','Agent Funding Pool NGN','LIABILITY','CREDIT','NGN','CUSTOMER_FUNDS',FALSE,TRUE)
        ON CONFLICT (code) DO NOTHING`,
     );
-    const pool: Array<{ id: string }> = await dataSource.query(
-      `SELECT id FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN'`,
+    const pool: Array<{ id: string; institutional_scope: string }> = await dataSource.query(
+      `SELECT id, institutional_scope FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN'`,
     );
-    await fundWallet(pool[0].id, '1000000');
-    // Grant the fixture agent the funding capabilities on its class (test fixture only).
-    await dataSource.query(`UPDATE agent_classes SET applicable_services=$2::jsonb WHERE id=$1`, [
-      run.cls.id,
-      JSON.stringify(['CASH_OUT', 'AGENT_FUNDING', 'AGENT_DEFUNDING']),
-    ]);
+    expect(pool[0].institutional_scope).toBe('UNATTRIBUTED');
+    await dataSource.transaction(async (manager) => {
+      await ledgerService.postJournalInTransaction(manager, {
+        idempotencyKey: `csv01-s06-pool-${randomUUID()}`,
+        currency: 'NGN',
+        accountingUnit: 'CUSTOMER_FUNDS',
+        reference: 'CSV01-POOL-FUND',
+        lines: [
+          { accountId: systemLedgerAccountId, direction: 'DEBIT', amountMinor: '1000000' },
+          { accountId: pool[0].id, direction: 'CREDIT', amountMinor: '1000000' },
+        ],
+      });
+    });
     const privilegedPrincipal: any = {
       type: 'OPERATOR',
       principalId: 'test-agent-network-manager',
@@ -927,8 +887,36 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
       aggregatorAccess: 'NONE',
       assuranceLevel: 'MFA', // Decision 7: agent funding requires an MFA-assured maker,
     };
+
+    // (a) MISSING POLICY, proven fail-closed: the agent wallet is attributed to an institution,
+    // while the funding pool is platform-level. The institutional journal contract refuses the
+    // mix, so an institution-attributed agent cannot be funded/defunded at all. Commissions are
+    // unaffected — this is a documented Arena 3B scope boundary, not a silent behaviour.
+    await dataSource.query(`UPDATE agent_classes SET applicable_services=$2::jsonb WHERE id=$1`, [
+      run.cls.id,
+      JSON.stringify(['CASH_OUT', 'AGENT_FUNDING', 'AGENT_DEFUNDING']),
+    ]);
+    await expect(
+      fundingService.fund({
+        agentId: run.agent.id,
+        amountMinor: '5000',
+        currency: 'NGN',
+        idempotencyKey: `csv01-s06-fund-${randomUUID()}`,
+        principal: privilegedPrincipal,
+        actor: 'test-actor',
+      }),
+    ).rejects.toThrow(/not attributed to the journal's institution|institutional/i);
+    expect(await pooledBalance(ACCOUNT_LEGEND.COMMISSION_PAYABLE)).toBe(100n);
+
+    // (b) Platform-level agents keep the legacy pool⇄wallet rail: defunding is a pure float
+    // movement that never touches the accrued commission payable.
+    const platformAgent = await createActiveAgentWithPin(
+      [AgentService.CASH_OUT, AgentService.AGENT_FUNDING, AgentService.AGENT_DEFUNDING],
+      '1234',
+      { govern: false },
+    );
     const fund = await fundingService.fund({
-      agentId: run.agent.id,
+      agentId: platformAgent.agent.id,
       amountMinor: '5000',
       currency: 'NGN',
       idempotencyKey: `csv01-s06-fund-${randomUUID()}`,
@@ -936,9 +924,9 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
       actor: 'test-actor',
     });
     expect(fund.status).toBe('COMPLETED');
-    const before = await walletBalance(run.walletLedgerAccountId);
+    const before = await walletBalance(platformAgent.walletLedgerAccountId);
     const defund = await fundingService.defund({
-      agentId: run.agent.id,
+      agentId: platformAgent.agent.id,
       amountMinor: '2000',
       currency: 'NGN',
       idempotencyKey: `csv01-s06-defund-${randomUUID()}`,
@@ -946,7 +934,7 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
       actor: 'test-actor',
     });
     expect(defund.status).toBe('COMPLETED');
-    expect(await walletBalance(run.walletLedgerAccountId)).toBe(before - 2000n);
+    expect(await walletBalance(platformAgent.walletLedgerAccountId)).toBe(before - 2000n);
 
     // The accrued commission payable is untouched: still the full standing amount, still only
     // its original single credit line across the entire ledger.
