@@ -38,6 +38,13 @@ Environment (Stage 11 execution model)
                                                 the Stage 1 tooling-exception record; no file touched by
                                                 this consolidation is in that list
 
+Provenance note: the matrix above was executed while the tree was at 04f73a5 (plus the Stage 7
+document, which contains no code). A later lint-only refactor of
+test/stage8-financial-engine-migration.integration.spec.ts (variable naming / redundant type
+assertions, no behavioural change) was re-verified in isolation afterwards:
+stage8-financial-engine-migration + financial-commitment-initiation = 58/58 PASS. No other file
+touched by this consolidation changed after the matrix.
+
 Flaky classification (Stage 11)
   No suite was re-run to "make it green" and no retry count was raised. The first full matrix of this
   consolidation reported 4 failing suites / 4 failing tests; every one was diagnosed to a deterministic
