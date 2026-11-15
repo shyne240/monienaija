@@ -244,7 +244,9 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
       `INSERT INTO kyc_tier_policy_versions(version,proposal_id,definition,maker_id,checker_id) VALUES(1,$1,$2,'maker','checker')`,
       [proposal, JSON.stringify(definition)],
     );
-    await dataSource.query('INSERT INTO kyc_tier_policy_head(singleton,version) VALUES(true,1)');
+    await dataSource.query(
+      'INSERT INTO kyc_tier_policy_head (singleton, version) VALUES (true, 1) ON CONFLICT (singleton) DO UPDATE SET version=EXCLUDED.version',
+    );
     await dataSource.query(
       `INSERT INTO banks(id,bank_code,bank_name,short_name,nip_supported,status) VALUES($1,'FCBANK','Test Bank','Test',true,'ACTIVE')`,
       [randomUUID()],

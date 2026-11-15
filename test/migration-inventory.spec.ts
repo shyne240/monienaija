@@ -46,12 +46,14 @@ describe('migration inventory', () => {
     expect(timestamps).toEqual([...timestamps].sort());
   });
 
-  it('adopts the published Arena 2 range without fabricating 0117', () => {
+  it('adopts the published Arena 2 range and the Arena 1 financial engine range', () => {
     const timestamps = new Set(migrations.map((migration) => migration.timestamp));
-    // Arena 1's governed ledger reversal owns `0117`; this branch still excludes it and must not
-    // invent it. The remaining lower-numbered Arena 2 evidence migrations are now adopted with
-    // their published identifiers (ARENA 3 consolidation, Phase 4).
-    expect(timestamps.has('1785753600117')).toBe(false);
+    // ARENA 1/Arena 2 consolidation (Stage 3-5): the governed ledger reversal `0117` and the A6/A7
+    // financial-engine migrations `0140`-`0146` now ship with their published identifiers. They are
+    // adopted as published and never renumbered or duplicated.
+    for (const id of [117, 140, 141, 142, 143, 144, 145, 146]) {
+      expect(timestamps.has(`1785753600${id}`)).toBe(true);
+    }
     for (const id of [120, 130, 131, 132, 200, 201, 202, 203, 204, 205]) {
       expect(timestamps.has(`1785753600${id}`)).toBe(true);
     }

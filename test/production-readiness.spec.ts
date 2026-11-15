@@ -187,12 +187,16 @@ describe('M8 production readiness', () => {
         new ReconciliationStub() as never,
         authority('verified'),
       );
-      await expect(verified.getReadiness()).resolves.toMatchObject({
-        status: 'ok',
-        reason: null,
-        protectedCheckerAuthority: { status: 'verified' },
-      });
-      await expect(verified.verifyStartup()).resolves.toBeUndefined();
+      // The protected checker authority is genuinely verified here. Readiness still refuses,
+      // because the financial dependency gates are unverified by design: no production evidence
+      // adapter exists and no readiness override is permitted. The refusal must name the financial
+      // dependency gate, never the protected authority.
+      const readiness = await verified.getReadiness();
+      expect(readiness.protectedCheckerAuthority).toMatchObject({ status: 'verified' });
+      expect(readiness.status).toBe('error');
+      expect(readiness.reason).toBe('financial_dependencies_not_ready');
+      expect(readiness.financialDependencies.blockers.length).toBeGreaterThan(0);
+      await expect(verified.verifyStartup()).rejects.toThrow('financial_dependencies_not_ready');
 
       const unsafe = new ProductionReadinessService(
         new ReadinessDataSource() as unknown as DataSource,

@@ -360,7 +360,7 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
       [credentialId, p.customerId],
     );
     await db.query(
-      `INSERT INTO authentication_sessions(id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at,version) VALUES($1,$2,$3,$4,'customer-api','ACTIVE',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp(),1)`,
+      `INSERT INTO authentication_sessions(id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at,version,onboarding_password_version) VALUES($1,$2,$3,$4,'customer-api','ACTIVE',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp(),1,1)`,
       [sessionId, p.customerId, credentialId, createHash('sha256').update(token).digest('hex')],
     );
     return { ...p, token, sessionId };
@@ -961,7 +961,7 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
     const f = await inboundFixture();
     const newToken = randomUUID();
     await db.query(
-      `INSERT INTO authentication_sessions(id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at,version) SELECT $1,customer_id,credential_id,$2,'customer-api','ACTIVE',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp(),1 FROM authentication_sessions WHERE id=$3`,
+      `INSERT INTO authentication_sessions(id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at,version,onboarding_password_version) SELECT $1,customer_id,credential_id,$2,'customer-api','ACTIVE',clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp(),1,onboarding_password_version FROM authentication_sessions WHERE id=$3`,
       [randomUUID(), createHash('sha256').update(newToken).digest('hex'), f.sessionId],
     );
     await db.query(
