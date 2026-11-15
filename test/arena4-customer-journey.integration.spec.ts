@@ -686,4 +686,130 @@ describe('ARENA 4 customer journey (real backend + PostgreSQL)', () => {
     );
     expect(after!.password_hash).toBe(before!.password_hash);
   }, 120000);
+
+  // 16–17. First-login rotation of a workforce-issued temporary credential (no session before it).
+  it('16-17. refuses a session for a temporary credential and completes the mandatory rotation', async () => {
+    const { customerId, phone: storedPhone } = await enrolCustomer();
+    await dataSource.query(
+      `UPDATE customer_authentication_credentials
+          SET rotation_required = true,
+              password_expires_at = clock_timestamp() + interval '1 hour'
+        WHERE customer_id = $1`,
+      [customerId],
+    );
+
+    // Login proves the temporary credential but issues NO session.
+    const pending = await login(storedPhone, PASSCODE).expect(200);
+    expect(pending.body).toMatchObject({ rotationRequired: true, customerId });
+    expect(pending.body.accessToken).toBeUndefined();
+    expect(pending.body.sessionId).toBeUndefined();
+    expect(pending.body.expiresAt).toBeUndefined();
+
+    const sessions: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text AS count FROM authentication_sessions WHERE customer_id=$1`,
+      [customerId],
+    );
+    expect(sessions[0]!.count).toBe('0');
+
+    // A wrong current password cannot rotate, and the new value must actually differ.
+    await request(server())
+      .post('/api/v1/customers/credentials/rotate')
+      .send({ customerId, currentPassword: '000000', newPassword: 'RotatedPasscode1' })
+      .expect(401);
+    await request(server())
+      .post('/api/v1/customers/credentials/rotate')
+      .send({ customerId, currentPassword: PASSCODE, newPassword: PASSCODE })
+      .expect(400);
+
+    const rotated = await request(server())
+      .post('/api/v1/customers/credentials/rotate')
+      .send({ customerId, currentPassword: PASSCODE, newPassword: 'RotatedPasscode1' })
+      .expect(200);
+    expect(rotated.body.accessToken).toBeTruthy();
+    expect(rotated.body.customerId).toBe(customerId);
+    expect(JSON.stringify(rotated.body)).not.toMatch(/hash|password/i);
+
+    // The rotated credential is the only one that authenticates now.
+    await login(storedPhone, PASSCODE).expect(401);
+    const fresh = await login(storedPhone, 'RotatedPasscode1').expect(200);
+    expect(fresh.body.accessToken).toBeTruthy();
+
+    const [credential]: Array<{
+      rotation_required: boolean;
+      password_version: number;
+      password_expires_at: Date | null;
+    }> = await dataSource.query(
+      `SELECT rotation_required, password_version, password_expires_at
+         FROM customer_authentication_credentials WHERE customer_id=$1`,
+      [customerId],
+    );
+    expect(credential!.rotation_required).toBe(false);
+    expect(Number(credential!.password_version)).toBe(2);
+    expect(credential!.password_expires_at).toBeNull();
+
+    const history: Array<{ action: string }> = await dataSource.query(
+      `SELECT ph.action
+         FROM password_histories ph
+         JOIN customer_authentication_credentials c ON c.id = ph.credential_id
+        WHERE c.customer_id=$1 ORDER BY ph.created_at ASC`,
+      [customerId],
+    );
+    expect(history.map((row) => row.action)).toContain('ROTATED');
+
+    // Rotation is not a second password-management path: a normal credential is refused.
+    await request(server())
+      .post('/api/v1/customers/credentials/rotate')
+      .send({ customerId, currentPassword: 'RotatedPasscode1', newPassword: 'AnotherPasscode2' })
+      .expect(403);
+  }, 120000);
+
+  // 18–19. Distinct no-wallet and restricted states — never a fabricated balance.
+  it('18-19. distinguishes no-wallet and restricted accounts from a zero balance', async () => {
+    const { customerId, phone: storedPhone } = await enrolCustomer();
+    const auth = { Authorization: `Bearer ${await authedToken(storedPhone)}` };
+
+    const empty = await request(server())
+      .get('/api/v1/customers/me/dashboard')
+      .set(auth)
+      .expect(200);
+    expect(empty.body.balance.wallets).toEqual([]);
+    expect(empty.body.balance.primary).toBeNull();
+    expect(empty.body.recentTransactions.items).toEqual([]);
+
+    const position = await request(server())
+      .get('/api/v1/customers/me/financial-position')
+      .set(auth)
+      .expect(200);
+    // The absence of a wallet is its own state (`walletExists:false`, empty `wallets`), never a
+    // customer-facing "you have ₦0.00" claim derived from a missing account.
+    expect(position.body.walletExists).toBe(false);
+    expect(position.body.wallets).toEqual([]);
+
+    // A real wallet with no postings reports a genuine zero (zero is a fact, not a placeholder).
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const wallets = app.get(WalletService);
+    const wallet = await wallets.createWallet({
+      customerId,
+      currency: 'NGN',
+      idempotencyKey: `a4-nowallet-${customerId}`,
+    });
+    const funded = await request(server())
+      .get('/api/v1/customers/me/dashboard')
+      .set(auth)
+      .expect(200);
+    expect(funded.body.balance.wallets).toHaveLength(1);
+    expect(funded.body.balance.primary.id).toBe(wallet.id);
+    expect(funded.body.balance.primary.balanceMinor).toBe('0');
+
+    // Restriction: a suspended wallet is surfaced as a restricted state, distinct from both an
+    // active wallet and the no-wallet state.
+    await dataSource.query(`UPDATE wallet_accounts SET status='SUSPENDED' WHERE id=$1`, [wallet.id]);
+    const restricted = await request(server())
+      .get('/api/v1/customers/me/dashboard')
+      .set(auth)
+      .expect(200);
+    expect(restricted.body.balance.wallets[0].status).toBe('SUSPENDED');
+    expect(restricted.body.balance.wallets[0].balanceMinor).toBe('0');
+    expect(restricted.body.balance.wallets[0].status).not.toBe(funded.body.balance.primary.status);
+  }, 120000);
 });
