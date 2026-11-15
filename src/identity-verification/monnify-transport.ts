@@ -8,7 +8,7 @@ export type MonnifyPath =
   | '/api/v1/auth/login'
   | '/api/v1/vas/bvn-details-match'
   | '/api/v1/vas/bvn-account-match'
-  | '/api/v1/vas/nin-details';
+  | '/api/v1/vas/nin-verification';
 export type MonnifyTransport = (
   path: MonnifyPath,
   options: {
@@ -22,7 +22,7 @@ const paths = new Set<string>([
   '/api/v1/auth/login',
   '/api/v1/vas/bvn-details-match',
   '/api/v1/vas/bvn-account-match',
-  '/api/v1/vas/nin-details',
+  '/api/v1/vas/nin-verification',
 ]);
 const MAX_BYTES = 256 * 1024;
 

@@ -227,7 +227,7 @@ describe('KYC foundation policy and orchestration', () => {
     ).toThrow('BLOCKED');
     expect(() => selectKycProvider(config, 'BVN', [registry[0]!, registry[0]!])).toThrow('BLOCKED');
   });
-  it('uses verified NIN names and birth date, not the untrusted provider match flag', async () => {
+  it('requires the provider NIN match, returned identifier binding, and local identity match', async () => {
     expect(
       matchNinDetails(input.identity, {
         firstName: ' synthetic ',
@@ -251,15 +251,37 @@ describe('KYC foundation policy and orchestration', () => {
     ).toBe(false);
     const adapter = {
       getNinDetails: jest.fn().mockResolvedValue({
+        nin: input.identifier,
         firstName: 'Impostor',
         lastName: 'Person',
         dateOfBirth: '29-Feb-2000',
         ninInformationMatch: true,
       }),
     } as unknown as MonnifyVerificationProvider;
-    await expect(
-      new MonnifyKycProvider(adapter).verify(input, new AbortController().signal),
-    ).resolves.toEqual({ outcome: 'REVIEW' });
+    const provider = new MonnifyKycProvider(adapter);
+    await expect(provider.verify(input, new AbortController().signal)).resolves.toEqual({
+      outcome: 'REVIEW',
+    });
+    adapter.getNinDetails = jest.fn().mockResolvedValue({
+      nin: input.identifier,
+      firstName: 'Synthetic',
+      lastName: 'Person',
+      dateOfBirth: '29-Feb-2000',
+      ninInformationMatch: false,
+    }) as unknown as MonnifyVerificationProvider['getNinDetails'];
+    await expect(provider.verify(input, new AbortController().signal)).resolves.toEqual({
+      outcome: 'REVIEW',
+    });
+    adapter.getNinDetails = jest.fn().mockResolvedValue({
+      nin: '00000000001',
+      firstName: 'Synthetic',
+      lastName: 'Person',
+      dateOfBirth: '29-Feb-2000',
+      ninInformationMatch: true,
+    }) as unknown as MonnifyVerificationProvider['getNinDetails'];
+    await expect(provider.verify(input, new AbortController().signal)).resolves.toEqual({
+      outcome: 'REVIEW',
+    });
   });
   it('uses the existing Monnify BVN details adapter, preserving negative match for review', async () => {
     const matchBvnDetails = jest.fn().mockResolvedValue({ match: false });

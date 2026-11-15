@@ -74,10 +74,10 @@ describe('isolated Monnify verification provider', () => {
       .mockResolvedValueOnce(auth)
       .mockResolvedValueOnce(
         success({
+          nin: '00000000000',
           firstName: 'Synthetic',
           lastName: 'Person',
           dateOfBirth: '01-Jan-2000',
-          nin: '00000000000',
           ninInformationMatch: true,
         }),
       );
@@ -91,6 +91,7 @@ describe('isolated Monnify verification provider', () => {
       }),
     ).resolves.toEqual({ match: true });
     await expect(provider.getNinDetails('00000000000')).resolves.toEqual({
+      nin: '00000000000',
       firstName: 'Synthetic',
       lastName: 'Person',
       dateOfBirth: '01-Jan-2000',
@@ -100,9 +101,36 @@ describe('isolated Monnify verification provider', () => {
       '/api/v1/auth/login',
       '/api/v1/vas/bvn-account-match',
       '/api/v1/auth/login',
-      '/api/v1/vas/nin-details',
+      '/api/v1/vas/nin-verification',
     ]);
     expect(JSON.parse(transport.mock.calls[3]![1].body!)).toEqual({ nin: '00000000000' });
+  });
+  it.each([
+    success({
+      firstName: 'Synthetic',
+      lastName: 'Person',
+      dateOfBirth: '01-Jan-2000',
+      ninInformationMatch: true,
+    }),
+    success({
+      nin: '00000000001',
+      firstName: 'Synthetic',
+      lastName: 'Person',
+      dateOfBirth: '01-Jan-2000',
+      ninInformationMatch: true,
+    }),
+    success({
+      nin: '00000000000',
+      firstName: 'Synthetic',
+      lastName: 'Person',
+      dateOfBirth: '01-Jan-2000',
+    }),
+  ])('rejects a malformed or identifier-unbound NIN verification response %#', async (response) => {
+    const transport = jest.fn().mockResolvedValueOnce(auth).mockResolvedValueOnce(response);
+    await expect(
+      new MonnifyVerificationProvider({ ...config, transport }).getNinDetails('00000000000'),
+    ).rejects.toMatchObject({ code: 'OUTCOME_UNKNOWN' });
+    expect(transport).toHaveBeenCalledTimes(2);
   });
   it('rejects malformed inputs and invalid configuration before network', async () => {
     const transport = jest.fn();
@@ -216,7 +244,7 @@ describe('Monnify pinned transport guard (no sockets)', () => {
     const transport = createMonnifyHttpsTransport({ lookup, request: request as never });
     const options = { authorization: 'synthetic', signal: new AbortController().signal };
     await expect(
-      transport('/api/v1/vas/nin-details?redirect=evil' as MonnifyPath, options),
+      transport('/api/v1/vas/nin-verification?redirect=evil' as MonnifyPath, options),
     ).rejects.toThrow();
     expect(lookup).not.toHaveBeenCalled();
     await expect(transport('/api/v1/auth/login', options)).rejects.toThrow();

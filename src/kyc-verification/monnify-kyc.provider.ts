@@ -50,7 +50,14 @@ export class MonnifyKycProvider implements KycProvider {
     if (signal.aborted) throw new Error('Aborted');
     if (input.kind === 'NIN') {
       const result = await this.adapter.getNinDetails(input.identifier);
-      return { outcome: matchNinDetails(input.identity, result) ? 'MATCH' : 'REVIEW' };
+      return {
+        outcome:
+          result.nin === input.identifier &&
+          result.ninInformationMatch &&
+          matchNinDetails(input.identity, result)
+            ? 'MATCH'
+            : 'REVIEW',
+      };
     }
     const dateOfBirth = dateParts(input.identity.dateOfBirth);
     if (!dateOfBirth) throw new Error('Invalid identity date');

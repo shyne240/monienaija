@@ -29,13 +29,12 @@ export interface BvnAccountInput {
   name: string;
 }
 export interface NinDetails {
+  nin: string;
   firstName: string;
   lastName: string;
   dateOfBirth: string;
-  gender?: string;
-  phoneNumber?: string;
-  /** Not proof that this person owns the identifier. */
-  ninInformationMatch?: boolean;
+  /** Monnify's NIN verification result; false is never upgraded by local field comparison. */
+  ninInformationMatch: boolean;
 }
 export interface MonnifyOptions {
   enabled?: boolean;
@@ -136,26 +135,23 @@ export class MonnifyVerificationProvider {
 
   async getNinDetails(nin: string): Promise<NinDetails> {
     if (!digits(nin, 11)) throw new MonnifyVerificationError('INVALID_INPUT');
-    const body = await this.verify('/api/v1/vas/nin-details', { nin });
+    const body = await this.verify('/api/v1/vas/nin-verification', { nin });
     if (
+      !digits(body.nin, 11) ||
+      body.nin !== nin ||
       !bounded(body.firstName, 150) ||
       !bounded(body.lastName, 150) ||
       !bounded(body.dateOfBirth, 32) ||
-      (body.gender !== undefined && !bounded(body.gender, 32)) ||
-      (body.phoneNumber !== undefined && !bounded(body.phoneNumber, 32)) ||
-      (body.ninInformationMatch !== undefined && typeof body.ninInformationMatch !== 'boolean')
+      typeof body.ninInformationMatch !== 'boolean'
     ) {
       throw new MonnifyVerificationError('OUTCOME_UNKNOWN');
     }
     return {
+      nin: body.nin,
       firstName: body.firstName,
       lastName: body.lastName,
       dateOfBirth: body.dateOfBirth,
-      ...(typeof body.gender === 'string' ? { gender: body.gender } : {}),
-      ...(typeof body.phoneNumber === 'string' ? { phoneNumber: body.phoneNumber } : {}),
-      ...(typeof body.ninInformationMatch === 'boolean'
-        ? { ninInformationMatch: body.ninInformationMatch }
-        : {}),
+      ninInformationMatch: body.ninInformationMatch,
     };
   }
 
