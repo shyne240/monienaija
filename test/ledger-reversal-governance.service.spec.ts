@@ -80,16 +80,22 @@ class MemoryManager {
   >();
   constructor(private readonly repositories: Map<unknown, MemoryRepository<ObjectLiteral>>) {}
 
-  query(sql: string, parameters: string[]): Promise<unknown[]> {
+  query(sql: string, parameters: unknown[] = []): Promise<unknown[]> {
+    // Protected decision/consumption evidence is written by SQL into a schema this in-memory
+    // double does not model; emulate the RETURNING row so the protected-authority contract is
+    // exercised here (the real database evidence is covered by the real-PostgreSQL suites).
+    if (/INSERT INTO protected_authority\.(checker_decisions|approval_consumptions)/.test(sql)) {
+      return Promise.resolve([{ approval_id: parameters[0] }]);
+    }
     if (sql.includes('INSERT INTO governed_ledger_reversal_executions')) {
-      this.executions.set(parameters[0]!, {
-        original_journal_id: parameters[1]!,
-        reversal_journal_id: parameters[2]!,
-        idempotency_key: parameters[3]!,
+      this.executions.set(String(parameters[0]), {
+        original_journal_id: String(parameters[1]),
+        reversal_journal_id: String(parameters[2]),
+        idempotency_key: String(parameters[3]),
       });
       return Promise.resolve([]);
     }
-    const item = this.executions.get(parameters[0]!);
+    const item = this.executions.get(String(parameters[0]));
     return Promise.resolve(item && item.original_journal_id === parameters[1] ? [item] : []);
   }
 
@@ -97,18 +103,6 @@ class MemoryManager {
     const repository = this.repositories.get(target);
     if (!repository) throw new Error('Unexpected repository');
     return repository as unknown as Repository<T>;
-  }
-
-  /**
-   * The protected decision/consumption evidence is written by SQL to a schema this in-memory
-   * double does not model. Emulate the RETURNING row so the service's protected-authority contract
-   * is exercised; the real database evidence is covered by the real-PostgreSQL suites.
-   */
-  query(sql: string, parameters: unknown[] = []): Promise<unknown[]> {
-    if (/INSERT INTO protected_authority\.(checker_decisions|approval_consumptions)/.test(sql)) {
-      return Promise.resolve([{ approval_id: parameters[0] }]);
-    }
-    return Promise.resolve([]);
   }
 }
 
