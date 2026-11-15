@@ -204,14 +204,20 @@ describe('NOTIFICATION-MIGRATION-UPGRADE-01 baseline upgrade (real PostgreSQL)',
           (SELECT count(*)::text FROM notification_templates) AS templates,
           (SELECT count(*)::text FROM notification_templates WHERE is_active AND version=1) AS active_templates
       `);
-    // 25 ordinary events each have EVENT/SMS/EMAIL rows; direct SECURITY retains two
-    // locked channels. New deposit/withdrawal controls start disabled; transfer.unknown
-    // inherits the earlier transfer.failed channel settings once during the upgrade.
+    // 25 ordinary events each have EVENT/SMS/EMAIL rows; direct SECURITY retains two locked
+    // channels. New deposit/withdrawal controls start disabled; transfer.unknown inherits the
+    // earlier transfer.failed channel settings once during the upgrade.
+    //
+    // Arena 4 added one SECURITY-class event, `customer.credentials.recovery_otp`
+    // (src/notification/notification-security.constants.ts), which the seeding migration reads from
+    // the constant list at run time: +2 configuration rows (SMS + EMAIL), +2 locked-security rows and
+    // +1 enabled SMS channel. Nothing was unlocked and no delivery channel was widened — the recovery
+    // OTP is locked and SMS-only exactly like the other three security events.
     expect(counts[0]).toEqual({
-      configs: '81',
-      sms_enabled: '24',
+      configs: '83',
+      sms_enabled: '25',
       email_enabled: '0',
-      locked_security: '6',
+      locked_security: '8',
       templates: '50',
       active_templates: '50',
     });

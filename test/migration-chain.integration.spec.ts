@@ -367,6 +367,10 @@ describe('institution 0400 historical upgrade (real PostgreSQL)', () => {
       const executed = await db.runMigrations({ transaction: 'all' });
       expect(executed.map((m) => m.name)).toEqual([
         'CreateInstitutionalFinancialOwnership1785753600401',
+        // Arena 4's customer credential recovery is a lower-numbered migration inside the
+        // institutional range, so the historical upgrade must apply it in timestamp order before the
+        // governance chain.
+        'CreateCustomerCredentialRecoveryChallenges1785753600402',
         'InstitutionGovernanceExecutionIntegrity1785753600500',
         'ProtectedAuthorityBoundary1785753600501',
         'ProtectedAuthorityInstitutionalOwnership1785753600502',
