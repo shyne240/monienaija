@@ -175,25 +175,28 @@ surfaces the customer app can reach are the governed wallet→wallet transfer an
 
 Reference date 2026-11-15 (UTC). Commands are reproduced in §C.8 and §F.
 
-### C.1 Backend PostgreSQL integration matrix — **153 files, 26 batches, 153 suites: PASS**
+### C.1 Backend PostgreSQL integration matrix — **153 files, 26 batches, 153/153 suites: PASS**
 
 `NODE_ENV=test DB_HOST=127.0.0.1 npm run test:pg:bounded`
 (`PG_TEST_CONCURRENCY=1 PG_TEST_BATCH_SIZE=6 PG_TEST_MAX_OLD_SPACE_MB=2560`)
 
-| Metric                                           | Result                                                                                |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| Files discovered / batches                       | 153 / 26                                                                              |
-| Suites passed on the first pass                  | **151**                                                                               |
-| Suites failed on the first pass                  | **2** (both expectation drift, see C.2)                                               |
-| Tests                                            | **2,750** total — 2,748 passed, 2 failed on the first pass; **2,750/2,750 after C.2** |
-| Runtime                                          | 60.7 min                                                                              |
-| Memory failures / timeouts / unexplained crashes | 0 / 0 / 0                                                                             |
-| Failing batches                                  | 2 (both re-run individually and green)                                                |
+| Metric                                           | Result                         |
+| ------------------------------------------------ | ------------------------------ |
+| Files discovered / batches executed              | 153 / 26                       |
+| Suites passed                                    | **153 / 153**                  |
+| Tests                                            | **2,750 / 2,750 passed**       |
+| Exit code                                        | **0**                          |
+| Runner-reported duration                         | 62.0 min (wall clock ≈ 83 min) |
+| Memory failures / timeouts / unexplained crashes | 0 / 0 / 0                      |
+| Failing batches                                  | 0                              |
 
-Arena 1's accepted baseline was 150 files / 2,722 tests. The three added files are
-`test/arena4-customer-journey.integration.spec.ts`, `test/arena4-customer-kyc-view.integration.spec.ts`
-and `test/stage10-recovery-migration.integration.spec.ts` (+28 net tests, plus the extra journeys added
-in this mission).
+This is the **final tree** (after the replayed customer application, the journey/rotation additions,
+the Stage 10 spec and the formatting-only commit) — not a pre-formatting snapshot.
+
+An earlier full pass on the pre-formatting tree reported **151 passed / 2 failed**; both failures were
+corrected expectation drift (§C.2), the two suites re-ran green, and the complete matrix above then
+passed with zero failures. Arena 1's accepted baseline was 150 files / 2,722 tests; this run adds the
+three customer/migration suites and the new journeys (+28 net tests).
 
 ### C.2 The two first-pass failures and their classification
 
@@ -298,11 +301,10 @@ ownership + customer trio + migration chain + Stage 10 + notification upgrade):
 | Flaky history (recorded, not hidden) | (1) First admin-web run _after_ formatting reported 2 failures in agent-classes tests (`Exceeded timeout of 5000 ms`, `Unable to find role="alert"`); the file passes in isolation and the full suite re-ran green 868/868. Load-induced, not a defect in the code under test. (2) An early `npm run lint` was OOM-killed while the PG matrix was running; it passes with 0 errors when run alone. |
 | Deliberate constraint                | No other suite was executed while the PG matrix was running, and the AST/JS-heavy smoke was not run concurrently with jest.                                                                                                                                                                                                                                                                        |
 
-The matrix was executed on the tree that these handoff commits describe, **before** the
-formatting-only commit; the formatting commit is whitespace/reflow-only and the security-critical
-group plus every suite-level gate (unit, admin, agent, customer, tsc, lint, build) was re-run on the
-post-formatting tree. The full 153-file matrix was not re-run a second time after formatting, and is
-not claimed to have been.
+The full matrix was executed **twice**: once before the formatting-only commit (151/153, with the two
+expectation-drift failures fixed and re-verified) and once on the final tree after it (153/153, 2,750
+tests, exit 0). The numbers in §C.1 are the final pass. Suite-level gates (unit, admin, agent,
+customer, tsc, lint, build, `npm ci`) were likewise re-run on the final tree.
 
 ### C.9 Stage 9 — visual acceptance: **NOT EXECUTED** (environment limitation)
 
