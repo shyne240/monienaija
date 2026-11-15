@@ -1,4 +1,5 @@
 import { NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
 import type {
   DataSource,
   DeepPartial,
@@ -187,6 +188,17 @@ interface InMemorySnapshot {
 class InMemoryDataSource {
   readonly isolationLevels: string[] = [];
   timeoutAfterCommitOnce = false;
+  /**
+   * Number of upcoming transactions that fail with PostgreSQL's `40001 serialization_failure`
+   * before the body runs. Used to exercise the bounded retry budget without a real server.
+   */
+  serializationFailuresRemaining = 0;
+  /**
+   * When set, the committed transfer is only visible to *later* reads (i.e. the recovery lookup
+   * after the retry budget is exhausted), simulating a competing identical request that commits
+   * while this request is giving up.
+   */
+  commitCompetingTransferOnFailure: Transfer | null = null;
 
   constructor(
     private readonly manager: InMemoryManager,
@@ -199,6 +211,22 @@ class InMemoryDataSource {
     callback: (manager: EntityManager) => Promise<T>,
   ): Promise<T> {
     this.isolationLevels.push(isolationLevel);
+    if (this.serializationFailuresRemaining > 0) {
+      this.serializationFailuresRemaining -= 1;
+      if (this.serializationFailuresRemaining === 0 && this.commitCompetingTransferOnFailure) {
+        const competing = this.commitCompetingTransferOnFailure;
+        this.commitCompetingTransferOnFailure = null;
+        competing.id = competing.id ?? '00000000-0000-4000-8000-0000000000aa';
+        await this.manager
+          .getRepository(Transfer)
+          .save(competing as unknown as DeepPartial<Transfer>);
+      }
+      throw new QueryFailedError(
+        'COMMIT',
+        [],
+        Object.assign(new Error('could not serialize access'), { code: '40001' }),
+      );
+    }
     const snapshot = this.snapshotState();
     let committed = false;
     try {
@@ -426,6 +454,57 @@ describe('TransferService', () => {
     await expect(
       fixture.service.createTransfer(transferCommand({ amountMinor: '50001' })),
     ).rejects.toMatchObject({ status: 409 });
+    expect(fixture.transfers.records.size).toBe(1);
+    expect(fixture.ledger.calls).toHaveLength(1);
+  });
+
+  it('recovers the committed result when the retry budget is exhausted by a competing request', async () => {
+    // A real committed transfer from an identical command supplies the recorded request hash.
+    const probe = makeFixture();
+    await probe.service.createTransfer(transferCommand());
+    const committed = [...probe.transfers.records.values()][0]!;
+
+    const fixture = makeFixture();
+    // A competing identical request commits while this one exhausts its attempts.
+    fixture.dataSource.commitCompetingTransferOnFailure = Object.assign(new Transfer(), {
+      ...committed,
+      id: '00000000-0000-4000-8000-0000000000aa',
+      idempotencyKey: committed.idempotencyKey,
+      requestHash: committed.requestHash,
+      status: TransferStatus.COMPLETED,
+    });
+    fixture.dataSource.serializationFailuresRemaining = 3;
+
+    const recovered = await fixture.service.createTransfer(transferCommand());
+
+    expect(recovered.id).toBe('00000000-0000-4000-8000-0000000000aa');
+    expect(recovered.status).toBe(TransferStatus.COMPLETED);
+    // Exactly one financial operation exists; this request posted nothing of its own.
+    expect(fixture.transfers.records.size).toBe(1);
+    expect(fixture.ledger.calls).toHaveLength(0);
+    expect(fixture.dataSource.isolationLevels).toHaveLength(3);
+  });
+
+  it('stays a retryable contention conflict when nothing committed', async () => {
+    const fixture = makeFixture();
+    fixture.dataSource.serializationFailuresRemaining = 3;
+
+    await expect(fixture.service.createTransfer(transferCommand())).rejects.toMatchObject({
+      status: 409,
+      code: 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED',
+    });
+    expect(fixture.transfers.records.size).toBe(0);
+    expect(fixture.ledger.calls).toHaveLength(0);
+  });
+
+  it('rejects an exhausted retry that reuses the key for a different payload', async () => {
+    const fixture = makeFixture();
+    await fixture.service.createTransfer(transferCommand());
+    fixture.dataSource.serializationFailuresRemaining = 3;
+
+    const reuse = fixture.service.createTransfer(transferCommand({ amountMinor: '50001' }));
+    await expect(reuse).rejects.toMatchObject({ status: 409 });
+    await expect(reuse).rejects.toThrow('another transfer');
     expect(fixture.transfers.records.size).toBe(1);
     expect(fixture.ledger.calls).toHaveLength(1);
   });

@@ -161,7 +161,11 @@ export class TransferService {
           // V1-LIMIT-05 test harness's own transient-contention retry wrapper) can distinguish
           // "transient contention, safe to retry the whole request" from a final/permanent
           // conflict, without ever re-exposing the raw PostgreSQL SQLSTATE or driver error type.
-          throw this.transactionContentionExhaustedException();
+          // Before that code is returned, the post-loop recovery below gets one chance to find
+          // the completed result of a competing identical request. Leaving the loop (rather than
+          // throwing here) is what allows that read; when it finds nothing, the same conflict is
+          // still what the caller receives.
+          break;
         }
 
         if (this.isConstraintViolation(error, 'uq_transfers_idempotency_key')) {
@@ -184,7 +188,17 @@ export class TransferService {
     }
 
     if (!result) {
-      throw this.transactionContentionExhaustedException();
+      // V1-IDEMPOTENCY-CONTENTION: the bounded budget above is deliberately small, so a request
+      // that loses every attempt to a genuine serialization failure still has a defined outcome
+      // when its operation has already been completed by a competing identical request. Recovery
+      // reuses the same idempotency authority the unique-constraint path uses: the committed
+      // transfer is the single financial operation, so returning it can never post a second
+      // journal, and a payload that does not match the committed request hash stays a conflict.
+      // Only when NO committed result exists does the exhaustion remain a retryable 409.
+      result = await this.recoverCommittedResult(normalized);
+      if (!result) {
+        throw this.transactionContentionExhaustedException();
+      }
     }
 
     if (result.failure) {
@@ -1055,6 +1069,42 @@ export class TransferService {
   // machine code (`TRANSACTION_CONTENTION_RETRY_EXHAUSTED`) set as both `error` and `code` in
   // the response body, plus `.code` directly on the exception instance, so a caller never has
   // to parse a free-text message to recognize "safe to retry the whole request".
+  /**
+   * Looks up an already-committed transfer for this idempotency key after the serializable retry
+   * budget was exhausted.
+   *
+   * A competing identical request that won its own attempt may still be committing when this
+   * request gives up (the winner's commit is a few milliseconds behind the loser's third
+   * serialization failure), so the lookup is repeated within a small, fixed budget instead of
+   * doubling the transaction retries. Waiting can never create a second financial operation: this
+   * method only reads. When nothing has been committed by the end of the budget the caller still
+   * surfaces the retryable `TRANSACTION_CONTENTION_RETRY_EXHAUSTED` conflict, and a payload that
+   * differs from the committed request remains a conflict — both identical to the
+   * unique-constraint recovery path.
+   */
+  private async recoverCommittedResult(
+    normalized: NormalizedTransfer,
+  ): Promise<TransferTransactionResult | undefined> {
+    // 5 reads at 20/40/60/80 ms ≈ 200 ms of total waiting — bounded, and far below the caller's
+    // own timeout. Nothing here retries a write.
+    const delaysMs = [20, 40, 60, 80];
+    for (let attempt = 0; ; attempt += 1) {
+      const existing = await this.transferRepository.findOne({
+        where: { idempotencyKey: normalized.idempotencyKey },
+      });
+      if (existing) {
+        if (existing.requestHash !== normalized.requestHash) {
+          throw new ConflictException('The idempotency key was already used for another transfer');
+        }
+        return { transferId: existing.id };
+      }
+      if (attempt >= delaysMs.length) {
+        return undefined;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delaysMs[attempt]));
+    }
+  }
+
   private transactionContentionExhaustedException(): ConflictException {
     const code = 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED';
     const message = 'The transfer could not be completed after concurrent retries';
