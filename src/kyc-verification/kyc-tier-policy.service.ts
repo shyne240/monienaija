@@ -2,9 +2,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { DataSource, EntityManager } from 'typeorm';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import type { AuthorizationService } from '../authorization/authorization.service';
+import type { ProtectedAuthorityService } from '../authorization/protected-authority.service';
 import { canonical } from '../authorization/workforce-crypto';
 import { UUID } from './kyc-orchestrator';
 import { KycFoundationError } from './kyc.types';
+import { appendKycGovernanceDecision } from './kyc-governance-authority';
 import { decideTier, type TierDecisionPolicy, type TierRequirements } from './kyc-tier-decision';
 
 type Pair = { LEVEL_1: TierRequirements; LEVEL_2: TierRequirements };
@@ -83,7 +85,11 @@ export class KycTierPolicyService {
   constructor(
     private readonly db: DataSource,
     private readonly auth: AuthorizationService,
+    private readonly protectedAuthority?: ProtectedAuthorityService,
   ) {}
+  private get authoritySource(): DataSource {
+    return this.protectedAuthority?.dataSource ?? this.db;
+  }
   private async authorize(
     principal: AuthorizationPrincipal | undefined,
     mode: 'view' | 'propose' | 'approve',
@@ -112,6 +118,12 @@ export class KycTierPolicyService {
     );
     if (!d.allowed) throw new KycFoundationError('BLOCKED');
     return principal;
+  }
+  private async lockPolicy(m: EntityManager, mode: 'SHARE' | 'UPDATE'): Promise<void> {
+    const functionName = mode === 'UPDATE' ? 'pg_advisory_xact_lock' : 'pg_advisory_xact_lock_shared';
+    await m.query(
+      `SELECT ${functionName}(hashtext(current_schema()),hashtext('monienaija:kyc-tier-policy-v1'))`,
+    );
   }
   private async head(m: EntityManager): Promise<number> {
     const rows = await m.query<Array<{ version: number }>>(
@@ -170,7 +182,8 @@ export class KycTierPolicyService {
     )
       throw new KycFoundationError('INVALID');
     const definition = validateTierPolicyDefinition(cmd.definition);
-    return this.db.transaction(async (m) => {
+    return this.authoritySource.transaction(async (m) => {
+      await this.lockPolicy(m, 'UPDATE');
       const head = await this.head(m);
       const rows = await m.query<
         Array<{ id: string; maker_id: string; expected_version: number; definition: unknown }>
@@ -208,7 +221,8 @@ export class KycTierPolicyService {
   async decide(principal: AuthorizationPrincipal | undefined, id: string, approve: boolean) {
     const actor = await this.authorize(principal, 'approve');
     if (!UUID.test(id) || typeof approve !== 'boolean') throw new KycFoundationError('INVALID');
-    return this.db.transaction(async (m) => {
+    return this.authoritySource.transaction(async (m) => {
+      await this.lockPolicy(m, 'UPDATE');
       const head = await this.head(m);
       const rows = await m.query<
         Array<{
@@ -233,17 +247,22 @@ export class KycTierPolicyService {
       if (p.fingerprint !== hash(p.request_id, p.expected_version, p.maker_id, definition))
         throw new KycFoundationError('CONFLICT');
       const state = approve ? 'APPROVED' : 'REJECTED';
+      const decidedAt = await appendKycGovernanceDecision(m, 'TIER_POLICY', id, state, actor);
       await m.query(
-        'UPDATE kyc_tier_policy_proposals SET state=$1,checker_id=$2,checker_session_id=$3,decided_at=clock_timestamp() WHERE id=$4',
-        [state, actor.principalId, actor.sessionId, id],
+        'UPDATE kyc_tier_policy_proposals SET state=$1,checker_id=$2,checker_session_id=$3,decided_at=$4 WHERE id=$5',
+        [state, actor.principalId, actor.sessionId, decidedAt, id],
       );
       if (!approve) return { version: head, state };
       const version = head + 1;
-      await m.query('UPDATE kyc_tier_policy_head SET version=$1 WHERE singleton=true', [version]);
       await m.query(
         'INSERT INTO kyc_tier_policy_versions(version,proposal_id,definition,maker_id,checker_id) VALUES($1,$2,$3::jsonb,$4,$5)',
         [version, id, JSON.stringify(definition), p.maker_id, actor.principalId],
       );
+      const published = await m.query<Array<{ version: number }>>(
+        'WITH published AS (UPDATE kyc_tier_policy_head SET version=$1,last_proposal_id=$2 WHERE singleton=true AND version=$3 RETURNING version) SELECT version FROM published',
+        [version, id, head],
+      );
+      if (published.length !== 1) throw new KycFoundationError('CONFLICT');
       await m.query(`INSERT INTO kyc_evaluation_refresh(customer_id) SELECT DISTINCT customer_id FROM kyc_tier_evaluations
         ON CONFLICT(customer_id) DO UPDATE SET revision=kyc_evaluation_refresh.revision+1,requested_at=clock_timestamp(),retry_after=clock_timestamp()`);
       return { version, state };
@@ -253,8 +272,9 @@ export class KycTierPolicyService {
   async effective(m: EntityManager, now: Date): Promise<TierDecisionPolicy | null> {
     if (!(now instanceof Date) || !Number.isFinite(now.getTime()))
       throw new KycFoundationError('INVALID');
+    await this.lockPolicy(m, 'SHARE');
     const head = await m.query<Array<{ version: number }>>(
-      'SELECT version FROM kyc_tier_policy_head WHERE singleton=true FOR SHARE',
+      'SELECT version FROM kyc_tier_policy_head WHERE singleton=true',
     );
     if (!head[0] || !Number.isSafeInteger(head[0].version))
       throw new KycFoundationError('DISABLED');

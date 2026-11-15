@@ -9,6 +9,11 @@
 - `1785753600501-ProtectedAuthorityBoundary` uses the same user-authorized `1785753600500`–`1785753600599` exception. It depends on `1785753600400`/`1785753600500` and preserves every published identifier; no migration was renumbered. It reuses 0500's evidence tables and adds `protected_authority` (schema, checker decisions, approval consumptions, refusal triggers, row level security, role grants).
 - The 0500-series reservation remains limited to this institutional correction; it is not a general-purpose allocation. Re-check the register and all live Arena branch heads before release.
 
+## ARENA 3 KYC provider/tier protected authority
+
+- Reserved and used `1785753600300-KycGovernanceProtectedAuthority` for the KYC governance boundary. The complete repository migration inventory was checked before finalizing this identifier; it is within Arena 3's `0300`–`0399` range and does not renumber or replace any published migration. The migration reuses existing provider/tier proposal tables and the shared `protected_authority` schema.
+- Keep `0500`–`0599` limited to the previously authorized institutional-governance correction; this KYC migration does not use that exception. Recheck the complete migration registry and all live Arena branch heads before release.
+
 ## ARENA 4 Phase 2 integration
 
 - `1785753600401-CreateInstitutionalFinancialOwnership` (source pins `1cf6ac75b18a2af68dfbd33389d1f2e5fb7f32f2`, `684271e9d972edc629d629b73e66cd719d759117`) is integrated inside its published range. It is additive: institution ownership columns, enrolment/attribution tables and guards.

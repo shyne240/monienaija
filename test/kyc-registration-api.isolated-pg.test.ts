@@ -4,6 +4,7 @@ import { RegistrationSyntheticProvider } from '../src/kyc-verification/kyc-regis
 import { KycProviderGovernance1785753600109 } from '../src/migrations/1785753600109-KycProviderGovernance';
 import { KycProviderGovernanceService } from '../src/kyc-verification/kyc-provider-governance.service';
 import { AuthorizationService } from '../src/authorization/authorization.service';
+import { ProtectedAuthorityService } from '../src/authorization/protected-authority.service';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { MODULE_METADATA } from '@nestjs/common/constants';
@@ -168,6 +169,7 @@ beforeAll(async () => {
           record: jest.fn().mockResolvedValue(undefined),
         } as never),
       },
+      { provide: ProtectedAuthorityService, useValue: new ProtectedAuthorityService(db) },
       { provide: NOTIFICATION_PROVIDER_TOKEN, useValue: sms },
       { provide: A2SecurityRateLimitService, useValue: limiter },
       { provide: REGISTRATION_SYNTHETIC_PROVIDER, useValue: provider },

@@ -28,6 +28,7 @@ import { CustomerRegistrationController } from './customer-registration.controll
 import { CustomerRegistrationService } from './customer-registration.service';
 import { DataSource } from 'typeorm';
 import { AuthorizationService } from '../authorization/authorization.service';
+import { ProtectedAuthorityService } from '../authorization/protected-authority.service';
 import { KycProviderGovernanceController } from '../kyc-verification/kyc-provider-governance.controller';
 import { KycProviderGovernanceService } from '../kyc-verification/kyc-provider-governance.service';
 import { A2SecurityRateLimitService } from '../authorization/security-rate-limit.service';
@@ -124,9 +125,12 @@ import type { KycProvider } from '../kyc-verification/kyc.types';
     { provide: REGISTRATION_SYNTHETIC_PROVIDER, useClass: RegistrationSyntheticProvider },
     {
       provide: KycProviderGovernanceService,
-      inject: [DataSource, AuthorizationService],
-      useFactory: (db: DataSource, auth: AuthorizationService) =>
-        new KycProviderGovernanceService(db, auth),
+      inject: [DataSource, AuthorizationService, ProtectedAuthorityService],
+      useFactory: (
+        db: DataSource,
+        auth: AuthorizationService,
+        protectedAuthority: ProtectedAuthorityService,
+      ) => new KycProviderGovernanceService(db, auth, protectedAuthority),
     },
     {
       provide: KycRegistrationVerificationService,

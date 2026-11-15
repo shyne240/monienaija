@@ -35,7 +35,16 @@ REVOKE INSERT, UPDATE, DELETE ON public.local_admin_credentials FROM monienaija_
 REVOKE INSERT, UPDATE, DELETE ON public.authorization_roles FROM monienaija_runtime;
 REVOKE INSERT, UPDATE, DELETE ON public.authorization_functions FROM monienaija_runtime;
 REVOKE INSERT, UPDATE, DELETE ON public.authorization_role_functions FROM monienaija_runtime;
-REVOKE INSERT, UPDATE, DELETE ON public.governed_institution_lifecycle_executions
+-- KYC provider routing and tier policy publication use the credential-separated authority.
+-- Runtime retains read-only access for customer/admin projections but cannot forge proposals,
+-- checker decisions, published configuration, or policy versions through ordinary SQL.
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.kyc_provider_configuration FROM monienaija_runtime;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.kyc_provider_change_proposals FROM monienaija_runtime;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.kyc_provider_configuration_history FROM monienaija_runtime;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.kyc_tier_policy_head FROM monienaija_runtime;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.kyc_tier_policy_proposals FROM monienaija_runtime;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.kyc_tier_policy_versions FROM monienaija_runtime;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.governed_institution_lifecycle_executions
   FROM monienaija_runtime;
 REVOKE INSERT, UPDATE, DELETE ON public.institution_affiliation_transition_evidence
   FROM monienaija_runtime;

@@ -1,0 +1,177 @@
+.kyc-governance-screen {
+  display: grid;
+  gap: 18px;
+  width: 100%;
+  min-width: 0;
+  color: var(--mn-text-primary, #1c2b25);
+}
+
+.kyc-governance-notices {
+  display: grid;
+  gap: 10px;
+}
+
+.kyc-governance-card {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: clamp(16px, 2.5vw, 24px);
+  border: 1px solid var(--mn-border-subtle, #d7e1dc);
+  border-radius: var(--mn-radius-lg, 14px);
+  background: var(--mn-surface-raised, #fff);
+  box-shadow: var(--mn-shadow-1, 0 2px 8px rgb(16 36 27 / 5%));
+}
+
+.kyc-governance-card__heading,
+.kyc-provider-status__title,
+.kyc-governance-list-item__heading,
+.kyc-governance-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.kyc-governance-card__heading h2,
+.kyc-provider-status h3 {
+  margin: 0;
+}
+
+.kyc-governance-card__heading p,
+.kyc-provider-status p,
+.kyc-governance-list-item p {
+  margin: 6px 0 0;
+  color: var(--mn-text-secondary, #52655f);
+}
+
+.kyc-provider-readiness-grid,
+.kyc-provider-form-grid,
+.kyc-policy-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.kyc-provider-status,
+.kyc-provider-fieldset,
+.kyc-policy-group {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--mn-border-subtle, #d7e1dc);
+  border-radius: var(--mn-radius-md, 10px);
+  background: var(--mn-surface-base, #f8faf9);
+}
+
+.kyc-provider-fieldset,
+.kyc-policy-group {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  margin: 0;
+}
+
+.kyc-provider-fieldset legend,
+.kyc-policy-group legend {
+  padding: 0 6px;
+  font-weight: 700;
+  color: var(--mn-text-primary, #1c2b25);
+}
+
+.kyc-governance-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+
+.kyc-governance-check {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 9px;
+  line-height: 1.45;
+}
+
+.kyc-governance-check input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--mn-action-primary, #0a3d25);
+}
+
+.kyc-governance-muted {
+  color: var(--mn-text-secondary, #52655f);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.kyc-governance-actions {
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.kyc-governance-list {
+  display: grid;
+  gap: 12px;
+}
+
+.kyc-governance-list-item {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--mn-border-subtle, #d7e1dc);
+  border-radius: var(--mn-radius-md, 10px);
+}
+
+.kyc-governance-list-item dl {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.25fr) minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.kyc-governance-list-item dt {
+  color: var(--mn-text-secondary, #52655f);
+  font-weight: 600;
+}
+
+.kyc-governance-list-item dd {
+  margin: 0;
+}
+
+.kyc-governance-list-item pre {
+  max-width: 100%;
+  margin: 10px 0 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.kyc-policy-group textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.kyc-policy-confirmation {
+  padding: 14px;
+  border: 1px solid var(--mn-border-strong, #b6c7be);
+  border-radius: var(--mn-radius-md, 10px);
+  background: var(--mn-surface-base, #f8faf9);
+}
+
+@media (max-width: 760px) {
+  .kyc-provider-readiness-grid,
+  .kyc-provider-form-grid,
+  .kyc-policy-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .kyc-governance-card__heading {
+    align-items: flex-start;
+  }
+
+  .kyc-governance-list-item dl {
+    grid-template-columns: minmax(92px, 0.35fr) minmax(0, 1fr);
+  }
+}

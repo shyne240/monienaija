@@ -45,11 +45,14 @@ interface RuntimePrivileges {
   protected_objects_present: boolean;
   approval_rls: boolean;
   guard_trigger: boolean;
+  kyc_governance_write: boolean;
+  kyc_governance_guard: boolean;
 }
 
 interface AuthorityPrivileges {
   decision_write: boolean;
   consumption_write: boolean;
+  kyc_governance_write: boolean;
   authority_member: boolean;
   db_owner_member: boolean;
   public_schema_owner_member: boolean;
@@ -164,7 +167,8 @@ export class ProtectedAuthorityService implements OnApplicationShutdown {
           authorityRole.authority_member &&
             authorityPrivileges.authority_member &&
             authorityPrivileges.decision_write &&
-            authorityPrivileges.consumption_write,
+            authorityPrivileges.consumption_write &&
+            authorityPrivileges.kyc_governance_write,
           'authority role cannot write protected checker evidence',
         ),
         protectedObjectsPresent: check(
@@ -214,9 +218,13 @@ export class ProtectedAuthorityService implements OnApplicationShutdown {
           !runtimePrivileges.evidence_write,
           'runtime role can write trigger-generated execution evidence',
         ),
+        runtimeCannotWriteKycGovernance: check(
+          !runtimePrivileges.kyc_governance_write,
+          'runtime role can forge KYC proposals, checker decisions or published policy/configuration',
+        ),
         guardTriggerInstalled: check(
-          runtimePrivileges.guard_trigger,
-          'protected approval guard trigger missing',
+          runtimePrivileges.guard_trigger && runtimePrivileges.kyc_governance_guard,
+          'protected approval or KYC governance guard trigger missing',
         ),
       };
       const failed = Object.entries(checks).filter(([, value]) => !value.ok);
@@ -298,14 +306,60 @@ const runtimePrivilegesSql = `
           WHERE a.privilege_type='EXECUTE'
             AND (a.grantee=0 OR a.grantee=(SELECT oid FROM pg_roles WHERE rolname=session_user)))))
       AS protected_function_execute,
-    EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+    (SELECT count(*)=3 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
       WHERE n.nspname='protected_authority'
-        AND c.relname IN ('checker_decisions','approval_consumptions'))
+        AND c.relname IN ('checker_decisions','approval_consumptions','kyc_governance_decisions'))
       AS protected_objects_present,
     COALESCE((SELECT c.relrowsecurity AND c.relforcerowsecurity FROM pg_class c
       WHERE c.oid = to_regclass('public.privileged_action_approvals')), false) AS approval_rls,
     EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgname='privileged_action_approval_authority_guard'
-      AND NOT t.tgisinternal) AS guard_trigger`;
+      AND NOT t.tgisinternal) AS guard_trigger,
+    (EXISTS (
+      SELECT 1 FROM unnest(ARRAY[
+        'kyc_provider_configuration','kyc_provider_change_proposals',
+        'kyc_provider_configuration_history','kyc_tier_policy_head',
+        'kyc_tier_policy_proposals','kyc_tier_policy_versions'
+      ]) AS kyc_tables(table_name)
+      WHERE has_table_privilege(session_user,format('%I.%I',current_schema(),kyc_tables.table_name),'INSERT')
+        OR has_table_privilege(session_user,format('%I.%I',current_schema(),kyc_tables.table_name),'UPDATE')
+        OR has_table_privilege(session_user,format('%I.%I',current_schema(),kyc_tables.table_name),'DELETE')
+        OR has_table_privilege(session_user,format('%I.%I',current_schema(),kyc_tables.table_name),'TRUNCATE')
+        OR has_table_privilege(session_user,format('%I.%I',current_schema(),kyc_tables.table_name),'REFERENCES')
+        OR has_table_privilege(session_user,format('%I.%I',current_schema(),kyc_tables.table_name),'TRIGGER')
+    ) OR COALESCE((SELECT has_table_privilege(session_user,c.oid,'INSERT')
+        OR has_table_privilege(session_user,c.oid,'UPDATE')
+        OR has_table_privilege(session_user,c.oid,'DELETE')
+        OR has_table_privilege(session_user,c.oid,'TRUNCATE')
+        OR has_table_privilege(session_user,c.oid,'REFERENCES')
+        OR has_table_privilege(session_user,c.oid,'TRIGGER')
+        FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname='protected_authority' AND c.relname='kyc_governance_decisions'),false)) AS kyc_governance_write,
+    (SELECT count(*)=7 FROM pg_trigger t
+      JOIN pg_class c ON c.oid=t.tgrelid
+      JOIN pg_namespace n ON n.oid=c.relnamespace
+      WHERE NOT t.tgisinternal AND (
+        (n.nspname=current_schema() AND c.relname='kyc_provider_change_proposals'
+          AND t.tgname='kyc_provider_proposal_authority_guard'
+          AND t.tgfoid='protected_authority.kyc_proposal_transition_guard()'::regprocedure)
+        OR (n.nspname=current_schema() AND c.relname='kyc_tier_policy_proposals'
+          AND t.tgname='kyc_tier_proposal_authority_guard'
+          AND t.tgfoid='protected_authority.kyc_proposal_transition_guard()'::regprocedure)
+        OR (n.nspname=current_schema() AND c.relname='kyc_provider_configuration'
+          AND t.tgname='kyc_provider_configuration_authority_guard'
+          AND t.tgfoid='protected_authority.kyc_provider_configuration_guard()'::regprocedure)
+        OR (n.nspname=current_schema() AND c.relname='kyc_provider_configuration_history'
+          AND t.tgname='kyc_provider_history_authority_guard'
+          AND t.tgfoid='protected_authority.kyc_provider_history_guard()'::regprocedure)
+        OR (n.nspname=current_schema() AND c.relname='kyc_tier_policy_versions'
+          AND t.tgname='kyc_tier_version_authority_guard'
+          AND t.tgfoid='protected_authority.kyc_tier_version_guard()'::regprocedure)
+        OR (n.nspname=current_schema() AND c.relname='kyc_tier_policy_head'
+          AND t.tgname='kyc_tier_head_authority_guard'
+          AND t.tgfoid='protected_authority.kyc_tier_head_guard()'::regprocedure)
+        OR (n.nspname='protected_authority' AND c.relname='kyc_governance_decisions'
+          AND t.tgname='kyc_governance_decisions_immutable'
+          AND t.tgfoid='protected_authority.kyc_governance_decision_guard()'::regprocedure)
+      )) AS kyc_governance_guard`;
 
 const authorityPrivilegesSql = `
   SELECT
@@ -315,12 +369,21 @@ const authorityPrivilegesSql = `
     (SELECT has_table_privilege(session_user, c.oid, 'INSERT') FROM pg_class c
       JOIN pg_namespace n ON n.oid=c.relnamespace
       WHERE n.nspname='protected_authority' AND c.relname='approval_consumptions') AS consumption_write,
+    ((SELECT has_table_privilege(session_user, c.oid, 'INSERT') FROM pg_class c
+      JOIN pg_namespace n ON n.oid=c.relnamespace
+      WHERE n.nspname='protected_authority' AND c.relname='kyc_governance_decisions')
+      AND has_table_privilege(session_user,format('%I.%I',current_schema(),'kyc_provider_configuration'),'UPDATE')
+      AND has_table_privilege(session_user,format('%I.%I',current_schema(),'kyc_tier_policy_head'),'UPDATE')
+      AND has_table_privilege(session_user,format('%I.%I',current_schema(),'kyc_tier_evaluations'),'SELECT')
+      AND has_table_privilege(session_user,format('%I.%I',current_schema(),'kyc_evaluation_refresh'),'INSERT')
+      AND has_table_privilege(session_user,format('%I.%I',current_schema(),'kyc_evaluation_refresh'),'UPDATE')) AS kyc_governance_write,
     EXISTS (SELECT 1 FROM pg_roles a WHERE a.rolname='monienaija_authority_core'
       AND pg_has_role(session_user, a.oid, 'MEMBER')) AS authority_member,
     pg_has_role(session_user,
       (SELECT datdba FROM pg_database WHERE datname=current_database()), 'MEMBER') AS db_owner_member,
     pg_has_role(session_user,
       (SELECT nspowner FROM pg_namespace WHERE nspname='public'), 'MEMBER') AS public_schema_owner_member,
-    EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-      WHERE n.nspname='protected_authority' AND c.relname='checker_decisions')
+    (SELECT count(*)=3 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+      WHERE n.nspname='protected_authority'
+        AND c.relname IN ('checker_decisions','approval_consumptions','kyc_governance_decisions'))
       AS protected_objects_present`;

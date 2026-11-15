@@ -3,10 +3,12 @@ import type { DataSource, EntityManager } from 'typeorm';
 import type { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { canonical } from '../authorization/workforce-crypto';
+import type { ProtectedAuthorityService } from '../authorization/protected-authority.service';
+import { appendKycGovernanceDecision } from './kyc-governance-authority';
 import { KycFoundationError, type IdentityKind } from './kyc.types';
 import { UUID } from './kyc-orchestrator';
 
-export type ProviderCode = 'MONNIFY' | 'SYNTHETIC';
+export type ProviderCode = 'MONNIFY' | 'DOJAH' | 'SYNTHETIC';
 type ProviderSetting = { enabled: boolean; capabilities: IdentityKind[] };
 type Route = { primary: ProviderCode | null; fallback: ProviderCode | null };
 export type ProviderConfiguration = {
@@ -18,7 +20,7 @@ type Reason = 'INITIAL_SETUP' | 'ROUTING_CHANGE' | 'PROVIDER_DISABLE';
 const fingerprint = (
   requestId: string,
   version: number,
-  configuration: ProviderConfiguration,
+  configuration: unknown,
   reason: string,
   maker: string,
 ) =>
@@ -34,13 +36,18 @@ const keys = (o: unknown, names: string[]): o is Record<string, unknown> =>
 export function validateProviderConfiguration(value: unknown): ProviderConfiguration {
   if (
     !keys(value, ['providers', 'routes']) ||
-    !keys(value.providers, ['MONNIFY', 'SYNTHETIC']) ||
+    !(
+      keys(value.providers, ['MONNIFY', 'SYNTHETIC']) ||
+      keys(value.providers, ['DOJAH', 'MONNIFY', 'SYNTHETIC'])
+    ) ||
     !keys(value.routes, ['BVN', 'NIN'])
   )
     throw new KycFoundationError('INVALID');
   const providers = {} as Record<ProviderCode, ProviderSetting>;
-  for (const code of ['MONNIFY', 'SYNTHETIC'] as const) {
-    const p = value.providers[code];
+  for (const code of ['MONNIFY', 'DOJAH', 'SYNTHETIC'] as const) {
+    // The two-provider shape is the immutable migration-seeded and historical format. Accept it
+    // as a read-compatible legacy snapshot and normalize the absent alternative to disabled.
+    const p = value.providers[code] ?? { enabled: false, capabilities: [] };
     if (
       !keys(p, ['enabled', 'capabilities']) ||
       typeof p.enabled !== 'boolean' ||
@@ -59,8 +66,8 @@ export function validateProviderConfiguration(value: unknown): ProviderConfigura
     const r = value.routes[kind];
     if (
       !keys(r, ['primary', 'fallback']) ||
-      ![null, 'MONNIFY', 'SYNTHETIC'].includes(r.primary as ProviderCode | null) ||
-      ![null, 'MONNIFY', 'SYNTHETIC'].includes(r.fallback as ProviderCode | null) ||
+      ![null, 'MONNIFY', 'DOJAH', 'SYNTHETIC'].includes(r.primary as ProviderCode | null) ||
+      ![null, 'MONNIFY', 'DOJAH', 'SYNTHETIC'].includes(r.fallback as ProviderCode | null) ||
       (r.primary !== null && r.primary === r.fallback) ||
       (r.primary === null && r.fallback !== null)
     )
@@ -82,10 +89,17 @@ export function validateProviderConfiguration(value: unknown): ProviderConfigura
     throw new KycFoundationError('INVALID');
   return { providers, routes };
 }
-/** Monnify's documented operations are candidates only; account entitlement/contracts/credentials are not established. */
+/** Publicly documented operations are candidates only; account entitlement/contracts/credentials are not established. */
 export const KYC_PROVIDER_CATALOGUE = [
   {
     code: 'MONNIFY',
+    candidateCapabilities: ['BVN', 'NIN'],
+    confirmedCapabilities: [],
+    testOnly: false,
+    ready: false,
+  },
+  {
+    code: 'DOJAH',
     candidateCapabilities: ['BVN', 'NIN'],
     confirmedCapabilities: [],
     testOnly: false,
@@ -103,7 +117,11 @@ export class KycProviderGovernanceService {
   constructor(
     private readonly db: DataSource,
     private readonly auth: AuthorizationService,
+    private readonly protectedAuthority?: ProtectedAuthorityService,
   ) {}
+  private get authoritySource(): DataSource {
+    return this.protectedAuthority?.dataSource ?? this.db;
+  }
   private async authorize(
     principal: AuthorizationPrincipal | undefined,
     mode: 'view' | 'propose' | 'approve',
@@ -133,9 +151,17 @@ export class KycProviderGovernanceService {
     if (!decision.allowed) throw new KycFoundationError('BLOCKED');
     return principal;
   }
+  private async lockRoutes(m: EntityManager, mode: 'SHARE' | 'UPDATE'): Promise<void> {
+    const functionName =
+      mode === 'UPDATE' ? 'pg_advisory_xact_lock' : 'pg_advisory_xact_lock_shared';
+    await m.query(
+      `SELECT ${functionName}(hashtext(current_schema()),hashtext('monienaija:kyc-provider-route-v1'))`,
+    );
+  }
   private async snapshot(m: EntityManager, lock: 'SHARE' | 'UPDATE'): Promise<Snapshot> {
+    const lockClause = lock === 'UPDATE' ? ' FOR UPDATE' : '';
     const rows = await m.query<Array<{ version: number; configuration: unknown }>>(
-      `SELECT version,configuration FROM kyc_provider_configuration WHERE singleton=true FOR ${lock}`,
+      `SELECT version,configuration FROM kyc_provider_configuration WHERE singleton=true${lockClause}`,
     );
     if (!rows[0] || !Number.isSafeInteger(rows[0].version) || rows[0].version < 0)
       throw new KycFoundationError('DISABLED');
@@ -209,7 +235,8 @@ export class KycProviderGovernanceService {
     )
       throw new KycFoundationError('INVALID');
     const configuration = validateProviderConfiguration(command.configuration);
-    return this.db.transaction(async (m) => {
+    return this.authoritySource.transaction(async (m) => {
+      await this.lockRoutes(m, 'UPDATE');
       const current = await this.snapshot(m, 'UPDATE');
       const prior = await m.query<
         Array<{
@@ -229,7 +256,7 @@ export class KycProviderGovernanceService {
           p.maker_id !== actor.principalId ||
           p.expected_version !== command.expectedVersion ||
           p.reason_code !== command.reason ||
-          canonical(p.configuration) !== canonical(configuration)
+          canonical(validateProviderConfiguration(p.configuration)) !== canonical(configuration)
         )
           throw new KycFoundationError('CONFLICT');
         return { id: p.id, replay: true };
@@ -265,7 +292,8 @@ export class KycProviderGovernanceService {
   ): Promise<{ version: number; state: 'APPROVED' | 'REJECTED' }> {
     const actor = await this.authorize(principal, 'approve');
     if (!UUID.test(id) || typeof approve !== 'boolean') throw new KycFoundationError('INVALID');
-    return this.db.transaction(async (m) => {
+    return this.authoritySource.transaction(async (m) => {
+      await this.lockRoutes(m, 'UPDATE');
       const current = await this.snapshot(m, 'UPDATE');
       const rows = await m.query<
         Array<{
@@ -298,23 +326,25 @@ export class KycProviderGovernanceService {
         fingerprint(
           proposal.request_id,
           proposal.expected_version,
-          config,
+          proposal.configuration,
           proposal.reason_code,
           proposal.maker_id,
         )
       )
         throw new KycFoundationError('CONFLICT');
       const state = approve ? 'APPROVED' : 'REJECTED';
+      const decidedAt = await appendKycGovernanceDecision(m, 'PROVIDER', id, state, actor);
       await m.query(
-        'UPDATE kyc_provider_change_proposals SET state=$1,checker_id=$2,checker_session_id=$3,decided_at=clock_timestamp() WHERE id=$4',
-        [state, actor.principalId, actor.sessionId, id],
+        'UPDATE kyc_provider_change_proposals SET state=$1,checker_id=$2,checker_session_id=$3,decided_at=$4 WHERE id=$5',
+        [state, actor.principalId, actor.sessionId, decidedAt, id],
       );
       if (!approve) return { version: current.version, state };
       const version = current.version + 1;
-      await m.query(
-        'UPDATE kyc_provider_configuration SET version=$1,configuration=$2::jsonb,updated_at=clock_timestamp() WHERE singleton=true',
-        [version, JSON.stringify(config)],
+      const updated = await m.query<Array<{ version: number }>>(
+        'WITH updated AS (UPDATE kyc_provider_configuration SET version=$1,configuration=$2::jsonb,last_proposal_id=$3,updated_at=clock_timestamp() WHERE singleton=true AND version=$4 RETURNING version) SELECT version FROM updated',
+        [version, JSON.stringify(config), id, current.version],
       );
+      if (updated.length !== 1) throw new KycFoundationError('CONFLICT');
       await m.query(
         'INSERT INTO kyc_provider_configuration_history(version,proposal_id,configuration,maker_id,checker_id,reason_code) VALUES($1,$2,$3::jsonb,$4,$5,$6)',
         [
@@ -340,6 +370,7 @@ export class KycProviderGovernanceService {
     expectedProvider?: ProviderCode,
   ): Promise<{ provider: ProviderCode; version: number }> {
     if (!['BVN', 'NIN'].includes(kind)) throw new KycFoundationError('INVALID');
+    await this.lockRoutes(m, 'SHARE');
     const snap = await this.snapshot(m, 'SHARE');
     if (expectedVersion !== undefined && expectedVersion !== snap.version)
       throw new KycFoundationError('BLOCKED');
@@ -348,8 +379,9 @@ export class KycProviderGovernanceService {
       if (!code) continue;
       const item = snap.configuration.providers[code];
       if (!item.enabled || !item.capabilities.includes(kind)) continue;
-      // Monnify account access, endpoint contract and credentials are unconfirmed. Do not dispatch.
-      if (code === 'MONNIFY') continue;
+      // Account access, endpoint entitlements/contracts and credentials are unconfirmed for both
+      // real providers. A published candidate route must not activate either adapter.
+      if (code === 'MONNIFY' || code === 'DOJAH') continue;
       if (code === 'SYNTHETIC' && process.env.NODE_ENV !== 'test') continue;
       if (expectedProvider && code !== expectedProvider) throw new KycFoundationError('BLOCKED');
       return { provider: code, version: snap.version };

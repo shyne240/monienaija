@@ -4,14 +4,18 @@ import { DataSource } from 'typeorm';
 import { Test } from '@nestjs/testing';
 import { APP_GUARD } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { KycProviderGovernance1785753600109 } from '../src/migrations/1785753600109-KycProviderGovernance';
 import { KycTierPolicy1785753600110 } from '../src/migrations/1785753600110-KycTierPolicy';
+import { KycGovernanceProtectedAuthority1785753600300 } from '../src/migrations/1785753600300-KycGovernanceProtectedAuthority';
 import { KycTierPolicyService } from '../src/kyc-verification/kyc-tier-policy.service';
 import { KycTierPolicyController } from '../src/kyc-verification/kyc-tier-policy.controller';
 import { AuthorizationService } from '../src/authorization/authorization.service';
+import { ProtectedAuthorityService } from '../src/authorization/protected-authority.service';
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 import { RoutePolicyRegistry } from '../src/authorization/route-policy-registry';
 import { RuntimeAccessGuard } from '../src/authorization/runtime-access.guard';
 import { assertIsolatedKycCluster, isolatedKycCluster } from './support/kyc-isolated-cluster';
+import { createKycAuthorityConnections } from './support/kyc-isolated-authority';
 // Portable provenance: see test/support/kyc-isolated-cluster.ts. No absolute path from any one
 // developer's machine is embedded here; the runner (scripts/run-isolated-kyc-tests.js) creates
 // the disposable cluster and exports KYC_ISOLATED_TEST_SOCKET.
@@ -72,7 +76,9 @@ beforeAll(async () => {
     'CREATE TABLE customer_profiles(id uuid PRIMARY KEY,customer_id uuid,first_name text,last_name text,date_of_birth date,is_active boolean,deleted_at timestamptz)',
   );
   const runner = db.createQueryRunner();
+  await new KycProviderGovernance1785753600109().up(runner);
   await new KycTierPolicy1785753600110().up(runner);
+  await new KycGovernanceProtectedAuthority1785753600300().up(runner);
   await runner.release();
   svc = new KycTierPolicyService(
     db,
@@ -274,5 +280,62 @@ it('backfills dedicated permissions for an already seeded catalogue', async () =
   } finally {
     if (isolated.isInitialized) await isolated.destroy();
     await db.query(`DROP SCHEMA ${other} CASCADE`);
+  }
+});
+
+test('separate authority login publishes tier policy while runtime cannot forge head or evidence', async () => {
+  const connections = await createKycAuthorityConnections(db, cluster, schema);
+  try {
+    const auth = new AuthorizationService(connections.runtime, {
+      record: jest.fn().mockResolvedValue(undefined),
+    } as never);
+    const protectedAuthority = new ProtectedAuthorityService(
+      connections.runtime,
+      connections.authority,
+    );
+    const service = new KycTierPolicyService(connections.runtime, auth, protectedAuthority);
+
+    await expect(
+      connections.runtime.query('UPDATE kyc_tier_policy_head SET version=version+1 WHERE singleton=true'),
+    ).rejects.toThrow();
+    await expect(
+      connections.runtime.query('SELECT * FROM protected_authority.kyc_governance_decisions'),
+    ).rejects.toThrow();
+    expect((await service.view(checker))[0]?.version).toBe(3);
+    expect(
+      (await connections.runtime.transaction((manager) =>
+        service.effective(manager, new Date('2026-11-01T00:00:00.000Z')),
+      ))?.version,
+    ).toBe('3');
+
+    const proposal = await service.propose(maker, {
+      requestId: randomUUID(),
+      expectedVersion: 3,
+      definition: definition(),
+    });
+    expect(proposal.replay).toBe(false);
+    expect(await service.decide(checker, proposal.id, true)).toEqual({
+      version: 4,
+      state: 'APPROVED',
+    });
+    await expect(service.decide(checker, proposal.id, true)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+    const evidence = await connections.authority.query<Array<{ decision: string; payload_digest: string }>>(
+      'SELECT decision,payload_digest FROM protected_authority.kyc_governance_decisions WHERE proposal_schema=$1 AND proposal_kind=$2 AND proposal_id=$3',
+      [schema, 'TIER_POLICY', proposal.id],
+    );
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]?.decision).toBe('APPROVED');
+    expect(evidence[0]?.payload_digest).toMatch(/^[0-9a-f]{64}$/);
+    await expect(
+      connections.authority.query(
+        'UPDATE kyc_tier_policy_versions SET definition=$1::jsonb WHERE proposal_id=$2',
+        [JSON.stringify(definition()), proposal.id],
+      ),
+    ).rejects.toThrow(/immutable/i);
+    expect((await service.view(checker))[0]?.version).toBe(4);
+  } finally {
+    await connections.cleanup();
   }
 });

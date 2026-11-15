@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import { KycStatusScreen } from '../src/screens/authenticated/KycStatusScreen';
 import { ApiClient } from '../src/services/api-client';
@@ -112,6 +112,16 @@ describe('KycStatusScreen (real backend policy projection)', () => {
 
     // The screen must never assert a failed requirement or a rejection.
     expect(queryByText(/requirement failed|did not meet|rejected/i)).toBeNull();
+  });
+
+  test('offers a safe pathway to published requirements without starting identity submission', async () => {
+    route(kycProjection(), limitsFixture);
+    const { getByText } = render(<KycStatusScreen />);
+
+    const action = await waitFor(() => getByText('See what the upgrade needs'));
+    fireEvent.press(action);
+    expect(getByText(/not a statement about your verification/)).toBeTruthy();
+    expect(ApiClient.post).not.toHaveBeenCalled();
   });
 
   test('states that evidence assessment is unavailable instead of implying a pass or fail', async () => {

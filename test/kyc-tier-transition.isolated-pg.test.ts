@@ -13,7 +13,9 @@ import { DataSource } from 'typeorm';
 import { AuditEvent } from '../src/operations/audit-event.entity';
 import { AuditService } from '../src/operations/audit.service';
 import { AuthorizationService } from '../src/authorization/authorization.service';
+import { KycProviderGovernance1785753600109 } from '../src/migrations/1785753600109-KycProviderGovernance';
 import { KycTierPolicy1785753600110 } from '../src/migrations/1785753600110-KycTierPolicy';
+import { KycGovernanceProtectedAuthority1785753600300 } from '../src/migrations/1785753600300-KycGovernanceProtectedAuthority';
 import { KycTierPolicyService } from '../src/kyc-verification/kyc-tier-policy.service';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { FixtureEvidenceReader } from './support/kyc-tier-fixture-evidence-reader';
@@ -144,7 +146,9 @@ beforeAll(async () => {
     `CREATE TABLE audit_events(id uuid PRIMARY KEY,entity_type varchar(80),entity_id uuid,action varchar(80),actor varchar(160),correlation_id varchar(255),request_id varchar(255),previous_values jsonb,new_values jsonb,occurred_at timestamptz,created_at timestamptz DEFAULT now())`,
   );
   const runner = db.createQueryRunner();
+  await new KycProviderGovernance1785753600109().up(runner);
   await new KycTierPolicy1785753600110().up(runner);
+  await new KycGovernanceProtectedAuthority1785753600300().up(runner);
   await runner.release();
   const audit = new AuditService(db.getRepository(AuditEvent));
   policy = new KycTierPolicyService(db, new AuthorizationService(db, audit));

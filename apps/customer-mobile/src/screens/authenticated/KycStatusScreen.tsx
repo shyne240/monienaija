@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -64,6 +64,8 @@ export const KycStatusScreen: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [limitsError, setLimitsError] = useState('');
+  const scrollRef = useRef<ScrollView | null>(null);
+  const requirementsOffset = useRef(0);
 
   const load = useCallback(async () => {
     setError('');
@@ -123,6 +125,7 @@ export const KycStatusScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl
@@ -189,6 +192,20 @@ export const KycStatusScreen: React.FC = () => {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>{pathway.title}</Text>
           <Text style={styles.cardBody}>{pathway.body}</Text>
+          {pathway.actionLabel && groups.length > 0 ? (
+            <Button
+              label={pathway.actionLabel}
+              variant="outline"
+              size="small"
+              accessibilityHint="Scrolls to the published next-tier requirements. It does not submit identity data or start a verification check."
+              onPress={() =>
+                scrollRef.current?.scrollTo({
+                  y: Math.max(0, requirementsOffset.current - 12),
+                  animated: true,
+                })
+              }
+            />
+          ) : null}
           <View style={styles.evidenceBlock}>
             <Text style={styles.evidenceTitle}>Evidence assessment</Text>
             <Text style={styles.cardMeta}>
@@ -200,7 +217,12 @@ export const KycStatusScreen: React.FC = () => {
             ) : null}
           </View>
           {groups.length > 0 ? (
-            <View style={styles.requirementsBlock}>
+            <View
+              style={styles.requirementsBlock}
+              onLayout={(event) => {
+                requirementsOffset.current = event.nativeEvent.layout.y;
+              }}
+            >
               <Text style={styles.evidenceTitle}>
                 What{' '}
                 {kyc?.requirements ? KYC_LEVEL_LABELS[kyc.requirements.level] : 'the next tier'}{' '}

@@ -18,6 +18,8 @@ export type AdminView =
   | 'limitCatalogue'
   | 'limitAssignments'
   | 'kycQueue'
+  | 'kycProviders'
+  | 'kycTierPolicies'
   | 'complianceCases'
   | 'fraudCases'
   | 'workforceAccess'
@@ -125,6 +127,10 @@ export function canAccessAdminView(
       return hasAny('limit.view', 'limit.modify', 'agent.assign_limit');
     case 'kycQueue':
       return has('kyc.view');
+    case 'kycProviders':
+      return has('kyc.provider.view');
+    case 'kycTierPolicies':
+      return has('kyc.policy.view');
     case 'complianceCases':
       return has('compliance.manage_case');
     case 'fraudCases':

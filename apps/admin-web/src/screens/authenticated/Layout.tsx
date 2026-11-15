@@ -17,6 +17,8 @@ import { AgentClassesScreen } from './AgentClassesScreen';
 import { CashToCashOperationsScreen } from './CashToCashOperationsScreen';
 import { SupportTicketsScreen } from './SupportTicketsScreen';
 import { ComplianceScreen } from './ComplianceScreen';
+import { KycProviderManagementScreen } from './KycProviderManagementScreen';
+import { KycTierPolicyManagementScreen } from './KycTierPolicyManagementScreen';
 import { RiskFraudScreen } from './RiskFraudScreen';
 import { WorkforceAdminScreen } from './WorkforceAdminScreen';
 import { SystemHealthScreen } from './SystemHealthScreen';
@@ -105,6 +107,10 @@ export const Layout: React.FC = () => {
   const [workforceBusy, setWorkforceBusy] = useState(false);
   const [complianceGuard, setComplianceGuard] = useState(false);
   const [complianceBusy, setComplianceBusy] = useState(false);
+  const [kycProviderGuard, setKycProviderGuard] = useState(false);
+  const [kycProviderBusy, setKycProviderBusy] = useState(false);
+  const [kycTierPolicyGuard, setKycTierPolicyGuard] = useState(false);
+  const [kycTierPolicyBusy, setKycTierPolicyBusy] = useState(false);
   const [recoveryGuard, setRecoveryGuard] = useState(false);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [notificationGuard, setNotificationGuard] = useState(false);
@@ -126,6 +132,14 @@ export const Layout: React.FC = () => {
   const reportComplianceGuard = useCallback((guarded: boolean, busy: boolean) => {
     setComplianceGuard(guarded);
     setComplianceBusy(busy);
+  }, []);
+  const reportKycProviderGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setKycProviderGuard(guarded);
+    setKycProviderBusy(busy);
+  }, []);
+  const reportKycTierPolicyGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setKycTierPolicyGuard(guarded);
+    setKycTierPolicyBusy(busy);
   }, []);
   const reportWorkforceGuard = useCallback((guarded: boolean, busy: boolean) => {
     setWorkforceGuard(guarded);
@@ -392,6 +406,12 @@ export const Layout: React.FC = () => {
       title: 'Risk & compliance',
       items: [
         { key: 'kycQueue' as View, label: 'KYC reviews', visible: isVisible('kycQueue') },
+        { key: 'kycProviders' as View, label: 'KYC providers', visible: isVisible('kycProviders') },
+        {
+          key: 'kycTierPolicies' as View,
+          label: 'KYC tier policies',
+          visible: isVisible('kycTierPolicies'),
+        },
         {
           key: 'complianceCases' as View,
           label: 'Compliance cases',
@@ -458,6 +478,10 @@ export const Layout: React.FC = () => {
     setWorkforceBusy(false);
     setComplianceGuard(false);
     setComplianceBusy(false);
+    setKycProviderGuard(false);
+    setKycProviderBusy(false);
+    setKycTierPolicyGuard(false);
+    setKycTierPolicyBusy(false);
     setRecoveryGuard(false);
     setRecoveryBusy(false);
     setLedgerGuard(false);
@@ -498,6 +522,8 @@ export const Layout: React.FC = () => {
       (roleGuard && canonicalAdminView(currentView) === 'roleGovernance') ||
       (workforceGuard && canonicalAdminView(currentView) === 'workforceAccess') ||
       (complianceGuard && canonicalAdminView(currentView) === 'kycQueue') ||
+      (kycProviderGuard && canonicalAdminView(currentView) === 'kycProviders') ||
+      (kycTierPolicyGuard && canonicalAdminView(currentView) === 'kycTierPolicies') ||
       (recoveryGuard && canonicalAdminView(currentView) === 'superAdminRecovery') ||
       (ledgerGuard && canonicalAdminView(currentView) === 'ledgerExplorer') ||
       (notificationGuard && canonicalAdminView(currentView) === 'notifications')
@@ -521,6 +547,8 @@ export const Layout: React.FC = () => {
       (roleGuard && canonicalAdminView(currentView) === 'roleGovernance') ||
       (workforceGuard && canonicalAdminView(currentView) === 'workforceAccess') ||
       (complianceGuard && canonicalAdminView(currentView) === 'kycQueue') ||
+      (kycProviderGuard && canonicalAdminView(currentView) === 'kycProviders') ||
+      (kycTierPolicyGuard && canonicalAdminView(currentView) === 'kycTierPolicies') ||
       (recoveryGuard && canonicalAdminView(currentView) === 'superAdminRecovery') ||
       (ledgerGuard && canonicalAdminView(currentView) === 'ledgerExplorer') ||
       (notificationGuard && canonicalAdminView(currentView) === 'notifications')
@@ -667,6 +695,10 @@ export const Layout: React.FC = () => {
             }
           />
         );
+      case 'kycProviders':
+        return <KycProviderManagementScreen onGuardChange={reportKycProviderGuard} />;
+      case 'kycTierPolicies':
+        return <KycTierPolicyManagementScreen onGuardChange={reportKycTierPolicyGuard} />;
       case 'complianceCases':
         return (
           <ComplianceScreen
@@ -989,13 +1021,17 @@ export const Layout: React.FC = () => {
                               ? 'Leave workforce access review?'
                               : canonicalAdminView(currentView) === 'kycQueue'
                                 ? 'Leave KYC decision review?'
-                                : canonicalAdminView(currentView) === 'superAdminRecovery'
-                                  ? 'Leave recovery review?'
-                                  : canonicalAdminView(currentView) === 'ledgerExplorer'
-                                    ? 'Leave ledger reversal review?'
-                                    : canonicalAdminView(currentView) === 'notifications'
-                                      ? 'Leave notification review?'
-                                      : 'Leave customer information?'}
+                                : canonicalAdminView(currentView) === 'kycProviders'
+                                  ? 'Leave KYC provider governance?'
+                                  : canonicalAdminView(currentView) === 'kycTierPolicies'
+                                    ? 'Leave KYC tier-policy governance?'
+                                    : canonicalAdminView(currentView) === 'superAdminRecovery'
+                                      ? 'Leave recovery review?'
+                                      : canonicalAdminView(currentView) === 'ledgerExplorer'
+                                        ? 'Leave ledger reversal review?'
+                                        : canonicalAdminView(currentView) === 'notifications'
+                                          ? 'Leave notification review?'
+                                          : 'Leave customer information?'}
             </h2>
             <p>
               {canonicalAdminView(currentView) === 'agents'
@@ -1016,13 +1052,17 @@ export const Layout: React.FC = () => {
                               ? 'Leaving discards workforce drafts, local review locks and any visible one-time credential, which may not be retrievable. An action may already have occurred; inspect workforce and audit records before acting again.'
                               : canonicalAdminView(currentView) === 'kycQueue'
                                 ? 'Leaving discards the KYC decision draft and local review lock. An action may already have occurred; inspect the customer assessment and audit history before acting again.'
-                                : canonicalAdminView(currentView) === 'superAdminRecovery'
-                                  ? 'Leaving discards the recovery statement, receipt and local review lock. Recovery may already have occurred; inspect authorized recovery, assignment, session and audit records before acting again.'
-                                  : canonicalAdminView(currentView) === 'ledgerExplorer'
-                                    ? 'Leaving discards reversal details and local journal safeguards. A request or reversal may already exist; inspect journal, approval and audit records before acting again.'
-                                    : canonicalAdminView(currentView) === 'notifications'
-                                      ? 'Leaving discards notification trigger, template, checker and test-send drafts and local safeguards. A proposal, decision, execution or test-send may already exist; independently review relevant approval, configuration, template, provider and audit records before acting again.'
-                                      : 'Leaving discards the customer draft, one-time proof or upload retry key, and any local uncertain-outcome lock. An earlier action may already have occurred; inspect current records and audit history before acting again.'}
+                                : canonicalAdminView(currentView) === 'kycProviders'
+                                  ? 'Leaving discards provider-routing edits and any local retry request id. A proposal may already have been recorded; reload proposals and published history before submitting a replacement.'
+                                  : canonicalAdminView(currentView) === 'kycTierPolicies'
+                                    ? 'Leaving discards the tier-policy draft and any local retry request id. A proposal may already have been recorded; reload proposals and published versions before submitting a replacement.'
+                                    : canonicalAdminView(currentView) === 'superAdminRecovery'
+                                      ? 'Leaving discards the recovery statement, receipt and local review lock. Recovery may already have occurred; inspect authorized recovery, assignment, session and audit records before acting again.'
+                                      : canonicalAdminView(currentView) === 'ledgerExplorer'
+                                        ? 'Leaving discards reversal details and local journal safeguards. A request or reversal may already exist; inspect journal, approval and audit records before acting again.'
+                                        : canonicalAdminView(currentView) === 'notifications'
+                                          ? 'Leaving discards notification trigger, template, checker and test-send drafts and local safeguards. A proposal, decision, execution or test-send may already exist; independently review relevant approval, configuration, template, provider and audit records before acting again.'
+                                          : 'Leaving discards the customer draft, one-time proof or upload retry key, and any local uncertain-outcome lock. An earlier action may already have occurred; inspect current records and audit history before acting again.'}
             </p>
             {(customerBusy ||
               agentBusy ||
@@ -1034,6 +1074,8 @@ export const Layout: React.FC = () => {
               roleBusy ||
               workforceBusy ||
               complianceBusy ||
+              kycProviderBusy ||
+              kycTierPolicyBusy ||
               recoveryBusy ||
               ledgerBusy ||
               notificationBusy) && (

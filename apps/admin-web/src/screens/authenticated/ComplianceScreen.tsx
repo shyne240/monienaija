@@ -17,6 +17,30 @@ interface ComplianceScreenProps {
   onComplianceGuardChange?: (guarded: boolean, busy: boolean) => void;
 }
 
+interface KycTierReviewRow {
+  customer_id: string;
+  reason: string;
+  policy_version: number | null;
+  created_at: string;
+  hold_reason: string | null;
+}
+
+const CUSTOMER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isKycTierReviewRow(value: unknown): value is KycTierReviewRow {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.customer_id === 'string' &&
+    CUSTOMER_UUID.test(row.customer_id) &&
+    typeof row.reason === 'string' &&
+    (row.policy_version === null ||
+      (Number.isSafeInteger(row.policy_version) && Number(row.policy_version) >= 0)) &&
+    typeof row.created_at === 'string' &&
+    Number.isFinite(Date.parse(row.created_at)) &&
+    (row.hold_reason === null || typeof row.hold_reason === 'string')
+  );
+}
+
 export const ComplianceScreen: React.FC<ComplianceScreenProps> = ({
   initialCustomerId,
   initialCategory,
@@ -64,15 +88,19 @@ const ComplianceWorkspace: React.FC<
 }) => {
   const lookupGeneration = useRef(0);
   const mutationGeneration = useRef(0);
+  const queueGeneration = useRef(0);
   useEffect(
     () => () => {
       lookupGeneration.current += 1;
       mutationGeneration.current += 1;
+      queueGeneration.current += 1;
     },
     [],
   );
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
   const canViewKyc = hasFn('kyc.view');
+  const canLoadTierReviewQueue =
+    mode === 'kyc' && hasFn('kyc.review') && principal?.assuranceLevel === 'MFA';
   const availableKycStatuses = [
     ...(hasFn('kyc.review') ? ['NOT_STARTED', 'PENDING'] : []),
     ...(hasFn('kyc.approve') ? ['APPROVED'] : []),
@@ -86,6 +114,10 @@ const ComplianceWorkspace: React.FC<
   const [kyc, setKyc] = useState<any>(null);
   const [cases, setCases] = useState<CustomerComplianceCaseRow[]>([]);
   const [selectedCase, setSelectedCase] = useState<CustomerComplianceCaseRow | null>(null);
+  const [reviewQueue, setReviewQueue] = useState<KycTierReviewRow[]>([]);
+  const [reviewQueueLoaded, setReviewQueueLoaded] = useState(false);
+  const [reviewQueueLoading, setReviewQueueLoading] = useState(false);
+  const [reviewQueueError, setReviewQueueError] = useState('');
   const [caseCategory, setCaseCategory] = useState(initialCategory || 'ALL');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -217,6 +249,34 @@ const ComplianceWorkspace: React.FC<
     setLoading(false);
   };
 
+  const refreshReviewQueue = async () => {
+    if (!canLoadTierReviewQueue || reviewQueueLoading) return;
+    const request = ++queueGeneration.current;
+    setReviewQueue([]);
+    setReviewQueueLoaded(false);
+    setReviewQueueError('');
+    setReviewQueueLoading(true);
+    try {
+      const rows: unknown = await ApiClient.get('/internal/kyc/tier-reviews');
+      if (request !== queueGeneration.current) return;
+      if (!Array.isArray(rows) || rows.some((row) => !isKycTierReviewRow(row)))
+        throw new Error('KYC review queue returned an invalid response.');
+      setReviewQueue(rows as KycTierReviewRow[]);
+    } catch (caught) {
+      if (request === queueGeneration.current) {
+        setReviewQueue([]);
+        setReviewQueueError(
+          caught instanceof Error ? caught.message : 'KYC review queue is unavailable.',
+        );
+      }
+    } finally {
+      if (request === queueGeneration.current) {
+        setReviewQueueLoaded(true);
+        setReviewQueueLoading(false);
+      }
+    }
+  };
+
   useEffect(() => {
     if (!initialCustomerId || !canAccess) return;
     setCustomerId(initialCustomerId);
@@ -325,6 +385,7 @@ const ComplianceWorkspace: React.FC<
       setCompletedDecision({ id: decision.id, level: decision.level, status: decision.status });
       setAssessMsg('KYC assessment submitted.');
       if (canViewKyc) await fetchForCustomer(decision.id);
+      if (canLoadTierReviewQueue) void refreshReviewQueue();
     } catch (err: any) {
       if (request === mutationGeneration.current) {
         lookupGeneration.current++;
@@ -373,6 +434,82 @@ const ComplianceWorkspace: React.FC<
             : 'Look up an existing customer KYC assessment and perform only the review decision allowed by your function grants.'
         }
       />
+      {canLoadTierReviewQueue && (
+        <section
+          className="compliance-workspace__panel"
+          aria-labelledby="kyc-tier-review-queue-heading"
+        >
+          <div className="compliance-workspace__heading">
+            <div>
+              <p className="compliance-workspace__eyebrow">AUTOMATED TIER REVIEW</p>
+              <h2 id="kyc-tier-review-queue-heading">KYC review queue</h2>
+              <p>
+                This queue contains customer IDs and machine reason codes only. Provider evidence
+                and identity values are not included.
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              onClick={() => void refreshReviewQueue()}
+              disabled={reviewQueueLoading}
+            >
+              {reviewQueueLoading ? 'Loading queue…' : 'Refresh review queue'}
+            </Button>
+          </div>
+          {reviewQueueError ? (
+            <div className="compliance-workspace__state" role="alert">
+              {reviewQueueError}
+            </div>
+          ) : null}
+          {reviewQueueLoaded && !reviewQueueError && reviewQueue.length === 0 ? (
+            <div className="compliance-workspace__state">
+              No current KYC tier items are awaiting review.
+            </div>
+          ) : null}
+          {reviewQueue.length > 0 && !reviewQueueError ? (
+            <ScrollRegion label="KYC review queue" hint="Scroll horizontally to see all columns.">
+              <table className="compliance-workspace__table">
+                <thead>
+                  <tr>
+                    <th scope="col">Customer</th>
+                    <th scope="col">Reason</th>
+                    <th scope="col">Policy version</th>
+                    <th scope="col">Opened</th>
+                    <th scope="col">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reviewQueue.map((item) => (
+                    <tr key={item.customer_id}>
+                      <td>
+                        <code>{item.customer_id}</code>
+                      </td>
+                      <td>{item.hold_reason ?? item.reason}</td>
+                      <td>{item.policy_version ?? '—'}</td>
+                      <td>{item.created_at}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="compliance-case-detail"
+                          aria-label={`Open KYC review for ${item.customer_id}`}
+                          onClick={() => {
+                            setCustomerId(item.customer_id);
+                            setError('');
+                            setSearched(false);
+                            if (canViewKyc) void fetchForCustomer(item.customer_id);
+                          }}
+                        >
+                          Open customer review
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollRegion>
+          ) : null}
+        </section>
+      )}
       {initialCustomerId && onBackToCustomer && (
         <Button onClick={onBackToCustomer}>← Back to Customer 360°</Button>
       )}
@@ -458,6 +595,7 @@ const ComplianceWorkspace: React.FC<
           <label>
             Customer UUID
             <input
+              id="compliance-customer-id"
               value={customerId}
               onChange={(event) => {
                 if (

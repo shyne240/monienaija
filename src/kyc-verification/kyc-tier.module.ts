@@ -3,7 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import type { Environment } from '../config/environment';
 import { AuthorizationModule } from '../authorization/authorization.module';
+import { ProtectedAuthorityModule } from '../authorization/protected-authority.module';
 import { AuthorizationService } from '../authorization/authorization.service';
+import { ProtectedAuthorityService } from '../authorization/protected-authority.service';
 import { OperationsModule } from '../operations/operations.module';
 import { AuditService } from '../operations/audit.service';
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
@@ -17,6 +19,7 @@ import { CustomerFinancialEligibilityService } from './customer-financial-eligib
 import { KycTierWorker } from './kyc-tier-worker.service';
 @Module({
   imports: [
+    ProtectedAuthorityModule,
     forwardRef(() => AuthorizationModule),
     forwardRef(() => OperationsModule),
     forwardRef(() => CustomerAuthenticationModule),
@@ -26,9 +29,12 @@ import { KycTierWorker } from './kyc-tier-worker.service';
     CustomerFinancialEligibilityService,
     {
       provide: KycTierPolicyService,
-      inject: [DataSource, AuthorizationService],
-      useFactory: (db: DataSource, auth: AuthorizationService) =>
-        new KycTierPolicyService(db, auth),
+      inject: [DataSource, AuthorizationService, ProtectedAuthorityService],
+      useFactory: (
+        db: DataSource,
+        auth: AuthorizationService,
+        protectedAuthority: ProtectedAuthorityService,
+      ) => new KycTierPolicyService(db, auth, protectedAuthority),
     },
     { provide: KycTierEvidenceReader, useFactory: () => new KycTierEvidenceReader() },
     {

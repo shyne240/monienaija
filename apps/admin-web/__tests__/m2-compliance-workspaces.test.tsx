@@ -46,18 +46,16 @@ test('KYC response for a previous lookup cannot appear after changing the custom
 test('switching the fraud customer clears prior results and ignores obsolete responses', async () => {
   principal(['risk_fraud.manage_fraud_case']);
   const old = deferred();
-  (ApiClient.get as jest.Mock)
-    .mockReturnValueOnce(old.promise)
-    .mockResolvedValueOnce([
-      {
-        id: 'new-fraud',
-        customerId: 'new',
-        caseNumber: 'new case',
-        category: 'FRAUD',
-        severity: 'HIGH',
-        status: 'OPEN',
-      },
-    ]);
+  (ApiClient.get as jest.Mock).mockReturnValueOnce(old.promise).mockResolvedValueOnce([
+    {
+      id: 'new-fraud',
+      customerId: 'new',
+      caseNumber: 'new case',
+      category: 'FRAUD',
+      severity: 'HIGH',
+      status: 'OPEN',
+    },
+  ]);
   render(<RiskFraudScreen />);
   fireEvent.change(screen.getByLabelText('Customer UUID'), { target: { value: 'old' } });
   fireEvent.click(screen.getByRole('button', { name: 'Search FRAUD cases' }));
@@ -86,17 +84,15 @@ test('KYC submission distinguishes an incomplete receipt and keeps successful fe
     level: 'LEVEL_1',
     status: 'APPROVED',
   });
-  (ApiClient.post as jest.Mock)
-    .mockResolvedValueOnce({})
-    .mockResolvedValueOnce({
-      id: 'assessment',
-      customerId: 'synthetic-customer',
-      level: 'LEVEL_1',
-      status: 'APPROVED',
-      assessedBy: 'synthetic',
-      reason: null,
-      isCurrent: true,
-    });
+  (ApiClient.post as jest.Mock).mockResolvedValueOnce({}).mockResolvedValueOnce({
+    id: 'assessment',
+    customerId: 'synthetic-customer',
+    level: 'LEVEL_1',
+    status: 'APPROVED',
+    assessedBy: 'synthetic',
+    reason: null,
+    isCurrent: true,
+  });
   render(<ComplianceScreen mode="kyc" />);
   fireEvent.change(screen.getByLabelText('Customer UUID'), {
     target: { value: 'synthetic-customer' },
@@ -159,6 +155,32 @@ test('an incomplete case row or a case for another customer is an error, not an 
   fireEvent.click(screen.getByRole('button', { name: 'Search' }));
   expect(await screen.findByText('Compliance lookup returned an invalid response.')).toBeTruthy();
 });
+test('MFA KYC reviewers can load and open customer-scoped tier-review queue items', async () => {
+  principal(['kyc.view', 'kyc.review']);
+  const customerId = '123e4567-e89b-42d3-a456-426614174000';
+  (ApiClient.get as jest.Mock)
+    .mockResolvedValueOnce([
+      {
+        customer_id: customerId,
+        reason: 'EVIDENCE_REQUIRES_REVIEW',
+        policy_version: 2,
+        created_at: '2026-11-15T10:00:00.000Z',
+        hold_reason: 'IDENTITY_CONFLICT',
+      },
+    ])
+    .mockResolvedValueOnce({ customerId, level: 'LEVEL_1', status: 'PENDING' });
+
+  render(<ComplianceScreen mode="kyc" />);
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh review queue' }));
+  expect(await screen.findByText('IDENTITY_CONFLICT')).toBeTruthy();
+  expect(screen.getByText(customerId)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: `Open KYC review for ${customerId}` }));
+
+  expect(await screen.findByText('KYC: Level LEVEL_1 — Status PENDING')).toBeTruthy();
+  expect(ApiClient.get).toHaveBeenNthCalledWith(1, '/internal/kyc/tier-reviews');
+  expect(ApiClient.get).toHaveBeenNthCalledWith(2, `/customers/${customerId}/kyc`);
+});
+
 test('review-only KYC functions cannot select an approval or rejection', () => {
   principal(['kyc.review']);
   render(<ComplianceScreen mode="kyc" />);
