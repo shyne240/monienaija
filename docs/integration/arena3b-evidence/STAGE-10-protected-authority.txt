@@ -1,0 +1,38 @@
+=== ARENA 3B Stage 10 — protected authority re-verification after Stage B ===
+Stage B changed test fixtures, test wiring and two test doubles ONLY (src/agent/*.spec.ts aside,
+which are colocated unit doubles). It did not touch triggers, RLS policies, ownership guards, role
+grants or protected functions — `git diff 5acc9c8..HEAD -- src/` contains no migration, no
+protected-authority SQL and no authorization service change for that part of the tree beyond the
+Cash-to-Cash funding/claim authority delivered earlier in the mission.
+
+Re-verified on this working tree (each suite on its own disposable database):
+  test/protected-authority-boundary.integration.spec.ts ......  7/7 PASS
+  test/wallet-ownership-resolution.integration.spec.ts ...... 21/21 PASS
+  test/institution-foundation.integration.spec.ts ........... 32/32 PASS
+  test/institution-financial-ownership.integration.spec.ts .. 16/16 PASS
+  ---------------------------------------------------------------
+  total ..................................................... 76/76 PASS
+
+The four original reproductions remain rejected:
+  1. direct-SQL checker approval forgery                      -> rejected
+  2. checker forgery with ordinary non-owner DML credentials  -> rejected
+  3. MFA checker impersonation by mutating the session hash   -> rejected
+  4. forged wallet-ownership approval by runtime SQL          -> rejected
+
+Also re-run in the same pass: test/governed-financial-fixture.integration.spec.ts (12/12), which
+keeps the protected_authority invariants asserted from the fixture side:
+  - UPDATE to APPROVED without protected evidence -> refused by guard
+  - DELETE of protected_authority.checker_decisions -> refused (immutable)
+  - zero checker decisions exist without their approval row
+
+Additional authority surfaces exercised by the Stage B migrations themselves (all green):
+  - the AGENT_NETWORK_MANAGER / FINANCE_AUDITOR function scopes are the only way to read the
+    internal agent-history route (a forged `workforce-operator` string is refused 403/401);
+  - claiming a Cash-to-Cash transfer re-reads the claimant Agent's session, credential and class
+    capability INSIDE the transaction (test/agent-cash-to-cash-claim-transaction.spec.ts and the
+    88-test A16 suite), so a session revoked mid-flight cannot post;
+  - the institutional-scope CHECK refused every attempt (by suites) to attribute an account with
+    raw SQL, which is why the fixtures now use the governed attribution endpoints.
+
+Verdict: protected authority is unchanged and still fail-closed. No guard was weakened, disabled,
+bypassed or made test-only during this mission.

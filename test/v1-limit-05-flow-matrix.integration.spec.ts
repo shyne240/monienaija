@@ -771,9 +771,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
       amountMinor: string,
       key: string,
     ): Promise<AttemptResult> {
-      const t0 = Date.now();
       try {
-        console.error('DBG_EXEC_START', amountMinor, key, t0);
         const res = await cashOutService.execute({
           agentId,
           agentPrincipal: agentPrincipal(agentId),

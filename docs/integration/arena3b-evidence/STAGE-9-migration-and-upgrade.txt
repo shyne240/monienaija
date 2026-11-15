@@ -1,0 +1,55 @@
+=== ARENA 3B Stage 9 — migration chain and historical-data upgrade ===
+tested commit: see STAGE-8 (same working tree)
+environment: disposable embedded PostgreSQL 18.4, synthetic data only
+commands (each suite on its own disposable database):
+  NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes PG_TEST_RUN_ID=<id> \
+    npx jest --config jest.integration.config.js test/<suite> --runInBand
+  (unit-only) node -r ./test/support/mission-25c-network-guard.cjs node_modules/jest/bin/jest.js \
+    test/migration-inventory.spec.ts test/proof-of-address-migration.spec.ts
+
+Result
+------
+migration files on disk ......... 134
+head migration .................. 1785753600503-CashOutInstitutionalScope
+test/migration-chain.integration.spec.ts ............ 20/20 PASS
+test/migration-inventory.spec.ts (unit) .............  5/5 PASS
+test/notification-migration-upgrade-01 ..............  2/2 PASS
+test/agent-application-access-migration-upgrade .....  1/1 PASS
+test/v1-release-01-production-readiness-migration-sync 6/6 PASS
+test/proof-of-address-migration.spec.ts (unit) ......  2/2 PASS
+
+What the chain suite proves on a genuinely empty database
+---------------------------------------------------------
+1. The filesystem glob is not silently matching nothing (migration count sanity check first).
+2. The database starts empty, then every migration executes in ONE atomic chain from empty —
+   so a fresh production/shadow database reaches head in a single run with no manual ordering.
+3. Zero migrations are left pending afterwards, and `migrations` records exactly the discovered
+   set (no drift between disk and ledger, no duplicate entries).
+4. The notification registry seeds during the real migration, including the locked SECURITY rows.
+5. Every foreign key exists in a VALIDATED state (`convalidated`), and no relation name is declared
+   twice between constraints and indexes.
+6. A5/A6T08/B2 column and constraint contracts survive the chain (snake_case-only accounting unit
+   column, reversal-reference constraint, consumer/webhook identity uniqueness, reserved-word
+   quoting).
+7. TypeORM entity metadata matches the migrated schema (no phantom column the entity would need).
+
+Historical-data upgrade (the part that is not a greenfield check)
+-----------------------------------------------------------------
+test/migration-chain.integration.spec.ts also upgrades governed wallet ownership WITH data present:
+- an unambiguous historical reference is canonicalised in place, and ownership itself is NOT
+  resolved by the migration (it has to be established through the governed path afterwards);
+- a historical canonical collision is rejected atomically: no wallet is merged, no row is deleted,
+  and the database is left exactly as it was (no partial canonicalisation).
+The institutional-scope CHECK from 1785753600401 is what makes this possible: an upgrade cannot
+produce a half-attributed account, because `(institutional_scope='INSTITUTION') =
+(institution_id IS NOT NULL)` is enforced by the database, not by application code.
+
+Release-readiness sync
+----------------------
+v1-release-01-production-readiness-migration-sync (6/6) cross-checks the release manifest against
+the migration ledger, so a deployment that ships code expecting a migration which is not on disk
+(or the reverse) fails here rather than in production.
+
+Verdict: migrations and historical upgrade paths are accepted. No migration was edited, reordered,
+squashed or marked as run out-of-band during this mission; the only new schema change is the
+institutional-scope migration already at base (1785753600503 head is unchanged by Stage B).
