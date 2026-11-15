@@ -1,6 +1,14 @@
-import { BadRequestException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Optional,
+} from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
+import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
+import { InstitutionKycLimitPolicyService } from './institution-kyc-limit-policy.service';
 import { LimitFailureCode, dimensionToFailureCode } from './limit-error.codes';
 import { LimitProfileResolverService } from './limit-profile-resolver.service';
 import { LimitUsageService } from './limit-usage.service';
@@ -28,10 +36,18 @@ export interface EnforceInput {
   // If not provided but dimension requires, we fetch wallet inside manager
   walletLedgerAccountId?: string | null; // for WALLET_BALANCE_MAX check
   principalWalletCustomerId?: string; // customerId for wallet lookup if ledgerAccountId not provided
+  /** Reject absent assignments/profiles/rules instead of interpreting missing config as unlimited. */
+  requireConfiguration?: boolean;
+  /** Require institution-scoped trusted customer eligibility and an approved tier mapping. */
+  requireKycTierPolicy?: boolean;
+  institutionId?: string | null;
+  /** Exact service-class key. Null means the explicitly configured unclassified-service key. */
+  serviceClass?: string | null;
 }
 
 export interface LimitRuleEvidence {
   ruleId: string;
+  profileCode?: string;
   dimension: string;
   limitValueMinor: string | null;
   limitValueCount: number | null;
@@ -51,6 +67,8 @@ export interface EnforceResult {
   ruleRefs?: LimitRuleEvidence[];
   reservationIds?: string[];
   usageIds?: string[];
+  tierPolicyVersion?: number;
+  customerKycTier?: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3';
 }
 
 @Injectable()
@@ -59,6 +77,8 @@ export class LimitEnforcementService {
     private readonly dataSource: DataSource,
     private readonly profileResolver: LimitProfileResolverService,
     private readonly usageService: LimitUsageService,
+    @Optional() private readonly tierLimitPolicies?: InstitutionKycLimitPolicyService,
+    @Optional() private readonly customerEligibility?: CustomerFinancialEligibilityService,
   ) {}
 
   /**
@@ -71,9 +91,9 @@ export class LimitEnforcementService {
    *    - WALLET_BALANCE_MAX vs ledger balance + amount (if credit) — authoritative, not window
    *    - DAILY/WEEKLY/MONTHLY/YEARLY amount+count via reserveBatchWithManager (checks used+reserved+delta > limit then increments reserved FOR UPDATE)
    * 4) Reserve windowed usages via LimitUsageService.reserveBatchWithManager inside same manager (atomic with ledger)
-   * If no profile or no rules, returns allowed (unlimited). Never invents thresholds.
-   * Throws HttpException with LimitFailureCode on breach (422) or LIMIT_RESERVATION_FAILED on reserve failure.
-   * Idempotent: reserveBatchWithManager handles replay via idempotencyKey/requestHash.
+   * Legacy/advisory callers retain their historical permissive behavior. Financial admission callers
+   * set requireConfiguration and/or requireKycTierPolicy; those paths reject missing assignments,
+   * mappings, profiles and applicable rules. No thresholds are invented.
    */
   async enforceWithManager(manager: EntityManager, input: EnforceInput): Promise<EnforceResult> {
     const now = input.now ?? new Date();
@@ -88,7 +108,41 @@ export class LimitEnforcementService {
     const principalType = input.principalType.trim().toUpperCase();
     const principalId = input.principalId.trim();
 
-    // 1) Resolve profile
+    // Tier-bound operations derive the level from the trusted financial-eligibility gate inside
+    // this same transaction. A caller-supplied `customers.kyc_level` or a synthetic fixture is
+    // never accepted as admission evidence.
+    let tierPolicyVersion: number | undefined;
+    let customerKycTier: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3' | undefined;
+    let tierProfileCode: string | null = null;
+    let explicitTierNonApplicability = false;
+    if (input.requireKycTierPolicy) {
+      if (principalType !== 'CUSTOMER' || !input.institutionId) {
+        throw this.configurationException('Institution and customer are required for tier-bound admission');
+      }
+      if (!this.customerEligibility || !this.tierLimitPolicies) {
+        throw this.configurationException('Trusted customer eligibility or tier policy is unavailable');
+      }
+      customerKycTier = await this.customerEligibility.require(manager, principalId, {
+        lockMode: 'SHARE',
+      });
+      const tierResolution = await this.tierLimitPolicies.resolveWithManager(manager, {
+        institutionId: input.institutionId,
+        product,
+        currency,
+        serviceClass: input.serviceClass ?? null,
+        tier: customerKycTier,
+      });
+      tierPolicyVersion = tierResolution.policyVersion;
+      if (tierResolution.mapping.disposition === 'PROFILE') {
+        tierProfileCode = tierResolution.mapping.profileCode;
+      } else {
+        explicitTierNonApplicability = true;
+      }
+    }
+
+    // Preserve existing assignment-based product/agent profiles in addition to the approved
+    // tier profile. All applicable rules are conjunctive; the policy profile never silently
+    // replaces an existing product or agent control.
     const resolved = await this.profileResolver.resolve(manager, {
       principalType,
       principalId,
@@ -96,13 +150,26 @@ export class LimitEnforcementService {
       segmentCodes: input.segmentCodes ?? [],
       now,
     });
-    if (!resolved) {
+    const profileCodes = [...new Set([
+      ...(resolved ? [resolved.limitProfileCode] : []),
+      ...(tierProfileCode ? [tierProfileCode] : []),
+    ])];
+    const configurationRequired = Boolean(input.requireConfiguration || input.requireKycTierPolicy);
+    if (profileCodes.length === 0 && configurationRequired) {
+      throw this.configurationException(
+        explicitTierNonApplicability
+          ? 'Explicit tier non-applicability still requires the product limit profile'
+          : 'No active limit profile is assigned for this financial operation',
+      );
+    }
+    if (profileCodes.length === 0) {
       return { allowed: true, limitProfileCode: null, evaluatedDimensions: [] };
     }
-    const profileCode = resolved.limitProfileCode;
+    const profileCode = tierProfileCode ?? resolved?.limitProfileCode ?? profileCodes[0]!;
 
-    // 2) Fetch active rules for this profile/product/currency/effective
-    // Do raw query to include effective and isActive, then filter direction/channel in JS
+    // Fetch all active rules for the configured assignment and the institution-approved tier
+    // profile. Filtering direction/channel below is exact; an empty match is not treated as
+    // unlimited when an authoritative financial path asked for strict configuration.
     const ruleRows: Array<{
       id: string;
       limit_profile_code: string;
@@ -119,7 +186,7 @@ export class LimitEnforcementService {
     }> = await manager.query(
       `SELECT id, limit_profile_code, product, direction, channel, currency, dimension, limit_value_minor::text AS limit_value_minor, limit_value_count, effective_from, effective_to, is_active
          FROM limit_rules
-        WHERE limit_profile_code = $1
+        WHERE limit_profile_code = ANY($1::varchar[])
           AND upper(product) = upper($2)
           AND upper(currency) = upper($3)
           AND is_active = true
@@ -127,7 +194,7 @@ export class LimitEnforcementService {
           AND effective_from <= $4
           AND (effective_to IS NULL OR $4 < effective_to)
         ORDER BY priority DESC, created_at ASC`,
-      [profileCode, product, currency, now],
+      [profileCodes, product, currency, now],
     );
 
     // Filter direction/channel: rule matches transaction if rule direction is null OR rule direction = transaction direction OR rule direction = BOTH
@@ -143,19 +210,28 @@ export class LimitEnforcementService {
       return true;
     });
 
+    if (tierProfileCode && !applicable.some((rule) => rule.limit_profile_code === tierProfileCode)) {
+      throw this.configurationException('The approved tier profile has no rule for this transaction direction or class of service');
+    }
     if (applicable.length === 0) {
+      if (configurationRequired) {
+        throw this.configurationException('No applicable financial limit rules are configured for this operation');
+      }
       return {
         allowed: true,
         limitProfileCode: profileCode,
         evaluatedDimensions: [],
-        assignmentId: resolved.assignmentId,
+        assignmentId: resolved?.assignmentId ?? null,
         ruleRefs: [],
+        ...(tierPolicyVersion ? { tierPolicyVersion } : {}),
+        ...(customerKycTier ? { customerKycTier } : {}),
       };
     }
 
     // V1-COMMERCIAL-DECISION-02: evidence of the rules this enforcement evaluates (additive).
     const ruleRefs: LimitRuleEvidence[] = applicable.map((r) => ({
       ruleId: r.id,
+      profileCode: r.limit_profile_code,
       dimension: r.dimension.trim().toUpperCase(),
       limitValueMinor: r.limit_value_minor,
       limitValueCount: r.limit_value_count,
@@ -284,8 +360,10 @@ export class LimitEnforcementService {
         allowed: true,
         limitProfileCode: profileCode,
         evaluatedDimensions,
-        assignmentId: resolved.assignmentId,
+        assignmentId: resolved?.assignmentId ?? null,
         ruleRefs,
+        ...(tierPolicyVersion ? { tierPolicyVersion } : {}),
+        ...(customerKycTier ? { customerKycTier } : {}),
       };
     }
 
@@ -333,8 +411,10 @@ export class LimitEnforcementService {
           limitProfileCode: profileCode,
           evaluatedDimensions,
           reserved: { kind: 'REPLAY' },
-          assignmentId: resolved.assignmentId,
+          assignmentId: resolved?.assignmentId ?? null,
           ruleRefs,
+          ...(tierPolicyVersion ? { tierPolicyVersion } : {}),
+          ...(customerKycTier ? { customerKycTier } : {}),
           ...replayEvidence,
         };
       }
@@ -362,15 +442,16 @@ export class LimitEnforcementService {
             limitProfileCode: profileCode,
             evaluatedDimensions,
             reserved: { kind: 'REPLAY' },
-            assignmentId: resolved.assignmentId,
+            assignmentId: resolved?.assignmentId ?? null,
             ruleRefs,
+            ...(tierPolicyVersion ? { tierPolicyVersion } : {}),
+            ...(customerKycTier ? { customerKycTier } : {}),
             ...replayEvidence,
           };
         }
       }
       if (row.status === 'IN_PROGRESS') {
-        // Someone else is in progress — concurrent duplicate? Treat as replay? But we should let usageService handle.
-        // For simplicity, return replay (outer financial idempotency will handle)
+        // Another financial transaction owns the matching idempotency reservation.
         {
           const replayEvidence = await this.replayEvidence(manager, input.idempotencyKey);
           return {
@@ -378,8 +459,10 @@ export class LimitEnforcementService {
             limitProfileCode: profileCode,
             evaluatedDimensions,
             reserved: { kind: 'REPLAY' },
-            assignmentId: resolved.assignmentId,
+            assignmentId: resolved?.assignmentId ?? null,
             ruleRefs,
+            ...(tierPolicyVersion ? { tierPolicyVersion } : {}),
+            ...(customerKycTier ? { customerKycTier } : {}),
             ...replayEvidence,
           };
         }
@@ -438,7 +521,7 @@ export class LimitEnforcementService {
         [
           principalType,
           principalId,
-          profileCode,
+          rule.limit_profile_code,
           rule.id,
           productForRule,
           dirForUsage,
@@ -467,7 +550,7 @@ export class LimitEnforcementService {
         [
           principalType,
           principalId,
-          profileCode,
+          rule.limit_profile_code,
           productForRule,
           dirForUsage,
           channelForUsage,
@@ -532,7 +615,7 @@ export class LimitEnforcementService {
             input.correlationId ?? null,
             principalType,
             principalId,
-            profileCode,
+            rule.limit_profile_code,
             rule.id,
             productForRule,
             dirForUsage,
@@ -595,10 +678,12 @@ export class LimitEnforcementService {
       limitProfileCode: profileCode,
       evaluatedDimensions,
       reserved: { kind: 'NEW' },
-      assignmentId: resolved.assignmentId,
+      assignmentId: resolved?.assignmentId ?? null,
       ruleRefs,
       reservationIds: newReservationIds,
       usageIds,
+      ...(tierPolicyVersion ? { tierPolicyVersion } : {}),
+      ...(customerKycTier ? { customerKycTier } : {}),
     };
   }
 
@@ -617,8 +702,13 @@ export class LimitEnforcementService {
     };
   }
 
+  private configurationException(message: string): HttpException {
+    const code = LimitFailureCode.LIMIT_PROFILE_MISSING;
+    return new HttpException({ message, error: code, code }, HttpStatus.SERVICE_UNAVAILABLE);
+  }
+
   private limitException(code: LimitFailureCode, message: string): HttpException {
-    // Map to 422 for exceeded, 400 for min? Spec says stable codes, use 422 for most, 400 for min not met
+    // Map to 422 for exceeded, 400 for minimums; missing configuration is a separate 503 path.
     const status =
       code === LimitFailureCode.LIMIT_MIN_AMOUNT_NOT_MET
         ? HttpStatus.BAD_REQUEST

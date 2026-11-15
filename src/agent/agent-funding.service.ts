@@ -9,6 +9,7 @@ import {
   Injectable,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
@@ -1031,6 +1032,10 @@ export class AgentFundingService {
                   },
                 ];
 
+          // New agent wallet funding/defunding requires an active configured class/product policy.
+          if (!this.limitEnforcementService) {
+            throw new ServiceUnavailableException('Agent financial limit enforcement is unavailable');
+          }
           // V1-LIMIT-04: enforce limits for AGENT_FUNDING/AGENT_DEFUNDING
           let limitIdempotencyKey: string | null = null;
           // V1-COMMERCIAL-DECISION-03E: capture the AUTHORITATIVE enforcement result so the
@@ -1062,6 +1067,7 @@ export class AgentFundingService {
                 now: new Date(),
                 walletLedgerAccountId: walletInTx.ledgerAccountId,
                 principalWalletCustomerId: agentId,
+                requireConfiguration: true,
               });
             } catch (error) {
               if (error instanceof HttpException) {

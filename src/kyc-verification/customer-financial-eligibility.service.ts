@@ -23,7 +23,7 @@ export class CustomerFinancialEligibilityService {
     customerId: string,
     requireActiveOrOptions: boolean | FinancialEligibilityOptions = true,
     options?: FinancialEligibilityOptions,
-  ): Promise<void> {
+  ): Promise<'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3'> {
     const resolvedOptions: FinancialEligibilityOptions =
       typeof requireActiveOrOptions === 'boolean'
         ? { ...options, requireActive: requireActiveOrOptions }
@@ -107,5 +107,6 @@ export class CustomerFinancialEligibilityService {
     );
     if (assessments.length !== 1)
       throw new ConflictException('Customer is not eligible for financial access');
+    return approvedLevel;
   }
 }

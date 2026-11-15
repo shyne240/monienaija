@@ -1,7 +1,15 @@
 import { forwardRef, Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 
 import { AuthorizationModule } from '../authorization/authorization.module';
+import { AuthorizationService } from '../authorization/authorization.service';
+import { ProtectedAuthorityModule } from '../authorization/protected-authority.module';
+import { ProtectedAuthorityService } from '../authorization/protected-authority.service';
+import type { Environment } from '../config/environment';
+import { InstitutionModule } from '../institution/institution.module';
+import { KycTierModule } from '../kyc-verification/kyc-tier.module';
 import { OperationsModule } from '../operations/operations.module';
 
 import { LimitAssignmentController } from './limit-assignment.controller';
@@ -12,6 +20,8 @@ import { LimitCatalogService } from './limit-catalog.service';
 import { CustomerLimitViewService } from './customer-limit-view.service';
 import { LimitDiagnosticsService } from './limit-diagnostics.service';
 import { LimitEnforcementService } from './limit-enforcement.service';
+import { InstitutionKycLimitPolicyController } from './institution-kyc-limit-policy.controller';
+import { InstitutionKycLimitPolicyService } from './institution-kyc-limit-policy.service';
 import { LimitOperationsController } from './limit-operations.controller';
 import { LimitProfile } from './limit-profile.entity';
 import { LimitProfileResolverService } from './limit-profile-resolver.service';
@@ -32,13 +42,31 @@ import { LimitUsageService } from './limit-usage.service';
     ]),
     forwardRef(() => OperationsModule),
     forwardRef(() => AuthorizationModule),
+    ProtectedAuthorityModule,
+    forwardRef(() => KycTierModule),
+    forwardRef(() => InstitutionModule),
   ],
-  controllers: [LimitCatalogController, LimitAssignmentController, LimitOperationsController],
+  controllers: [
+    LimitCatalogController,
+    LimitAssignmentController,
+    LimitOperationsController,
+    InstitutionKycLimitPolicyController,
+  ],
   providers: [
     LimitCatalogService,
     LimitAssignmentService,
     LimitUsageService,
     LimitProfileResolverService,
+    {
+      provide: InstitutionKycLimitPolicyService,
+      inject: [DataSource, AuthorizationService, ProtectedAuthorityService, ConfigService],
+      useFactory: (
+        db: DataSource,
+        auth: AuthorizationService,
+        protectedAuthority: ProtectedAuthorityService,
+        config: ConfigService<Environment, true>,
+      ) => new InstitutionKycLimitPolicyService(db, auth, protectedAuthority, config),
+    },
     LimitEnforcementService,
     LimitDiagnosticsService,
     LimitReservationRecoveryService,
@@ -50,6 +78,7 @@ import { LimitUsageService } from './limit-usage.service';
     LimitUsageService,
     LimitProfileResolverService,
     LimitEnforcementService,
+    InstitutionKycLimitPolicyService,
     LimitDiagnosticsService,
     LimitReservationRecoveryService,
     CustomerLimitViewService,

@@ -7,6 +7,7 @@ import {
   Injectable,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
@@ -483,24 +484,32 @@ export class TransferService {
       );
     }
 
-    // — V1-LIMIT-04: limit enforcement for WALLET_TRANSFER (principal = source customer, OUTGOING) —
+    // Admission checks the exact institutional scope and trusted KYC tier for both sides. A
+    // missing customer attribution, evidence reader, policy mapping, profile, or rule rejects the
+    // new transfer before the journal can post; prior committed journals remain untouched.
+    if (
+      UUID_PATTERN.test(sourceWallet.customerId) &&
+      UUID_PATTERN.test(destinationWallet.customerId) &&
+      (!sourceWallet.institutionId ||
+        !destinationWallet.institutionId ||
+        sourceWallet.institutionId !== destinationWallet.institutionId)
+    ) {
+      throw new ServiceUnavailableException('Institutional wallet context is unavailable');
+    }
     let limitIdempotencyKey: string | null = null;
-    // V1-COMMERCIAL-DECISION-02: capture the AUTHORITATIVE enforcement result (profile, rules,
-    // reservations, usages) so the commercial snapshot records what actually governed this
-    // transfer — no second evaluation is ever performed.
+    let recipientLimitIdempotencyKey: string | null = null;
     let limitOutcome: EnforceResult | null = null;
     if (this.limitEnforcementService && UUID_PATTERN.test(sourceWallet.customerId)) {
-      const limitProduct = 'WALLET_TRANSFER';
-      const limitDirection = 'OUTGOING';
       const amountMinorStr = command.amountMinor.toString();
       limitIdempotencyKey = command.idempotencyKey;
+      recipientLimitIdempotencyKey = `transfer:${transfer.id}:incoming`;
       try {
         limitOutcome = await this.limitEnforcementService.enforceWithManager(manager, {
           principalType: 'CUSTOMER',
           principalId: sourceWallet.customerId,
-          product: limitProduct,
+          product: 'WALLET_TRANSFER',
           currency: command.currency,
-          direction: limitDirection,
+          direction: 'OUTGOING',
           channel: null,
           amountMinor: amountMinorStr,
           idempotencyKey: limitIdempotencyKey,
@@ -509,12 +518,47 @@ export class TransferService {
           now: new Date(),
           walletLedgerAccountId: sourceWallet.ledgerAccountId,
           principalWalletCustomerId: sourceWallet.customerId,
+          requireConfiguration: true,
+          requireKycTierPolicy: true,
+          institutionId: sourceWallet.institutionId,
+          serviceClass: null,
         });
+        if (UUID_PATTERN.test(destinationWallet.customerId)) {
+          await this.limitEnforcementService.enforceWithManager(manager, {
+            principalType: 'CUSTOMER',
+            principalId: destinationWallet.customerId,
+            product: 'WALLET_TRANSFER',
+            currency: command.currency,
+            direction: 'INCOMING',
+            channel: null,
+            amountMinor: amountMinorStr,
+            idempotencyKey: recipientLimitIdempotencyKey,
+            requestHash: createHash('sha256')
+              .update(`${command.requestHash}:incoming:${destinationWallet.customerId}`)
+              .digest('hex'),
+            correlationId: `transfer:${transfer.id}`,
+            now: new Date(),
+            walletLedgerAccountId: destinationWallet.ledgerAccountId,
+            principalWalletCustomerId: destinationWallet.customerId,
+            requireConfiguration: true,
+            requireKycTierPolicy: true,
+            institutionId: destinationWallet.institutionId,
+            serviceClass: null,
+          });
+        }
       } catch (error) {
+        for (const key of [limitIdempotencyKey, recipientLimitIdempotencyKey]) {
+          if (key) {
+            try {
+              await this.limitEnforcementService.releaseReservationsWithManager(manager, key);
+            } catch {
+              // Keep denial fail-closed; the enclosing transaction still owns rollback.
+            }
+          }
+        }
         if (error instanceof HttpException) {
           const resp = error.getResponse() as { error?: string; code?: string; message?: string };
           const rawCode = resp && (resp.error || resp.code);
-          // V1-LIMIT-05: type-safe mapping of the stable LIMIT_* union onto TransferFailureCode
           const limitCode = rawCode ? limitCodeToTransferFailureCode(String(rawCode)) : null;
           if (limitCode) {
             return this.markFailed(
@@ -565,14 +609,14 @@ export class TransferService {
         throw error;
       }
 
-      if (limitIdempotencyKey && this.limitEnforcementService) {
-        try {
-          await this.limitEnforcementService.releaseReservationsWithManager(
-            manager,
-            limitIdempotencyKey,
-          );
-        } catch {
-          // best-effort release; if no reservations exist this is a no-op
+      if (this.limitEnforcementService) {
+        for (const key of [limitIdempotencyKey, recipientLimitIdempotencyKey]) {
+          if (!key) continue;
+          try {
+            await this.limitEnforcementService.releaseReservationsWithManager(manager, key);
+          } catch {
+            // best-effort release; if no reservations exist this is a no-op
+          }
         }
       }
       return this.markFailed(
@@ -583,14 +627,14 @@ export class TransferService {
       );
     }
 
-    if (limitIdempotencyKey && this.limitEnforcementService) {
-      try {
-        await this.limitEnforcementService.commitReservationsWithManager(
-          manager,
-          limitIdempotencyKey,
-        );
-      } catch {
-        // best-effort commit; if no reservations exist this is a no-op
+    if (this.limitEnforcementService) {
+      for (const key of [limitIdempotencyKey, recipientLimitIdempotencyKey]) {
+        if (!key) continue;
+        try {
+          await this.limitEnforcementService.commitReservationsWithManager(manager, key);
+        } catch {
+          // best-effort commit; if no reservations exist this is a no-op
+        }
       }
     }
 

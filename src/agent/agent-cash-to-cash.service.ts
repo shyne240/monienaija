@@ -656,6 +656,9 @@ export class AgentCashToCashService {
             );
           }
 
+          if (!this.limitEnforcementService) {
+            throw new ServiceUnavailableException('Agent financial limit enforcement is unavailable');
+          }
           // V1-LIMIT-04: enforce limits for AGENT OUTGOING CASH_TO_CASH
           let limitIdempotencyKey: string | null = null;
           let agentClassIdForLimit: string | null = null;
@@ -685,6 +688,8 @@ export class AgentCashToCashService {
                 now: new Date(),
                 walletLedgerAccountId: walletInTx.ledgerAccountId,
                 principalWalletCustomerId: agentId,
+                requireConfiguration: true,
+                institutionId: fundingEvidence.institutionId,
               });
             } catch (error) {
               if (error instanceof HttpException) {

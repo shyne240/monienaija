@@ -8,14 +8,11 @@ import {
 } from '../authorization/protected-authority.service';
 
 // V1-RELEASE-01: this marker must always equal the newest file in src/migrations/*.ts.
-// It previously drifted twice (stayed at 1785753600079 while migrations 080 and 081 were
-// added), which made a freshly and fully migrated production database fail this service's
-// own compatibility check and refuse to start (schema_incompatible). See
-// test/v1-release-01-production-readiness-migration-sync.integration.spec.ts, which runs the
+// See test/v1-release-01-production-readiness-migration-sync.integration.spec.ts, which runs the
 // full migration chain against real PostgreSQL and fails the build if this constant and the
-// actual latest migration file ever diverge again.
-const EXPECTED_MIGRATION_TIMESTAMP = '1785753600503';
-const EXPECTED_MIGRATION_NAME = 'CashOutInstitutionalScope1785753600503';
+// actual latest migration file ever diverge.
+const EXPECTED_MIGRATION_TIMESTAMP = '1785753600504';
+const EXPECTED_MIGRATION_NAME = 'InstitutionKycTierLimitGovernance1785753600504';
 
 type Row = Record<string, unknown>;
 
@@ -29,6 +26,7 @@ const FINANCIAL_DEPENDENCY_BLOCKERS: readonly string[] = [
   'effective_kyc_policy_unverified',
   'provider_governance_and_routing_unverified',
   'wallet_ownership_governance_unverified',
+  'institution_kyc_tier_limit_governance_unverified',
   'financial_authorization_dependencies_unverified',
 ];
 

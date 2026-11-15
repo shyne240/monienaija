@@ -35,6 +35,10 @@ export interface AgentFinancialExecutionInput {
     currency?: string;
     walletLedgerAccountId?: string | null;
     principalWalletCustomerId?: string;
+    requireConfiguration?: boolean;
+    requireKycTierPolicy?: boolean;
+    institutionId?: string | null;
+    serviceClass?: string | null;
   };
 }
 

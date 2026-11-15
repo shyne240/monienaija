@@ -368,9 +368,13 @@ export class CustomerFundingService {
           const currency: string = request.currency;
 
           // Resolve customer wallet ledger account — ledger-derived, no balance column
-          const walletRows: Array<{ id: string; ledger_account_id: string; status: string }> =
-            await manager.query(
-              `SELECT id, ledger_account_id, status FROM wallet_accounts WHERE customer_id=$1 AND currency=$2 LIMIT 1`,
+          const walletRows: Array<{
+            id: string;
+            ledger_account_id: string;
+            status: string;
+            institution_id: string | null;
+          }> = await manager.query(
+              `SELECT id, ledger_account_id, status, institution_id FROM wallet_accounts WHERE customer_id=$1 AND currency=$2 LIMIT 1`,
               [customerId, currency],
             );
           const wallet = walletRows[0];
@@ -441,6 +445,10 @@ export class CustomerFundingService {
                 now: new Date(),
                 walletLedgerAccountId: wallet.ledger_account_id,
                 principalWalletCustomerId: customerId,
+                requireConfiguration: true,
+                requireKycTierPolicy: true,
+                institutionId: wallet.institution_id,
+                serviceClass: null,
               });
             } catch (error) {
               if (error instanceof HttpException) {

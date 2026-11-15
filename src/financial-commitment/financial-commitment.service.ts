@@ -210,8 +210,8 @@ export class FinancialCommitmentService {
     );
     if (pin.length !== 1)
       throw new UnauthorizedException('Customer PIN authorization is no longer active');
-    const wallets = await manager.query<Array<{ ledger_account_id: string }>>(
-      `SELECT ledger_account_id FROM wallet_accounts WHERE id=$1 AND customer_id=$2
+    const wallets = await manager.query<Array<{ ledger_account_id: string; institution_id: string | null }>>(
+      `SELECT ledger_account_id,institution_id FROM wallet_accounts WHERE id=$1 AND customer_id=$2
        AND status='ACTIVE' AND currency=$3 FOR UPDATE`,
       [input.walletId, input.customerId, input.currency],
     );
@@ -234,6 +234,10 @@ export class FinancialCommitmentService {
       requestHash: input.requestHash,
       walletLedgerAccountId: wallet.ledger_account_id,
       principalWalletCustomerId: input.customerId,
+      requireConfiguration: true,
+      requireKycTierPolicy: true,
+      institutionId: wallet.institution_id,
+      serviceClass: null,
     });
     const authorizationId = randomUUID();
     await this.commitments.insertAuthorization(manager, {
@@ -247,7 +251,7 @@ export class FinancialCommitmentService {
       currency: input.currency,
       requestHash: input.requestHash,
       principalId: input.customerId,
-      institution: null,
+      institution: wallet.institution_id,
     });
     const withdrawalId = await this.withdrawals.createWithdrawalInTransaction(manager, {
       walletId: input.walletId,

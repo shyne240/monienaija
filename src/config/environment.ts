@@ -157,6 +157,9 @@ export const environmentSchema = z
     // tests (unchanged production behaviour) and OFF under NODE_ENV=test; the explicit variable
     // always wins, so a test that exercises the worker can turn it back on deliberately.
     KYC_TIER_WORKER_ENABLED: booleanFromEnvironment.optional(),
+    // Tier-bound transaction admissions stay blocked until institution policy and provider/evidence
+    // approvals are complete and a deliberate operational rollout enables this gate.
+    KYC_TIER_LIMIT_ENFORCEMENT_ENABLED: booleanFromEnvironment.default(false),
     KYC_TIER_WORKER_POLL_INTERVAL_MS: z.coerce
       .number()
       .int()

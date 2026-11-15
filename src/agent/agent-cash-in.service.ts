@@ -207,6 +207,10 @@ export class AgentCashInService {
         currency: 'NGN',
         walletLedgerAccountId: customerWallet.ledgerAccountId,
         principalWalletCustomerId: customerId,
+        requireConfiguration: true,
+        requireKycTierPolicy: true,
+        institutionId: customerWallet.institutionId,
+        serviceClass: null,
       },
     });
 

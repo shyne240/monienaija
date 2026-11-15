@@ -7,6 +7,7 @@ import {
   HttpException,
   Injectable,
   Optional,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
@@ -130,6 +131,9 @@ export class AgentFinancialExecutionService {
     }
     if (ctx.principal.type !== 'AGENT' || ctx.principal.agentId !== agentId) {
       throw new UnauthorizedException('Agent financial context principal mismatch');
+    }
+    if (!this.limitEnforcementService || !input.limit) {
+      throw new ServiceUnavailableException('Agent financial limit enforcement is unavailable');
     }
 
     const idempotencyKey = input.idempotencyKey?.trim();
@@ -266,44 +270,89 @@ export class AgentFinancialExecutionService {
             }
           }
 
-          // V1-LIMIT-04: enforce limits before ledger (same SERIALIZABLE manager)
-          let limitIdempotencyKey: string | null = null;
-          // V1-COMMERCIAL-DECISION-03A: capture the AUTHORITATIVE enforcement result so the
-          // commercial snapshot records what actually governed this execution — never re-evaluated.
-          let limitOutcome: EnforceResult | null = null;
-          if (this.limitEnforcementService && input.limit) {
-            limitIdempotencyKey = idempotencyKey;
-            try {
-              limitOutcome = await this.limitEnforcementService.enforceWithManager(manager, {
-                principalType: input.limit.principalType,
-                principalId: input.limit.principalId,
-                agentClassId: input.limit.agentClassId ?? null,
-                product: input.limit.product,
-                currency: input.limit.currency ?? currency,
-                direction: input.limit.direction,
-                channel: input.limit.channel ?? null,
-                amountMinor: input.limit.amountMinor,
-                idempotencyKey: limitIdempotencyKey,
-                requestHash,
-                correlationId: input.correlationId ?? null,
-                now: new Date(),
-                walletLedgerAccountId: input.limit.walletLedgerAccountId ?? null,
-                principalWalletCustomerId:
-                  input.limit.principalWalletCustomerId ?? input.limit.principalId,
-              });
-            } catch (error) {
-              if (error instanceof HttpException) {
-                const resp = error.getResponse() as {
-                  error?: string;
-                  code?: string;
-                  message?: string;
-                };
-                const code = resp && (resp.error || resp.code);
-                if (code && String(code).startsWith('LIMIT_')) throw error;
-              }
-              throw error;
-            }
+          // Enforce both sides before ledger posting inside this SERIALIZABLE manager: the
+          // customer's tier-specific product receipt/withdrawal policy and the Agent's existing
+          // class/profile product limit. The two reservations commit or roll back with the journal.
+          const limitIdempotencyKeys: string[] = [idempotencyKey];
+          const customerLimitOutcome = await this.limitEnforcementService!.enforceWithManager(manager, {
+            principalType: input.limit!.principalType,
+            principalId: input.limit!.principalId,
+            agentClassId: input.limit!.agentClassId ?? null,
+            product: input.limit!.product,
+            currency: input.limit!.currency ?? currency,
+            direction: input.limit!.direction,
+            channel: input.limit!.channel ?? null,
+            amountMinor: input.limit!.amountMinor,
+            idempotencyKey,
+            requestHash,
+            correlationId: input.correlationId ?? null,
+            now: new Date(),
+            walletLedgerAccountId: input.limit!.walletLedgerAccountId ?? null,
+            principalWalletCustomerId:
+              input.limit!.principalWalletCustomerId ?? input.limit!.principalId,
+            requireConfiguration: true,
+            requireKycTierPolicy: input.limit!.principalType.toUpperCase() === 'CUSTOMER',
+            institutionId: input.limit!.institutionId,
+            serviceClass: input.limit!.serviceClass ?? null,
+          });
+          const agentRows = await manager.query<Array<{ agent_class_id: string | null }>>(
+            `SELECT agent_class_id FROM agents WHERE id=$1 AND deleted_at IS NULL FOR SHARE`,
+            [agentId],
+          );
+          const agentWalletRows = await manager.query<Array<{ ledger_account_id: string; institution_id: string | null }>>(
+            `SELECT ledger_account_id,institution_id FROM wallet_accounts
+              WHERE customer_id=$1 AND owner_class='AGENT' AND currency=$2 AND status='ACTIVE'
+              FOR SHARE`,
+            [agentId,currency],
+          );
+          if (agentRows.length !== 1 || agentWalletRows.length !== 1) {
+            throw new ServiceUnavailableException('Agent limit context is unavailable');
           }
+          const agentClassId = agentRows[0]!.agent_class_id;
+          if (!agentClassId) throw new ServiceUnavailableException('Agent service class is unavailable');
+          const agentLimitIdempotencyKey = `agent-limit:${createHash('sha256')
+            .update(`${agentId}:${idempotencyKey}`)
+            .digest('hex')}`;
+          limitIdempotencyKeys.push(agentLimitIdempotencyKey);
+          const agentDirection = ctx.canonicalService === 'CASH_IN'
+            ? 'OUTGOING'
+            : ctx.canonicalService === 'CASH_OUT'
+              ? 'INCOMING'
+              : null;
+          if (!agentDirection) throw new ServiceUnavailableException('Agent limit operation mapping is unavailable');
+          const agentLimitOutcome = await this.limitEnforcementService!.enforceWithManager(manager, {
+            principalType: 'AGENT',
+            principalId: agentId,
+            agentClassId,
+            product: input.limit!.product,
+            currency,
+            direction: agentDirection,
+            channel: input.limit!.channel ?? null,
+            amountMinor: String(input.limit!.amountMinor),
+            idempotencyKey: agentLimitIdempotencyKey,
+            requestHash: createHash('sha256').update(`${requestHash}:agent-limit`).digest('hex'),
+            correlationId: input.correlationId ?? null,
+            now: new Date(),
+            walletLedgerAccountId: agentWalletRows[0]!.ledger_account_id,
+            principalWalletCustomerId: agentId,
+            requireConfiguration: true,
+            institutionId: agentWalletRows[0]!.institution_id,
+          });
+          const limitOutcome: EnforceResult = {
+            ...customerLimitOutcome,
+            ruleRefs: [
+              ...(customerLimitOutcome.ruleRefs ?? []),
+              ...(agentLimitOutcome.ruleRefs ?? []),
+            ],
+            reservationIds: [
+              ...(customerLimitOutcome.reservationIds ?? []),
+              ...(agentLimitOutcome.reservationIds ?? []),
+            ],
+            usageIds: [
+              ...(customerLimitOutcome.usageIds ?? []),
+              ...(agentLimitOutcome.usageIds ?? []),
+            ],
+          };
 
           // 2. Ledger posting (atomic, with its own pessimistic_write on accounts, balance checks, no negative)
           // Use a derived idempotencyKey for ledger to keep it unique per Agent+key and avoid cross-Agent collision.
@@ -333,28 +382,16 @@ export class AgentFinancialExecutionService {
               })),
             });
           } catch (error) {
-            if (limitIdempotencyKey && this.limitEnforcementService) {
-              try {
-                await this.limitEnforcementService.releaseReservationsWithManager(
-                  manager,
-                  limitIdempotencyKey!,
-                );
-              } catch {
-                // Preserve the existing best-effort reservation handling.
-              }
+            for (const key of limitIdempotencyKeys) {
+              await this.limitEnforcementService!.releaseReservationsWithManager(manager, key);
             }
             throw error;
           }
 
-          if (limitIdempotencyKey && this.limitEnforcementService) {
-            try {
-              await this.limitEnforcementService.commitReservationsWithManager(
-                manager,
-                limitIdempotencyKey,
-              );
-            } catch {
-              // Preserve the existing best-effort reservation handling.
-            }
+          for (const key of limitIdempotencyKeys) {
+            // If reservation finalization fails, abort the transaction so the journal and usage
+            // state cannot diverge.
+            await this.limitEnforcementService!.commitReservationsWithManager(manager, key);
           }
 
           // — V1-COMMERCIAL-DECISION-03A/03B (pilot extension): record the immutable commercial

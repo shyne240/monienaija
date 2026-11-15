@@ -306,9 +306,9 @@ const runtimePrivilegesSql = `
           WHERE a.privilege_type='EXECUTE'
             AND (a.grantee=0 OR a.grantee=(SELECT oid FROM pg_roles WHERE rolname=session_user)))))
       AS protected_function_execute,
-    (SELECT count(*)=3 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+    (SELECT count(*)=4 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
       WHERE n.nspname='protected_authority'
-        AND c.relname IN ('checker_decisions','approval_consumptions','kyc_governance_decisions'))
+        AND c.relname IN ('checker_decisions','approval_consumptions','kyc_governance_decisions','institution_kyc_limit_decisions'))
       AS protected_objects_present,
     COALESCE((SELECT c.relrowsecurity AND c.relforcerowsecurity FROM pg_class c
       WHERE c.oid = to_regclass('public.privileged_action_approvals')), false) AS approval_rls,
@@ -318,7 +318,9 @@ const runtimePrivilegesSql = `
       SELECT 1 FROM unnest(ARRAY[
         'kyc_provider_configuration','kyc_provider_change_proposals',
         'kyc_provider_configuration_history','kyc_tier_policy_head',
-        'kyc_tier_policy_proposals','kyc_tier_policy_versions'
+        'kyc_tier_policy_proposals','kyc_tier_policy_versions',
+        'institution_kyc_limit_policy_heads','institution_kyc_limit_policy_proposals',
+        'institution_kyc_limit_policy_versions'
       ]) AS kyc_tables(table_name)
       WHERE has_table_privilege(session_user,format('%I.%I',current_schema(),kyc_tables.table_name),'INSERT')
         OR has_table_privilege(session_user,format('%I.%I',current_schema(),kyc_tables.table_name),'UPDATE')
@@ -333,8 +335,8 @@ const runtimePrivilegesSql = `
         OR has_table_privilege(session_user,c.oid,'REFERENCES')
         OR has_table_privilege(session_user,c.oid,'TRIGGER')
         FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-        WHERE n.nspname='protected_authority' AND c.relname='kyc_governance_decisions'),false)) AS kyc_governance_write,
-    (SELECT count(*)=7 FROM pg_trigger t
+        WHERE n.nspname='protected_authority' AND c.relname IN ('kyc_governance_decisions','institution_kyc_limit_decisions')),false)) AS kyc_governance_write,
+    (SELECT count(*)=11 FROM pg_trigger t
       JOIN pg_class c ON c.oid=t.tgrelid
       JOIN pg_namespace n ON n.oid=c.relnamespace
       WHERE NOT t.tgisinternal AND (
@@ -359,6 +361,18 @@ const runtimePrivilegesSql = `
         OR (n.nspname='protected_authority' AND c.relname='kyc_governance_decisions'
           AND t.tgname='kyc_governance_decisions_immutable'
           AND t.tgfoid='protected_authority.kyc_governance_decision_guard()'::regprocedure)
+        OR (n.nspname='protected_authority' AND c.relname='institution_kyc_limit_decisions'
+          AND t.tgname='institution_kyc_limit_decision_immutable'
+          AND t.tgfoid='protected_authority.institution_kyc_limit_decision_guard()'::regprocedure)
+        OR (n.nspname=current_schema() AND c.relname='institution_kyc_limit_policy_proposals'
+          AND t.tgname='institution_kyc_limit_proposal_authority_guard'
+          AND t.tgfoid='protected_authority.institution_kyc_limit_proposal_guard()'::regprocedure)
+        OR (n.nspname=current_schema() AND c.relname='institution_kyc_limit_policy_versions'
+          AND t.tgname='institution_kyc_limit_version_authority_guard'
+          AND t.tgfoid='protected_authority.institution_kyc_limit_version_guard()'::regprocedure)
+        OR (n.nspname=current_schema() AND c.relname='institution_kyc_limit_policy_heads'
+          AND t.tgname='institution_kyc_limit_head_authority_guard'
+          AND t.tgfoid='protected_authority.institution_kyc_limit_head_guard()'::regprocedure)
       )) AS kyc_governance_guard`;
 
 const authorityPrivilegesSql = `
@@ -383,7 +397,7 @@ const authorityPrivilegesSql = `
       (SELECT datdba FROM pg_database WHERE datname=current_database()), 'MEMBER') AS db_owner_member,
     pg_has_role(session_user,
       (SELECT nspowner FROM pg_namespace WHERE nspname='public'), 'MEMBER') AS public_schema_owner_member,
-    (SELECT count(*)=3 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+    (SELECT count(*)=4 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
       WHERE n.nspname='protected_authority'
-        AND c.relname IN ('checker_decisions','approval_consumptions','kyc_governance_decisions'))
+        AND c.relname IN ('checker_decisions','approval_consumptions','kyc_governance_decisions','institution_kyc_limit_decisions'))
       AS protected_objects_present`;

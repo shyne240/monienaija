@@ -463,6 +463,10 @@ export class AgentCashOutService {
           currency: 'NGN',
           walletLedgerAccountId: customerWallet.ledgerAccountId,
           principalWalletCustomerId: customerId,
+          requireConfiguration: true,
+          requireKycTierPolicy: true,
+          institutionId: customerWallet.institutionId,
+          serviceClass: null,
         },
       },
       async (manager, replay, requestHash) => {
