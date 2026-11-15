@@ -145,6 +145,30 @@ path), **present-but-gated** (implemented, refuses until a named authority exist
 | Release tooling: root Prettier scope, app-level lint configs, bounded PG runner       | live (see §E)                                      | `package.json`, `scripts/run-pg-integration-tests.js` |
 | Customer web target / visual pipeline                                                 | absent in the shipped app (out of scope, see §C.7) | —                                                     |
 
+### B.6 Customer financial action map (Stage 7)
+
+Every customer-facing financial affordance maps onto a real, existing backend contract. Where a
+contract does not exist, the app shows an honest unavailable state instead of inventing one.
+
+| Customer action                         | Endpoint the app calls                              | Backing contract                                                         | State                                                                      |
+| --------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Sign in with the six-digit passcode     | `POST /customers/sessions`                          | `AuthenticationExecutionService` → `AuthenticationSessionService.issue`  | live, gated by evidence (D-3)                                              |
+| Complete first-login rotation           | `POST /customers/credentials/rotate`                | `rotateInitialPasswordInManager` + revoke-all + issue in one transaction | live                                                                       |
+| Read dashboard and balance              | `GET /customers/me/dashboard`                       | `WalletService.listWallets` (ledger-derived), transfer history           | live                                                                       |
+| Read KYC level, limits, upgrade pathway | `GET /customers/me/kyc`, `GET /customers/me/limits` | `CustomerKycViewService`, governed tier-policy head, limit catalog       | live, upgrade gated (D-2, D-3)                                             |
+| Copy receiving identity                 | `GET /customers/me/receiving-identity`              | `ReceivingNumberService`                                                 | live (not a NUBAN, D-1)                                                    |
+| Send to a customer wallet               | `POST /customers/me/transfers`                      | `TransferService` + `LedgerService` + transaction PIN                    | live, only for an existing destination the resolver returned; PIN required |
+| Browse history                          | `GET /customers/me/transactions`                    | unified history projection                                               | live                                                                       |
+| Open a receipt                          | `GET /customers/me/transactions/:id`                | transfer detail projection                                               | live for wallet transfers (D-5)                                            |
+| Set / change the transaction PIN        | `POST /customers/me/transaction-pin[/change]`       | `CustomerTransactionPinService` with lockout accounting                  | live                                                                       |
+| Recover passcode or PIN                 | `/customers/credential-recovery/*`                  | `CustomerCredentialRecoveryService` + OTP + trusted evidence             | live, gated by evidence and SMS provider (D-3, D-12)                       |
+| Add money                               | none                                                | no approved funding/product intake contract exists                       | **absent, shown as unavailable** (D-4)                                     |
+| Change bank account number              | none                                                | no NUBAN allocation service exists                                       | **absent** (D-1)                                                           |
+| Refund / return a transfer              | none                                                | no approved return policy or authenticated return outcome                | **absent, refused by design** (D-10)                                       |
+
+No customer-wallet-funded Cash-to-Cash, no new rail, no client-side money creation: the only posting
+surfaces the customer app can reach are the governed wallet→wallet transfer and the read models above.
+
 ---
 
 ## C. Acceptance record
