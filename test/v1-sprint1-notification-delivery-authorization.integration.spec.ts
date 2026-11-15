@@ -184,9 +184,9 @@ describe('SPRINT-1 Notification Delivery Authorization Hardening — F-02 / P0-0
        VALUES ($1, $2, 'PBKDF2', 1, now(), 'ACTIVE', false, 0, 1)`,
       [customerId, encodePbkdf2(password)],
     );
-      // The governed gate now runs when a session is issued, and this helper builds the
-      // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
-      await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
+    // The governed gate now runs when a session is issued, and this helper builds the
+    // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const loginRes = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId, password })

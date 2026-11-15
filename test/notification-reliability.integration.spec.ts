@@ -54,10 +54,7 @@ import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 // fail-closed because nothing in AppModule references this module.
 const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
-import {
-  makeCustomerFinanciallyEligible,
-  restoreKycSingletons,
-} from './support/kyc-test-fixtures';
+import { makeCustomerFinanciallyEligible, restoreKycSingletons } from './support/kyc-test-fixtures';
 
 describe('notification reliability (real HTTP and PostgreSQL, synthetic providers only)', () => {
   let ds: DataSource;
@@ -157,9 +154,9 @@ describe('notification reliability (real HTTP and PostgreSQL, synthetic provider
       await ds.query(
         `TRUNCATE ${rows.map((r) => `"${r.tablename}"`).join(', ')} RESTART IDENTITY CASCADE`,
       );
-      // Batch 2C: a wholesale TRUNCATE also empties the migration-seeded KYC singletons
-      // (tier policy head, provider configuration, synthetic provider lock).
-      await restoreKycSingletons(ds);
+    // Batch 2C: a wholesale TRUNCATE also empties the migration-seeded KYC singletons
+    // (tier policy head, provider configuration, synthetic provider lock).
+    await restoreKycSingletons(ds);
     await seedNotificationDefaultsV1(ds.manager);
     await seedNotificationDefaultsV2(ds.manager);
     await ds.query(`INSERT INTO ledger_accounts

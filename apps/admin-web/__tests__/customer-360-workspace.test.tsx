@@ -1,7 +1,10 @@
 import React from 'react';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react';
 
-import { Customer360Workspace, type DirectoryCustomer } from '../src/screens/authenticated/Customer360Workspace';
+import {
+  Customer360Workspace,
+  type DirectoryCustomer,
+} from '../src/screens/authenticated/Customer360Workspace';
 import { ApiClient } from '../src/services/api-client';
 import { useAuthStore } from '../src/store/auth-store';
 
@@ -54,7 +57,9 @@ function mockCustomerReads() {
       return Promise.resolve({
         customerId: customer.id,
         customerStatus: 'ACTIVE',
-        phones: [{ isPrimary: true, maskedValue: '+234*****4321', verifiedAt: '2026-09-10T12:00:00.000Z' }],
+        phones: [
+          { isPrimary: true, maskedValue: '+234*****4321', verifiedAt: '2026-09-10T12:00:00.000Z' },
+        ],
         activationGate: { verifiedPrimaryPhone: true },
       });
     }
@@ -66,34 +71,73 @@ function mockCustomerReads() {
     }
     if (path.includes('/transactions?')) {
       return Promise.resolve({
-        items: [{
-          id: 'txn-1',
-          type: 'WALLET_TRANSFER',
-          status: 'COMPLETED',
-          amountMinor: '350050',
-          currency: 'NGN',
-          direction: 'OUTGOING',
-          createdAt: '2026-10-01T10:00:00.000Z',
-          counterparty: { receivingNumber: '+2340000001234' },
-        }],
+        items: [
+          {
+            id: 'txn-1',
+            type: 'WALLET_TRANSFER',
+            status: 'COMPLETED',
+            amountMinor: '350050',
+            currency: 'NGN',
+            direction: 'OUTGOING',
+            createdAt: '2026-10-01T10:00:00.000Z',
+            counterparty: { receivingNumber: '+2340000001234' },
+          },
+        ],
         pagination: { page: 1, limit: 5, total: 1 },
       });
     }
     if (path.endsWith('/wallets')) {
-      return Promise.resolve({ data: [{ id: '11111111-1111-4111-8111-111111111111', customerId: customer.id, currency: 'NGN', status: 'ACTIVE' }], total: 1 });
+      return Promise.resolve({
+        data: [
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            customerId: customer.id,
+            currency: 'NGN',
+            status: 'ACTIVE',
+          },
+        ],
+        total: 1,
+      });
     }
     if (path.endsWith('/wallets/11111111-1111-4111-8111-111111111111/balance')) {
-      return Promise.resolve({ walletId: '11111111-1111-4111-8111-111111111111', customerId: customer.id, currency: 'NGN', balanceMinor: '350050', status: 'ACTIVE' });
+      return Promise.resolve({
+        walletId: '11111111-1111-4111-8111-111111111111',
+        customerId: customer.id,
+        currency: 'NGN',
+        balanceMinor: '350050',
+        status: 'ACTIVE',
+      });
     }
     if (path.endsWith('/profile')) {
-      return Promise.resolve({ displayName: customer.displayName, legalName: customer.legalName, dateOfBirth: '1990-06-12', nationality: 'NG' });
+      return Promise.resolve({
+        displayName: customer.displayName,
+        legalName: customer.legalName,
+        dateOfBirth: '1990-06-12',
+        nationality: 'NG',
+      });
     }
     if (path.endsWith('/addresses')) {
-      return Promise.resolve([{ id: 'address-1', type: 'RESIDENTIAL', lineOne: '1 Synthetic Road', city: 'Abuja', state: 'FCT', country: 'NG', isPrimary: true }]);
+      return Promise.resolve([
+        {
+          id: 'address-1',
+          type: 'RESIDENTIAL',
+          lineOne: '1 Synthetic Road',
+          city: 'Abuja',
+          state: 'FCT',
+          country: 'NG',
+          isPrimary: true,
+        },
+      ]);
     }
     if (path.endsWith('/contact-methods')) {
       return Promise.resolve([
-        { id: 'contact-1', type: 'PHONE', value: fullPhone, isPrimary: true, verifiedAt: '2026-09-10T12:00:00.000Z' },
+        {
+          id: 'contact-1',
+          type: 'PHONE',
+          value: fullPhone,
+          isPrimary: true,
+          verifiedAt: '2026-09-10T12:00:00.000Z',
+        },
         { id: 'contact-2', type: 'EMAIL', value: fullEmail, isPrimary: false, verifiedAt: null },
       ]);
     }
@@ -136,10 +180,18 @@ describe('Batch 1 Customer 360° workspace', () => {
     expect(view.queryByText(fullPhone)).toBeNull();
     expect(view.queryByText(fullEmail)).toBeNull();
     expect(view.container.querySelector('pre')).toBeNull();
-    expect(ApiClient.get).toHaveBeenCalledWith(`/internal/customers/${customer.id}/wallets/11111111-1111-4111-8111-111111111111/balance`);
-    expect(ApiClient.get).toHaveBeenCalledWith(`/internal/customers/${customer.id}/transactions?page=1&limit=5`);
+    expect(ApiClient.get).toHaveBeenCalledWith(
+      `/internal/customers/${customer.id}/wallets/11111111-1111-4111-8111-111111111111/balance`,
+    );
+    expect(ApiClient.get).toHaveBeenCalledWith(
+      `/internal/customers/${customer.id}/transactions?page=1&limit=5`,
+    );
     expect(ApiClient.get).not.toHaveBeenCalledWith(`/customers/${customer.id}/identity-documents`);
-    expect(view.queryByRole('button', { name: /Provision Wallet|Submit KYC Assessment|Identity Documents/i })).toBeNull();
+    expect(
+      view.queryByRole('button', {
+        name: /Provision Wallet|Submit KYC Assessment|Identity Documents/i,
+      }),
+    ).toBeNull();
   });
 
   test('loads authorized personal/contact/address APIs lazily and masks contact values until explicitly shown', async () => {
@@ -171,8 +223,12 @@ describe('Batch 1 Customer 360° workspace', () => {
     );
     await view.findByRole('heading', { name: 'Synthetic Customer 360' });
     fireEvent.click(view.getByRole('tab', { name: 'Personal information & contact' }));
-    expect(await view.findByText('Contact details are restricted to authorized contact-method viewers.')).toBeTruthy();
-    expect(await view.findByText('Address details are restricted to authorized address viewers.')).toBeTruthy();
+    expect(
+      await view.findByText('Contact details are restricted to authorized contact-method viewers.'),
+    ).toBeTruthy();
+    expect(
+      await view.findByText('Address details are restricted to authorized address viewers.'),
+    ).toBeTruthy();
     expect(ApiClient.get).not.toHaveBeenCalledWith(`/customers/${customer.id}/addresses`);
     expect(ApiClient.get).not.toHaveBeenCalledWith(`/customers/${customer.id}/contact-methods`);
     expect(ApiClient.get).not.toHaveBeenCalledWith(`/customers/${customer.id}/identity-documents`);
@@ -180,11 +236,16 @@ describe('Batch 1 Customer 360° workspace', () => {
 
   test('shows explicit not-recorded states when profile, contacts and addresses are absent', async () => {
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-      if (path.endsWith('/profile')) return Promise.reject(Object.assign(new Error('not found'), { status: 404 }));
-      if (path.endsWith('/addresses') || path.endsWith('/contact-methods')) return Promise.resolve([]);
-      if (path.endsWith('/onboarding-readiness')) return Promise.resolve({ status: 'NOT_READY', onboardingStatus: null, missing: [] });
-      if (path.endsWith('/eligibility')) return Promise.reject(Object.assign(new Error('not found'), { status: 404 }));
-      if (path.endsWith('/phone-verification')) return Promise.resolve({ phones: [], activationGate: { verifiedPrimaryPhone: false } });
+      if (path.endsWith('/profile'))
+        return Promise.reject(Object.assign(new Error('not found'), { status: 404 }));
+      if (path.endsWith('/addresses') || path.endsWith('/contact-methods'))
+        return Promise.resolve([]);
+      if (path.endsWith('/onboarding-readiness'))
+        return Promise.resolve({ status: 'NOT_READY', onboardingStatus: null, missing: [] });
+      if (path.endsWith('/eligibility'))
+        return Promise.reject(Object.assign(new Error('not found'), { status: 404 }));
+      if (path.endsWith('/phone-verification'))
+        return Promise.resolve({ phones: [], activationGate: { verifiedPrimaryPhone: false } });
       if (path.endsWith('/identity-documents')) return Promise.resolve([]);
       return Promise.resolve({ items: [], data: [] });
     });
@@ -203,7 +264,11 @@ describe('Batch 1 Customer 360° workspace', () => {
     const onCustomerUpdated = jest.fn();
     (ApiClient.patch as jest.Mock).mockResolvedValue({ ...customer, status: 'SUSPENDED' });
     const view = render(
-      <Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={onCustomerUpdated} />,
+      <Customer360Workspace
+        customer={customer}
+        onBack={jest.fn()}
+        onCustomerUpdated={onCustomerUpdated}
+      />,
     );
     await view.findByRole('heading', { name: 'Synthetic Customer 360' });
     fireEvent.click(view.getByRole('button', { name: 'Suspend' }));
@@ -214,14 +279,22 @@ describe('Batch 1 Customer 360° workspace', () => {
       expect(ApiClient.patch).toHaveBeenCalledWith(`/customers/${customer.id}`, {
         status: 'SUSPENDED',
       });
-      expect(onCustomerUpdated).toHaveBeenCalledWith(expect.objectContaining({ status: 'SUSPENDED' }));
+      expect(onCustomerUpdated).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'SUSPENDED' }),
+      );
     });
   });
 
   test('lifecycle success requires the requested customer and target status', async () => {
     const callback = jest.fn();
-    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ ...customer, id: 'different-customer', status: 'SUSPENDED' });
-    const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={callback} />);
+    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({
+      ...customer,
+      id: 'different-customer',
+      status: 'SUSPENDED',
+    });
+    const view = render(
+      <Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={callback} />,
+    );
     await view.findByRole('heading', { name: 'Synthetic Customer 360' });
     fireEvent.click(view.getByRole('button', { name: 'Suspend' }));
     fireEvent.click(view.getByRole('button', { name: 'Confirm change' }));
@@ -232,14 +305,29 @@ describe('Batch 1 Customer 360° workspace', () => {
 
   test('late lifecycle changes cannot update a newly selected customer', async () => {
     let resolvePatch!: (value: DirectoryCustomer) => void;
-    (ApiClient.patch as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => { resolvePatch = resolve; }));
+    (ApiClient.patch as jest.Mock).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePatch = resolve;
+        }),
+    );
     const callback = jest.fn();
-    const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={callback} />);
+    const view = render(
+      <Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={callback} />,
+    );
     await view.findByRole('heading', { name: 'Synthetic Customer 360' });
     fireEvent.click(view.getByRole('button', { name: 'Suspend' }));
     fireEvent.click(view.getByRole('button', { name: 'Confirm change' }));
-    view.rerender(<Customer360Workspace customer={{ ...customer, id:'other', displayName:'Other Customer' }} onBack={jest.fn()} onCustomerUpdated={callback} />);
-    await act(async () => { resolvePatch({ ...customer, status:'SUSPENDED' }); });
+    view.rerender(
+      <Customer360Workspace
+        customer={{ ...customer, id: 'other', displayName: 'Other Customer' }}
+        onBack={jest.fn()}
+        onCustomerUpdated={callback}
+      />,
+    );
+    await act(async () => {
+      resolvePatch({ ...customer, status: 'SUSPENDED' });
+    });
     expect(callback).not.toHaveBeenCalled();
     expect(view.queryByText(/Customer status updated to/)).toBeNull();
   });
@@ -247,7 +335,12 @@ describe('Batch 1 Customer 360° workspace', () => {
   test('the transaction deep link carries the selected customer context without a UUID form', async () => {
     const onNavigate = jest.fn();
     const view = render(
-      <Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} onNavigate={onNavigate} />,
+      <Customer360Workspace
+        customer={customer}
+        onBack={jest.fn()}
+        onCustomerUpdated={jest.fn()}
+        onNavigate={onNavigate}
+      />,
     );
     await view.findByRole('heading', { name: 'Synthetic Customer 360' });
     fireEvent.click(view.getByRole('button', { name: 'Open transaction workspace →' }));
@@ -261,7 +354,9 @@ describe('Batch 1 Customer 360° workspace', () => {
       if (path.includes('/transactions?')) return Promise.resolve({});
       return Promise.resolve({});
     });
-    const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />);
+    const view = render(
+      <Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />,
+    );
     expect(await view.findByText('Wallet information is unavailable.')).toBeTruthy();
     expect(view.getByText('Recent transactions are unavailable.')).toBeTruthy();
     expect(view.queryByText('No financial wallets are recorded for this customer.')).toBeNull();
@@ -271,56 +366,141 @@ describe('Batch 1 Customer 360° workspace', () => {
 
   test('large monetary strings retain exact precision and non-NGN units remain explicit', async () => {
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-      if (path.endsWith('/wallets')) return Promise.resolve({ data: [{ id:'22222222-2222-4222-8222-222222222222', customerId:customer.id, currency:'NGN', status:'ACTIVE' }], total:1 });
-      if (path.endsWith('/wallets/22222222-2222-4222-8222-222222222222/balance')) return Promise.resolve({ walletId:'22222222-2222-4222-8222-222222222222', customerId:customer.id, status:'ACTIVE', currency:'NGN', balanceMinor:'900719925474099301' });
-      if (path.includes('/transactions?')) return Promise.resolve({ items:[{ id:'x', type:'TRANSFER', status:'DONE', amountMinor:'1200', currency:'USD', direction:'OUTGOING', createdAt:'2026-01-01' }] });
+      if (path.endsWith('/wallets'))
+        return Promise.resolve({
+          data: [
+            {
+              id: '22222222-2222-4222-8222-222222222222',
+              customerId: customer.id,
+              currency: 'NGN',
+              status: 'ACTIVE',
+            },
+          ],
+          total: 1,
+        });
+      if (path.endsWith('/wallets/22222222-2222-4222-8222-222222222222/balance'))
+        return Promise.resolve({
+          walletId: '22222222-2222-4222-8222-222222222222',
+          customerId: customer.id,
+          status: 'ACTIVE',
+          currency: 'NGN',
+          balanceMinor: '900719925474099301',
+        });
+      if (path.includes('/transactions?'))
+        return Promise.resolve({
+          items: [
+            {
+              id: 'x',
+              type: 'TRANSFER',
+              status: 'DONE',
+              amountMinor: '1200',
+              currency: 'USD',
+              direction: 'OUTGOING',
+              createdAt: '2026-01-01',
+            },
+          ],
+        });
       return Promise.resolve({});
     });
-    const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />);
+    const view = render(
+      <Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />,
+    );
     expect(await view.findByText('₦9,007,199,254,740,993.01')).toBeTruthy();
     expect(view.getByText('USD 1,200 minor units')).toBeTruthy();
   });
 
   test.each([
-    ['wrong customer', { data: [{ id: '11111111-1111-4111-8111-111111111111', customerId: 'other', currency: 'NGN', status: 'ACTIVE' }], total: 1 }],
+    [
+      'wrong customer',
+      {
+        data: [
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            customerId: 'other',
+            currency: 'NGN',
+            status: 'ACTIVE',
+          },
+        ],
+        total: 1,
+      },
+    ],
     ['malformed row', { data: [null], total: 1 }],
     ['wrong total', { data: [], total: 1 }],
-    ['duplicate', { data: Array(2).fill({ id: '11111111-1111-4111-8111-111111111111', customerId: customer.id, currency: 'NGN', status: 'ACTIVE' }), total: 2 }],
-    ['invalid identifier', { data: [{ id: '../wallet', customerId: customer.id, currency: 'NGN', status: 'ACTIVE' }], total: 1 }],
+    [
+      'duplicate',
+      {
+        data: Array(2).fill({
+          id: '11111111-1111-4111-8111-111111111111',
+          customerId: customer.id,
+          currency: 'NGN',
+          status: 'ACTIVE',
+        }),
+        total: 2,
+      },
+    ],
+    [
+      'invalid identifier',
+      {
+        data: [{ id: '../wallet', customerId: customer.id, currency: 'NGN', status: 'ACTIVE' }],
+        total: 1,
+      },
+    ],
   ])('rejects %s wallet list before balance requests', async (_name, page) => {
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
       if (path.endsWith('/wallets')) return Promise.resolve(page);
       return Promise.resolve({});
     });
-    const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />);
+    const view = render(
+      <Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />,
+    );
     expect(await view.findByText('Wallet information is unavailable.')).toBeTruthy();
     expect(view.queryByText('No financial wallets are recorded for this customer.')).toBeNull();
-    expect((ApiClient.get as jest.Mock).mock.calls.some(([path]) => path.includes('/balance'))).toBe(false);
+    expect(
+      (ApiClient.get as jest.Mock).mock.calls.some(([path]) => path.includes('/balance')),
+    ).toBe(false);
   });
 
   test.each([
-    ['wallet', { walletId: 'wrong' }], ['customer', { customerId: 'other' }],
-    ['currency', { currency: 'USD' }], ['amount', { balanceMinor: 9007199254740992 }],
+    ['wallet', { walletId: 'wrong' }],
+    ['customer', { customerId: 'other' }],
+    ['currency', { currency: 'USD' }],
+    ['amount', { balanceMinor: 9007199254740992 }],
     ['status', { status: 'UNKNOWN' }],
   ])('does not display mismatched balance %s', async (_name, change) => {
     const id = '11111111-1111-4111-8111-111111111111';
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-      if (path.endsWith('/wallets')) return Promise.resolve({ data: [{ id, customerId: customer.id, currency: 'NGN', status: 'ACTIVE' }], total: 1 });
-      if (path.endsWith('/balance')) return Promise.resolve({ walletId: id, customerId: customer.id, currency: 'NGN', status: 'ACTIVE', balanceMinor: '350050', ...change });
+      if (path.endsWith('/wallets'))
+        return Promise.resolve({
+          data: [{ id, customerId: customer.id, currency: 'NGN', status: 'ACTIVE' }],
+          total: 1,
+        });
+      if (path.endsWith('/balance'))
+        return Promise.resolve({
+          walletId: id,
+          customerId: customer.id,
+          currency: 'NGN',
+          status: 'ACTIVE',
+          balanceMinor: '350050',
+          ...change,
+        });
       return Promise.resolve({});
     });
-    const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />);
+    const view = render(
+      <Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />,
+    );
     expect(await view.findByText('Balance unavailable')).toBeTruthy();
     expect(view.queryByText('₦3,500.50')).toBeNull();
   });
 
   test('customer tabs use roving focus and arrow keys', async () => {
-    const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />);
+    const view = render(
+      <Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />,
+    );
     await view.findByText('Ready');
-    const overview = view.getByRole('tab', { name:'Overview' });
+    const overview = view.getByRole('tab', { name: 'Overview' });
     overview.focus();
-    fireEvent.keyDown(overview, { key:'ArrowRight' });
-    const personal = view.getByRole('tab', { name:'Personal information & contact' });
+    fireEvent.keyDown(overview, { key: 'ArrowRight' });
+    const personal = view.getByRole('tab', { name: 'Personal information & contact' });
     expect(document.activeElement).toBe(personal);
     expect(personal.getAttribute('aria-selected')).toBe('true');
     expect(overview.getAttribute('tabindex')).toBe('-1');
@@ -328,42 +508,100 @@ describe('Batch 1 Customer 360° workspace', () => {
   });
 
   test('lifecycle dialog traps focus, closes with Escape and restores its trigger', async () => {
-    const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />);
+    const view = render(
+      <Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />,
+    );
     await view.findByText('Ready');
-    const trigger = view.getByRole('button', { name:'Suspend' });
+    const trigger = view.getByRole('button', { name: 'Suspend' });
     trigger.focus();
     fireEvent.click(trigger);
-    const cancel = view.getByRole('button', { name:'Cancel' });
-    const confirm = view.getByRole('button', { name:'Confirm change' });
+    const cancel = view.getByRole('button', { name: 'Cancel' });
+    const confirm = view.getByRole('button', { name: 'Confirm change' });
     expect(document.activeElement).toBe(cancel);
-    fireEvent.keyDown(cancel, { key:'Tab', shiftKey:true });
+    fireEvent.keyDown(cancel, { key: 'Tab', shiftKey: true });
     expect(document.activeElement).toBe(confirm);
-    fireEvent.keyDown(confirm, { key:'Tab' });
+    fireEvent.keyDown(confirm, { key: 'Tab' });
     expect(document.activeElement).toBe(cancel);
-    fireEvent.keyDown(cancel, { key:'Escape' });
+    fireEvent.keyDown(cancel, { key: 'Escape' });
     expect(view.queryByRole('dialog')).toBeNull();
     expect(document.activeElement).toBe(trigger);
     expect(ApiClient.patch).not.toHaveBeenCalled();
   });
-
 });
 
-test('read-only principal cannot use lifecycle actions despite lifecycle scopes',async()=>{
- jest.clearAllMocks();setPrincipal(['customer.view','customer.suspend','customer.close','customer.activate']);useAuthStore.setState(state=>({principal:state.principal?{...state.principal,readOnlyPrincipal:true}:null}));mockCustomerReads();const view=render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()}/>);await view.findByRole('heading',{name:'Synthetic Customer 360'});expect(view.queryByRole('button',{name:'Suspend'})).toBeNull();expect(view.queryByRole('button',{name:'Close customer'})).toBeNull();expect(ApiClient.patch).not.toHaveBeenCalled();
+test('read-only principal cannot use lifecycle actions despite lifecycle scopes', async () => {
+  jest.clearAllMocks();
+  setPrincipal(['customer.view', 'customer.suspend', 'customer.close', 'customer.activate']);
+  useAuthStore.setState((state) => ({
+    principal: state.principal ? { ...state.principal, readOnlyPrincipal: true } : null,
+  }));
+  mockCustomerReads();
+  const view = render(
+    <Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />,
+  );
+  await view.findByRole('heading', { name: 'Synthetic Customer 360' });
+  expect(view.queryByRole('button', { name: 'Suspend' })).toBeNull();
+  expect(view.queryByRole('button', { name: 'Close customer' })).toBeNull();
+  expect(ApiClient.patch).not.toHaveBeenCalled();
 });
-test('unconfirmed lifecycle outcome cannot be retried in the same workspace',async()=>{
- jest.clearAllMocks();setPrincipal(['customer.view','customer.suspend']);mockCustomerReads();(ApiClient.patch as jest.Mock).mockResolvedValueOnce({...customer,id:'other',status:'SUSPENDED'});const view=render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()}/>);fireEvent.click(view.getByRole('button',{name:'Suspend'}));fireEvent.click(view.getByRole('button',{name:'Confirm change'}));expect(await view.findByText(/status change could not be confirmed/)).toBeTruthy();expect((view.getByRole('button',{name:'Confirm change'}) as HTMLButtonElement).disabled).toBe(true);fireEvent.click(view.getByRole('button',{name:'Cancel'}));expect((view.getByRole('button',{name:'Suspend'}) as HTMLButtonElement).disabled).toBe(true);expect(ApiClient.patch).toHaveBeenCalledTimes(1);
+test('unconfirmed lifecycle outcome cannot be retried in the same workspace', async () => {
+  jest.clearAllMocks();
+  setPrincipal(['customer.view', 'customer.suspend']);
+  mockCustomerReads();
+  (ApiClient.patch as jest.Mock).mockResolvedValueOnce({
+    ...customer,
+    id: 'other',
+    status: 'SUSPENDED',
+  });
+  const view = render(
+    <Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />,
+  );
+  fireEvent.click(view.getByRole('button', { name: 'Suspend' }));
+  fireEvent.click(view.getByRole('button', { name: 'Confirm change' }));
+  expect(await view.findByText(/status change could not be confirmed/)).toBeTruthy();
+  expect((view.getByRole('button', { name: 'Confirm change' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  fireEvent.click(view.getByRole('button', { name: 'Cancel' }));
+  expect((view.getByRole('button', { name: 'Suspend' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(ApiClient.patch).toHaveBeenCalledTimes(1);
 });
-test('lifecycle confirmation synchronously prevents duplicate writes',async()=>{
- jest.clearAllMocks();setPrincipal(['customer.view','customer.suspend']);mockCustomerReads();let resolve!:(value:any)=>void;const pending=new Promise(r=>resolve=r);(ApiClient.patch as jest.Mock).mockReturnValueOnce(pending);const view=render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()}/>);fireEvent.click(view.getByRole('button',{name:'Suspend'}));const confirm=view.getByRole('button',{name:'Confirm change'});fireEvent.click(confirm);fireEvent.click(confirm);expect(ApiClient.patch).toHaveBeenCalledTimes(1);await act(async()=>{resolve({...customer,status:'SUSPENDED'});await pending;});
+test('lifecycle confirmation synchronously prevents duplicate writes', async () => {
+  jest.clearAllMocks();
+  setPrincipal(['customer.view', 'customer.suspend']);
+  mockCustomerReads();
+  let resolve!: (value: any) => void;
+  const pending = new Promise((r) => (resolve = r));
+  (ApiClient.patch as jest.Mock).mockReturnValueOnce(pending);
+  const view = render(
+    <Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />,
+  );
+  fireEvent.click(view.getByRole('button', { name: 'Suspend' }));
+  const confirm = view.getByRole('button', { name: 'Confirm change' });
+  fireEvent.click(confirm);
+  fireEvent.click(confirm);
+  expect(ApiClient.patch).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    resolve({ ...customer, status: 'SUSPENDED' });
+    await pending;
+  });
 });
 
 test('personal draft requires explicit confirmation before tab change or return to directory', async () => {
   jest.clearAllMocks();
-  setPrincipal(['customer.view', 'customer.create', 'customer.view_address', 'customer.view_contact_methods', 'customer.view_identity_documents', 'kyc.review']);
+  setPrincipal([
+    'customer.view',
+    'customer.create',
+    'customer.view_address',
+    'customer.view_contact_methods',
+    'customer.view_identity_documents',
+    'kyc.review',
+  ]);
   mockCustomerReads();
   const onBack = jest.fn();
-  const view = render(<Customer360Workspace customer={customer} onBack={onBack} onCustomerUpdated={jest.fn()} />);
+  const view = render(
+    <Customer360Workspace customer={customer} onBack={onBack} onCustomerUpdated={jest.fn()} />,
+  );
   fireEvent.click(view.getByRole('tab', { name: 'Personal information & contact' }));
   fireEvent.click(await view.findByRole('button', { name: 'Edit profile' }));
   fireEvent.change(view.getByLabelText(/Display name/), { target: { value: 'Unfinished name' } });
@@ -379,22 +617,35 @@ test('personal draft requires explicit confirmation before tab change or return 
 
 test('Proof of Address draft is guarded on tab change and return to directory', async () => {
   jest.clearAllMocks();
-  setPrincipal(['customer.view', 'customer.view_address', 'customer.view_proof_of_address_metadata', 'customer.upload_proof_of_address']);
+  setPrincipal([
+    'customer.view',
+    'customer.view_address',
+    'customer.view_proof_of_address_metadata',
+    'customer.upload_proof_of_address',
+  ]);
   mockCustomerReads();
   const old = (ApiClient.get as jest.Mock).getMockImplementation()!;
   (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-    if (path.endsWith('/proof-of-address/capabilities')) return Promise.resolve({ enabled: true, maxUploadBytes: 1048576 });
-    if (path.includes('/proof-of-address?page=')) return Promise.resolve({ items: [], page: 1, limit: 20, total: 0 });
+    if (path.endsWith('/proof-of-address/capabilities'))
+      return Promise.resolve({ enabled: true, maxUploadBytes: 1048576 });
+    if (path.includes('/proof-of-address?page='))
+      return Promise.resolve({ items: [], page: 1, limit: 20, total: 0 });
     return old(path);
   });
   const onBack = jest.fn();
-  const view = render(<Customer360Workspace customer={customer} onBack={onBack} onCustomerUpdated={jest.fn()} />);
+  const view = render(
+    <Customer360Workspace customer={customer} onBack={onBack} onCustomerUpdated={jest.fn()} />,
+  );
   fireEvent.click(view.getByRole('tab', { name: 'Proof of Address & physical verification' }));
-  fireEvent.change(await view.findByLabelText('Issuer (optional)'), { target: { value: 'Synthetic issuer' } });
+  fireEvent.change(await view.findByLabelText('Issuer (optional)'), {
+    target: { value: 'Synthetic issuer' },
+  });
   fireEvent.click(view.getByRole('tab', { name: 'Overview' }));
   expect(view.getByRole('dialog', { name: 'Leave Proof of Address?' })).toBeTruthy();
   fireEvent.click(view.getByRole('button', { name: 'Keep working' }));
-  expect((view.getByLabelText('Issuer (optional)') as HTMLInputElement).value).toBe('Synthetic issuer');
+  expect((view.getByLabelText('Issuer (optional)') as HTMLInputElement).value).toBe(
+    'Synthetic issuer',
+  );
   fireEvent.click(view.getByRole('button', { name: /Back to directory/ }));
   expect(onBack).not.toHaveBeenCalled();
   fireEvent.click(view.getByRole('button', { name: 'Discard and leave' }));
@@ -402,8 +653,12 @@ test('Proof of Address draft is guarded on tab change and return to directory', 
 });
 
 test('lifecycle conflict requires a fresh matching record and explicit audit review', async () => {
-  jest.clearAllMocks(); setPrincipal(['customer.view', 'customer.suspend']); mockCustomerReads();
-  (ApiClient.patch as jest.Mock).mockRejectedValueOnce(Object.assign(new Error('conflict'), { status: 409 }));
+  jest.clearAllMocks();
+  setPrincipal(['customer.view', 'customer.suspend']);
+  mockCustomerReads();
+  (ApiClient.patch as jest.Mock).mockRejectedValueOnce(
+    Object.assign(new Error('conflict'), { status: 409 }),
+  );
   const oldGet = (ApiClient.get as jest.Mock).getMockImplementation()!;
   let reviewMode = 'failure';
   (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
@@ -415,38 +670,94 @@ test('lifecycle conflict requires a fresh matching record and explicit audit rev
     return oldGet(path);
   });
   const onBack = jest.fn();
-  const Harness = () => { const [current, setCurrent] = React.useState(customer); return <Customer360Workspace customer={current} onBack={onBack} onCustomerUpdated={setCurrent} />; };
+  const Harness = () => {
+    const [current, setCurrent] = React.useState(customer);
+    return (
+      <Customer360Workspace customer={current} onBack={onBack} onCustomerUpdated={setCurrent} />
+    );
+  };
   const view = render(<Harness />);
   fireEvent.click(view.getByRole('button', { name: 'Suspend' }));
   fireEvent.click(view.getByRole('button', { name: 'Confirm change' }));
   expect(await view.findByText(/status change conflicted/)).toBeTruthy();
-  expect((view.getByRole('button', { name: 'Confirm change' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((view.getByRole('button', { name: 'Confirm change' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
   fireEvent.click(view.getByRole('button', { name: 'Cancel' }));
   fireEvent.click(view.getByRole('button', { name: 'Refresh customer for lifecycle review' }));
   await view.findByText(/review could not be loaded/);
-  expect(view.queryByRole('button', { name: 'I reviewed customer status and audit history' })).toBeNull();
+  expect(
+    view.queryByRole('button', { name: 'I reviewed customer status and audit history' }),
+  ).toBeNull();
   reviewMode = 'wrong';
   fireEvent.click(view.getByRole('button', { name: 'Refresh customer for lifecycle review' }));
-  await waitFor(() => expect((ApiClient.get as jest.Mock).mock.calls.filter(([path]) => path === `/internal/customers/${customer.id}`)).toHaveLength(2));
-  expect(view.queryByRole('button', { name: 'I reviewed customer status and audit history' })).toBeNull();
+  await waitFor(() =>
+    expect(
+      (ApiClient.get as jest.Mock).mock.calls.filter(
+        ([path]) => path === `/internal/customers/${customer.id}`,
+      ),
+    ).toHaveLength(2),
+  );
+  expect(
+    view.queryByRole('button', { name: 'I reviewed customer status and audit history' }),
+  ).toBeNull();
   reviewMode = 'ok';
   fireEvent.click(view.getByRole('button', { name: 'Refresh customer for lifecycle review' }));
-  const acknowledge = await view.findByRole('button', { name: 'I reviewed customer status and audit history' });
-  expect(view.getByText('Current returned status:', { exact: false }).textContent).toMatch('SUSPENDED');
+  const acknowledge = await view.findByRole('button', {
+    name: 'I reviewed customer status and audit history',
+  });
+  expect(view.getByText('Current returned status:', { exact: false }).textContent).toMatch(
+    'SUSPENDED',
+  );
   fireEvent.click(acknowledge);
   expect(view.queryByRole('heading', { name: 'Customer lifecycle review required' })).toBeNull();
   expect(ApiClient.patch).toHaveBeenCalledTimes(1);
 });
 
-
-test('wallet drawer presents only the validated customer wallet and restores focus',async()=>{
- jest.clearAllMocks();setPrincipal(['customer.view','customer.view_wallets']);mockCustomerReads();
- const view=render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()}/>);
- const trigger=await view.findByRole('button',{name:'View NGN wallet details'});trigger.focus();fireEvent.click(trigger);
- const dialog=view.getByRole('dialog',{name:'Wallet details'});expect(within(dialog).getByText('11111111-1111-4111-8111-111111111111')).toBeTruthy();expect(within(dialog).getByText('₦3,500.50')).toBeTruthy();
- fireEvent.keyDown(document,{key:'Escape'});expect(view.queryByRole('dialog',{name:'Wallet details'})).toBeNull();expect(document.activeElement).toBe(trigger);expect(ApiClient.post).not.toHaveBeenCalled();expect(ApiClient.patch).not.toHaveBeenCalled();
+test('wallet drawer presents only the validated customer wallet and restores focus', async () => {
+  jest.clearAllMocks();
+  setPrincipal(['customer.view', 'customer.view_wallets']);
+  mockCustomerReads();
+  const view = render(
+    <Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />,
+  );
+  const trigger = await view.findByRole('button', { name: 'View NGN wallet details' });
+  trigger.focus();
+  fireEvent.click(trigger);
+  const dialog = view.getByRole('dialog', { name: 'Wallet details' });
+  expect(within(dialog).getByText('11111111-1111-4111-8111-111111111111')).toBeTruthy();
+  expect(within(dialog).getByText('₦3,500.50')).toBeTruthy();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(view.queryByRole('dialog', { name: 'Wallet details' })).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  expect(ApiClient.post).not.toHaveBeenCalled();
+  expect(ApiClient.patch).not.toHaveBeenCalled();
 });
-test('wallet drawer is absent without wallet permission or when the returned wallet belongs to another customer',async()=>{
- jest.clearAllMocks();setPrincipal(['customer.view']);mockCustomerReads();const view=render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()}/>);await view.findByText('Wallet information is restricted to authorized wallet viewers.');expect(view.queryByRole('button',{name:/wallet details/})).toBeNull();view.unmount();
- setPrincipal(['customer.view_wallets']);(ApiClient.get as jest.Mock).mockResolvedValue({data:[{id:'11111111-1111-4111-8111-111111111111',customerId:'other',currency:'NGN',status:'ACTIVE'}],total:1});const other=render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()}/>);await other.findByText('Wallet information is unavailable.');expect(other.queryByRole('button',{name:/wallet details/})).toBeNull();
+test('wallet drawer is absent without wallet permission or when the returned wallet belongs to another customer', async () => {
+  jest.clearAllMocks();
+  setPrincipal(['customer.view']);
+  mockCustomerReads();
+  const view = render(
+    <Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />,
+  );
+  await view.findByText('Wallet information is restricted to authorized wallet viewers.');
+  expect(view.queryByRole('button', { name: /wallet details/ })).toBeNull();
+  view.unmount();
+  setPrincipal(['customer.view_wallets']);
+  (ApiClient.get as jest.Mock).mockResolvedValue({
+    data: [
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        customerId: 'other',
+        currency: 'NGN',
+        status: 'ACTIVE',
+      },
+    ],
+    total: 1,
+  });
+  const other = render(
+    <Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />,
+  );
+  await other.findByText('Wallet information is unavailable.');
+  expect(other.queryByRole('button', { name: /wallet details/ })).toBeNull();
 });

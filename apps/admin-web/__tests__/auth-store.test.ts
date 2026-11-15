@@ -21,14 +21,20 @@ describe('Admin Web Auth Store (Zustand) Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockStorage = {};
-    
+
     // Stub localStorage
     Object.defineProperty(global, 'localStorage', {
       value: {
         getItem: (key: string) => mockStorage[key] || null,
-        setItem: (key: string, value: string) => { mockStorage[key] = value; },
-        removeItem: (key: string) => { delete mockStorage[key]; },
-        clear: () => { mockStorage = {}; },
+        setItem: (key: string, value: string) => {
+          mockStorage[key] = value;
+        },
+        removeItem: (key: string) => {
+          delete mockStorage[key];
+        },
+        clear: () => {
+          mockStorage = {};
+        },
       },
       writable: true,
     });
@@ -69,7 +75,9 @@ describe('Admin Web Auth Store (Zustand) Tests', () => {
 
     (ApiClient.post as jest.Mock).mockResolvedValue(mockSessionResponse);
 
-    await useAuthStore.getState().loginWithPassword('admin@monienaija.local', 'MonieNaijaAdmin123!');
+    await useAuthStore
+      .getState()
+      .loginWithPassword('admin@monienaija.local', 'MonieNaijaAdmin123!');
 
     expect(ApiClient.post).toHaveBeenCalledWith('/internal/a2/workforce/local-admin-sessions', {
       email: 'admin@monienaija.local',

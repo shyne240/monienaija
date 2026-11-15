@@ -1,12 +1,6 @@
 import React, { useState } from 'react';
 
-import {
-  Alert,
-  Button,
-  Field,
-  ScrollRegion,
-  StatusBadge,
-} from '../../design-system/primitives';
+import { Alert, Button, Field, ScrollRegion, StatusBadge } from '../../design-system/primitives';
 import { useAuthStore } from '../../store/auth-store';
 import {
   InstitutionAdminApi,
@@ -232,10 +226,10 @@ export const InstitutionAgentsTab: React.FC<{ institution: InstitutionSummary }>
   return (
     <div className="mn-inst__stack">
       <Alert tone="info" title="Three relationships are distinct">
-        An <strong>institutional affiliation</strong> is a governed record naming one institution. An{' '}
-        <strong>aggregator relationship</strong> links an agent to an aggregator and is never read as
-        an institutional affiliation. An agent with neither is <strong>independent</strong>. The
-        directory below reports the relationship; it never infers one.
+        An <strong>institutional affiliation</strong> is a governed record naming one institution.
+        An <strong>aggregator relationship</strong> links an agent to an aggregator and is never
+        read as an institutional affiliation. An agent with neither is <strong>independent</strong>.
+        The directory below reports the relationship; it never infers one.
       </Alert>
 
       <section className="mn-inst__panel" aria-labelledby="mn-inst-affiliations">
@@ -243,7 +237,12 @@ export const InstitutionAgentsTab: React.FC<{ institution: InstitutionSummary }>
           <h2 id="mn-inst-affiliations" className="mn-inst__panel-title">
             Affiliation records for this institution
           </h2>
-          <Button variant="quiet" size="sm" onClick={affiliations.reload} disabled={affiliations.loading}>
+          <Button
+            variant="quiet"
+            size="sm"
+            onClick={affiliations.reload}
+            disabled={affiliations.loading}
+          >
             Refresh
           </Button>
         </div>
@@ -261,7 +260,10 @@ export const InstitutionAgentsTab: React.FC<{ institution: InstitutionSummary }>
             affiliate anyone.
           </p>
         ) : (
-          <ScrollRegion label="Institution affiliations" hint="Scroll horizontally for all columns.">
+          <ScrollRegion
+            label="Institution affiliations"
+            hint="Scroll horizontally for all columns."
+          >
             <table className="mn-inst__table">
               <thead>
                 <tr>
@@ -285,7 +287,9 @@ export const InstitutionAgentsTab: React.FC<{ institution: InstitutionSummary }>
                     </td>
                     <td>{row.changeKind}</td>
                     <td>
-                      <span className="mn-inst__secondary">{row.evidenceType.replace(/_/g, ' ')}</span>
+                      <span className="mn-inst__secondary">
+                        {row.evidenceType.replace(/_/g, ' ')}
+                      </span>
                       <span className="mn-inst__secondary">{row.evidenceReference}</span>
                     </td>
                     <td className="mn-inst__mono">
@@ -294,7 +298,11 @@ export const InstitutionAgentsTab: React.FC<{ institution: InstitutionSummary }>
                     </td>
                     <td className="mn-inst__mono">{shortId(row.approvalId)}</td>
                     <td>
-                      <Button size="sm" variant="quiet" onClick={() => setHistoryAgent(row.agentId)}>
+                      <Button
+                        size="sm"
+                        variant="quiet"
+                        onClick={() => setHistoryAgent(row.agentId)}
+                      >
                         History
                       </Button>
                     </td>
@@ -323,7 +331,9 @@ export const InstitutionAgentsTab: React.FC<{ institution: InstitutionSummary }>
               Loading history…
             </p>
           ) : (history.data ?? []).length === 0 ? (
-            <p className="mn-inst__hint">No institutional affiliation has ever been recorded for this agent.</p>
+            <p className="mn-inst__hint">
+              No institutional affiliation has ever been recorded for this agent.
+            </p>
           ) : (
             <ul className="mn-inst__timeline">
               {(history.data ?? []).map((row) => (
@@ -364,7 +374,12 @@ export const InstitutionAgentsTab: React.FC<{ institution: InstitutionSummary }>
                 onChange={(event) => setSearch(event.target.value)}
               />
             </Field>
-            <Button variant="quiet" size="sm" onClick={directory.reload} disabled={directory.loading}>
+            <Button
+              variant="quiet"
+              size="sm"
+              onClick={directory.reload}
+              disabled={directory.loading}
+            >
               Refresh
             </Button>
           </div>
@@ -475,7 +490,9 @@ export const InstitutionAgentsTab: React.FC<{ institution: InstitutionSummary }>
                 id="inst-affiliate-agent"
                 className="mn-input mn-inst__mono"
                 value={requestForm.agentId}
-                onChange={(event) => setRequestForm({ ...requestForm, agentId: event.target.value })}
+                onChange={(event) =>
+                  setRequestForm({ ...requestForm, agentId: event.target.value })
+                }
                 required
               />
             </Field>
@@ -555,8 +572,8 @@ export const InstitutionAgentsTab: React.FC<{ institution: InstitutionSummary }>
             Execute an approved affiliation change
           </h2>
           <p className="mn-inst__panel-note">
-            Every field must match the approved request. A different payload is refused (the approval
-            is bound to a fingerprint of the original request).
+            Every field must match the approved request. A different payload is refused (the
+            approval is bound to a fingerprint of the original request).
           </p>
           <form className="mn-inst__grid" onSubmit={submitExecute}>
             <Field label="Agent id" htmlFor="inst-affiliate-exec-agent">
@@ -619,7 +636,10 @@ export const InstitutionAgentsTab: React.FC<{ institution: InstitutionSummary }>
                 ))}
               </select>
             </Field>
-            <Field label="Evidence reference (as approved)" htmlFor="inst-affiliate-exec-evidence-ref">
+            <Field
+              label="Evidence reference (as approved)"
+              htmlFor="inst-affiliate-exec-evidence-ref"
+            >
               <input
                 id="inst-affiliate-exec-evidence-ref"
                 className="mn-input"
@@ -748,7 +768,12 @@ export const InstitutionWorkforceTab: React.FC<{ institution: InstitutionSummary
           <h2 id="mn-inst-workforce-list" className="mn-inst__panel-title">
             Workforce assignments
           </h2>
-          <Button variant="quiet" size="sm" onClick={assignments.reload} disabled={assignments.loading}>
+          <Button
+            variant="quiet"
+            size="sm"
+            onClick={assignments.reload}
+            disabled={assignments.loading}
+          >
             Refresh
           </Button>
         </div>
@@ -800,7 +825,12 @@ export const InstitutionWorkforceTab: React.FC<{ institution: InstitutionSummary
                     </td>
                     <td>
                       {canAssign && row.status === 'ACTIVE' ? (
-                        <Button size="sm" variant="danger" disabled={busy} onClick={() => void revoke(row)}>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          disabled={busy}
+                          onClick={() => void revoke(row)}
+                        >
                           Revoke
                         </Button>
                       ) : null}
@@ -1027,7 +1057,12 @@ export const InstitutionEnrolmentsTab: React.FC<{ institution: InstitutionSummar
           <h2 id="mn-inst-enrolments" className="mn-inst__panel-title">
             Enrolments at this institution
           </h2>
-          <Button variant="quiet" size="sm" onClick={enrolments.reload} disabled={enrolments.loading}>
+          <Button
+            variant="quiet"
+            size="sm"
+            onClick={enrolments.reload}
+            disabled={enrolments.loading}
+          >
             Refresh
           </Button>
         </div>
@@ -1061,9 +1096,7 @@ export const InstitutionEnrolmentsTab: React.FC<{ institution: InstitutionSummar
                     <td className="mn-inst__mono">{row.reference}</td>
                     <td className="mn-inst__mono">{shortId(row.customerId)}</td>
                     <td>
-                      <StatusBadge tone={ENROLMENT_TONES[row.status]}>
-                        {row.status}
-                      </StatusBadge>
+                      <StatusBadge tone={ENROLMENT_TONES[row.status]}>{row.status}</StatusBadge>
                     </td>
                     <td>
                       <StatusBadge tone={ELIGIBILITY_TONES[row.financialEligibility] ?? 'neutral'}>
@@ -1115,7 +1148,11 @@ export const InstitutionEnrolmentsTab: React.FC<{ institution: InstitutionSummar
                 required
               />
             </Field>
-            <Field label="Enrolment reference" htmlFor="inst-enrol-reference" hint="3–80 characters.">
+            <Field
+              label="Enrolment reference"
+              htmlFor="inst-enrol-reference"
+              hint="3–80 characters."
+            >
               <input
                 id="inst-enrol-reference"
                 className="mn-input"
@@ -1182,9 +1219,7 @@ export const InstitutionEnrolmentsTab: React.FC<{ institution: InstitutionSummar
                 className="mn-input"
                 value={form.kycEvidenceReference}
                 maxLength={160}
-                onChange={(event) =>
-                  setForm({ ...form, kycEvidenceReference: event.target.value })
-                }
+                onChange={(event) => setForm({ ...form, kycEvidenceReference: event.target.value })}
               />
             </Field>
             <Field label="KYC reuse consent (optional)" htmlFor="inst-enrol-kyc-consent">
@@ -1232,8 +1267,8 @@ export const InstitutionEnrolmentsTab: React.FC<{ institution: InstitutionSummar
             </div>
           ) : (
             <p className="mn-inst__hint">
-              Executing requires <code>institution.enrolment.approve</code> plus an approval issued to
-              this exact payload.
+              Executing requires <code>institution.enrolment.approve</code> plus an approval issued
+              to this exact payload.
             </p>
           )}
         </section>
@@ -1270,8 +1305,8 @@ export const InstitutionEnrolmentsTab: React.FC<{ institution: InstitutionSummar
               <ul className="mn-inst__timeline">
                 {lookup.map((row) => (
                   <li key={row.id}>
-                    institution <span className="mn-inst__mono">{shortId(row.institutionId)}</span> ·{' '}
-                    {row.status} · {row.financialEligibility.replace(/_/g, ' ')} · since{' '}
+                    institution <span className="mn-inst__mono">{shortId(row.institutionId)}</span>{' '}
+                    · {row.status} · {row.financialEligibility.replace(/_/g, ' ')} · since{' '}
                     {formatTimestamp(row.effectiveFrom)}
                   </li>
                 ))}
@@ -1304,7 +1339,8 @@ export const InstitutionAccountsTab: React.FC<{ institution: InstitutionSummary 
 }) => {
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
-  const canManage = hasAnyScope(scopes, INSTITUTION_FUNCTIONS.manage) && !principal?.readOnlyPrincipal;
+  const canManage =
+    hasAnyScope(scopes, INSTITUTION_FUNCTIONS.manage) && !principal?.readOnlyPrincipal;
   const canPrepare =
     hasAnyScope(scopes, INSTITUTION_FUNCTIONS.attributionPrepare) && !principal?.readOnlyPrincipal;
   const canExecute =
@@ -1477,7 +1513,10 @@ export const InstitutionAccountsTab: React.FC<{ institution: InstitutionSummary 
             opened here; platform operations accounts are not yours to open.
           </p>
         ) : (
-          <ScrollRegion label="Institutional ledger accounts" hint="Scroll horizontally for all columns.">
+          <ScrollRegion
+            label="Institutional ledger accounts"
+            hint="Scroll horizontally for all columns."
+          >
             <table className="mn-inst__table">
               <thead>
                 <tr>
@@ -1501,7 +1540,9 @@ export const InstitutionAccountsTab: React.FC<{ institution: InstitutionSummary 
                     <td>{row.currency}</td>
                     <td>{row.institutionalPurpose?.replace(/_/g, ' ') ?? '—'}</td>
                     <td>
-                      <StatusBadge tone={row.institutionalScope === 'INSTITUTION' ? 'success' : 'neutral'}>
+                      <StatusBadge
+                        tone={row.institutionalScope === 'INSTITUTION' ? 'success' : 'neutral'}
+                      >
                         {row.institutionalScope}
                       </StatusBadge>
                     </td>
@@ -1617,7 +1658,12 @@ export const InstitutionAccountsTab: React.FC<{ institution: InstitutionSummary 
           <h2 id="mn-inst-attributions" className="mn-inst__panel-title">
             Governed wallet attributions
           </h2>
-          <Button variant="quiet" size="sm" onClick={attributions.reload} disabled={attributions.loading}>
+          <Button
+            variant="quiet"
+            size="sm"
+            onClick={attributions.reload}
+            disabled={attributions.loading}
+          >
             Refresh
           </Button>
         </div>
@@ -1751,7 +1797,11 @@ export const InstitutionAccountsTab: React.FC<{ institution: InstitutionSummary 
                 }
               />
             </Field>
-            <Button variant="danger" disabled={busy} onClick={() => void submitAttribution('execute')}>
+            <Button
+              variant="danger"
+              disabled={busy}
+              onClick={() => void submitAttribution('execute')}
+            >
               Execute approved attribution
             </Button>
           </div>
@@ -1769,7 +1819,12 @@ export const InstitutionAccountsTab: React.FC<{ institution: InstitutionSummary 
             <h2 id="mn-inst-unattributed" className="mn-inst__panel-title">
               Unattributed financial accounts (platform)
             </h2>
-            <Button variant="quiet" size="sm" onClick={unattributed.reload} disabled={unattributed.loading}>
+            <Button
+              variant="quiet"
+              size="sm"
+              onClick={unattributed.reload}
+              disabled={unattributed.loading}
+            >
               Refresh
             </Button>
           </div>
@@ -1813,7 +1868,9 @@ export const InstitutionAccountsTab: React.FC<{ institution: InstitutionSummary 
                       <td className="mn-inst__mono">{row.balanceMinor}</td>
                       <td>
                         {row.ledgerLineCount > 0 ? (
-                          <StatusBadge tone="warning">Posted history — not attributable</StatusBadge>
+                          <StatusBadge tone="warning">
+                            Posted history — not attributable
+                          </StatusBadge>
                         ) : (
                           <StatusBadge tone="info">Attributable via governed request</StatusBadge>
                         )}

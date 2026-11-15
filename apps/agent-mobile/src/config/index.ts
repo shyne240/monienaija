@@ -17,5 +17,4 @@
 // EXPO_PUBLIC_API_URL=https://api.monienaija.ng in the EAS build profile now controls the
 // shipped API endpoint. The literal below remains the local-development fallback only.
 export const DEFAULT_BASE_URL =
-  (typeof process !== 'undefined' && process.env.EXPO_PUBLIC_API_URL) ||
-  'http://10.0.2.2:3000';
+  (typeof process !== 'undefined' && process.env.EXPO_PUBLIC_API_URL) || 'http://10.0.2.2:3000';

@@ -122,7 +122,8 @@ export function createTestEvidenceReader(
         !profile.date_of_birth ||
         phones.length !== 1 ||
         !phone
-      ) {        return null;
+      ) {
+        return null;
       }
 
       const binding = identityBindingMac(

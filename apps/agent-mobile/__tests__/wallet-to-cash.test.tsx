@@ -32,7 +32,8 @@ jest.mock('../src/services/agent-api', () => ({
   handoffCashOutReconciliation: jest.fn(),
   describeApiError: jest.requireActual('../src/services/agent-api').describeApiError,
   describeCashOutError: jest.requireActual('../src/services/agent-api').describeCashOutError,
-  isAmbiguousOperationOutcome: jest.requireActual('../src/services/agent-api').isAmbiguousOperationOutcome,
+  isAmbiguousOperationOutcome: jest.requireActual('../src/services/agent-api')
+    .isAmbiguousOperationOutcome,
 }));
 
 const mockApi = jest.requireMock('../src/services/agent-api') as {
@@ -271,7 +272,9 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
 
   test('client-side validation: blocks submit if MFA challenge has not been requested', async () => {
     const { getByTestId, getByText } = wrap(<WalletToCashConfirmScreen />);
-    await waitFor(() => expect(getByTestId('w2c-confirm-submit').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() =>
+      expect(getByTestId('w2c-confirm-submit').props.accessibilityState.disabled).toBe(false),
+    );
 
     fireEvent.changeText(getByTestId('w2c-otp-input'), '123456');
     fireEvent.changeText(getByTestId('w2c-customer-pin-input'), '1111');
@@ -287,7 +290,9 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     const { getByTestId, getByText } = wrap(<WalletToCashConfirmScreen />);
 
     // Request MFA challenge
-    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() =>
+      expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false),
+    );
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -315,7 +320,9 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
     // Request MFA
-    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() =>
+      expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false),
+    );
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -349,7 +356,9 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     );
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
-    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() =>
+      expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false),
+    );
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -371,7 +380,9 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockRejectedValue(apiError('Customer PIN invalid', 401));
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
-    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() =>
+      expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false),
+    );
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -396,7 +407,9 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockRejectedValue(apiError('Agent PIN invalid: PIN_INVALID', 401));
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
-    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() =>
+      expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false),
+    );
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -417,7 +430,9 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockRejectedValue(apiError('OTP invalid: MFA_INVALID_OTP', 400));
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
-    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() =>
+      expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false),
+    );
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -438,7 +453,9 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockRejectedValue(apiError('OTP expired', 400));
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
-    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() =>
+      expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false),
+    );
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -459,7 +476,9 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockRejectedValue(apiError('Insufficient available balance', 409));
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
-    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() =>
+      expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false),
+    );
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -480,7 +499,9 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockRejectedValue(apiError('Agent not permitted: AGENT_SUSPENDED', 403));
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
-    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() =>
+      expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false),
+    );
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -501,7 +522,9 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockRejectedValue(apiError('Database deadlock at tx_34', 500));
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
-    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() =>
+      expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false),
+    );
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -524,7 +547,9 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockRejectedValue(netErr);
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
-    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() =>
+      expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false),
+    );
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -547,7 +572,9 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     const { client, getByTestId } = wrap(<WalletToCashConfirmScreen />);
     const spy = jest.spyOn(client, 'invalidateQueries');
 
-    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() =>
+      expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false),
+    );
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -572,7 +599,9 @@ describe('Wallet→Cash — Step 3: Confirmation & Multi-party Authorization', (
     mockApi.agentCashOut.mockResolvedValue(cashOutResult);
     const { getByTestId } = wrap(<WalletToCashConfirmScreen />);
 
-    await waitFor(() => expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() =>
+      expect(getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false),
+    );
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 
@@ -723,7 +752,11 @@ describe('Wallet→Cash — Idempotency-Key durability across a simulated proces
 
   const fillAndSubmit = async (screen: ReturnType<typeof wrap>) => {
     mockApi.requestAgentMfaChallenge.mockResolvedValue(mfaChallenge);
-    await waitFor(() => expect(screen.getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() =>
+      expect(screen.getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(
+        false,
+      ),
+    );
     fireEvent.press(screen.getByTestId('mfa-request-button'));
     await waitFor(() => expect(screen.getByTestId('mfa-ready-title')).toBeTruthy());
     fireEvent.changeText(screen.getByTestId('w2c-otp-input'), '123456');
@@ -760,9 +793,27 @@ describe('Wallet→Cash — Idempotency-Key durability across a simulated proces
   });
 
   test('2. restart recovers the original receipt without new authorization', async () => {
-    await savePendingAgentOperation({ agentId, operationType:'CASH_OUT', idempotencyKey:'w2c-restart-original', counterpartyId:customer.customerId, amountMinor:'300000', currency:'NGN', createdAt:new Date().toISOString() });
-    mockRoute = { key:'k2', name:'WalletToCashConfirm', params:{customer, amountMinor:'300000', idempotencyKey:'fresh-key'} };
-    mockApi.recoverAgentCashOut.mockResolvedValueOnce({...cashOutResult, agentId, idempotencyKey:'w2c-restart-original', status:'REPLAYED', replayed:true});
+    await savePendingAgentOperation({
+      agentId,
+      operationType: 'CASH_OUT',
+      idempotencyKey: 'w2c-restart-original',
+      counterpartyId: customer.customerId,
+      amountMinor: '300000',
+      currency: 'NGN',
+      createdAt: new Date().toISOString(),
+    });
+    mockRoute = {
+      key: 'k2',
+      name: 'WalletToCashConfirm',
+      params: { customer, amountMinor: '300000', idempotencyKey: 'fresh-key' },
+    };
+    mockApi.recoverAgentCashOut.mockResolvedValueOnce({
+      ...cashOutResult,
+      agentId,
+      idempotencyKey: 'w2c-restart-original',
+      status: 'REPLAYED',
+      replayed: true,
+    });
     const screen = wrap(<WalletToCashConfirmScreen />);
     await waitFor(() => expect(screen.getByTestId('w2c-recovery-card')).toBeTruthy());
     expect(screen.getByTestId('mfa-request-button').props.accessibilityState.disabled).toBe(true);
@@ -775,32 +826,59 @@ describe('Wallet→Cash — Idempotency-Key durability across a simulated proces
   });
 
   test('unresolved operation only clears after server-confirmed cancellation', async () => {
-    await savePendingAgentOperation({agentId,operationType:'CASH_OUT',idempotencyKey:'pending-cancel',counterpartyId:customer.customerId,amountMinor:'300000',currency:'NGN',createdAt:new Date().toISOString()});
-    mockRoute={key:'k',name:'WalletToCashConfirm',params:{customer,amountMinor:'300000',idempotencyKey:'fresh'}};
+    await savePendingAgentOperation({
+      agentId,
+      operationType: 'CASH_OUT',
+      idempotencyKey: 'pending-cancel',
+      counterpartyId: customer.customerId,
+      amountMinor: '300000',
+      currency: 'NGN',
+      createdAt: new Date().toISOString(),
+    });
+    mockRoute = {
+      key: 'k',
+      name: 'WalletToCashConfirm',
+      params: { customer, amountMinor: '300000', idempotencyKey: 'fresh' },
+    };
     const screen = wrap(<WalletToCashConfirmScreen />);
     await waitFor(() => expect(screen.getByTestId('w2c-cancel-pending')).toBeTruthy());
     mockApi.cancelPendingAgentCashOut.mockRejectedValueOnce(new Error('completed'));
     fireEvent.press(screen.getByTestId('w2c-cancel-pending'));
     await waitFor(() => expect(screen.getByTestId('w2c-recovery-error')).toBeTruthy());
-    expect(await loadPendingAgentOperation(agentId,'CASH_OUT')).not.toBeNull();
-    mockApi.cancelPendingAgentCashOut.mockResolvedValueOnce({status:'CANCELLED'});
+    expect(await loadPendingAgentOperation(agentId, 'CASH_OUT')).not.toBeNull();
+    mockApi.cancelPendingAgentCashOut.mockResolvedValueOnce({ status: 'CANCELLED' });
     fireEvent.press(screen.getByTestId('w2c-cancel-pending'));
     await waitFor(() => expect(mockReset).toHaveBeenCalled());
-    expect(await loadPendingAgentOperation(agentId,'CASH_OUT')).toBeNull();
+    expect(await loadPendingAgentOperation(agentId, 'CASH_OUT')).toBeNull();
   });
 
   test('lost response then remount and reauthentication recovers without a second submission', async () => {
-    mockRoute={key:'first',name:'WalletToCashConfirm',params:{customer,amountMinor:'300000',idempotencyKey:'lost-response'}};
-    const networkErr = new Error('lost response'); networkErr.name = 'NetworkError';
+    mockRoute = {
+      key: 'first',
+      name: 'WalletToCashConfirm',
+      params: { customer, amountMinor: '300000', idempotencyKey: 'lost-response' },
+    };
+    const networkErr = new Error('lost response');
+    networkErr.name = 'NetworkError';
     mockApi.agentCashOut.mockRejectedValueOnce(networkErr);
     const first = wrap(<WalletToCashConfirmScreen />);
     await fillAndSubmit(first);
     await waitFor(() => expect(first.getByTestId('w2c-recovery-card')).toBeTruthy());
     first.unmount();
-    useAuthStore.setState({agentId:null});
-    useAuthStore.setState({agentId});
-    mockRoute={key:'restart',name:'WalletToCashConfirm',params:{customer,amountMinor:'300000',idempotencyKey:'new-key'}};
-    mockApi.recoverAgentCashOut.mockResolvedValueOnce({...cashOutResult,agentId,idempotencyKey:'lost-response',status:'REPLAYED',replayed:true});
+    useAuthStore.setState({ agentId: null });
+    useAuthStore.setState({ agentId });
+    mockRoute = {
+      key: 'restart',
+      name: 'WalletToCashConfirm',
+      params: { customer, amountMinor: '300000', idempotencyKey: 'new-key' },
+    };
+    mockApi.recoverAgentCashOut.mockResolvedValueOnce({
+      ...cashOutResult,
+      agentId,
+      idempotencyKey: 'lost-response',
+      status: 'REPLAYED',
+      replayed: true,
+    });
     const restarted = wrap(<WalletToCashConfirmScreen />);
     await waitFor(() => expect(restarted.getByTestId('w2c-recover-button')).toBeTruthy());
     fireEvent.press(restarted.getByTestId('w2c-recover-button'));
@@ -811,59 +889,139 @@ describe('Wallet→Cash — Idempotency-Key durability across a simulated proces
   });
 
   test('durable storage failure prevents submission', async () => {
-    mockRoute={key:'k',name:'WalletToCashConfirm',params:{customer,amountMinor:'300000',idempotencyKey:'storage-failure'}};
+    mockRoute = {
+      key: 'k',
+      name: 'WalletToCashConfirm',
+      params: { customer, amountMinor: '300000', idempotencyKey: 'storage-failure' },
+    };
     const screen = wrap(<WalletToCashConfirmScreen />);
-    const storage = jest.spyOn(SecureStorage, 'setDurable').mockRejectedValueOnce(new Error('disk unavailable'));
+    const storage = jest
+      .spyOn(SecureStorage, 'setDurable')
+      .mockRejectedValueOnce(new Error('disk unavailable'));
     await fillAndSubmit(screen);
-    await waitFor(() => expect(screen.getByTestId('w2c-confirm-error').props.children).toMatch(/storage unavailable/i));
+    await waitFor(() =>
+      expect(screen.getByTestId('w2c-confirm-error').props.children).toMatch(
+        /storage unavailable/i,
+      ),
+    );
     expect(mockApi.agentCashOut).not.toHaveBeenCalled();
     storage.mockRestore();
   });
 
   test('replacement uses one atomic supersession request and fresh customer authorization', async () => {
-    await savePendingAgentOperation({agentId,operationType:'CASH_OUT',idempotencyKey:'old',counterpartyId:customer.customerId,amountMinor:'300000',currency:'NGN',createdAt:new Date().toISOString()});
-    mockRoute={key:'k',name:'WalletToCashConfirm',params:{customer,amountMinor:'700000',idempotencyKey:'new'}};
+    await savePendingAgentOperation({
+      agentId,
+      operationType: 'CASH_OUT',
+      idempotencyKey: 'old',
+      counterpartyId: customer.customerId,
+      amountMinor: '300000',
+      currency: 'NGN',
+      createdAt: new Date().toISOString(),
+    });
+    mockRoute = {
+      key: 'k',
+      name: 'WalletToCashConfirm',
+      params: { customer, amountMinor: '700000', idempotencyKey: 'new' },
+    };
     mockApi.requestAgentMfaChallenge.mockResolvedValueOnce(mfaChallenge);
-    const screen=wrap(<WalletToCashConfirmScreen />);
+    const screen = wrap(<WalletToCashConfirmScreen />);
     await waitFor(() => expect(screen.getByTestId('w2c-replace')).toBeTruthy());
     fireEvent.press(screen.getByTestId('w2c-replace'));
     await waitFor(() => expect(screen.getByTestId('w2c-replacement-ready')).toBeTruthy());
-    expect(mockApi.requestAgentMfaChallenge).toHaveBeenCalledWith(customer.customerId,'WALLET_TO_CASH',undefined,{amountMinor:'700000',currency:'NGN',operationKey:'new',supersedesOperationKey:'old'});
+    expect(mockApi.requestAgentMfaChallenge).toHaveBeenCalledWith(
+      customer.customerId,
+      'WALLET_TO_CASH',
+      undefined,
+      {
+        amountMinor: '700000',
+        currency: 'NGN',
+        operationKey: 'new',
+        supersedesOperationKey: 'old',
+      },
+    );
     expect(mockApi.cancelPendingAgentCashOut).not.toHaveBeenCalled();
-    expect((await loadPendingAgentOperation(agentId,'CASH_OUT'))?.idempotencyKey).toBe('new');
+    expect((await loadPendingAgentOperation(agentId, 'CASH_OUT'))?.idempotencyKey).toBe('new');
   });
 
   test('ambiguous replacement survives remount and checks both operation locators', async () => {
-    await savePendingAgentOperation({agentId,operationType:'CASH_OUT',idempotencyKey:'old',counterpartyId:customer.customerId,amountMinor:'300000',currency:'NGN',createdAt:new Date().toISOString()});
-    mockRoute={key:'k',name:'WalletToCashConfirm',params:{customer,amountMinor:'700000',idempotencyKey:'new'}};
+    await savePendingAgentOperation({
+      agentId,
+      operationType: 'CASH_OUT',
+      idempotencyKey: 'old',
+      counterpartyId: customer.customerId,
+      amountMinor: '300000',
+      currency: 'NGN',
+      createdAt: new Date().toISOString(),
+    });
+    mockRoute = {
+      key: 'k',
+      name: 'WalletToCashConfirm',
+      params: { customer, amountMinor: '700000', idempotencyKey: 'new' },
+    };
     mockApi.requestAgentMfaChallenge.mockRejectedValueOnce(new Error('lost response'));
-    const first=wrap(<WalletToCashConfirmScreen />);
+    const first = wrap(<WalletToCashConfirmScreen />);
     await waitFor(() => expect(first.getByTestId('w2c-replace')).toBeTruthy());
     fireEvent.press(first.getByTestId('w2c-replace'));
     await waitFor(() => expect(first.getByTestId('w2c-replacement-uncertain')).toBeTruthy());
-    expect((await loadPendingAgentOperation(agentId,'CASH_OUT'))?.replacement?.idempotencyKey).toBe('new');
+    expect(
+      (await loadPendingAgentOperation(agentId, 'CASH_OUT'))?.replacement?.idempotencyKey,
+    ).toBe('new');
     first.unmount();
-    mockApi.getCashOutReplacementStatus.mockResolvedValueOnce({status:'REPLACED',replacementStatus:'ACTIVE',customerId:customer.customerId,amountMinor:'700000',currency:'NGN'});
-    const reopened=wrap(<WalletToCashConfirmScreen />);
+    mockApi.getCashOutReplacementStatus.mockResolvedValueOnce({
+      status: 'REPLACED',
+      replacementStatus: 'ACTIVE',
+      customerId: customer.customerId,
+      amountMinor: '700000',
+      currency: 'NGN',
+    });
+    const reopened = wrap(<WalletToCashConfirmScreen />);
     await waitFor(() => expect(reopened.getByTestId('w2c-check-replacement')).toBeTruthy());
     fireEvent.press(reopened.getByTestId('w2c-check-replacement'));
     await waitFor(() => expect(reopened.getByTestId('w2c-recovery-card')).toBeTruthy());
-    expect(mockApi.getCashOutReplacementStatus).toHaveBeenCalledWith('old','new');
-    expect((await loadPendingAgentOperation(agentId,'CASH_OUT'))?.idempotencyKey).toBe('new');
+    expect(mockApi.getCashOutReplacementStatus).toHaveBeenCalledWith('old', 'new');
+    expect((await loadPendingAgentOperation(agentId, 'CASH_OUT'))?.idempotencyKey).toBe('new');
     expect(mockApi.agentCashOut).not.toHaveBeenCalled();
   });
 
   test('ambiguous replacement handoff preserves both references and pending state', async () => {
-    await savePendingAgentOperation({agentId,operationType:'CASH_OUT',idempotencyKey:'old',counterpartyId:customer.customerId,amountMinor:'300000',currency:'NGN',createdAt:new Date().toISOString(),replacement:{idempotencyKey:'new',counterpartyId:customer.customerId,amountMinor:'700000',currency:'NGN'}});
-    mockRoute={key:'k',name:'WalletToCashConfirm',params:{customer,amountMinor:'700000',idempotencyKey:'new'}};
-    mockApi.handoffCashOutReconciliation.mockResolvedValue({id:'case-id'});
-    const screen=wrap(<WalletToCashConfirmScreen />);
+    await savePendingAgentOperation({
+      agentId,
+      operationType: 'CASH_OUT',
+      idempotencyKey: 'old',
+      counterpartyId: customer.customerId,
+      amountMinor: '300000',
+      currency: 'NGN',
+      createdAt: new Date().toISOString(),
+      replacement: {
+        idempotencyKey: 'new',
+        counterpartyId: customer.customerId,
+        amountMinor: '700000',
+        currency: 'NGN',
+      },
+    });
+    mockRoute = {
+      key: 'k',
+      name: 'WalletToCashConfirm',
+      params: { customer, amountMinor: '700000', idempotencyKey: 'new' },
+    };
+    mockApi.handoffCashOutReconciliation.mockResolvedValue({ id: 'case-id' });
+    const screen = wrap(<WalletToCashConfirmScreen />);
     await waitFor(() => expect(screen.getByTestId('w2c-handoff')).toBeTruthy());
     fireEvent.press(screen.getByTestId('w2c-handoff'));
     await waitFor(() => expect(screen.getByTestId('w2c-handoff-message')).toBeTruthy());
-    expect(mockApi.handoffCashOutReconciliation).toHaveBeenNthCalledWith(1,'old','REPLACEMENT_UNKNOWN');
-    expect(mockApi.handoffCashOutReconciliation).toHaveBeenNthCalledWith(2,'new','REPLACEMENT_UNKNOWN');
-    expect((await loadPendingAgentOperation(agentId,'CASH_OUT'))?.replacement?.idempotencyKey).toBe('new');
+    expect(mockApi.handoffCashOutReconciliation).toHaveBeenNthCalledWith(
+      1,
+      'old',
+      'REPLACEMENT_UNKNOWN',
+    );
+    expect(mockApi.handoffCashOutReconciliation).toHaveBeenNthCalledWith(
+      2,
+      'new',
+      'REPLACEMENT_UNKNOWN',
+    );
+    expect(
+      (await loadPendingAgentOperation(agentId, 'CASH_OUT'))?.replacement?.idempotencyKey,
+    ).toBe('new');
   });
 
   test('3. success clears the persisted operation', async () => {
@@ -876,7 +1034,9 @@ describe('Wallet→Cash — Idempotency-Key durability across a simulated proces
     const screen = wrap(<WalletToCashConfirmScreen />);
     await fillAndSubmit(screen);
     await waitFor(() => expect(mockReset).toHaveBeenCalled());
-    await waitFor(async () => expect(await loadPendingAgentOperation(agentId, 'CASH_OUT')).toBeNull());
+    await waitFor(async () =>
+      expect(await loadPendingAgentOperation(agentId, 'CASH_OUT')).toBeNull(),
+    );
   });
 
   test('4. a definitive rejection (4xx) clears the persisted operation — a later attempt gets a clean new key', async () => {
@@ -893,7 +1053,9 @@ describe('Wallet→Cash — Idempotency-Key durability across a simulated proces
         'Customer transaction PIN is invalid. Ask the customer to check and try again.',
       ),
     );
-    await waitFor(async () => expect(await loadPendingAgentOperation(agentId, 'CASH_OUT')).toBeNull());
+    await waitFor(async () =>
+      expect(await loadPendingAgentOperation(agentId, 'CASH_OUT')).toBeNull(),
+    );
     first.unmount();
 
     mockApi.agentCashOut.mockResolvedValueOnce(cashOutResult);

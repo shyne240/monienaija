@@ -75,7 +75,8 @@ export const InstitutionDirectoryScreen: React.FC<InstitutionDirectoryScreenProp
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
   const canView = hasAnyScope(scopes, INSTITUTION_FUNCTIONS.view);
-  const canManage = hasAnyScope(scopes, INSTITUTION_FUNCTIONS.manage) && !principal?.readOnlyPrincipal;
+  const canManage =
+    hasAnyScope(scopes, INSTITUTION_FUNCTIONS.manage) && !principal?.readOnlyPrincipal;
   const canSeeGaps = hasAnyScope(scopes, INSTITUTION_FUNCTIONS.attributionView);
 
   const [rows, setRows] = useState<InstitutionSummary[] | null>(null);
@@ -130,7 +131,13 @@ export const InstitutionDirectoryScreen: React.FC<InstitutionDirectoryScreenProp
     return (rows ?? []).filter((row) => {
       if (statusFilter !== 'ALL' && row.status !== statusFilter) return false;
       if (!term) return true;
-      return [row.reference, row.code, row.legalName, row.displayName ?? '', row.regulatorName ?? '']
+      return [
+        row.reference,
+        row.code,
+        row.legalName,
+        row.displayName ?? '',
+        row.regulatorName ?? '',
+      ]
         .join(' ')
         .toLowerCase()
         .includes(term);
@@ -214,8 +221,8 @@ export const InstitutionDirectoryScreen: React.FC<InstitutionDirectoryScreenProp
 
       <Alert tone="info" title="Registration is not authorisation">
         A licence reference is evidence recorded for verification, never proof of a valid licence.
-        Only an <strong>APPROVED</strong> institution can hold financial authority, and approval is a
-        governed lifecycle change decided by a principal other than its requester.
+        Only an <strong>APPROVED</strong> institution can hold financial authority, and approval is
+        a governed lifecycle change decided by a principal other than its requester.
       </Alert>
 
       {formNotice ? (

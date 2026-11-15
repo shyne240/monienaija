@@ -60,11 +60,15 @@ function requireAbsoluteSocket(value: string | undefined): string {
     );
   }
   if (!isAbsolute(value)) {
-    throw new Error(`KYC_ISOLATED_TEST_SOCKET must be an absolute path, got ${JSON.stringify(value)}`);
+    throw new Error(
+      `KYC_ISOLATED_TEST_SOCKET must be an absolute path, got ${JSON.stringify(value)}`,
+    );
   }
   const socket = resolve(value);
   if (!basename(socket).startsWith('socket')) {
-    throw new Error(`KYC_ISOLATED_TEST_SOCKET must point at the runner's socket directory, got ${socket}`);
+    throw new Error(
+      `KYC_ISOLATED_TEST_SOCKET must point at the runner's socket directory, got ${socket}`,
+    );
   }
   return socket;
 }

@@ -32,7 +32,8 @@ export function useConsoleData<T>(
         if (active) setState({ data, loading: false, error: null });
       })
       .catch((error: unknown) => {
-        if (active) setState({ data: undefined, loading: false, error: describeError(error, fallback) });
+        if (active)
+          setState({ data: undefined, loading: false, error: describeError(error, fallback) });
       });
     return () => {
       active = false;

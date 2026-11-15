@@ -64,9 +64,7 @@ export const CreateSupportTicketScreen: React.FC = () => {
   const [priority, setPriority] = useState<SupportTicketPriority>('MEDIUM');
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState(route.params?.prefillDescription ?? '');
-  const [relatedTransferId, setRelatedTransferId] = useState(
-    route.params?.relatedTransferId ?? '',
-  );
+  const [relatedTransferId, setRelatedTransferId] = useState(route.params?.relatedTransferId ?? '');
   const [clientError, setClientError] = useState('');
   const [createdTicket, setCreatedTicket] = useState<AgentSupportTicket | null>(null);
   const idempotencyKeyRef = useRef<string | null>(null);

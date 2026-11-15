@@ -39,7 +39,9 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
     setError('');
     setMessage('');
     setBusy(false);
-    return () => { generation.current += 1; };
+    return () => {
+      generation.current += 1;
+    };
   }, [agentId, currentClassId, canManageClasses]);
 
   const currentClass = availableClasses.find((cls) => cls.id === currentClassId) ?? null;
@@ -57,7 +59,10 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
       return;
     }
     const request = ++generation.current;
-    const valid = () => request === generation.current && context.current.agentId === agentId && context.current.canManageClasses;
+    const valid = () =>
+      request === generation.current &&
+      context.current.agentId === agentId &&
+      context.current.canManageClasses;
     setBusy(true);
     setError('');
     setMessage('');
@@ -74,20 +79,40 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
   };
 
   return (
-    <section aria-label="Agent class governance assignment" className="mn-agent-workspace agent-governance">
+    <section
+      aria-label="Agent class governance assignment"
+      className="mn-agent-workspace agent-governance"
+    >
       <div className="agent-governance__header">
-        <div><p className="agent-governance__eyebrow">AGENT GOVERNANCE</p><h4 className="mn-agent-workspace__title">Class Governance &amp; Reclassification</h4><p className="mn-agent-workspace__description">Review the Agent’s assigned class and the availability of governed reclassification.</p></div>
+        <div>
+          <p className="agent-governance__eyebrow">AGENT GOVERNANCE</p>
+          <h4 className="mn-agent-workspace__title">Class Governance &amp; Reclassification</h4>
+          <p className="mn-agent-workspace__description">
+            Review the Agent’s assigned class and the availability of governed reclassification.
+          </p>
+        </div>
       </div>
-      <div className="agent-governance__fact"><span>Current assigned class</span><strong>{currentClass ? `${currentClass.name} (${currentClass.code})` : currentClassId || 'Unassigned'}</strong></div>
+      <div className="agent-governance__fact">
+        <span>Current assigned class</span>
+        <strong>
+          {currentClass
+            ? `${currentClass.name} (${currentClass.code})`
+            : currentClassId || 'Unassigned'}
+        </strong>
+      </div>
 
       {!onReclassify ? (
         <div>
-          <div className="agent-governance__boundary" role="note" data-testid="agent-reclassify-dependency">
+          <div
+            className="agent-governance__boundary"
+            role="note"
+            data-testid="agent-reclassify-dependency"
+          >
             <strong>Policy-Blocked Capability:</strong> Post-activation Agent class reassignment (
             <code>PATCH /internal/admin/agents/:id/class</code>) is not enabled in V1 policy. While{' '}
-            <code>agent.manage_classes</code> governs the class catalogue, an active Agent&apos;s assigned
-            class remains bound to its approved onboarding application until a governed reclassification
-            workflow is approved.
+            <code>agent.manage_classes</code> governs the class catalogue, an active Agent&apos;s
+            assigned class remains bound to its approved onboarding application until a governed
+            reclassification workflow is approved.
           </div>
           <button
             type="button"
@@ -98,9 +123,14 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
           </button>
         </div>
       ) : !canManageClasses ? (
-        <div className="agent-governance__boundary">Reclassification requires <code>agent.manage_classes</code>.</div>
+        <div className="agent-governance__boundary">
+          Reclassification requires <code>agent.manage_classes</code>.
+        </div>
       ) : (
-        <form onSubmit={handleSubmit} className="mn-agent-workspace__controls agent-governance__form">
+        <form
+          onSubmit={handleSubmit}
+          className="mn-agent-workspace__controls agent-governance__form"
+        >
           <label className="mn-agent-workspace__field">
             Target active class
             <select
@@ -142,8 +172,22 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
           >
             {busy ? 'Updating…' : 'Reclassify Agent'}
           </button>
-          {error && <div className="agent-governance__feedback agent-governance__feedback--error" role="alert">{error}</div>}
-          {message && <div className="agent-governance__feedback agent-governance__feedback--success" role="status">{message}</div>}
+          {error && (
+            <div
+              className="agent-governance__feedback agent-governance__feedback--error"
+              role="alert"
+            >
+              {error}
+            </div>
+          )}
+          {message && (
+            <div
+              className="agent-governance__feedback agent-governance__feedback--success"
+              role="status"
+            >
+              {message}
+            </div>
+          )}
         </form>
       )}
     </section>

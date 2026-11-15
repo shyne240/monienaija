@@ -35,7 +35,11 @@ describe('Defect AW-01 — Admin Web local development API configuration & produ
         devAuthMock: false,
       });
       expect(
-        resolveAdminBuildConfig('development', { ADMIN_WEB_API_BASE_URL: '   ' }, { command: 'serve' }),
+        resolveAdminBuildConfig(
+          'development',
+          { ADMIN_WEB_API_BASE_URL: '   ' },
+          { command: 'serve' },
+        ),
       ).toEqual({
         apiBaseUrl: '/api/v1',
         devAuthMock: false,
@@ -66,7 +70,11 @@ describe('Defect AW-01 — Admin Web local development API configuration & produ
       });
 
       expect(
-        resolveAdminBuildConfig('production', { ADMIN_WEB_API_BASE_URL: '/api/v1' }, { command: 'build' }),
+        resolveAdminBuildConfig(
+          'production',
+          { ADMIN_WEB_API_BASE_URL: '/api/v1' },
+          { command: 'build' },
+        ),
       ).toEqual({
         apiBaseUrl: '/api/v1',
         devAuthMock: false,

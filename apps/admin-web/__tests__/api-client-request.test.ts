@@ -45,27 +45,37 @@ describe('Admin Web API client requests', () => {
     const form = new FormData();
     const signal = new AbortController().signal;
     await ApiClient.postForm('/customers/customer-1/proof-of-address', form, {
-      idempotencyKey: 'upload-key', signal,
+      idempotencyKey: 'upload-key',
+      signal,
     });
     expect(fetchSpy.mock.calls[0][0]).toBe(
       'https://admin-api.example.com/api/v1/customers/customer-1/proof-of-address',
     );
     expect(fetchSpy.mock.calls[0][1]).toEqual({
       method: 'POST',
-      headers: { Accept: 'application/json', Authorization: 'Bearer workforce-token-123', 'idempotency-key': 'upload-key' },
+      headers: {
+        Accept: 'application/json',
+        Authorization: 'Bearer workforce-token-123',
+        'idempotency-key': 'upload-key',
+      },
       body: form,
       signal,
     });
 
     const blob = new Blob(['synthetic']);
     fetchSpy.mockResolvedValueOnce({ ok: true, blob: async () => blob });
-    await expect(ApiClient.getBlob('/customers/customer-1/proof-of-address/doc-1/content', { signal })).resolves.toBe(blob);
+    await expect(
+      ApiClient.getBlob('/customers/customer-1/proof-of-address/doc-1/content', { signal }),
+    ).resolves.toBe(blob);
     expect(fetchSpy.mock.calls[1][0]).toBe(
       'https://admin-api.example.com/api/v1/customers/customer-1/proof-of-address/doc-1/content',
     );
     expect(fetchSpy.mock.calls[1][1]).toEqual({
       method: 'GET',
-      headers: { Accept: 'application/pdf, image/jpeg, image/png', Authorization: 'Bearer workforce-token-123' },
+      headers: {
+        Accept: 'application/pdf, image/jpeg, image/png',
+        Authorization: 'Bearer workforce-token-123',
+      },
       signal,
     });
   });
@@ -76,7 +86,10 @@ describe('Admin Web API client requests', () => {
     expect(bodylessInit.headers['Content-Type']).toBeUndefined();
 
     await ApiClient.post('/agents/applications', { applicantReference: 'AGT-001' });
-    const jsonInit = fetchSpy.mock.calls[1]?.[1] as { headers: Record<string, string>; body?: string };
+    const jsonInit = fetchSpy.mock.calls[1]?.[1] as {
+      headers: Record<string, string>;
+      body?: string;
+    };
     expect(jsonInit.headers['Content-Type']).toBe('application/json');
     expect(jsonInit.body).toBe(JSON.stringify({ applicantReference: 'AGT-001' }));
   });

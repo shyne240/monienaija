@@ -141,9 +141,7 @@ function extractTopLevelRuleBodies(css: string, targetSelector: string): string[
       if (depth === 0) {
         const rawHeader = clean.slice(headerStart, i).trim();
         if (!rawHeader.startsWith('@')) {
-          currentSelectors = rawHeader
-            .split(',')
-            .map((s) => s.replace(/\s+/g, ' ').trim());
+          currentSelectors = rawHeader.split(',').map((s) => s.replace(/\s+/g, ' ').trim());
           bodyStart = i + 1;
         } else {
           currentSelectors = [];
@@ -340,7 +338,9 @@ describe('Mission 19B (Defect N-01) — sidebar navigation scroll containment an
       fireEvent.click(view.getByTestId('mobile-menu-toggle'));
       const drawer = view.getByTestId('mobile-nav');
       const drawerNav = drawer.querySelector('nav.mn-nav--drawer')!;
-      expect(drawerNav.contains(view.getByRole('button', { name: 'Account menu', hidden: true }))).toBe(false);
+      expect(
+        drawerNav.contains(view.getByRole('button', { name: 'Account menu', hidden: true })),
+      ).toBe(false);
 
       const drawerCommercialToggle = drawer.querySelector<HTMLButtonElement>(
         '[data-testid="section-commercial"]',

@@ -34,7 +34,9 @@ export function parseNairaInputToMinor(input: string): string | null {
 
 /** Non-secret idempotency key generated once per transaction attempt. */
 export function newIdempotencyKey(prefix: string): string {
-  const rand = Math.abs(Math.floor(Math.random() * 0xffffffff)).toString(16).padStart(8, '0');
+  const rand = Math.abs(Math.floor(Math.random() * 0xffffffff))
+    .toString(16)
+    .padStart(8, '0');
   return `${prefix}-${Date.now().toString(36)}-${rand}`;
 }
 

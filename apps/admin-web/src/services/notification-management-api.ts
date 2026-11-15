@@ -47,19 +47,36 @@ interface WorkforceDecisionReceipt {
   approval?: { id?: string; status?: string };
 }
 
-function validateWorkforceDecisionReceipt(value: unknown, approvalId: string, decision: 'approve' | 'reject'): void {
+function validateWorkforceDecisionReceipt(
+  value: unknown,
+  approvalId: string,
+  decision: 'approve' | 'reject',
+): void {
   const receipt = value as WorkforceDecisionReceipt | null;
   const expectedStatus = decision === 'approve' ? 'APPROVED' : 'REJECTED';
-  if (!receipt || receipt.approval?.id !== approvalId || receipt.approval.status !== expectedStatus ||
-      receipt.reason !== expectedStatus || receipt.approved !== (decision === 'approve')) {
-    throw new Error('Decision outcome not confirmed. Refresh the approval queue and audit record before retrying.');
+  if (
+    !receipt ||
+    receipt.approval?.id !== approvalId ||
+    receipt.approval.status !== expectedStatus ||
+    receipt.reason !== expectedStatus ||
+    receipt.approved !== (decision === 'approve')
+  ) {
+    throw new Error(
+      'Decision outcome not confirmed. Refresh the approval queue and audit record before retrying.',
+    );
   }
 }
 
 function validateNotificationExecutionReceipt(value: unknown, approvalId: string): void {
   const receipt = value as { approvalId?: string; type?: string } | null;
-  if (!receipt || receipt.approvalId !== approvalId || !['TEMPLATE', 'TEMPLATE_ROLLBACK', 'CONFIGURATION'].includes(receipt.type ?? '')) {
-    throw new Error('Execution outcome not confirmed. Refresh the approval queue and audit record before retrying.');
+  if (
+    !receipt ||
+    receipt.approvalId !== approvalId ||
+    !['TEMPLATE', 'TEMPLATE_ROLLBACK', 'CONFIGURATION'].includes(receipt.type ?? '')
+  ) {
+    throw new Error(
+      'Execution outcome not confirmed. Refresh the approval queue and audit record before retrying.',
+    );
   }
 }
 
@@ -284,43 +301,128 @@ interface RegistryChangeCreation {
 
 // The creation response identifies the approval but does not echo its frozen target.
 // Validate the available receipt fields; operators must still inspect the proposal.
-function confirmedRegistryCreation(value: RegistryChangeCreation | null | undefined, action: string): value is RegistryChangeCreation {
-  return !!value && typeof value.approvalId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.approvalId)
-    && value.status === 'REQUESTED' && value.actionType === action
-    && typeof value.actionFingerprint === 'string' && !!value.actionFingerprint.trim()
-    && typeof value.requestedAt === 'string' && Number.isFinite(Date.parse(value.requestedAt))
-    && typeof value.expiresAt === 'string' && Number.isFinite(Date.parse(value.expiresAt))
-    && Date.parse(value.expiresAt) > Date.parse(value.requestedAt);
+function confirmedRegistryCreation(
+  value: RegistryChangeCreation | null | undefined,
+  action: string,
+): value is RegistryChangeCreation {
+  return (
+    !!value &&
+    typeof value.approvalId === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.approvalId) &&
+    value.status === 'REQUESTED' &&
+    value.actionType === action &&
+    typeof value.actionFingerprint === 'string' &&
+    !!value.actionFingerprint.trim() &&
+    typeof value.requestedAt === 'string' &&
+    Number.isFinite(Date.parse(value.requestedAt)) &&
+    typeof value.expiresAt === 'string' &&
+    Number.isFinite(Date.parse(value.expiresAt)) &&
+    Date.parse(value.expiresAt) > Date.parse(value.requestedAt)
+  );
 }
 
 // Both diagnostic endpoints return explicit pagination. Never manufacture empty
 // pages or totals when a malformed or wrong-page response arrives.
-function requireDiagnosticPage<T>(value: unknown, page: number, limit: number, isRow: (row: any) => boolean): { data: T[]; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean } {
-  const result = value as { data?: unknown; total?: unknown; page?: unknown; limit?: unknown; totalPages?: unknown; hasNextPage?: unknown } | null;
-  if (!result || !Array.isArray(result.data) || result.page !== page || result.limit !== limit ||
-      !Number.isSafeInteger(result.total) || (result.total as number) < 0 ||
-      !Number.isSafeInteger(result.totalPages) || result.totalPages !== Math.ceil((result.total as number) / limit) ||
-      result.hasNextPage !== (page < (result.totalPages as number)) || result.data.length > limit || result.data.length > (result.total as number) || !result.data.every(isRow)) {
-    throw new Error('Diagnostic response could not be verified. Refresh before relying on these results.');
+function requireDiagnosticPage<T>(
+  value: unknown,
+  page: number,
+  limit: number,
+  isRow: (row: any) => boolean,
+): {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNextPage: boolean;
+} {
+  const result = value as {
+    data?: unknown;
+    total?: unknown;
+    page?: unknown;
+    limit?: unknown;
+    totalPages?: unknown;
+    hasNextPage?: unknown;
+  } | null;
+  if (
+    !result ||
+    !Array.isArray(result.data) ||
+    result.page !== page ||
+    result.limit !== limit ||
+    !Number.isSafeInteger(result.total) ||
+    (result.total as number) < 0 ||
+    !Number.isSafeInteger(result.totalPages) ||
+    result.totalPages !== Math.ceil((result.total as number) / limit) ||
+    result.hasNextPage !== page < (result.totalPages as number) ||
+    result.data.length > limit ||
+    result.data.length > (result.total as number) ||
+    !result.data.every(isRow)
+  ) {
+    throw new Error(
+      'Diagnostic response could not be verified. Refresh before relying on these results.',
+    );
   }
-  return result as { data: T[]; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean };
+  return result as {
+    data: T[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  };
 }
-const nonEmptyDiagnosticString = (value: unknown): value is string => typeof value === 'string' && !!value.trim();
-const validDiagnosticTime = (value: unknown): boolean => typeof value === 'string' && Number.isFinite(Date.parse(value));
+const nonEmptyDiagnosticString = (value: unknown): value is string =>
+  typeof value === 'string' && !!value.trim();
+const validDiagnosticTime = (value: unknown): boolean =>
+  typeof value === 'string' && Number.isFinite(Date.parse(value));
 // These projections deliberately discard unexpected message, destination, payload or secret
 // fields even if an older/misconfigured server sends them.
 function projectDiagnosticFields<T>(row: T, keys: readonly string[]): T {
   const input = row as Record<string, unknown>;
-  return Object.fromEntries(keys.filter(key => Object.prototype.hasOwnProperty.call(input, key)).map(key => [key, input[key]])) as T;
+  return Object.fromEntries(
+    keys
+      .filter((key) => Object.prototype.hasOwnProperty.call(input, key))
+      .map((key) => [key, input[key]]),
+  ) as T;
 }
-const DELIVERY_FIELDS = ['id', 'eventType', 'eventKey', 'aggregateType', 'aggregateId', 'recipientType', 'recipientId', 'channel', 'status', 'attempts', 'providerRef', 'correlationId', 'causationId', 'errorCode', 'createdAt', 'updatedAt', 'sentAt', 'failedAt'] as const;
-const RECEIPT_FIELDS = ['outboxEventId', 'status', 'reason', 'attempts', 'nextAttemptAt', 'createdAt', 'updatedAt'] as const;
-const optionalStringFields = (row: Record<string, unknown>, keys: readonly string[]) => keys.every(key => row[key] == null || typeof row[key] === 'string');
-
+const DELIVERY_FIELDS = [
+  'id',
+  'eventType',
+  'eventKey',
+  'aggregateType',
+  'aggregateId',
+  'recipientType',
+  'recipientId',
+  'channel',
+  'status',
+  'attempts',
+  'providerRef',
+  'correlationId',
+  'causationId',
+  'errorCode',
+  'createdAt',
+  'updatedAt',
+  'sentAt',
+  'failedAt',
+] as const;
+const RECEIPT_FIELDS = [
+  'outboxEventId',
+  'status',
+  'reason',
+  'attempts',
+  'nextAttemptAt',
+  'createdAt',
+  'updatedAt',
+] as const;
+const optionalStringFields = (row: Record<string, unknown>, keys: readonly string[]) =>
+  keys.every((key) => row[key] == null || typeof row[key] === 'string');
 
 /** Metadata for registry-approved variables (live names are authoritative; this only
  *  enriches the UI with descriptions/safe samples for the variable picker). */
-const VARIABLE_METADATA: Record<string, { description: string; sampleValue: string; sourceSummary: string }> = {
+const VARIABLE_METADATA: Record<
+  string,
+  { description: string; sampleValue: string; sourceSummary: string }
+> = {
   reference: {
     description: 'Public-safe request/transfer reference (short display shape only)',
     sampleValue: 'SAMPLE-1',
@@ -385,7 +487,10 @@ export function generateNotificationIdempotencyKey(): string {
   if (globalCrypto && typeof globalCrypto.randomUUID === 'function') {
     return globalCrypto.randomUUID();
   }
-  const hex = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).slice(1);
+  const hex = () =>
+    Math.floor((1 + Math.random()) * 0x10000)
+      .toString(16)
+      .slice(1);
   return `${hex()}${hex()}-${hex()}-4${hex().slice(1)}-a${hex().slice(1)}-${hex()}${hex()}${hex()}`;
 }
 
@@ -398,7 +503,12 @@ function getHttpStatus(error: unknown): number | null {
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof (error as any).message === 'string'
+  ) {
     return (error as { message: string }).message;
   }
   return fallback;
@@ -443,7 +553,9 @@ function extractArray<T>(raw: unknown): T[] {
 }
 
 function mapRegistryEvent(item: RegistryEventItem): NotificationEventCatalogueItem {
-  const baseline = BASELINE_CODE_EVENT_CATALOGUE.find((entry) => entry.eventType === item.eventType);
+  const baseline = BASELINE_CODE_EVENT_CATALOGUE.find(
+    (entry) => entry.eventType === item.eventType,
+  );
   const sms = item.channels?.SMS;
   const email = item.channels?.EMAIL;
   const registryLocked = Boolean(sms?.locked || email?.locked) || !item.editable;
@@ -470,7 +582,8 @@ function mapRegistryEvent(item: RegistryEventItem): NotificationEventCatalogueIt
     eventType: item.eventType,
     category: baseline?.category ?? 'TRANSFER',
     description: baseline?.description ?? `Notification event ${item.eventType}`,
-    deliveryClass: (item.deliveryClass as NotificationEventCatalogueItem['deliveryClass']) ?? 'TRANSACTIONAL',
+    deliveryClass:
+      (item.deliveryClass as NotificationEventCatalogueItem['deliveryClass']) ?? 'TRANSACTIONAL',
     recipientTarget: baseline?.recipientTarget ?? 'CUSTOMER',
     runtimeTriggerState: baseline?.runtimeTriggerState ?? 'LIVE_OUTBOX',
     eventEnabled: typeof item.eventEnabled === 'boolean' ? item.eventEnabled : undefined,
@@ -483,7 +596,9 @@ function mapRegistryEvent(item: RegistryEventItem): NotificationEventCatalogueIt
     emailLocked: typeof email?.locked === 'boolean' ? email.locked : undefined,
     emailConfigurationVersion: email?.configurationVersion,
     toggleLocked: locked,
-    lockReason: locked ? (baseline?.lockReason ?? 'This event is locked against configuration changes.') : null,
+    lockReason: locked
+      ? (baseline?.lockReason ?? 'This event is locked against configuration changes.')
+      : null,
     templateEditable: item.editable && !registryLocked,
     securityNotes: baseline?.securityNotes ?? null,
     approvedVariables,
@@ -564,10 +679,32 @@ async function fetchTemplatePage(
   }
   const query = new URLSearchParams({ eventType, channel, limit: String(limit) });
   const res = await ApiClient.get<unknown>(`/internal/notifications/templates?${query.toString()}`);
-  const validList = Array.isArray(res) || Boolean(res && typeof res === 'object' && ['data', 'items', 'templates'].some(key => Array.isArray((res as Record<string, unknown>)[key])));
+  const validList =
+    Array.isArray(res) ||
+    Boolean(
+      res &&
+        typeof res === 'object' &&
+        ['data', 'items', 'templates'].some((key) =>
+          Array.isArray((res as Record<string, unknown>)[key]),
+        ),
+    );
   if (!validList) throw new Error('Template registry returned an invalid list.');
   const rows = extractArray<RegistryTemplateRow>(res);
-  if (rows.some(row => !row || typeof row.id !== 'string' || row.eventType !== eventType || row.channel !== channel || typeof row.locale !== 'string' || !Number.isSafeInteger(row.version) || row.version < 1 || typeof row.active !== 'boolean' || typeof row.body !== 'string')) throw new Error('Template registry returned invalid or mismatched versions.');
+  if (
+    rows.some(
+      (row) =>
+        !row ||
+        typeof row.id !== 'string' ||
+        row.eventType !== eventType ||
+        row.channel !== channel ||
+        typeof row.locale !== 'string' ||
+        !Number.isSafeInteger(row.version) ||
+        row.version < 1 ||
+        typeof row.active !== 'boolean' ||
+        typeof row.body !== 'string',
+    )
+  )
+    throw new Error('Template registry returned invalid or mismatched versions.');
   return rows;
 }
 
@@ -627,7 +764,9 @@ export const NotificationManagementApi = {
           { idempotencyKey },
         );
         if (!confirmedRegistryCreation(created, 'NOTIFICATION_EVENT_CONFIGURATION_CHANGE')) {
-          throw new Error('Proposal status could not be confirmed. Check the approval queue before retrying.');
+          throw new Error(
+            'Proposal status could not be confirmed. Check the approval queue before retrying.',
+          );
         }
         return {
           status: 'PENDING_APPROVAL',
@@ -718,7 +857,8 @@ export const NotificationManagementApi = {
         'BLOCKED on ARENA 1: Notification change-request endpoint (POST /internal/notifications/changes) is not yet integrated. Submission was not confirmed; check the approval queue before retrying.',
       run: async () => {
         const expectedVersion = payload.expectedVersion;
-        if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) throw new Error('A confirmed active template snapshot is required.');
+        if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1)
+          throw new Error('A confirmed active template snapshot is required.');
         const created = await ApiClient.post<RegistryChangeCreation>(
           '/internal/notifications/changes',
           {
@@ -733,7 +873,10 @@ export const NotificationManagementApi = {
           },
           { idempotencyKey },
         );
-        if (!confirmedRegistryCreation(created, 'NOTIFICATION_TEMPLATE_CHANGE')) throw new Error('Template proposal outcome not confirmed. Check the approval queue before retrying.');
+        if (!confirmedRegistryCreation(created, 'NOTIFICATION_TEMPLATE_CHANGE'))
+          throw new Error(
+            'Template proposal outcome not confirmed. Check the approval queue before retrying.',
+          );
         return {
           status: 'PENDING_APPROVAL',
           approvalId: created.approvalId,
@@ -770,7 +913,8 @@ export const NotificationManagementApi = {
           );
         }
         const expectedVersion = body.expectedVersion;
-        if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) throw new Error('A confirmed active template snapshot is required.');
+        if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1)
+          throw new Error('A confirmed active template snapshot is required.');
         const created = await ApiClient.post<RegistryChangeCreation>(
           '/internal/notifications/changes',
           {
@@ -780,13 +924,17 @@ export const NotificationManagementApi = {
             locale: 'en-NG',
             sourceVersion: version.version,
             expectedVersion,
-            reason: body.comment?.trim() && body.comment.trim().length >= 5
-              ? body.comment.trim()
-              : `Rollback ${version.channel} template to version ${version.version}.`,
+            reason:
+              body.comment?.trim() && body.comment.trim().length >= 5
+                ? body.comment.trim()
+                : `Rollback ${version.channel} template to version ${version.version}.`,
           },
           { idempotencyKey },
         );
-        if (!confirmedRegistryCreation(created, 'NOTIFICATION_TEMPLATE_CHANGE')) throw new Error('Template proposal outcome not confirmed. Check the approval queue before retrying.');
+        if (!confirmedRegistryCreation(created, 'NOTIFICATION_TEMPLATE_CHANGE'))
+          throw new Error(
+            'Template proposal outcome not confirmed. Check the approval queue before retrying.',
+          );
         return {
           status: 'PENDING_APPROVAL',
           approvalId: created.approvalId,
@@ -814,19 +962,21 @@ export const NotificationManagementApi = {
       blockedExplanation:
         'BLOCKED on ARENA 1: Server-side template preview endpoint (POST /internal/notifications/templates/preview) is not yet integrated. Displaying deterministic client-side safe whitelist preview only.',
       run: async () => {
-        const res = await ApiClient.post<{ subject: string | null; body: string; variablesUsed: string[] }>(
-          '/internal/notifications/templates/preview',
-          {
-            eventType: payload.eventType,
-            channel: payload.channel,
-            locale: payload.locale || 'en-NG',
-            subject: payload.subject,
-            body: payload.body,
-          },
-        );
+        const res = await ApiClient.post<{
+          subject: string | null;
+          body: string;
+          variablesUsed: string[];
+        }>('/internal/notifications/templates/preview', {
+          eventType: payload.eventType,
+          channel: payload.channel,
+          locale: payload.locale || 'en-NG',
+          subject: payload.subject,
+          body: payload.body,
+        });
         const resolvedVariables: Record<string, string> = {};
         for (const name of res.variablesUsed ?? []) {
-          resolvedVariables[name] = payload.sampleVariables?.[name] ?? VARIABLE_METADATA[name]?.sampleValue ?? 'SAMPLE';
+          resolvedVariables[name] =
+            payload.sampleVariables?.[name] ?? VARIABLE_METADATA[name]?.sampleValue ?? 'SAMPLE';
         }
         return {
           renderedSubject: res.subject,
@@ -910,22 +1060,68 @@ export const NotificationManagementApi = {
         // Scope discipline: environment and outbox health are loaded by the console through
         // their OWN permission-gated endpoints (getSafeRuntimeConfig / getDiagnostics) —
         // this mapping never cross-calls endpoints the current principal may lack scope for.
-        if (!raw || !Array.isArray(raw.channels) || !raw.channels.every(channel => typeof channel === 'string') ||
-          !raw.sms || !raw.email || !['MINIMAL', 'FULL'].includes(raw.projectionScope ?? '')) {
+        if (
+          !raw ||
+          !Array.isArray(raw.channels) ||
+          !raw.channels.every((channel) => typeof channel === 'string') ||
+          !raw.sms ||
+          !raw.email ||
+          !['MINIMAL', 'FULL'].includes(raw.projectionScope ?? '')
+        ) {
           throw new Error('Provider status response could not be verified.');
         }
-        if (raw.projectionScope === 'MINIMAL' && (typeof raw.sms.available !== 'boolean' || typeof raw.email.available !== 'boolean')) {
+        if (
+          raw.projectionScope === 'MINIMAL' &&
+          (typeof raw.sms.available !== 'boolean' || typeof raw.email.available !== 'boolean')
+        ) {
           throw new Error('Provider availability response could not be verified.');
         }
-        if (raw.projectionScope === 'FULL' && (!nonEmptyDiagnosticString(raw.sms.provider) || !nonEmptyDiagnosticString(raw.email.provider) ||
-          typeof raw.sms.enabled !== 'boolean' || typeof raw.sms.configured !== 'boolean' ||
-          typeof raw.email.enabled !== 'boolean' || typeof raw.email.configured !== 'boolean' ||
-          typeof raw.sms.deliveryTested !== 'boolean' || typeof raw.email.deliveryTested !== 'boolean' ||
-          !['NOT_CONFIGURED', 'CONSOLE_ONLY', 'MISCONFIGURED', 'CONFIGURED', 'VERIFIED', 'ENABLED', 'DELIVERY_TESTED', 'PRODUCTION_READY'].includes(raw.sms.lifecycleState ?? '') ||
-          !['NOT_CONFIGURED', 'CONSOLE_ONLY', 'MISCONFIGURED', 'CONFIGURED', 'VERIFIED', 'ENABLED', 'DELIVERY_TESTED', 'PRODUCTION_READY'].includes(raw.email.lifecycleState ?? '') ||
-          (raw.email.domainAuth != null && (typeof raw.email.domainAuth.spfConfigured !== 'boolean' || typeof raw.email.domainAuth.dkimConfigured !== 'boolean' || typeof raw.email.domainAuth.dmarcConfigured !== 'boolean' || raw.email.domainAuth.allConfigured !== (raw.email.domainAuth.spfConfigured && raw.email.domainAuth.dkimConfigured && raw.email.domainAuth.dmarcConfigured))) ||
-          !raw.worker || typeof raw.worker.enabled !== 'boolean' ||
-          ![raw.worker.batchSize, raw.worker.retryMaxAttempts, raw.worker.retryBaseDelaySeconds].every(value => Number.isSafeInteger(value) && (value as number) >= 0))) {
+        if (
+          raw.projectionScope === 'FULL' &&
+          (!nonEmptyDiagnosticString(raw.sms.provider) ||
+            !nonEmptyDiagnosticString(raw.email.provider) ||
+            typeof raw.sms.enabled !== 'boolean' ||
+            typeof raw.sms.configured !== 'boolean' ||
+            typeof raw.email.enabled !== 'boolean' ||
+            typeof raw.email.configured !== 'boolean' ||
+            typeof raw.sms.deliveryTested !== 'boolean' ||
+            typeof raw.email.deliveryTested !== 'boolean' ||
+            ![
+              'NOT_CONFIGURED',
+              'CONSOLE_ONLY',
+              'MISCONFIGURED',
+              'CONFIGURED',
+              'VERIFIED',
+              'ENABLED',
+              'DELIVERY_TESTED',
+              'PRODUCTION_READY',
+            ].includes(raw.sms.lifecycleState ?? '') ||
+            ![
+              'NOT_CONFIGURED',
+              'CONSOLE_ONLY',
+              'MISCONFIGURED',
+              'CONFIGURED',
+              'VERIFIED',
+              'ENABLED',
+              'DELIVERY_TESTED',
+              'PRODUCTION_READY',
+            ].includes(raw.email.lifecycleState ?? '') ||
+            (raw.email.domainAuth != null &&
+              (typeof raw.email.domainAuth.spfConfigured !== 'boolean' ||
+                typeof raw.email.domainAuth.dkimConfigured !== 'boolean' ||
+                typeof raw.email.domainAuth.dmarcConfigured !== 'boolean' ||
+                raw.email.domainAuth.allConfigured !==
+                  (raw.email.domainAuth.spfConfigured &&
+                    raw.email.domainAuth.dkimConfigured &&
+                    raw.email.domainAuth.dmarcConfigured))) ||
+            !raw.worker ||
+            typeof raw.worker.enabled !== 'boolean' ||
+            ![
+              raw.worker.batchSize,
+              raw.worker.retryMaxAttempts,
+              raw.worker.retryBaseDelaySeconds,
+            ].every((value) => Number.isSafeInteger(value) && (value as number) >= 0))
+        ) {
           throw new Error('Provider status response could not be verified.');
         }
 
@@ -981,12 +1177,14 @@ export const NotificationManagementApi = {
           raw.sms?.lifecycleState !== undefined
             ? smsProvider === 'console'
               ? 'CONSOLE_ONLY'
-              : raw.sms.lifecycleState === 'MISCONFIGURED' || raw.sms.lifecycleState === 'NOT_CONFIGURED'
+              : raw.sms.lifecycleState === 'MISCONFIGURED' ||
+                  raw.sms.lifecycleState === 'NOT_CONFIGURED'
                 ? 'MISCONFIGURED'
                 : (raw.sms.deliveryTested ||
                       raw.sms.lifecycleState === 'DELIVERY_TESTED' ||
                       raw.sms.lifecycleState === 'PRODUCTION_READY') &&
-                    raw.sms.enabled && raw.sms.configured
+                    raw.sms.enabled &&
+                    raw.sms.configured
                   ? 'READY'
                   : 'DEGRADED'
             : raw.sms?.configured
@@ -1004,7 +1202,8 @@ export const NotificationManagementApi = {
                 : (raw.email.deliveryTested ||
                       raw.email.lifecycleState === 'DELIVERY_TESTED' ||
                       raw.email.lifecycleState === 'PRODUCTION_READY') &&
-                    raw.email.enabled && raw.email.configured
+                    raw.email.enabled &&
+                    raw.email.configured
                   ? 'READY'
                   : 'DEGRADED'
             : emailProvider === 'none'
@@ -1055,7 +1254,9 @@ export const NotificationManagementApi = {
                 ? raw.sms?.senderId
                   ? `Workspace sender ID "${raw.sms.senderId}" recorded (bound at Robase workspace level).`
                   : 'Sender identity is managed by the Robase workspace/account configuration.'
-                : smsProvider === 'console' ? 'Console provider simulates sends; no live sender identity is reported.' : 'Sender identity is not reported for this provider.',
+                : smsProvider === 'console'
+                  ? 'Console provider simulates sends; no live sender identity is reported.'
+                  : 'Sender identity is not reported for this provider.',
             deliveryReceiptTracking: 'ACCEPTED_BY_PROVIDER_ONLY',
           },
           email: {
@@ -1108,8 +1309,19 @@ export const NotificationManagementApi = {
           { channel: payload.channel, destination: payload.destination },
           { idempotencyKey },
         );
-        if (!res || res.channel !== payload.channel || res.destination !== maskTestDestination(payload.channel, payload.destination) || typeof res.correlationId !== 'string' || !res.correlationId.trim() || !['SENT', 'FAILED'].includes(res.status) || typeof res.provider !== 'string' || !res.provider.trim()) {
-          throw new Error('Test-send receipt did not match the requested channel and masked destination, or lacked a correlation reference.');
+        if (
+          !res ||
+          res.channel !== payload.channel ||
+          res.destination !== maskTestDestination(payload.channel, payload.destination) ||
+          typeof res.correlationId !== 'string' ||
+          !res.correlationId.trim() ||
+          !['SENT', 'FAILED'].includes(res.status) ||
+          typeof res.provider !== 'string' ||
+          !res.provider.trim()
+        ) {
+          throw new Error(
+            'Test-send receipt did not match the requested channel and masked destination, or lacked a correlation reference.',
+          );
         }
         return {
           status: res.status,
@@ -1136,7 +1348,11 @@ export const NotificationManagementApi = {
     statusFilter?: string,
   ): Promise<IntegrationResult<NotificationChangeRequestRecord[]>> {
     const mappedStatus =
-      statusFilter === 'PENDING_APPROVAL' ? 'REQUESTED' : statusFilter === 'APPLIED' ? 'CONSUMED' : statusFilter;
+      statusFilter === 'PENDING_APPROVAL'
+        ? 'REQUESTED'
+        : statusFilter === 'APPLIED'
+          ? 'CONSUMED'
+          : statusFilter;
     const qs = mappedStatus ? `?status=${encodeURIComponent(mappedStatus)}` : '';
     return callTypedBoundary({
       owner: 'ARENA_1',
@@ -1146,9 +1362,30 @@ export const NotificationManagementApi = {
         'BLOCKED on ARENA 1: Notification change-request listing endpoint (GET /internal/notifications/changes) is not yet integrated.',
       run: async () => {
         const res = await ApiClient.get<unknown>(`/internal/notifications/changes${qs}`);
-        if (!Array.isArray(res) && !(res && typeof res === 'object' && (Array.isArray((res as any).items) || Array.isArray((res as any).data)))) throw new Error('Notification queue response could not be verified.');
+        if (
+          !Array.isArray(res) &&
+          !(
+            res &&
+            typeof res === 'object' &&
+            (Array.isArray((res as any).items) || Array.isArray((res as any).data))
+          )
+        )
+          throw new Error('Notification queue response could not be verified.');
         const rows = extractArray<RegistryChangeRow>(res);
-        if (rows.some(row => !row || typeof row.approvalId !== 'string' || !row.approvalId || !['TEMPLATE', 'TEMPLATE_ROLLBACK', 'CONFIGURATION'].includes(row.type) || typeof row.createdBy !== 'string' || !row.createdBy || typeof row.createdAt !== 'string' || typeof row.status !== 'string')) throw new Error('Notification queue contains an invalid entry.');
+        if (
+          rows.some(
+            (row) =>
+              !row ||
+              typeof row.approvalId !== 'string' ||
+              !row.approvalId ||
+              !['TEMPLATE', 'TEMPLATE_ROLLBACK', 'CONFIGURATION'].includes(row.type) ||
+              typeof row.createdBy !== 'string' ||
+              !row.createdBy ||
+              typeof row.createdAt !== 'string' ||
+              typeof row.status !== 'string',
+          )
+        )
+          throw new Error('Notification queue contains an invalid entry.');
         const enriched = await Promise.all(
           rows.slice(0, 10).map(async (row) => {
             try {
@@ -1162,9 +1399,19 @@ export const NotificationManagementApi = {
         );
         return rows.map((row, index) => {
           const candidate = index < enriched.length ? enriched[index] : null;
-          const detail = candidate?.approvalId === row.approvalId && candidate.change?.type === row.type && candidate.change.eventType === row.eventType && candidate.change.channel === row.channel ? candidate : null;
+          const detail =
+            candidate?.approvalId === row.approvalId &&
+            candidate.change?.type === row.type &&
+            candidate.change.eventType === row.eventType &&
+            candidate.change.channel === row.channel
+              ? candidate
+              : null;
           const change = detail?.change;
-          const summaryParts = [`${mapChangeType(row.type).replace(/_/g, ' ')}`, row.eventType, row.channel]
+          const summaryParts = [
+            `${mapChangeType(row.type).replace(/_/g, ' ')}`,
+            row.eventType,
+            row.channel,
+          ]
             .filter(Boolean)
             .join(' · ');
           return {
@@ -1172,10 +1419,13 @@ export const NotificationManagementApi = {
             approvalId: row.approvalId,
             changeType: mapChangeType(row.type),
             eventType: row.eventType ?? change?.eventType ?? 'unknown',
-            channel: (row.channel ?? change?.channel ?? 'MULTI') as NotificationChangeRequestRecord['channel'],
+            channel: (row.channel ??
+              change?.channel ??
+              'MULTI') as NotificationChangeRequestRecord['channel'],
             summary: detail?.reason ? `${summaryParts} — ${detail.reason}` : summaryParts,
             status: mapChangeStatus(row.status),
-            requestedBy: row.createdBy ?? (row as { requestedBy?: string }).requestedBy ?? 'unknown',
+            requestedBy:
+              row.createdBy ?? (row as { requestedBy?: string }).requestedBy ?? 'unknown',
             requestedAt: row.createdAt,
             decidedBy: row.approvedBy,
             decidedAt: null,
@@ -1224,7 +1474,8 @@ export const NotificationManagementApi = {
             approvalId: requestId,
             changeRequestId: requestId,
             updatedAt: new Date().toISOString(),
-            message: 'Change request rejected; the frozen proposal was discarded and nothing was applied.',
+            message:
+              'Change request rejected; the frozen proposal was discarded and nothing was applied.',
           };
         }
         try {
@@ -1295,10 +1546,13 @@ export const NotificationManagementApi = {
   ): Promise<unknown> {
     const trimmedComment = comment?.trim() || undefined;
     const cleanId = approvalId.trim();
-    const result = await ApiClient.post<unknown>(`/internal/a2/workforce/approvals/${encodeURIComponent(cleanId)}/${decision}`, {
-      comment: trimmedComment,
-      ...(decision === 'reject' && trimmedComment ? { reason: trimmedComment } : {}),
-    });
+    const result = await ApiClient.post<unknown>(
+      `/internal/a2/workforce/approvals/${encodeURIComponent(cleanId)}/${decision}`,
+      {
+        comment: trimmedComment,
+        ...(decision === 'reject' && trimmedComment ? { reason: trimmedComment } : {}),
+      },
+    );
     validateWorkforceDecisionReceipt(result, cleanId, decision);
     return result;
   },
@@ -1325,17 +1579,48 @@ export const NotificationManagementApi = {
     const endpoint = `/internal/notifications/deliveries?${query.toString()}`;
     try {
       const response = await ApiClient.get<unknown>(endpoint);
-      const page = requireDiagnosticPage<NotificationDeliveryRecord>(response, filters.page ?? 1, filters.limit ?? 20, row =>
-        !!row && nonEmptyDiagnosticString(row.id) && nonEmptyDiagnosticString(row.eventType) && nonEmptyDiagnosticString(row.eventKey) &&
-        nonEmptyDiagnosticString(row.channel) && nonEmptyDiagnosticString(row.status) && nonEmptyDiagnosticString(row.recipientType) &&
-        nonEmptyDiagnosticString(row.recipientId) && Number.isSafeInteger(row.attempts) && row.attempts >= 0 && validDiagnosticTime(row.createdAt) &&
-        optionalStringFields(row, ['aggregateType', 'aggregateId', 'providerRef', 'correlationId', 'causationId', 'errorCode', 'updatedAt', 'sentAt', 'failedAt']) &&
-        (!filters.status || row.status === filters.status.toUpperCase()) && (!filters.channel || row.channel === filters.channel.toUpperCase()) &&
-        (!filters.recipientType || row.recipientType === filters.recipientType.toUpperCase()) &&
-        (!filters.eventType || row.eventType === filters.eventType) &&
-        (!filters.recipientId || row.recipientType === 'PHONE' || row.recipientId.toLowerCase() === filters.recipientId.toLowerCase()));
-      return { status: 'LIVE', data: { ...page, data: page.data.map(row => projectDiagnosticFields(row, DELIVERY_FIELDS)) } };
-
+      const page = requireDiagnosticPage<NotificationDeliveryRecord>(
+        response,
+        filters.page ?? 1,
+        filters.limit ?? 20,
+        (row) =>
+          !!row &&
+          nonEmptyDiagnosticString(row.id) &&
+          nonEmptyDiagnosticString(row.eventType) &&
+          nonEmptyDiagnosticString(row.eventKey) &&
+          nonEmptyDiagnosticString(row.channel) &&
+          nonEmptyDiagnosticString(row.status) &&
+          nonEmptyDiagnosticString(row.recipientType) &&
+          nonEmptyDiagnosticString(row.recipientId) &&
+          Number.isSafeInteger(row.attempts) &&
+          row.attempts >= 0 &&
+          validDiagnosticTime(row.createdAt) &&
+          optionalStringFields(row, [
+            'aggregateType',
+            'aggregateId',
+            'providerRef',
+            'correlationId',
+            'causationId',
+            'errorCode',
+            'updatedAt',
+            'sentAt',
+            'failedAt',
+          ]) &&
+          (!filters.status || row.status === filters.status.toUpperCase()) &&
+          (!filters.channel || row.channel === filters.channel.toUpperCase()) &&
+          (!filters.recipientType || row.recipientType === filters.recipientType.toUpperCase()) &&
+          (!filters.eventType || row.eventType === filters.eventType) &&
+          (!filters.recipientId ||
+            row.recipientType === 'PHONE' ||
+            row.recipientId.toLowerCase() === filters.recipientId.toLowerCase()),
+      );
+      return {
+        status: 'LIVE',
+        data: {
+          ...page,
+          data: page.data.map((row) => projectDiagnosticFields(row, DELIVERY_FIELDS)),
+        },
+      };
     } catch (error) {
       const httpStatus = getHttpStatus(error);
       const message = getErrorMessage(error, '');
@@ -1377,9 +1662,15 @@ export const NotificationManagementApi = {
     const endpoint = `/internal/notifications/deliveries/${encodeURIComponent(deliveryId)}/retry`;
     // V1 has no authorized retry route. Never probe a potentially side-effecting
     // endpoint: no network request was made, so zero is not an HTTP response.
-    return { status: 'BLOCKED', owner: 'ARENA_3', method: 'POST', endpoint, httpStatus: 0,
-      message: 'Manual retry is outside the approved read-only V1 scope. No request was made; a new requirement and authorization policy are needed.' };
-
+    return {
+      status: 'BLOCKED',
+      owner: 'ARENA_3',
+      method: 'POST',
+      endpoint,
+      httpStatus: 0,
+      message:
+        'Manual retry is outside the approved read-only V1 scope. No request was made; a new requirement and authorization policy are needed.',
+    };
   },
 
   /**
@@ -1428,12 +1719,25 @@ export const NotificationManagementApi = {
         'BLOCKED on ARENA 3: Notification outbox receipts endpoint (GET /internal/notifications/outbox-receipts) is not yet integrated.',
       run: async () => {
         const response = await ApiClient.get<unknown>(endpoint);
-        const page = requireDiagnosticPage<NotificationOutboxReceiptRecord>(response, filters.page ?? 1, filters.limit ?? 15, row =>
-          !!row && nonEmptyDiagnosticString(row.outboxEventId) && nonEmptyDiagnosticString(row.status) &&
-          Number.isSafeInteger(row.attempts) && row.attempts >= 0 && validDiagnosticTime(row.createdAt) && validDiagnosticTime(row.updatedAt) &&
-          optionalStringFields(row, ['reason', 'nextAttemptAt']) &&
-          (!filters.status || row.status === filters.status.toUpperCase()));
-        return { ...page, data: page.data.map(row => projectDiagnosticFields(row, RECEIPT_FIELDS)) };
+        const page = requireDiagnosticPage<NotificationOutboxReceiptRecord>(
+          response,
+          filters.page ?? 1,
+          filters.limit ?? 15,
+          (row) =>
+            !!row &&
+            nonEmptyDiagnosticString(row.outboxEventId) &&
+            nonEmptyDiagnosticString(row.status) &&
+            Number.isSafeInteger(row.attempts) &&
+            row.attempts >= 0 &&
+            validDiagnosticTime(row.createdAt) &&
+            validDiagnosticTime(row.updatedAt) &&
+            optionalStringFields(row, ['reason', 'nextAttemptAt']) &&
+            (!filters.status || row.status === filters.status.toUpperCase()),
+        );
+        return {
+          ...page,
+          data: page.data.map((row) => projectDiagnosticFields(row, RECEIPT_FIELDS)),
+        };
       },
     });
   },
@@ -1446,7 +1750,15 @@ export const NotificationManagementApi = {
     const res = await ApiClient.get<unknown>(
       `/internal/audit?entityType=${encodeURIComponent(entityType)}&limit=${limit}`,
     );
-    if (!Array.isArray(res) && !(res && typeof res === 'object' && (Array.isArray((res as any).items) || Array.isArray((res as any).data)))) throw new Error('Audit response could not be verified.');
+    if (
+      !Array.isArray(res) &&
+      !(
+        res &&
+        typeof res === 'object' &&
+        (Array.isArray((res as any).items) || Array.isArray((res as any).data))
+      )
+    )
+      throw new Error('Audit response could not be verified.');
     return extractArray<Record<string, unknown>>(res).map((row) => ({
       ...row,
       entityType: row.entityType ?? entityType,
@@ -1471,13 +1783,20 @@ export const NotificationManagementApi = {
       'NOTIFICATION_TEST_SEND',
     ] as const;
     const batches = await Promise.allSettled(
-      categories.map((category) => NotificationManagementApi.listAuditEvents(category, limitPerCategory)),
+      categories.map((category) =>
+        NotificationManagementApi.listAuditEvents(category, limitPerCategory),
+      ),
     );
     const failedCategories = categories.filter((_, index) => batches[index].status === 'rejected');
     const seen = new Set<string>();
     const merged: Array<Record<string, unknown>> = [];
-    for (const row of batches.flatMap((batch) => batch.status === 'fulfilled' ? batch.value : [])) {
-      const key = String(row.id ?? `${row.entityType}-${row.entityId}-${row.action}-${row.createdAt ?? row.occurredAt}`);
+    for (const row of batches.flatMap((batch) =>
+      batch.status === 'fulfilled' ? batch.value : [],
+    )) {
+      const key = String(
+        row.id ??
+          `${row.entityType}-${row.entityId}-${row.action}-${row.createdAt ?? row.occurredAt}`,
+      );
       if (seen.has(key)) continue;
       seen.add(key);
       merged.push(row);
@@ -1541,18 +1860,40 @@ export const NotificationManagementApi = {
         'Provider configuration proposals endpoint is not available on this server.',
       run: async () => {
         const res = await ApiClient.get<unknown>(endpoint);
-        const record = res && typeof res === 'object' && !Array.isArray(res) ? res as Record<string, unknown> : null;
-        const rows = Array.isArray(res) ? res : Array.isArray(record?.data) ? record.data : Array.isArray(record?.items) ? record.items : null;
-        if (!rows || rows.some((value: unknown) => {
-          if (!value || typeof value !== 'object' || Array.isArray(value)) return true;
-          const row = value as Partial<ProviderConfigProposal>;
-          return typeof row.id !== 'string' || !row.id.trim() || !['SMS', 'EMAIL'].includes(row.channel ?? '') ||
-            !['REQUESTED', 'APPROVED', 'REJECTED', 'ACTIVATED'].includes(row.status ?? '') ||
-            typeof row.proposerPrincipalId !== 'string' || !row.proposerPrincipalId.trim() ||
-            typeof row.proposedProvider !== 'string' || !row.proposedProvider.trim() || typeof row.proposedEnabled !== 'boolean' ||
-            !Number.isSafeInteger(row.expectedVersion) || (row.expectedVersion as number) < 0 ||
-            typeof row.credentialAction !== 'string' || typeof row.reason !== 'string';
-        })) throw new Error('Invalid provider proposals response.');
+        const record =
+          res && typeof res === 'object' && !Array.isArray(res)
+            ? (res as Record<string, unknown>)
+            : null;
+        const rows = Array.isArray(res)
+          ? res
+          : Array.isArray(record?.data)
+            ? record.data
+            : Array.isArray(record?.items)
+              ? record.items
+              : null;
+        if (
+          !rows ||
+          rows.some((value: unknown) => {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) return true;
+            const row = value as Partial<ProviderConfigProposal>;
+            return (
+              typeof row.id !== 'string' ||
+              !row.id.trim() ||
+              !['SMS', 'EMAIL'].includes(row.channel ?? '') ||
+              !['REQUESTED', 'APPROVED', 'REJECTED', 'ACTIVATED'].includes(row.status ?? '') ||
+              typeof row.proposerPrincipalId !== 'string' ||
+              !row.proposerPrincipalId.trim() ||
+              typeof row.proposedProvider !== 'string' ||
+              !row.proposedProvider.trim() ||
+              typeof row.proposedEnabled !== 'boolean' ||
+              !Number.isSafeInteger(row.expectedVersion) ||
+              (row.expectedVersion as number) < 0 ||
+              typeof row.credentialAction !== 'string' ||
+              typeof row.reason !== 'string'
+            );
+          })
+        )
+          throw new Error('Invalid provider proposals response.');
         return sanitizeProviderStatusForDisplay(rows as ProviderConfigProposal[]);
       },
     });

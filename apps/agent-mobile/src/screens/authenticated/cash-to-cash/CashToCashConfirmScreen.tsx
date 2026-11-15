@@ -125,27 +125,50 @@ export const CashToCashConfirmScreen: React.FC = () => {
       if (existing) {
         setPin('');
         if (!matchesPendingAgentOperation(existing, candidateParams)) {
-          setClientError('A previous transfer is unresolved. Recover it before starting another transfer.');
+          setClientError(
+            'A previous transfer is unresolved. Recover it before starting another transfer.',
+          );
           return;
         }
         const recovery = await recoverCashToCashFunding(existing.idempotencyKey);
-        const reason = recovery.status === 'UNKNOWN' ? 'UNKNOWN_OUTCOME' : recovery.status === 'FOUND' && recovery.lifecycleStatus === 'UNCLAIMED' ? 'LOST_TRANSFER_CODE' : 'EVIDENCE_REVIEW';
+        const reason =
+          recovery.status === 'UNKNOWN'
+            ? 'UNKNOWN_OUTCOME'
+            : recovery.status === 'FOUND' && recovery.lifecycleStatus === 'UNCLAIMED'
+              ? 'LOST_TRANSFER_CODE'
+              : 'EVIDENCE_REVIEW';
         const handoff = await handoffCashToCashOperation(existing.idempotencyKey, reason);
         if (recovery.status === 'FOUND') {
-          setClientError(`Transfer ${recovery.transferId}: ${recovery.lifecycleStatus}. ${recovery.disposition === 'PENDING' ? 'Funds remain an outstanding obligation; this is not a refund.' : recovery.lifecycleStatus === 'UNCLAIMED' ? 'Funding is recorded, but the one-time code cannot be recovered. Recipient redemption remains unavailable until support resolves this.' : 'Contact support for receipt recovery.'} Support reference: ${handoff.id}.`);
+          setClientError(
+            `Transfer ${recovery.transferId}: ${recovery.lifecycleStatus}. ${recovery.disposition === 'PENDING' ? 'Funds remain an outstanding obligation; this is not a refund.' : recovery.lifecycleStatus === 'UNCLAIMED' ? 'Funding is recorded, but the one-time code cannot be recovered. Recipient redemption remains unavailable until support resolves this.' : 'Contact support for receipt recovery.'} Support reference: ${handoff.id}.`,
+          );
         } else {
-          setClientError(`The previous transfer is unresolved. Do not submit a new transfer. Support reference: ${handoff.id}.`);
+          setClientError(
+            `The previous transfer is unresolved. Do not submit a new transfer. Support reference: ${handoff.id}.`,
+          );
         }
         return;
       }
       effectiveKeyRef.current = idempotencyKey;
-      await savePendingAgentOperation({agentId,operationType:'CASH_TO_CASH_SEND',idempotencyKey,...candidateParams,createdAt:new Date().toISOString()});
+      await savePendingAgentOperation({
+        agentId,
+        operationType: 'CASH_TO_CASH_SEND',
+        idempotencyKey,
+        ...candidateParams,
+        createdAt: new Date().toISOString(),
+      });
       submitted = true;
-      cashToCashMutation.mutate(undefined, { onSettled: () => { submitInFlightRef.current = false; } });
+      cashToCashMutation.mutate(undefined, {
+        onSettled: () => {
+          submitInFlightRef.current = false;
+        },
+      });
       return;
     } catch {
       setPin('');
-      setClientError('Recovery or secure storage is unavailable. Do not submit another transfer; contact support.');
+      setClientError(
+        'Recovery or secure storage is unavailable. Do not submit another transfer; contact support.',
+      );
     } finally {
       // mutate's in-flight guard remains set until its callback.
       if (!submitted) submitInFlightRef.current = false;
@@ -159,13 +182,20 @@ export const CashToCashConfirmScreen: React.FC = () => {
       : '';
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.flex}
+    >
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>Confirm Cash→Cash Transfer</Text>
 
         <Card style={styles.card} testID="c2c-confirm-summary-card">
           <SummaryRow label="Sender phone" value={senderPhone} testID="c2c-confirm-sender-phone" />
-          <SummaryRow label="Beneficiary phone" value={beneficiaryPhone} testID="c2c-confirm-phone" />
+          <SummaryRow
+            label="Beneficiary phone"
+            value={beneficiaryPhone}
+            testID="c2c-confirm-phone"
+          />
           <SummaryRow
             label="Amount to send"
             value={`${formatNairaFromMinor(amountMinor)} NGN`}
@@ -174,9 +204,9 @@ export const CashToCashConfirmScreen: React.FC = () => {
           <Text style={styles.note} testID="c2c-settlement-method-notice">
             Confirm the sender phone carefully — the issued sender phone and 6-digit transfer number
             cannot be edited after sending. The server debits this amount from your Agent float and
-            reserves the principal. At claim, settlement can credit the beneficiary Customer wallet or
-            the claiming Agent's NGN float for cash payout. Physical cash handover is separate from this
-            ledger settlement.
+            reserves the principal. At claim, settlement can credit the beneficiary Customer wallet
+            or the claiming Agent's NGN float for cash payout. Physical cash handover is separate
+            from this ledger settlement.
           </Text>
         </Card>
 
@@ -197,11 +227,14 @@ export const CashToCashConfirmScreen: React.FC = () => {
             }}
           />
           <Text style={styles.helper}>
-            Your transaction PIN authorizes this transfer. It is sent to the server and never stored.
+            Your transaction PIN authorizes this transfer. It is sent to the server and never
+            stored.
           </Text>
 
           {!!failureText && (
-            <Text style={styles.errorText} testID="c2c-confirm-error">{failureText}</Text>
+            <Text style={styles.errorText} testID="c2c-confirm-error">
+              {failureText}
+            </Text>
           )}
 
           <Button
@@ -226,7 +259,9 @@ interface SummaryRowProps {
 const SummaryRow: React.FC<SummaryRowProps> = ({ label, value, testID }) => (
   <View style={styles.row}>
     <Text style={styles.rowLabel}>{label}</Text>
-    <Text style={styles.rowValue} testID={testID}>{value}</Text>
+    <Text style={styles.rowValue} testID={testID}>
+      {value}
+    </Text>
   </View>
 );
 

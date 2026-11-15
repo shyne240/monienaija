@@ -138,12 +138,7 @@ export async function request<T>(endpoint: string, options: ApiClientOptions = {
         await purgeAgentSessionFromStorage(true);
       }
 
-      throw new ApiError(
-        normalizedMessage,
-        status,
-        code,
-        validationErrors,
-      );
+      throw new ApiError(normalizedMessage, status, code, validationErrors);
     }
 
     return data as T;
@@ -162,11 +157,17 @@ export const ApiClient = {
   get: <T>(endpoint: string, options?: Omit<ApiClientOptions, 'method' | 'body'>) =>
     request<T>(endpoint, { ...options, method: 'GET' }),
 
-  post: <T>(endpoint: string, body?: unknown, options?: Omit<ApiClientOptions, 'method' | 'body'>) =>
-    request<T>(endpoint, { ...options, method: 'POST', body }),
+  post: <T>(
+    endpoint: string,
+    body?: unknown,
+    options?: Omit<ApiClientOptions, 'method' | 'body'>,
+  ) => request<T>(endpoint, { ...options, method: 'POST', body }),
 
-  patch: <T>(endpoint: string, body?: unknown, options?: Omit<ApiClientOptions, 'method' | 'body'>) =>
-    request<T>(endpoint, { ...options, method: 'PATCH', body }),
+  patch: <T>(
+    endpoint: string,
+    body?: unknown,
+    options?: Omit<ApiClientOptions, 'method' | 'body'>,
+  ) => request<T>(endpoint, { ...options, method: 'PATCH', body }),
 
   delete: <T>(endpoint: string, options?: Omit<ApiClientOptions, 'method' | 'body'>) =>
     request<T>(endpoint, { ...options, method: 'DELETE' }),

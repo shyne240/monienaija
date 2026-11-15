@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 
-import { AGENT_SESSION_KEYS, onSessionPurged, purgeAgentSessionFromStorage } from '../services/api-client';
+import {
+  AGENT_SESSION_KEYS,
+  onSessionPurged,
+  purgeAgentSessionFromStorage,
+} from '../services/api-client';
 import { SecureStorage } from '../services/secure-storage';
 import {
   agentLogin,

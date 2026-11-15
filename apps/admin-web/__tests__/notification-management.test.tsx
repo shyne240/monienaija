@@ -320,7 +320,8 @@ function registryTemplateRows(eventType: string, channel: string) {
     'cash_to_cash.created':
       'Cash-to-Cash: {{sender_name}} sent you {{amount}}. Visit an active agent outlet to collect.{{locator_clause}}',
     'customer.funding.requested': 'We received your funding request. Ref {{reference}}.',
-    'customer.funding.approved': 'Your funding{{amount_clause}} has been approved. Ref {{reference}}.',
+    'customer.funding.approved':
+      'Your funding{{amount_clause}} has been approved. Ref {{reference}}.',
     'transfer.completed': 'Transfer{{amount_clause}} completed. Ref {{reference}}.',
     'support.ticket.assigned': 'Update on your support request. Ref {{reference}}.',
   };
@@ -375,7 +376,10 @@ const PROVIDER_STATUS_FIXTURE = {
   projectionScope: 'FULL',
   channels: ['SMS', 'PUSH', 'EMAIL'],
   sms: {
-    provider: 'robase', enabled: true, deliveryTested: true, lifecycleState: 'DELIVERY_TESTED',
+    provider: 'robase',
+    enabled: true,
+    deliveryTested: true,
+    lifecycleState: 'DELIVERY_TESTED',
     baseUrl: 'https://api.robase.dev',
     configured: true,
     keyFingerprint: '9f2a',
@@ -385,7 +389,10 @@ const PROVIDER_STATUS_FIXTURE = {
     apiKey: 'robe_99999999999999999999999999999999',
   },
   email: {
-    provider: 'resend', enabled: true, deliveryTested: true, lifecycleState: 'DELIVERY_TESTED',
+    provider: 'resend',
+    enabled: true,
+    deliveryTested: true,
+    lifecycleState: 'DELIVERY_TESTED',
     baseUrl: 'https://api.resend.com',
     configured: true,
     keyFingerprint: 'ab12',
@@ -428,8 +435,21 @@ function mockIntegratedRegistryBackend() {
         approvalId,
         change:
           row.type === 'TEMPLATE'
-            ? { type: 'TEMPLATE', eventType: row.eventType, channel: row.channel, subject: null, body: 'Frozen proposed body', expectedVersion: 1 }
-            : { type: 'CONFIGURATION', eventType: row.eventType, channel: row.channel, enabled: true, expectedVersion: 1 },
+            ? {
+                type: 'TEMPLATE',
+                eventType: row.eventType,
+                channel: row.channel,
+                subject: null,
+                body: 'Frozen proposed body',
+                expectedVersion: 1,
+              }
+            : {
+                type: 'CONFIGURATION',
+                eventType: row.eventType,
+                channel: row.channel,
+                enabled: true,
+                expectedVersion: 1,
+              },
         reason: row.type === 'TEMPLATE' ? 'Refine wording' : 'Enable email on ticket assignment',
         createdBy: row.createdBy,
         createdAt: row.createdAt,
@@ -514,20 +534,40 @@ function mockIntegratedRegistryBackend() {
                 failedAt: '2026-10-27T08:08:00.000Z',
               },
             ];
-      return Promise.resolve({ data: rows, total: rows.length, page: 1, limit: 20, totalPages: 1, hasNextPage: false });
+      return Promise.resolve({
+        data: rows,
+        total: rows.length,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+        hasNextPage: false,
+      });
     }
     if (endpoint.startsWith('/internal/configuration')) {
-      return Promise.resolve({ environment: 'staging', version: '1.3.0', apiVersion: 'v1', outboxRetryDelaySeconds: 60 });
+      return Promise.resolve({
+        environment: 'staging',
+        version: '1.3.0',
+        apiVersion: 'v1',
+        outboxRetryDelaySeconds: 60,
+      });
     }
     if (endpoint.startsWith('/internal/diagnostics')) {
       return Promise.resolve({ status: 'ok', version: '1.3.0', pendingOutbox: 4 });
     }
     if (endpoint.startsWith('/internal/outbox')) {
-      return Promise.resolve([{ id: 'outbox-1', eventType: 'customer.funding.approved', status: 'PENDING', attempts: 0 }]);
+      return Promise.resolve([
+        { id: 'outbox-1', eventType: 'customer.funding.approved', status: 'PENDING', attempts: 0 },
+      ]);
     }
     if (endpoint.startsWith('/internal/audit')) {
       return Promise.resolve([
-        { id: 'aud-1', action: 'NOTIFICATION_CHANGE_REQUESTED', entityId: '550e8400-e29b-41d4-a716-446655440002', actorId: 'issuer:ops-maker-9', occurredAt: '2026-10-27T09:00:00.000Z' },
+        {
+          id: 'aud-1',
+          action: 'NOTIFICATION_CHANGE_REQUESTED',
+          entityId: '550e8400-e29b-41d4-a716-446655440002',
+          actorId: 'issuer:ops-maker-9',
+          occurredAt: '2026-10-27T09:00:00.000Z',
+        },
       ]);
     }
     return Promise.resolve([]);
@@ -536,7 +576,10 @@ function mockIntegratedRegistryBackend() {
   (ApiClient.post as jest.Mock).mockImplementation((endpoint: string, body?: any) => {
     if (endpoint.startsWith('/internal/notifications/templates/preview')) {
       const renderSample = (text: string | null) =>
-        (text ?? '').replace(/\{\{([a-z_]+)\}\}/g, (_m, name: string) => TEMPLATE_SAMPLE_VALUES[name] ?? '');
+        (text ?? '').replace(
+          /\{\{([a-z_]+)\}\}/g,
+          (_m, name: string) => TEMPLATE_SAMPLE_VALUES[name] ?? '',
+        );
       const variablesUsed = Array.from(
         ((body?.subject ?? '') + ' ' + (body?.body ?? '')).matchAll(/\{\{([a-z_]+)\}\}/g),
         (m) => m[1],
@@ -554,7 +597,10 @@ function mockIntegratedRegistryBackend() {
       return Promise.resolve({
         approvalId: '550e8400-e29b-41d4-a716-4466554400aa',
         status: 'REQUESTED',
-        actionType: body?.type === 'CONFIGURATION' ? 'NOTIFICATION_EVENT_CONFIGURATION_CHANGE' : 'NOTIFICATION_TEMPLATE_CHANGE',
+        actionType:
+          body?.type === 'CONFIGURATION'
+            ? 'NOTIFICATION_EVENT_CONFIGURATION_CHANGE'
+            : 'NOTIFICATION_TEMPLATE_CHANGE',
         actionFingerprint: 'fingerprint-1',
         requestedAt: '2026-10-27T10:00:00.000Z',
         expiresAt: '2026-10-27T11:00:00.000Z',
@@ -566,14 +612,21 @@ function mockIntegratedRegistryBackend() {
     if (endpoint.includes('/internal/a2/workforce/approvals/')) {
       const approvalId = endpoint.split('/')[5];
       const status = endpoint.endsWith('/reject') ? 'REJECTED' : 'APPROVED';
-      return Promise.resolve({ approved: status === 'APPROVED', reason: status, approval: { id: approvalId, status } });
+      return Promise.resolve({
+        approved: status === 'APPROVED',
+        reason: status,
+        approval: { id: approvalId, status },
+      });
     }
     if (endpoint === '/internal/notifications/test-send') {
       return Promise.resolve({
         status: 'SENT',
         channel: body?.channel,
         correlationId: 'corr-test-1',
-        destination: body?.channel === 'SMS' ? '+**********100' : `${body.destination.slice(0,2)}***@${body.destination.split('@')[1]}`,
+        destination:
+          body?.channel === 'SMS'
+            ? '+**********100'
+            : `${body.destination.slice(0, 2)}***@${body.destination.split('@')[1]}`,
         provider: 'test',
         providerRef: 'ref-test-1',
         errorCode: null,
@@ -591,7 +644,14 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
   });
 
   test('failed notification reads do not claim an active pipeline or zero delivery and outbox counts', async () => {
-    seedPrincipal({ scopes: ['notification.view_deliveries', 'notification.provider.view', 'diagnostics.view', 'outbox.view'] });
+    seedPrincipal({
+      scopes: [
+        'notification.view_deliveries',
+        'notification.provider.view',
+        'diagnostics.view',
+        'outbox.view',
+      ],
+    });
     (ApiClient.get as jest.Mock).mockRejectedValue(new ApiError('Service unavailable', 503));
     const view = render(<NotificationManagementScreen />);
     await waitFor(() => expect(view.getByTestId('notification-global-load-errors')).toBeTruthy());
@@ -603,7 +663,9 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     expect(health.textContent).toMatch(/Total Recorded Deliveries:\s*Unavailable/);
     fireEvent.click(view.getByTestId('notif-tab-deliveries'));
     expect(await view.findByText('Delivery records unavailable.')).toBeTruthy();
-    expect(view.queryByText('No notification delivery records matched the selected filters.')).toBeNull();
+    expect(
+      view.queryByText('No notification delivery records matched the selected filters.'),
+    ).toBeNull();
     expect(view.queryByTestId('delivery-summary-cards')).toBeNull();
     expect(view.queryByTestId('notification-deliveries-pager')).toBeNull();
   });
@@ -634,9 +696,9 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
       ),
     );
     await waitFor(() =>
-      expect((view.getByTestId('backend-readiness-matrix').textContent ?? '').includes('BLOCKED')).toBe(
-        true,
-      ),
+      expect(
+        (view.getByTestId('backend-readiness-matrix').textContent ?? '').includes('BLOCKED'),
+      ).toBe(true),
     );
     expect(view.getByTestId('overview-email-blocked-badge')).toBeTruthy();
     await waitFor(() =>
@@ -657,7 +719,9 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
 
     // SECURITY OTP flow is permanently locked (registry is_locked=true) even when the
     // operator holds configuration scopes
-    const otpBtn = view.getByTestId('configure-trigger-agent.desk.customer_otp') as HTMLButtonElement;
+    const otpBtn = view.getByTestId(
+      'configure-trigger-agent.desk.customer_otp',
+    ) as HTMLButtonElement;
     expect(otpBtn.disabled).toBe(true);
 
     // The owner-approved policy makes this financial outcome configurable, not mandatory.
@@ -667,7 +731,11 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     await waitFor(() => expect(fundingApprovedBtn.disabled).toBe(false));
 
     // Wait for the live registry rather than the initial offline reference before opening.
-    await waitFor(() => expect(view.getByTestId('event-master-customer.funding.requested').textContent).toBe('DISABLED'));
+    await waitFor(() =>
+      expect(view.getByTestId('event-master-customer.funding.requested').textContent).toBe(
+        'DISABLED',
+      ),
+    );
     // Eligible event (customer.funding.requested) can open Configure Triggers drawer
     const eligibleBtn = view.getByTestId(
       'configure-trigger-customer.funding.requested',
@@ -677,8 +745,12 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
 
     const drawer = view.getByTestId('event-trigger-config-panel');
     expect(drawer).toBeTruthy();
-    expect(view.getByTestId('event-master-customer.funding.requested').textContent).toBe('DISABLED');
-    expect(view.getByTestId('event-master-disabled-notice').textContent).toContain('Enabling a channel alone');
+    expect(view.getByTestId('event-master-customer.funding.requested').textContent).toBe(
+      'DISABLED',
+    );
+    expect(view.getByTestId('event-master-disabled-notice').textContent).toContain(
+      'Enabling a channel alone',
+    );
 
     // Submitting with no toggle change and short reason fails validation before any network call
     const postsBefore = (ApiClient.post as jest.Mock).mock.calls.length;
@@ -895,8 +967,11 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     const passwordView = render(<NotificationManagementScreen initialTab="approvals" />);
     expect(await passwordView.findByTestId('approvals-mfa-required-banner')).toBeTruthy();
     expect(
-      ((await passwordView.findByTestId('approve-change-550e8400-e29b-41d4-a716-446655440002')) as HTMLButtonElement)
-        .disabled,
+      (
+        (await passwordView.findByTestId(
+          'approve-change-550e8400-e29b-41d4-a716-446655440002',
+        )) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
     passwordView.unmount();
 
@@ -915,12 +990,18 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
 
     // Self-requested row remains disabled (Maker !== Checker)
     expect(
-      (mfaView.getByTestId('approve-change-550e8400-e29b-41d4-a716-446655440001') as HTMLButtonElement)
-        .disabled,
+      (
+        mfaView.getByTestId(
+          'approve-change-550e8400-e29b-41d4-a716-446655440001',
+        ) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
     expect(
-      (mfaView.getByTestId('approve-change-550e8400-e29b-41d4-a716-446655440002') as HTMLButtonElement)
-        .disabled,
+      (
+        mfaView.getByTestId(
+          'approve-change-550e8400-e29b-41d4-a716-446655440002',
+        ) as HTMLButtonElement
+      ).disabled,
     ).toBe(false);
 
     // Approving a notification change request executes the REAL two-step contract:
@@ -1048,8 +1129,11 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
 
     // No manual retry route or policy exists: the control must not issue any POST.
     expect((view.getByTestId('request-manual-retry-btn') as HTMLButtonElement).disabled).toBe(true);
-    expect(view.getByTestId('manual-retry-policy').textContent).toMatch(/No retry or worker action is started/);
-    fireEvent.click(view.getByTestId('request-manual-retry-btn')); expect(ApiClient.post).not.toHaveBeenCalled();
+    expect(view.getByTestId('manual-retry-policy').textContent).toMatch(
+      /No retry or worker action is started/,
+    );
+    fireEvent.click(view.getByTestId('request-manual-retry-btn'));
+    expect(ApiClient.post).not.toHaveBeenCalled();
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(view.queryByRole('dialog', { name: 'Delivery diagnostic inspector' })).toBeNull();
@@ -1068,9 +1152,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     fireEvent.change(view.getByLabelText('Delivery channel'), { target: { value: 'EMAIL' } });
     fireEvent.click(view.getByTestId('apply-delivery-filters-btn'));
     await waitFor(() =>
-      expect(ApiClient.get).toHaveBeenCalledWith(
-        expect.stringContaining('channel=EMAIL'),
-      ),
+      expect(ApiClient.get).toHaveBeenCalledWith(expect.stringContaining('channel=EMAIL')),
     );
     expect(await view.findByTestId('delivery-row-deliv-email-3')).toBeTruthy();
     expect(view.queryByTestId('delivery-email-filter-blocked')).toBeNull();
@@ -1171,7 +1253,9 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     const makerView = render(<NotificationManagementScreen initialTab="smsTemplates" />);
     await waitFor(() => expect(makerView.getByTestId('template-workspace-sms')).toBeTruthy());
     await makerView.findByTestId('template-version-history-table');
-    await waitFor(() => expect(makerView.getByText(/Active SMS:/).textContent).toContain('v1 (DB)'));
+    await waitFor(() =>
+      expect(makerView.getByText(/Active SMS:/).textContent).toContain('v1 (DB)'),
+    );
 
     (ApiClient.post as jest.Mock).mockRejectedValue(
       new ApiError('Notification change request denied: UNAUTHORIZED', 403),
@@ -1231,7 +1315,9 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
 
     const view = render(<SystemHealthScreen />);
     await waitFor(() =>
-      expect(ApiClient.get).toHaveBeenCalledWith('/internal/notifications/deliveries?page=1&limit=20'),
+      expect(ApiClient.get).toHaveBeenCalledWith(
+        '/internal/notifications/deliveries?page=1&limit=20',
+      ),
     );
 
     fireEvent.change(view.getByLabelText('Channel'), { target: { value: 'EMAIL' } });
@@ -1336,7 +1422,9 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
               editable: true,
               sms: { enabled: true, toggleable: false, activeTemplateVersion: 1 },
               email: { enabled: false, toggleable: true, activeTemplateVersion: 1 },
-              approvedVariables: [{ name: 'amount_clause', description: 'Amount', example: 'NGN 100' }],
+              approvedVariables: [
+                { name: 'amount_clause', description: 'Amount', example: 'NGN 100' },
+              ],
             },
           ]);
         }
@@ -1371,9 +1459,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
       });
 
       const view = render(<NotificationManagementScreen initialTab="providers" />);
-      await waitFor(() =>
-        expect(view.getByTestId('provider-worker-redacted-badge')).toBeTruthy(),
-      );
+      await waitFor(() => expect(view.getByTestId('provider-worker-redacted-badge')).toBeTruthy());
 
       expect(calledGetPaths).not.toContain('/internal/configuration');
       expect(calledGetPaths).not.toContain('/internal/diagnostics');
@@ -1467,9 +1553,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
       const execBtn = (await view.findByTestId(
         `execute-change-${approvedProposalId}`,
       )) as HTMLButtonElement;
-      const selfExecBtn = view.getByTestId(
-        `execute-change-${selfApprovedId}`,
-      ) as HTMLButtonElement;
+      const selfExecBtn = view.getByTestId(`execute-change-${selfApprovedId}`) as HTMLButtonElement;
 
       expect(execBtn.disabled).toBe(false);
       expect(selfExecBtn.disabled).toBe(true);
@@ -1518,7 +1602,8 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
         }
         if (path === '/internal/notifications/provider-status') {
           return Promise.resolve({
-            channels: ['SMS', 'PUSH', 'EMAIL'], projectionScope: 'MINIMAL',
+            channels: ['SMS', 'PUSH', 'EMAIL'],
+            projectionScope: 'MINIMAL',
             sms: { available: true, provider: 'console' },
             push: { available: false },
             email: { available: false, provider: 'none' },
@@ -1540,9 +1625,9 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
 
       expect(auditUrls.some((u) => u.includes('entityType=NOTIFICATION_TEMPLATE'))).toBe(true);
       expect(auditUrls.some((u) => u.includes('entityType=NOTIFICATION_CHANGE'))).toBe(true);
-      expect(
-        auditUrls.some((u) => u.includes('entityType=NOTIFICATION_EVENT_CONFIGURATION')),
-      ).toBe(true);
+      expect(auditUrls.some((u) => u.includes('entityType=NOTIFICATION_EVENT_CONFIGURATION'))).toBe(
+        true,
+      );
       expect(auditUrls.some((u) => u.includes('entityType=NOTIFICATION_TEST_SEND'))).toBe(true);
       expect(auditUrls.some((u) => u.includes('NOTIFICATION_PROVIDER_CONFIG'))).toBe(false);
 
@@ -1610,7 +1695,8 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
         }
         if (path === '/internal/notifications/provider-status') {
           return Promise.resolve({
-            channels: ['SMS', 'PUSH', 'EMAIL'], projectionScope: 'MINIMAL',
+            channels: ['SMS', 'PUSH', 'EMAIL'],
+            projectionScope: 'MINIMAL',
             sms: { available: true, provider: 'console' },
             push: { available: false },
             email: { available: false, provider: 'none' },
@@ -1705,9 +1791,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
       expect(emailView.getByTestId('rendered-preview-body').textContent).toContain(
         'CUSTOM-OVERRIDE',
       );
-      expect(
-        emailView.getByTestId('safe-email-layout-preview').querySelector('img'),
-      ).toBeNull();
+      expect(emailView.getByTestId('safe-email-layout-preview').querySelector('img')).toBeNull();
 
       // Trigger authoritative Server Preview -> server preview displays fixed samples AND local custom override preview remains preserved!
       fireEvent.click(emailView.getByTestId('run-server-preview-btn'));
@@ -1733,7 +1817,8 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
         if (path === '/internal/notifications/events') return Promise.resolve([]);
         if (path === '/internal/notifications/provider-status') {
           return Promise.resolve({
-            channels: ['SMS', 'PUSH', 'EMAIL'], projectionScope: 'MINIMAL',
+            channels: ['SMS', 'PUSH', 'EMAIL'],
+            projectionScope: 'MINIMAL',
             sms: { available: true, provider: 'console' },
             push: { available: false },
             email: { available: false, provider: 'none' },
@@ -1751,7 +1836,9 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
       });
 
       const overview = render(<NotificationManagementScreen initialTab="overview" />);
-      expect((await overview.findByTestId('overview-email-coarse-badge')).textContent).toContain('UNAVAILABLE (COARSE)');
+      expect((await overview.findByTestId('overview-email-coarse-badge')).textContent).toContain(
+        'UNAVAILABLE (COARSE)',
+      );
       expect(overview.queryByText(/Confirmed disabled \/ dark/)).toBeNull();
       const matrixText = overview.getByTestId('backend-readiness-matrix').textContent ?? '';
       expect(matrixText).toContain('GET /internal/notifications/outbox-receipts');
@@ -1761,120 +1848,285 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
   });
 });
 
-
 test('offline template baselines are references, not confirmation of an active registry version', () => {
-  const { NotificationTemplateWorkspace } = require('../src/components/NotificationTemplateWorkspace');
+  const {
+    NotificationTemplateWorkspace,
+  } = require('../src/components/NotificationTemplateWorkspace');
   const permissions = deriveNotificationPermissions(null);
-  const view = render(<NotificationTemplateWorkspace channel="SMS" events={BASELINE_CODE_EVENT_CATALOGUE} templates={BASELINE_CODE_TEMPLATES} templatesRegistryBlocked emailChannelBlocked={false} permissions={permissions} currentPrincipalId="synthetic" initialEventType="transfer.completed" />);
+  const view = render(
+    <NotificationTemplateWorkspace
+      channel="SMS"
+      events={BASELINE_CODE_EVENT_CATALOGUE}
+      templates={BASELINE_CODE_TEMPLATES}
+      templatesRegistryBlocked
+      emailChannelBlocked={false}
+      permissions={permissions}
+      currentPrincipalId="synthetic"
+      initialEventType="transfer.completed"
+    />,
+  );
   expect(view.getByText(/Active SMS:/).textContent).toContain('Not confirmed');
   expect(view.getByText('REFERENCE · activation unconfirmed')).toBeTruthy();
   expect(view.queryByText('ACTIVE')).toBeNull();
 });
 
 test('a console test response is shown as simulation, not live delivery', async () => {
-    mockIntegratedRegistryBackend();seedPrincipal({roles:['OPERATIONS'],scopes:['notification.view_deliveries','notification.test_send']});
-    (ApiClient.post as jest.Mock).mockResolvedValueOnce({status:'SENT',channel:'SMS',provider:'console',correlationId:'synthetic-correlation',destination:'+**********100',providerRef:null});
-    const view=render(<NotificationManagementScreen initialTab="testSend"/>);fireEvent.change(view.getByTestId('test-send-destination-input'),{target:{value:'08030000100'}});fireEvent.click(view.getByTestId('test-send-workforce-attestation'));fireEvent.click(view.getByTestId('submit-test-send-btn'));
-    expect((await view.findByTestId('test-send-outcome-banner')).textContent).toContain('Console simulation only; no live provider delivery was confirmed.');
+  mockIntegratedRegistryBackend();
+  seedPrincipal({
+    roles: ['OPERATIONS'],
+    scopes: ['notification.view_deliveries', 'notification.test_send'],
   });
+  (ApiClient.post as jest.Mock).mockResolvedValueOnce({
+    status: 'SENT',
+    channel: 'SMS',
+    provider: 'console',
+    correlationId: 'synthetic-correlation',
+    destination: '+**********100',
+    providerRef: null,
+  });
+  const view = render(<NotificationManagementScreen initialTab="testSend" />);
+  fireEvent.change(view.getByTestId('test-send-destination-input'), {
+    target: { value: '08030000100' },
+  });
+  fireEvent.click(view.getByTestId('test-send-workforce-attestation'));
+  fireEvent.click(view.getByTestId('submit-test-send-btn'));
+  expect((await view.findByTestId('test-send-outcome-banner')).textContent).toContain(
+    'Console simulation only; no live provider delivery was confirmed.',
+  );
+});
 
-  test('a test-send receipt for another channel is not shown as sent', async () => {
-    mockIntegratedRegistryBackend();seedPrincipal({roles:['OPERATIONS'],scopes:['notification.view_deliveries','notification.test_send']});
-    (ApiClient.post as jest.Mock).mockResolvedValueOnce({status:'SENT',channel:'EMAIL',provider:'console',correlationId:'synthetic-correlation',destination:'+**********100',providerRef:null});
-    const view=render(<NotificationManagementScreen initialTab="testSend"/>);fireEvent.change(view.getByTestId('test-send-destination-input'),{target:{value:'08030000100'}});fireEvent.click(view.getByTestId('test-send-workforce-attestation'));fireEvent.click(view.getByTestId('submit-test-send-btn'));
-    expect((await view.findByTestId('test-send-error-banner')).textContent).toContain('Test-send outcome not confirmed');expect(view.queryByTestId('test-send-outcome-banner')).toBeNull();
+test('a test-send receipt for another channel is not shown as sent', async () => {
+  mockIntegratedRegistryBackend();
+  seedPrincipal({
+    roles: ['OPERATIONS'],
+    scopes: ['notification.view_deliveries', 'notification.test_send'],
   });
+  (ApiClient.post as jest.Mock).mockResolvedValueOnce({
+    status: 'SENT',
+    channel: 'EMAIL',
+    provider: 'console',
+    correlationId: 'synthetic-correlation',
+    destination: '+**********100',
+    providerRef: null,
+  });
+  const view = render(<NotificationManagementScreen initialTab="testSend" />);
+  fireEvent.change(view.getByTestId('test-send-destination-input'), {
+    target: { value: '08030000100' },
+  });
+  fireEvent.click(view.getByTestId('test-send-workforce-attestation'));
+  fireEvent.click(view.getByTestId('submit-test-send-btn'));
+  expect((await view.findByTestId('test-send-error-banner')).textContent).toContain(
+    'Test-send outcome not confirmed',
+  );
+  expect(view.queryByTestId('test-send-outcome-banner')).toBeNull();
+});
 
 test('template event switching protects a draft and reason without issuing a proposal', async () => {
-  jest.clearAllMocks(); mockIntegratedRegistryBackend();
-  seedPrincipal({roles:['SUPER_ADMIN'], scopes:['notification.view_deliveries'], assuranceLevel:'MFA'});
-  const view = render(<NotificationManagementScreen initialTab="smsTemplates"/>);
+  jest.clearAllMocks();
+  mockIntegratedRegistryBackend();
+  seedPrincipal({
+    roles: ['SUPER_ADMIN'],
+    scopes: ['notification.view_deliveries'],
+    assuranceLevel: 'MFA',
+  });
+  const view = render(<NotificationManagementScreen initialTab="smsTemplates" />);
   await waitFor(() => expect(view.getByTestId('template-version-history-table')).toBeTruthy());
   const selector = view.getByTestId('template-event-select') as HTMLSelectElement;
-  fireEvent.change(selector, {target:{value:'transfer.completed'}});
+  fireEvent.change(selector, { target: { value: 'transfer.completed' } });
   const body = view.getByTestId('template-body-textarea') as HTMLTextAreaElement;
-  fireEvent.change(body, {target:{value:'Draft {{reference}}'}});
-  fireEvent.change(view.getByTestId('template-change-summary-input'), {target:{value:'A careful change reason'}});
-  fireEvent.change(selector, {target:{value:'cash_to_cash.created'}});
+  fireEvent.change(body, { target: { value: 'Draft {{reference}}' } });
+  fireEvent.change(view.getByTestId('template-change-summary-input'), {
+    target: { value: 'A careful change reason' },
+  });
+  fireEvent.change(selector, { target: { value: 'cash_to_cash.created' } });
   const prompt = view.getByTestId('template-event-switch-prompt');
-  expect(document.activeElement).toBe(prompt); expect(selector.value).toBe('transfer.completed');
-  expect((view.getByTestId('submit-template-version-btn') as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(view.getByRole('button',{name:'Keep draft'}));
-  expect(document.activeElement).toBe(selector); expect(body.value).toBe('Draft {{reference}}');
-  fireEvent.change(selector, {target:{value:'cash_to_cash.created'}});
-  fireEvent.click(view.getByRole('button',{name:'Discard and switch'}));
-  expect(selector.value).toBe('cash_to_cash.created'); expect(document.activeElement).toBe(selector);
+  expect(document.activeElement).toBe(prompt);
+  expect(selector.value).toBe('transfer.completed');
+  expect((view.getByTestId('submit-template-version-btn') as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  fireEvent.click(view.getByRole('button', { name: 'Keep draft' }));
+  expect(document.activeElement).toBe(selector);
+  expect(body.value).toBe('Draft {{reference}}');
+  fireEvent.change(selector, { target: { value: 'cash_to_cash.created' } });
+  fireEvent.click(view.getByRole('button', { name: 'Discard and switch' }));
+  expect(selector.value).toBe('cash_to_cash.created');
+  expect(document.activeElement).toBe(selector);
   expect(view.getByTestId('template-c2c-nondisclosure-banner')).toBeTruthy();
   expect((view.getByTestId('template-change-summary-input') as HTMLInputElement).value).toBe('');
   expect(ApiClient.post).not.toHaveBeenCalled();
 });
 
 test('template drafts survive tab switches, but not a workforce session change', async () => {
-  jest.clearAllMocks(); mockIntegratedRegistryBackend();
-  seedPrincipal({roles:['SUPER_ADMIN'], scopes:['notification.view_deliveries'], assuranceLevel:'MFA'});
-  const view=render(<NotificationManagementScreen initialTab="smsTemplates"/>);
-  const sms=await view.findByTestId('template-workspace-sms');
-  fireEvent.change(within(sms).getByTestId('template-body-textarea'),{target:{value:'SMS local draft'}});
-  fireEvent.change(within(sms).getByTestId('template-change-summary-input'),{target:{value:'SMS local reason'}});
+  jest.clearAllMocks();
+  mockIntegratedRegistryBackend();
+  seedPrincipal({
+    roles: ['SUPER_ADMIN'],
+    scopes: ['notification.view_deliveries'],
+    assuranceLevel: 'MFA',
+  });
+  const view = render(<NotificationManagementScreen initialTab="smsTemplates" />);
+  const sms = await view.findByTestId('template-workspace-sms');
+  fireEvent.change(within(sms).getByTestId('template-body-textarea'), {
+    target: { value: 'SMS local draft' },
+  });
+  fireEvent.change(within(sms).getByTestId('template-change-summary-input'), {
+    target: { value: 'SMS local reason' },
+  });
   fireEvent.click(view.getByTestId('notif-tab-emailTemplates'));
-  const email=await view.findByTestId('template-workspace-email');
-  fireEvent.change(within(email).getByTestId('template-body-textarea'),{target:{value:'Email local draft'}});
+  const email = await view.findByTestId('template-workspace-email');
+  fireEvent.change(within(email).getByTestId('template-body-textarea'), {
+    target: { value: 'Email local draft' },
+  });
   fireEvent.click(view.getByTestId('notif-tab-smsTemplates'));
-  expect((within(sms).getByTestId('template-body-textarea') as HTMLTextAreaElement).value).toBe('SMS local draft');
-  expect((within(sms).getByTestId('template-change-summary-input') as HTMLInputElement).value).toBe('SMS local reason');
+  expect((within(sms).getByTestId('template-body-textarea') as HTMLTextAreaElement).value).toBe(
+    'SMS local draft',
+  );
+  expect((within(sms).getByTestId('template-change-summary-input') as HTMLInputElement).value).toBe(
+    'SMS local reason',
+  );
   fireEvent.click(view.getByTestId('notif-tab-emailTemplates'));
-  expect((within(email).getByTestId('template-body-textarea') as HTMLTextAreaElement).value).toBe('Email local draft');
-  act(()=>useAuthStore.setState(state=>({principal:{...state.principal!,sessionId:'new-session'}})));
-  const newSms=await view.findByTestId('template-workspace-sms');
-  expect((within(newSms).getByTestId('template-body-textarea') as HTMLTextAreaElement).value).not.toBe('SMS local draft');
+  expect((within(email).getByTestId('template-body-textarea') as HTMLTextAreaElement).value).toBe(
+    'Email local draft',
+  );
+  act(() =>
+    useAuthStore.setState((state) => ({
+      principal: { ...state.principal!, sessionId: 'new-session' },
+    })),
+  );
+  const newSms = await view.findByTestId('template-workspace-sms');
+  expect(
+    (within(newSms).getByTestId('template-body-textarea') as HTMLTextAreaElement).value,
+  ).not.toBe('SMS local draft');
   expect(ApiClient.post).not.toHaveBeenCalled();
 });
 
 test('catalogue jumps to another event ask before replacing an existing channel draft', async () => {
-  jest.clearAllMocks(); mockIntegratedRegistryBackend();
-  seedPrincipal({roles:['SUPER_ADMIN'], scopes:['notification.view_deliveries'], assuranceLevel:'MFA'});
-  const view=render(<NotificationManagementScreen initialTab="smsTemplates"/>);
-  const workspace=await view.findByTestId('template-workspace-sms');
-  fireEvent.change(within(workspace).getByTestId('template-event-select'),{target:{value:'transfer.completed'}});
-  fireEvent.change(within(workspace).getByTestId('template-body-textarea'),{target:{value:'Protected local draft'}});
+  jest.clearAllMocks();
+  mockIntegratedRegistryBackend();
+  seedPrincipal({
+    roles: ['SUPER_ADMIN'],
+    scopes: ['notification.view_deliveries'],
+    assuranceLevel: 'MFA',
+  });
+  const view = render(<NotificationManagementScreen initialTab="smsTemplates" />);
+  const workspace = await view.findByTestId('template-workspace-sms');
+  fireEvent.change(within(workspace).getByTestId('template-event-select'), {
+    target: { value: 'transfer.completed' },
+  });
+  fireEvent.change(within(workspace).getByTestId('template-body-textarea'), {
+    target: { value: 'Protected local draft' },
+  });
   fireEvent.click(view.getByTestId('notif-tab-events'));
-  fireEvent.click(view.getByRole('button',{name:'SMS Template for customer.funding.approved'}));
+  fireEvent.click(view.getByRole('button', { name: 'SMS Template for customer.funding.approved' }));
   expect(within(workspace).getByTestId('template-event-switch-prompt')).toBeTruthy();
-  expect((within(workspace).getByTestId('template-event-select') as HTMLSelectElement).value).toBe('transfer.completed');
-  fireEvent.click(within(workspace).getByRole('button',{name:'Keep draft'}));
-  expect((within(workspace).getByTestId('template-body-textarea') as HTMLTextAreaElement).value).toBe('Protected local draft');
+  expect((within(workspace).getByTestId('template-event-select') as HTMLSelectElement).value).toBe(
+    'transfer.completed',
+  );
+  fireEvent.click(within(workspace).getByRole('button', { name: 'Keep draft' }));
+  expect(
+    (within(workspace).getByTestId('template-body-textarea') as HTMLTextAreaElement).value,
+  ).toBe('Protected local draft');
   expect(ApiClient.post).not.toHaveBeenCalled();
 });
 
 test('switching tabs cannot start a duplicate template proposal while the first is pending', async () => {
-  jest.clearAllMocks(); mockIntegratedRegistryBackend();
-  seedPrincipal({roles:['SUPER_ADMIN'], scopes:['notification.view_deliveries'], assuranceLevel:'MFA'});
-  let resolve!: (value:any)=>void; const pending=new Promise<any>(r=>resolve=r);
-  const original=(ApiClient.post as jest.Mock).getMockImplementation()!;
-  (ApiClient.post as jest.Mock).mockImplementation((endpoint:string,...args:any[])=>endpoint==='/internal/notifications/changes'?pending:original(endpoint,...args));
-  const view=render(<NotificationManagementScreen initialTab="smsTemplates"/>);
-  const sms=await view.findByTestId('template-workspace-sms');
-  await waitFor(()=>expect(within(sms).getByTestId('template-version-history-table')).toBeTruthy());
-  fireEvent.change(within(sms).getByTestId('template-body-textarea'),{target:{value:'A controlled draft'}});
-  fireEvent.change(within(sms).getByTestId('template-change-summary-input'),{target:{value:'A detailed reason'}});
-  const submit=within(sms).getByTestId('submit-template-version-btn') as HTMLButtonElement;fireEvent.click(submit);
-  expect(submit.disabled).toBe(true);fireEvent.click(view.getByTestId('notif-tab-overview'));fireEvent.click(view.getByTestId('notif-tab-smsTemplates'));
-  expect(submit.disabled).toBe(true);fireEvent.click(submit);
-  expect((ApiClient.post as jest.Mock).mock.calls.filter(([path])=>path==='/internal/notifications/changes')).toHaveLength(1);
-  await act(async()=>{resolve({approvalId:'550e8400-e29b-41d4-a716-4466554400aa',status:'REQUESTED',actionType:'NOTIFICATION_TEMPLATE_CHANGE',requestedAt:'2026-11-01',expiresAt:'2026-11-02'});await pending;});
+  jest.clearAllMocks();
+  mockIntegratedRegistryBackend();
+  seedPrincipal({
+    roles: ['SUPER_ADMIN'],
+    scopes: ['notification.view_deliveries'],
+    assuranceLevel: 'MFA',
+  });
+  let resolve!: (value: any) => void;
+  const pending = new Promise<any>((r) => (resolve = r));
+  const original = (ApiClient.post as jest.Mock).getMockImplementation()!;
+  (ApiClient.post as jest.Mock).mockImplementation((endpoint: string, ...args: any[]) =>
+    endpoint === '/internal/notifications/changes' ? pending : original(endpoint, ...args),
+  );
+  const view = render(<NotificationManagementScreen initialTab="smsTemplates" />);
+  const sms = await view.findByTestId('template-workspace-sms');
+  await waitFor(() =>
+    expect(within(sms).getByTestId('template-version-history-table')).toBeTruthy(),
+  );
+  fireEvent.change(within(sms).getByTestId('template-body-textarea'), {
+    target: { value: 'A controlled draft' },
+  });
+  fireEvent.change(within(sms).getByTestId('template-change-summary-input'), {
+    target: { value: 'A detailed reason' },
+  });
+  const submit = within(sms).getByTestId('submit-template-version-btn') as HTMLButtonElement;
+  fireEvent.click(submit);
+  expect(submit.disabled).toBe(true);
+  fireEvent.click(view.getByTestId('notif-tab-overview'));
+  fireEvent.click(view.getByTestId('notif-tab-smsTemplates'));
+  expect(submit.disabled).toBe(true);
+  fireEvent.click(submit);
+  expect(
+    (ApiClient.post as jest.Mock).mock.calls.filter(
+      ([path]) => path === '/internal/notifications/changes',
+    ),
+  ).toHaveLength(1);
+  await act(async () => {
+    resolve({
+      approvalId: '550e8400-e29b-41d4-a716-4466554400aa',
+      status: 'REQUESTED',
+      actionType: 'NOTIFICATION_TEMPLATE_CHANGE',
+      requestedAt: '2026-11-01',
+      expiresAt: '2026-11-02',
+    });
+    await pending;
+  });
 });
 
 test('a mismatched probe receipt locks sends across tabs until independent review', async () => {
-  mockIntegratedRegistryBackend(); seedPrincipal({roles:['OPERATIONS'],scopes:['notification.view_deliveries','notification.test_send']});
-  (ApiClient.post as jest.Mock).mockResolvedValueOnce({status:'SENT',channel:'SMS',provider:'console',correlationId:'synthetic-correlation',destination:'+**********999',providerRef:null});
-  const view=render(<NotificationManagementScreen initialTab="testSend"/>);fireEvent.change(view.getByTestId('test-send-destination-input'),{target:{value:'08030000100'}});fireEvent.click(view.getByTestId('test-send-workforce-attestation'));fireEvent.click(view.getByTestId('submit-test-send-btn'));
-  expect((await view.findByTestId('notification-probe-review-lock')).textContent).toMatch(/do not create delivery rows.*cannot prove non-delivery/i);expect((view.getByTestId('submit-test-send-btn') as HTMLButtonElement).disabled).toBe(true); expect((view.getByRole('button',{name:'Clear local probe draft'}) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(view.getByTestId('notif-tab-overview'));expect(view.getByTestId('notification-probe-review-lock')).toBeTruthy();const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);
-  const confirm=jest.spyOn(window,'confirm').mockReturnValue(false);fireEvent.click(view.getByRole('button',{name:'Acknowledge independent test-send review'}));expect(view.getByTestId('notification-probe-review-lock')).toBeTruthy();confirm.mockReturnValue(true);fireEvent.click(view.getByRole('button',{name:'Acknowledge independent test-send review'}));confirm.mockRestore();expect(view.queryByTestId('notification-probe-review-lock')).toBeNull();
+  mockIntegratedRegistryBackend();
+  seedPrincipal({
+    roles: ['OPERATIONS'],
+    scopes: ['notification.view_deliveries', 'notification.test_send'],
+  });
+  (ApiClient.post as jest.Mock).mockResolvedValueOnce({
+    status: 'SENT',
+    channel: 'SMS',
+    provider: 'console',
+    correlationId: 'synthetic-correlation',
+    destination: '+**********999',
+    providerRef: null,
+  });
+  const view = render(<NotificationManagementScreen initialTab="testSend" />);
+  fireEvent.change(view.getByTestId('test-send-destination-input'), {
+    target: { value: '08030000100' },
+  });
+  fireEvent.click(view.getByTestId('test-send-workforce-attestation'));
+  fireEvent.click(view.getByTestId('submit-test-send-btn'));
+  expect((await view.findByTestId('notification-probe-review-lock')).textContent).toMatch(
+    /do not create delivery rows.*cannot prove non-delivery/i,
+  );
+  expect((view.getByTestId('submit-test-send-btn') as HTMLButtonElement).disabled).toBe(true);
+  expect(
+    (view.getByRole('button', { name: 'Clear local probe draft' }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  fireEvent.click(view.getByTestId('notif-tab-overview'));
+  expect(view.getByTestId('notification-probe-review-lock')).toBeTruthy();
+  const event = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(true);
+  const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
+  fireEvent.click(view.getByRole('button', { name: 'Acknowledge independent test-send review' }));
+  expect(view.getByTestId('notification-probe-review-lock')).toBeTruthy();
+  confirm.mockReturnValue(true);
+  fireEvent.click(view.getByRole('button', { name: 'Acknowledge independent test-send review' }));
+  confirm.mockRestore();
+  expect(view.queryByTestId('notification-probe-review-lock')).toBeNull();
 });
 
-test('the deferred manual retry service fails closed without any network request', async()=>{
+test('the deferred manual retry service fails closed without any network request', async () => {
   (ApiClient.post as jest.Mock).mockClear();
-  const result=await NotificationManagementApi.requestManualDeliveryRetry('synthetic-delivery','Synthetic reason');
-  expect(result.status).toBe('BLOCKED');expect(result.status === 'BLOCKED' && result.httpStatus).toBe(0);expect(ApiClient.post).not.toHaveBeenCalled();
+  const result = await NotificationManagementApi.requestManualDeliveryRetry(
+    'synthetic-delivery',
+    'Synthetic reason',
+  );
+  expect(result.status).toBe('BLOCKED');
+  expect(result.status === 'BLOCKED' && result.httpStatus).toBe(0);
+  expect(ApiClient.post).not.toHaveBeenCalled();
 });

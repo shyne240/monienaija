@@ -77,8 +77,8 @@ export const RotateCredentialScreen: React.FC = () => {
         <View style={styles.header}>
           <Text style={styles.title}>Set Your New Password</Text>
           <Text style={styles.subtitle}>
-            Your temporary password must be replaced before continuing. This is required before
-            any Agent activity.
+            Your temporary password must be replaced before continuing. This is required before any
+            Agent activity.
           </Text>
         </View>
 

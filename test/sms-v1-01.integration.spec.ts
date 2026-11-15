@@ -41,10 +41,7 @@ import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 // fail-closed because nothing in AppModule references this module.
 const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });
 
-import {
-  makeCustomerFinanciallyEligible,
-  restoreKycSingletons,
-} from './support/kyc-test-fixtures';
+import { makeCustomerFinanciallyEligible, restoreKycSingletons } from './support/kyc-test-fixtures';
 
 describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
   let dataSource: DataSource;

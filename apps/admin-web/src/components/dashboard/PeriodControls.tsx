@@ -27,7 +27,12 @@ export const PeriodControls: React.FC<PeriodControlsProps> = ({
   onCompareChange,
 }) => (
   <div style={styles.row}>
-    <select style={styles.select} value={period} onChange={(e) => onPeriodChange(e.target.value as DashboardPeriod)} aria-label="Period">
+    <select
+      style={styles.select}
+      value={period}
+      onChange={(e) => onPeriodChange(e.target.value as DashboardPeriod)}
+      aria-label="Period"
+    >
       <option value="today">Today</option>
       <option value="7d">Last 7 days</option>
       <option value="30d">Last 30 days</option>
@@ -35,15 +40,31 @@ export const PeriodControls: React.FC<PeriodControlsProps> = ({
     </select>
     {period === 'custom' && (
       <>
-        <input type="date" style={styles.dateInput} value={from} onChange={(e) => onFromChange(e.target.value)} aria-label="From date" />
+        <input
+          type="date"
+          style={styles.dateInput}
+          value={from}
+          onChange={(e) => onFromChange(e.target.value)}
+          aria-label="From date"
+        />
         <span style={styles.toLabel}>to</span>
-        <input type="date" style={styles.dateInput} value={to} onChange={(e) => onToChange(e.target.value)} aria-label="To date" />
+        <input
+          type="date"
+          style={styles.dateInput}
+          value={to}
+          onChange={(e) => onToChange(e.target.value)}
+          aria-label="To date"
+        />
         <span style={styles.toLabel}>Inclusive UTC days</span>
       </>
     )}
     {showCompare && (
       <label style={styles.compareLabel}>
-        <input type="checkbox" checked={!!compare} onChange={(e) => onCompareChange?.(e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={!!compare}
+          onChange={(e) => onCompareChange?.(e.target.checked)}
+        />
         Compare to prior period
       </label>
     )}

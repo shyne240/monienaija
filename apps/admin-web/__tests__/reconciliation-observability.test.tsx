@@ -27,7 +27,7 @@ describe('Admin Web Portal W5 Reconciliation & Breaks Desk Tests', () => {
         sessionId: 'controller-sess',
         audience: 'workforce-admin',
         roles: ['SUPER_ADMIN'],
-        scopes: ['reconciliation.view','transaction.view'],
+        scopes: ['reconciliation.view', 'transaction.view'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },

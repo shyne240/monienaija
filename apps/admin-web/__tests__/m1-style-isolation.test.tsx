@@ -130,7 +130,15 @@ describe('M1 style isolation — pilot CSS selector discipline', () => {
         const universal = selector.trim() === '*';
         const sharedClass = selector.includes('.cm-');
         const excludedScope = selector.includes('.customer-management');
-        return !scoped || globalRoot || htmlSelector || bodySelector || universal || sharedClass || excludedScope;
+        return (
+          !scoped ||
+          globalRoot ||
+          htmlSelector ||
+          bodySelector ||
+          universal ||
+          sharedClass ||
+          excludedScope
+        );
       });
       // Printed as a joined string so a failure names the offending selector.
       expect(violations.join(' | ')).toBe('');
@@ -217,7 +225,11 @@ describe('M1 style isolation — embedded workflows keep their own presentation'
     // The scope root keeps only the pre-existing class: pilot typography and colour
     // are applied on the header and panel, never inherited by embedded workflows.
     expect(main.className).toBe('customer-management');
-    expect(classesOf(main).filter((name) => name.startsWith('mn-')).join('')).toBe('');
+    expect(
+      classesOf(main)
+        .filter((name) => name.startsWith('mn-'))
+        .join(''),
+    ).toBe('');
 
     fireEvent.click(view.getByRole('button', { name: 'New Customer' }));
     const wizard = view.container.querySelector('.cm-registration-wizard');
@@ -233,7 +245,9 @@ describe('M1 style isolation — embedded workflows keep their own presentation'
     const view = render(<CustomerDirectoryScreen />);
     await view.findByText('Synthetic Directory Alpha');
 
-    fireEvent.click(view.getByRole('button', { name: 'Open Customer 360° for Synthetic Directory Alpha' }));
+    fireEvent.click(
+      view.getByRole('button', { name: 'Open Customer 360° for Synthetic Directory Alpha' }),
+    );
     await waitFor(() => {
       expect(view.container.querySelector('.cm-workspace')).not.toBeNull();
     });

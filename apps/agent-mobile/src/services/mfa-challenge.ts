@@ -24,7 +24,10 @@ export interface MfaChallengeState {
   failureMessage: string | null;
 }
 
-export function isChallengeExpired(challenge: AgentMfaChallenge | null, now: number = Date.now()): boolean {
+export function isChallengeExpired(
+  challenge: AgentMfaChallenge | null,
+  now: number = Date.now(),
+): boolean {
   if (!challenge) return false;
   const expiry = new Date(challenge.expiresAt).getTime();
   return !Number.isNaN(expiry) && now >= expiry;

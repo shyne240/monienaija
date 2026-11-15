@@ -28,12 +28,14 @@ export type RootStackParamList = {
 
   // Agent Support UI (V1-AGENT-MOBILE-11)
   Support: undefined;
-  CreateSupportTicket: {
-    prefillCategory?: SupportTicketCategory;
-    prefillDescription?: string;
-    relatedTransferId?: string;
-    fundingRequestId?: string;
-  } | undefined;
+  CreateSupportTicket:
+    | {
+        prefillCategory?: SupportTicketCategory;
+        prefillDescription?: string;
+        relatedTransferId?: string;
+        fundingRequestId?: string;
+      }
+    | undefined;
   SupportTicketDetail: {
     ticketId: string;
   };
@@ -119,7 +121,13 @@ export type RootStackParamList = {
   // Unified history + history-derived receipt (V1-AGENT-MOBILE-06)
   TransactionReceipt: {
     itemId: string;
-    filter?: 'CASH_IN' | 'CASH_OUT' | 'CASH_TO_CASH' | 'CASH_TO_CASH_CLAIM' | 'AGENT_FUNDING' | 'AGENT_DEFUNDING';
+    filter?:
+      | 'CASH_IN'
+      | 'CASH_OUT'
+      | 'CASH_TO_CASH'
+      | 'CASH_TO_CASH_CLAIM'
+      | 'AGENT_FUNDING'
+      | 'AGENT_DEFUNDING';
   };
 };
 

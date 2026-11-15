@@ -164,9 +164,9 @@ describe('V1-OPS-01 Support Workforce Operational Workflow (real PostgreSQL + re
       currency: 'NGN',
       idempotencyKey: `ops01-wallet-${customerId}`,
     });
-      // The governed gate now runs when a session is issued, and this helper builds the
-      // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
-      await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
+    // The governed gate now runs when a session is issued, and this helper builds the
+    // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const login = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId, password })

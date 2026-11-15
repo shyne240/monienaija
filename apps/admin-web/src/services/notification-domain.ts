@@ -185,7 +185,13 @@ export interface NotificationProviderStatus {
     credentialFingerprint: string | null;
     fromAddress: string | null;
     fromName: string | null;
-    domainVerificationStatus: 'VERIFIED' | 'UNVERIFIED' | 'CONFIGURED' | 'INCOMPLETE' | 'UNKNOWN' | 'NOT_APPLICABLE';
+    domainVerificationStatus:
+      | 'VERIFIED'
+      | 'UNVERIFIED'
+      | 'CONFIGURED'
+      | 'INCOMPLETE'
+      | 'UNKNOWN'
+      | 'NOT_APPLICABLE';
     honorsCustomerEmailPreference: boolean | null;
   };
 }
@@ -290,9 +296,12 @@ export function deriveNotificationPermissions(
       has('notification.approve_configuration') ||
       isFinanceControllerChecker,
     canManageTemplates: canWrite && (has('notification.manage_templates') || isSuperAdminMaker),
-    canApproveTemplates: canWrite && (has('notification.approve_templates') || isFinanceControllerChecker),
-    canManageConfiguration: canWrite && (has('notification.manage_configuration') || isSuperAdminMaker),
-    canApproveConfiguration: canWrite && (has('notification.approve_configuration') || isFinanceControllerChecker),
+    canApproveTemplates:
+      canWrite && (has('notification.approve_templates') || isFinanceControllerChecker),
+    canManageConfiguration:
+      canWrite && (has('notification.manage_configuration') || isSuperAdminMaker),
+    canApproveConfiguration:
+      canWrite && (has('notification.approve_configuration') || isFinanceControllerChecker),
     canViewProviderStatus:
       has('notification.view_provider_status') ||
       has('notification.provider.view') ||
@@ -305,7 +314,8 @@ export function deriveNotificationPermissions(
     canApproveProviderConfig:
       canWrite && has('notification.provider.configure') && roles.has('FINANCE_CONTROLLER'),
     canActivateProviderConfig:
-      canWrite && has('notification.provider.configure') &&
+      canWrite &&
+      has('notification.provider.configure') &&
       (roles.has('SUPER_ADMIN') || roles.has('FINANCE_CONTROLLER')),
     canTestSend: canWrite && has('notification.test_send'),
     canUseWorkforceApprovalEndpoint: canWrite && isFinanceControllerChecker,
@@ -439,7 +449,9 @@ export function validateTemplateDraft(input: TemplateDraftValidationInput): stri
     if (!trimmedBody) {
       errors.push('SMS template body is required.');
     } else if (body.length > SMS_BODY_MAX_LENGTH) {
-      errors.push(`SMS template body must not exceed ${SMS_BODY_MAX_LENGTH} characters (currently ${body.length}).`);
+      errors.push(
+        `SMS template body must not exceed ${SMS_BODY_MAX_LENGTH} characters (currently ${body.length}).`,
+      );
     }
   } else {
     if (!trimmedSubject) {
@@ -555,7 +567,9 @@ export function renderSafeTemplatePreview(
     source.replace(/\{\{([^{}]*)\}\}/g, (_full, rawName: string) => {
       const name = rawName.trim();
       if (!approvedMap.has(name)) {
-        warnings.push(`Unapproved or unknown variable "{{${name}}}" was omitted during safe rendering.`);
+        warnings.push(
+          `Unapproved or unknown variable "{{${name}}}" was omitted during safe rendering.`,
+        );
         return '';
       }
       const value = approvedMap.get(name) ?? '';
@@ -599,7 +613,11 @@ export function getNotificationConfigurationSnapshot(
   target: NotificationConfigurationTarget,
 ): NotificationConfigurationSnapshot | null {
   const enabled =
-    target === 'EVENT' ? event.eventEnabled : target === 'SMS' ? event.smsEnabled : event.emailEnabled;
+    target === 'EVENT'
+      ? event.eventEnabled
+      : target === 'SMS'
+        ? event.smsEnabled
+        : event.emailEnabled;
   const locked =
     target === 'EVENT' ? event.eventLocked : target === 'SMS' ? event.smsLocked : event.emailLocked;
   const version =
@@ -663,7 +681,11 @@ export function validateTriggerConfigurationChange(input: TriggerConfigValidatio
     return errors;
   }
 
-  const targets: Array<{ target: NotificationConfigurationTarget; current?: boolean; desired: boolean }> = [
+  const targets: Array<{
+    target: NotificationConfigurationTarget;
+    current?: boolean;
+    desired: boolean;
+  }> = [
     { target: 'EVENT', current: event.eventEnabled, desired: eventEnabled },
     { target: 'SMS', current: event.smsEnabled, desired: smsEnabled },
     { target: 'EMAIL', current: event.emailEnabled, desired: emailEnabled },
@@ -729,7 +751,9 @@ export function validateTestSendRequest(input: TestSendValidationInput): {
   if (input.channel === 'SMS') {
     normalizedDestination = normalizeWorkforceSmsDestination(input.destination);
     if (!normalizedDestination) {
-      errors.push('Enter a valid E.164 or Nigerian mobile number (e.g. +2348030000100 or 08030000100).');
+      errors.push(
+        'Enter a valid E.164 or Nigerian mobile number (e.g. +2348030000100 or 08030000100).',
+      );
     }
   } else {
     if (!isValidEmailAddress(input.destination)) {
@@ -1018,11 +1042,20 @@ export function validateProviderConfigProposalDraft(
 
   if (draft.channel === 'EMAIL' && (provider === 'brevo' || provider === 'resend')) {
     const fromEmail = (draft.fromEmail ?? '').trim();
-    if (!fromEmail || !/^[^@\s,;"'<>()\\]+@[^@\s,;"'<>()\\]+\.[^@\s,;"'<>()\\]{2,63}$/.test(fromEmail)) {
-      errors.push('Enter a valid verified sender email address (e.g. notifications@monienaija.ng).');
+    if (
+      !fromEmail ||
+      !/^[^@\s,;"'<>()\\]+@[^@\s,;"'<>()\\]+\.[^@\s,;"'<>()\\]{2,63}$/.test(fromEmail)
+    ) {
+      errors.push(
+        'Enter a valid verified sender email address (e.g. notifications@monienaija.ng).',
+      );
     }
     if (draft.replyToEmail && draft.replyToEmail.trim().length > 0) {
-      if (!/^[^@\s,;"'<>()\\]+@[^@\s,;"'<>()\\]+\.[^@\s,;"'<>()\\]{2,63}$/.test(draft.replyToEmail.trim())) {
+      if (
+        !/^[^@\s,;"'<>()\\]+@[^@\s,;"'<>()\\]+\.[^@\s,;"'<>()\\]{2,63}$/.test(
+          draft.replyToEmail.trim(),
+        )
+      ) {
         errors.push('Reply-To address must be a valid email address when specified.');
       }
     }
@@ -1040,7 +1073,9 @@ export function validateProviderConfigProposalDraft(
 
   if (draft.credentialAction === 'SET_ENCRYPTED') {
     if (!isExternal) {
-      errors.push('Encrypted API keys can only be configured for external providers (Robase, Brevo, Resend).');
+      errors.push(
+        'Encrypted API keys can only be configured for external providers (Robase, Brevo, Resend).',
+      );
     } else {
       const key = (draft.apiKey ?? '').trim();
       if (!key) {
@@ -1048,21 +1083,31 @@ export function validateProviderConfigProposalDraft(
       } else if (/\s/.test(key)) {
         errors.push('API key must not contain spaces or line breaks.');
       } else if (provider === 'robase' && !/^robe_[A-Za-z0-9_-]{15,500}$/.test(key)) {
-        errors.push('Robase API key must use the verified live key format (robe_ prefix, 20+ characters).');
+        errors.push(
+          'Robase API key must use the verified live key format (robe_ prefix, 20+ characters).',
+        );
       } else if (provider === 'brevo') {
         if (key.startsWith('xsmtpsib-')) {
           errors.push(
             'SMTP relay keys (xsmtpsib- prefix) are not valid for the Brevo v3 HTTP API. Enter a Brevo v3 REST API key (xkeysib- prefix).',
           );
         } else if (!/^xkeysib-[A-Za-z0-9_-]{15,500}$/.test(key)) {
-          errors.push('Brevo API key must use the v3 REST API key format (xkeysib- prefix, 23+ characters).');
+          errors.push(
+            'Brevo API key must use the v3 REST API key format (xkeysib- prefix, 23+ characters).',
+          );
         }
       } else if (provider === 'resend' && !/^re_[A-Za-z0-9_-]{12,500}$/.test(key)) {
         errors.push('Resend API key must use the live key format (re_ prefix).');
       }
     }
-  } else if (draft.credentialAction === 'KEEP_EXISTING' && isExternal && !hasExistingStoredCredential) {
-    errors.push('No stored credential exists yet for this channel; select "Set / Rotate Encrypted API Key" or "Use Server Environment Secret".');
+  } else if (
+    draft.credentialAction === 'KEEP_EXISTING' &&
+    isExternal &&
+    !hasExistingStoredCredential
+  ) {
+    errors.push(
+      'No stored credential exists yet for this channel; select "Set / Rotate Encrypted API Key" or "Use Server Environment Secret".',
+    );
   } else if (draft.credentialAction === 'CLEAR' && isExternal && draft.enabled) {
     errors.push('Cannot clear credentials while the external provider is enabled.');
   }
@@ -1098,7 +1143,8 @@ const AMOUNT_VAR: ApprovedTemplateVariable = {
 
 const REFERENCE_VAR: ApprovedTemplateVariable = {
   name: 'reference',
-  description: 'Validated public transaction or ticket reference (never internal ledger/journal ID)',
+  description:
+    'Validated public transaction or ticket reference (never internal ledger/journal ID)',
   sampleValue: 'SAMPLE-1',
   sourceSummary: 'redactedPayload.reference (validated public shape)',
 };
@@ -1119,7 +1165,8 @@ const SENDER_NAME_VAR: ApprovedTemplateVariable = {
 
 const LOCATOR_CLAUSE_VAR: ApprovedTemplateVariable = {
   name: 'locator_clause',
-  description: 'Optional HTTPS-validated public Cash-to-Cash Agent outlet locator clause (Decision D-N5)',
+  description:
+    'Optional HTTPS-validated public Cash-to-Cash Agent outlet locator clause (Decision D-N5)',
   sampleValue: ' Find an active outlet: https://monienaija.example/agents',
   sourceSummary: 'redactedPayload.locatorUrl (CASH_TO_CASH_LOCATOR_URL, https-validated)',
 };
@@ -1135,14 +1182,16 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
   {
     eventType: 'customer.registration.phone_verification',
     category: 'SECURITY',
-    description: 'Customer onboarding registration phone verification OTP (direct provider path; bypasses outbox).',
+    description:
+      'Customer onboarding registration phone verification OTP (direct provider path; bypasses outbox).',
     deliveryClass: 'SECURITY',
     recipientTarget: 'CUSTOMER',
     runtimeTriggerState: 'DIRECT_PROVIDER_BYPASS',
     smsEnabled: true,
     emailEnabled: false,
     toggleLocked: true,
-    lockReason: 'Mandatory SECURITY direct-send OTP: bypasses outbox and customer opt-out; cannot be disabled or edited.',
+    lockReason:
+      'Mandatory SECURITY direct-send OTP: bypasses outbox and customer opt-out; cannot be disabled or edited.',
     templateEditable: false,
     securityNotes: 'Rendered OTP is never persisted in outbox_events or notification_deliveries.',
     approvedVariables: [],
@@ -1152,14 +1201,16 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
   {
     eventType: 'customer.credentials.temporary_credential',
     category: 'SECURITY',
-    description: 'Workforce-issued temporary customer login credential SMS (direct provider path; bypasses outbox).',
+    description:
+      'Workforce-issued temporary customer login credential SMS (direct provider path; bypasses outbox).',
     deliveryClass: 'SECURITY',
     recipientTarget: 'CUSTOMER',
     runtimeTriggerState: 'DIRECT_PROVIDER_BYPASS',
     smsEnabled: true,
     emailEnabled: false,
     toggleLocked: true,
-    lockReason: 'Mandatory SECURITY direct-send credential: fixed code template; never persisted or toggleable.',
+    lockReason:
+      'Mandatory SECURITY direct-send credential: fixed code template; never persisted or toggleable.',
     templateEditable: false,
     securityNotes: 'Temporary credentials must never become configurable template variables.',
     approvedVariables: [],
@@ -1169,14 +1220,16 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
   {
     eventType: 'agent.desk.customer_otp',
     category: 'SECURITY',
-    description: 'Customer authorization OTP for Agent-desk Wallet→Cash and Cash→Cash claims (sent to customer phone only).',
+    description:
+      'Customer authorization OTP for Agent-desk Wallet→Cash and Cash→Cash claims (sent to customer phone only).',
     deliveryClass: 'SECURITY',
     recipientTarget: 'CUSTOMER',
     runtimeTriggerState: 'DIRECT_PROVIDER_BYPASS',
     smsEnabled: true,
     emailEnabled: false,
     toggleLocked: true,
-    lockReason: 'Mandatory SECURITY MFA challenge: fixed code template; never persisted or toggleable.',
+    lockReason:
+      'Mandatory SECURITY MFA challenge: fixed code template; never persisted or toggleable.',
     templateEditable: false,
     securityNotes: 'Delivered strictly to the customer verified primary phone, never the Agent.',
     approvedVariables: [],
@@ -1238,7 +1291,8 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
   {
     eventType: 'transfer.completed',
     category: 'TRANSFER',
-    description: 'Wallet-to-wallet transfer completed (dispatched to source and destination customers).',
+    description:
+      'Wallet-to-wallet transfer completed (dispatched to source and destination customers).',
     deliveryClass: 'TRANSACTIONAL',
     recipientTarget: 'CUSTOMER',
     runtimeTriggerState: 'LIVE_OUTBOX',
@@ -1352,7 +1406,8 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
   {
     eventType: 'support.ticket.message_added',
     category: 'SUPPORT',
-    description: 'Customer-visible reply added to support ticket (internal notes strictly filtered out).',
+    description:
+      'Customer-visible reply added to support ticket (internal notes strictly filtered out).',
     deliveryClass: 'TRANSACTIONAL',
     recipientTarget: 'CUSTOMER_AND_AGENT',
     runtimeTriggerState: 'LIVE_OUTBOX',
@@ -1361,7 +1416,8 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
     toggleLocked: false,
     lockReason: null,
     templateEditable: true,
-    securityNotes: 'Internal workforce notes (isInternal=true) never generate notification intents.',
+    securityNotes:
+      'Internal workforce notes (isInternal=true) never generate notification intents.',
     approvedVariables: [REFERENCE_VAR],
     activeSmsVersion: 1,
     activeEmailVersion: 1,
@@ -1425,7 +1481,8 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
   {
     eventType: 'agent.application.approved',
     category: 'AGENT_LIFECYCLE',
-    description: 'Ordinary Agent onboarding application approved (pending Agent phone contact model D-N6).',
+    description:
+      'Ordinary Agent onboarding application approved (pending Agent phone contact model D-N6).',
     deliveryClass: 'INFORMATIONAL',
     recipientTarget: 'AGENT',
     runtimeTriggerState: 'UNWIRED_OUTBOX',
@@ -1441,7 +1498,8 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
   {
     eventType: 'agent.application.rejected',
     category: 'AGENT_LIFECYCLE',
-    description: 'Ordinary Agent onboarding application rejected (pending Agent phone contact model D-N6).',
+    description:
+      'Ordinary Agent onboarding application rejected (pending Agent phone contact model D-N6).',
     deliveryClass: 'INFORMATIONAL',
     recipientTarget: 'AGENT',
     runtimeTriggerState: 'UNWIRED_OUTBOX',
@@ -1522,108 +1580,110 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
 
 const CODE_BASELINE_TIMESTAMP = '2026-10-27T00:00:00.000Z';
 
-const BASELINE_SEED_BODIES: Record<string, { body: string; variables: string[]; summary: string }> = {
-  'customer.funding.approved': {
-    body: 'Your funding{{amount_clause}} has been approved. Ref {{reference}}.',
-    variables: ['reference', 'amount_clause'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'customer.funding.rejected': {
-    body: 'Your funding{{amount_clause}} was not approved. Ref {{reference}}. Contact support.',
-    variables: ['reference', 'amount_clause'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'customer.funding.requested': {
-    body: 'Funding request{{amount_clause}} received. Ref {{reference}}. Awaiting review.',
-    variables: ['reference', 'amount_clause'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'transfer.completed': {
-    body: 'Transfer{{amount_clause}} completed. Ref {{reference}}.',
-    variables: ['reference', 'amount_clause'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'transfer.failed': {
-    body: 'Transfer{{amount_clause}} failed. Ref {{reference}}. Contact support.',
-    variables: ['reference', 'amount_clause'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'support.ticket.created': {
-    body: "Support ticket {{reference}} created. We'll update you soon.",
-    variables: ['reference'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'support.ticket.assigned': {
-    body: 'Your support ticket {{reference}} has been assigned.',
-    variables: ['reference'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'support.ticket.status_changed': {
-    body: 'Your support ticket {{reference}} status changed to {{status}}.',
-    variables: ['reference', 'status'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'support.ticket.resolved': {
-    body: 'Your support ticket {{reference}} has been resolved.',
-    variables: ['reference'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'support.ticket.closed': {
-    body: 'Your support ticket {{reference}} has been closed.',
-    variables: ['reference'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'support.ticket.message_added': {
-    body: 'New update on support ticket {{reference}}. Check your dashboard.',
-    variables: ['reference'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'cash_to_cash.created': {
-    body: 'Cash-to-Cash: {{sender_name}} sent you {{amount}}. Visit an active agent outlet to collect.{{locator_clause}}',
-    variables: ['sender_name', 'amount', 'locator_clause'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 non-disclosure C2C beneficiary seed baseline',
-  },
-  'cash_to_cash.claimed': {
-    body: 'Cash-to-cash transfer {{reference}} claimed{{amount_clause}}.',
-    variables: ['reference', 'amount_clause'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'cash_to_cash.expired': {
-    body: 'Cash-to-cash transfer {{reference}} expired{{amount_clause}}. Contact support.',
-    variables: ['reference', 'amount_clause'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'agent.application.approved': {
-    body: 'Agent application {{reference}} approved.',
-    variables: ['reference'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'agent.application.rejected': {
-    body: 'Agent application {{reference}} not approved.',
-    variables: ['reference'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'agent.activated': {
-    body: 'Agent {{reference}} activated.',
-    variables: ['reference'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'agent.suspended': {
-    body: 'Agent {{reference}} suspended. Contact support.',
-    variables: ['reference'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'agent.terminated': {
-    body: 'Agent {{reference}} terminated.',
-    variables: ['reference'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-  'agent.reactivated': {
-    body: 'Agent {{reference}} reactivated.',
-    variables: ['reference'],
-    summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
-  },
-};
+const BASELINE_SEED_BODIES: Record<string, { body: string; variables: string[]; summary: string }> =
+  {
+    'customer.funding.approved': {
+      body: 'Your funding{{amount_clause}} has been approved. Ref {{reference}}.',
+      variables: ['reference', 'amount_clause'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'customer.funding.rejected': {
+      body: 'Your funding{{amount_clause}} was not approved. Ref {{reference}}. Contact support.',
+      variables: ['reference', 'amount_clause'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'customer.funding.requested': {
+      body: 'Funding request{{amount_clause}} received. Ref {{reference}}. Awaiting review.',
+      variables: ['reference', 'amount_clause'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'transfer.completed': {
+      body: 'Transfer{{amount_clause}} completed. Ref {{reference}}.',
+      variables: ['reference', 'amount_clause'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'transfer.failed': {
+      body: 'Transfer{{amount_clause}} failed. Ref {{reference}}. Contact support.',
+      variables: ['reference', 'amount_clause'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'support.ticket.created': {
+      body: "Support ticket {{reference}} created. We'll update you soon.",
+      variables: ['reference'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'support.ticket.assigned': {
+      body: 'Your support ticket {{reference}} has been assigned.',
+      variables: ['reference'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'support.ticket.status_changed': {
+      body: 'Your support ticket {{reference}} status changed to {{status}}.',
+      variables: ['reference', 'status'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'support.ticket.resolved': {
+      body: 'Your support ticket {{reference}} has been resolved.',
+      variables: ['reference'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'support.ticket.closed': {
+      body: 'Your support ticket {{reference}} has been closed.',
+      variables: ['reference'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'support.ticket.message_added': {
+      body: 'New update on support ticket {{reference}}. Check your dashboard.',
+      variables: ['reference'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'cash_to_cash.created': {
+      body: 'Cash-to-Cash: {{sender_name}} sent you {{amount}}. Visit an active agent outlet to collect.{{locator_clause}}',
+      variables: ['sender_name', 'amount', 'locator_clause'],
+      summary:
+        'NOTIFICATION_DEFAULTS_V1 migration-0098 non-disclosure C2C beneficiary seed baseline',
+    },
+    'cash_to_cash.claimed': {
+      body: 'Cash-to-cash transfer {{reference}} claimed{{amount_clause}}.',
+      variables: ['reference', 'amount_clause'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'cash_to_cash.expired': {
+      body: 'Cash-to-cash transfer {{reference}} expired{{amount_clause}}. Contact support.',
+      variables: ['reference', 'amount_clause'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'agent.application.approved': {
+      body: 'Agent application {{reference}} approved.',
+      variables: ['reference'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'agent.application.rejected': {
+      body: 'Agent application {{reference}} not approved.',
+      variables: ['reference'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'agent.activated': {
+      body: 'Agent {{reference}} activated.',
+      variables: ['reference'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'agent.suspended': {
+      body: 'Agent {{reference}} suspended. Contact support.',
+      variables: ['reference'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'agent.terminated': {
+      body: 'Agent {{reference}} terminated.',
+      variables: ['reference'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+    'agent.reactivated': {
+      body: 'Agent {{reference}} reactivated.',
+      variables: ['reference'],
+      summary: 'NOTIFICATION_DEFAULTS_V1 migration-0098 seed baseline',
+    },
+  };
 
 export const BASELINE_CODE_TEMPLATES: NotificationTemplateVersion[] = Object.entries(
   BASELINE_SEED_BODIES,

@@ -52,8 +52,7 @@ export const TransactionsScreen: React.FC = () => {
 
   const historyQuery = useQuery({
     queryKey: ['agent-transactions', agentId, activeType ?? 'ALL', pageLimit],
-    queryFn: () =>
-      getAgentTransactions({ page: 1, limit: pageLimit, type: activeType }),
+    queryFn: () => getAgentTransactions({ page: 1, limit: pageLimit, type: activeType }),
     enabled: !!agentId,
     staleTime: 30_000,
   });
@@ -149,7 +148,9 @@ export const TransactionsScreen: React.FC = () => {
               accessibilityRole="button"
               testID={`filter-${filter.type ?? 'ALL'}`.toLowerCase()}
             >
-              <Text style={[styles.filterText, active && styles.filterTextActive]}>{filter.label}</Text>
+              <Text style={[styles.filterText, active && styles.filterTextActive]}>
+                {filter.label}
+              </Text>
             </TouchableOpacity>
           );
         })}
@@ -197,7 +198,10 @@ export const TransactionsScreen: React.FC = () => {
             <View style={{ gap: theme.spacing.xs }}>
               {overflowError ? (
                 <Text
-                  style={{ color: theme.colors.feedback.error, fontSize: theme.typography.sizes.sm }}
+                  style={{
+                    color: theme.colors.feedback.error,
+                    fontSize: theme.typography.sizes.sm,
+                  }}
                   testID="history-overflow-error"
                 >
                   {overflowError}

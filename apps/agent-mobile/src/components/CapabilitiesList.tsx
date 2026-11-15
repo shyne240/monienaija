@@ -29,23 +29,31 @@ export const CapabilitiesList: React.FC<CapabilitiesListProps> = ({ capabilities
   return (
     <View testID={testID}>
       {PRESENTED_SERVICES.map(({ canonical, label }) => {
-        const evaluation = capabilities.evaluations.find(
-          (e) => e.canonicalService === canonical,
-        );
+        const evaluation = capabilities.evaluations.find((e) => e.canonicalService === canonical);
         const enabled = evaluation?.allowed === true;
         return (
-          <View key={canonical} style={styles.row} testID={`capability-${canonical.toLowerCase().replaceAll('_', '-')}`}>
+          <View
+            key={canonical}
+            style={styles.row}
+            testID={`capability-${canonical.toLowerCase().replaceAll('_', '-')}`}
+          >
             <View style={styles.rowText}>
               <Text style={styles.serviceLabel}>{label}</Text>
               {!enabled && (
-                <Text style={styles.reason} testID={`capability-reason-${canonical.toLowerCase().replaceAll('_', '-')}`}>
+                <Text
+                  style={styles.reason}
+                  testID={`capability-reason-${canonical.toLowerCase().replaceAll('_', '-')}`}
+                >
                   {evaluation?.reason ?? 'Unavailable for your account'}
                 </Text>
               )}
             </View>
             <View style={[styles.pill, enabled ? styles.pillEnabled : styles.pillDisabled]}>
               <Text
-                style={[styles.pillText, enabled ? styles.pillTextEnabled : styles.pillTextDisabled]}
+                style={[
+                  styles.pillText,
+                  enabled ? styles.pillTextEnabled : styles.pillTextDisabled,
+                ]}
                 testID={`capability-state-${canonical.toLowerCase().replaceAll('_', '-')}`}
               >
                 {enabled ? 'Enabled' : 'Unavailable'}

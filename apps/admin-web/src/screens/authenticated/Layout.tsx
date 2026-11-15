@@ -68,11 +68,21 @@ export const Layout: React.FC = () => {
   const accountButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!accountOpen) return;
-    const onPointer = (event: MouseEvent) => { if (!accountRef.current?.contains(event.target as Node)) setAccountOpen(false); };
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { setAccountOpen(false); accountButtonRef.current?.focus(); } };
+    const onPointer = (event: MouseEvent) => {
+      if (!accountRef.current?.contains(event.target as Node)) setAccountOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setAccountOpen(false);
+        accountButtonRef.current?.focus();
+      }
+    };
     document.addEventListener('mousedown', onPointer);
     document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('mousedown', onPointer); document.removeEventListener('keydown', onKey); };
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
   }, [accountOpen]);
   const [navigationQuery, setNavigationQuery] = useState('');
   const [customerGuard, setCustomerGuard] = useState(false);
@@ -99,23 +109,64 @@ export const Layout: React.FC = () => {
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [notificationGuard, setNotificationGuard] = useState(false);
   const [notificationBusy, setNotificationBusy] = useState(false);
-  const reportNotificationGuard = useCallback((guarded: boolean, busy: boolean) => { setNotificationGuard(guarded); setNotificationBusy(busy); }, []);
+  const reportNotificationGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setNotificationGuard(guarded);
+    setNotificationBusy(busy);
+  }, []);
   const [ledgerGuard, setLedgerGuard] = useState(false);
   const [ledgerBusy, setLedgerBusy] = useState(false);
-  const reportLedgerGuard = useCallback((guarded: boolean, busy: boolean) => { setLedgerGuard(guarded); setLedgerBusy(busy); }, []);
-  const reportRecoveryGuard = useCallback((guarded: boolean, busy: boolean) => { setRecoveryGuard(guarded); setRecoveryBusy(busy); }, []);
-  const reportComplianceGuard = useCallback((guarded: boolean, busy: boolean) => { setComplianceGuard(guarded); setComplianceBusy(busy); }, []);
-  const reportWorkforceGuard = useCallback((guarded: boolean, busy: boolean) => { setWorkforceGuard(guarded); setWorkforceBusy(busy); }, []);
-  const reportRoleGuard = useCallback((guarded: boolean, busy: boolean) => { setRoleGuard(guarded); setRoleBusy(busy); }, []);
-  const reportSupportGuard = useCallback((guarded: boolean, busy: boolean) => { setSupportGuard(guarded); setSupportBusy(busy); }, []);
-  const reportDashboardGuard = useCallback((guarded: boolean, busy: boolean) => { setDashboardGuard(guarded); setDashboardBusy(busy); }, []);
-  const reportClassGuard = useCallback((guarded: boolean, busy: boolean) => { setClassGuard(guarded); setClassBusy(busy); }, []);
-  const reportLimitGuard = useCallback((guarded: boolean, busy: boolean) => { setLimitGuard(guarded); setLimitBusy(busy); }, []);
-  const reportApprovalGuard = useCallback((guarded: boolean, busy: boolean) => { setApprovalGuard(guarded); setApprovalBusy(busy); }, []);
-  const reportAgentGuard = useCallback((guarded: boolean, busy: boolean) => { setAgentGuard(guarded); setAgentBusy(busy); }, []);
-  const [pendingLeave, setPendingLeave] = useState<{ view: View; context?: NavContext } | { logout: true } | null>(null);
+  const reportLedgerGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setLedgerGuard(guarded);
+    setLedgerBusy(busy);
+  }, []);
+  const reportRecoveryGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setRecoveryGuard(guarded);
+    setRecoveryBusy(busy);
+  }, []);
+  const reportComplianceGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setComplianceGuard(guarded);
+    setComplianceBusy(busy);
+  }, []);
+  const reportWorkforceGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setWorkforceGuard(guarded);
+    setWorkforceBusy(busy);
+  }, []);
+  const reportRoleGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setRoleGuard(guarded);
+    setRoleBusy(busy);
+  }, []);
+  const reportSupportGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setSupportGuard(guarded);
+    setSupportBusy(busy);
+  }, []);
+  const reportDashboardGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setDashboardGuard(guarded);
+    setDashboardBusy(busy);
+  }, []);
+  const reportClassGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setClassGuard(guarded);
+    setClassBusy(busy);
+  }, []);
+  const reportLimitGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setLimitGuard(guarded);
+    setLimitBusy(busy);
+  }, []);
+  const reportApprovalGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setApprovalGuard(guarded);
+    setApprovalBusy(busy);
+  }, []);
+  const reportAgentGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setAgentGuard(guarded);
+    setAgentBusy(busy);
+  }, []);
+  const [pendingLeave, setPendingLeave] = useState<
+    { view: View; context?: NavContext } | { logout: true } | null
+  >(null);
   const leaveDialogRef = useRef<HTMLElement>(null);
-  const reportCustomerGuard = useCallback((guarded: boolean, busy: boolean) => { setCustomerGuard(guarded); setCustomerBusy(busy); }, []);
+  const reportCustomerGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setCustomerGuard(guarded);
+    setCustomerBusy(busy);
+  }, []);
   useDialogFocus(leaveDialogRef, Boolean(pendingLeave), () => setPendingLeave(null));
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     home: true,
@@ -241,8 +292,7 @@ export const Layout: React.FC = () => {
 
   if (!principal) return null;
 
-  const isVisible = (view: View) =>
-    canAccessAdminView(view, principal.scopes, principal.roles);
+  const isVisible = (view: View) => canAccessAdminView(view, principal.scopes, principal.roles);
 
   // Seven sections; only implemented menu routes are exposed.
   const sections = [
@@ -251,7 +301,11 @@ export const Layout: React.FC = () => {
       title: 'Overview',
       items: [
         { key: 'dashboard' as View, label: 'Dashboard', visible: true },
-        { key: 'dashboardSettings' as View, label: 'Dashboard Settings', visible: isVisible('dashboardSettings') },
+        {
+          key: 'dashboardSettings' as View,
+          label: 'Dashboard Settings',
+          visible: isVisible('dashboardSettings'),
+        },
       ],
     },
     {
@@ -282,15 +336,27 @@ export const Layout: React.FC = () => {
         { key: 'transfers' as View, label: 'Transfers', visible: isVisible('transfers') },
         { key: 'cashIn' as View, label: 'Deposits', visible: isVisible('transfers') },
         { key: 'cashOut' as View, label: 'Withdrawals', visible: isVisible('transfers') },
-        { key: 'cashToCashOps' as View, label: 'Cash to cash', visible: isVisible('cashToCashOps') },
+        {
+          key: 'cashToCashOps' as View,
+          label: 'Cash to cash',
+          visible: isVisible('cashToCashOps'),
+        },
       ],
     },
     {
       id: 'finance',
       title: 'Finance',
       items: [
-        { key: 'ledgerExplorer' as View, label: 'Ledger & reversals', visible: isVisible('ledgerExplorer') },
-        { key: 'reconciliation' as View, label: 'Reconciliation', visible: isVisible('reconciliation') },
+        {
+          key: 'ledgerExplorer' as View,
+          label: 'Ledger & reversals',
+          visible: isVisible('ledgerExplorer'),
+        },
+        {
+          key: 'reconciliation' as View,
+          label: 'Reconciliation',
+          visible: isVisible('reconciliation'),
+        },
       ],
     },
     {
@@ -298,11 +364,27 @@ export const Layout: React.FC = () => {
       title: 'Products & pricing',
       items: [
         { key: 'feeRules' as View, label: 'Fee rules', visible: isVisible('feeRules') },
-        { key: 'commissionRules' as View, label: 'Commission rules', visible: isVisible('commissionRules') },
+        {
+          key: 'commissionRules' as View,
+          label: 'Commission rules',
+          visible: isVisible('commissionRules'),
+        },
         { key: 'rewardRules' as View, label: 'Reward rules', visible: isVisible('rewardRules') },
-        { key: 'productCatalogue' as View, label: 'Products', visible: isVisible('productCatalogue') },
-        { key: 'limitCatalogue' as View, label: 'Limit catalogue', visible: isVisible('limitCatalogue') },
-        { key: 'limitAssignments' as View, label: 'Limit assignments', visible: isVisible('limitAssignments') },
+        {
+          key: 'productCatalogue' as View,
+          label: 'Products',
+          visible: isVisible('productCatalogue'),
+        },
+        {
+          key: 'limitCatalogue' as View,
+          label: 'Limit catalogue',
+          visible: isVisible('limitCatalogue'),
+        },
+        {
+          key: 'limitAssignments' as View,
+          label: 'Limit assignments',
+          visible: isVisible('limitAssignments'),
+        },
       ],
     },
     {
@@ -310,7 +392,11 @@ export const Layout: React.FC = () => {
       title: 'Risk & compliance',
       items: [
         { key: 'kycQueue' as View, label: 'KYC reviews', visible: isVisible('kycQueue') },
-        { key: 'complianceCases' as View, label: 'Compliance cases', visible: isVisible('complianceCases') },
+        {
+          key: 'complianceCases' as View,
+          label: 'Compliance cases',
+          visible: isVisible('complianceCases'),
+        },
         { key: 'fraudCases' as View, label: 'Fraud cases', visible: isVisible('fraudCases') },
       ],
     },
@@ -318,11 +404,27 @@ export const Layout: React.FC = () => {
       id: 'platform',
       title: 'Administration',
       items: [
-        { key: 'workforceAccess' as View, label: 'Workforce access', visible: isVisible('workforceAccess') },
-        { key: 'roleGovernance' as View, label: 'Role governance', visible: isVisible('roleGovernance') },
+        {
+          key: 'workforceAccess' as View,
+          label: 'Workforce access',
+          visible: isVisible('workforceAccess'),
+        },
+        {
+          key: 'roleGovernance' as View,
+          label: 'Role governance',
+          visible: isVisible('roleGovernance'),
+        },
         { key: 'approvalsInbox' as View, label: 'Approvals', visible: isVisible('approvalsInbox') },
-        { key: 'superAdminRecovery' as View, label: 'Admin recovery', visible: isVisible('superAdminRecovery') },
-        { key: 'notifications' as View, label: 'Notifications', visible: isVisible('notifications') },
+        {
+          key: 'superAdminRecovery' as View,
+          label: 'Admin recovery',
+          visible: isVisible('superAdminRecovery'),
+        },
+        {
+          key: 'notifications' as View,
+          label: 'Notifications',
+          visible: isVisible('notifications'),
+        },
         { key: 'systemHealth' as View, label: 'System health', visible: isVisible('systemHealth') },
         { key: 'auditEvents' as View, label: 'Audit events', visible: isVisible('auditEvents') },
       ],
@@ -342,16 +444,26 @@ export const Layout: React.FC = () => {
     setAgentBusy(false);
     setApprovalGuard(false);
     setApprovalBusy(false);
-    setLimitGuard(false); setLimitBusy(false);
-    setClassGuard(false); setClassBusy(false);
-    setDashboardGuard(false); setDashboardBusy(false);
-    setSupportGuard(false); setSupportBusy(false);
-    setRoleGuard(false); setRoleBusy(false);
-    setWorkforceGuard(false); setWorkforceBusy(false);
-    setComplianceGuard(false); setComplianceBusy(false);
-    setRecoveryGuard(false); setRecoveryBusy(false);
-    setLedgerGuard(false); setLedgerBusy(false);
-    setNotificationGuard(false); setNotificationBusy(false);
+    setLimitGuard(false);
+    setLimitBusy(false);
+    setClassGuard(false);
+    setClassBusy(false);
+    setDashboardGuard(false);
+    setDashboardBusy(false);
+    setSupportGuard(false);
+    setSupportBusy(false);
+    setRoleGuard(false);
+    setRoleBusy(false);
+    setWorkforceGuard(false);
+    setWorkforceBusy(false);
+    setComplianceGuard(false);
+    setComplianceBusy(false);
+    setRecoveryGuard(false);
+    setRecoveryBusy(false);
+    setLedgerGuard(false);
+    setLedgerBusy(false);
+    setNotificationGuard(false);
+    setNotificationBusy(false);
     setNavigationQuery('');
     setCurrentView(view);
     // Customer context belongs only to the destination explicitly selected from Customer 360°.
@@ -375,11 +487,49 @@ export const Layout: React.FC = () => {
 
   const handleNav = (view: View, context?: NavContext) => {
     if (!canAccessAdminView(view, principal.scopes, principal.roles, context)) return;
-    if ((customerGuard && canonicalAdminView(currentView) === 'customers') || (agentGuard && canonicalAdminView(currentView) === 'agents') || (approvalGuard && canonicalAdminView(currentView) === 'approvalsInbox') || (limitGuard && canonicalAdminView(currentView) === 'limitAssignments') || (classGuard && canonicalAdminView(currentView) === 'agentClasses') || (dashboardGuard && canonicalAdminView(currentView) === 'dashboardSettings') || (supportGuard && canonicalAdminView(currentView) === 'support') || (roleGuard && canonicalAdminView(currentView) === 'roleGovernance') || (workforceGuard && canonicalAdminView(currentView) === 'workforceAccess') || (complianceGuard && canonicalAdminView(currentView) === 'kycQueue') || (recoveryGuard && canonicalAdminView(currentView) === 'superAdminRecovery') || (ledgerGuard && canonicalAdminView(currentView) === 'ledgerExplorer') || (notificationGuard && canonicalAdminView(currentView) === 'notifications')) { restoreFocusRef.current = false; setMobileOpen(false); setPendingLeave({ view, context }); return; }
+    if (
+      (customerGuard && canonicalAdminView(currentView) === 'customers') ||
+      (agentGuard && canonicalAdminView(currentView) === 'agents') ||
+      (approvalGuard && canonicalAdminView(currentView) === 'approvalsInbox') ||
+      (limitGuard && canonicalAdminView(currentView) === 'limitAssignments') ||
+      (classGuard && canonicalAdminView(currentView) === 'agentClasses') ||
+      (dashboardGuard && canonicalAdminView(currentView) === 'dashboardSettings') ||
+      (supportGuard && canonicalAdminView(currentView) === 'support') ||
+      (roleGuard && canonicalAdminView(currentView) === 'roleGovernance') ||
+      (workforceGuard && canonicalAdminView(currentView) === 'workforceAccess') ||
+      (complianceGuard && canonicalAdminView(currentView) === 'kycQueue') ||
+      (recoveryGuard && canonicalAdminView(currentView) === 'superAdminRecovery') ||
+      (ledgerGuard && canonicalAdminView(currentView) === 'ledgerExplorer') ||
+      (notificationGuard && canonicalAdminView(currentView) === 'notifications')
+    ) {
+      restoreFocusRef.current = false;
+      setMobileOpen(false);
+      setPendingLeave({ view, context });
+      return;
+    }
     performNav(view, context);
   };
   const requestLogout = () => {
-    if ((customerGuard && canonicalAdminView(currentView) === 'customers') || (agentGuard && canonicalAdminView(currentView) === 'agents') || (approvalGuard && canonicalAdminView(currentView) === 'approvalsInbox') || (limitGuard && canonicalAdminView(currentView) === 'limitAssignments') || (classGuard && canonicalAdminView(currentView) === 'agentClasses') || (dashboardGuard && canonicalAdminView(currentView) === 'dashboardSettings') || (supportGuard && canonicalAdminView(currentView) === 'support') || (roleGuard && canonicalAdminView(currentView) === 'roleGovernance') || (workforceGuard && canonicalAdminView(currentView) === 'workforceAccess') || (complianceGuard && canonicalAdminView(currentView) === 'kycQueue') || (recoveryGuard && canonicalAdminView(currentView) === 'superAdminRecovery') || (ledgerGuard && canonicalAdminView(currentView) === 'ledgerExplorer') || (notificationGuard && canonicalAdminView(currentView) === 'notifications')) { restoreFocusRef.current = false; setMobileOpen(false); setPendingLeave({ logout: true }); return; }
+    if (
+      (customerGuard && canonicalAdminView(currentView) === 'customers') ||
+      (agentGuard && canonicalAdminView(currentView) === 'agents') ||
+      (approvalGuard && canonicalAdminView(currentView) === 'approvalsInbox') ||
+      (limitGuard && canonicalAdminView(currentView) === 'limitAssignments') ||
+      (classGuard && canonicalAdminView(currentView) === 'agentClasses') ||
+      (dashboardGuard && canonicalAdminView(currentView) === 'dashboardSettings') ||
+      (supportGuard && canonicalAdminView(currentView) === 'support') ||
+      (roleGuard && canonicalAdminView(currentView) === 'roleGovernance') ||
+      (workforceGuard && canonicalAdminView(currentView) === 'workforceAccess') ||
+      (complianceGuard && canonicalAdminView(currentView) === 'kycQueue') ||
+      (recoveryGuard && canonicalAdminView(currentView) === 'superAdminRecovery') ||
+      (ledgerGuard && canonicalAdminView(currentView) === 'ledgerExplorer') ||
+      (notificationGuard && canonicalAdminView(currentView) === 'notifications')
+    ) {
+      restoreFocusRef.current = false;
+      setMobileOpen(false);
+      setPendingLeave({ logout: true });
+      return;
+    }
     logout();
   };
 
@@ -402,15 +552,26 @@ export const Layout: React.FC = () => {
       case 'dashboard':
         return (
           <DashboardScreen
-            onNavigate={view => handleNav(view)}
+            onNavigate={(view) => handleNav(view)}
             onNavigateToCustomers={() => handleNav('customers')}
             onNavigateToAgents={(opts) =>
-              handleNav('agents', opts?.openApplications ? { openAgentApplications: true } : undefined)
+              handleNav(
+                'agents',
+                opts?.openApplications ? { openAgentApplications: true } : undefined,
+              )
             }
           />
         );
-      case 'dashboardSettings': return <DashboardSettingsScreen onDashboardGuardChange={reportDashboardGuard} />;
-      case 'customers': return <CustomerDirectoryScreen onNavigate={(view, customerId) => navigateWithCustomer(view as View, customerId)} selectedCustomerId={navContext.customerId} onCustomerGuardChange={reportCustomerGuard} />;
+      case 'dashboardSettings':
+        return <DashboardSettingsScreen onDashboardGuardChange={reportDashboardGuard} />;
+      case 'customers':
+        return (
+          <CustomerDirectoryScreen
+            onNavigate={(view, customerId) => navigateWithCustomer(view as View, customerId)}
+            selectedCustomerId={navContext.customerId}
+            onCustomerGuardChange={reportCustomerGuard}
+          />
+        );
       case 'agents':
         return (
           <AgentNetworkScreen
@@ -424,8 +585,10 @@ export const Layout: React.FC = () => {
             }
           />
         );
-      case 'agentClasses': return <AgentClassesScreen onClassGuardChange={reportClassGuard} />;
-      case 'cashToCashOps': return <CashToCashOperationsScreen />;
+      case 'agentClasses':
+        return <AgentClassesScreen onClassGuardChange={reportClassGuard} />;
+      case 'cashToCashOps':
+        return <CashToCashOperationsScreen />;
       case 'support':
         return (
           <SupportTicketsScreen
@@ -439,30 +602,132 @@ export const Layout: React.FC = () => {
             }
           />
         );
-      case 'transfers': return <TransactionObservabilityScreen initialType="TRANSFER" initialCustomerId={navContext.customerId} onBackToCustomer={navContext.customerId ? () => handleNav('customers', { customerId: navContext.customerId }) : undefined} />;
-      case 'cashIn': return <TransactionObservabilityScreen initialType="DEPOSIT" initialCustomerId={navContext.customerId} />;
-      case 'cashOut': return <TransactionObservabilityScreen initialType="WITHDRAWAL" initialCustomerId={navContext.customerId} />;
-      case 'ledgerExplorer': return <LedgerOperationsScreen onLedgerGuardChange={reportLedgerGuard} />;
-      case 'reconciliation': return <ReconciliationObservabilityScreen />;
-      case 'feeRules': return <CommercialRulesScreen initialTab="fees" />;
-      case 'commissionRules': return <CommercialRulesScreen initialTab="commissions" />;
-      case 'rewardRules': return <CommercialRulesScreen initialTab="rewards" />;
-      case 'productCatalogue': return <CommercialRulesScreen initialTab="products" />;
-      case 'limitCatalogue': return <CommercialRulesScreen initialTab="limits" />;
-      case 'limitAssignments': return <LimitAssignmentScreen onLimitGuardChange={reportLimitGuard} initialCustomerId={navContext.customerId} onBackToCustomer={navContext.customerId ? () => handleNav('customers', { customerId: navContext.customerId }) : undefined} />;
-      case 'kycQueue': return <ComplianceScreen onComplianceGuardChange={reportComplianceGuard} initialCustomerId={navContext.customerId} mode="kyc" onBackToCustomer={navContext.customerId ? () => handleNav('customers', { customerId: navContext.customerId }) : undefined} />;
-      case 'complianceCases': return <ComplianceScreen initialCustomerId={navContext.customerId} initialCategory="AML" mode="cases" onBackToCustomer={navContext.customerId ? () => handleNav('customers', { customerId: navContext.customerId }) : undefined} />;
-      case 'fraudCases': return <RiskFraudScreen initialCustomerId={navContext.customerId} onBackToCustomer={navContext.customerId ? () => handleNav('customers', { customerId: navContext.customerId }) : undefined} />;
-      case 'workforceAccess': return <WorkforceAdminScreen onWorkforceGuardChange={reportWorkforceGuard} />;
-      case 'roleGovernance': return <RoleAssignmentScreen onRoleGuardChange={reportRoleGuard} />;
-      case 'approvalsInbox': return <ApprovalsScreen onApprovalGuardChange={reportApprovalGuard} />;
-      case 'superAdminRecovery': return <SuperAdminRecoveryScreen onRecoveryGuardChange={reportRecoveryGuard} />;
-      case 'notifications': return <NotificationManagementScreen onNotificationGuardChange={reportNotificationGuard} />;
-      case 'systemHealth': return <SystemHealthScreen onOpenNotifications={isVisible('notifications') ? () => handleNav('notifications') : undefined} />;
-      case 'auditEvents': return <AuditTrailScreen initialCustomerId={navContext.customerId} />;
-      case 'institutions': return <InstitutionDirectoryScreen onOpenInstitution={(institutionId) => handleNav('institutionWorkspace', { institutionId })} />;
-      case 'institutionWorkspace': return <InstitutionWorkspaceScreen institutionId={navContext.institutionId} onBackToDirectory={() => handleNav('institutions')} />;
-      default: return null;
+      case 'transfers':
+        return (
+          <TransactionObservabilityScreen
+            initialType="TRANSFER"
+            initialCustomerId={navContext.customerId}
+            onBackToCustomer={
+              navContext.customerId
+                ? () => handleNav('customers', { customerId: navContext.customerId })
+                : undefined
+            }
+          />
+        );
+      case 'cashIn':
+        return (
+          <TransactionObservabilityScreen
+            initialType="DEPOSIT"
+            initialCustomerId={navContext.customerId}
+          />
+        );
+      case 'cashOut':
+        return (
+          <TransactionObservabilityScreen
+            initialType="WITHDRAWAL"
+            initialCustomerId={navContext.customerId}
+          />
+        );
+      case 'ledgerExplorer':
+        return <LedgerOperationsScreen onLedgerGuardChange={reportLedgerGuard} />;
+      case 'reconciliation':
+        return <ReconciliationObservabilityScreen />;
+      case 'feeRules':
+        return <CommercialRulesScreen initialTab="fees" />;
+      case 'commissionRules':
+        return <CommercialRulesScreen initialTab="commissions" />;
+      case 'rewardRules':
+        return <CommercialRulesScreen initialTab="rewards" />;
+      case 'productCatalogue':
+        return <CommercialRulesScreen initialTab="products" />;
+      case 'limitCatalogue':
+        return <CommercialRulesScreen initialTab="limits" />;
+      case 'limitAssignments':
+        return (
+          <LimitAssignmentScreen
+            onLimitGuardChange={reportLimitGuard}
+            initialCustomerId={navContext.customerId}
+            onBackToCustomer={
+              navContext.customerId
+                ? () => handleNav('customers', { customerId: navContext.customerId })
+                : undefined
+            }
+          />
+        );
+      case 'kycQueue':
+        return (
+          <ComplianceScreen
+            onComplianceGuardChange={reportComplianceGuard}
+            initialCustomerId={navContext.customerId}
+            mode="kyc"
+            onBackToCustomer={
+              navContext.customerId
+                ? () => handleNav('customers', { customerId: navContext.customerId })
+                : undefined
+            }
+          />
+        );
+      case 'complianceCases':
+        return (
+          <ComplianceScreen
+            initialCustomerId={navContext.customerId}
+            initialCategory="AML"
+            mode="cases"
+            onBackToCustomer={
+              navContext.customerId
+                ? () => handleNav('customers', { customerId: navContext.customerId })
+                : undefined
+            }
+          />
+        );
+      case 'fraudCases':
+        return (
+          <RiskFraudScreen
+            initialCustomerId={navContext.customerId}
+            onBackToCustomer={
+              navContext.customerId
+                ? () => handleNav('customers', { customerId: navContext.customerId })
+                : undefined
+            }
+          />
+        );
+      case 'workforceAccess':
+        return <WorkforceAdminScreen onWorkforceGuardChange={reportWorkforceGuard} />;
+      case 'roleGovernance':
+        return <RoleAssignmentScreen onRoleGuardChange={reportRoleGuard} />;
+      case 'approvalsInbox':
+        return <ApprovalsScreen onApprovalGuardChange={reportApprovalGuard} />;
+      case 'superAdminRecovery':
+        return <SuperAdminRecoveryScreen onRecoveryGuardChange={reportRecoveryGuard} />;
+      case 'notifications':
+        return <NotificationManagementScreen onNotificationGuardChange={reportNotificationGuard} />;
+      case 'systemHealth':
+        return (
+          <SystemHealthScreen
+            onOpenNotifications={
+              isVisible('notifications') ? () => handleNav('notifications') : undefined
+            }
+          />
+        );
+      case 'auditEvents':
+        return <AuditTrailScreen initialCustomerId={navContext.customerId} />;
+      case 'institutions':
+        return (
+          <InstitutionDirectoryScreen
+            onOpenInstitution={(institutionId) =>
+              handleNav('institutionWorkspace', { institutionId })
+            }
+          />
+        );
+      case 'institutionWorkspace':
+        return (
+          <InstitutionWorkspaceScreen
+            institutionId={navContext.institutionId}
+            onBackToDirectory={() => handleNav('institutions')}
+          />
+        );
+      default:
+        return null;
     }
   };
 
@@ -524,22 +789,86 @@ export const Layout: React.FC = () => {
       <aside className="mn-shell__sidebar" data-testid="desktop-nav">
         <div className="one-rail" aria-label="Navigation sections">
           <img src="/favicon.png" alt="MonieNaija" className="one-rail__logo" />
-          {sections.filter(section => section.items.some(item => item.visible)).map((section) => (
-            <button key={section.id} type="button" title={section.title} aria-label={`Open ${section.title} navigation`} aria-pressed={activeSection === section.id && !sidebarCollapsed} className={activeSection === section.id && !sidebarCollapsed ? 'one-rail__button one-rail__button--active' : 'one-rail__button'} onClick={() => { setSidebarCollapsed(false); setActiveSection(section.id); setExpandedSections({ [section.id]: true }); requestAnimationFrame(() => { const header = document.getElementById(`mn-nav-rail-header-${section.id}`); const nav = header?.closest('.mn-nav'); if (header && nav) nav.scrollTop = header.offsetTop - (nav as HTMLElement).offsetTop; }); }}>
-              <span aria-hidden="true">{({home:'▦',servicing:'♙',institutions:'◈',money:'⇄',finance:'◫',commercial:'▤',compliance:'◇',platform:'⚙'} as Record<string,string>)[section.id]}</span>
-            </button>
-          ))}
+          {sections
+            .filter((section) => section.items.some((item) => item.visible))
+            .map((section) => (
+              <button
+                key={section.id}
+                type="button"
+                title={section.title}
+                aria-label={`Open ${section.title} navigation`}
+                aria-pressed={activeSection === section.id && !sidebarCollapsed}
+                className={
+                  activeSection === section.id && !sidebarCollapsed
+                    ? 'one-rail__button one-rail__button--active'
+                    : 'one-rail__button'
+                }
+                onClick={() => {
+                  setSidebarCollapsed(false);
+                  setActiveSection(section.id);
+                  setExpandedSections({ [section.id]: true });
+                  requestAnimationFrame(() => {
+                    const header = document.getElementById(`mn-nav-rail-header-${section.id}`);
+                    const nav = header?.closest('.mn-nav');
+                    if (header && nav)
+                      nav.scrollTop = header.offsetTop - (nav as HTMLElement).offsetTop;
+                  });
+                }}
+              >
+                <span aria-hidden="true">
+                  {
+                    (
+                      {
+                        home: '▦',
+                        servicing: '♙',
+                        institutions: '◈',
+                        money: '⇄',
+                        finance: '◫',
+                        commercial: '▤',
+                        compliance: '◇',
+                        platform: '⚙',
+                      } as Record<string, string>
+                    )[section.id]
+                  }
+                </span>
+              </button>
+            ))}
         </div>
         <div className="one-nav-panel" id="one-desktop-navigation" hidden={sidebarCollapsed}>
-        <div className="one-nav-heading"><div className="mn-shell__brand"><span className="mn-shell__brand-text"><span className="mn-shell__brand-name">MonieNaija One</span><span className="mn-shell__brand-sub">Workforce console</span></span></div>
-          <button type="button" className="one-nav-collapse" aria-label="Collapse sidebar" aria-expanded={!sidebarCollapsed} aria-controls="one-desktop-navigation" onClick={() => setSidebarCollapsed(true)}>‹</button>
+          <div className="one-nav-heading">
+            <div className="mn-shell__brand">
+              <span className="mn-shell__brand-text">
+                <span className="mn-shell__brand-name">MonieNaija One</span>
+                <span className="mn-shell__brand-sub">Workforce console</span>
+              </span>
+            </div>
+            <button
+              type="button"
+              className="one-nav-collapse"
+              aria-label="Collapse sidebar"
+              aria-expanded={!sidebarCollapsed}
+              aria-controls="one-desktop-navigation"
+              onClick={() => setSidebarCollapsed(true)}
+            >
+              ‹
+            </button>
+          </div>
+          <nav className="mn-nav" aria-label="Main navigation">
+            {renderNavGroups('rail')}
+          </nav>
         </div>
-        <nav className="mn-nav" aria-label="Main navigation">
-          {renderNavGroups('rail')}
-        </nav>
-
-        </div>
-        {sidebarCollapsed && <button type="button" className="one-nav-expand" aria-label="Expand sidebar" aria-expanded="false" aria-controls="one-desktop-navigation" onClick={() => setSidebarCollapsed(false)}>›</button>}
+        {sidebarCollapsed && (
+          <button
+            type="button"
+            className="one-nav-expand"
+            aria-label="Expand sidebar"
+            aria-expanded="false"
+            aria-controls="one-desktop-navigation"
+            onClick={() => setSidebarCollapsed(false)}
+          >
+            ›
+          </button>
+        )}
       </aside>
 
       {/* Compact top app bar: shown below the persistent-rail breakpoint. */}
@@ -561,10 +890,64 @@ export const Layout: React.FC = () => {
       </header>
 
       <div className="one-command-bar">
-        <GlobalSearch query={navigationQuery} onQuery={setNavigationQuery} canSearchCustomers={isVisible('customers')} sessionKey={JSON.stringify([principal.principalId, principal.sessionId, principal.scopes])} workspaces={sections.flatMap(section => section.items).filter(item => item.visible)} onWorkspace={key => handleNav(key as View)} onCustomer={customerId => handleNav('customers', {customerId})} />
+        <GlobalSearch
+          query={navigationQuery}
+          onQuery={setNavigationQuery}
+          canSearchCustomers={isVisible('customers')}
+          sessionKey={JSON.stringify([
+            principal.principalId,
+            principal.sessionId,
+            principal.scopes,
+          ])}
+          workspaces={sections.flatMap((section) => section.items).filter((item) => item.visible)}
+          onWorkspace={(key) => handleNav(key as View)}
+          onCustomer={(customerId) => handleNav('customers', { customerId })}
+        />
         <div className="one-account" ref={accountRef}>
-          <button type="button" className="one-account__trigger" ref={accountButtonRef} aria-label="Account menu" aria-expanded={accountOpen} aria-controls="one-account-menu" onClick={() => setAccountOpen(open => !open)}><span className="one-command-avatar">{principalInitial}</span><span className="one-account__role">{principal.roles[0]?.replace(/_/g, ' ')}</span><span aria-hidden="true">⌄</span></button>
-          {accountOpen && <div className="one-account__menu" id="one-account-menu"><div className="one-account__details"><strong>{principal.roles[0]?.replace(/_/g, ' ') || 'Operator'}</strong><span title={principal.principalId}>{principalHandle}</span></div><details><summary>Session details</summary><p>{principal.audience} · {principal.assuranceLevel}</p><details><summary>Allowed scopes ({principal.scopes.length})</summary><ul>{principal.scopes.map(scope => <li key={scope}>{scope}</li>)}</ul></details></details><button type="button" onClick={() => { setAccountOpen(false); requestLogout(); }}>Log out</button></div>}
+          <button
+            type="button"
+            className="one-account__trigger"
+            ref={accountButtonRef}
+            aria-label="Account menu"
+            aria-expanded={accountOpen}
+            aria-controls="one-account-menu"
+            onClick={() => setAccountOpen((open) => !open)}
+          >
+            <span className="one-command-avatar">{principalInitial}</span>
+            <span className="one-account__role">{principal.roles[0]?.replace(/_/g, ' ')}</span>
+            <span aria-hidden="true">⌄</span>
+          </button>
+          {accountOpen && (
+            <div className="one-account__menu" id="one-account-menu">
+              <div className="one-account__details">
+                <strong>{principal.roles[0]?.replace(/_/g, ' ') || 'Operator'}</strong>
+                <span title={principal.principalId}>{principalHandle}</span>
+              </div>
+              <details>
+                <summary>Session details</summary>
+                <p>
+                  {principal.audience} · {principal.assuranceLevel}
+                </p>
+                <details>
+                  <summary>Allowed scopes ({principal.scopes.length})</summary>
+                  <ul>
+                    {principal.scopes.map((scope) => (
+                      <li key={scope}>{scope}</li>
+                    ))}
+                  </ul>
+                </details>
+              </details>
+              <button
+                type="button"
+                onClick={() => {
+                  setAccountOpen(false);
+                  requestLogout();
+                }}
+              >
+                Log out
+              </button>
+            </div>
+          )}
         </div>
       </div>
       <div
@@ -579,13 +962,103 @@ export const Layout: React.FC = () => {
 
       {pendingLeave && (
         <div className="cm-modal-backdrop" role="presentation">
-          <section ref={leaveDialogRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="mn-customer-leave-title">
-            <h2 id="mn-customer-leave-title">{canonicalAdminView(currentView) === 'agents' ? 'Leave Agent review?' : canonicalAdminView(currentView) === 'approvalsInbox' ? 'Leave approval review?' : canonicalAdminView(currentView) === 'limitAssignments' ? 'Leave limit assignment review?' : canonicalAdminView(currentView) === 'agentClasses' ? 'Leave Agent class review?' : canonicalAdminView(currentView) === 'dashboardSettings' ? 'Leave dashboard settings?' : canonicalAdminView(currentView) === 'support' ? 'Leave support ticket review?' : canonicalAdminView(currentView) === 'roleGovernance' ? 'Leave role change review?' : canonicalAdminView(currentView) === 'workforceAccess' ? 'Leave workforce access review?' : canonicalAdminView(currentView) === 'kycQueue' ? 'Leave KYC decision review?' : canonicalAdminView(currentView) === 'superAdminRecovery' ? 'Leave recovery review?' : canonicalAdminView(currentView) === 'ledgerExplorer' ? 'Leave ledger reversal review?' : canonicalAdminView(currentView) === 'notifications' ? 'Leave notification review?' : 'Leave customer information?'}</h2>
-            <p>{canonicalAdminView(currentView) === 'agents' ? 'Leaving discards unsaved Agent and funding entries, any visible one-time credential and local review locks. A funding key may remain in browser storage, but an earlier action may already have occurred; inspect Agent, funding, approval, ledger and audit records before acting again.' : canonicalAdminView(currentView) === 'approvalsInbox' ? 'Leaving discards approval and funding entries and local review locks. A decision or posting may already have occurred; inspect authoritative funding, approval, ledger and audit records before acting again.' : canonicalAdminView(currentView) === 'limitAssignments' ? 'Leaving discards assignment entries and local review locks. An action may already have occurred; inspect assignments and audit history before acting again.' : canonicalAdminView(currentView) === 'agentClasses' ? 'Leaving discards class and limit drafts and local review locks. An action may already have occurred; inspect class, assignment and audit records before acting again.' : canonicalAdminView(currentView) === 'dashboardSettings' ? 'Leaving discards dashboard assignment drafts and local review locks. An action may already have occurred; inspect assignment and audit history before acting again.' : canonicalAdminView(currentView) === 'support' ? 'Leaving discards ticket drafts, message retry keys and local review locks. An action may already have occurred; inspect ticket, message and audit history before acting again.' : canonicalAdminView(currentView) === 'roleGovernance' ? 'Leaving discards the role change draft and local review lock. An action may already have occurred; inspect authorized workforce, approval and audit records before acting again.' : canonicalAdminView(currentView) === 'workforceAccess' ? 'Leaving discards workforce drafts, local review locks and any visible one-time credential, which may not be retrievable. An action may already have occurred; inspect workforce and audit records before acting again.' : canonicalAdminView(currentView) === 'kycQueue' ? 'Leaving discards the KYC decision draft and local review lock. An action may already have occurred; inspect the customer assessment and audit history before acting again.' : canonicalAdminView(currentView) === 'superAdminRecovery' ? 'Leaving discards the recovery statement, receipt and local review lock. Recovery may already have occurred; inspect authorized recovery, assignment, session and audit records before acting again.' : canonicalAdminView(currentView) === 'ledgerExplorer' ? 'Leaving discards reversal details and local journal safeguards. A request or reversal may already exist; inspect journal, approval and audit records before acting again.' : canonicalAdminView(currentView) === 'notifications' ? 'Leaving discards notification trigger, template, checker and test-send drafts and local safeguards. A proposal, decision, execution or test-send may already exist; independently review relevant approval, configuration, template, provider and audit records before acting again.' : 'Leaving discards the customer draft, one-time proof or upload retry key, and any local uncertain-outcome lock. An earlier action may already have occurred; inspect current records and audit history before acting again.'}</p>
-            {(customerBusy || agentBusy || approvalBusy || limitBusy || classBusy || dashboardBusy || supportBusy || roleBusy || workforceBusy || complianceBusy || recoveryBusy || ledgerBusy || notificationBusy) && <p>A request is in progress. Leaving cannot cancel or confirm the server outcome.</p>}
+          <section
+            ref={leaveDialogRef}
+            tabIndex={-1}
+            className="cm-confirm-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mn-customer-leave-title"
+          >
+            <h2 id="mn-customer-leave-title">
+              {canonicalAdminView(currentView) === 'agents'
+                ? 'Leave Agent review?'
+                : canonicalAdminView(currentView) === 'approvalsInbox'
+                  ? 'Leave approval review?'
+                  : canonicalAdminView(currentView) === 'limitAssignments'
+                    ? 'Leave limit assignment review?'
+                    : canonicalAdminView(currentView) === 'agentClasses'
+                      ? 'Leave Agent class review?'
+                      : canonicalAdminView(currentView) === 'dashboardSettings'
+                        ? 'Leave dashboard settings?'
+                        : canonicalAdminView(currentView) === 'support'
+                          ? 'Leave support ticket review?'
+                          : canonicalAdminView(currentView) === 'roleGovernance'
+                            ? 'Leave role change review?'
+                            : canonicalAdminView(currentView) === 'workforceAccess'
+                              ? 'Leave workforce access review?'
+                              : canonicalAdminView(currentView) === 'kycQueue'
+                                ? 'Leave KYC decision review?'
+                                : canonicalAdminView(currentView) === 'superAdminRecovery'
+                                  ? 'Leave recovery review?'
+                                  : canonicalAdminView(currentView) === 'ledgerExplorer'
+                                    ? 'Leave ledger reversal review?'
+                                    : canonicalAdminView(currentView) === 'notifications'
+                                      ? 'Leave notification review?'
+                                      : 'Leave customer information?'}
+            </h2>
+            <p>
+              {canonicalAdminView(currentView) === 'agents'
+                ? 'Leaving discards unsaved Agent and funding entries, any visible one-time credential and local review locks. A funding key may remain in browser storage, but an earlier action may already have occurred; inspect Agent, funding, approval, ledger and audit records before acting again.'
+                : canonicalAdminView(currentView) === 'approvalsInbox'
+                  ? 'Leaving discards approval and funding entries and local review locks. A decision or posting may already have occurred; inspect authoritative funding, approval, ledger and audit records before acting again.'
+                  : canonicalAdminView(currentView) === 'limitAssignments'
+                    ? 'Leaving discards assignment entries and local review locks. An action may already have occurred; inspect assignments and audit history before acting again.'
+                    : canonicalAdminView(currentView) === 'agentClasses'
+                      ? 'Leaving discards class and limit drafts and local review locks. An action may already have occurred; inspect class, assignment and audit records before acting again.'
+                      : canonicalAdminView(currentView) === 'dashboardSettings'
+                        ? 'Leaving discards dashboard assignment drafts and local review locks. An action may already have occurred; inspect assignment and audit history before acting again.'
+                        : canonicalAdminView(currentView) === 'support'
+                          ? 'Leaving discards ticket drafts, message retry keys and local review locks. An action may already have occurred; inspect ticket, message and audit history before acting again.'
+                          : canonicalAdminView(currentView) === 'roleGovernance'
+                            ? 'Leaving discards the role change draft and local review lock. An action may already have occurred; inspect authorized workforce, approval and audit records before acting again.'
+                            : canonicalAdminView(currentView) === 'workforceAccess'
+                              ? 'Leaving discards workforce drafts, local review locks and any visible one-time credential, which may not be retrievable. An action may already have occurred; inspect workforce and audit records before acting again.'
+                              : canonicalAdminView(currentView) === 'kycQueue'
+                                ? 'Leaving discards the KYC decision draft and local review lock. An action may already have occurred; inspect the customer assessment and audit history before acting again.'
+                                : canonicalAdminView(currentView) === 'superAdminRecovery'
+                                  ? 'Leaving discards the recovery statement, receipt and local review lock. Recovery may already have occurred; inspect authorized recovery, assignment, session and audit records before acting again.'
+                                  : canonicalAdminView(currentView) === 'ledgerExplorer'
+                                    ? 'Leaving discards reversal details and local journal safeguards. A request or reversal may already exist; inspect journal, approval and audit records before acting again.'
+                                    : canonicalAdminView(currentView) === 'notifications'
+                                      ? 'Leaving discards notification trigger, template, checker and test-send drafts and local safeguards. A proposal, decision, execution or test-send may already exist; independently review relevant approval, configuration, template, provider and audit records before acting again.'
+                                      : 'Leaving discards the customer draft, one-time proof or upload retry key, and any local uncertain-outcome lock. An earlier action may already have occurred; inspect current records and audit history before acting again.'}
+            </p>
+            {(customerBusy ||
+              agentBusy ||
+              approvalBusy ||
+              limitBusy ||
+              classBusy ||
+              dashboardBusy ||
+              supportBusy ||
+              roleBusy ||
+              workforceBusy ||
+              complianceBusy ||
+              recoveryBusy ||
+              ledgerBusy ||
+              notificationBusy) && (
+              <p>A request is in progress. Leaving cannot cancel or confirm the server outcome.</p>
+            )}
             <div className="cm-actions-row">
-              <button type="button" className="cm-button cm-button-secondary" onClick={() => setPendingLeave(null)}>Keep working</button>
-              <button type="button" className="cm-button cm-button-danger" onClick={() => { const destination = pendingLeave; setPendingLeave(null); if ('logout' in destination) logout(); else performNav(destination.view, destination.context); }}>Discard and leave</button>
+              <button
+                type="button"
+                className="cm-button cm-button-secondary"
+                onClick={() => setPendingLeave(null)}
+              >
+                Keep working
+              </button>
+              <button
+                type="button"
+                className="cm-button cm-button-danger"
+                onClick={() => {
+                  const destination = pendingLeave;
+                  setPendingLeave(null);
+                  if ('logout' in destination) logout();
+                  else performNav(destination.view, destination.context);
+                }}
+              >
+                Discard and leave
+              </button>
             </div>
           </section>
         </div>
@@ -623,7 +1096,6 @@ export const Layout: React.FC = () => {
             <nav className="mn-nav mn-nav--drawer" aria-label="Mobile navigation">
               {renderNavGroups('drawer')}
             </nav>
-
           </div>
         </div>
       )}

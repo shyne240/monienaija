@@ -19,7 +19,10 @@ import {
   classifyCashToCashClaimIdentifier,
   validateSixDigitTransferNumber,
 } from './cash-to-cash-reference-handoff.plan';
-import { loadPendingCashToCashLocatorClaim, type PendingCashToCashLocatorClaim } from '../../../services/pending-operation';
+import {
+  loadPendingCashToCashLocatorClaim,
+  type PendingCashToCashLocatorClaim,
+} from '../../../services/pending-operation';
 import { useAuthStore } from '../../../store/auth-store';
 import type { RootStackParamList } from '../../../navigation/types';
 
@@ -45,24 +48,59 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
   useEffect(() => {
     let active = true;
     setPendingChecked(false);
-    if (!agentId) { setPendingError('Agent session unavailable. Sign in again.'); return () => { active = false; }; }
-    void loadPendingCashToCashLocatorClaim(agentId).then(value => {
-      if (active) { setPending(value); setPendingChecked(true); }
-    }).catch(() => { if (active) setPendingError('Claim recovery storage is unavailable. Do not start another claim; contact support.'); });
-    return () => { active = false; };
+    if (!agentId) {
+      setPendingError('Agent session unavailable. Sign in again.');
+      return () => {
+        active = false;
+      };
+    }
+    void loadPendingCashToCashLocatorClaim(agentId)
+      .then((value) => {
+        if (active) {
+          setPending(value);
+          setPendingChecked(true);
+        }
+      })
+      .catch(() => {
+        if (active)
+          setPendingError(
+            'Claim recovery storage is unavailable. Do not start another claim; contact support.',
+          );
+      });
+    return () => {
+      active = false;
+    };
   }, [agentId]);
   const recoverPending = async () => {
     if (!pending || recovering) return;
     setRecovering(true);
     setPendingError('');
     try {
-      const result = await recoverAgentCashToCashClaimByNumber({ senderPhone: pending.senderPhone, transferNumber: pending.transferNumber, idempotencyKey: pending.idempotencyKey });
-      navigation.reset({ index: 0, routes: [{ name: 'CashToCashClaimSuccess', params: {
-        result, customerReceivingNumber: pending.beneficiaryPhone, pendingLocatorClaim: true,
-      } }] });
+      const result = await recoverAgentCashToCashClaimByNumber({
+        senderPhone: pending.senderPhone,
+        transferNumber: pending.transferNumber,
+        idempotencyKey: pending.idempotencyKey,
+      });
+      navigation.reset({
+        index: 0,
+        routes: [
+          {
+            name: 'CashToCashClaimSuccess',
+            params: {
+              result,
+              customerReceivingNumber: pending.beneficiaryPhone,
+              pendingLocatorClaim: true,
+            },
+          },
+        ],
+      });
     } catch {
-      setPendingError('The previous claim remains unresolved. Check again later or contact support; do not submit a replacement.');
-    } finally { setRecovering(false); }
+      setPendingError(
+        'The previous claim remains unresolved. Check again later or contact support; do not submit a replacement.',
+      );
+    } finally {
+      setRecovering(false);
+    }
   };
   const [phoneInput, setPhoneInput] = useState('');
   const [senderPhoneInput, setSenderPhoneInput] = useState('');
@@ -166,83 +204,104 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
   const eligible = customer?.ownerType === 'CUSTOMER' && customer?.status === 'ACTIVE';
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.flex}
+    >
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>Cash→Cash Claim Assistance</Text>
         <Text style={styles.helper} testID="c2c-settlement-method-notice">
-          Assist the named Customer with a Cash→Cash claim using the sender&apos;s phone number and the
-          6-digit transfer number. An eligible claim can credit the beneficiary&apos;s Customer wallet or
-          the claiming Agent&apos;s NGN float for cash payout. Physical cash handover is separate from
-          the ledger settlement.
+          Assist the named Customer with a Cash→Cash claim using the sender&apos;s phone number and
+          the 6-digit transfer number. An eligible claim can credit the beneficiary&apos;s Customer
+          wallet or the claiming Agent&apos;s NGN float for cash payout. Physical cash handover is
+          separate from the ledger settlement.
         </Text>
 
-        {pending && <Card style={styles.card}>
-          <Text testID="c2c-pending-claim-notice">A previous claim needs receipt recovery before another claim can be started.</Text>
-          <Button label="Recover claim receipt" loading={recovering} onPress={() => { void recoverPending(); }} testID="c2c-recover-pending-claim" />
-        </Card>}
-        {!!pendingError && <Text accessibilityRole="alert" testID="c2c-pending-claim-error">{pendingError}</Text>}
-        {pendingChecked && !pending && <Card style={styles.card}>
-          <Input
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="phone-pad"
-            label="Beneficiary Phone Number"
-            placeholder="e.g. 08012345678"
-            value={phoneInput}
-            maxLength={20}
-            testID="c2c-claim-phone-input"
-            onChangeText={(text) => {
-              setPhoneInput(text);
-              setClientError('');
-              setCustomer(null);
-              resolveMutation.reset();
-            }}
-          />
-
-          <Input
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="phone-pad"
-            label="Sender Phone Number"
-            placeholder="e.g. 08031234567"
-            value={senderPhoneInput}
-            maxLength={20}
-            testID="c2c-claim-sender-phone-input"
-            onChangeText={(text) => {
-              setSenderPhoneInput(text);
-              setClientError('');
-              setCustomer(null);
-              resolveMutation.reset();
-            }}
-          />
-
-          <Input
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="number-pad"
-            label="6-Digit Transfer Number"
-            placeholder="e.g. 000042"
-            value={transferNumberInput}
-            maxLength={64}
-            testID="c2c-claim-transfer-number-input"
-            onChangeText={(text) => {
-              setTransferNumberInput(text);
-              setClientError('');
-              setCustomer(null);
-              resolveMutation.reset();
-            }}
-          />
-          <Text style={styles.helper} testID="c2c-claim-locator-hint">
-            Enter all 6 digits exactly as issued, including any leading zeros (for example, 000042).
+        {pending && (
+          <Card style={styles.card}>
+            <Text testID="c2c-pending-claim-notice">
+              A previous claim needs receipt recovery before another claim can be started.
+            </Text>
+            <Button
+              label="Recover claim receipt"
+              loading={recovering}
+              onPress={() => {
+                void recoverPending();
+              }}
+              testID="c2c-recover-pending-claim"
+            />
+          </Card>
+        )}
+        {!!pendingError && (
+          <Text accessibilityRole="alert" testID="c2c-pending-claim-error">
+            {pendingError}
           </Text>
+        )}
+        {pendingChecked && !pending && (
+          <Card style={styles.card}>
+            <Input
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="phone-pad"
+              label="Beneficiary Phone Number"
+              placeholder="e.g. 08012345678"
+              value={phoneInput}
+              maxLength={20}
+              testID="c2c-claim-phone-input"
+              onChangeText={(text) => {
+                setPhoneInput(text);
+                setClientError('');
+                setCustomer(null);
+                resolveMutation.reset();
+              }}
+            />
 
-          <Button
-            loading={resolveMutation.isPending}
-            label="Verify Beneficiary"
-            onPress={handleVerify}
-            testID="c2c-claim-verify-button"
-          />
-        </Card>}
+            <Input
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="phone-pad"
+              label="Sender Phone Number"
+              placeholder="e.g. 08031234567"
+              value={senderPhoneInput}
+              maxLength={20}
+              testID="c2c-claim-sender-phone-input"
+              onChangeText={(text) => {
+                setSenderPhoneInput(text);
+                setClientError('');
+                setCustomer(null);
+                resolveMutation.reset();
+              }}
+            />
+
+            <Input
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="number-pad"
+              label="6-Digit Transfer Number"
+              placeholder="e.g. 000042"
+              value={transferNumberInput}
+              maxLength={64}
+              testID="c2c-claim-transfer-number-input"
+              onChangeText={(text) => {
+                setTransferNumberInput(text);
+                setClientError('');
+                setCustomer(null);
+                resolveMutation.reset();
+              }}
+            />
+            <Text style={styles.helper} testID="c2c-claim-locator-hint">
+              Enter all 6 digits exactly as issued, including any leading zeros (for example,
+              000042).
+            </Text>
+
+            <Button
+              loading={resolveMutation.isPending}
+              label="Verify Beneficiary"
+              onPress={handleVerify}
+              testID="c2c-claim-verify-button"
+            />
+          </Card>
+        )}
 
         {(!!clientError || resolveMutation.isError) && (
           <View style={styles.errorBanner}>
@@ -253,13 +312,17 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
         )}
 
         {resolveMutation.isPending && (
-          <Text style={styles.muted} testID="c2c-claim-resolving">Verifying beneficiary…</Text>
+          <Text style={styles.muted} testID="c2c-claim-resolving">
+            Verifying beneficiary…
+          </Text>
         )}
 
         {customer && (
           <Card style={styles.card} testID="c2c-claim-customer-card">
             <Text style={styles.sectionTitle}>Beneficiary Customer</Text>
-            <Text style={styles.displayName} testID="c2c-claim-customer-display">{customer.display}</Text>
+            <Text style={styles.displayName} testID="c2c-claim-customer-display">
+              {customer.display}
+            </Text>
             <Text selectable style={styles.receivingNumber} testID="c2c-claim-customer-number">
               {customer.receivingNumber}
             </Text>

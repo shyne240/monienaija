@@ -308,7 +308,14 @@ function installRegistryBackend() {
             approvedBy: null,
           };
           server.proposals.unshift(proposal);
-          return { approvalId, status: 'REQUESTED', actionType: 'NOTIFICATION_EVENT_CONFIGURATION_CHANGE', actionFingerprint: 'synthetic-fingerprint', requestedAt: proposal.createdAt, expiresAt: '2026-11-02T11:00:00.000Z' };
+          return {
+            approvalId,
+            status: 'REQUESTED',
+            actionType: 'NOTIFICATION_EVENT_CONFIGURATION_CHANGE',
+            actionFingerprint: 'synthetic-fingerprint',
+            requestedAt: proposal.createdAt,
+            expiresAt: '2026-11-02T11:00:00.000Z',
+          };
         }
         const approvalMatch = endpoint.match(
           /^\/internal\/a2\/workforce\/approvals\/([^/]+)\/(approve|reject)$/,
@@ -329,7 +336,11 @@ function installRegistryBackend() {
           if (proposal.status !== 'REQUESTED') throw new ApiError('Invalid approval status', 409);
           proposal.status = approvalMatch[2] === 'approve' ? 'APPROVED' : 'REJECTED';
           proposal.approvedBy = principal.principalId;
-          return { approved: proposal.status === 'APPROVED', reason: proposal.status, approval: { id: proposal.approvalId, status: proposal.status } };
+          return {
+            approved: proposal.status === 'APPROVED',
+            reason: proposal.status,
+            approval: { id: proposal.approvalId, status: proposal.status },
+          };
         }
         const executeMatch = endpoint.match(
           /^\/internal\/notifications\/changes\/([^/]+)\/execute$/,
@@ -688,12 +699,19 @@ describe('H-04/H-06 — versioned event-master controls', () => {
     );
     const firstCalls = postCalls().filter(([url]) => url === '/internal/notifications/changes');
     expect(firstCalls.map((call) => configurationBody(call).channel)).toEqual(['EVENT', 'SMS']);
-    expect((maker.getByTestId('submit-trigger-config-btn') as HTMLButtonElement).disabled).toBe(true);
-    expect(maker.getByTestId('trigger-review-lock').textContent).toMatch(/cannot exclude a late commit/i);
+    expect((maker.getByTestId('submit-trigger-config-btn') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(maker.getByTestId('trigger-review-lock').textContent).toMatch(
+      /cannot exclude a late commit/i,
+    );
     fireEvent.click(maker.getByTestId('submit-trigger-config-btn'));
-    expect(postCalls().filter(([url]) => url === '/internal/notifications/changes')).toHaveLength(2);
+    expect(postCalls().filter(([url]) => url === '/internal/notifications/changes')).toHaveLength(
+      2,
+    );
     const confirmation = jest.spyOn(window, 'confirm').mockReturnValue(true);
-    fireEvent.click(maker.getByRole('button', {name: 'Acknowledge independent trigger review'})); confirmation.mockRestore();
+    fireEvent.click(maker.getByRole('button', { name: 'Acknowledge independent trigger review' }));
+    confirmation.mockRestore();
     expect(maker.queryByTestId('event-trigger-config-panel')).toBeNull();
     expect(server.proposals).toHaveLength(1);
   });
@@ -802,8 +820,12 @@ describe('H-04/H-06 — versioned event-master controls', () => {
     );
     expect(offline.getByTestId(`effective-channels-${A}`).textContent).toBe('Unavailable');
     fireEvent.click(offline.getByRole('button', { name: `Inspect event ${A}` }));
-    expect(offline.getByRole('dialog', { name: 'Event catalogue inspection' }).textContent).toContain('Code-derived reference only; live configuration is unavailable.');
-    expect(offline.getByRole('dialog', { name: 'Event catalogue inspection' }).textContent).toContain('Unavailable');
+    expect(
+      offline.getByRole('dialog', { name: 'Event catalogue inspection' }).textContent,
+    ).toContain('Code-derived reference only; live configuration is unavailable.');
+    expect(
+      offline.getByRole('dialog', { name: 'Event catalogue inspection' }).textContent,
+    ).toContain('Unavailable');
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(ApiClient.post).not.toHaveBeenCalled();
     offline.unmount();
@@ -883,9 +905,13 @@ describe('H-04/H-06 — versioned event-master controls', () => {
 
     server.executeError = null;
     fireEvent.click(checker.getByTestId('notif-tab-approvals'));
-    const acknowledge = checker.getByRole('button', {name: 'Acknowledge independent approval review'});
+    const acknowledge = checker.getByRole('button', {
+      name: 'Acknowledge independent approval review',
+    });
     await waitFor(() => expect((acknowledge as HTMLButtonElement).disabled).toBe(false));
-    const confirmation = jest.spyOn(window, 'confirm').mockReturnValue(true); fireEvent.click(acknowledge); confirmation.mockRestore();
+    const confirmation = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(acknowledge);
+    confirmation.mockRestore();
     fireEvent.click(checker.getByTestId(`execute-change-${id}`));
     expect((await checker.findByTestId('checker-feedback-success')).textContent).toMatch(
       /executed/i,
@@ -929,9 +955,13 @@ describe('H-04/H-06 — versioned event-master controls', () => {
     expect(server.events[0].eventEnabled).toBe(true);
     expect(server.events[0].eventConfigurationVersion).toBe(8);
     expect(server.events[1]).toEqual(unrelatedBefore);
-    const acknowledge = checker.getByRole('button', {name: 'Acknowledge independent approval review'});
+    const acknowledge = checker.getByRole('button', {
+      name: 'Acknowledge independent approval review',
+    });
     await waitFor(() => expect((acknowledge as HTMLButtonElement).disabled).toBe(false));
-    const confirmation = jest.spyOn(window, 'confirm').mockReturnValue(true); fireEvent.click(acknowledge); confirmation.mockRestore();
+    const confirmation = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(acknowledge);
+    confirmation.mockRestore();
     fireEvent.click(checker.getByTestId(`execute-change-${id}`));
     await waitFor(() =>
       expect(postCalls().filter(([url]) => url.endsWith('/execute'))).toHaveLength(2),
@@ -1060,21 +1090,37 @@ describe('H-04/H-06 — versioned event-master controls', () => {
       /EVENT submission could not be confirmed.*Check the approval queue before retrying/i,
     );
     expect(view.getByTestId(`event-master-${A}`).textContent).toBe('ENABLED');
-    expect(postCalls().filter(([url]) => url === '/internal/notifications/changes')).toHaveLength(1);
-    const event = new Event('beforeunload', {cancelable:true}); window.dispatchEvent(event); expect(event.defaultPrevented).toBe(true);
+    expect(postCalls().filter(([url]) => url === '/internal/notifications/changes')).toHaveLength(
+      1,
+    );
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
     const confirmation = jest.spyOn(window, 'confirm').mockReturnValue(false);
-    fireEvent.click(view.getByRole('button', {name:'Close'})); expect(view.getByTestId('event-trigger-config-panel')).toBeTruthy();
-    fireEvent.click(view.getByTestId('refresh-notifications-console-btn')); await ready(view);
-    expect(view.getByTestId('trigger-review-lock')).toBeTruthy(); expect((view.getByTestId('submit-trigger-config-btn') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(view.getByRole('button', {name:'Acknowledge independent trigger review'})); expect(view.getByTestId('trigger-review-lock')).toBeTruthy();
-    confirmation.mockReturnValue(true); fireEvent.click(view.getByRole('button', {name:'Acknowledge independent trigger review'})); confirmation.mockRestore();
-    expect(view.queryByTestId('event-trigger-config-panel')).toBeNull(); expect(view.queryByTestId('trigger-review-lock')).toBeNull();
+    fireEvent.click(view.getByRole('button', { name: 'Close' }));
+    expect(view.getByTestId('event-trigger-config-panel')).toBeTruthy();
+    fireEvent.click(view.getByTestId('refresh-notifications-console-btn'));
+    await ready(view);
+    expect(view.getByTestId('trigger-review-lock')).toBeTruthy();
+    expect((view.getByTestId('submit-trigger-config-btn') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    fireEvent.click(view.getByRole('button', { name: 'Acknowledge independent trigger review' }));
+    expect(view.getByTestId('trigger-review-lock')).toBeTruthy();
+    confirmation.mockReturnValue(true);
+    fireEvent.click(view.getByRole('button', { name: 'Acknowledge independent trigger review' }));
+    confirmation.mockRestore();
+    expect(view.queryByTestId('event-trigger-config-panel')).toBeNull();
+    expect(view.queryByTestId('trigger-review-lock')).toBeNull();
   });
 });
 
 test('event catalogue filters, empty state and drawer focus remain keyboard discoverable', async () => {
-  jest.clearAllMocks(); installRegistryBackend(); seedPrincipal();
-  const view = render(<NotificationManagementScreen initialTab="events" />); await ready(view);
+  jest.clearAllMocks();
+  installRegistryBackend();
+  seedPrincipal();
+  const view = render(<NotificationManagementScreen initialTab="events" />);
+  await ready(view);
   const search = view.getByLabelText('Search event or description');
   fireEvent.change(search, { target: { value: 'no-synthetic-match' } });
   expect(view.getByText('No catalogue events match these filters.')).toBeTruthy();
@@ -1082,21 +1128,37 @@ test('event catalogue filters, empty state and drawer focus remain keyboard disc
   fireEvent.click(view.getByRole('button', { name: 'Reset filters' }));
   expect((search as HTMLInputElement).value).toBe('');
   const trigger = view.getByTestId(`configure-trigger-${A}`) as HTMLButtonElement;
-  expect(trigger.getAttribute('aria-label')).toContain(A); fireEvent.click(trigger);
+  expect(trigger.getAttribute('aria-label')).toContain(A);
+  fireEvent.click(trigger);
   expect(document.activeElement).toBe(view.getByTestId('event-trigger-config-panel'));
   fireEvent.click(view.getByRole('button', { name: 'Close' }));
-  expect(view.queryByTestId('event-trigger-config-panel')).toBeNull(); expect(document.activeElement).toBe(trigger);
+  expect(view.queryByTestId('event-trigger-config-panel')).toBeNull();
+  expect(document.activeElement).toBe(trigger);
   expect(ApiClient.post).not.toHaveBeenCalled();
 });
 
 test('read-only event inspection preserves the trigger draft and returns focus without writes', async () => {
-    jest.clearAllMocks(); installRegistryBackend(); seedPrincipal();
-    const view = render(<NotificationManagementScreen initialTab="events" />); await ready(view);
-    await openEvent(view, A); fireEvent.change(view.getByLabelText('Operational audit reason (required)'), { target: { value: 'Local draft reason' } });
-    const trigger = view.getByRole('button', { name: `Inspect event ${A}` }); trigger.focus(); fireEvent.click(trigger);
-    expect(view.getByRole('dialog', { name: 'Event catalogue inspection' }).textContent).toContain('Last loaded registry state');
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(view.queryByRole('dialog', { name: 'Event catalogue inspection' })).toBeNull(); expect(document.activeElement).toBe(trigger);
-    expect(view.getByLabelText('Operational audit reason (required)')).toHaveProperty('value', 'Local draft reason');
-    expect(ApiClient.post).not.toHaveBeenCalled();
+  jest.clearAllMocks();
+  installRegistryBackend();
+  seedPrincipal();
+  const view = render(<NotificationManagementScreen initialTab="events" />);
+  await ready(view);
+  await openEvent(view, A);
+  fireEvent.change(view.getByLabelText('Operational audit reason (required)'), {
+    target: { value: 'Local draft reason' },
+  });
+  const trigger = view.getByRole('button', { name: `Inspect event ${A}` });
+  trigger.focus();
+  fireEvent.click(trigger);
+  expect(view.getByRole('dialog', { name: 'Event catalogue inspection' }).textContent).toContain(
+    'Last loaded registry state',
+  );
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(view.queryByRole('dialog', { name: 'Event catalogue inspection' })).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  expect(view.getByLabelText('Operational audit reason (required)')).toHaveProperty(
+    'value',
+    'Local draft reason',
+  );
+  expect(ApiClient.post).not.toHaveBeenCalled();
 });

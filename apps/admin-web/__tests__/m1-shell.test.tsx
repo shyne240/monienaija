@@ -4,7 +4,11 @@ import { act, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { Layout } from '../src/screens/authenticated/Layout';
 import { ApiClient } from '../src/services/api-client';
 import { useAuthStore } from '../src/store/auth-store';
-import { canAccessAdminView, canonicalAdminView, type AdminView } from '../src/screens/authenticated/navigation-access';
+import {
+  canAccessAdminView,
+  canonicalAdminView,
+  type AdminView,
+} from '../src/screens/authenticated/navigation-access';
 
 jest.mock('../src/services/api-client', () => ({
   ApiClient: {
@@ -58,7 +62,8 @@ describe('M1 shell — structure, landmarks and accessible naming', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-      if (path === '/internal/a2/workforce/dashboard/my-dashboard') return Promise.resolve(DASHBOARD);
+      if (path === '/internal/a2/workforce/dashboard/my-dashboard')
+        return Promise.resolve(DASHBOARD);
       if (path.startsWith('/internal/customers?')) {
         return Promise.resolve({
           data: [],
@@ -156,7 +161,8 @@ describe('M1 shell — modal drawer keyboard and focus management', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-      if (path === '/internal/a2/workforce/dashboard/my-dashboard') return Promise.resolve(DASHBOARD);
+      if (path === '/internal/a2/workforce/dashboard/my-dashboard')
+        return Promise.resolve(DASHBOARD);
       if (path.startsWith('/internal/customers?')) {
         return Promise.resolve({
           data: [],
@@ -293,12 +299,18 @@ describe('M1 shell — authorization, alias and context parity', () => {
   });
 
   test('approval and role governance remain role-and-scope gated, not role-only', () => {
-    expect(canAccessAdminView('approvalsInbox', ['privileged:approve'], ['FINANCE_AUDITOR'])).toBe(false);
+    expect(canAccessAdminView('approvalsInbox', ['privileged:approve'], ['FINANCE_AUDITOR'])).toBe(
+      false,
+    );
     expect(
       canAccessAdminView('approvalsInbox', ['privileged:approve'], ['FINANCE_CONTROLLER']),
     ).toBe(true);
-    expect(canAccessAdminView('roleGovernance', ['workforce.role.assign'], ['ADMINISTRATOR'])).toBe(false);
-    expect(canAccessAdminView('roleGovernance', ['workforce.role.assign'], ['SUPER_ADMIN'])).toBe(true);
+    expect(canAccessAdminView('roleGovernance', ['workforce.role.assign'], ['ADMINISTRATOR'])).toBe(
+      false,
+    );
+    expect(canAccessAdminView('roleGovernance', ['workforce.role.assign'], ['SUPER_ADMIN'])).toBe(
+      true,
+    );
   });
 
   test('navigation rendering matches the guard for mixed scopes and hidden destinations', async () => {
@@ -309,11 +321,14 @@ describe('M1 shell — authorization, alias and context parity', () => {
       await Promise.resolve();
     });
 
-    const rendered = Array.from(view.getByTestId('desktop-nav').querySelectorAll<HTMLElement>('[data-testid^="nav-"]'))
-      .map((node) => node.getAttribute('data-testid')!.replace('nav-', ''));
+    const rendered = Array.from(
+      view.getByTestId('desktop-nav').querySelectorAll<HTMLElement>('[data-testid^="nav-"]'),
+    ).map((node) => node.getAttribute('data-testid')!.replace('nav-', ''));
 
     for (const key of rendered) {
-      expect(canAccessAdminView(key as AdminView, ['customer.view', 'ledger.view'], ['FINANCE_AUDITOR'])).toBe(true);
+      expect(
+        canAccessAdminView(key as AdminView, ['customer.view', 'ledger.view'], ['FINANCE_AUDITOR']),
+      ).toBe(true);
     }
     expect(rendered).toContain('customers');
     expect(rendered).toContain('ledgerExplorer');
@@ -324,7 +339,9 @@ describe('M1 shell — authorization, alias and context parity', () => {
 
   test('logout is available through the account menu', async () => {
     setPrincipal(FULL_SCOPES);
-    const logout = jest.spyOn(useAuthStore.getState(), 'logout').mockResolvedValue(undefined as never);
+    const logout = jest
+      .spyOn(useAuthStore.getState(), 'logout')
+      .mockResolvedValue(undefined as never);
 
     try {
       const view = render(<Layout />);
@@ -345,16 +362,40 @@ describe('MonieNaija One workspace search', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     setPrincipal(['customer.view']);
-    (ApiClient.get as jest.Mock).mockImplementation((path: string) => path.startsWith('/internal/customers?')
-      ? Promise.resolve({ data: [], total: 0, page: 1, limit: 20, totalPages: 0, hasNextPage: false, hasPreviousPage: false })
-      : Promise.resolve({ templateKey: 'DEFAULT_FALLBACK', displayName: 'Dashboard', description: '', isFallback: true, widgets: [] }));
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) =>
+      path.startsWith('/internal/customers?')
+        ? Promise.resolve({
+            data: [],
+            total: 0,
+            page: 1,
+            limit: 20,
+            totalPages: 0,
+            hasNextPage: false,
+            hasPreviousPage: false,
+          })
+        : Promise.resolve({
+            templateKey: 'DEFAULT_FALLBACK',
+            displayName: 'Dashboard',
+            description: '',
+            isFallback: true,
+            widgets: [],
+          }),
+    );
   });
   test('returns only visible destinations and uses the normal navigation guard', async () => {
     const view = render(<Layout />);
-    fireEvent.change(view.getByRole('searchbox', { name: 'Search navigation' }), { target: { value: 'customer' } });
-    fireEvent.click(within(view.getByRole('group', { name: 'Navigation search results' })).getByRole('button', { name: 'Customers' }));
+    fireEvent.change(view.getByRole('searchbox', { name: 'Search navigation' }), {
+      target: { value: 'customer' },
+    });
+    fireEvent.click(
+      within(view.getByRole('group', { name: 'Navigation search results' })).getByRole('button', {
+        name: 'Customers',
+      }),
+    );
     expect(await view.findByRole('heading', { name: 'Customer directory' })).toBeTruthy();
-    fireEvent.change(view.getByRole('searchbox', { name: 'Search navigation' }), { target: { value: 'ledger' } });
+    fireEvent.change(view.getByRole('searchbox', { name: 'Search navigation' }), {
+      target: { value: 'ledger' },
+    });
     expect(view.getByText('No matching workspaces')).toBeTruthy();
   });
 });

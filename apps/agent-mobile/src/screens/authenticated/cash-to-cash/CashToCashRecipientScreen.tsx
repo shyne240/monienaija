@@ -107,14 +107,17 @@ export const CashToCashRecipientScreen: React.FC = () => {
   const isAgent = resolvedView?.ownerType === 'AGENT';
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.flex}
+    >
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>Send cash to beneficiary</Text>
         <Text style={styles.helper} testID="c2c-settlement-method-notice">
-          Collect the sender&apos;s physical cash and enter the sending customer&apos;s phone number and
-          the recipient&apos;s phone number. At claim, settlement can credit the beneficiary Customer
-          wallet or the claiming Agent&apos;s NGN float for cash payout. Physical cash handover is separate
-          from this ledger settlement.
+          Collect the sender&apos;s physical cash and enter the sending customer&apos;s phone number
+          and the recipient&apos;s phone number. At claim, settlement can credit the beneficiary
+          Customer wallet or the claiming Agent&apos;s NGN float for cash payout. Physical cash
+          handover is separate from this ledger settlement.
         </Text>
 
         <Card style={styles.card}>
@@ -133,9 +136,9 @@ export const CashToCashRecipientScreen: React.FC = () => {
             }}
           />
           <Text style={styles.helper} testID="sender-phone-notice">
-            Enter the sending customer&apos;s Nigerian phone number (never your Agent login phone). Confirm
-            it carefully before sending — the issued sender phone and 6-digit transfer number cannot be
-            edited later.
+            Enter the sending customer&apos;s Nigerian phone number (never your Agent login phone).
+            Confirm it carefully before sending — the issued sender phone and 6-digit transfer
+            number cannot be edited later.
           </Text>
 
           <Input
@@ -175,16 +178,19 @@ export const CashToCashRecipientScreen: React.FC = () => {
         )}
 
         {resolveMutation.isPending && (
-          <Text style={styles.muted} testID="beneficiary-resolving">Verifying phone number…</Text>
+          <Text style={styles.muted} testID="beneficiary-resolving">
+            Verifying phone number…
+          </Text>
         )}
 
         {isUnregistered && (
           <Card style={styles.card} testID="beneficiary-unregistered-card">
             <Text style={styles.sectionTitle}>Unregistered Beneficiary</Text>
             <Text style={styles.infoText}>
-              This phone is unregistered. The recipient must register and become eligible before a claim
-              can be completed. An eligible claim can credit the Customer wallet or the claiming Agent's
-              NGN float for cash payout; physical handover is separate from ledger settlement.
+              This phone is unregistered. The recipient must register and become eligible before a
+              claim can be completed. An eligible claim can credit the Customer wallet or the
+              claiming Agent's NGN float for cash payout; physical handover is separate from ledger
+              settlement.
             </Text>
           </Card>
         )}
@@ -194,7 +200,9 @@ export const CashToCashRecipientScreen: React.FC = () => {
             <Text style={styles.sectionTitle}>
               {resolvedView.ownerType === 'CUSTOMER' ? 'Registered Customer' : 'Agent Account'}
             </Text>
-            <Text style={styles.displayName} testID="beneficiary-display">{resolvedView.display}</Text>
+            <Text style={styles.displayName} testID="beneficiary-display">
+              {resolvedView.display}
+            </Text>
             <Text selectable style={styles.receivingNumber} testID="beneficiary-number">
               {resolvedView.receivingNumber}
             </Text>
@@ -207,7 +215,11 @@ export const CashToCashRecipientScreen: React.FC = () => {
         )}
 
         {!isAgent && (
-          <Button label="Continue to Amount" onPress={handleContinue} testID="beneficiary-continue" />
+          <Button
+            label="Continue to Amount"
+            onPress={handleContinue}
+            testID="beneficiary-continue"
+          />
         )}
       </ScrollView>
     </KeyboardAvoidingView>

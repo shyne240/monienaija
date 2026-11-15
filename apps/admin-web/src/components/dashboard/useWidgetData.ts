@@ -14,7 +14,11 @@ export interface WidgetDataState<T> {
  * it is embedded in.
  */
 export function useWidgetData<T>(fetcher: () => Promise<T>, deps: unknown[]): WidgetDataState<T> {
-  const [state, setState] = useState<WidgetDataState<T>>({ data: undefined, loading: true, error: null });
+  const [state, setState] = useState<WidgetDataState<T>>({
+    data: undefined,
+    loading: true,
+    error: null,
+  });
   useEffect(() => {
     let active = true;
     setState({ data: undefined, loading: true, error: null });
@@ -27,7 +31,11 @@ export function useWidgetData<T>(fetcher: () => Promise<T>, deps: unknown[]): Wi
         }
       } catch (err: any) {
         if (active) {
-          setState({ data: undefined, loading: false, error: err?.message || 'Failed to load widget data.' });
+          setState({
+            data: undefined,
+            loading: false,
+            error: err?.message || 'Failed to load widget data.',
+          });
         }
       }
     })();

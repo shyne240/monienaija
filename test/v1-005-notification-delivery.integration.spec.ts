@@ -30,9 +30,7 @@ import {
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
-import { makeCustomerFinanciallyEligible,
-  restoreKycSingletons,
-} from './support/kyc-test-fixtures';
+import { makeCustomerFinanciallyEligible, restoreKycSingletons } from './support/kyc-test-fixtures';
 
 function encodePbkdf2(password: string, saltStr = 'a8-test-salt'): string {
   const salt = Buffer.from(saltStr);
@@ -167,9 +165,9 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     if (rows.length) {
       const list = rows.map((r) => `"${r.tablename}"`).join(', ');
       await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
-    // Batch 2C: a wholesale TRUNCATE also empties the migration-seeded KYC singletons
-    // (tier policy head, provider configuration, synthetic provider lock).
-    await restoreKycSingletons(dataSource);
+      // Batch 2C: a wholesale TRUNCATE also empties the migration-seeded KYC singletons
+      // (tier policy head, provider configuration, synthetic provider lock).
+      await restoreKycSingletons(dataSource);
     }
     await seedNotificationDefaultsV1(dataSource.manager);
     await seedNotificationDefaultsV2(dataSource.manager);

@@ -184,9 +184,9 @@ describe('V1-HARDEN-01 adversarial SUPPORT authentication probes (real PostgreSQ
       currency: 'NGN',
       idempotencyKey: `harden01-wallet-${customerId}`,
     });
-      // The governed gate now runs when a session is issued, and this helper builds the
-      // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
-      await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
+    // The governed gate now runs when a session is issued, and this helper builds the
+    // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const login = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId, password })

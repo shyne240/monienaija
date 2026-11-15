@@ -154,14 +154,29 @@ export const CashToWalletConfirmScreen: React.FC = () => {
       : '';
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.flex}
+    >
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>Confirm Cash→Wallet</Text>
 
         <Card style={styles.card} testID="confirm-summary-card">
-          <SummaryRow label="You credit wallet of" value={recipient.display} testID="confirm-recipient" />
-          <SummaryRow label="Receiving number" value={recipient.receivingNumber} testID="confirm-number" />
-          <SummaryRow label="Amount" value={`${formatNairaFromMinor(amountMinor)} NGN`} testID="confirm-amount" />
+          <SummaryRow
+            label="You credit wallet of"
+            value={recipient.display}
+            testID="confirm-recipient"
+          />
+          <SummaryRow
+            label="Receiving number"
+            value={recipient.receivingNumber}
+            testID="confirm-number"
+          />
+          <SummaryRow
+            label="Amount"
+            value={`${formatNairaFromMinor(amountMinor)} NGN`}
+            testID="confirm-amount"
+          />
           <Text style={styles.note}>
             The server settles this against your Agent float. No fee preview is provided by the
             server for this flow, so none is shown.
@@ -189,7 +204,9 @@ export const CashToWalletConfirmScreen: React.FC = () => {
           </Text>
 
           {!!failureText && (
-            <Text style={styles.errorText} testID="confirm-error">{failureText}</Text>
+            <Text style={styles.errorText} testID="confirm-error">
+              {failureText}
+            </Text>
           )}
 
           <Button
@@ -214,7 +231,9 @@ interface SummaryRowProps {
 const SummaryRow: React.FC<SummaryRowProps> = ({ label, value, testID }) => (
   <View style={styles.row}>
     <Text style={styles.rowLabel}>{label}</Text>
-    <Text style={styles.rowValue} testID={testID}>{value}</Text>
+    <Text style={styles.rowValue} testID={testID}>
+      {value}
+    </Text>
   </View>
 );
 

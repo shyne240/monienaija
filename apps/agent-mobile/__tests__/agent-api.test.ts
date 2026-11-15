@@ -72,9 +72,15 @@ describe('Agent operating-context API bindings', () => {
   describe('POST /agents/me/mfa-challenges binding', () => {
     test('sends customerId+purpose and returns the typed server response', async () => {
       const issued = {
-        challengeId: 'c-1', customerId: 'cust-1', purpose: 'WALLET_TO_CASH',
-        deliveryChannel: 'SMS', destinationMasked: '******7801', delivered: true,
-        issuedAt: '2026-01-01T00:00:00.000Z', expiresAt: '2026-01-01T00:01:30.000Z', ttlSeconds: 90,
+        challengeId: 'c-1',
+        customerId: 'cust-1',
+        purpose: 'WALLET_TO_CASH',
+        deliveryChannel: 'SMS',
+        destinationMasked: '******7801',
+        delivered: true,
+        issuedAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: '2026-01-01T00:01:30.000Z',
+        ttlSeconds: 90,
       };
       mockClient.post.mockResolvedValue(issued);
 
@@ -90,8 +96,18 @@ describe('Agent operating-context API bindings', () => {
 
     test('cash-out issuance forwards the transaction context', async () => {
       mockClient.post.mockResolvedValue({});
-      await requestAgentMfaChallenge('cust-1', 'WALLET_TO_CASH', undefined, { amountMinor: '2500', currency: 'NGN', operationKey: 'operation-1' });
-      expect(mockClient.post).toHaveBeenCalledWith('api/v1/agents/me/mfa-challenges', { customerId:'cust-1', purpose:'WALLET_TO_CASH', amountMinor:'2500', currency:'NGN', operationKey:'operation-1' });
+      await requestAgentMfaChallenge('cust-1', 'WALLET_TO_CASH', undefined, {
+        amountMinor: '2500',
+        currency: 'NGN',
+        operationKey: 'operation-1',
+      });
+      expect(mockClient.post).toHaveBeenCalledWith('api/v1/agents/me/mfa-challenges', {
+        customerId: 'cust-1',
+        purpose: 'WALLET_TO_CASH',
+        amountMinor: '2500',
+        currency: 'NGN',
+        operationKey: 'operation-1',
+      });
     });
 
     test('ttlSeconds is omitted unless the caller explicitly supplies it', async () => {
@@ -109,8 +125,11 @@ describe('Agent operating-context API bindings', () => {
   describe('GET /recipients/resolve binding (Cash→Wallet recipient identity)', () => {
     test('resolves identity and STRIPS the internal ownerId before returning', async () => {
       mockClient.get.mockResolvedValue({
-        ownerType: 'CUSTOMER', ownerId: 'internal-customer-id', receivingNumber: '8000000001',
-        display: 'Ada N.', status: 'ACTIVE',
+        ownerType: 'CUSTOMER',
+        ownerId: 'internal-customer-id',
+        receivingNumber: '8000000001',
+        display: 'Ada N.',
+        status: 'ACTIVE',
       });
 
       const view = await resolveAgentRecipient(' 8000000001 ');
@@ -120,7 +139,10 @@ describe('Agent operating-context API bindings', () => {
         'api/v1/recipients/resolve?identifier=8000000001',
       );
       expect(view).toEqual({
-        ownerType: 'CUSTOMER', receivingNumber: '8000000001', display: 'Ada N.', status: 'ACTIVE',
+        ownerType: 'CUSTOMER',
+        receivingNumber: '8000000001',
+        display: 'Ada N.',
+        status: 'ACTIVE',
       });
       expect('ownerId' in view).toBe(false); // internal ids never leak into the app
     });
@@ -129,23 +151,37 @@ describe('Agent operating-context API bindings', () => {
   describe('POST /agents/cash-in binding', () => {
     test('sends the exact contract body with body+header idempotency and PIN-session preservation', async () => {
       const result = {
-        status: 'COMPLETED', journalId: 'j-1', agentId: 'a-1', recipientCustomerId: 'c-1',
-        recipientReceivingNumber: '8000000001', amountMinor: '250000', currency: 'NGN',
-        idempotencyKey: 'c2w-x', requestHash: 'h', replayed: false,
-        reference: 'CASH_IN-c2w-x', createdAt: '2026-01-01T00:00:00.000Z',
+        status: 'COMPLETED',
+        journalId: 'j-1',
+        agentId: 'a-1',
+        recipientCustomerId: 'c-1',
+        recipientReceivingNumber: '8000000001',
+        amountMinor: '250000',
+        currency: 'NGN',
+        idempotencyKey: 'c2w-x',
+        requestHash: 'h',
+        replayed: false,
+        reference: 'CASH_IN-c2w-x',
+        createdAt: '2026-01-01T00:00:00.000Z',
       };
       mockClient.post.mockResolvedValue(result);
 
       const out = await agentCashIn({
-        recipientIdentifier: '8000000001', amountMinor: '250000', currency: 'NGN',
-        idempotencyKey: 'c2w-x', pin: '1234',
+        recipientIdentifier: '8000000001',
+        amountMinor: '250000',
+        currency: 'NGN',
+        idempotencyKey: 'c2w-x',
+        pin: '1234',
       });
 
       expect(mockClient.post).toHaveBeenCalledWith(
         'api/v1/agents/cash-in',
         {
-          recipientIdentifier: '8000000001', amountMinor: '250000', currency: 'NGN',
-          idempotencyKey: 'c2w-x', pin: '1234',
+          recipientIdentifier: '8000000001',
+          amountMinor: '250000',
+          currency: 'NGN',
+          idempotencyKey: 'c2w-x',
+          pin: '1234',
         },
         { idempotencyKey: 'c2w-x', preserveSessionOn401: true },
       );
@@ -251,7 +287,9 @@ describe('Agent operating-context API bindings', () => {
       );
     });
     test('4xx preserving backend message (safe, agent-facing)', () => {
-      expect(describeApiError(new ApiError('No receiving number', 404))).toBe('No receiving number');
+      expect(describeApiError(new ApiError('No receiving number', 404))).toBe(
+        'No receiving number',
+      );
     });
   });
 
@@ -318,10 +356,16 @@ describe('Agent operating-context API bindings', () => {
       expect(describeCashToCashClaimError(new ApiError('Transfer code locked', 403))).toBe(
         'Transfer code is locked due to too many failed attempts.',
       );
-      expect(describeCashToCashClaimError(new ApiError('Claimant identity not verified', 403))).toBe(
+      expect(
+        describeCashToCashClaimError(new ApiError('Claimant identity not verified', 403)),
+      ).toBe(
         'Beneficiary identity is not verified. Customer KYC approval is required for wallet redemption.',
       );
-      expect(describeCashToCashClaimError(new ApiError('Cash payout requires a current approved Customer KYC assessment', 403))).toBe(
+      expect(
+        describeCashToCashClaimError(
+          new ApiError('Cash payout requires a current approved Customer KYC assessment', 403),
+        ),
+      ).toBe(
         'Cash payout requires a current approved Customer KYC assessment. Request a KYC review if needed; physical cash handover is separate.',
       );
       expect(describeCashToCashClaimError(new ApiError('Transfer has expired', 409))).toBe(
@@ -336,9 +380,9 @@ describe('Agent operating-context API bindings', () => {
       expect(describeCashToCashClaimError(new ApiError('OTP expired', 400))).toBe(
         'Customer verification code has expired. Request a new code.',
       );
-      expect(describeCashToCashClaimError(new ApiError('Beneficiary phone does not match', 400))).toBe(
-        'Beneficiary phone number does not match this transfer.',
-      );
+      expect(
+        describeCashToCashClaimError(new ApiError('Beneficiary phone does not match', 400)),
+      ).toBe('Beneficiary phone number does not match this transfer.');
       expect(describeCashToCashClaimError(new ApiError('Transfer not found', 404))).toBe(
         'Cash→Cash transfer not found. Check the transfer ID and beneficiary phone.',
       );
@@ -372,7 +416,11 @@ describe('Agent operating-context API bindings', () => {
       );
       expect(
         describeCashToCashClaimError(
-          new ApiError('Claim outcome unavailable; recover before retrying', 503, 'C2C_RETRY_REQUIRED'),
+          new ApiError(
+            'Claim outcome unavailable; recover before retrying',
+            503,
+            'C2C_RETRY_REQUIRED',
+          ),
         ),
       ).toBe(
         'Claim outcome could not be confirmed yet. Check claim status to recover before retrying with the same attempt.',
@@ -555,7 +603,9 @@ describe('Agent operating-context API bindings', () => {
 
       const out = await getAgentSupportTickets(1, 20);
 
-      expect(mockClient.get).toHaveBeenCalledWith('api/v1/agents/me/support/tickets?page=1&limit=20');
+      expect(mockClient.get).toHaveBeenCalledWith(
+        'api/v1/agents/me/support/tickets?page=1&limit=20',
+      );
       expect(out.items).toHaveLength(1);
     });
 
@@ -600,7 +650,9 @@ describe('Agent operating-context API bindings', () => {
 
       const out = await getAgentSupportTicketMessages('sup-1');
 
-      expect(mockClient.get).toHaveBeenCalledWith('api/v1/agents/me/support/tickets/sup-1/messages');
+      expect(mockClient.get).toHaveBeenCalledWith(
+        'api/v1/agents/me/support/tickets/sup-1/messages',
+      );
       expect(out).toHaveLength(1);
     });
 
@@ -639,9 +691,7 @@ describe('Agent operating-context API bindings', () => {
       expect(describeSupportError(new NetworkError('failed'))).toBe(
         'No network connection. Check your connection and retry.',
       );
-      expect(describeSupportError(new Error('Local error message'))).toBe(
-        'Local error message',
-      );
+      expect(describeSupportError(new Error('Local error message'))).toBe('Local error message');
     });
   });
 });

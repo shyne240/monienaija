@@ -14,10 +14,7 @@ export class KycExceptionReviewService {
   constructor(
     private readonly db: DataSource,
     private readonly authorization: AuthorizationService,
-    private readonly sessions?: Pick<
-      AuthenticationSessionService,
-      'revokeAllForCustomerInManager'
-    >,
+    private readonly sessions?: Pick<AuthenticationSessionService, 'revokeAllForCustomerInManager'>,
   ) {}
   async hold(
     principal: AuthorizationPrincipal | undefined,

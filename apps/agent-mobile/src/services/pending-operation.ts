@@ -216,10 +216,29 @@ function isPendingCashToCashLocatorClaim(value: unknown): value is PendingCashTo
 export async function savePendingCashToCashLocatorClaim(
   intent: PendingCashToCashLocatorClaim,
 ): Promise<void> {
-  const { agentId, senderPhone, transferNumber, beneficiaryPhone, customerId, redemptionMethod, idempotencyKey, createdAt } = intent;
-  await SecureStorage.setDurable(locatorClaimStorageKeyFor(agentId), JSON.stringify({
-    agentId, senderPhone, transferNumber, beneficiaryPhone, customerId, redemptionMethod, idempotencyKey, createdAt,
-  }));
+  const {
+    agentId,
+    senderPhone,
+    transferNumber,
+    beneficiaryPhone,
+    customerId,
+    redemptionMethod,
+    idempotencyKey,
+    createdAt,
+  } = intent;
+  await SecureStorage.setDurable(
+    locatorClaimStorageKeyFor(agentId),
+    JSON.stringify({
+      agentId,
+      senderPhone,
+      transferNumber,
+      beneficiaryPhone,
+      customerId,
+      redemptionMethod,
+      idempotencyKey,
+      createdAt,
+    }),
+  );
 }
 
 export async function clearPendingCashToCashLocatorClaim(agentId: string): Promise<void> {
@@ -233,8 +252,11 @@ export async function loadPendingCashToCashLocatorClaim(
   if (!raw) return null;
 
   let parsed: unknown;
-  try { parsed = JSON.parse(raw); }
-  catch { throw new Error('Claim recovery state is unreadable'); }
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('Claim recovery state is unreadable');
+  }
   if (!isPendingCashToCashLocatorClaim(parsed) || parsed.agentId !== agentId)
     throw new Error('Claim recovery state is invalid');
 

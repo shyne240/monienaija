@@ -8,7 +8,11 @@ import { CashToWalletConfirmScreen } from '../src/screens/authenticated/cash-in/
 import { CashToWalletSuccessScreen } from '../src/screens/authenticated/cash-in/CashToWalletSuccessScreen';
 import { SecureStorage } from '../src/services/secure-storage';
 import { useAuthStore } from '../src/store/auth-store';
-import { formatNairaFromMinor, newIdempotencyKey, parseNairaInputToMinor } from '../src/utils/format';
+import {
+  formatNairaFromMinor,
+  newIdempotencyKey,
+  parseNairaInputToMinor,
+} from '../src/utils/format';
 import {
   clearPendingAgentOperation,
   loadPendingAgentOperation,
@@ -20,7 +24,8 @@ jest.mock('../src/services/agent-api', () => ({
   resolveAgentRecipient: jest.fn(),
   agentCashIn: jest.fn(),
   describeApiError: jest.requireActual('../src/services/agent-api').describeApiError,
-  isAmbiguousOperationOutcome: jest.requireActual('../src/services/agent-api').isAmbiguousOperationOutcome,
+  isAmbiguousOperationOutcome: jest.requireActual('../src/services/agent-api')
+    .isAmbiguousOperationOutcome,
 }));
 
 const mockApi = jest.requireMock('../src/services/agent-api') as {
@@ -68,7 +73,10 @@ const cashInResult = {
 
 function wrap(ui: React.ReactElement) {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false, gcTime: 0 } },
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false, gcTime: 0 },
+    },
   });
   return { client, ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>) };
 }
@@ -91,7 +99,9 @@ describe('Cash→Wallet — recipient step', () => {
   });
 
   test('3. resolution failure (404) shows sanitized error, no identity', async () => {
-    mockApi.resolveAgentRecipient.mockRejectedValue(apiError('Recipient 8000000009 not found', 404));
+    mockApi.resolveAgentRecipient.mockRejectedValue(
+      apiError('Recipient 8000000009 not found', 404),
+    );
     const { getByTestId, getByText, queryByTestId } = wrap(<CashToWalletRecipientScreen />);
     fireEvent.changeText(getByTestId('recipient-input'), '8000000009');
     fireEvent.press(getByTestId('recipient-verify-button'));
@@ -108,7 +118,11 @@ describe('Cash→Wallet — recipient step', () => {
   });
 
   test('4. AGENT recipient is ineligible for Cash→Wallet (fail-closed, no continue)', async () => {
-    mockApi.resolveAgentRecipient.mockResolvedValue({ ...customerRecipient, ownerType: 'AGENT', display: 'Other Agent' });
+    mockApi.resolveAgentRecipient.mockResolvedValue({
+      ...customerRecipient,
+      ownerType: 'AGENT',
+      display: 'Other Agent',
+    });
     const { getByTestId, getByText, queryByTestId } = wrap(<CashToWalletRecipientScreen />);
     fireEvent.changeText(getByTestId('recipient-input'), '8000000002');
     fireEvent.press(getByTestId('recipient-verify-button'));
@@ -124,7 +138,9 @@ describe('Cash→Wallet — recipient step', () => {
     fireEvent.press(getByTestId('recipient-verify-button'));
     await waitFor(() => expect(getByTestId('recipient-continue')).toBeTruthy());
     fireEvent.press(getByTestId('recipient-continue'));
-    expect(mockNavigate).toHaveBeenCalledWith('CashToWalletAmount', { recipient: customerRecipient });
+    expect(mockNavigate).toHaveBeenCalledWith('CashToWalletAmount', {
+      recipient: customerRecipient,
+    });
     const params = (mockNavigate.mock.calls[0]?.[1] as any).recipient;
     expect('ownerId' in params).toBe(false);
   });
@@ -134,7 +150,8 @@ describe('Cash→Wallet — amount step', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockRoute = {
-      key: 'k', name: 'CashToWalletAmount',
+      key: 'k',
+      name: 'CashToWalletAmount',
       params: { recipient: customerRecipient },
     };
   });
@@ -216,7 +233,12 @@ describe('Cash→Wallet — confirmation & submission', () => {
 
   test('11. duplicate-submit protection while in flight', async () => {
     let resolveIt: (v: any) => void = () => {};
-    mockApi.agentCashIn.mockImplementation(() => new Promise((res) => { resolveIt = res; }));
+    mockApi.agentCashIn.mockImplementation(
+      () =>
+        new Promise((res) => {
+          resolveIt = res;
+        }),
+    );
     const { getByTestId } = wrap(<CashToWalletConfirmScreen />);
     fireEvent.changeText(getByTestId('pin-input'), '1234');
     fireEvent.press(getByTestId('confirm-submit'));
@@ -238,7 +260,8 @@ describe('Cash→Wallet — confirmation & submission', () => {
     expect(successParams).toEqual({ result: cashInResult, amountMinor: '250000' });
 
     mockRoute = {
-      key: 'k', name: 'CashToWalletSuccess',
+      key: 'k',
+      name: 'CashToWalletSuccess',
       params: { result: cashInResult, amountMinor: '250000' },
     };
     const view = wrap(<CashToWalletSuccessScreen />);
@@ -261,7 +284,9 @@ describe('Cash→Wallet — confirmation & submission', () => {
     fireEvent.changeText(getByTestId('pin-input'), '1234');
     fireEvent.press(getByTestId('confirm-submit'));
     await waitFor(() =>
-      expect(getByTestId('confirm-error').props.children).toContain('Insufficient available balance'),
+      expect(getByTestId('confirm-error').props.children).toContain(
+        'Insufficient available balance',
+      ),
     );
   });
 
@@ -271,7 +296,9 @@ describe('Cash→Wallet — confirmation & submission', () => {
     fireEvent.changeText(getByTestId('pin-input'), '1234');
     fireEvent.press(getByTestId('confirm-submit'));
     await waitFor(() =>
-      expect(getByTestId('confirm-error').props.children).toContain('Per-transaction limit exceeded'),
+      expect(getByTestId('confirm-error').props.children).toContain(
+        'Per-transaction limit exceeded',
+      ),
     );
   });
 
@@ -293,7 +320,9 @@ describe('Cash→Wallet — confirmation & submission', () => {
     fireEvent.changeText(getByTestId('pin-input'), '1234');
     fireEvent.press(getByTestId('confirm-submit'));
     await waitFor(() =>
-      expect(getByTestId('confirm-error').props.children).toBe('Incorrect transaction PIN. Try again.'),
+      expect(getByTestId('confirm-error').props.children).toBe(
+        'Incorrect transaction PIN. Try again.',
+      ),
     );
 
     mockApi.agentCashIn.mockRejectedValue(apiError('Transaction PIN is locked', 401));
@@ -396,13 +425,17 @@ describe('Cash→Wallet — confirmation & submission', () => {
     for (const call of setSpy.mock.calls) {
       expect(String(call.join(' '))).not.toContain('1234');
     }
-    logSpy.mockRestore(); warnSpy.mockRestore(); errSpy.mockRestore();
+    logSpy.mockRestore();
+    warnSpy.mockRestore();
+    errSpy.mockRestore();
     // error path also clears: second render with rejection
     mockApi.agentCashIn.mockRejectedValue(apiError('Transaction PIN invalid: PIN_INVALID', 401));
     const second = wrap(<CashToWalletConfirmScreen />);
     fireEvent.changeText(second.getByTestId('pin-input'), '1234');
     fireEvent.press(second.getByTestId('confirm-submit'));
-    await waitFor(() => expect(second.getByText('Incorrect transaction PIN. Try again.')).toBeTruthy());
+    await waitFor(() =>
+      expect(second.getByText('Incorrect transaction PIN. Try again.')).toBeTruthy(),
+    );
     expect(second.getByTestId('pin-input').props.value).toBe('');
   });
 
@@ -413,7 +446,11 @@ describe('Cash→Wallet — confirmation & submission', () => {
     fireEvent.press(getByTestId('confirm-submit'));
     await waitFor(() => expect(mockReset).toHaveBeenCalled());
     const resultParam = (mockReset.mock.calls[0]?.[0] as any).routes[0].params.result;
-    mockRoute = { key: 'k', name: 'CashToWalletSuccess', params: { result: resultParam, amountMinor: '250000' } };
+    mockRoute = {
+      key: 'k',
+      name: 'CashToWalletSuccess',
+      params: { result: resultParam, amountMinor: '250000' },
+    };
     const view = wrap(<CashToWalletSuccessScreen />);
     // REPLAYED honesty:
     expect(view.getByText('Already recorded')).toBeTruthy();
@@ -513,7 +550,9 @@ describe('Cash→Wallet — Idempotency-Key durability across a simulated proces
     fireEvent.changeText(getByTestId('pin-input'), '1234');
     fireEvent.press(getByTestId('confirm-submit'));
     await waitFor(() => expect(mockReset).toHaveBeenCalled());
-    await waitFor(async () => expect(await loadPendingAgentOperation(agentId, 'CASH_IN')).toBeNull());
+    await waitFor(async () =>
+      expect(await loadPendingAgentOperation(agentId, 'CASH_IN')).toBeNull(),
+    );
   });
 
   test('4. a definitive rejection (4xx) clears the persisted operation — a later attempt gets a clean new key', async () => {
@@ -522,14 +561,20 @@ describe('Cash→Wallet — Idempotency-Key durability across a simulated proces
       name: 'CashToWalletConfirm',
       params: { recipient, amountMinor: '250000', idempotencyKey: 'c2w-definitive-reject' },
     };
-    mockApi.agentCashIn.mockRejectedValueOnce(apiError('Transaction PIN invalid: PIN_INVALID', 401));
+    mockApi.agentCashIn.mockRejectedValueOnce(
+      apiError('Transaction PIN invalid: PIN_INVALID', 401),
+    );
     const first = wrap(<CashToWalletConfirmScreen />);
     fireEvent.changeText(first.getByTestId('pin-input'), '1234');
     fireEvent.press(first.getByTestId('confirm-submit'));
     await waitFor(() =>
-      expect(first.getByTestId('confirm-error').props.children).toBe('Incorrect transaction PIN. Try again.'),
+      expect(first.getByTestId('confirm-error').props.children).toBe(
+        'Incorrect transaction PIN. Try again.',
+      ),
     );
-    await waitFor(async () => expect(await loadPendingAgentOperation(agentId, 'CASH_IN')).toBeNull());
+    await waitFor(async () =>
+      expect(await loadPendingAgentOperation(agentId, 'CASH_IN')).toBeNull(),
+    );
     first.unmount();
 
     // A later attempt (new screen instance, new key) is NOT overridden by anything stale.

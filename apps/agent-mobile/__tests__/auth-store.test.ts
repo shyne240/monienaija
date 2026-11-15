@@ -60,7 +60,11 @@ describe('Agent auth store (fail-closed)', () => {
   });
 
   test('login failure fails closed: unauthenticated, no session, no mock fallback', async () => {
-    mockedApi.agentLogin.mockRejectedValue({ name: 'ApiError', message: 'Invalid credentials', status: 401 });
+    mockedApi.agentLogin.mockRejectedValue({
+      name: 'ApiError',
+      message: 'Invalid credentials',
+      status: 401,
+    });
 
     await expect(
       useAuthStore.getState().login(sessionFixture().agentId, 'wrong'),
@@ -76,14 +80,19 @@ describe('Agent auth store (fail-closed)', () => {
   test('login failure on network error also fails closed (no DEV_AUTH_MOCK exists)', async () => {
     mockedApi.agentLogin.mockRejectedValue(new Error('Network request failed'));
 
-    await expect(useAuthStore.getState().login(sessionFixture().agentId, 'any')).rejects.toBeTruthy();
+    await expect(
+      useAuthStore.getState().login(sessionFixture().agentId, 'any'),
+    ).rejects.toBeTruthy();
 
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
     expect(await SecureStorage.get(AGENT_SESSION_KEYS.token)).toBeNull();
   });
 
   test('rotationRequired response enters pending-rotation without establishing a session', async () => {
-    mockedApi.agentLogin.mockResolvedValue({ rotationRequired: true, agentId: sessionFixture().agentId });
+    mockedApi.agentLogin.mockResolvedValue({
+      rotationRequired: true,
+      agentId: sessionFixture().agentId,
+    });
 
     await useAuthStore.getState().login(sessionFixture().agentId, 'temp-password');
 
@@ -210,7 +219,10 @@ describe('Agent auth store (fail-closed)', () => {
 
     // A DIFFERENT Agent logging into this device still cannot see it — pure function of the
     // agentId-scoped storage key, independent of the logout change above.
-    const otherAgentView = await loadPendingAgentOperation('a-totally-different-agent-id', 'CASH_IN');
+    const otherAgentView = await loadPendingAgentOperation(
+      'a-totally-different-agent-id',
+      'CASH_IN',
+    );
     expect(otherAgentView).toBeNull();
 
     await clearAllPendingAgentOperations(session.agentId);

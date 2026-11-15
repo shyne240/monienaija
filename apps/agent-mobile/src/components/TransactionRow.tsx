@@ -27,7 +27,9 @@ function counterpartyLabel(item: AgentHistoryItem): string | null {
   const cp = item.counterparty;
   if (!cp) return null;
   if (cp.type === 'CUSTOMER') {
-    return cp.beneficiaryPhone ? `Customer · beneficiary ${cp.beneficiaryPhone}` : 'Customer wallet';
+    return cp.beneficiaryPhone
+      ? `Customer · beneficiary ${cp.beneficiaryPhone}`
+      : 'Customer wallet';
   }
   if (cp.type === 'AGGREGATOR') return 'Aggregator';
   if (cp.type === 'WORKFORCE') return 'MonieNaija Workforce';
@@ -53,9 +55,12 @@ interface TransactionRowProps {
 }
 
 export const TransactionRow: React.FC<TransactionRowProps> = ({ item, onPress, testID }) => {
-  const typeLabel = item.type === 'CASH_TO_CASH_CLAIM'
-    ? item.direction === 'CREDIT' ? 'Cash→Cash cash payout' : 'Cash→Cash wallet claim'
-    : TYPE_LABEL[item.type] ?? item.type;
+  const typeLabel =
+    item.type === 'CASH_TO_CASH_CLAIM'
+      ? item.direction === 'CREDIT'
+        ? 'Cash→Cash cash payout'
+        : 'Cash→Cash wallet claim'
+      : (TYPE_LABEL[item.type] ?? item.type);
   const sign = historyDirectionSign(item.direction);
   const amountText = `${sign}${formatNairaFromMinor(item.amountMinor)}`;
   const hasFee = item.feeMinor !== undefined && item.feeMinor !== null && item.feeMinor !== '0';
@@ -64,9 +69,17 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({ item, onPress, t
   const body = (
     <View style={styles.row} testID={testID ?? `transaction-row-${item.id}`}>
       <View style={styles.left}>
-        <Text style={styles.type} testID="tx-type">{typeLabel}</Text>
-        <Text style={styles.meta} testID="tx-time">{formatHistoryTimestamp(item.createdAt)}</Text>
-        {counterpartyText && <Text style={styles.meta} testID="tx-counterparty">{counterpartyText}</Text>}
+        <Text style={styles.type} testID="tx-type">
+          {typeLabel}
+        </Text>
+        <Text style={styles.meta} testID="tx-time">
+          {formatHistoryTimestamp(item.createdAt)}
+        </Text>
+        {counterpartyText && (
+          <Text style={styles.meta} testID="tx-counterparty">
+            {counterpartyText}
+          </Text>
+        )}
         {item.reference && (
           <Text style={styles.meta} numberOfLines={1} testID="tx-reference">
             Ref: {item.reference}
@@ -91,7 +104,9 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({ item, onPress, t
           <Text style={styles.statusText}>{item.status}</Text>
         </View>
         {hasFee && (
-          <Text style={styles.fee} testID="tx-fee">Fee {formatNairaFromMinor(item.feeMinor)}</Text>
+          <Text style={styles.fee} testID="tx-fee">
+            Fee {formatNairaFromMinor(item.feeMinor)}
+          </Text>
         )}
         {item.commission && (
           <Text style={styles.fee} testID="tx-commission">
@@ -104,7 +119,11 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({ item, onPress, t
 
   if (onPress) {
     return (
-      <TouchableOpacity onPress={onPress} accessibilityRole="button" accessibilityLabel={`${typeLabel} ${item.status}`}>
+      <TouchableOpacity
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${typeLabel} ${item.status}`}
+      >
         {body}
       </TouchableOpacity>
     );

@@ -91,9 +91,11 @@ export function canAccessAdminView(
     case 'customers':
       return has('customer.view');
     case 'agents':
-      return has('agent.view') ||
+      return (
+        has('agent.view') ||
         ((roles.includes('AGENT_NETWORK_MANAGER') || roles.includes('FINANCE_CONTROLLER')) &&
-          hasAny('agent.fund', 'agent.defund'));
+          hasAny('agent.fund', 'agent.defund'))
+      );
     case 'agentClasses':
       return has('agent.view');
     case 'cashToCashOps':
@@ -101,9 +103,7 @@ export function canAccessAdminView(
     case 'support':
       return has('customer.manage_support_case');
     case 'transfers':
-      return context?.customerId
-        ? has('customer.view_transactions')
-        : has('transaction.view');
+      return context?.customerId ? has('customer.view_transactions') : has('transaction.view');
     case 'cashIn':
     case 'cashOut':
       return has('transaction.view');
@@ -133,7 +133,8 @@ export function canAccessAdminView(
       // This screen exposes only the workforce-overview widget and SUPPORT provisioning.
       return hasAny('workforce.dashboard.view', 'workforce.user.create');
     case 'roleGovernance': {
-      const canManageFinance = roles.includes('SUPER_ADMIN') && hasAny('workforce.role.assign', 'workforce.role.revoke');
+      const canManageFinance =
+        roles.includes('SUPER_ADMIN') && hasAny('workforce.role.assign', 'workforce.role.revoke');
       const canManageOperational =
         (roles.includes('ADMINISTRATOR') || roles.includes('SUPER_ADMIN')) &&
         hasAny('workforce.role.assign_operational', 'workforce.role.revoke_operational');
@@ -165,7 +166,12 @@ export function canAccessAdminView(
         'notification.test_send',
       );
     case 'systemHealth':
-      return hasAny('metrics.view', 'diagnostics.view', 'outbox.view', 'notification.view_deliveries');
+      return hasAny(
+        'metrics.view',
+        'diagnostics.view',
+        'outbox.view',
+        'notification.view_deliveries',
+      );
     case 'auditEvents':
       return has('audit.search');
     case 'institutions':

@@ -22,7 +22,11 @@
 import type { BadgeStatus } from '../components/StatusBadge';
 
 export type UnifiedTransactionType =
-  'WALLET_TRANSFER' | 'FUNDING' | 'CASH_TO_CASH' | 'CASH_IN' | 'CASH_OUT';
+  | 'WALLET_TRANSFER'
+  | 'FUNDING'
+  | 'CASH_TO_CASH'
+  | 'CASH_IN'
+  | 'CASH_OUT';
 
 export interface UnifiedCounterparty {
   type?: string;
@@ -198,7 +202,12 @@ export function mapTransactionToRow(item: TransferListItem): TransactionRowView 
 }
 
 export type SupportTicketCategoryForTransaction =
-  'TRANSFER' | 'FUNDING' | 'CASH_TO_CASH' | 'CASH_IN' | 'CASH_OUT' | 'OTHER';
+  | 'TRANSFER'
+  | 'FUNDING'
+  | 'CASH_TO_CASH'
+  | 'CASH_IN'
+  | 'CASH_OUT'
+  | 'OTHER';
 
 export interface TransactionSupportContext {
   category: SupportTicketCategoryForTransaction;

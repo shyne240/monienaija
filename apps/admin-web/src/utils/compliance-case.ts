@@ -9,9 +9,19 @@ export interface CustomerComplianceCaseRow {
   openedAt?: string;
 }
 
-export function validCustomerCase(value: unknown, customerId: string): value is CustomerComplianceCaseRow {
+export function validCustomerCase(
+  value: unknown,
+  customerId: string,
+): value is CustomerComplianceCaseRow {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const row = value as CustomerComplianceCaseRow;
   const text = (item: unknown) => typeof item === 'string' && !!item.trim();
-  return text(row.id) && row.customerId === customerId && text(row.caseNumber) && text(row.category) && text(row.severity) && text(row.status);
+  return (
+    text(row.id) &&
+    row.customerId === customerId &&
+    text(row.caseNumber) &&
+    text(row.category) &&
+    text(row.severity) &&
+    text(row.status)
+  );
 }

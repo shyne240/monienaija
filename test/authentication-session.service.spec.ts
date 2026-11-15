@@ -265,7 +265,9 @@ describe('AuthenticationSessionService', () => {
       new MemoryDataSource(new MemoryManager(repository)) as unknown as DataSource,
       auditService as unknown as AuditService,
       customerRepository as unknown as Repository<Customer>,
-      { require: jest.fn().mockResolvedValue(undefined) } as unknown as CustomerFinancialEligibilityService,
+      {
+        require: jest.fn().mockResolvedValue(undefined),
+      } as unknown as CustomerFinancialEligibilityService,
     );
 
     const issued = await service.issue({ authentication, actor: 'a2-session' });
@@ -286,7 +288,11 @@ describe('AuthenticationSessionService', () => {
       valid: true,
     });
     await expect(
-      service.revoke({ token: issued.accessToken, actor: authentication.customerId, reason: 'Customer logout' }),
+      service.revoke({
+        token: issued.accessToken,
+        actor: authentication.customerId,
+        reason: 'Customer logout',
+      }),
     ).resolves.toMatchObject({ valid: false, reason: 'REVOKED' });
     await expect(service.validateForLogout({ token: issued.accessToken })).resolves.toEqual({
       valid: false,
@@ -314,7 +320,9 @@ describe('AuthenticationSessionService', () => {
     const issued = await service.issue({ authentication, actor: 'a2-session' });
     requireEligibility.mockClear();
 
-    await expect(service.validate({ token: issued.accessToken, mode: 'READ' })).resolves.toMatchObject({
+    await expect(
+      service.validate({ token: issued.accessToken, mode: 'READ' }),
+    ).resolves.toMatchObject({
       valid: true,
     });
     expect(requireEligibility).toHaveBeenCalledWith(expect.anything(), authentication.customerId, {

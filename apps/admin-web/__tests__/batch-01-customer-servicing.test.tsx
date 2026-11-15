@@ -73,7 +73,10 @@ describe('Batch 1 customer directory', () => {
       'customer.close',
     ]);
     (ApiClient.get as jest.Mock).mockResolvedValue(directoryResponse());
-    (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'cust-created', reference: 'mn-••••9876' });
+    (ApiClient.post as jest.Mock).mockResolvedValue({
+      id: 'cust-created',
+      reference: 'mn-••••9876',
+    });
   });
 
   test('uses the authorized, paginated workforce API and displays masked directory fields', async () => {
@@ -82,8 +85,8 @@ describe('Batch 1 customer directory', () => {
     expect(await view.findByText('Synthetic Directory Alpha')).toBeTruthy();
     expect(view.getByText('mn-••••5678')).toBeTruthy();
     expect(view.getByText('+234*****4321')).toBeTruthy();
-    expect((view.getAllByText('ACTIVE')).length).toBeGreaterThan(0);
-    expect((view.getAllByText('LEVEL_1')).length).toBeGreaterThan(0);
+    expect(view.getAllByText('ACTIVE').length).toBeGreaterThan(0);
+    expect(view.getAllByText('LEVEL_1').length).toBeGreaterThan(0);
     expect(ApiClient.get).toHaveBeenCalledWith('/internal/customers?page=1&limit=20');
     expect(view.queryByText('mn-0000000000')).toBeNull();
     expect(view.container.querySelector('pre')).toBeNull();
@@ -138,7 +141,12 @@ describe('Batch 1 customer directory', () => {
     };
     (ApiClient.post as jest.Mock).mockImplementation((path: string) => {
       if (path === '/customers') return Promise.resolve(created);
-      if (path.endsWith('/registration-profile')) return Promise.resolve({ id: 'profile-created', customerId: 'cust-created', displayName: 'Synthetic Draft Customer' });
+      if (path.endsWith('/registration-profile'))
+        return Promise.resolve({
+          id: 'profile-created',
+          customerId: 'cust-created',
+          displayName: 'Synthetic Draft Customer',
+        });
       return Promise.resolve({});
     });
 
@@ -159,10 +167,13 @@ describe('Batch 1 customer directory', () => {
 
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenCalledWith('/customers', { type: 'INDIVIDUAL' });
-      expect(ApiClient.post).toHaveBeenCalledWith('/customers/cust-created/registration-profile', expect.objectContaining({
-        firstName: 'Synthetic',
-        lastName: 'Draft Customer',
-      }));
+      expect(ApiClient.post).toHaveBeenCalledWith(
+        '/customers/cust-created/registration-profile',
+        expect.objectContaining({
+          firstName: 'Synthetic',
+          lastName: 'Draft Customer',
+        }),
+      );
       expect(view.getByLabelText(/Primary phone number/)).toBeTruthy();
     });
   });

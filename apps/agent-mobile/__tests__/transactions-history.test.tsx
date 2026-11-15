@@ -109,7 +109,10 @@ const pageOf = (items: AgentHistoryItem[], hasNextPage = false) => ({
 
 function wrap(ui: React.ReactElement) {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false, gcTime: 0 } },
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false, gcTime: 0 },
+    },
   });
   return { client, ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>) };
 }
@@ -137,7 +140,9 @@ describe('TransactionsScreen (unified Agent history)', () => {
     mockApi.getAgentTransactions.mockResolvedValue(pageOf([cashInRow, c2cRow, fundingRow]));
     const { getAllByText, getByText, getByTestId, queryByText } = wrap(<TransactionsScreen />);
 
-    await waitFor(() => expect(getByTestId('transaction-row-journal-internal-uuid-1')).toBeTruthy());
+    await waitFor(() =>
+      expect(getByTestId('transaction-row-journal-internal-uuid-1')).toBeTruthy(),
+    );
     expect(getAllByText('Cash→Wallet').length).toBeGreaterThan(0); // chip + CASH_IN row label
     expect(getAllByText('Cash→Cash sent').length).toBeGreaterThan(0); // chip + C2C row label
     expect(getByText('Agent Funding')).toBeTruthy(); // unique to the funding row
@@ -182,7 +187,9 @@ describe('TransactionsScreen (unified Agent history)', () => {
     mockApi.getAgentTransactions.mockResolvedValue(pageOf([c2cClaimRow]));
     const { getAllByText, getByTestId, getByText, queryByText } = wrap(<TransactionsScreen />);
 
-    await waitFor(() => expect(getByTestId('transaction-row-claim-journal-internal-uuid-4')).toBeTruthy());
+    await waitFor(() =>
+      expect(getByTestId('transaction-row-claim-journal-internal-uuid-4')).toBeTruthy(),
+    );
     expect(getByText('Cash→Cash claim')).toBeTruthy(); // generic filter includes both redemption methods
     expect(getByText('Cash→Cash wallet claim')).toBeTruthy(); // wallet-specific row label
     expect(getByText('₦4,500.00')).toBeTruthy();
@@ -201,7 +208,9 @@ describe('TransactionsScreen (unified Agent history)', () => {
     mockApi.getAgentTransactions.mockResolvedValue(pageOf([agentCashClaimRow]));
     const { getByTestId, getByText } = wrap(<TransactionsScreen />);
 
-    await waitFor(() => expect(getByTestId('transaction-row-claim-agent-float-internal-uuid-5')).toBeTruthy());
+    await waitFor(() =>
+      expect(getByTestId('transaction-row-claim-agent-float-internal-uuid-5')).toBeTruthy(),
+    );
     expect(getByText('Cash→Cash cash payout')).toBeTruthy();
     expect(getByText('+₦4,500.00')).toBeTruthy();
     expect(getByText('Cash→Cash claim')).toBeTruthy();
@@ -224,49 +233,65 @@ describe('TransactionsScreen (unified Agent history)', () => {
   });
 
   test('A.failure shows sanitized error and retry refetches', async () => {
-    mockApi.getAgentTransactions.mockRejectedValueOnce(apiError('SQL dump secret 9', 500)).mockResolvedValueOnce(pageOf([cashInRow]));
+    mockApi.getAgentTransactions
+      .mockRejectedValueOnce(apiError('SQL dump secret 9', 500))
+      .mockResolvedValueOnce(pageOf([cashInRow]));
     const { getByText, getByTestId, queryByText } = wrap(<TransactionsScreen />);
     await waitFor(() =>
       expect(getByText('The service is temporarily unavailable. Please retry.')).toBeTruthy(),
     );
     fireEvent.press(getByText(/Try|Retry/));
-    await waitFor(() => expect(getByTestId('transaction-row-journal-internal-uuid-1')).toBeTruthy());
+    await waitFor(() =>
+      expect(getByTestId('transaction-row-journal-internal-uuid-1')).toBeTruthy(),
+    );
     expect(queryByText(/SQL dump secret 9/)).toBeNull();
   });
 
   test('A.session-expiry surfaces established message (401 purge stays API-client-side)', async () => {
     mockApi.getAgentTransactions.mockRejectedValue(apiError('Unauthorized', 401));
     const { getByText } = wrap(<TransactionsScreen />);
-    await waitFor(() => expect(getByText('Your session has expired. Please log in again.')).toBeTruthy());
+    await waitFor(() =>
+      expect(getByText('Your session has expired. Please log in again.')).toBeTruthy(),
+    );
   });
 
   test('B.tapping a row navigates to the history-derived receipt with small params only', async () => {
     mockApi.getAgentTransactions.mockResolvedValue(pageOf([cashInRow]));
     const { getByTestId } = wrap(<TransactionsScreen />);
-    await waitFor(() => expect(getByTestId('transaction-row-journal-internal-uuid-1')).toBeTruthy());
+    await waitFor(() =>
+      expect(getByTestId('transaction-row-journal-internal-uuid-1')).toBeTruthy(),
+    );
     fireEvent.press(getByTestId('transaction-row-journal-internal-uuid-1'));
     expect(mockNavigate).toHaveBeenCalledWith('TransactionReceipt', {
       itemId: 'journal-internal-uuid-1',
       filter: undefined,
     });
-    const params = (mockNavigate.mock.calls[0]?.[1] as any);
+    const params = mockNavigate.mock.calls[0]?.[1] as any;
     expect(Object.keys(params).sort()).toEqual(['filter', 'itemId']);
   });
 
   test('B.receipt renders from cached history row; missing row shows honest state', async () => {
     mockApi.getAgentTransactions.mockResolvedValue(pageOf([c2cRow]));
     const { client } = wrap(<TransactionsScreen />);
-    await waitFor(() => expect(client.getQueryData(['agent-transactions', 'agent-uuid-1', 'ALL', 20])).toBeTruthy());
+    await waitFor(() =>
+      expect(client.getQueryData(['agent-transactions', 'agent-uuid-1', 'ALL', 20])).toBeTruthy(),
+    );
 
     // Prime cache through screen render, then route to the receipt screen:
-    mockRoute = { key: 'k', name: 'TransactionReceipt', params: { itemId: 'transfer-internal-uuid-2' } };
+    mockRoute = {
+      key: 'k',
+      name: 'TransactionReceipt',
+      params: { itemId: 'transfer-internal-uuid-2' },
+    };
     const receiptView = render(
       <QueryClientProvider client={client}>
         <TransactionReceiptScreen />
       </QueryClientProvider>,
     );
     expect(receiptView.getByTestId('history-receipt')).toBeTruthy();
-    expect(receiptView.getByTestId('receipt-heading').props.children).toBe('Cash→Cash send Receipt');
+    expect(receiptView.getByTestId('receipt-heading').props.children).toBe(
+      'Cash→Cash send Receipt',
+    );
     expect(receiptView.getByTestId('receipt-status').props.children).toBe('UNCLAIMED');
 
     mockRoute = { key: 'k', name: 'TransactionReceipt', params: { itemId: 'not-cached' } };
@@ -287,24 +312,26 @@ describe('TransactionsScreen (unified Agent history)', () => {
     const makeRows = (prefix: string, count: number): AgentHistoryItem[] =>
       Array.from({ length: count }, (_, idx) => ({ ...cashInRow, id: `${prefix}-${idx}` }));
 
-    mockApi.getAgentTransactions.mockImplementation(({ page, limit }: { page: number; limit: number }) => {
-      if (page === 1 && limit < 100) {
+    mockApi.getAgentTransactions.mockImplementation(
+      ({ page, limit }: { page: number; limit: number }) => {
+        if (page === 1 && limit < 100) {
+          return Promise.resolve({
+            items: makeRows(`p1-${limit}`, limit),
+            pagination: { page: 1, limit, total: 105, totalPages: 2, hasNextPage: true },
+          });
+        }
+        if (page === 1 && limit === 100) {
+          return Promise.resolve({
+            items: makeRows('p1-100', 100),
+            pagination: { page: 1, limit: 100, total: 105, totalPages: 2, hasNextPage: true },
+          });
+        }
         return Promise.resolve({
-          items: makeRows(`p1-${limit}`, limit),
-          pagination: { page: 1, limit, total: 105, totalPages: 2, hasNextPage: true },
+          items: makeRows('p2-100', 5),
+          pagination: { page: 2, limit: 100, total: 105, totalPages: 2, hasNextPage: false },
         });
-      }
-      if (page === 1 && limit === 100) {
-        return Promise.resolve({
-          items: makeRows('p1-100', 100),
-          pagination: { page: 1, limit: 100, total: 105, totalPages: 2, hasNextPage: true },
-        });
-      }
-      return Promise.resolve({
-        items: makeRows('p2-100', 5),
-        pagination: { page: 2, limit: 100, total: 105, totalPages: 2, hasNextPage: false },
-      });
-    });
+      },
+    );
 
     const { getByTestId, queryByTestId } = wrap(<TransactionsScreen />);
     // Step limit from 20 -> 40 -> 60 -> 80 -> 100

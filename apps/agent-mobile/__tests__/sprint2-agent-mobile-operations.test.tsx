@@ -2,12 +2,7 @@ import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import {
-  AGENT_SESSION_KEYS,
-  ApiClient,
-  ApiError,
-  setBaseUrl,
-} from '../src/services/api-client';
+import { AGENT_SESSION_KEYS, ApiClient, ApiError, setBaseUrl } from '../src/services/api-client';
 import { SecureStorage } from '../src/services/secure-storage';
 import { useAuthStore } from '../src/store/auth-store';
 import {
@@ -91,7 +86,10 @@ describe('Sprint 2 — Agent Mobile operational hardening', () => {
     });
 
     await SecureStorage.set(AGENT_SESSION_KEYS.token, 'valid-agent-token');
-    await SecureStorage.set(AGENT_SESSION_KEYS.sessionData, '{"agentId":"11111111-1111-4111-8111-111111111111"}');
+    await SecureStorage.set(
+      AGENT_SESSION_KEYS.sessionData,
+      '{"agentId":"11111111-1111-4111-8111-111111111111"}',
+    );
 
     // Step-up PIN 401 keeps session alive
     fetchMock.mockResolvedValueOnce(
@@ -104,9 +102,7 @@ describe('Sprint 2 — Agent Mobile operational hardening', () => {
     expect(await SecureStorage.get(AGENT_SESSION_KEYS.token)).toBe('valid-agent-token');
 
     // Guard-level Bearer expiry 401 purges session even with preserveSessionOn401: true
-    fetchMock.mockResolvedValueOnce(
-      jsonResp(401, { message: 'Agent authentication required' }),
-    );
+    fetchMock.mockResolvedValueOnce(jsonResp(401, { message: 'Agent authentication required' }));
     await expect(
       ApiClient.post('api/v1/agents/cash-in', { pin: '1234' }, { preserveSessionOn401: true }),
     ).rejects.toThrow('Agent authentication required');
@@ -122,9 +118,9 @@ describe('Sprint 2 — Agent Mobile operational hardening', () => {
       mockApi.describeCashToCashError(makeApiError('Transaction PIN invalid: PIN_NOT_FOUND', 401)),
     ).toContain('No transaction PIN is set for your account');
 
-    expect(
-      mockApi.describeCashOutError(makeApiError('Authentication required', 401)),
-    ).toBe('Your session has expired. Please log in again.');
+    expect(mockApi.describeCashOutError(makeApiError('Authentication required', 401))).toBe(
+      'Your session has expired. Please log in again.',
+    );
     expect(
       mockApi.describeCashOutError(makeApiError('Agent PIN invalid: PIN_NOT_FOUND', 401)),
     ).toContain('No transaction PIN is set for your account');
@@ -139,9 +135,9 @@ describe('Sprint 2 — Agent Mobile operational hardening', () => {
     expect(
       mockApi.describeTransactionPinError(makeApiError('Agent authentication required', 401)),
     ).toBe('Your session has expired. Please log in again.');
-    expect(
-      mockApi.describeTransactionPinError(makeApiError('Unauthorized', 401)),
-    ).toBe('Incorrect transaction PIN. Check the PIN and try again.');
+    expect(mockApi.describeTransactionPinError(makeApiError('Unauthorized', 401))).toBe(
+      'Incorrect transaction PIN. Check the PIN and try again.',
+    );
   });
 
   test('Cash-to-Cash Claim holds an uncertain post-OTP outcome without resubmitting', async () => {

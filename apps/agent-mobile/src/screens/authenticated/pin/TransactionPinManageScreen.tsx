@@ -56,20 +56,27 @@ export const TransactionPinManageScreen: React.FC = () => {
     >
       <Text style={styles.title}>Agent Transaction PIN</Text>
       <Text style={styles.helper}>
-        Your Transaction PIN is a dedicated financial authorization credential used to secure
-        agent operations such as Cash→Wallet and Cash→Cash.
+        Your Transaction PIN is a dedicated financial authorization credential used to secure agent
+        operations such as Cash→Wallet and Cash→Cash.
       </Text>
 
       {statusQuery.isLoading ? (
         <Card style={styles.card}>
-          <Text style={styles.muted} testID="pin-status-loading">Loading PIN status…</Text>
+          <Text style={styles.muted} testID="pin-status-loading">
+            Loading PIN status…
+          </Text>
         </Card>
       ) : statusQuery.isError ? (
         <Card style={styles.card}>
           <Text style={styles.errorText} testID="pin-status-error">
             {describeApiError(statusQuery.error)}
           </Text>
-          <Button label="Retry" variant="outline" onPress={handleRefresh} testID="pin-status-retry" />
+          <Button
+            label="Retry"
+            variant="outline"
+            onPress={handleRefresh}
+            testID="pin-status-retry"
+          />
         </Card>
       ) : pinStatus ? (
         <>
@@ -131,8 +138,8 @@ export const TransactionPinManageScreen: React.FC = () => {
                   {pinStatus.lockReason || 'Maximum failed PIN attempts reached (5 attempts).'}
                 </Text>
                 <Text style={styles.lockedInstruction}>
-                  For your security, a locked Transaction PIN cannot be reset from this app.
-                  Contact Support to restore transaction authorization.
+                  For your security, a locked Transaction PIN cannot be reset from this app. Contact
+                  Support to restore transaction authorization.
                 </Text>
               </View>
             )}

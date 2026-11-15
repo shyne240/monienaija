@@ -18,7 +18,8 @@ jest.mock('../src/services/agent-api', () => ({
   setAgentTransactionPin: jest.fn(),
   changeAgentTransactionPin: jest.fn(),
   describeApiError: jest.requireActual('../src/services/agent-api').describeApiError,
-  describeTransactionPinError: jest.requireActual('../src/services/agent-api').describeTransactionPinError,
+  describeTransactionPinError: jest.requireActual('../src/services/agent-api')
+    .describeTransactionPinError,
 }));
 
 const mockApi = jest.requireMock('../src/services/agent-api') as {
@@ -71,7 +72,10 @@ const lockedPinStatus: AgentTransactionPinStatus = {
 
 function wrap(ui: React.ReactElement) {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false, gcTime: 0 } },
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false, gcTime: 0 },
+    },
   });
   return { client, ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>) };
 }
@@ -170,7 +174,9 @@ describe('Agent Transaction PIN — Create Mode', () => {
     fireEvent.changeText(getByTestId('pin-input-confirm'), '1234');
     fireEvent.press(getByTestId('pin-submit-button'));
 
-    await waitFor(() => expect(mockApi.setAgentTransactionPin).toHaveBeenCalledWith('1234', '1234'));
+    await waitFor(() =>
+      expect(mockApi.setAgentTransactionPin).toHaveBeenCalledWith('1234', '1234'),
+    );
     await waitFor(() => expect(getByTestId('pin-success-card')).toBeTruthy());
     expect(getByText('Transaction PIN Set')).toBeTruthy();
 
@@ -254,7 +260,9 @@ describe('Agent Transaction PIN — Rotate Mode', () => {
     fireEvent.changeText(getByTestId('pin-input-confirm'), '5678');
     fireEvent.press(getByTestId('pin-submit-button'));
 
-    await waitFor(() => expect(mockApi.changeAgentTransactionPin).toHaveBeenCalledWith('1234', '5678'));
+    await waitFor(() =>
+      expect(mockApi.changeAgentTransactionPin).toHaveBeenCalledWith('1234', '5678'),
+    );
     expect(mockApi.setAgentTransactionPin).not.toHaveBeenCalled();
     await waitFor(() => expect(getByTestId('pin-success-card')).toBeTruthy());
     expect(getByText('Transaction PIN Updated')).toBeTruthy();
@@ -296,7 +304,10 @@ describe('Agent Transaction PIN — Rotate Mode', () => {
 
   test('locked PIN on change attempt shows locked message (no bypass)', async () => {
     mockApi.changeAgentTransactionPin.mockRejectedValue(
-      apiError('Transaction PIN is locked due to too many failed attempts. Contact support to proceed.', 403),
+      apiError(
+        'Transaction PIN is locked due to too many failed attempts. Contact support to proceed.',
+        403,
+      ),
     );
 
     const { getByTestId, getByText } = wrap(<SetTransactionPinScreen />);
@@ -307,9 +318,7 @@ describe('Agent Transaction PIN — Rotate Mode', () => {
     fireEvent.press(getByTestId('pin-submit-button'));
 
     await waitFor(() =>
-      expect(
-        getByText('Transaction PIN is locked due to too many failed attempts.'),
-      ).toBeTruthy(),
+      expect(getByText('Transaction PIN is locked due to too many failed attempts.')).toBeTruthy(),
     );
   });
 
@@ -335,7 +344,11 @@ describe('Agent Transaction PIN — Rotate Mode', () => {
 
     await waitFor(() => expect(mockApi.changeAgentTransactionPin).toHaveBeenCalledTimes(1));
 
-    resolveChange({ agentId: 'agent-pin-uuid-1', pinVersion: 2, updatedAt: new Date().toISOString() });
+    resolveChange({
+      agentId: 'agent-pin-uuid-1',
+      pinVersion: 2,
+      updatedAt: new Date().toISOString(),
+    });
     await waitFor(() => expect(getByTestId('pin-success-card')).toBeTruthy());
   });
 });

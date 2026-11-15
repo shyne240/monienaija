@@ -53,7 +53,11 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
   afterEach(() => jest.restoreAllMocks());
 
   test('Finance Controller accesses live Global Funding Inbox and Maker handoff token inside ApprovalsScreen without requiring agent.view', async () => {
-    setPrincipal(['FINANCE_CONTROLLER'], ['privileged:approve', 'agent.fund', 'agent.defund'], 'checker-fc-1');
+    setPrincipal(
+      ['FINANCE_CONTROLLER'],
+      ['privileged:approve', 'agent.fund', 'agent.defund'],
+      'checker-fc-1',
+    );
     const pendingReq = {
       id: 'fund-req-1',
       approvalId: 'approval-fc-1',
@@ -100,7 +104,11 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
           approvalApprovedBy: 'checker-fc-1',
           checkerPrincipalId: 'checker-fc-1',
         } as any;
-        return Promise.resolve({ approved:true, reason: 'APPROVED', approval:{id:pendingReq.approvalId,status:'APPROVED'} });
+        return Promise.resolve({
+          approved: true,
+          reason: 'APPROVED',
+          approval: { id: pendingReq.approvalId, status: 'APPROVED' },
+        });
       }
       if (url.endsWith('/execute')) {
         currentState = {
@@ -136,7 +144,9 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
     );
     expect(await view.findByText('Business reason: Float top-up Abuja outlet')).toBeTruthy();
 
-    fireEvent.click(view.getByLabelText('I reviewed this Agent, amount, direction and business reason'));
+    fireEvent.click(
+      view.getByLabelText('I reviewed this Agent, amount, direction and business reason'),
+    );
     fireEvent.click(view.getByRole('button', { name: 'Approve funding instruction' }));
     await waitFor(() =>
       expect(ApiClient.post).toHaveBeenCalledWith(
@@ -146,7 +156,9 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
     );
 
     await view.findByRole('button', { name: 'Execute approved instruction' });
-    fireEvent.click(view.getByLabelText('I reviewed this Agent, amount, direction and business reason'));
+    fireEvent.click(
+      view.getByLabelText('I reviewed this Agent, amount, direction and business reason'),
+    );
     fireEvent.click(view.getByRole('button', { name: 'Execute approved instruction' }));
     await waitFor(() =>
       expect(ApiClient.post).toHaveBeenCalledWith(
@@ -289,10 +301,24 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
         ]);
       }
       if (url === '/internal/limit-assignments/agent/agent-100?page=1&limit=20') {
-        return Promise.resolve({data:[],page:1,limit:20,total:0,totalPages:0,hasNextPage:false});
+        return Promise.resolve({
+          data: [],
+          page: 1,
+          limit: 20,
+          total: 0,
+          totalPages: 0,
+          hasNextPage: false,
+        });
       }
       if (url === '/internal/limit-profiles?page=1&limit=20') {
-        return Promise.resolve({ data:[{ code: 'AGENT_ORDINARY_T1', name: 'Ordinary Tier 1 Profile', isActive: true }], page:1, limit:20, total:1, totalPages:1, hasNextPage:false });
+        return Promise.resolve({
+          data: [{ code: 'AGENT_ORDINARY_T1', name: 'Ordinary Tier 1 Profile', isActive: true }],
+          page: 1,
+          limit: 20,
+          total: 1,
+          totalPages: 1,
+          hasNextPage: false,
+        });
       }
       if (url === '/internal/admin/cash-to-cash/transfers?page=1&limit=10&agentId=agent-100') {
         return Promise.resolve({
@@ -338,14 +364,20 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
     fireEvent.click(view.getByRole('button', { name: 'Load applications' }));
     expect(await view.findByText('APP-100')).toBeTruthy();
     fireEvent.click(view.getByRole('button', { name: 'Inspect details' }));
-    expect((await view.findByTestId('inspected-agent-application')).textContent).toContain('RC-998877');
+    expect((await view.findByTestId('inspected-agent-application')).textContent).toContain(
+      'RC-998877',
+    );
 
     // Open Agent drawer -> resolve class catalog -> load limit catalog -> load wallet & C2C transactions
     fireEvent.click(view.getByRole('button', { name: 'View' }));
-    await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith('/internal/agents/agent-100/financial-position'));
+    await waitFor(() =>
+      expect(ApiClient.get).toHaveBeenCalledWith('/internal/agents/agent-100/financial-position'),
+    );
 
     fireEvent.click(view.getByRole('button', { name: 'Resolve class name' }));
-    expect((await view.findAllByText(/Ordinary Tier 1 \(ORD_T1\)/)).length).toBeGreaterThanOrEqual(2);
+    expect((await view.findAllByText(/Ordinary Tier 1 \(ORD_T1\)/)).length).toBeGreaterThanOrEqual(
+      2,
+    );
 
     fireEvent.click(view.getByRole('button', { name: 'Load agent limits' }));
     await view.findByText(/No limit assignments on this page/i);
@@ -358,7 +390,9 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
     expect(
       (view.getByRole('button', { name: 'Load unified stream' }) as HTMLButtonElement).disabled,
     ).toBe(false);
-    expect(view.getByTestId('agent-pin-support-dependency').textContent).toContain('transaction-pin');
+    expect(view.getByTestId('agent-pin-support-dependency').textContent).toContain(
+      'transaction-pin',
+    );
   });
 
   test('AgentClassesScreen surfaces read-only governance note & service summary; isolated AgentClassAssignmentPanel & AgentUnifiedHistoryPanel work with contracts', async () => {
@@ -383,8 +417,12 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
     ]);
 
     const classesView = render(<AgentClassesScreen />);
-    expect(await classesView.findByText('Configured (CASH_IN, CASH_OUT, CASH_TO_CASH)')).toBeTruthy();
-    expect(classesView.getByTestId('agent-classes-readonly-governance').textContent).toContain('agent.manage_classes');
+    expect(
+      await classesView.findByText('Configured (CASH_IN, CASH_OUT, CASH_TO_CASH)'),
+    ).toBeTruthy();
+    expect(classesView.getByTestId('agent-classes-readonly-governance').textContent).toContain(
+      'agent.manage_classes',
+    );
     classesView.unmount();
 
     const onReclassify = jest.fn().mockResolvedValue(undefined);
@@ -400,10 +438,16 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
         onReclassify={onReclassify}
       />,
     );
-    fireEvent.change(reclassView.getByLabelText('Target Agent class'), { target: { value: 'cls-2' } });
-    fireEvent.change(reclassView.getByLabelText('Class change reason'), { target: { value: 'Upgraded KYC tier' } });
+    fireEvent.change(reclassView.getByLabelText('Target Agent class'), {
+      target: { value: 'cls-2' },
+    });
+    fireEvent.change(reclassView.getByLabelText('Class change reason'), {
+      target: { value: 'Upgraded KYC tier' },
+    });
     fireEvent.click(reclassView.getByRole('button', { name: 'Reclassify Agent' }));
-    await waitFor(() => expect(onReclassify).toHaveBeenCalledWith('agent-1', 'cls-2', 'Upgraded KYC tier'));
+    await waitFor(() =>
+      expect(onReclassify).toHaveBeenCalledWith('agent-1', 'cls-2', 'Upgraded KYC tier'),
+    );
     reclassView.unmount();
 
     const loadTransactions = jest.fn().mockResolvedValue({
@@ -498,9 +542,28 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
       if (url === '/internal/reconciliation/finance') {
         return Promise.resolve({
           generatedAt: '2026-10-26T11:00:00.000Z',
-          trialBalance: { generatedAt: '2026-10-26T11:00:00.000Z', balanced: true, dimensions: [], rows: [] },
-          totalAssets: [{ accountType: 'ASSET', currency: 'NGN', accountingUnit: 'HOUSE', totalBalanceMinor: '1000000' }],
-          totalLiabilities: [{ accountType: 'LIABILITY', currency: 'NGN', accountingUnit: 'HOUSE', totalBalanceMinor: '1000000' }],
+          trialBalance: {
+            generatedAt: '2026-10-26T11:00:00.000Z',
+            balanced: true,
+            dimensions: [],
+            rows: [],
+          },
+          totalAssets: [
+            {
+              accountType: 'ASSET',
+              currency: 'NGN',
+              accountingUnit: 'HOUSE',
+              totalBalanceMinor: '1000000',
+            },
+          ],
+          totalLiabilities: [
+            {
+              accountType: 'LIABILITY',
+              currency: 'NGN',
+              accountingUnit: 'HOUSE',
+              totalBalanceMinor: '1000000',
+            },
+          ],
           journalIntegrity: {
             generatedAt: '2026-10-26T11:00:00.000Z',
             totalJournals: 42,
@@ -540,7 +603,9 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
     expect(summary.textContent).toContain('42');
     expect(summary.textContent).toContain('BALANCED');
 
-    fireEvent.change(view.getByLabelText('Ledger Account UUID'), { target: { value: 'acc-uuid-1' } });
+    fireEvent.change(view.getByLabelText('Ledger Account UUID'), {
+      target: { value: 'acc-uuid-1' },
+    });
     fireEvent.click(view.getByRole('button', { name: 'Load Account Activity' }));
     const activityTable = await view.findByTestId('account-activity-table');
     expect(activityTable.textContent).toContain('2100-AGENT-FLOAT');
@@ -579,7 +644,9 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
     const view = render(<SupportTicketsScreen />);
     expect(await view.findByText('SUP-PIN-01')).toBeTruthy();
 
-    fireEvent.change(view.getByLabelText('Filter by Agent ID'), { target: { value: 'agent-locked-1' } });
+    fireEvent.change(view.getByLabelText('Filter by Agent ID'), {
+      target: { value: 'agent-locked-1' },
+    });
     fireEvent.click(view.getByRole('button', { name: 'Filter Agent' }));
     await waitFor(() =>
       expect(ApiClient.get).toHaveBeenCalledWith(
@@ -597,10 +664,14 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
     fireEvent.click(view.getByLabelText('Internal operator note'));
     fireEvent.click(view.getByRole('button', { name: 'Send' }));
     await waitFor(() =>
-      expect(ApiClient.post).toHaveBeenCalledWith('/internal/support/tickets/ticket-pin-1/messages', {
-        body: 'Verified Agent outlet ID & callback.',
-        isInternal: true,
-      }, { idempotencyKey: expect.any(String) }),
+      expect(ApiClient.post).toHaveBeenCalledWith(
+        '/internal/support/tickets/ticket-pin-1/messages',
+        {
+          body: 'Verified Agent outlet ID & callback.',
+          isInternal: true,
+        },
+        { idempotencyKey: expect.any(String) },
+      ),
     );
     view.unmount();
 

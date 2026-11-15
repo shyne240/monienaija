@@ -51,11 +51,14 @@ export const SetTransactionPinScreen: React.FC = () => {
   const [isSuccess, setIsSuccess] = useState(false);
 
   // Safety: wipe sensitive credentials when component unmounts
-  useEffect(() => () => {
-    setCurrentPin('');
-    setNewPin('');
-    setConfirmPin('');
-  }, []);
+  useEffect(
+    () => () => {
+      setCurrentPin('');
+      setNewPin('');
+      setConfirmPin('');
+    },
+    [],
+  );
 
   const pinMutation = useMutation<void, unknown, void>({
     mutationFn: async () => {
@@ -159,7 +162,10 @@ export const SetTransactionPinScreen: React.FC = () => {
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.flex}
+    >
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>
           {isRotate ? 'Change Transaction PIN' : 'Set Transaction PIN'}

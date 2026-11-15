@@ -12,7 +12,11 @@ import { CashToCashConfirmScreen } from '../src/screens/authenticated/cash-to-ca
 import { CashToCashSuccessScreen } from '../src/screens/authenticated/cash-to-cash/CashToCashSuccessScreen';
 import { SecureStorage } from '../src/services/secure-storage';
 import { useAuthStore } from '../src/store/auth-store';
-import { formatNairaFromMinor, newIdempotencyKey, parseNairaInputToMinor } from '../src/utils/format';
+import {
+  formatNairaFromMinor,
+  newIdempotencyKey,
+  parseNairaInputToMinor,
+} from '../src/utils/format';
 import {
   setPendingTransferCode,
   consumePendingTransferCode,
@@ -34,9 +38,12 @@ jest.mock('../src/services/agent-api', () => ({
   describeApiError: jest.requireActual('../src/services/agent-api').describeApiError,
   describeCashToCashError: jest.requireActual('../src/services/agent-api').describeCashToCashError,
   setPendingTransferCode: jest.requireActual('../src/services/agent-api').setPendingTransferCode,
-  isAmbiguousOperationOutcome: jest.requireActual('../src/services/agent-api').isAmbiguousOperationOutcome,
-  consumePendingTransferCode: jest.requireActual('../src/services/agent-api').consumePendingTransferCode,
-  clearPendingTransferCode: jest.requireActual('../src/services/agent-api').clearPendingTransferCode,
+  isAmbiguousOperationOutcome: jest.requireActual('../src/services/agent-api')
+    .isAmbiguousOperationOutcome,
+  consumePendingTransferCode: jest.requireActual('../src/services/agent-api')
+    .consumePendingTransferCode,
+  clearPendingTransferCode: jest.requireActual('../src/services/agent-api')
+    .clearPendingTransferCode,
 }));
 
 const mockApi = jest.requireMock('../src/services/agent-api') as {
@@ -86,7 +93,10 @@ const cashToCashResult: AgentCashToCashResult = {
 
 function wrap(ui: React.ReactElement) {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false, gcTime: 0 } },
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false, gcTime: 0 },
+    },
   });
   return { client, ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>) };
 }
@@ -223,7 +233,9 @@ describe('Cash→Cash — Step 2: Amount Entry Screen (C2C-2)', () => {
     expect(getByText(/You will send ₦5,000.00 NGN/)).toBeTruthy();
     expect(getByText(/principal reserved as unclaimed funds/)).toBeTruthy();
     expect(getByText(/claiming Agent's NGN float for cash payout/)).toBeTruthy();
-    expect(getByText(/physical cash handover is separate from this ledger settlement/i)).toBeTruthy();
+    expect(
+      getByText(/physical cash handover is separate from this ledger settlement/i),
+    ).toBeTruthy();
 
     fireEvent.press(getByTestId('c2c-amount-continue'));
     await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
@@ -283,7 +295,12 @@ describe('Cash→Cash — Step 3: Confirmation & Authorize (C2C-4 / C2C-7 / SEC-
 
   test('duplicate-submission protection: button disabled while in-flight', async () => {
     let resolveIt: (v: any) => void = () => {};
-    mockApi.agentCashToCash.mockImplementation(() => new Promise((res) => { resolveIt = res; }));
+    mockApi.agentCashToCash.mockImplementation(
+      () =>
+        new Promise((res) => {
+          resolveIt = res;
+        }),
+    );
 
     const { getByTestId } = wrap(<CashToCashConfirmScreen />);
     fireEvent.changeText(getByTestId('c2c-pin-input'), '4321');
@@ -318,14 +335,18 @@ describe('Cash→Cash — Step 3: Confirmation & Authorize (C2C-4 / C2C-7 / SEC-
   });
 
   test('PIN failure (401) surfaces PIN-specific error without logging agent out', async () => {
-    mockApi.agentCashToCash.mockRejectedValue(apiError('Transaction PIN invalid: PIN_INVALID', 401));
+    mockApi.agentCashToCash.mockRejectedValue(
+      apiError('Transaction PIN invalid: PIN_INVALID', 401),
+    );
     const { getByTestId } = wrap(<CashToCashConfirmScreen />);
 
     fireEvent.changeText(getByTestId('c2c-pin-input'), '9999');
     fireEvent.press(getByTestId('c2c-confirm-submit'));
 
     await waitFor(() =>
-      expect(getByTestId('c2c-confirm-error').props.children).toBe('Incorrect transaction PIN. Try again.'),
+      expect(getByTestId('c2c-confirm-error').props.children).toBe(
+        'Incorrect transaction PIN. Try again.',
+      ),
     );
     // PIN cleared from state on error:
     expect(getByTestId('c2c-pin-input').props.value).toBe('');
@@ -353,12 +374,16 @@ describe('Cash→Cash — Step 3: Confirmation & Authorize (C2C-4 / C2C-7 / SEC-
     fireEvent.press(getByTestId('c2c-confirm-submit'));
 
     await waitFor(() =>
-      expect(getByTestId('c2c-confirm-error').props.children).toContain('Insufficient available balance'),
+      expect(getByTestId('c2c-confirm-error').props.children).toContain(
+        'Insufficient available balance',
+      ),
     );
   });
 
   test('authorization failure (403) surfaces account permission message', async () => {
-    mockApi.agentCashToCash.mockRejectedValue(apiError('Agent not permitted: AGENT_SUSPENDED', 403));
+    mockApi.agentCashToCash.mockRejectedValue(
+      apiError('Agent not permitted: AGENT_SUSPENDED', 403),
+    );
     const { getByTestId } = wrap(<CashToCashConfirmScreen />);
 
     fireEvent.changeText(getByTestId('c2c-pin-input'), '4321');
@@ -442,7 +467,9 @@ describe('Cash→Cash — Step 4: Display-Once Success & Receipt (C2C-5 / C2C-6 
   });
 
   test('displays leading-zero 6-digit transferNumber, normalized senderPhone, and separate display-once secret transferCode', async () => {
-    const shareSpy = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' } as never);
+    const shareSpy = jest
+      .spyOn(Share, 'share')
+      .mockResolvedValue({ action: 'sharedAction' } as never);
     setPendingTransferCode('TRANSFER_CODE_778899');
     const { getByTestId, getByText } = wrap(<CashToCashSuccessScreen />);
 
@@ -453,7 +480,9 @@ describe('Cash→Cash — Step 4: Display-Once Success & Receipt (C2C-5 / C2C-6 
     expect(getByTestId('c2c-transfer-code').props.children).toBe('TRANSFER_CODE_778899');
     expect(getByText(/DISPLAY-ONCE CODE/)).toBeTruthy();
     expect(
-      getByText(/Agent-cash mode also requires the claiming Agent's CASH_TO_CASH capability and transaction PIN/),
+      getByText(
+        /Agent-cash mode also requires the claiming Agent's CASH_TO_CASH capability and transaction PIN/,
+      ),
     ).toBeTruthy();
 
     // Handover was consumed:
@@ -508,7 +537,9 @@ describe('Cash→Cash — Step 4: Display-Once Success & Receipt (C2C-5 / C2C-6 
   });
 
   test('share receipt payload NEVER contains transferCode', async () => {
-    const shareSpy = jest.spyOn(Share, 'share').mockResolvedValueOnce({ action: 'sharedAction' } as never);
+    const shareSpy = jest
+      .spyOn(Share, 'share')
+      .mockResolvedValueOnce({ action: 'sharedAction' } as never);
     setPendingTransferCode('TRANSFER_CODE_778899');
     const { getByTestId } = wrap(<CashToCashSuccessScreen />);
 
@@ -591,7 +622,12 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     mockRoute = {
       key: 'k1',
       name: 'CashToCashConfirm',
-      params: { senderPhone, beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-persist-k1' },
+      params: {
+        senderPhone,
+        beneficiaryPhone,
+        amountMinor: '500000',
+        idempotencyKey: 'c2c-persist-k1',
+      },
     };
     const networkErr = new Error('fetch failed');
     (networkErr as any).name = 'NetworkError';
@@ -620,40 +656,88 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
       createdAt: new Date().toISOString(),
     });
 
-    mockApi.recoverCashToCashFunding.mockResolvedValueOnce({status:'UNKNOWN'});
-    mockApi.handoffCashToCashOperation.mockResolvedValueOnce({id:'support-ref',status:'UNRESOLVED'});
+    mockApi.recoverCashToCashFunding.mockResolvedValueOnce({ status: 'UNKNOWN' });
+    mockApi.handoffCashToCashOperation.mockResolvedValueOnce({
+      id: 'support-ref',
+      status: 'UNRESOLVED',
+    });
     mockRoute = {
       key: 'k2',
       name: 'CashToCashConfirm',
-      params: { senderPhone, beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-restart-FRESH-K2' },
+      params: {
+        senderPhone,
+        beneficiaryPhone,
+        amountMinor: '500000',
+        idempotencyKey: 'c2c-restart-FRESH-K2',
+      },
     };
     const second = wrap(<CashToCashConfirmScreen />);
     fireEvent.changeText(second.getByTestId('c2c-pin-input'), '4321');
     fireEvent.press(second.getByTestId('c2c-confirm-submit'));
-    await waitFor(() => expect(mockApi.recoverCashToCashFunding).toHaveBeenCalledWith('c2c-restart-original'));
-    await waitFor(() => expect(mockApi.handoffCashToCashOperation).toHaveBeenCalledWith('c2c-restart-original','UNKNOWN_OUTCOME'));
+    await waitFor(() =>
+      expect(mockApi.recoverCashToCashFunding).toHaveBeenCalledWith('c2c-restart-original'),
+    );
+    await waitFor(() =>
+      expect(mockApi.handoffCashToCashOperation).toHaveBeenCalledWith(
+        'c2c-restart-original',
+        'UNKNOWN_OUTCOME',
+      ),
+    );
     expect(mockApi.agentCashToCash).not.toHaveBeenCalled();
   });
 
   test('recovered funding without one-time code creates support handoff without another debit', async () => {
-    await savePendingAgentOperation({agentId,operationType:'CASH_TO_CASH_SEND',idempotencyKey:'funding-lost-code',counterpartyId:`${senderPhone}->${beneficiaryPhone}`,amountMinor:'500000',currency:'NGN',createdAt:'2020-01-01T00:00:00.000Z'});
-    mockApi.recoverCashToCashFunding.mockResolvedValueOnce({status:'FOUND',transferId:'transfer-id',lifecycleStatus:'UNCLAIMED'});
-    mockApi.handoffCashToCashOperation.mockResolvedValueOnce({id:'support-id',status:'UNRESOLVED'});
-    mockRoute={key:'k',name:'CashToCashConfirm',params:{senderPhone,beneficiaryPhone,amountMinor:'500000',idempotencyKey:'new-key'}};
-    const view=wrap(<CashToCashConfirmScreen />);
-    fireEvent.changeText(view.getByTestId('c2c-pin-input'),'4321');
+    await savePendingAgentOperation({
+      agentId,
+      operationType: 'CASH_TO_CASH_SEND',
+      idempotencyKey: 'funding-lost-code',
+      counterpartyId: `${senderPhone}->${beneficiaryPhone}`,
+      amountMinor: '500000',
+      currency: 'NGN',
+      createdAt: '2020-01-01T00:00:00.000Z',
+    });
+    mockApi.recoverCashToCashFunding.mockResolvedValueOnce({
+      status: 'FOUND',
+      transferId: 'transfer-id',
+      lifecycleStatus: 'UNCLAIMED',
+    });
+    mockApi.handoffCashToCashOperation.mockResolvedValueOnce({
+      id: 'support-id',
+      status: 'UNRESOLVED',
+    });
+    mockRoute = {
+      key: 'k',
+      name: 'CashToCashConfirm',
+      params: { senderPhone, beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'new-key' },
+    };
+    const view = wrap(<CashToCashConfirmScreen />);
+    fireEvent.changeText(view.getByTestId('c2c-pin-input'), '4321');
     fireEvent.press(view.getByTestId('c2c-confirm-submit'));
-    await waitFor(()=>expect(view.getByTestId('c2c-confirm-error').props.children).toMatch(/one-time code cannot be recovered/));
-    expect(mockApi.handoffCashToCashOperation).toHaveBeenCalledWith('funding-lost-code','LOST_TRANSFER_CODE');
+    await waitFor(() =>
+      expect(view.getByTestId('c2c-confirm-error').props.children).toMatch(
+        /one-time code cannot be recovered/,
+      ),
+    );
+    expect(mockApi.handoffCashToCashOperation).toHaveBeenCalledWith(
+      'funding-lost-code',
+      'LOST_TRANSFER_CODE',
+    );
     expect(mockApi.agentCashToCash).not.toHaveBeenCalled();
-    expect((await loadPendingAgentOperation(agentId,'CASH_TO_CASH_SEND'))?.idempotencyKey).toBe('funding-lost-code');
+    expect((await loadPendingAgentOperation(agentId, 'CASH_TO_CASH_SEND'))?.idempotencyKey).toBe(
+      'funding-lost-code',
+    );
   });
 
   test('3. success clears the persisted operation', async () => {
     mockRoute = {
       key: 'k1',
       name: 'CashToCashConfirm',
-      params: { senderPhone, beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-success-clear' },
+      params: {
+        senderPhone,
+        beneficiaryPhone,
+        amountMinor: '500000',
+        idempotencyKey: 'c2c-success-clear',
+      },
     };
     mockApi.agentCashToCash.mockResolvedValueOnce(cashToCashResult);
     const { getByTestId } = wrap(<CashToCashConfirmScreen />);
@@ -669,31 +753,52 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     mockRoute = {
       key: 'k1',
       name: 'CashToCashConfirm',
-      params: { senderPhone, beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-definitive-reject' },
+      params: {
+        senderPhone,
+        beneficiaryPhone,
+        amountMinor: '500000',
+        idempotencyKey: 'c2c-definitive-reject',
+      },
     };
-    mockApi.agentCashToCash.mockRejectedValueOnce(apiError('Transaction PIN invalid: PIN_INVALID', 401));
+    mockApi.agentCashToCash.mockRejectedValueOnce(
+      apiError('Transaction PIN invalid: PIN_INVALID', 401),
+    );
     const first = wrap(<CashToCashConfirmScreen />);
     fireEvent.changeText(first.getByTestId('c2c-pin-input'), '4321');
     fireEvent.press(first.getByTestId('c2c-confirm-submit'));
     await waitFor(() =>
-      expect(first.getByTestId('c2c-confirm-error').props.children).toBe('Incorrect transaction PIN. Try again.'),
+      expect(first.getByTestId('c2c-confirm-error').props.children).toBe(
+        'Incorrect transaction PIN. Try again.',
+      ),
     );
     await waitFor(async () =>
-      expect((await loadPendingAgentOperation(agentId, 'CASH_TO_CASH_SEND'))?.idempotencyKey).toBe('c2c-definitive-reject'),
+      expect((await loadPendingAgentOperation(agentId, 'CASH_TO_CASH_SEND'))?.idempotencyKey).toBe(
+        'c2c-definitive-reject',
+      ),
     );
     first.unmount();
 
-    mockApi.recoverCashToCashFunding.mockResolvedValueOnce({status:'UNKNOWN'});
-    mockApi.handoffCashToCashOperation.mockResolvedValueOnce({id:'support-ref',status:'UNRESOLVED'});
+    mockApi.recoverCashToCashFunding.mockResolvedValueOnce({ status: 'UNKNOWN' });
+    mockApi.handoffCashToCashOperation.mockResolvedValueOnce({
+      id: 'support-ref',
+      status: 'UNRESOLVED',
+    });
     mockRoute = {
       key: 'k2',
       name: 'CashToCashConfirm',
-      params: { senderPhone, beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-clean-retry-key' },
+      params: {
+        senderPhone,
+        beneficiaryPhone,
+        amountMinor: '500000',
+        idempotencyKey: 'c2c-clean-retry-key',
+      },
     };
     const second = wrap(<CashToCashConfirmScreen />);
     fireEvent.changeText(second.getByTestId('c2c-pin-input'), '4321');
     fireEvent.press(second.getByTestId('c2c-confirm-submit'));
-    await waitFor(() => expect(mockApi.recoverCashToCashFunding).toHaveBeenCalledWith('c2c-definitive-reject'));
+    await waitFor(() =>
+      expect(mockApi.recoverCashToCashFunding).toHaveBeenCalledWith('c2c-definitive-reject'),
+    );
     expect(mockApi.agentCashToCash).toHaveBeenCalledTimes(1);
   });
 
@@ -711,12 +816,21 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     mockRoute = {
       key: 'k2',
       name: 'CashToCashConfirm',
-      params: { senderPhone, beneficiaryPhone, amountMinor: '900000', idempotencyKey: 'c2c-amount-b-own-key' },
+      params: {
+        senderPhone,
+        beneficiaryPhone,
+        amountMinor: '900000',
+        idempotencyKey: 'c2c-amount-b-own-key',
+      },
     };
     const second = wrap(<CashToCashConfirmScreen />);
     fireEvent.changeText(second.getByTestId('c2c-pin-input'), '4321');
     fireEvent.press(second.getByTestId('c2c-confirm-submit'));
-    await waitFor(() => expect(second.getByTestId('c2c-confirm-error').props.children).toMatch(/previous transfer is unresolved/i));
+    await waitFor(() =>
+      expect(second.getByTestId('c2c-confirm-error').props.children).toMatch(
+        /previous transfer is unresolved/i,
+      ),
+    );
     expect(mockApi.agentCashToCash).not.toHaveBeenCalled();
     second.unmount();
 
@@ -743,7 +857,11 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     const third = wrap(<CashToCashConfirmScreen />);
     fireEvent.changeText(third.getByTestId('c2c-pin-input'), '4321');
     fireEvent.press(third.getByTestId('c2c-confirm-submit'));
-    await waitFor(() => expect(third.getByTestId('c2c-confirm-error').props.children).toMatch(/previous transfer is unresolved/i));
+    await waitFor(() =>
+      expect(third.getByTestId('c2c-confirm-error').props.children).toMatch(
+        /previous transfer is unresolved/i,
+      ),
+    );
     expect(mockApi.agentCashToCash).not.toHaveBeenCalled();
   });
 
@@ -751,9 +869,17 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     mockRoute = {
       key: 'k-loc',
       name: 'CashToCashConfirm',
-      params: { senderPhone, beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-locator-retry-k1' },
+      params: {
+        senderPhone,
+        beneficiaryPhone,
+        amountMinor: '500000',
+        idempotencyKey: 'c2c-locator-retry-k1',
+      },
     };
-    const locatorErr = apiError('Unable to allocate transfer number; retry unchanged request', 409) as Error & {
+    const locatorErr = apiError(
+      'Unable to allocate transfer number; retry unchanged request',
+      409,
+    ) as Error & {
       status: number;
       code?: string;
     };

@@ -65,7 +65,10 @@ export const CashToWalletRecipientScreen: React.FC = () => {
   const eligible = recipient?.ownerType === 'CUSTOMER' && recipient?.status === 'ACTIVE';
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.flex}
+    >
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>Receive cash / credit a wallet</Text>
         <Text style={styles.helper}>
@@ -107,7 +110,9 @@ export const CashToWalletRecipientScreen: React.FC = () => {
         )}
 
         {resolveMutation.isPending && (
-          <Text style={styles.muted} testID="recipient-resolving">Verifying recipient…</Text>
+          <Text style={styles.muted} testID="recipient-resolving">
+            Verifying recipient…
+          </Text>
         )}
 
         {recipient && (
@@ -115,7 +120,9 @@ export const CashToWalletRecipientScreen: React.FC = () => {
             <Text style={styles.sectionTitle}>
               {recipient.ownerType === 'CUSTOMER' ? 'Customer wallet' : 'Agent wallet'}
             </Text>
-            <Text style={styles.displayName} testID="recipient-display">{recipient.display}</Text>
+            <Text style={styles.displayName} testID="recipient-display">
+              {recipient.display}
+            </Text>
             <Text selectable style={styles.receivingNumber} testID="recipient-number">
               {recipient.receivingNumber}
             </Text>

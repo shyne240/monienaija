@@ -93,10 +93,14 @@ describe('Batch 1 customer directory', () => {
       'customer.close',
     ]);
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-      if (path === '/internal/a2/workforce/dashboard/my-dashboard') return Promise.resolve(dashboard);
+      if (path === '/internal/a2/workforce/dashboard/my-dashboard')
+        return Promise.resolve(dashboard);
       return Promise.resolve(directoryResponse());
     });
-    (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'cust-created', reference: 'mn-••••9876' });
+    (ApiClient.post as jest.Mock).mockResolvedValue({
+      id: 'cust-created',
+      reference: 'mn-••••9876',
+    });
   });
 
   test('a new workforce session never inherits the previous customer directory', async () => {
@@ -104,7 +108,12 @@ describe('Batch 1 customer directory', () => {
     await view.findByText('Synthetic Directory Alpha');
     (ApiClient.get as jest.Mock).mockRejectedValue(new Error('unavailable'));
     const principal = useAuthStore.getState().principal!;
-    act(() => useAuthStore.setState({ sessionId:'new-session', principal:{ ...principal, principalId:'new-user', sessionId:'new-session' } }));
+    act(() =>
+      useAuthStore.setState({
+        sessionId: 'new-session',
+        principal: { ...principal, principalId: 'new-user', sessionId: 'new-session' },
+      }),
+    );
     expect(await view.findByText('Customer records could not be loaded. Try again.')).toBeTruthy();
     expect(view.queryByText('Synthetic Directory Alpha')).toBeNull();
   });
@@ -115,8 +124,8 @@ describe('Batch 1 customer directory', () => {
     expect(await view.findByText('Synthetic Directory Alpha')).toBeTruthy();
     expect(view.getByText('mn-••••5678')).toBeTruthy();
     expect(view.getByText('+234*****4321')).toBeTruthy();
-    expect((view.getAllByText('ACTIVE')).length).toBeGreaterThan(0);
-    expect((view.getAllByText('LEVEL_1')).length).toBeGreaterThan(0);
+    expect(view.getAllByText('ACTIVE').length).toBeGreaterThan(0);
+    expect(view.getAllByText('LEVEL_1').length).toBeGreaterThan(0);
     expect(ApiClient.get).toHaveBeenCalledWith('/internal/customers?page=1&limit=20');
     expect(view.queryByText('mn-0000000000')).toBeNull();
     expect(view.container.querySelector('pre')).toBeNull();
@@ -171,7 +180,12 @@ describe('Batch 1 customer directory', () => {
     };
     (ApiClient.post as jest.Mock).mockImplementation((path: string) => {
       if (path === '/customers') return Promise.resolve(created);
-      if (path.endsWith('/registration-profile')) return Promise.resolve({ id: 'profile-created', customerId: 'cust-created', displayName: 'Synthetic New Customer' });
+      if (path.endsWith('/registration-profile'))
+        return Promise.resolve({
+          id: 'profile-created',
+          customerId: 'cust-created',
+          displayName: 'Synthetic New Customer',
+        });
       return Promise.resolve({});
     });
 
@@ -212,9 +226,16 @@ describe('Batch 1 customer directory', () => {
   });
 
   test('closing the embedded registration restores focus to its directory trigger', async () => {
-    setPrincipal(['customer.view','customer.create']);const view=render(<CustomerDirectoryScreen/>);await view.findByText('Synthetic Directory Alpha');
-    const toggle=view.getByRole('button',{name:'New Customer'});toggle.focus();fireEvent.click(toggle);expect(document.activeElement).toBe(view.getByRole('heading',{name:'Customer details'}));
-    fireEvent.click(view.getByRole('region',{name:'New customer registration'}).querySelector('button')!);expect(document.activeElement).toBe(view.getByRole('button',{name:'New Customer'}));
+    setPrincipal(['customer.view', 'customer.create']);
+    const view = render(<CustomerDirectoryScreen />);
+    await view.findByText('Synthetic Directory Alpha');
+    const toggle = view.getByRole('button', { name: 'New Customer' });
+    toggle.focus();
+    fireEvent.click(toggle);
+    expect(document.activeElement).toBe(view.getByRole('heading', { name: 'Customer details' }));
+    fireEvent.click(
+      view.getByRole('region', { name: 'New customer registration' }).querySelector('button')!,
+    );
+    expect(document.activeElement).toBe(view.getByRole('button', { name: 'New Customer' }));
   });
-
 });

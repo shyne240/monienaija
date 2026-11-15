@@ -228,12 +228,19 @@ export async function requestAgentMfaChallenge(
   customerId: string,
   purpose: MfaChallengePurpose,
   ttlSeconds?: number,
-  cashOutContext?: {
-    amountMinor: string;
-    currency: string;
-    operationKey: string;
-    supersedesOperationKey?: string;
-  } | { senderPhone: string; transferNumber: string; redemptionMethod: 'AGENT_CASH' | 'CUSTOMER_WALLET' } | { transferId: string; redemptionMethod: 'AGENT_CASH' | 'CUSTOMER_WALLET' },
+  cashOutContext?:
+    | {
+        amountMinor: string;
+        currency: string;
+        operationKey: string;
+        supersedesOperationKey?: string;
+      }
+    | {
+        senderPhone: string;
+        transferNumber: string;
+        redemptionMethod: 'AGENT_CASH' | 'CUSTOMER_WALLET';
+      }
+    | { transferId: string; redemptionMethod: 'AGENT_CASH' | 'CUSTOMER_WALLET' },
 ): Promise<AgentMfaChallenge> {
   const body: Record<string, unknown> = { customerId, purpose, ...(cashOutContext ?? {}) };
   if (ttlSeconds !== undefined) {
@@ -407,9 +414,27 @@ export async function agentCashToCash(
 export type CashToCashFundingRecovery =
   | { status: 'UNKNOWN' }
   | { status: 'EVIDENCE_REVIEW'; transferId?: string }
-  | { status: 'FOUND'; transferId: string; lifecycleStatus: 'UNCLAIMED' | 'CLAIMED' | 'CANCELLED' | 'EXPIRED'; principalMinor: string; currency: string; journalId: string; claimJournalId: string | null; disposition: 'PENDING' | null; senderPhone: string | null; transferNumber: string | null; createdAt: string; expiresAt: string; expiredAt: string | null };
-export async function recoverCashToCashFunding(idempotencyKey: string): Promise<CashToCashFundingRecovery> {
-  return ApiClient.post<CashToCashFundingRecovery>('api/v1/agents/cash-to-cash/recover-funding', { idempotencyKey });
+  | {
+      status: 'FOUND';
+      transferId: string;
+      lifecycleStatus: 'UNCLAIMED' | 'CLAIMED' | 'CANCELLED' | 'EXPIRED';
+      principalMinor: string;
+      currency: string;
+      journalId: string;
+      claimJournalId: string | null;
+      disposition: 'PENDING' | null;
+      senderPhone: string | null;
+      transferNumber: string | null;
+      createdAt: string;
+      expiresAt: string;
+      expiredAt: string | null;
+    };
+export async function recoverCashToCashFunding(
+  idempotencyKey: string,
+): Promise<CashToCashFundingRecovery> {
+  return ApiClient.post<CashToCashFundingRecovery>('api/v1/agents/cash-to-cash/recover-funding', {
+    idempotencyKey,
+  });
 }
 
 export async function handoffCashToCashOperation(

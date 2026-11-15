@@ -24,7 +24,8 @@ jest.mock('../src/services/agent-api', () => ({
   getAgentCashToCashClaim: jest.fn(),
   recoverAgentCashToCashClaimByNumber: jest.fn(),
   describeApiError: jest.requireActual('../src/services/agent-api').describeApiError,
-  describeCashToCashClaimError: jest.requireActual('../src/services/agent-api').describeCashToCashClaimError,
+  describeCashToCashClaimError: jest.requireActual('../src/services/agent-api')
+    .describeCashToCashClaimError,
 }));
 
 const mockApi = jest.requireMock('../src/services/agent-api') as {
@@ -101,7 +102,10 @@ const cashClaimResult: AgentCashToCashClaimResult = {
 
 function wrap(ui: React.ReactElement) {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false, gcTime: 0 } },
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false, gcTime: 0 },
+    },
   });
   return { client, ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>) };
 }
@@ -124,7 +128,9 @@ describe('Cash→Cash Claim — Step 1: Beneficiary Identification, Sender Phone
 
     await waitFor(() => expect(getByTestId('c2c-claim-customer-card')).toBeTruthy());
     expect(getByText('Cash→Cash Claim Assistance')).toBeTruthy();
-    expect(getByText(/beneficiary's Customer wallet or the claiming Agent's NGN float for cash payout/)).toBeTruthy();
+    expect(
+      getByText(/beneficiary's Customer wallet or the claiming Agent's NGN float for cash payout/),
+    ).toBeTruthy();
     expect(getByText('Emeka Obi')).toBeTruthy();
     expect(getByText('8012345678')).toBeTruthy();
     expect(getByText('Account status: ACTIVE')).toBeTruthy();
@@ -157,7 +163,10 @@ describe('Cash→Cash Claim — Step 1: Beneficiary Identification, Sender Phone
     expect(getByText(/exact 6-digit transfer number/)).toBeTruthy();
     expect(mockApi.resolveCustomerRecipient).not.toHaveBeenCalled();
 
-    fireEvent.changeText(getByTestId('c2c-claim-transfer-number-input'), '12345678-1234-1234-1234-1234567890ab');
+    fireEvent.changeText(
+      getByTestId('c2c-claim-transfer-number-input'),
+      '12345678-1234-1234-1234-1234567890ab',
+    );
     fireEvent.press(getByTestId('c2c-claim-verify-button'));
     expect(getByText(/not an internal UUID/)).toBeTruthy();
     expect(mockApi.resolveCustomerRecipient).not.toHaveBeenCalled();
@@ -175,7 +184,9 @@ describe('Cash→Cash Claim — Step 1: Beneficiary Identification, Sender Phone
 
     await waitFor(() =>
       expect(
-        getByText('Beneficiary customer not found. An active customer account is required to claim.'),
+        getByText(
+          'Beneficiary customer not found. An active customer account is required to claim.',
+        ),
       ).toBeTruthy(),
     );
     expect(queryByTestId('c2c-claim-customer-card')).toBeNull();
@@ -233,7 +244,9 @@ describe('Cash→Cash Claim — Step 2: Confirmation & Multi-party Verification'
   beforeEach(() => {
     jest.clearAllMocks();
     useAuthStore.setState({ agentId: 'agent-uuid-claim-1' });
-    mockApi.getAgentCashToCashClaim.mockRejectedValue(apiError('Cash-to-Cash claim not found for this Agent', 404));
+    mockApi.getAgentCashToCashClaim.mockRejectedValue(
+      apiError('Cash-to-Cash claim not found for this Agent', 404),
+    );
     mockRoute = { key: 'k', name: 'CashToCashClaimConfirm', params };
   });
 
@@ -250,17 +263,21 @@ describe('Cash→Cash Claim — Step 2: Confirmation & Multi-party Verification'
     mockApi.getAgentCashToCashClaim.mockResolvedValue(replayedResult);
     const { queryByTestId } = wrap(<CashToCashClaimConfirmScreen />);
 
-    await waitFor(() => expect(mockReset).toHaveBeenCalledWith({
-      index: 0,
-      routes: [{
-        name: 'CashToCashClaimSuccess',
-        params: {
-          result: replayedResult,
-          customerDisplay: 'Emeka Obi',
-          customerReceivingNumber: '8012345678',
-        },
-      }],
-    }));
+    await waitFor(() =>
+      expect(mockReset).toHaveBeenCalledWith({
+        index: 0,
+        routes: [
+          {
+            name: 'CashToCashClaimSuccess',
+            params: {
+              result: replayedResult,
+              customerDisplay: 'Emeka Obi',
+              customerReceivingNumber: '8012345678',
+            },
+          },
+        ],
+      }),
+    );
     expect(mockApi.agentCashToCashClaim).not.toHaveBeenCalled();
     expect(queryByTestId('c2c-claim-mfa-card')).toBeNull();
   });
@@ -349,7 +366,9 @@ describe('Cash→Cash Claim — Step 2: Confirmation & Multi-party Verification'
     await waitForClaimForm(getByTestId);
     fireEvent.press(getByTestId('c2c-claim-method-cash'));
     expect(getByTestId('c2c-claim-method-cash').props.accessibilityState.checked).toBe(true);
-    expect(getByTestId('c2c-claim-method-note').props.children).toMatch(/current approved Customer KYC assessment/);
+    expect(getByTestId('c2c-claim-method-note').props.children).toMatch(
+      /current approved Customer KYC assessment/,
+    );
     const methodIntro = getByTestId('c2c-redemption-method-intro').props.children as string;
     expect(methodIntro).toMatch(/current approved Customer KYC assessment/);
     expect(methodIntro).not.toMatch(/authorized|supervisor|workforce/i);
@@ -365,14 +384,16 @@ describe('Cash→Cash Claim — Step 2: Confirmation & Multi-party Verification'
     fireEvent.changeText(getByTestId('c2c-claim-agent-pin-input'), '1234');
     fireEvent.press(getByTestId('c2c-claim-submit'));
 
-    await waitFor(() => expect(mockApi.agentCashToCashClaim).toHaveBeenCalledWith(
-      expect.objectContaining({
-        redemptionMethod: 'AGENT_CASH',
-        agentPin: '1234',
-        transferCode: '87654321',
-        otp: '123456',
-      }),
-    ));
+    await waitFor(() =>
+      expect(mockApi.agentCashToCashClaim).toHaveBeenCalledWith(
+        expect.objectContaining({
+          redemptionMethod: 'AGENT_CASH',
+          agentPin: '1234',
+          transferCode: '87654321',
+          otp: '123456',
+        }),
+      ),
+    );
     await waitFor(() => expect(mockReset).toHaveBeenCalled());
     expect(getByTestId('c2c-claim-agent-pin-input').props.value).toBe('');
     const navigationPayload = JSON.stringify(mockReset.mock.calls[0]?.[0]);
@@ -384,7 +405,10 @@ describe('Cash→Cash Claim — Step 2: Confirmation & Multi-party Verification'
     mockApi.requestAgentMfaChallenge.mockResolvedValue(mfaChallenge);
     let resolveIt: (v: any) => void = () => {};
     mockApi.agentCashToCashClaim.mockImplementation(
-      () => new Promise((res) => { resolveIt = res; }),
+      () =>
+        new Promise((res) => {
+          resolveIt = res;
+        }),
     );
     const { getByTestId } = wrap(<CashToCashClaimConfirmScreen />);
 
@@ -577,7 +601,9 @@ describe('Cash→Cash Claim — Step 2: Confirmation & Multi-party Verification'
 
   test('server error translations: 500 internal error is sanitized', async () => {
     mockApi.requestAgentMfaChallenge.mockResolvedValue(mfaChallenge);
-    mockApi.agentCashToCashClaim.mockRejectedValue(apiError('PostgreSQL constraint violation at tx_88', 500));
+    mockApi.agentCashToCashClaim.mockRejectedValue(
+      apiError('PostgreSQL constraint violation at tx_88', 500),
+    );
     const { getByTestId } = wrap(<CashToCashClaimConfirmScreen />);
 
     await waitForClaimForm(getByTestId);
@@ -633,7 +659,9 @@ describe('Cash→Cash Claim — Step 2: Confirmation & Multi-party Verification'
     fireEvent.press(getByTestId('c2c-claim-submit'));
 
     await waitFor(() => expect(mockReset).toHaveBeenCalled());
-    expect(spy).toHaveBeenCalledWith({ queryKey: ['agent-financial-position', 'agent-uuid-claim-1'] });
+    expect(spy).toHaveBeenCalledWith({
+      queryKey: ['agent-financial-position', 'agent-uuid-claim-1'],
+    });
     expect(spy).toHaveBeenCalledWith({ queryKey: ['agent-transactions', 'agent-uuid-claim-1'] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ['agent-history', 'agent-uuid-claim-1'] });
   });
@@ -676,7 +704,9 @@ describe('Cash→Cash Claim — Step 2: Confirmation & Multi-party Verification'
 
   test('Agent-cash PIN invalid (401) and PIN locked (401) translate to specific PIN messages without session purge', async () => {
     mockApi.requestAgentMfaChallenge.mockResolvedValue(mfaChallenge);
-    mockApi.agentCashToCashClaim.mockRejectedValueOnce(apiError('Agent PIN invalid: PIN_INVALID', 401));
+    mockApi.agentCashToCashClaim.mockRejectedValueOnce(
+      apiError('Agent PIN invalid: PIN_INVALID', 401),
+    );
     const { getByTestId } = wrap(<CashToCashClaimConfirmScreen />);
 
     await waitForClaimForm(getByTestId);
@@ -724,9 +754,7 @@ describe('Cash→Cash Claim — Step 2: Confirmation & Multi-party Verification'
       ),
     ).toContain('Cash payout requires a current approved Customer KYC assessment');
     expect(
-      describeCashToCashClaimError(
-        apiError('Agent does not have CASH_TO_CASH capability', 403),
-      ),
+      describeCashToCashClaimError(apiError('Agent does not have CASH_TO_CASH capability', 403)),
     ).toBe('This Agent is not currently authorized for Cash-to-Cash cash redemption.');
   });
 
@@ -826,7 +854,9 @@ describe('Cash→Cash Claim — Step 3: Customer-Wallet Credit Receipt', () => {
     expect(getByTestId('c2c-claim-wallet-credit-amount').props.children).toBe('₦4,500.00 NGN');
     expect(getByText('Customer wallet credited')).toBeTruthy();
     expect(getByText(/This transaction did not pay physical cash/)).toBeTruthy();
-    expect(getByText(/No physical cash handout is included in this wallet redemption/)).toBeTruthy();
+    expect(
+      getByText(/No physical cash handout is included in this wallet redemption/),
+    ).toBeTruthy();
   });
 
   test('renders shared receipt with zero internal database UUIDs or secrets', () => {
@@ -864,8 +894,12 @@ describe('Cash→Cash Claim — Step 3: Customer-Wallet Credit Receipt', () => {
     expect(getByTestId('c2c-claim-agent-float-amount').props.children).toBe('₦4,500.00 NGN');
     expect(getByText('Agent float credited')).toBeTruthy();
     expect(getByText('Cash→Cash Cash Payout Receipt')).toBeTruthy();
-    expect(within(getByTestId('c2c-claim-receipt')).getByText('Amount credited to Agent float')).toBeTruthy();
-    expect(within(getByTestId('c2c-claim-receipt')).getByText(/Physical cash handover is separate/)).toBeTruthy();
+    expect(
+      within(getByTestId('c2c-claim-receipt')).getByText('Amount credited to Agent float'),
+    ).toBeTruthy();
+    expect(
+      within(getByTestId('c2c-claim-receipt')).getByText(/Physical cash handover is separate/),
+    ).toBeTruthy();
     expect(queryByText('1234')).toBeNull();
   });
 
@@ -888,7 +922,9 @@ describe('Cash→Cash Claim — Step 3: Customer-Wallet Credit Receipt', () => {
   });
 
   test('receipt share text contains receipt details and zero secrets or internal IDs', async () => {
-    const shareSpy = jest.spyOn(Share, 'share').mockResolvedValueOnce({ action: 'sharedAction' } as never);
+    const shareSpy = jest
+      .spyOn(Share, 'share')
+      .mockResolvedValueOnce({ action: 'sharedAction' } as never);
     const { getByTestId } = wrap(<CashToCashClaimSuccessScreen />);
 
     fireEvent.press(getByTestId('receipt-share'));

@@ -30,10 +30,7 @@ export class KycTierTransitionService {
     private readonly reader: KycTierEvidenceReader,
     private readonly audit: AuditService,
     private readonly authorization: AuthorizationService,
-    private readonly sessions?: Pick<
-      AuthenticationSessionService,
-      'revokeAllForCustomerInManager'
-    >,
+    private readonly sessions?: Pick<AuthenticationSessionService, 'revokeAllForCustomerInManager'>,
   ) {}
   async reviews(principal: AuthorizationPrincipal | undefined) {
     if (!principal || !principal.sessionId || !UUID.test(principal.sessionId))

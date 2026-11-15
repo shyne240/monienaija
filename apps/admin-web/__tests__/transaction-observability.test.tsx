@@ -16,7 +16,13 @@ jest.mock('../src/services/api-client', () => ({
 // below lands on first) now makes one real `ApiClient.get` call on mount to load the caller's own
 // dashboard — always the first recorded call. Prefixed onto the sequential
 // `.mockResolvedValueOnce(...)` chain below so it still lines up with this screen's own call order.
-const DASHBOARD_FETCH_STUB = { templateKey: 'DEFAULT_FALLBACK', displayName: 'Default Dashboard', description: '', isFallback: true, widgets: [] };
+const DASHBOARD_FETCH_STUB = {
+  templateKey: 'DEFAULT_FALLBACK',
+  displayName: 'Default Dashboard',
+  description: '',
+  isFallback: true,
+  widgets: [],
+};
 
 describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', () => {
   beforeEach(() => {
@@ -33,7 +39,7 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
         sessionId: 'controller-sess',
         audience: 'workforce-admin',
         roles: ['SUPER_ADMIN'],
-        scopes: ['transaction.view','reporting.transaction_summary.view','fee_rule.view'],
+        scopes: ['transaction.view', 'reporting.transaction_summary.view', 'fee_rule.view'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },
@@ -59,7 +65,9 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
 
     fireEvent.click(getByText('Transfers'));
     fireEvent.click(document.querySelector('[data-testid="nav-cashIn"]')!);
-    fireEvent.change(getByPlaceholderText('e.g. 5e6f7g8h-...'), { target: { value: 'dep-uuid-777' } });
+    fireEvent.change(getByPlaceholderText('e.g. 5e6f7g8h-...'), {
+      target: { value: 'dep-uuid-777' },
+    });
     fireEvent.click(getByText('Track'));
 
     expect(ApiClient.get).toHaveBeenNthCalledWith(2, '/deposits/dep-uuid-777');
@@ -67,7 +75,9 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
     expect(await findByText('dep-ref-123')).toBeTruthy();
     expect(await findByText('PENDING')).toBeTruthy();
     expect(
-      await findByText('This view is read-only. A pending record cannot be completed here and is not evidence of external settlement.'),
+      await findByText(
+        'This view is read-only. A pending record cannot be completed here and is not evidence of external settlement.',
+      ),
     ).toBeTruthy();
     expect(queryByText('Trigger Sandbox Completion')).toBeNull();
     expect(ApiClient.post).not.toHaveBeenCalled();
@@ -75,9 +85,11 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
 
   test('should run fee simulator calculations and display gross output', async () => {
     const mockFeeResult = {
-      paymentType: 'VIRTUAL_ACCOUNT', currency: 'NGN', amountMinor: '100000',
+      paymentType: 'VIRTUAL_ACCOUNT',
+      currency: 'NGN',
+      amountMinor: '100000',
       feeMinor: '6000', // 60 Naira
-      vatMinor: '450',  // 4.50 Naira
+      vatMinor: '450', // 4.50 Naira
       totalMinor: '106450', // 1,064.50 Naira
     };
 

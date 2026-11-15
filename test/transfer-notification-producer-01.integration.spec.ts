@@ -161,9 +161,9 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
       await ds.query(
         `TRUNCATE ${rows.map((r) => `"${r.tablename}"`).join(', ')} RESTART IDENTITY CASCADE`,
       );
-      // Batch 2C: a wholesale TRUNCATE also empties the migration-seeded KYC singletons
-      // (tier policy head, provider configuration, synthetic provider lock).
-      await restoreKycSingletons(ds);
+    // Batch 2C: a wholesale TRUNCATE also empties the migration-seeded KYC singletons
+    // (tier policy head, provider configuration, synthetic provider lock).
+    await restoreKycSingletons(ds);
     await seedNotificationDefaultsV1(ds.manager);
     await seedNotificationDefaultsV2(ds.manager);
     const funding = await ledger.createAccount({

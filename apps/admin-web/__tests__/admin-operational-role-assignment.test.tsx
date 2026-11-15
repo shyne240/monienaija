@@ -37,14 +37,46 @@ function setPrincipal(roles: string[], scopes: string[]) {
 describe('Admin Web operational role governance', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (ApiClient.post as jest.Mock).mockImplementation((_url: string, body: any) => Promise.resolve({ assignmentReference:'synthetic-reference', assignmentVersion:1, status:'ACTIVE', principalId:body.targetPrincipalId, roleKey:body.roleKey, assignedBy:'issuer:ADMINISTRATOR', assignedAt:'2026-10-23T09:00:00Z', effectiveFrom:body.effectiveFrom, effectiveTo:body.effectiveTo }));
-    (ApiClient.delete as jest.Mock).mockResolvedValue({ assignmentReference:'synthetic-reference', assignmentVersion:1, status:'REVOKED', principalId:'issuer:operator-28', roleKey:'TREASURY', revokedBy:'issuer:ADMINISTRATOR', revokedAt:'2026-10-23T09:00:00Z' });
+    (ApiClient.post as jest.Mock).mockImplementation((_url: string, body: any) =>
+      Promise.resolve({
+        assignmentReference: 'synthetic-reference',
+        assignmentVersion: 1,
+        status: 'ACTIVE',
+        principalId: body.targetPrincipalId,
+        roleKey: body.roleKey,
+        assignedBy: 'issuer:ADMINISTRATOR',
+        assignedAt: '2026-10-23T09:00:00Z',
+        effectiveFrom: body.effectiveFrom,
+        effectiveTo: body.effectiveTo,
+      }),
+    );
+    (ApiClient.delete as jest.Mock).mockResolvedValue({
+      assignmentReference: 'synthetic-reference',
+      assignmentVersion: 1,
+      status: 'REVOKED',
+      principalId: 'issuer:operator-28',
+      roleKey: 'TREASURY',
+      revokedBy: 'issuer:ADMINISTRATOR',
+      revokedAt: '2026-10-23T09:00:00Z',
+    });
   });
 
   test('ADMINISTRATOR can assign only one of the six existing operational roles through the guarded endpoint', async () => {
     setPrincipal(['ADMINISTRATOR'], ['workforce.role.assign_operational']);
-    expect(canAccessAdminView('roleGovernance', ['workforce.role.assign_operational'], ['ADMINISTRATOR'])).toBe(true);
-    expect(canAccessAdminView('roleGovernance', ['workforce.role.assign_operational'], ['FINANCE_AUDITOR'])).toBe(false);
+    expect(
+      canAccessAdminView(
+        'roleGovernance',
+        ['workforce.role.assign_operational'],
+        ['ADMINISTRATOR'],
+      ),
+    ).toBe(true);
+    expect(
+      canAccessAdminView(
+        'roleGovernance',
+        ['workforce.role.assign_operational'],
+        ['FINANCE_AUDITOR'],
+      ),
+    ).toBe(false);
 
     const view = render(<RoleAssignmentScreen />);
     expect(view.getByText('Operational Role Assignments')).toBeTruthy();
@@ -57,10 +89,18 @@ describe('Admin Web operational role governance', () => {
     expect(view.getByRole('option', { name: 'TREASURY' })).toBeTruthy();
     expect(view.queryByRole('option', { name: /FINANCE_|SUPER_ADMIN/ })).toBeNull();
 
-    fireEvent.change(view.getByLabelText('Target Principal ID (e.g. issuer:subject)'), { target: { value: 'issuer:operator-27' } });
-    fireEvent.change(view.getByLabelText('Select Role Entitlement'), { target: { value: 'COMPLIANCE' } });
-    fireEvent.change(view.getByLabelText('Effective From'), { target: { value: '2026-10-23T10:00' } });
-    fireEvent.change(view.getByLabelText('Effective To'), { target: { value: '2027-10-23T10:00' } });
+    fireEvent.change(view.getByLabelText('Target Principal ID (e.g. issuer:subject)'), {
+      target: { value: 'issuer:operator-27' },
+    });
+    fireEvent.change(view.getByLabelText('Select Role Entitlement'), {
+      target: { value: 'COMPLIANCE' },
+    });
+    fireEvent.change(view.getByLabelText('Effective From'), {
+      target: { value: '2026-10-23T10:00' },
+    });
+    fireEvent.change(view.getByLabelText('Effective To'), {
+      target: { value: '2027-10-23T10:00' },
+    });
     fireEvent.click(view.getByRole('button', { name: 'Commit Role Assignment' }));
     fireEvent.click(view.getByRole('button', { name: 'Confirm role change' }));
 
@@ -79,21 +119,32 @@ describe('Admin Web operational role governance', () => {
     setPrincipal(['ADMINISTRATOR'], ['workforce.role.revoke_operational']);
     const view = render(<RoleAssignmentScreen />);
     expect(view.getByRole('button', { name: 'Revoke Operational Role' })).toBeTruthy();
-    fireEvent.change(view.getByLabelText('Target Principal ID (e.g. issuer:subject)'), { target: { value: 'issuer:operator-28' } });
-    fireEvent.change(view.getByLabelText('Select Role Entitlement'), { target: { value: 'TREASURY' } });
-    fireEvent.change(view.getByLabelText('Effective From'), { target: { value: '2026-10-23T10:00' } });
-    fireEvent.change(view.getByLabelText('Effective To'), { target: { value: '2027-10-23T10:00' } });
+    fireEvent.change(view.getByLabelText('Target Principal ID (e.g. issuer:subject)'), {
+      target: { value: 'issuer:operator-28' },
+    });
+    fireEvent.change(view.getByLabelText('Select Role Entitlement'), {
+      target: { value: 'TREASURY' },
+    });
+    fireEvent.change(view.getByLabelText('Effective From'), {
+      target: { value: '2026-10-23T10:00' },
+    });
+    fireEvent.change(view.getByLabelText('Effective To'), {
+      target: { value: '2027-10-23T10:00' },
+    });
     fireEvent.click(view.getByRole('button', { name: 'Execute Revocation' }));
     fireEvent.click(view.getByRole('button', { name: 'Confirm role change' }));
 
     await waitFor(() => {
-      expect(ApiClient.delete).toHaveBeenCalledWith('/internal/a2/workforce/roles/issuer%3Aoperator-28/TREASURY', {
-        body: {
-          effectiveFrom: new Date('2026-10-23T10:00').toISOString(),
-          effectiveTo: new Date('2027-10-23T10:00').toISOString(),
-          approvalIds: [],
+      expect(ApiClient.delete).toHaveBeenCalledWith(
+        '/internal/a2/workforce/roles/issuer%3Aoperator-28/TREASURY',
+        {
+          body: {
+            effectiveFrom: new Date('2026-10-23T10:00').toISOString(),
+            effectiveTo: new Date('2027-10-23T10:00').toISOString(),
+            approvalIds: [],
+          },
         },
-      });
+      );
       expect(view.getByText('Operational role revoked successfully.')).toBeTruthy();
     });
     expect(ApiClient.post).not.toHaveBeenCalled();
@@ -103,7 +154,9 @@ describe('Admin Web operational role governance', () => {
     setPrincipal(['SUPER_ADMIN'], ['workforce.role.assign']);
     const view = render(<RoleAssignmentScreen />);
     expect(view.getByText('Finance Role Assignments')).toBeTruthy();
-    expect(view.getByLabelText('Related Maker-Checker Approval IDs (comma separated, when required)')).toBeTruthy();
+    expect(
+      view.getByLabelText('Related Maker-Checker Approval IDs (comma separated, when required)'),
+    ).toBeTruthy();
     expect(view.queryByRole('option', { name: 'OPERATIONS' })).toBeNull();
   });
 });

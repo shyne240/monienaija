@@ -101,9 +101,9 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       // customer logs in first, then flips status afterwards (see suspension test below).
       return { customerId, token: '' };
     }
-      // The governed gate now runs when a session is issued, and this helper builds the
-      // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
-      await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
+    // The governed gate now runs when a session is issued, and this helper builds the
+    // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const login = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId, password })
@@ -452,9 +452,9 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
       [customerId, hash],
     );
-      // The governed gate now runs when a session is issued, and this helper builds the
-      // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
-      await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
+    // The governed gate now runs when a session is issued, and this helper builds the
+    // customer with raw SQL only. Complete it here; a non-ACTIVE customer is left alone.
+    await makeCustomerFinanciallyEligible(dataSource, customerId, kycEvidence);
     const res = await request(app.getHttpServer())
       .post('/api/v1/customers/sessions')
       .send({ customerId, password })

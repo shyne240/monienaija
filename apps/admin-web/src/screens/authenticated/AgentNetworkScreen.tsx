@@ -16,7 +16,10 @@ import {
 import { useAuthStore } from '../../store/auth-store';
 import { AgentFundingPanel } from './AgentFundingPanel';
 import { AgentCredentialPanel } from './AgentCredentialPanel';
-import { AgentClassAssignmentPanel, type AgentClassOption } from '../../components/AgentClassAssignmentPanel';
+import {
+  AgentClassAssignmentPanel,
+  type AgentClassOption,
+} from '../../components/AgentClassAssignmentPanel';
 import { AgentUnifiedHistoryPanel } from '../../components/AgentUnifiedHistoryPanel';
 import { AgentTransactionPinSupportPanel } from '../../components/AgentTransactionPinSupportPanel';
 
@@ -174,7 +177,8 @@ function buildApplicationPayload(form: AgentApplicationFormState): Record<string
   if (form.city.trim()) payload.city = form.city.trim();
   if (form.state.trim()) payload.state = form.state.trim();
   if (form.registrationNumber.trim()) payload.registrationNumber = form.registrationNumber.trim();
-  if (form.kycDocumentReference.trim()) payload.kycDocumentReference = form.kycDocumentReference.trim();
+  if (form.kycDocumentReference.trim())
+    payload.kycDocumentReference = form.kycDocumentReference.trim();
   if (form.notes.trim()) payload.notes = form.notes.trim();
 
   const cleanedClassInfo: Record<string, string> = {};
@@ -225,28 +229,70 @@ interface AgentCashToCashRow {
 // while Cash-to-Cash rows carry an Agent id and an already masked phone.
 function walletHistoryRows(response: any): WalletTransferRow[] | null {
   if (!Array.isArray(response?.items) || response.items.length > 10) return null;
-  const ids = new Set<string>(); const rows: WalletTransferRow[] = [];
+  const ids = new Set<string>();
+  const rows: WalletTransferRow[] = [];
   for (const row of response.items) {
-    if (!row || typeof row.transferId !== 'string' || !row.transferId || ids.has(row.transferId) ||
-        !['SENT', 'RECEIVED'].includes(row.direction) || typeof row.amountMinor !== 'string' || !/^-?\d+$/.test(row.amountMinor) ||
-        typeof row.currency !== 'string' || !/^[A-Z]{3}$/.test(row.currency) || typeof row.status !== 'string' || !row.status ||
-        (row.reference !== null && typeof row.reference !== 'string')) return null;
+    if (
+      !row ||
+      typeof row.transferId !== 'string' ||
+      !row.transferId ||
+      ids.has(row.transferId) ||
+      !['SENT', 'RECEIVED'].includes(row.direction) ||
+      typeof row.amountMinor !== 'string' ||
+      !/^-?\d+$/.test(row.amountMinor) ||
+      typeof row.currency !== 'string' ||
+      !/^[A-Z]{3}$/.test(row.currency) ||
+      typeof row.status !== 'string' ||
+      !row.status ||
+      (row.reference !== null && typeof row.reference !== 'string')
+    )
+      return null;
     ids.add(row.transferId);
-    rows.push({ id: row.transferId, direction: row.direction, amountMinor: row.amountMinor, currency: row.currency, status: row.status, reference: row.reference, createdAt: row.createdAt });
+    rows.push({
+      id: row.transferId,
+      direction: row.direction,
+      amountMinor: row.amountMinor,
+      currency: row.currency,
+      status: row.status,
+      reference: row.reference,
+      createdAt: row.createdAt,
+    });
   }
   return rows;
 }
 function c2cHistoryRows(response: any, agentId: string): AgentCashToCashRow[] | null {
   if (!Array.isArray(response?.data) || response.data.length > 10) return null;
-  const ids = new Set<string>(); const rows: AgentCashToCashRow[] = [];
+  const ids = new Set<string>();
+  const rows: AgentCashToCashRow[] = [];
   for (const row of response.data) {
-    if (!row || typeof row.id !== 'string' || !row.id || ids.has(row.id) || row.agentId !== agentId ||
-        typeof row.beneficiaryPhoneMasked !== 'string' || !/^•{4,}(?:\d{4})?$/.test(row.beneficiaryPhoneMasked) ||
-        typeof row.principalMinor !== 'string' || !/^-?\d+$/.test(row.principalMinor) ||
-        typeof row.currency !== 'string' || !/^[A-Z]{3}$/.test(row.currency) || !['UNCLAIMED', 'CLAIMED', 'EXPIRED'].includes(row.status) ||
-        (row.reference !== null && typeof row.reference !== 'string') || ![null, 'CUSTOMER_WALLET', 'AGENT_CASH'].includes(row.redemptionMethod)) return null;
+    if (
+      !row ||
+      typeof row.id !== 'string' ||
+      !row.id ||
+      ids.has(row.id) ||
+      row.agentId !== agentId ||
+      typeof row.beneficiaryPhoneMasked !== 'string' ||
+      !/^•{4,}(?:\d{4})?$/.test(row.beneficiaryPhoneMasked) ||
+      typeof row.principalMinor !== 'string' ||
+      !/^-?\d+$/.test(row.principalMinor) ||
+      typeof row.currency !== 'string' ||
+      !/^[A-Z]{3}$/.test(row.currency) ||
+      !['UNCLAIMED', 'CLAIMED', 'EXPIRED'].includes(row.status) ||
+      (row.reference !== null && typeof row.reference !== 'string') ||
+      ![null, 'CUSTOMER_WALLET', 'AGENT_CASH'].includes(row.redemptionMethod)
+    )
+      return null;
     ids.add(row.id);
-    rows.push({ id: row.id, beneficiaryPhoneMasked: row.beneficiaryPhoneMasked, principalMinor: row.principalMinor, currency: row.currency, status: row.status, reference: row.reference, redemptionMethod: row.redemptionMethod, createdAt: row.createdAt });
+    rows.push({
+      id: row.id,
+      beneficiaryPhoneMasked: row.beneficiaryPhoneMasked,
+      principalMinor: row.principalMinor,
+      currency: row.currency,
+      status: row.status,
+      reference: row.reference,
+      redemptionMethod: row.redemptionMethod,
+      createdAt: row.createdAt,
+    });
   }
   return rows;
 }
@@ -290,20 +336,56 @@ interface AgentLimitAssignmentRecord {
 }
 
 function validOutlet(value: any, agentId: string): value is OutletRecord {
-  return !!value && typeof value === 'object' && typeof value.id === 'string' && !!value.id.trim() && value.agentId === agentId &&
-    typeof value.reference === 'string' && !!value.reference.trim() && typeof value.name === 'string' &&
-    ['code', 'displayName', 'addressLine', 'city', 'state', 'country'].every(key => value[key] == null || typeof value[key] === 'string') &&
-    ['ACTIVE', 'SUSPENDED', 'TERMINATED'].includes(value.status) && Number.isSafeInteger(value.version) && value.version > 0;
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof value.id === 'string' &&
+    !!value.id.trim() &&
+    value.agentId === agentId &&
+    typeof value.reference === 'string' &&
+    !!value.reference.trim() &&
+    typeof value.name === 'string' &&
+    ['code', 'displayName', 'addressLine', 'city', 'state', 'country'].every(
+      (key) => value[key] == null || typeof value[key] === 'string',
+    ) &&
+    ['ACTIVE', 'SUSPENDED', 'TERMINATED'].includes(value.status) &&
+    Number.isSafeInteger(value.version) &&
+    value.version > 0
+  );
 }
 function validTerminal(value: any, agentId: string): value is TerminalRecord {
-  return !!value && typeof value === 'object' && typeof value.id === 'string' && !!value.id.trim() && value.agentId === agentId &&
-    typeof value.outletId === 'string' && !!value.outletId.trim() && typeof value.reference === 'string' && !!value.reference.trim() &&
-    ['code', 'label', 'serialNumber'].every(key => value[key] == null || typeof value[key] === 'string') &&
-    ['ACTIVE', 'SUSPENDED', 'TERMINATED'].includes(value.status) && Number.isSafeInteger(value.version) && value.version > 0;
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof value.id === 'string' &&
+    !!value.id.trim() &&
+    value.agentId === agentId &&
+    typeof value.outletId === 'string' &&
+    !!value.outletId.trim() &&
+    typeof value.reference === 'string' &&
+    !!value.reference.trim() &&
+    ['code', 'label', 'serialNumber'].every(
+      (key) => value[key] == null || typeof value[key] === 'string',
+    ) &&
+    ['ACTIVE', 'SUSPENDED', 'TERMINATED'].includes(value.status) &&
+    Number.isSafeInteger(value.version) &&
+    value.version > 0
+  );
 }
 function validAgentLimit(value: any, agentId: string): value is AgentLimitAssignmentRecord {
-  return !!value && typeof value === 'object' && typeof value.id === 'string' && !!value.id.trim() && value.subjectType === 'AGENT' && value.subjectId === agentId &&
-    typeof value.limitProfileCode === 'string' && !!value.limitProfileCode.trim() && typeof value.isActive === 'boolean' && Number.isSafeInteger(value.version) && value.version > 0;
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof value.id === 'string' &&
+    !!value.id.trim() &&
+    value.subjectType === 'AGENT' &&
+    value.subjectId === agentId &&
+    typeof value.limitProfileCode === 'string' &&
+    !!value.limitProfileCode.trim() &&
+    typeof value.isActive === 'boolean' &&
+    Number.isSafeInteger(value.version) &&
+    value.version > 0
+  );
 }
 function operationUncertain(error: any): boolean {
   return ![400, 401, 403, 404, 422].includes(error?.status);
@@ -372,7 +454,17 @@ const EMPTY_TERMINAL_FORM = {
 
 export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = (props) => {
   const { principal, sessionId } = useAuthStore();
-  const contextKey = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  const contextKey = JSON.stringify([
+    sessionId,
+    principal?.principalId,
+    principal?.sessionId,
+    principal?.type,
+    principal?.roles,
+    principal?.scopes,
+    principal?.assuranceLevel,
+    principal?.customerAccess,
+    principal?.readOnlyPrincipal,
+  ]);
   return <AgentNetworkWorkspace key={contextKey} {...props} />;
 };
 
@@ -384,18 +476,34 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 }) => {
   const { principal } = useAuthStore();
   const mountedRef = useRef(true);
-  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const [fundingGuard, setFundingGuard] = useState(false);
   const [fundingBusy, setFundingBusy] = useState(false);
-  const reportFundingGuard = useCallback((guarded: boolean, busy: boolean) => { setFundingGuard(guarded); setFundingBusy(busy); }, []);
-  const mayChangeFundingTarget = () => !fundingBusy && (!fundingGuard || window.confirm('Change funding target? Unsaved entries and local review locks will be lost. An earlier request or posting may have occurred; inspect funding, approval, ledger and audit records.'));
+  const reportFundingGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setFundingGuard(guarded);
+    setFundingBusy(busy);
+  }, []);
+  const mayChangeFundingTarget = () =>
+    !fundingBusy &&
+    (!fundingGuard ||
+      window.confirm(
+        'Change funding target? Unsaved entries and local review locks will be lost. An earlier request or posting may have occurred; inspect funding, approval, ledger and audit records.',
+      ));
   const [credentialGuard, setCredentialGuard] = useState(false);
   const [credentialBusy, setCredentialBusy] = useState(false);
   const [lifecycleUnconfirmed, setLifecycleUnconfirmed] = useState(false);
   const [lifecycleReviewStatus, setLifecycleReviewStatus] = useState<string | null>(null);
   const [lifecycleReviewBusy, setLifecycleReviewBusy] = useState(false);
   const lifecycleInFlight = useRef(false);
-  const reportCredentialGuard = useCallback((guarded: boolean, busy: boolean) => { setCredentialGuard(guarded); setCredentialBusy(busy); }, []);
+  const reportCredentialGuard = useCallback((guarded: boolean, busy: boolean) => {
+    setCredentialGuard(guarded);
+    setCredentialBusy(busy);
+  }, []);
   useEffect(() => () => onAgentGuardChange?.(false, false), [onAgentGuardChange]);
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
   const canView = hasFn('agent.view');
@@ -409,9 +517,12 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const canActivate = hasFn('agent.activate') && !principal?.readOnlyPrincipal;
   const canLifecycle = canSuspend || canTerminate || canReactivate || canActivate;
   const canManageCredentials = hasFn('agent.manage_credentials') && !principal?.readOnlyPrincipal;
-  const canReviewApplications = hasFn('agent.review_application') && (principal?.type === 'OPERATOR' || principal?.type === 'PRIVILEGED');
+  const canReviewApplications =
+    hasFn('agent.review_application') &&
+    (principal?.type === 'OPERATOR' || principal?.type === 'PRIVILEGED');
   const canChangeApplications = canReviewApplications && !principal?.readOnlyPrincipal;
-  const canManageOutletsTerminals = hasFn('agent.manage_outlets_terminals') && !principal?.readOnlyPrincipal;
+  const canManageOutletsTerminals =
+    hasFn('agent.manage_outlets_terminals') && !principal?.readOnlyPrincipal;
   const canAssignLimit = hasFn('agent.assign_limit') && !principal?.readOnlyPrincipal;
   const isOperatorOrPrivilegedWorkforce = ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(
     principal?.type ?? '',
@@ -505,7 +616,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const [outletReviewReady, setOutletReviewReady] = useState(false);
   const outletWriteInFlight = useRef(false);
   const outletReadGeneration = useRef(0);
-  const outletDraft = Object.values(outletForm).some(value => value.trim()) ||
+  const outletDraft =
+    Object.values(outletForm).some((value) => value.trim()) ||
     Object.entries(terminalForm).some(([key, value]) => key !== 'outletId' && value.trim()) ||
     Boolean(editingOutletId || editingTerminalId);
   // Agent applications queue + onboarding form (scope: agent.review_application)
@@ -520,7 +632,9 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const [applicationsMsg, setApplicationsMsg] = useState('');
   const [applications, setApplications] = useState<AgentApplicationRecord[]>([]);
   const [applicationStatusFilter, setApplicationStatusFilter] = useState('');
-  const [inspectedApplication, setInspectedApplication] = useState<AgentApplicationRecord | null>(null);
+  const [inspectedApplication, setInspectedApplication] = useState<AgentApplicationRecord | null>(
+    null,
+  );
   const [inspectAppLoading, setInspectAppLoading] = useState(false);
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
   const [applicationBusyId, setApplicationBusyId] = useState<string | null>(null);
@@ -540,26 +654,63 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const applicationBaseline = useRef<AgentApplicationFormState>(EMPTY_APPLICATION_FORM);
   const keepEditingRef = useRef<HTMLButtonElement>(null);
   const cancelApplicationRef = useRef<HTMLButtonElement>(null);
-  const detailGuard = credentialGuard || credentialBusy || lifecycleUnconfirmed || lifecycleBusy || lifecycleReviewBusy || outletDraft || outletBusy || outletUnconfirmed || Boolean(newLimitProfileCode.trim()) || limitsBusy || limitUnconfirmed;
-  const detailBusy = credentialBusy || lifecycleBusy || lifecycleReviewBusy || outletBusy || limitsBusy;
-  const applicationDraft = onboardingOpen && JSON.stringify(applicationForm) !== JSON.stringify(applicationBaseline.current);
-  const applicationGuard = applicationDraft || onboardingUnconfirmed || applicationsReviewPending || onboardingBusy || Boolean(applicationBusyId) || Object.values(rejectReasons).some(reason => reason.trim());
+  const detailGuard =
+    credentialGuard ||
+    credentialBusy ||
+    lifecycleUnconfirmed ||
+    lifecycleBusy ||
+    lifecycleReviewBusy ||
+    outletDraft ||
+    outletBusy ||
+    outletUnconfirmed ||
+    Boolean(newLimitProfileCode.trim()) ||
+    limitsBusy ||
+    limitUnconfirmed;
+  const detailBusy =
+    credentialBusy || lifecycleBusy || lifecycleReviewBusy || outletBusy || limitsBusy;
+  const applicationDraft =
+    onboardingOpen &&
+    JSON.stringify(applicationForm) !== JSON.stringify(applicationBaseline.current);
+  const applicationGuard =
+    applicationDraft ||
+    onboardingUnconfirmed ||
+    applicationsReviewPending ||
+    onboardingBusy ||
+    Boolean(applicationBusyId) ||
+    Object.values(rejectReasons).some((reason) => reason.trim());
   const agentGuard = detailGuard || applicationGuard || fundingGuard;
   const agentBusy = detailBusy || fundingBusy || onboardingBusy || Boolean(applicationBusyId);
-  useEffect(() => { onAgentGuardChange?.(agentGuard, agentBusy); }, [onAgentGuardChange, agentGuard, agentBusy]);
+  useEffect(() => {
+    onAgentGuardChange?.(agentGuard, agentBusy);
+  }, [onAgentGuardChange, agentGuard, agentBusy]);
   useEffect(() => {
     if (!agentGuard) return;
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
-    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
   }, [agentGuard]);
   const mayLeaveAgent = () => {
-    if (detailBusy || lifecycleInFlight.current || outletWriteInFlight.current || limitWriteInFlight.current) return false;
-    return !detailGuard || window.confirm('Leave this Agent? Unsaved outlet, terminal or limit entries, a visible one-time credential, and local review locks will be lost. An action may have occurred; inspect Agent records and audit history before acting again.');
+    if (
+      detailBusy ||
+      lifecycleInFlight.current ||
+      outletWriteInFlight.current ||
+      limitWriteInFlight.current
+    )
+      return false;
+    return (
+      !detailGuard ||
+      window.confirm(
+        'Leave this Agent? Unsaved outlet, terminal or limit entries, a visible one-time credential, and local review locks will be lost. An action may have occurred; inspect Agent records and audit history before acting again.',
+      )
+    );
   };
 
-
-
-  useEffect(() => { if (confirmDiscardApplication) keepEditingRef.current?.focus(); }, [confirmDiscardApplication]);
+  useEffect(() => {
+    if (confirmDiscardApplication) keepEditingRef.current?.focus();
+  }, [confirmDiscardApplication]);
 
   // On-demand catalogs & transaction observability
   const [classCatalog, setClassCatalog] = useState<AgentClassFullOption[]>([]);
@@ -575,7 +726,9 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const [agentHistoryLoaded, setAgentHistoryLoaded] = useState(false);
   const [agentHistoryLoading, setAgentHistoryLoading] = useState(false);
   const [agentHistoryError, setAgentHistoryError] = useState('');
-  const [walletHistoryState, setWalletHistoryState] = useState<'unavailable' | 'no-wallet' | 'loaded' | 'failed'>('unavailable');
+  const [walletHistoryState, setWalletHistoryState] = useState<
+    'unavailable' | 'no-wallet' | 'loaded' | 'failed'
+  >('unavailable');
   const [c2cHistoryState, setC2cHistoryState] = useState<'loaded' | 'failed'>('failed');
   const agentHistoryRequest = useRef(0);
   const [walletTransfers, setWalletTransfers] = useState<WalletTransferRow[]>([]);
@@ -584,12 +737,20 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
   const selectedAgentId = useRef<string | null>(null);
   const positionRequest = useRef(0);
-  useEffect(() => () => { positionRequest.current += 1; selectedAgentId.current = null; }, []);
+  useEffect(
+    () => () => {
+      positionRequest.current += 1;
+      selectedAgentId.current = null;
+    },
+    [],
+  );
 
   const loadPosition = async (agentId: string) => {
     if (selectedAgentId.current !== agentId) return;
     const request = ++positionRequest.current;
-    agentHistoryRequest.current += 1; setAgentHistoryLoading(false); setAgentHistoryLoaded(false);
+    agentHistoryRequest.current += 1;
+    setAgentHistoryLoading(false);
+    setAgentHistoryLoaded(false);
     setPosition(null);
     setDetailError('');
     try {
@@ -597,24 +758,45 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
         `/internal/agents/${encodeURIComponent(agentId)}/financial-position`,
       );
       if (request !== positionRequest.current || selectedAgentId.current !== agentId) return;
-      if (!pos || pos.agentId !== agentId) throw new Error('Financial position did not match the selected Agent.');
+      if (!pos || pos.agentId !== agentId)
+        throw new Error('Financial position did not match the selected Agent.');
       setPosition(pos);
     } catch (e: any) {
-      if (request === positionRequest.current && selectedAgentId.current === agentId) setDetailError(e?.message || 'Failed to load financial position');
+      if (request === positionRequest.current && selectedAgentId.current === agentId)
+        setDetailError(e?.message || 'Failed to load financial position');
     }
   };
 
   const openDetail = async (a: Agent) => {
-    if (!canView || (selectedAgentId.current === a.id && detailGuard) || (selectedAgentId.current !== a.id && !mayLeaveAgent())) return;
-    if (selectedAgentId.current !== a.id) { setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); setLimitUnconfirmed(false); setLimitReviewReady(false); }
-    outletReadGeneration.current += 1; limitReadGeneration.current += 1;
+    if (
+      !canView ||
+      (selectedAgentId.current === a.id && detailGuard) ||
+      (selectedAgentId.current !== a.id && !mayLeaveAgent())
+    )
+      return;
+    if (selectedAgentId.current !== a.id) {
+      setLifecycleUnconfirmed(false);
+      setLifecycleReviewStatus(null);
+      setOutletUnconfirmed(false);
+      setOutletReviewReady(false);
+      setOutletForm(EMPTY_OUTLET_FORM);
+      setTerminalForm(EMPTY_TERMINAL_FORM);
+      setLimitUnconfirmed(false);
+      setLimitReviewReady(false);
+    }
+    outletReadGeneration.current += 1;
+    limitReadGeneration.current += 1;
     selectedAgentId.current = a.id;
     setSelected(a);
     setPosition(null);
     setDetailError('');
     agentHistoryRequest.current += 1;
     setAgentHistoryLoading(false);
-    catalogRequest.current += 1; setLimitCatalogLoading(false); setLimitCatalogLoaded(false); setLimitCatalog([]); setLimitCatalogError('');
+    catalogRequest.current += 1;
+    setLimitCatalogLoading(false);
+    setLimitCatalogLoaded(false);
+    setLimitCatalog([]);
+    setLimitCatalogError('');
     setLifecycleReason('');
     setActionMsg('');
     setActionErr('');
@@ -632,7 +814,10 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     setEditingOutletId(null);
     setEditingTerminalId(null);
     setLimitsLoaded(false);
-    setLimitsLoading(false); setLimitPage(1); setLimitHasNext(false); setLimitTotal(0);
+    setLimitsLoading(false);
+    setLimitPage(1);
+    setLimitHasNext(false);
+    setLimitTotal(0);
     setAgentLimits([]);
     setLimitsError('');
     setLimitsMsg('');
@@ -663,7 +848,9 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       if (request !== agentListRequest.current) return;
       setAgents(rows);
       setTotal(res.total ?? rows.length);
-      setSelected((current) => current ? rows.find((item) => item.id === current.id) ?? current : null);
+      setSelected((current) =>
+        current ? (rows.find((item) => item.id === current.id) ?? current) : null,
+      );
     } catch (e: any) {
       if (request === agentListRequest.current) setError(e?.message || 'Failed to load agents');
     } finally {
@@ -674,7 +861,9 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   useEffect(() => {
     if (canView) void fetchAgents();
     else setLoading(false);
-    return () => { agentListRequest.current += 1; };
+    return () => {
+      agentListRequest.current += 1;
+    };
   }, [page, statusFilter, canView]);
 
   const loadClassCatalog = async () => {
@@ -700,8 +889,28 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     setApplicationsError('');
     try {
       const res: unknown = await ApiClient.get('/internal/agents/applications');
-      const rows = Array.isArray(res) ? res : res && typeof res === 'object' && Array.isArray((res as { data?: unknown }).data) ? (res as { data: unknown[] }).data : null;
-      if (!rows || rows.some(row => !row || typeof row !== 'object' || typeof (row as AgentApplicationRecord).id !== 'string' || !(row as AgentApplicationRecord).id || typeof (row as AgentApplicationRecord).reference !== 'string' || !['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED'].includes((row as AgentApplicationRecord).status) || typeof (row as AgentApplicationRecord).applicantReference !== 'string' || typeof (row as AgentApplicationRecord).agentClassId !== 'string')) throw new Error('Application queue response could not be verified.');
+      const rows = Array.isArray(res)
+        ? res
+        : res && typeof res === 'object' && Array.isArray((res as { data?: unknown }).data)
+          ? (res as { data: unknown[] }).data
+          : null;
+      if (
+        !rows ||
+        rows.some(
+          (row) =>
+            !row ||
+            typeof row !== 'object' ||
+            typeof (row as AgentApplicationRecord).id !== 'string' ||
+            !(row as AgentApplicationRecord).id ||
+            typeof (row as AgentApplicationRecord).reference !== 'string' ||
+            !['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED'].includes(
+              (row as AgentApplicationRecord).status,
+            ) ||
+            typeof (row as AgentApplicationRecord).applicantReference !== 'string' ||
+            typeof (row as AgentApplicationRecord).agentClassId !== 'string',
+        )
+      )
+        throw new Error('Application queue response could not be verified.');
       if (!mountedRef.current || generation !== applicationsReadGeneration.current) return;
       setApplications(rows as AgentApplicationRecord[]);
       setApplicationsLoaded(true);
@@ -715,7 +924,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       setApplicationsNeedRefresh(true);
       setApplicationsError(e?.message || 'Failed to load Agent applications');
     } finally {
-      if (mountedRef.current && generation === applicationsReadGeneration.current) setApplicationsLoading(false);
+      if (mountedRef.current && generation === applicationsReadGeneration.current)
+        setApplicationsLoading(false);
     }
   };
 
@@ -745,7 +955,14 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   }, [initialAgentId, canView, loading, agents, handledInitialAgentId]);
 
   const startNewApplication = () => {
-    if (!canChangeApplications || onboardingOpen || applicationActionRef.current || applicationsLoading || applicationsNeedRefresh) return;
+    if (
+      !canChangeApplications ||
+      onboardingOpen ||
+      applicationActionRef.current ||
+      applicationsLoading ||
+      applicationsNeedRefresh
+    )
+      return;
     setOnboardingUnconfirmed(false);
     setOnboardingOpen(true);
     setEditingDraftId(null);
@@ -764,7 +981,15 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   };
 
   const openDraftEditor = async (app: AgentApplicationRecord) => {
-    if (!canChangeApplications || onboardingBusy || onboardingOpen || applicationActionRef.current || applicationsLoading || applicationsNeedRefresh) return;
+    if (
+      !canChangeApplications ||
+      onboardingBusy ||
+      onboardingOpen ||
+      applicationActionRef.current ||
+      applicationsLoading ||
+      applicationsNeedRefresh
+    )
+      return;
     applicationActionRef.current = true;
     setOnboardingBusy(true);
     setOnboardingError('');
@@ -778,7 +1003,14 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
         `/internal/agents/applications/${encodeURIComponent(app.id)}`,
       );
       if (!mountedRef.current) return;
-      if (!fresh || fresh.id !== app.id || fresh.status !== 'DRAFT' || !Number.isSafeInteger(fresh.version) || (fresh.version ?? 0) < 1) throw new Error('Draft details could not be verified. Refresh the queue before editing.');
+      if (
+        !fresh ||
+        fresh.id !== app.id ||
+        fresh.status !== 'DRAFT' ||
+        !Number.isSafeInteger(fresh.version) ||
+        (fresh.version ?? 0) < 1
+      )
+        throw new Error('Draft details could not be verified. Refresh the queue before editing.');
       setOnboardingUnconfirmed(false);
       setEditingDraftId(fresh.id);
       setEditingDraftRef(fresh.reference);
@@ -788,7 +1020,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       setApplicationForm(initial);
       setOnboardingOpen(true);
     } catch (e: any) {
-      if (mountedRef.current) setApplicationsError(e?.message || 'Failed to open draft application for editing');
+      if (mountedRef.current)
+        setApplicationsError(e?.message || 'Failed to open draft application for editing');
     } finally {
       applicationActionRef.current = false;
       if (mountedRef.current) setOnboardingBusy(false);
@@ -801,7 +1034,10 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     if (applicationForm.agentClassId) return;
     const firstActive = classCatalog.find((c) => c.isActive !== false);
     if (firstActive) {
-      applicationBaseline.current = { ...applicationBaseline.current, agentClassId: firstActive.id };
+      applicationBaseline.current = {
+        ...applicationBaseline.current,
+        agentClassId: firstActive.id,
+      };
       setApplicationForm((cur) => ({ ...cur, agentClassId: firstActive.id }));
     }
   }, [onboardingOpen, editingDraftId, classCatalog, applicationForm.agentClassId]);
@@ -897,7 +1133,14 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   };
 
   const saveApplicationDraft = async () => {
-    if (!canChangeApplications || onboardingBusy || onboardingUnconfirmed || confirmDiscardApplication || applicationActionRef.current) return;
+    if (
+      !canChangeApplications ||
+      onboardingBusy ||
+      onboardingUnconfirmed ||
+      confirmDiscardApplication ||
+      applicationActionRef.current
+    )
+      return;
     const validationErr = validateApplicationForm('draft');
     if (validationErr) {
       setOnboardingError(validationErr);
@@ -917,7 +1160,16 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       );
       await loadApplications();
     } catch (e: any) {
-      if (mountedRef.current) { applicationsUncertaintyVersion.current++; setApplicationsNeedRefresh(true); setApplicationsReviewPending(true); setApplicationsReviewReady(false); setOnboardingUnconfirmed(true); setOnboardingError(`Draft outcome not confirmed. Review the application queue before retrying. ${e?.message || ''}`); }
+      if (mountedRef.current) {
+        applicationsUncertaintyVersion.current++;
+        setApplicationsNeedRefresh(true);
+        setApplicationsReviewPending(true);
+        setApplicationsReviewReady(false);
+        setOnboardingUnconfirmed(true);
+        setOnboardingError(
+          `Draft outcome not confirmed. Review the application queue before retrying. ${e?.message || ''}`,
+        );
+      }
     } finally {
       applicationActionRef.current = false;
       if (mountedRef.current) setOnboardingBusy(false);
@@ -926,7 +1178,14 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
   const submitApplicationFromEditor = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canChangeApplications || onboardingBusy || onboardingUnconfirmed || confirmDiscardApplication || applicationActionRef.current) return;
+    if (
+      !canChangeApplications ||
+      onboardingBusy ||
+      onboardingUnconfirmed ||
+      confirmDiscardApplication ||
+      applicationActionRef.current
+    )
+      return;
     const validationErr = validateApplicationForm('submit');
     if (validationErr) {
       setOnboardingError(validationErr);
@@ -952,7 +1211,16 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       );
       await loadApplications();
     } catch (e: any) {
-      if (mountedRef.current) { applicationsUncertaintyVersion.current++; setApplicationsNeedRefresh(true); setApplicationsReviewPending(true); setApplicationsReviewReady(false); setOnboardingUnconfirmed(true); setOnboardingError(`Application outcome not confirmed. Review the application queue before retrying. ${e?.message || ''}`); }
+      if (mountedRef.current) {
+        applicationsUncertaintyVersion.current++;
+        setApplicationsNeedRefresh(true);
+        setApplicationsReviewPending(true);
+        setApplicationsReviewReady(false);
+        setOnboardingUnconfirmed(true);
+        setOnboardingError(
+          `Application outcome not confirmed. Review the application queue before retrying. ${e?.message || ''}`,
+        );
+      }
     } finally {
       applicationActionRef.current = false;
       if (mountedRef.current) setOnboardingBusy(false);
@@ -960,7 +1228,15 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   };
 
   const submitDraftFromQueue = async (app: AgentApplicationRecord) => {
-    if (!canChangeApplications || applicationBusyId || onboardingOpen || applicationActionRef.current || applicationsLoading || applicationsNeedRefresh) return;
+    if (
+      !canChangeApplications ||
+      applicationBusyId ||
+      onboardingOpen ||
+      applicationActionRef.current ||
+      applicationsLoading ||
+      applicationsNeedRefresh
+    )
+      return;
     applicationActionRef.current = true;
     setApplicationBusyId(app.id);
     setApplicationsError('');
@@ -971,7 +1247,15 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       setApplicationsMsg(`Draft application ${app.reference} submitted for review.`);
       await loadApplications();
     } catch (e: any) {
-      if (mountedRef.current) { applicationsUncertaintyVersion.current++; setApplicationsNeedRefresh(true); setApplicationsReviewPending(true); setApplicationsReviewReady(false); setApplicationsError(`Submission outcome not confirmed. Refresh and inspect the application before retrying. ${e?.message || ''}`); }
+      if (mountedRef.current) {
+        applicationsUncertaintyVersion.current++;
+        setApplicationsNeedRefresh(true);
+        setApplicationsReviewPending(true);
+        setApplicationsReviewReady(false);
+        setApplicationsError(
+          `Submission outcome not confirmed. Refresh and inspect the application before retrying. ${e?.message || ''}`,
+        );
+      }
     } finally {
       applicationActionRef.current = false;
       if (mountedRef.current) setApplicationBusyId(null);
@@ -982,71 +1266,177 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     const agentId = selectedAgentId.current;
     if (!canViewLimitCatalog || limitCatalogLoading || !agentId) return;
     const request = ++catalogRequest.current;
-    const valid = () => mountedRef.current && request === catalogRequest.current && selectedAgentId.current === agentId;
-    setLimitCatalogLoading(true); setLimitCatalogLoaded(false); setLimitCatalogError('');
+    const valid = () =>
+      mountedRef.current &&
+      request === catalogRequest.current &&
+      selectedAgentId.current === agentId;
+    setLimitCatalogLoading(true);
+    setLimitCatalogLoaded(false);
+    setLimitCatalogError('');
     try {
       const res: any = await ApiClient.get(`/internal/limit-profiles?page=${page}&limit=20`);
       if (!valid()) return;
-      if (!res || !Array.isArray(res.data) || res.page !== page || res.limit !== 20 ||
-          !Number.isSafeInteger(res.total) || res.total < 0 || res.totalPages !== Math.ceil(res.total / 20) ||
-          res.hasNextPage !== (page < res.totalPages) || res.data.length > 20 || res.data.length > res.total) throw new Error('Invalid limit catalogue page.');
+      if (
+        !res ||
+        !Array.isArray(res.data) ||
+        res.page !== page ||
+        res.limit !== 20 ||
+        !Number.isSafeInteger(res.total) ||
+        res.total < 0 ||
+        res.totalPages !== Math.ceil(res.total / 20) ||
+        res.hasNextPage !== page < res.totalPages ||
+        res.data.length > 20 ||
+        res.data.length > res.total
+      )
+        throw new Error('Invalid limit catalogue page.');
       const seen = new Set<string>();
       const rows: LimitCatalogOption[] = res.data.map((profile: any) => {
-        if (!profile || typeof profile.code !== 'string' || !/^[A-Z0-9_]{3,80}$/.test(profile.code) || seen.has(profile.code) || typeof profile.name !== 'string' || !profile.name.trim()) throw new Error('Invalid limit catalogue page.');
+        if (
+          !profile ||
+          typeof profile.code !== 'string' ||
+          !/^[A-Z0-9_]{3,80}$/.test(profile.code) ||
+          seen.has(profile.code) ||
+          typeof profile.name !== 'string' ||
+          !profile.name.trim()
+        )
+          throw new Error('Invalid limit catalogue page.');
         seen.add(profile.code);
         return { code: profile.code, name: profile.name };
       });
-      setLimitCatalog(rows); setLimitCatalogPage(page); setLimitCatalogTotal(res.total); setLimitCatalogHasNext(res.hasNextPage); setLimitCatalogLoaded(true);
+      setLimitCatalog(rows);
+      setLimitCatalogPage(page);
+      setLimitCatalogTotal(res.total);
+      setLimitCatalogHasNext(res.hasNextPage);
+      setLimitCatalogLoaded(true);
     } catch (e: any) {
-      if (valid()) { setLimitCatalog([]); setLimitCatalogError(e?.message || 'Failed to load limit profile catalog'); }
-    } finally { if (valid()) setLimitCatalogLoading(false); }
+      if (valid()) {
+        setLimitCatalog([]);
+        setLimitCatalogError(e?.message || 'Failed to load limit profile catalog');
+      }
+    } finally {
+      if (valid()) setLimitCatalogLoading(false);
+    }
   };
 
-  const loadAgentTransactions = async (agentId: string, currentPosition: AgentFinancialPosition | null) => {
+  const loadAgentTransactions = async (
+    agentId: string,
+    currentPosition: AgentFinancialPosition | null,
+  ) => {
     if (!canViewTransactions || agentHistoryLoading || selectedAgentId.current !== agentId) return;
     const request = ++agentHistoryRequest.current;
-    const valid = () => mountedRef.current && request === agentHistoryRequest.current && selectedAgentId.current === agentId;
-    setAgentHistoryLoading(true); setAgentHistoryLoaded(false); setAgentHistoryError('');
-    const walletId = currentPosition?.agentId === agentId && currentPosition.walletExists === true && typeof currentPosition.walletId === 'string' && currentPosition.walletId ? currentPosition.walletId : null;
-    const noWallet = currentPosition?.agentId === agentId && currentPosition.walletExists === false && currentPosition.walletId === null;
-    const c2cPromise = ApiClient.get<any>(`/internal/admin/cash-to-cash/transfers?page=1&limit=10&agentId=${encodeURIComponent(agentId)}`);
-    const walletPromise = walletId ? ApiClient.get<any>(`/wallets/${encodeURIComponent(walletId)}/transactions?page=1&limit=10`) : null;
+    const valid = () =>
+      mountedRef.current &&
+      request === agentHistoryRequest.current &&
+      selectedAgentId.current === agentId;
+    setAgentHistoryLoading(true);
+    setAgentHistoryLoaded(false);
+    setAgentHistoryError('');
+    const walletId =
+      currentPosition?.agentId === agentId &&
+      currentPosition.walletExists === true &&
+      typeof currentPosition.walletId === 'string' &&
+      currentPosition.walletId
+        ? currentPosition.walletId
+        : null;
+    const noWallet =
+      currentPosition?.agentId === agentId &&
+      currentPosition.walletExists === false &&
+      currentPosition.walletId === null;
+    const c2cPromise = ApiClient.get<any>(
+      `/internal/admin/cash-to-cash/transfers?page=1&limit=10&agentId=${encodeURIComponent(agentId)}`,
+    );
+    const walletPromise = walletId
+      ? ApiClient.get<any>(`/wallets/${encodeURIComponent(walletId)}/transactions?page=1&limit=10`)
+      : null;
     const [c2cOutcome, walletOutcome] = await Promise.allSettled([c2cPromise, walletPromise]);
     if (!valid()) return;
     const errors: string[] = [];
-    const c2cRows = c2cOutcome.status === 'fulfilled' ? c2cHistoryRows(c2cOutcome.value, agentId) : null;
-    const walletRows = walletOutcome.status === 'fulfilled' && walletId ? walletHistoryRows(walletOutcome.value) : null;
+    const c2cRows =
+      c2cOutcome.status === 'fulfilled' ? c2cHistoryRows(c2cOutcome.value, agentId) : null;
+    const walletRows =
+      walletOutcome.status === 'fulfilled' && walletId
+        ? walletHistoryRows(walletOutcome.value)
+        : null;
     if (c2cRows) {
-      setAgentC2CRows(c2cRows); setC2cHistoryState('loaded');
+      setAgentC2CRows(c2cRows);
+      setC2cHistoryState('loaded');
     } else {
-      setAgentC2CRows([]); setC2cHistoryState('failed');
-      errors.push(c2cOutcome.status === 'rejected' ? (c2cOutcome.reason as Error)?.message || 'Failed to load Cash-to-Cash history' : 'Cash-to-Cash history returned an invalid response.');
+      setAgentC2CRows([]);
+      setC2cHistoryState('failed');
+      errors.push(
+        c2cOutcome.status === 'rejected'
+          ? (c2cOutcome.reason as Error)?.message || 'Failed to load Cash-to-Cash history'
+          : 'Cash-to-Cash history returned an invalid response.',
+      );
     }
     if (!walletId) {
-      setWalletTransfers([]); setWalletHistoryState(noWallet ? 'no-wallet' : 'unavailable');
+      setWalletTransfers([]);
+      setWalletHistoryState(noWallet ? 'no-wallet' : 'unavailable');
     } else if (walletRows) {
-      setWalletTransfers(walletRows); setWalletHistoryState('loaded');
+      setWalletTransfers(walletRows);
+      setWalletHistoryState('loaded');
     } else {
-      setWalletTransfers([]); setWalletHistoryState('failed');
-      errors.push(walletOutcome.status === 'rejected' ? (walletOutcome.reason as Error)?.message || 'Failed to load wallet transfers' : 'Wallet history returned an invalid response.');
+      setWalletTransfers([]);
+      setWalletHistoryState('failed');
+      errors.push(
+        walletOutcome.status === 'rejected'
+          ? (walletOutcome.reason as Error)?.message || 'Failed to load wallet transfers'
+          : 'Wallet history returned an invalid response.',
+      );
     }
-    setAgentHistoryLoaded(true); setAgentHistoryError(errors.join(' · ')); setAgentHistoryLoading(false);
+    setAgentHistoryLoaded(true);
+    setAgentHistoryError(errors.join(' · '));
+    setAgentHistoryLoading(false);
   };
 
   const doLifecycle = async (action: keyof typeof lifecycleFunctions, id: string) => {
-    if (principal?.readOnlyPrincipal || !hasFn(lifecycleFunctions[action]) || lifecycleBusy || lifecycleInFlight.current || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || newLimitProfileCode.trim() || limitsBusy || limitUnconfirmed || !selected || selected.id !== id || !canPerformAgentLifecycle(action, selected.status)) return;
-    if (action === 'terminate' && !window.confirm(`Terminate Agent ${selected.reference}? This is irreversible, revokes its receiving number and invalidates sessions. Residual float is not moved automatically.`)) return;
+    if (
+      principal?.readOnlyPrincipal ||
+      !hasFn(lifecycleFunctions[action]) ||
+      lifecycleBusy ||
+      lifecycleInFlight.current ||
+      lifecycleUnconfirmed ||
+      credentialGuard ||
+      credentialBusy ||
+      outletDraft ||
+      outletBusy ||
+      outletUnconfirmed ||
+      newLimitProfileCode.trim() ||
+      limitsBusy ||
+      limitUnconfirmed ||
+      !selected ||
+      selected.id !== id ||
+      !canPerformAgentLifecycle(action, selected.status)
+    )
+      return;
+    if (
+      action === 'terminate' &&
+      !window.confirm(
+        `Terminate Agent ${selected.reference}? This is irreversible, revokes its receiving number and invalidates sessions. Residual float is not moved automatically.`,
+      )
+    )
+      return;
     lifecycleInFlight.current = true;
-    setLifecycleBusy(true); setLifecycleReviewStatus(null); setActionErr(''); setActionMsg('');
+    setLifecycleBusy(true);
+    setLifecycleReviewStatus(null);
+    setActionErr('');
+    setActionMsg('');
     try {
       const reasonText = lifecycleReason.trim() || `${action} via Admin Web`;
       const payload = action === 'suspend' || action === 'terminate' ? { reason: reasonText } : {};
-      const updated: any = await ApiClient.post(`/internal/admin/agents/${encodeURIComponent(id)}/${action}`, payload);
+      const updated: any = await ApiClient.post(
+        `/internal/admin/agents/${encodeURIComponent(id)}/${action}`,
+        payload,
+      );
       if (!mountedRef.current || selectedAgentId.current !== id) return;
-      const expected = action === 'suspend' ? 'SUSPENDED' : action === 'terminate' ? 'TERMINATED' : 'ACTIVE';
-      if (!updated || updated.id !== id || updated.status !== expected) throw new Error('Lifecycle receipt did not match the Agent and requested status.');
-      setSelected(cur => cur && cur.id === id ? { ...cur, status: expected } : cur);
-      setActionMsg(`Agent ${action} confirmed (status: ${expected}). Review the Agent record and audit history for details.`);
+      const expected =
+        action === 'suspend' ? 'SUSPENDED' : action === 'terminate' ? 'TERMINATED' : 'ACTIVE';
+      if (!updated || updated.id !== id || updated.status !== expected)
+        throw new Error('Lifecycle receipt did not match the Agent and requested status.');
+      setSelected((cur) => (cur && cur.id === id ? { ...cur, status: expected } : cur));
+      setActionMsg(
+        `Agent ${action} confirmed (status: ${expected}). Review the Agent record and audit history for details.`,
+      );
       setLifecycleReason('');
       await Promise.all([fetchAgents(), loadPosition(id)]);
     } catch (e: any) {
@@ -1055,8 +1445,11 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       if (status === 400 || status === 401 || status === 403 || status === 404 || status === 422) {
         setActionErr(e?.message || `${action} was rejected.`);
       } else {
-        setLifecycleUnconfirmed(true); setLifecycleReviewStatus(null);
-        setActionErr('Agent lifecycle outcome is unconfirmed or conflicted. Refresh the matching Agent and independently review its audit history before another lifecycle action.');
+        setLifecycleUnconfirmed(true);
+        setLifecycleReviewStatus(null);
+        setActionErr(
+          'Agent lifecycle outcome is unconfirmed or conflicted. Refresh the matching Agent and independently review its audit history before another lifecycle action.',
+        );
       }
     } finally {
       lifecycleInFlight.current = false;
@@ -1065,17 +1458,35 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   };
 
   const reviewLifecycle = async () => {
-    if (!selected || !lifecycleUnconfirmed || lifecycleReviewBusy || lifecycleInFlight.current) return;
-    const id = selected.id; lifecycleInFlight.current = true; setLifecycleReviewBusy(true); setLifecycleReviewStatus(null);
+    if (!selected || !lifecycleUnconfirmed || lifecycleReviewBusy || lifecycleInFlight.current)
+      return;
+    const id = selected.id;
+    lifecycleInFlight.current = true;
+    setLifecycleReviewBusy(true);
+    setLifecycleReviewStatus(null);
     try {
       const fresh = await ApiClient.get<Agent>(`/internal/agents/${encodeURIComponent(id)}`);
       if (!mountedRef.current || selectedAgentId.current !== id) return;
-      if (!fresh || fresh.id !== id || !['PENDING', 'ACTIVE', 'SUSPENDED', 'TERMINATED'].includes(fresh.status)) throw new Error('Agent review response did not match the selected Agent or a known status.');
-      setSelected(current => current && current.id === id ? { ...current, status: fresh.status } : current);
-      setLifecycleReviewStatus(fresh.status); setActionErr('');
+      if (
+        !fresh ||
+        fresh.id !== id ||
+        !['PENDING', 'ACTIVE', 'SUSPENDED', 'TERMINATED'].includes(fresh.status)
+      )
+        throw new Error(
+          'Agent review response did not match the selected Agent or a known status.',
+        );
+      setSelected((current) =>
+        current && current.id === id ? { ...current, status: fresh.status } : current,
+      );
+      setLifecycleReviewStatus(fresh.status);
+      setActionErr('');
     } catch (e: any) {
-      if (mountedRef.current && selectedAgentId.current === id) setActionErr(e?.message || 'Unable to load the Agent for review.');
-    } finally { lifecycleInFlight.current = false; if (mountedRef.current) setLifecycleReviewBusy(false); }
+      if (mountedRef.current && selectedAgentId.current === id)
+        setActionErr(e?.message || 'Unable to load the Agent for review.');
+    } finally {
+      lifecycleInFlight.current = false;
+      if (mountedRef.current) setLifecycleReviewBusy(false);
+    }
   };
 
   const loadReceivingNumber = async (agentId: string) => {
@@ -1103,35 +1514,76 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
   const loadOutletsAndTerminals = async (agentId: string) => {
     const request = ++outletReadGeneration.current;
-    const valid = () => mountedRef.current && request === outletReadGeneration.current && selectedAgentId.current === agentId;
-    setOutletsLoading(true); setOutletsLoaded(false); setOutletReviewReady(false); setOutletsError('');
+    const valid = () =>
+      mountedRef.current &&
+      request === outletReadGeneration.current &&
+      selectedAgentId.current === agentId;
+    setOutletsLoading(true);
+    setOutletsLoaded(false);
+    setOutletReviewReady(false);
+    setOutletsError('');
     try {
       const [outletRows, terminalRows] = await Promise.all([
         ApiClient.get<OutletRecord[]>(`/internal/agents/${encodeURIComponent(agentId)}/outlets`),
-        ApiClient.get<TerminalRecord[]>(`/internal/agents/${encodeURIComponent(agentId)}/terminals`),
+        ApiClient.get<TerminalRecord[]>(
+          `/internal/agents/${encodeURIComponent(agentId)}/terminals`,
+        ),
       ]);
       if (!valid()) return;
-      if (!Array.isArray(outletRows) || !outletRows.every(row => validOutlet(row, agentId)) ||
-          !Array.isArray(terminalRows) || !terminalRows.every(row => validTerminal(row, agentId)) ||
-          new Set(outletRows.map(row => row.id)).size !== outletRows.length || new Set(terminalRows.map(row => row.id)).size !== terminalRows.length) throw new Error('Invalid or cross-Agent outlet/terminal response.');
-      setOutlets(outletRows); setTerminals(terminalRows); setOutletsLoaded(true);
+      if (
+        !Array.isArray(outletRows) ||
+        !outletRows.every((row) => validOutlet(row, agentId)) ||
+        !Array.isArray(terminalRows) ||
+        !terminalRows.every((row) => validTerminal(row, agentId)) ||
+        new Set(outletRows.map((row) => row.id)).size !== outletRows.length ||
+        new Set(terminalRows.map((row) => row.id)).size !== terminalRows.length
+      )
+        throw new Error('Invalid or cross-Agent outlet/terminal response.');
+      setOutlets(outletRows);
+      setTerminals(terminalRows);
+      setOutletsLoaded(true);
       if (outletUnconfirmed) setOutletReviewReady(true);
-      setTerminalForm(cur => ({ ...cur, outletId: outletRows.some(o => o.id === cur.outletId) ? cur.outletId : (outletRows.find(o => o.status === 'ACTIVE')?.id ?? outletRows[0]?.id ?? '') }));
+      setTerminalForm((cur) => ({
+        ...cur,
+        outletId: outletRows.some((o) => o.id === cur.outletId)
+          ? cur.outletId
+          : (outletRows.find((o) => o.status === 'ACTIVE')?.id ?? outletRows[0]?.id ?? ''),
+      }));
     } catch (e: any) {
-      if (valid()) { setOutletsError(e?.message || 'Failed to load outlets and terminals'); setOutletsLoaded(false); }
-    } finally { if (valid()) setOutletsLoading(false); }
+      if (valid()) {
+        setOutletsError(e?.message || 'Failed to load outlets and terminals');
+        setOutletsLoaded(false);
+      }
+    } finally {
+      if (valid()) setOutletsLoading(false);
+    }
   };
 
   const outletFailure = (error: any, operation: string) => {
     if (operationUncertain(error)) {
-      setOutletUnconfirmed(true); setOutletReviewReady(false);
-      setOutletsError(`${operation} outcome is unconfirmed or conflicted. Refresh and independently review records and audit history before another action.${error?.message ? ` ${error.message}` : ''}`);
+      setOutletUnconfirmed(true);
+      setOutletReviewReady(false);
+      setOutletsError(
+        `${operation} outcome is unconfirmed or conflicted. Refresh and independently review records and audit history before another action.${error?.message ? ` ${error.message}` : ''}`,
+      );
     } else setOutletsError(error?.message || `${operation} was rejected.`);
   };
 
   const createOutlet = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selected || !canManageOutletsTerminals || outletBusy || outletWriteInFlight.current || outletUnconfirmed || outletsLoading || !outletsLoaded || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed) return;
+    if (
+      !selected ||
+      !canManageOutletsTerminals ||
+      outletBusy ||
+      outletWriteInFlight.current ||
+      outletUnconfirmed ||
+      outletsLoading ||
+      !outletsLoaded ||
+      lifecycleBusy ||
+      lifecycleReviewBusy ||
+      lifecycleUnconfirmed
+    )
+      return;
     if (editingOutletId || editingTerminalId) return;
     const reference = outletForm.reference.trim();
     const name = outletForm.name.trim();
@@ -1144,7 +1596,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       setOutletsError('Outlet code must be 3–80 characters when provided.');
       return;
     }
-    outletWriteInFlight.current = true; outletReadGeneration.current += 1;
+    outletWriteInFlight.current = true;
+    outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
     setOutletsMsg('');
@@ -1157,15 +1610,31 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       if (outletForm.city.trim()) body.city = outletForm.city.trim();
       if (outletForm.state.trim()) body.state = outletForm.state.trim();
       if (outletForm.country.trim()) body.country = outletForm.country.trim();
-      const receipt = await ApiClient.post<OutletRecord>(`/internal/agents/${encodeURIComponent(selected.id)}/outlets`, body);
+      const receipt = await ApiClient.post<OutletRecord>(
+        `/internal/agents/${encodeURIComponent(selected.id)}/outlets`,
+        body,
+      );
       if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
-      if (!validOutlet(receipt, selected.id) || receipt.reference !== reference || receipt.name !== name || receipt.status !== 'ACTIVE' || receipt.version !== 1 || receipt.code !== (code ? code.toUpperCase() : null) ||
-          receipt.displayName !== (body.displayName ?? null) || receipt.addressLine !== (body.addressLine ?? null) || receipt.city !== (body.city ?? null) || receipt.state !== (body.state ?? null) || receipt.country !== (body.country ?? 'NG')) throw new Error('Outlet receipt did not match the request.');
+      if (
+        !validOutlet(receipt, selected.id) ||
+        receipt.reference !== reference ||
+        receipt.name !== name ||
+        receipt.status !== 'ACTIVE' ||
+        receipt.version !== 1 ||
+        receipt.code !== (code ? code.toUpperCase() : null) ||
+        receipt.displayName !== (body.displayName ?? null) ||
+        receipt.addressLine !== (body.addressLine ?? null) ||
+        receipt.city !== (body.city ?? null) ||
+        receipt.state !== (body.state ?? null) ||
+        receipt.country !== (body.country ?? 'NG')
+      )
+        throw new Error('Outlet receipt did not match the request.');
       setOutletForm(EMPTY_OUTLET_FORM);
       setOutletsMsg(`Outlet ${reference} created.`);
       await loadOutletsAndTerminals(selected.id);
     } catch (e: any) {
-      if (mountedRef.current && selectedAgentId.current === selected.id) outletFailure(e, 'Outlet creation');
+      if (mountedRef.current && selectedAgentId.current === selected.id)
+        outletFailure(e, 'Outlet creation');
     } finally {
       outletWriteInFlight.current = false;
       if (mountedRef.current) setOutletBusy(false);
@@ -1175,7 +1644,11 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const startEditOutlet = (outlet: OutletRecord) => {
     if (outletBusy || outletsLoading || outletUnconfirmed) return;
     if (editingOutletId === outlet.id && !editingTerminalId) return;
-    if ((editingOutletId || editingTerminalId) && !window.confirm('Discard the current outlet or terminal editor before opening another?')) return;
+    if (
+      (editingOutletId || editingTerminalId) &&
+      !window.confirm('Discard the current outlet or terminal editor before opening another?')
+    )
+      return;
     setEditingTerminalId(null);
     setEditingOutletId(outlet.id);
     setOutletBoundaryMsg('');
@@ -1195,13 +1668,31 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
   const saveOutletMetadata = async (event: React.FormEvent, outlet: OutletRecord) => {
     event.preventDefault();
-    if (!selected || !canManageOutletsTerminals || outletBusy || outletWriteInFlight.current || outletUnconfirmed || outletsLoading || !outletsLoaded || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed) return;
-    if (editingOutletId !== outlet.id || !Number.isSafeInteger(editingOutletForm.expectedVersion) || (editingOutletForm.expectedVersion ?? 0) < 1) return;
+    if (
+      !selected ||
+      !canManageOutletsTerminals ||
+      outletBusy ||
+      outletWriteInFlight.current ||
+      outletUnconfirmed ||
+      outletsLoading ||
+      !outletsLoaded ||
+      lifecycleBusy ||
+      lifecycleReviewBusy ||
+      lifecycleUnconfirmed
+    )
+      return;
+    if (
+      editingOutletId !== outlet.id ||
+      !Number.isSafeInteger(editingOutletForm.expectedVersion) ||
+      (editingOutletForm.expectedVersion ?? 0) < 1
+    )
+      return;
     if (editingOutletForm.name.trim().length < 2) {
       setOutletsError('Outlet name must be at least 2 characters.');
       return;
     }
-    outletWriteInFlight.current = true; outletReadGeneration.current += 1;
+    outletWriteInFlight.current = true;
+    outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
     setOutletsMsg('');
@@ -1222,36 +1713,89 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       }
       if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
       const receipt = outcome.data;
-      if (!validOutlet(receipt, selected.id) || receipt.id !== outlet.id || receipt.version !== (editingOutletForm.expectedVersion ?? 0) + 1 || receipt.name !== editingOutletForm.name.trim() || receipt.displayName !== nullableTrim(editingOutletForm.displayName) || receipt.addressLine !== nullableTrim(editingOutletForm.addressLine) || receipt.city !== nullableTrim(editingOutletForm.city) || receipt.state !== nullableTrim(editingOutletForm.state) || receipt.country !== nullableTrim(editingOutletForm.country)) throw new Error('Outlet metadata receipt did not match the request.');
+      if (
+        !validOutlet(receipt, selected.id) ||
+        receipt.id !== outlet.id ||
+        receipt.version !== (editingOutletForm.expectedVersion ?? 0) + 1 ||
+        receipt.name !== editingOutletForm.name.trim() ||
+        receipt.displayName !== nullableTrim(editingOutletForm.displayName) ||
+        receipt.addressLine !== nullableTrim(editingOutletForm.addressLine) ||
+        receipt.city !== nullableTrim(editingOutletForm.city) ||
+        receipt.state !== nullableTrim(editingOutletForm.state) ||
+        receipt.country !== nullableTrim(editingOutletForm.country)
+      )
+        throw new Error('Outlet metadata receipt did not match the request.');
       setEditingOutletId(null);
       setOutletsMsg(`Outlet ${outlet.reference} metadata updated.`);
       await loadOutletsAndTerminals(selected.id);
     } catch (e: any) {
-      if (mountedRef.current && selectedAgentId.current === selected.id) outletFailure(e, 'Outlet metadata update');
+      if (mountedRef.current && selectedAgentId.current === selected.id)
+        outletFailure(e, 'Outlet metadata update');
     } finally {
       outletWriteInFlight.current = false;
       if (mountedRef.current) setOutletBusy(false);
     }
   };
 
-  const doOutletLifecycle = async (outletId: string, action: 'suspend' | 'reactivate' | 'terminate') => {
-    if (!selected || !canManageOutletsTerminals || outletBusy || outletWriteInFlight.current || outletUnconfirmed || outletsLoading || !outletsLoaded || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed) return;
-    const current = outlets.find(row => row.id === outletId);
-    if (editingOutletId || editingTerminalId || !current || (action === 'suspend' && current.status !== 'ACTIVE') || (action === 'reactivate' && current.status !== 'SUSPENDED') || (action === 'terminate' && current.status === 'TERMINATED')) return;
-    if (action === 'terminate' && !window.confirm(`Terminate outlet ${current.reference}? This action cannot be undone.`)) return;
-    outletWriteInFlight.current = true; outletReadGeneration.current += 1;
+  const doOutletLifecycle = async (
+    outletId: string,
+    action: 'suspend' | 'reactivate' | 'terminate',
+  ) => {
+    if (
+      !selected ||
+      !canManageOutletsTerminals ||
+      outletBusy ||
+      outletWriteInFlight.current ||
+      outletUnconfirmed ||
+      outletsLoading ||
+      !outletsLoaded ||
+      lifecycleBusy ||
+      lifecycleReviewBusy ||
+      lifecycleUnconfirmed
+    )
+      return;
+    const current = outlets.find((row) => row.id === outletId);
+    if (
+      editingOutletId ||
+      editingTerminalId ||
+      !current ||
+      (action === 'suspend' && current.status !== 'ACTIVE') ||
+      (action === 'reactivate' && current.status !== 'SUSPENDED') ||
+      (action === 'terminate' && current.status === 'TERMINATED')
+    )
+      return;
+    if (
+      action === 'terminate' &&
+      !window.confirm(`Terminate outlet ${current.reference}? This action cannot be undone.`)
+    )
+      return;
+    outletWriteInFlight.current = true;
+    outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
     setOutletsMsg('');
     try {
-      const receipt = await ApiClient.post<OutletRecord>(`/internal/outlets/${encodeURIComponent(outletId)}/${action}`, { expectedVersion: current.version });
+      const receipt = await ApiClient.post<OutletRecord>(
+        `/internal/outlets/${encodeURIComponent(outletId)}/${action}`,
+        { expectedVersion: current.version },
+      );
       if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
-      const expected = action === 'suspend' ? 'SUSPENDED' : action === 'terminate' ? 'TERMINATED' : 'ACTIVE';
-      if (!validOutlet(receipt, selected.id) || receipt.id !== outletId || receipt.reference !== current.reference || receipt.code !== current.code || receipt.status !== expected || receipt.version !== current.version + 1) throw new Error('Outlet lifecycle receipt did not match the request.');
+      const expected =
+        action === 'suspend' ? 'SUSPENDED' : action === 'terminate' ? 'TERMINATED' : 'ACTIVE';
+      if (
+        !validOutlet(receipt, selected.id) ||
+        receipt.id !== outletId ||
+        receipt.reference !== current.reference ||
+        receipt.code !== current.code ||
+        receipt.status !== expected ||
+        receipt.version !== current.version + 1
+      )
+        throw new Error('Outlet lifecycle receipt did not match the request.');
       setOutletsMsg(`Outlet ${action} succeeded.`);
       await loadOutletsAndTerminals(selected.id);
     } catch (e: any) {
-      if (mountedRef.current && selectedAgentId.current === selected.id) outletFailure(e, `Outlet ${action}`);
+      if (mountedRef.current && selectedAgentId.current === selected.id)
+        outletFailure(e, `Outlet ${action}`);
     } finally {
       outletWriteInFlight.current = false;
       if (mountedRef.current) setOutletBusy(false);
@@ -1260,7 +1804,19 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
   const createTerminal = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selected || !canManageOutletsTerminals || outletBusy || outletWriteInFlight.current || outletUnconfirmed || outletsLoading || !outletsLoaded || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed) return;
+    if (
+      !selected ||
+      !canManageOutletsTerminals ||
+      outletBusy ||
+      outletWriteInFlight.current ||
+      outletUnconfirmed ||
+      outletsLoading ||
+      !outletsLoaded ||
+      lifecycleBusy ||
+      lifecycleReviewBusy ||
+      lifecycleUnconfirmed
+    )
+      return;
     if (editingOutletId || editingTerminalId) return;
     const reference = terminalForm.reference.trim();
     const code = terminalForm.code.trim();
@@ -1273,7 +1829,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       setOutletsError('Terminal code must be 3–80 characters when provided.');
       return;
     }
-    outletWriteInFlight.current = true; outletReadGeneration.current += 1;
+    outletWriteInFlight.current = true;
+    outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
     setOutletsMsg('');
@@ -1283,10 +1840,22 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       if (code) body.code = code;
       if (terminalForm.label.trim()) body.label = terminalForm.label.trim();
       if (terminalForm.serialNumber.trim()) body.serialNumber = terminalForm.serialNumber.trim();
-      const receipt = await ApiClient.post<TerminalRecord>(`/internal/agents/${encodeURIComponent(selected.id)}/terminals`, body);
+      const receipt = await ApiClient.post<TerminalRecord>(
+        `/internal/agents/${encodeURIComponent(selected.id)}/terminals`,
+        body,
+      );
       if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
-      if (!validTerminal(receipt, selected.id) || receipt.reference !== reference || receipt.outletId !== outletId || receipt.status !== 'ACTIVE' || receipt.version !== 1 || receipt.code !== (code ? code.toUpperCase() : null) ||
-          receipt.label !== (body.label ?? null) || receipt.serialNumber !== (body.serialNumber ?? null)) throw new Error('Terminal receipt did not match the request.');
+      if (
+        !validTerminal(receipt, selected.id) ||
+        receipt.reference !== reference ||
+        receipt.outletId !== outletId ||
+        receipt.status !== 'ACTIVE' ||
+        receipt.version !== 1 ||
+        receipt.code !== (code ? code.toUpperCase() : null) ||
+        receipt.label !== (body.label ?? null) ||
+        receipt.serialNumber !== (body.serialNumber ?? null)
+      )
+        throw new Error('Terminal receipt did not match the request.');
       setTerminalForm((cur) => ({
         ...cur,
         reference: '',
@@ -1297,7 +1866,8 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       setOutletsMsg(`Terminal ${reference} created.`);
       await loadOutletsAndTerminals(selected.id);
     } catch (e: any) {
-      if (mountedRef.current && selectedAgentId.current === selected.id) outletFailure(e, 'Terminal creation');
+      if (mountedRef.current && selectedAgentId.current === selected.id)
+        outletFailure(e, 'Terminal creation');
     } finally {
       outletWriteInFlight.current = false;
       if (mountedRef.current) setOutletBusy(false);
@@ -1307,7 +1877,11 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const startEditTerminal = (terminal: TerminalRecord) => {
     if (outletBusy || outletsLoading || outletUnconfirmed) return;
     if (editingTerminalId === terminal.id && !editingOutletId) return;
-    if ((editingOutletId || editingTerminalId) && !window.confirm('Discard the current outlet or terminal editor before opening another?')) return;
+    if (
+      (editingOutletId || editingTerminalId) &&
+      !window.confirm('Discard the current outlet or terminal editor before opening another?')
+    )
+      return;
     setEditingOutletId(null);
     setEditingTerminalId(terminal.id);
     setTerminalBoundaryMsg('');
@@ -1323,8 +1897,24 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
   const saveTerminalMetadata = async (event: React.FormEvent, terminal: TerminalRecord) => {
     event.preventDefault();
-    if (!selected || !canManageOutletsTerminals || outletBusy || outletWriteInFlight.current || outletUnconfirmed || outletsLoading || !outletsLoaded || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || editingTerminalId !== terminal.id || !Number.isSafeInteger(editingTerminalForm.expectedVersion) || (editingTerminalForm.expectedVersion ?? 0) < 1) return;
-    outletWriteInFlight.current = true; outletReadGeneration.current += 1;
+    if (
+      !selected ||
+      !canManageOutletsTerminals ||
+      outletBusy ||
+      outletWriteInFlight.current ||
+      outletUnconfirmed ||
+      outletsLoading ||
+      !outletsLoaded ||
+      lifecycleBusy ||
+      lifecycleReviewBusy ||
+      lifecycleUnconfirmed ||
+      editingTerminalId !== terminal.id ||
+      !Number.isSafeInteger(editingTerminalForm.expectedVersion) ||
+      (editingTerminalForm.expectedVersion ?? 0) < 1
+    )
+      return;
+    outletWriteInFlight.current = true;
+    outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
     setOutletsMsg('');
@@ -1341,36 +1931,86 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       }
       if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
       const receipt = outcome.data;
-      if (!validTerminal(receipt, selected.id) || receipt.id !== terminal.id || receipt.version !== (editingTerminalForm.expectedVersion ?? 0) + 1 || receipt.label !== nullableTrim(editingTerminalForm.label) || receipt.serialNumber !== nullableTrim(editingTerminalForm.serialNumber)) throw new Error('Terminal metadata receipt did not match the request.');
+      if (
+        !validTerminal(receipt, selected.id) ||
+        receipt.id !== terminal.id ||
+        receipt.version !== (editingTerminalForm.expectedVersion ?? 0) + 1 ||
+        receipt.label !== nullableTrim(editingTerminalForm.label) ||
+        receipt.serialNumber !== nullableTrim(editingTerminalForm.serialNumber)
+      )
+        throw new Error('Terminal metadata receipt did not match the request.');
       setEditingTerminalId(null);
       setOutletsMsg(`Terminal ${terminal.reference} metadata updated.`);
       await loadOutletsAndTerminals(selected.id);
     } catch (e: any) {
-      if (mountedRef.current && selectedAgentId.current === selected.id) outletFailure(e, 'Terminal metadata update');
+      if (mountedRef.current && selectedAgentId.current === selected.id)
+        outletFailure(e, 'Terminal metadata update');
     } finally {
       outletWriteInFlight.current = false;
       if (mountedRef.current) setOutletBusy(false);
     }
   };
 
-  const doTerminalLifecycle = async (terminalId: string, action: 'suspend' | 'reactivate' | 'terminate') => {
-    if (!selected || !canManageOutletsTerminals || outletBusy || outletWriteInFlight.current || outletUnconfirmed || outletsLoading || !outletsLoaded || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed) return;
-    const current = terminals.find(row => row.id === terminalId);
-    if (editingOutletId || editingTerminalId || !current || (action === 'suspend' && current.status !== 'ACTIVE') || (action === 'reactivate' && current.status !== 'SUSPENDED') || (action === 'terminate' && current.status === 'TERMINATED')) return;
-    if (action === 'terminate' && !window.confirm(`Terminate terminal ${current.reference}? This action cannot be undone.`)) return;
-    outletWriteInFlight.current = true; outletReadGeneration.current += 1;
+  const doTerminalLifecycle = async (
+    terminalId: string,
+    action: 'suspend' | 'reactivate' | 'terminate',
+  ) => {
+    if (
+      !selected ||
+      !canManageOutletsTerminals ||
+      outletBusy ||
+      outletWriteInFlight.current ||
+      outletUnconfirmed ||
+      outletsLoading ||
+      !outletsLoaded ||
+      lifecycleBusy ||
+      lifecycleReviewBusy ||
+      lifecycleUnconfirmed
+    )
+      return;
+    const current = terminals.find((row) => row.id === terminalId);
+    if (
+      editingOutletId ||
+      editingTerminalId ||
+      !current ||
+      (action === 'suspend' && current.status !== 'ACTIVE') ||
+      (action === 'reactivate' && current.status !== 'SUSPENDED') ||
+      (action === 'terminate' && current.status === 'TERMINATED')
+    )
+      return;
+    if (
+      action === 'terminate' &&
+      !window.confirm(`Terminate terminal ${current.reference}? This action cannot be undone.`)
+    )
+      return;
+    outletWriteInFlight.current = true;
+    outletReadGeneration.current += 1;
     setOutletBusy(true);
     setOutletsError('');
     setOutletsMsg('');
     try {
-      const receipt = await ApiClient.post<TerminalRecord>(`/internal/terminals/${encodeURIComponent(terminalId)}/${action}`, { expectedVersion: current.version });
+      const receipt = await ApiClient.post<TerminalRecord>(
+        `/internal/terminals/${encodeURIComponent(terminalId)}/${action}`,
+        { expectedVersion: current.version },
+      );
       if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
-      const expected = action === 'suspend' ? 'SUSPENDED' : action === 'terminate' ? 'TERMINATED' : 'ACTIVE';
-      if (!validTerminal(receipt, selected.id) || receipt.id !== terminalId || receipt.reference !== current.reference || receipt.code !== current.code || receipt.status !== expected || receipt.version !== current.version + 1 || receipt.outletId !== current.outletId) throw new Error('Terminal lifecycle receipt did not match the request.');
+      const expected =
+        action === 'suspend' ? 'SUSPENDED' : action === 'terminate' ? 'TERMINATED' : 'ACTIVE';
+      if (
+        !validTerminal(receipt, selected.id) ||
+        receipt.id !== terminalId ||
+        receipt.reference !== current.reference ||
+        receipt.code !== current.code ||
+        receipt.status !== expected ||
+        receipt.version !== current.version + 1 ||
+        receipt.outletId !== current.outletId
+      )
+        throw new Error('Terminal lifecycle receipt did not match the request.');
       setOutletsMsg(`Terminal ${action} succeeded.`);
       await loadOutletsAndTerminals(selected.id);
     } catch (e: any) {
-      if (mountedRef.current && selectedAgentId.current === selected.id) outletFailure(e, `Terminal ${action}`);
+      if (mountedRef.current && selectedAgentId.current === selected.id)
+        outletFailure(e, `Terminal ${action}`);
     } finally {
       outletWriteInFlight.current = false;
       if (mountedRef.current) setOutletBusy(false);
@@ -1380,60 +2020,163 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   const loadAgentLimits = async (agentId: string, page = 1) => {
     if (!canViewLimitCatalog) return;
     const request = ++limitReadGeneration.current;
-    const valid = () => mountedRef.current && selectedAgentId.current === agentId && request === limitReadGeneration.current;
-    setLimitsLoading(true); setLimitsLoaded(false); setLimitReviewReady(false); setLimitsError('');
+    const valid = () =>
+      mountedRef.current &&
+      selectedAgentId.current === agentId &&
+      request === limitReadGeneration.current;
+    setLimitsLoading(true);
+    setLimitsLoaded(false);
+    setLimitReviewReady(false);
+    setLimitsError('');
     try {
-      const res: any = await ApiClient.get(`/internal/limit-assignments/agent/${encodeURIComponent(agentId)}?page=${page}&limit=20`);
+      const res: any = await ApiClient.get(
+        `/internal/limit-assignments/agent/${encodeURIComponent(agentId)}?page=${page}&limit=20`,
+      );
       if (!valid()) return;
-      if (!res || !Array.isArray(res.data) || !res.data.every((row: unknown) => validAgentLimit(row, agentId)) ||
-          new Set(res.data.map((row: AgentLimitAssignmentRecord) => row.id)).size !== res.data.length ||
-          res.page !== page || res.limit !== 20 || !Number.isSafeInteger(res.total) || res.total < 0 ||
-          !Number.isSafeInteger(res.totalPages) || res.totalPages !== Math.ceil(res.total / 20) ||
-          typeof res.hasNextPage !== 'boolean' || res.hasNextPage !== (page < res.totalPages) || res.data.length > 20 || res.data.length > res.total) throw new Error('Invalid or cross-Agent limit assignment page.');
-      setAgentLimits(res.data); setLimitPage(page); setLimitHasNext(res.hasNextPage); setLimitTotal(res.total); setLimitsLoaded(true);
+      if (
+        !res ||
+        !Array.isArray(res.data) ||
+        !res.data.every((row: unknown) => validAgentLimit(row, agentId)) ||
+        new Set(res.data.map((row: AgentLimitAssignmentRecord) => row.id)).size !==
+          res.data.length ||
+        res.page !== page ||
+        res.limit !== 20 ||
+        !Number.isSafeInteger(res.total) ||
+        res.total < 0 ||
+        !Number.isSafeInteger(res.totalPages) ||
+        res.totalPages !== Math.ceil(res.total / 20) ||
+        typeof res.hasNextPage !== 'boolean' ||
+        res.hasNextPage !== page < res.totalPages ||
+        res.data.length > 20 ||
+        res.data.length > res.total
+      )
+        throw new Error('Invalid or cross-Agent limit assignment page.');
+      setAgentLimits(res.data);
+      setLimitPage(page);
+      setLimitHasNext(res.hasNextPage);
+      setLimitTotal(res.total);
+      setLimitsLoaded(true);
       if (limitUnconfirmed) setLimitReviewReady(true);
     } catch (e: any) {
-      if (valid()) { setLimitsLoaded(false); setLimitsError(e?.message || 'Failed to load agent limit assignments'); }
-    } finally { if (valid()) setLimitsLoading(false); }
+      if (valid()) {
+        setLimitsLoaded(false);
+        setLimitsError(e?.message || 'Failed to load agent limit assignments');
+      }
+    } finally {
+      if (valid()) setLimitsLoading(false);
+    }
   };
 
   const limitFailure = (error: any, operation: string) => {
     if (operationUncertain(error)) {
-      setLimitUnconfirmed(true); setLimitReviewReady(false);
-      setLimitsError(`${operation} outcome is unconfirmed or conflicted. Review Agent assignments and audit history independently before another action.${error?.message ? ` ${error.message}` : ''}`);
+      setLimitUnconfirmed(true);
+      setLimitReviewReady(false);
+      setLimitsError(
+        `${operation} outcome is unconfirmed or conflicted. Review Agent assignments and audit history independently before another action.${error?.message ? ` ${error.message}` : ''}`,
+      );
     } else setLimitsError(error?.message || `${operation} was rejected.`);
   };
 
   const assignAgentLimit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selected || !canAssignLimit || limitsBusy || limitWriteInFlight.current || limitUnconfirmed || limitsLoading || (canViewLimitCatalog && !limitsLoaded) || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed) return;
+    if (
+      !selected ||
+      !canAssignLimit ||
+      limitsBusy ||
+      limitWriteInFlight.current ||
+      limitUnconfirmed ||
+      limitsLoading ||
+      (canViewLimitCatalog && !limitsLoaded) ||
+      lifecycleBusy ||
+      lifecycleReviewBusy ||
+      lifecycleUnconfirmed
+    )
+      return;
     const code = newLimitProfileCode.trim().toUpperCase();
-    if (!/^[A-Z0-9_]{3,80}$/.test(code)) { setLimitsError('Limit profile code must contain 3–80 letters, numbers or underscores.'); return; }
-    limitWriteInFlight.current = true; limitReadGeneration.current += 1;
-    setLimitsBusy(true); setLimitsError(''); setLimitsMsg('');
+    if (!/^[A-Z0-9_]{3,80}$/.test(code)) {
+      setLimitsError('Limit profile code must contain 3–80 letters, numbers or underscores.');
+      return;
+    }
+    limitWriteInFlight.current = true;
+    limitReadGeneration.current += 1;
+    setLimitsBusy(true);
+    setLimitsError('');
+    setLimitsMsg('');
     try {
-      const receipt = await ApiClient.post<AgentLimitAssignmentRecord>('/internal/limit-assignments', { subjectType: 'AGENT', subjectId: selected.id, limitProfileCode: code });
+      const receipt = await ApiClient.post<AgentLimitAssignmentRecord>(
+        '/internal/limit-assignments',
+        { subjectType: 'AGENT', subjectId: selected.id, limitProfileCode: code },
+      );
       if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
-      if (!validAgentLimit(receipt, selected.id) || receipt.limitProfileCode !== code || receipt.isActive !== true) throw new Error('Assignment receipt did not match the request.');
+      if (
+        !validAgentLimit(receipt, selected.id) ||
+        receipt.limitProfileCode !== code ||
+        receipt.isActive !== true
+      )
+        throw new Error('Assignment receipt did not match the request.');
       setNewLimitProfileCode('');
-      setLimitsMsg(canViewLimitCatalog ? `Assigned limit profile ${code} to ${selected.reference}.` : `Assigned limit profile ${code} to ${selected.reference}. Viewing existing assignments requires limit.view.`);
+      setLimitsMsg(
+        canViewLimitCatalog
+          ? `Assigned limit profile ${code} to ${selected.reference}.`
+          : `Assigned limit profile ${code} to ${selected.reference}. Viewing existing assignments requires limit.view.`,
+      );
       if (canViewLimitCatalog) await loadAgentLimits(selected.id, 1);
-    } catch (e: any) { if (mountedRef.current && selectedAgentId.current === selected.id) limitFailure(e, 'Limit assignment'); }
-    finally { limitWriteInFlight.current = false; if (mountedRef.current) setLimitsBusy(false); }
+    } catch (e: any) {
+      if (mountedRef.current && selectedAgentId.current === selected.id)
+        limitFailure(e, 'Limit assignment');
+    } finally {
+      limitWriteInFlight.current = false;
+      if (mountedRef.current) setLimitsBusy(false);
+    }
   };
 
   const toggleAgentLimit = async (item: AgentLimitAssignmentRecord) => {
-    if (!selected || !canAssignLimit || limitsBusy || limitWriteInFlight.current || limitUnconfirmed || limitsLoading || !limitsLoaded || newLimitProfileCode.trim() || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || !validAgentLimit(item, selected.id) || !agentLimits.some(row => row.id === item.id && row.version === item.version)) return;
-    limitWriteInFlight.current = true; limitReadGeneration.current += 1;
-    setLimitsBusy(true); setLimitsError(''); setLimitsMsg('');
+    if (
+      !selected ||
+      !canAssignLimit ||
+      limitsBusy ||
+      limitWriteInFlight.current ||
+      limitUnconfirmed ||
+      limitsLoading ||
+      !limitsLoaded ||
+      newLimitProfileCode.trim() ||
+      lifecycleBusy ||
+      lifecycleReviewBusy ||
+      lifecycleUnconfirmed ||
+      !validAgentLimit(item, selected.id) ||
+      !agentLimits.some((row) => row.id === item.id && row.version === item.version)
+    )
+      return;
+    limitWriteInFlight.current = true;
+    limitReadGeneration.current += 1;
+    setLimitsBusy(true);
+    setLimitsError('');
+    setLimitsMsg('');
     try {
-      const receipt = await ApiClient.patch<AgentLimitAssignmentRecord>(`/internal/limit-assignments/${encodeURIComponent(item.id)}`, { subjectType: 'AGENT', isActive: !item.isActive, version: item.version });
+      const receipt = await ApiClient.patch<AgentLimitAssignmentRecord>(
+        `/internal/limit-assignments/${encodeURIComponent(item.id)}`,
+        { subjectType: 'AGENT', isActive: !item.isActive, version: item.version },
+      );
       if (!mountedRef.current || selectedAgentId.current !== selected.id) return;
-      if (!validAgentLimit(receipt, selected.id) || receipt.id !== item.id || receipt.limitProfileCode !== item.limitProfileCode || receipt.isActive !== !item.isActive || receipt.version !== item.version! + 1) throw new Error('Limit update receipt did not match the request.');
-      setLimitsMsg(`Limit profile ${item.limitProfileCode} ${item.isActive ? 'deactivated' : 'activated'}.`);
+      if (
+        !validAgentLimit(receipt, selected.id) ||
+        receipt.id !== item.id ||
+        receipt.limitProfileCode !== item.limitProfileCode ||
+        receipt.isActive !== !item.isActive ||
+        receipt.version !== item.version! + 1
+      )
+        throw new Error('Limit update receipt did not match the request.');
+      setLimitsMsg(
+        `Limit profile ${item.limitProfileCode} ${item.isActive ? 'deactivated' : 'activated'}.`,
+      );
       await loadAgentLimits(selected.id, limitPage);
-    } catch (e: any) { if (mountedRef.current && selectedAgentId.current === selected.id) limitFailure(e, 'Limit update'); }
-    finally { limitWriteInFlight.current = false; if (mountedRef.current) setLimitsBusy(false); }
+    } catch (e: any) {
+      if (mountedRef.current && selectedAgentId.current === selected.id)
+        limitFailure(e, 'Limit update');
+    } finally {
+      limitWriteInFlight.current = false;
+      if (mountedRef.current) setLimitsBusy(false);
+    }
   };
 
   const inspectApplication = async (applicationId: string) => {
@@ -1445,10 +2188,19 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
         `/internal/agents/applications/${encodeURIComponent(applicationId)}`,
       );
       if (!mountedRef.current) return;
-      if (!detail || detail.id !== applicationId || typeof detail.reference !== 'string' || typeof detail.status !== 'string') throw new Error('Application details could not be verified.');
+      if (
+        !detail ||
+        detail.id !== applicationId ||
+        typeof detail.reference !== 'string' ||
+        typeof detail.status !== 'string'
+      )
+        throw new Error('Application details could not be verified.');
       setInspectedApplication(detail);
     } catch (e: any) {
-      if (mountedRef.current) { setInspectedApplication(null); setApplicationsError(e?.message || 'Failed to load application details'); }
+      if (mountedRef.current) {
+        setInspectedApplication(null);
+        setApplicationsError(e?.message || 'Failed to load application details');
+      }
     } finally {
       if (mountedRef.current) setInspectAppLoading(false);
     }
@@ -1458,7 +2210,16 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     app: AgentApplicationRecord,
     action: 'review' | 'approve' | 'reject' | 'activate',
   ) => {
-    if (!canChangeApplications || (action === 'activate' && !canActivate) || applicationBusyId || onboardingOpen || applicationActionRef.current || applicationsLoading || applicationsNeedRefresh) return;
+    if (
+      !canChangeApplications ||
+      (action === 'activate' && !canActivate) ||
+      applicationBusyId ||
+      onboardingOpen ||
+      applicationActionRef.current ||
+      applicationsLoading ||
+      applicationsNeedRefresh
+    )
+      return;
     if (action === 'reject' && !(rejectReasons[app.id] || '').trim()) {
       setApplicationsError('A rejection reason is required before rejecting an application.');
       return;
@@ -1473,22 +2234,46 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
           `/internal/admin/agents/applications/${encodeURIComponent(app.id)}/activate`,
         );
         if (!mountedRef.current) return;
-        if (!activated || activated.status !== 'ACTIVE' || typeof activated.id !== 'string' || !activated.id || typeof activated.reference !== 'string' || !activated.reference.trim() || (app.agentId ? activated.id !== app.agentId : activated.reference !== app.applicantReference)) throw new Error('Activation receipt did not match the application.');
-        setApplicationsMsg(`Application ${app.reference} activated as Agent ${activated.reference}.`);
+        if (
+          !activated ||
+          activated.status !== 'ACTIVE' ||
+          typeof activated.id !== 'string' ||
+          !activated.id ||
+          typeof activated.reference !== 'string' ||
+          !activated.reference.trim() ||
+          (app.agentId
+            ? activated.id !== app.agentId
+            : activated.reference !== app.applicantReference)
+        )
+          throw new Error('Activation receipt did not match the application.');
+        setApplicationsMsg(
+          `Application ${app.reference} activated as Agent ${activated.reference}.`,
+        );
         await Promise.all([loadApplications(), fetchAgents()]);
       } else if (action === 'reject') {
-        const rejected = await ApiClient.post<AgentApplicationRecord>(`/internal/agents/applications/${encodeURIComponent(app.id)}/reject`, {
-          reason: (rejectReasons[app.id] || '').trim(),
-        });
+        const rejected = await ApiClient.post<AgentApplicationRecord>(
+          `/internal/agents/applications/${encodeURIComponent(app.id)}/reject`,
+          {
+            reason: (rejectReasons[app.id] || '').trim(),
+          },
+        );
         if (!mountedRef.current) return;
-        if (!rejected || rejected.id !== app.id || rejected.status !== 'REJECTED') throw new Error('Rejection receipt did not match the application.');
+        if (!rejected || rejected.id !== app.id || rejected.status !== 'REJECTED')
+          throw new Error('Rejection receipt did not match the application.');
         setRejectReasons((cur) => ({ ...cur, [app.id]: '' }));
         setApplicationsMsg(`Application ${app.reference} rejected.`);
         await loadApplications();
       } else {
-        const receipt = await ApiClient.post<AgentApplicationRecord>(`/internal/agents/applications/${encodeURIComponent(app.id)}/${action}`);
+        const receipt = await ApiClient.post<AgentApplicationRecord>(
+          `/internal/agents/applications/${encodeURIComponent(app.id)}/${action}`,
+        );
         if (!mountedRef.current) return;
-        if (!receipt || receipt.id !== app.id || receipt.status !== (action === 'review' ? 'UNDER_REVIEW' : 'APPROVED')) throw new Error('Decision receipt did not match the application.');
+        if (
+          !receipt ||
+          receipt.id !== app.id ||
+          receipt.status !== (action === 'review' ? 'UNDER_REVIEW' : 'APPROVED')
+        )
+          throw new Error('Decision receipt did not match the application.');
         setApplicationsMsg(
           action === 'review'
             ? `Application ${app.reference} marked under review.`
@@ -1497,7 +2282,15 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
         await loadApplications();
       }
     } catch (e: any) {
-      if (mountedRef.current) { applicationsUncertaintyVersion.current++; setApplicationsNeedRefresh(true); setApplicationsReviewPending(true); setApplicationsReviewReady(false); setApplicationsError(`Application ${action} outcome not confirmed. Refresh and inspect before retrying. ${e?.message || ''}`); }
+      if (mountedRef.current) {
+        applicationsUncertaintyVersion.current++;
+        setApplicationsNeedRefresh(true);
+        setApplicationsReviewPending(true);
+        setApplicationsReviewReady(false);
+        setApplicationsError(
+          `Application ${action} outcome not confirmed. Refresh and inspect before retrying. ${e?.message || ''}`,
+        );
+      }
     } finally {
       applicationActionRef.current = false;
       if (mountedRef.current) setApplicationBusyId(null);
@@ -1506,12 +2299,24 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
   const closeDetail = () => {
     if (detailBusy || !mayLeaveAgent()) return;
-    selectedAgentId.current = null; positionRequest.current += 1; agentHistoryRequest.current += 1;
-    setAgentHistoryLoading(false); catalogRequest.current += 1; setLimitCatalogLoading(false);
-    outletReadGeneration.current += 1; limitReadGeneration.current += 1;
-    setLimitUnconfirmed(false); setLimitReviewReady(false); setNewLimitProfileCode('');
-    setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setOutletUnconfirmed(false); setOutletReviewReady(false);
-    setOutletForm(EMPTY_OUTLET_FORM); setTerminalForm(EMPTY_TERMINAL_FORM); setSelected(null);
+    selectedAgentId.current = null;
+    positionRequest.current += 1;
+    agentHistoryRequest.current += 1;
+    setAgentHistoryLoading(false);
+    catalogRequest.current += 1;
+    setLimitCatalogLoading(false);
+    outletReadGeneration.current += 1;
+    limitReadGeneration.current += 1;
+    setLimitUnconfirmed(false);
+    setLimitReviewReady(false);
+    setNewLimitProfileCode('');
+    setLifecycleUnconfirmed(false);
+    setLifecycleReviewStatus(null);
+    setOutletUnconfirmed(false);
+    setOutletReviewReady(false);
+    setOutletForm(EMPTY_OUTLET_FORM);
+    setTerminalForm(EMPTY_TERMINAL_FORM);
+    setSelected(null);
   };
 
   if (!canView) {
@@ -1532,9 +2337,18 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   return (
     <div className="mn-operational" style={wrap}>
       <header className="agent-network-header">
-        <div><p className="agent-network-eyebrow">AGENT OPERATIONS</p><h2>Agent Network Management</h2>
-          <p>Review onboarding and manage your agent network in one place. Available actions depend on your workforce access.</p></div>
-        <nav aria-label="Agent network sections"><a href="#agent-directory">Agent directory</a>{canReviewApplications && <a href="#agent-applications">Onboarding applications</a>}</nav>
+        <div>
+          <p className="agent-network-eyebrow">AGENT OPERATIONS</p>
+          <h2>Agent Network Management</h2>
+          <p>
+            Review onboarding and manage your agent network in one place. Available actions depend
+            on your workforce access.
+          </p>
+        </div>
+        <nav aria-label="Agent network sections">
+          <a href="#agent-directory">Agent directory</a>
+          {canReviewApplications && <a href="#agent-applications">Onboarding applications</a>}
+        </nav>
       </header>
 
       {canManageFunding && (
@@ -1542,23 +2356,38 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
           {fundingTargetAgentId && (
             <div style={noteBox}>
               Funding panel targeted to Agent <code>{fundingTargetAgentId}</code>.{' '}
-              <button type="button" style={smallBtn} onClick={() => { if (mayChangeFundingTarget()) setFundingTargetAgentId(''); }}>
+              <button
+                type="button"
+                style={smallBtn}
+                onClick={() => {
+                  if (mayChangeFundingTarget()) setFundingTargetAgentId('');
+                }}
+              >
                 Clear target
               </button>
             </div>
           )}
-          <AgentFundingPanel agentId={fundingTargetAgentId || undefined} onFundingGuardChange={reportFundingGuard} />
+          <AgentFundingPanel
+            agentId={fundingTargetAgentId || undefined}
+            onFundingGuardChange={reportFundingGuard}
+          />
         </div>
       )}
 
       {canReviewApplications && (
-        <section id="agent-applications" className="agent-network-section" aria-label="Agent applications governance">
+        <section
+          id="agent-applications"
+          className="agent-network-section"
+          aria-label="Agent applications governance"
+        >
           <div style={sectionHead}>
             <div>
               <p className="agent-network-eyebrow">ONBOARDING &amp; REVIEW</p>
               <h3 style={h3}>Agent Onboarding Applications</h3>
               <p style={smallMuted}>
-                Create and edit workforce-assisted <code>DRAFT</code> applications, submit drafts, review submitted applications, record approval/rejection decisions, and activate approved Ordinary Agents.
+                Create and edit workforce-assisted <code>DRAFT</code> applications, submit drafts,
+                review submitted applications, record approval/rejection decisions, and activate
+                approved Ordinary Agents.
               </p>
             </div>
             <div style={actionRow}>
@@ -1580,7 +2409,14 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
               <button
                 type="button"
                 style={successBtn}
-                disabled={!canChangeApplications || onboardingBusy || onboardingOpen || Boolean(applicationBusyId) || applicationsLoading || applicationsNeedRefresh}
+                disabled={
+                  !canChangeApplications ||
+                  onboardingBusy ||
+                  onboardingOpen ||
+                  Boolean(applicationBusyId) ||
+                  applicationsLoading ||
+                  applicationsNeedRefresh
+                }
                 onClick={startNewApplication}
               >
                 New Agent Application
@@ -1618,7 +2454,11 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   ref={cancelApplicationRef}
                   disabled={onboardingBusy}
                   onClick={() => {
-                    if (JSON.stringify(applicationForm) !== JSON.stringify(applicationBaseline.current) || onboardingUnconfirmed) {
+                    if (
+                      JSON.stringify(applicationForm) !==
+                        JSON.stringify(applicationBaseline.current) ||
+                      onboardingUnconfirmed
+                    ) {
                       setConfirmDiscardApplication(true);
                     } else {
                       setOnboardingOpen(false);
@@ -1630,479 +2470,613 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
               </div>
               {confirmDiscardApplication && (
                 <div role="group" aria-label="Discard application changes" style={errBox}>
-                  <p>Discard the local changes? Saved drafts remain in the queue. If the last outcome was unconfirmed, refresh and inspect the queue before retrying.</p>
-                  <button ref={keepEditingRef} type="button" style={btn} onClick={() => { setConfirmDiscardApplication(false); cancelApplicationRef.current?.focus(); }}>Keep editing</button>{' '}
-                  <button type="button" style={btn} onClick={() => { setConfirmDiscardApplication(false); setOnboardingOpen(false); setEditingDraftId(null); setEditingDraftRef(null); setEditingDraftVersion(undefined); setOnboardingError(''); }}>Discard changes</button>
-                </div>
-              )}
-              <fieldset disabled={onboardingBusy || confirmDiscardApplication} className="agent-network-form-fields">
-              <p style={{ ...smallMuted, marginTop: 4, marginBottom: 10 }}>
-                Save an editable <code>DRAFT</code> at any time or submit directly into the{' '}
-                <code>SUBMITTED</code> review queue. Applicant reference becomes the canonical Agent
-                reference upon approval.
-              </p>
-
-              {onboardingError && (
-                <div style={errBox} role="alert">
-                  {onboardingError}
-                </div>
-              )}
-
-              <div style={formGrid}>
-                <label style={formFieldLabel}>
-                  Applicant reference (canonical Agent ref)
-                  <input
-                    aria-label="Applicant reference"
-                    placeholder="e.g. AGT-ABJ-001"
-                    value={applicationForm.applicantReference}
-                    readOnly={Boolean(editingDraftId)}
-                    onChange={(e) =>
-                      setApplicationForm((cur) => ({ ...cur, applicantReference: e.target.value }))
-                    }
-                    style={{
-                      ...inlineInput,
-                      background: editingDraftId ? 'var(--mn-surface-sunken, #eef3f0)' : '#fff',
+                  <p>
+                    Discard the local changes? Saved drafts remain in the queue. If the last outcome
+                    was unconfirmed, refresh and inspect the queue before retrying.
+                  </p>
+                  <button
+                    ref={keepEditingRef}
+                    type="button"
+                    style={btn}
+                    onClick={() => {
+                      setConfirmDiscardApplication(false);
+                      cancelApplicationRef.current?.focus();
                     }}
-                    disabled={onboardingBusy}
-                    maxLength={160}
-                  />
-                </label>
+                  >
+                    Keep editing
+                  </button>{' '}
+                  <button
+                    type="button"
+                    style={btn}
+                    onClick={() => {
+                      setConfirmDiscardApplication(false);
+                      setOnboardingOpen(false);
+                      setEditingDraftId(null);
+                      setEditingDraftRef(null);
+                      setEditingDraftVersion(undefined);
+                      setOnboardingError('');
+                    }}
+                  >
+                    Discard changes
+                  </button>
+                </div>
+              )}
+              <fieldset
+                disabled={onboardingBusy || confirmDiscardApplication}
+                className="agent-network-form-fields"
+              >
+                <p style={{ ...smallMuted, marginTop: 4, marginBottom: 10 }}>
+                  Save an editable <code>DRAFT</code> at any time or submit directly into the{' '}
+                  <code>SUBMITTED</code> review queue. Applicant reference becomes the canonical
+                  Agent reference upon approval.
+                </p>
 
-                <label style={formFieldLabel}>
-                  Agent Class
-                  {activeClassOptions.length > 0 ? (
-                    <select
-                      aria-label="Application Agent class"
-                      value={applicationForm.agentClassId}
-                      onChange={(e) =>
-                        setApplicationForm((cur) => ({ ...cur, agentClassId: e.target.value }))
-                      }
-                      style={inlineInput}
-                      disabled={onboardingBusy}
-                    >
-                      <option value="">Select active Agent Class…</option>
-                      {activeClassOptions.map((cls) => (
-                        <option key={cls.id} value={cls.id}>
-                          {cls.name} ({cls.code})
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
+                {onboardingError && (
+                  <div style={errBox} role="alert">
+                    {onboardingError}
+                  </div>
+                )}
+
+                <div style={formGrid}>
+                  <label style={formFieldLabel}>
+                    Applicant reference (canonical Agent ref)
                     <input
-                      aria-label="Application Agent class reference"
-                      placeholder={
-                        classCatalogLoading
-                          ? 'Loading Agent classes…'
-                          : 'Active Agent Class code or reference'
-                      }
-                      value={applicationForm.agentClassReference || applicationForm.agentClassId}
+                      aria-label="Applicant reference"
+                      placeholder="e.g. AGT-ABJ-001"
+                      value={applicationForm.applicantReference}
+                      readOnly={Boolean(editingDraftId)}
                       onChange={(e) =>
                         setApplicationForm((cur) => ({
                           ...cur,
-                          agentClassReference: e.target.value,
+                          applicantReference: e.target.value,
+                        }))
+                      }
+                      style={{
+                        ...inlineInput,
+                        background: editingDraftId ? 'var(--mn-surface-sunken, #eef3f0)' : '#fff',
+                      }}
+                      disabled={onboardingBusy}
+                      maxLength={160}
+                    />
+                  </label>
+
+                  <label style={formFieldLabel}>
+                    Agent Class
+                    {activeClassOptions.length > 0 ? (
+                      <select
+                        aria-label="Application Agent class"
+                        value={applicationForm.agentClassId}
+                        onChange={(e) =>
+                          setApplicationForm((cur) => ({ ...cur, agentClassId: e.target.value }))
+                        }
+                        style={inlineInput}
+                        disabled={onboardingBusy}
+                      >
+                        <option value="">Select active Agent Class…</option>
+                        {activeClassOptions.map((cls) => (
+                          <option key={cls.id} value={cls.id}>
+                            {cls.name} ({cls.code})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        aria-label="Application Agent class reference"
+                        placeholder={
+                          classCatalogLoading
+                            ? 'Loading Agent classes…'
+                            : 'Active Agent Class code or reference'
+                        }
+                        value={applicationForm.agentClassReference || applicationForm.agentClassId}
+                        onChange={(e) =>
+                          setApplicationForm((cur) => ({
+                            ...cur,
+                            agentClassReference: e.target.value,
+                          }))
+                        }
+                        style={inlineInput}
+                        disabled={onboardingBusy}
+                      />
+                    )}
+                  </label>
+
+                  <label style={formFieldLabel}>
+                    Business / trading name
+                    <input
+                      aria-label="Business name"
+                      placeholder="Registered or trading business name"
+                      value={applicationForm.businessName}
+                      onChange={(e) =>
+                        setApplicationForm((cur) => ({ ...cur, businessName: e.target.value }))
+                      }
+                      style={inlineInput}
+                      disabled={onboardingBusy}
+                      maxLength={320}
+                    />
+                  </label>
+
+                  <label style={formFieldLabel}>
+                    Contact email
+                    <input
+                      aria-label="Contact email"
+                      type="email"
+                      placeholder="applicant@example.com"
+                      value={applicationForm.contactEmail}
+                      onChange={(e) =>
+                        setApplicationForm((cur) => ({ ...cur, contactEmail: e.target.value }))
+                      }
+                      style={inlineInput}
+                      disabled={onboardingBusy}
+                      maxLength={320}
+                    />
+                  </label>
+
+                  <label style={formFieldLabel}>
+                    Principal contact name
+                    <input
+                      aria-label="Principal contact name"
+                      placeholder="Full name of applicant / proprietor"
+                      value={applicationForm.contactPersonName}
+                      onChange={(e) =>
+                        setApplicationForm((cur) => ({ ...cur, contactPersonName: e.target.value }))
+                      }
+                      style={inlineInput}
+                      disabled={onboardingBusy}
+                    />
+                  </label>
+
+                  <label style={formFieldLabel}>
+                    Contact phone
+                    <input
+                      aria-label="Contact phone"
+                      placeholder="e.g. +2348012345678"
+                      value={applicationForm.contactPhone}
+                      onChange={(e) =>
+                        setApplicationForm((cur) => ({ ...cur, contactPhone: e.target.value }))
+                      }
+                      style={inlineInput}
+                      disabled={onboardingBusy}
+                    />
+                  </label>
+
+                  <label style={formFieldLabel}>
+                    Operating address
+                    <input
+                      aria-label="Operating address"
+                      placeholder="Primary shop / desk street address"
+                      value={applicationForm.businessAddress}
+                      onChange={(e) =>
+                        setApplicationForm((cur) => ({ ...cur, businessAddress: e.target.value }))
+                      }
+                      style={inlineInput}
+                      disabled={onboardingBusy}
+                    />
+                  </label>
+
+                  <label style={formFieldLabel}>
+                    Operating city
+                    <input
+                      aria-label="Operating city"
+                      placeholder="City (optional)"
+                      value={applicationForm.city}
+                      onChange={(e) =>
+                        setApplicationForm((cur) => ({ ...cur, city: e.target.value }))
+                      }
+                      style={inlineInput}
+                      disabled={onboardingBusy}
+                    />
+                  </label>
+
+                  <label style={formFieldLabel}>
+                    Operating state
+                    <input
+                      aria-label="Operating state"
+                      placeholder="State (optional)"
+                      value={applicationForm.state}
+                      onChange={(e) =>
+                        setApplicationForm((cur) => ({ ...cur, state: e.target.value }))
+                      }
+                      style={inlineInput}
+                      disabled={onboardingBusy}
+                    />
+                  </label>
+
+                  <label style={formFieldLabel}>
+                    CAC / registration reference (optional)
+                    <input
+                      aria-label="Registration reference"
+                      placeholder="e.g. RC-123456"
+                      value={applicationForm.registrationNumber}
+                      onChange={(e) =>
+                        setApplicationForm((cur) => ({
+                          ...cur,
+                          registrationNumber: e.target.value,
                         }))
                       }
                       style={inlineInput}
                       disabled={onboardingBusy}
                     />
-                  )}
-                </label>
+                  </label>
 
-                <label style={formFieldLabel}>
-                  Business / trading name
-                  <input
-                    aria-label="Business name"
-                    placeholder="Registered or trading business name"
-                    value={applicationForm.businessName}
-                    onChange={(e) =>
-                      setApplicationForm((cur) => ({ ...cur, businessName: e.target.value }))
-                    }
-                    style={inlineInput}
-                    disabled={onboardingBusy}
-                    maxLength={320}
-                  />
-                </label>
+                  <label style={formFieldLabel}>
+                    Primary KYC / evidence reference
+                    <input
+                      aria-label="Primary evidence reference"
+                      placeholder="Verified ID / dossier reference"
+                      value={applicationForm.kycDocumentReference}
+                      onChange={(e) =>
+                        setApplicationForm((cur) => ({
+                          ...cur,
+                          kycDocumentReference: e.target.value,
+                        }))
+                      }
+                      style={inlineInput}
+                      disabled={onboardingBusy}
+                    />
+                  </label>
 
-                <label style={formFieldLabel}>
-                  Contact email
-                  <input
-                    aria-label="Contact email"
-                    type="email"
-                    placeholder="applicant@example.com"
-                    value={applicationForm.contactEmail}
-                    onChange={(e) =>
-                      setApplicationForm((cur) => ({ ...cur, contactEmail: e.target.value }))
-                    }
-                    style={inlineInput}
-                    disabled={onboardingBusy}
-                    maxLength={320}
-                  />
-                </label>
-
-                <label style={formFieldLabel}>
-                  Principal contact name
-                  <input
-                    aria-label="Principal contact name"
-                    placeholder="Full name of applicant / proprietor"
-                    value={applicationForm.contactPersonName}
-                    onChange={(e) =>
-                      setApplicationForm((cur) => ({ ...cur, contactPersonName: e.target.value }))
-                    }
-                    style={inlineInput}
-                    disabled={onboardingBusy}
-                  />
-                </label>
-
-                <label style={formFieldLabel}>
-                  Contact phone
-                  <input
-                    aria-label="Contact phone"
-                    placeholder="e.g. +2348012345678"
-                    value={applicationForm.contactPhone}
-                    onChange={(e) =>
-                      setApplicationForm((cur) => ({ ...cur, contactPhone: e.target.value }))
-                    }
-                    style={inlineInput}
-                    disabled={onboardingBusy}
-                  />
-                </label>
-
-                <label style={formFieldLabel}>
-                  Operating address
-                  <input
-                    aria-label="Operating address"
-                    placeholder="Primary shop / desk street address"
-                    value={applicationForm.businessAddress}
-                    onChange={(e) =>
-                      setApplicationForm((cur) => ({ ...cur, businessAddress: e.target.value }))
-                    }
-                    style={inlineInput}
-                    disabled={onboardingBusy}
-                  />
-                </label>
-
-                <label style={formFieldLabel}>
-                  Operating city
-                  <input
-                    aria-label="Operating city"
-                    placeholder="City (optional)"
-                    value={applicationForm.city}
-                    onChange={(e) =>
-                      setApplicationForm((cur) => ({ ...cur, city: e.target.value }))
-                    }
-                    style={inlineInput}
-                    disabled={onboardingBusy}
-                  />
-                </label>
-
-                <label style={formFieldLabel}>
-                  Operating state
-                  <input
-                    aria-label="Operating state"
-                    placeholder="State (optional)"
-                    value={applicationForm.state}
-                    onChange={(e) =>
-                      setApplicationForm((cur) => ({ ...cur, state: e.target.value }))
-                    }
-                    style={inlineInput}
-                    disabled={onboardingBusy}
-                  />
-                </label>
-
-                <label style={formFieldLabel}>
-                  CAC / registration reference (optional)
-                  <input
-                    aria-label="Registration reference"
-                    placeholder="e.g. RC-123456"
-                    value={applicationForm.registrationNumber}
-                    onChange={(e) =>
-                      setApplicationForm((cur) => ({ ...cur, registrationNumber: e.target.value }))
-                    }
-                    style={inlineInput}
-                    disabled={onboardingBusy}
-                  />
-                </label>
-
-                <label style={formFieldLabel}>
-                  Primary KYC / evidence reference
-                  <input
-                    aria-label="Primary evidence reference"
-                    placeholder="Verified ID / dossier reference"
-                    value={applicationForm.kycDocumentReference}
-                    onChange={(e) =>
-                      setApplicationForm((cur) => ({
-                        ...cur,
-                        kycDocumentReference: e.target.value,
-                      }))
-                    }
-                    style={inlineInput}
-                    disabled={onboardingBusy}
-                  />
-                </label>
-
-                <label style={formFieldLabel}>
-                  Verification notes (optional)
-                  <input
-                    aria-label="Verification notes"
-                    placeholder="Field verification or compliance notes"
-                    value={applicationForm.notes}
-                    onChange={(e) =>
-                      setApplicationForm((cur) => ({ ...cur, notes: e.target.value }))
-                    }
-                    style={inlineInput}
-                    disabled={onboardingBusy}
-                  />
-                </label>
-              </div>
-
-              {requiredInfoKeys.length > 0 && (
-                <div style={{ marginTop: 10 }}>
-                  <strong style={{ fontSize: 12 }}>
-                    Class-Required Applicant Information ({selectedOnboardingClass?.code})
-                  </strong>
-                  <div style={{ ...formGrid, marginTop: 6 }}>
-                    {requiredInfoKeys.map((infoKey) => (
-                      <label key={infoKey} style={formFieldLabel}>
-                        {infoKey}
-                        <input
-                          aria-label={`Required info: ${infoKey}`}
-                          placeholder={`Enter ${infoKey}`}
-                          value={applicationForm.classInformation[infoKey] || ''}
-                          onChange={(e) =>
-                            setApplicationForm((cur) => ({
-                              ...cur,
-                              classInformation: {
-                                ...cur.classInformation,
-                                [infoKey]: e.target.value,
-                              },
-                            }))
-                          }
-                          style={inlineInput}
-                          disabled={onboardingBusy}
-                        />
-                      </label>
-                    ))}
-                  </div>
+                  <label style={formFieldLabel}>
+                    Verification notes (optional)
+                    <input
+                      aria-label="Verification notes"
+                      placeholder="Field verification or compliance notes"
+                      value={applicationForm.notes}
+                      onChange={(e) =>
+                        setApplicationForm((cur) => ({ ...cur, notes: e.target.value }))
+                      }
+                      style={inlineInput}
+                      disabled={onboardingBusy}
+                    />
+                  </label>
                 </div>
-              )}
 
-              {requiredDocKeys.length > 0 && (
-                <div style={{ marginTop: 10 }}>
-                  <strong style={{ fontSize: 12 }}>
-                    Class-Required Evidence References ({selectedOnboardingClass?.code})
-                  </strong>
-                  <div style={{ ...formGrid, marginTop: 6 }}>
-                    {requiredDocKeys.map((docKey) => (
-                      <label key={docKey} style={formFieldLabel}>
-                        {docKey}
-                        <input
-                          aria-label={`Required evidence: ${docKey}`}
-                          placeholder={`Document reference for ${docKey}`}
-                          value={applicationForm.documentEvidence[docKey] || ''}
-                          onChange={(e) =>
-                            setApplicationForm((cur) => ({
-                              ...cur,
-                              documentEvidence: {
-                                ...cur.documentEvidence,
-                                [docKey]: e.target.value,
-                              },
-                            }))
-                          }
-                          style={inlineInput}
-                          disabled={onboardingBusy}
-                        />
-                      </label>
-                    ))}
+                {requiredInfoKeys.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <strong style={{ fontSize: 12 }}>
+                      Class-Required Applicant Information ({selectedOnboardingClass?.code})
+                    </strong>
+                    <div style={{ ...formGrid, marginTop: 6 }}>
+                      {requiredInfoKeys.map((infoKey) => (
+                        <label key={infoKey} style={formFieldLabel}>
+                          {infoKey}
+                          <input
+                            aria-label={`Required info: ${infoKey}`}
+                            placeholder={`Enter ${infoKey}`}
+                            value={applicationForm.classInformation[infoKey] || ''}
+                            onChange={(e) =>
+                              setApplicationForm((cur) => ({
+                                ...cur,
+                                classInformation: {
+                                  ...cur.classInformation,
+                                  [infoKey]: e.target.value,
+                                },
+                              }))
+                            }
+                            style={inlineInput}
+                            disabled={onboardingBusy}
+                          />
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              <div style={{ ...actionRow, marginTop: 12 }}>
-                <button
-                  type="button"
-                  style={btn}
-                  disabled={onboardingBusy || onboardingUnconfirmed}
-                  onClick={() => void saveApplicationDraft()}
-                >
-                  {onboardingBusy ? 'Saving…' : 'Save draft'}
-                </button>
-                <button type="submit" style={successBtn} disabled={onboardingBusy || onboardingUnconfirmed}>
-                  {onboardingBusy ? 'Submitting…' : 'Submit application'}
-                </button>
-              </div>
+                {requiredDocKeys.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <strong style={{ fontSize: 12 }}>
+                      Class-Required Evidence References ({selectedOnboardingClass?.code})
+                    </strong>
+                    <div style={{ ...formGrid, marginTop: 6 }}>
+                      {requiredDocKeys.map((docKey) => (
+                        <label key={docKey} style={formFieldLabel}>
+                          {docKey}
+                          <input
+                            aria-label={`Required evidence: ${docKey}`}
+                            placeholder={`Document reference for ${docKey}`}
+                            value={applicationForm.documentEvidence[docKey] || ''}
+                            onChange={(e) =>
+                              setApplicationForm((cur) => ({
+                                ...cur,
+                                documentEvidence: {
+                                  ...cur.documentEvidence,
+                                  [docKey]: e.target.value,
+                                },
+                              }))
+                            }
+                            style={inlineInput}
+                            disabled={onboardingBusy}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ ...actionRow, marginTop: 12 }}>
+                  <button
+                    type="button"
+                    style={btn}
+                    disabled={onboardingBusy || onboardingUnconfirmed}
+                    onClick={() => void saveApplicationDraft()}
+                  >
+                    {onboardingBusy ? 'Saving…' : 'Save draft'}
+                  </button>
+                  <button
+                    type="submit"
+                    style={successBtn}
+                    disabled={onboardingBusy || onboardingUnconfirmed}
+                  >
+                    {onboardingBusy ? 'Submitting…' : 'Submit application'}
+                  </button>
+                </div>
               </fieldset>
             </form>
           )}
 
-          {applicationsError && <div style={errBox} role="alert">{applicationsError}</div>}
-          {applicationsLoading && <p role="status">Refreshing the application queue; actions are unavailable until the read completes.</p>}
-          {applicationsReviewPending && <div style={boundaryBox} role="status"><strong>Application review required.</strong> The last outcome is unconfirmed or conflicted. Refresh the queue and independently inspect the application and available audit history before another action. A missing record or fresh read cannot exclude a late commit, and this local lock is lost on confirmed exit or session change.
-            {applicationsReviewReady && <button type="button" style={smallBtn} onClick={() => { if (onboardingOpen && !window.confirm('Acknowledge review and discard the local application editor? Copy any needed entries before continuing.')) return; setOnboardingOpen(false); setOnboardingUnconfirmed(false); setConfirmDiscardApplication(false); setEditingDraftId(null); setEditingDraftRef(null); setEditingDraftVersion(undefined); setApplicationForm(EMPTY_APPLICATION_FORM); setOnboardingError(''); setApplicationsReviewPending(false); setApplicationsReviewReady(false); setApplicationsNeedRefresh(false); setApplicationsError(''); }}>I reviewed the application and audit history</button>}
-          </div>}
-          {applicationsMsg && <div style={successBox} role="status">{applicationsMsg}</div>}
-          {applicationsLoaded && (() => {
-            const visibleApps = applications.filter((a) =>
-              applicationStatusFilter ? a.status === applicationStatusFilter : true,
-            );
-            return visibleApps.length === 0 ? (
-              <div style={empty}>No Agent onboarding applications found.</div>
-            ) : (
-              <ScrollRegion label="Agent records" hint="Scroll horizontally to see all columns."><table className="mn-data-table" style={table}>
-                <thead>
-                  <tr>
-                    <th>Reference</th>
-                    <th>Business / Applicant</th>
-                    <th>Class</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleApps.map((app) => {
-                    const busy = Boolean(applicationBusyId) || onboardingBusy || onboardingOpen || applicationsLoading || applicationsNeedRefresh || !canChangeApplications;
-                    const isDraft = app.status === 'DRAFT';
-                    const canReviewOrDecide = app.status === 'SUBMITTED' || app.status === 'UNDER_REVIEW';
-                    // INTEGRATION FIX (Mission 16): the backend sets `agentId` when an application
-                    // is APPROVED — it creates the Agent record in PENDING status and a separate
-                    // `POST .../applications/:id/activate` transition (agent.activate) moves it to
-                    // ACTIVE. The previous condition `APPROVED && !app.agentId` was therefore
-                    // unsatisfiable, so a newly approved Agent could never be activated from the
-                    // console and stayed PENDING forever. Offer activation whenever the application
-                    // is APPROVED and its linked Agent is not known to be already ACTIVE
-                    // (SUSPENDED/TERMINATED are not activatable; the backend answers 409 and the
-                    // error is surfaced rather than silently ignored).
-                    const linkedAgent = app.agentId
-                      ? agents.find((candidate) => candidate.id === app.agentId)
-                      : undefined;
-                    const canActivateFromApp =
-                      canActivate && app.status === 'APPROVED' &&
-                      (!app.agentId ||
-                        (linkedAgent ? linkedAgent.status === 'PENDING' : true));
-                    const matchedClass = classCatalog.find((c) => c.id === app.agentClassId);
-                    return (
-                      <tr key={app.id}>
-                        <td style={cell}>
-                          <strong>{app.reference}</strong>
-                          {app.agentId && <div style={smallMuted}>Agent: <code>{app.agentId}</code></div>}
-                        </td>
-                        <td style={cell}>
-                          {app.businessName || app.applicantReference}
-                          {app.contactEmail && <div style={smallMuted}>{app.contactEmail}</div>}
-                          {app.rejectionReason && <div style={smallMuted}>Rejected: {app.rejectionReason}</div>}
-                        </td>
-                        <td style={cell}>
-                          {matchedClass ? `${matchedClass.name} (${matchedClass.code})` : <code>{app.agentClassId}</code>}
-                        </td>
-                        <td style={cell}><span style={badge(app.status)}>{app.status}</span></td>
-                        <td style={cell}>
-                          <div style={actionRow}>
-                            <button
-                              type="button"
-                              style={smallBtn}
-                              disabled={inspectAppLoading}
-                              onClick={() => void inspectApplication(app.id)}
-                            >
-                              Inspect details
-                            </button>
-                            {isDraft && (
-                              <>
+          {applicationsError && (
+            <div style={errBox} role="alert">
+              {applicationsError}
+            </div>
+          )}
+          {applicationsLoading && (
+            <p role="status">
+              Refreshing the application queue; actions are unavailable until the read completes.
+            </p>
+          )}
+          {applicationsReviewPending && (
+            <div style={boundaryBox} role="status">
+              <strong>Application review required.</strong> The last outcome is unconfirmed or
+              conflicted. Refresh the queue and independently inspect the application and available
+              audit history before another action. A missing record or fresh read cannot exclude a
+              late commit, and this local lock is lost on confirmed exit or session change.
+              {applicationsReviewReady && (
+                <button
+                  type="button"
+                  style={smallBtn}
+                  onClick={() => {
+                    if (
+                      onboardingOpen &&
+                      !window.confirm(
+                        'Acknowledge review and discard the local application editor? Copy any needed entries before continuing.',
+                      )
+                    )
+                      return;
+                    setOnboardingOpen(false);
+                    setOnboardingUnconfirmed(false);
+                    setConfirmDiscardApplication(false);
+                    setEditingDraftId(null);
+                    setEditingDraftRef(null);
+                    setEditingDraftVersion(undefined);
+                    setApplicationForm(EMPTY_APPLICATION_FORM);
+                    setOnboardingError('');
+                    setApplicationsReviewPending(false);
+                    setApplicationsReviewReady(false);
+                    setApplicationsNeedRefresh(false);
+                    setApplicationsError('');
+                  }}
+                >
+                  I reviewed the application and audit history
+                </button>
+              )}
+            </div>
+          )}
+          {applicationsMsg && (
+            <div style={successBox} role="status">
+              {applicationsMsg}
+            </div>
+          )}
+          {applicationsLoaded &&
+            (() => {
+              const visibleApps = applications.filter((a) =>
+                applicationStatusFilter ? a.status === applicationStatusFilter : true,
+              );
+              return visibleApps.length === 0 ? (
+                <div style={empty}>No Agent onboarding applications found.</div>
+              ) : (
+                <ScrollRegion label="Agent records" hint="Scroll horizontally to see all columns.">
+                  <table className="mn-data-table" style={table}>
+                    <thead>
+                      <tr>
+                        <th>Reference</th>
+                        <th>Business / Applicant</th>
+                        <th>Class</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleApps.map((app) => {
+                        const busy =
+                          Boolean(applicationBusyId) ||
+                          onboardingBusy ||
+                          onboardingOpen ||
+                          applicationsLoading ||
+                          applicationsNeedRefresh ||
+                          !canChangeApplications;
+                        const isDraft = app.status === 'DRAFT';
+                        const canReviewOrDecide =
+                          app.status === 'SUBMITTED' || app.status === 'UNDER_REVIEW';
+                        // INTEGRATION FIX (Mission 16): the backend sets `agentId` when an application
+                        // is APPROVED — it creates the Agent record in PENDING status and a separate
+                        // `POST .../applications/:id/activate` transition (agent.activate) moves it to
+                        // ACTIVE. The previous condition `APPROVED && !app.agentId` was therefore
+                        // unsatisfiable, so a newly approved Agent could never be activated from the
+                        // console and stayed PENDING forever. Offer activation whenever the application
+                        // is APPROVED and its linked Agent is not known to be already ACTIVE
+                        // (SUSPENDED/TERMINATED are not activatable; the backend answers 409 and the
+                        // error is surfaced rather than silently ignored).
+                        const linkedAgent = app.agentId
+                          ? agents.find((candidate) => candidate.id === app.agentId)
+                          : undefined;
+                        const canActivateFromApp =
+                          canActivate &&
+                          app.status === 'APPROVED' &&
+                          (!app.agentId || (linkedAgent ? linkedAgent.status === 'PENDING' : true));
+                        const matchedClass = classCatalog.find((c) => c.id === app.agentClassId);
+                        return (
+                          <tr key={app.id}>
+                            <td style={cell}>
+                              <strong>{app.reference}</strong>
+                              {app.agentId && (
+                                <div style={smallMuted}>
+                                  Agent: <code>{app.agentId}</code>
+                                </div>
+                              )}
+                            </td>
+                            <td style={cell}>
+                              {app.businessName || app.applicantReference}
+                              {app.contactEmail && <div style={smallMuted}>{app.contactEmail}</div>}
+                              {app.rejectionReason && (
+                                <div style={smallMuted}>Rejected: {app.rejectionReason}</div>
+                              )}
+                            </td>
+                            <td style={cell}>
+                              {matchedClass ? (
+                                `${matchedClass.name} (${matchedClass.code})`
+                              ) : (
+                                <code>{app.agentClassId}</code>
+                              )}
+                            </td>
+                            <td style={cell}>
+                              <span style={badge(app.status)}>{app.status}</span>
+                            </td>
+                            <td style={cell}>
+                              <div style={actionRow}>
                                 <button
                                   type="button"
                                   style={smallBtn}
-                                  disabled={busy || onboardingBusy || onboardingOpen || Boolean(applicationBusyId)}
-                                  onClick={() => void openDraftEditor(app)}
+                                  disabled={inspectAppLoading}
+                                  onClick={() => void inspectApplication(app.id)}
                                 >
-                                  Edit draft
+                                  Inspect details
                                 </button>
-                                <button
-                                  type="button"
-                                  style={successBtn}
-                                  disabled={busy || onboardingBusy || onboardingOpen || Boolean(applicationBusyId)}
-                                  onClick={() => void submitDraftFromQueue(app)}
-                                >
-                                  Submit draft
-                                </button>
-                              </>
-                            )}
-                            {app.status === 'SUBMITTED' && (
-                              <button
-                                type="button"
-                                style={smallBtn}
-                                disabled={busy}
-                                onClick={() => void handleApplicationAction(app, 'review')}
-                              >
-                                Mark under review
-                              </button>
-                            )}
-                            {canReviewOrDecide && (
-                              <>
-                                <button
-                                  type="button"
-                                  style={successBtn}
-                                  disabled={busy}
-                                  onClick={() => void handleApplicationAction(app, 'approve')}
-                                >
-                                  Approve
-                                </button>
-                                <input
-                                  aria-label={`Rejection reason for ${app.reference}`}
-                                  placeholder="Rejection reason"
-                                  value={rejectReasons[app.id] || ''}
-                                  onChange={(e) => setRejectReasons((cur) => ({ ...cur, [app.id]: e.target.value }))}
-                                  style={inlineInput}
-                                  disabled={busy}
-                                />
-                                <button
-                                  type="button"
-                                  style={dangerBtn}
-                                  disabled={busy || !(rejectReasons[app.id] || '').trim()}
-                                  onClick={() => void handleApplicationAction(app, 'reject')}
-                                >
-                                  Reject
-                                </button>
-                              </>
-                            )}
-                            {canActivateFromApp && (
-                              <button
-                                type="button"
-                                style={successBtn}
-                                disabled={busy}
-                                onClick={() => void handleApplicationAction(app, 'activate')}
-                              >
-                                Activate agent
-                              </button>
-                            )}
-                            {app.agentId && (
-                              <button
-                                type="button"
-                                style={smallBtn}
-                                onClick={() => {
-                                  const found = agents.find((item) => item.id === app.agentId);
-                                  if (found) void openDetail(found);
-                                }}
-                              >
-                                Open agent
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table></ScrollRegion>
-            );
-          })()}
+                                {isDraft && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      style={smallBtn}
+                                      disabled={
+                                        busy ||
+                                        onboardingBusy ||
+                                        onboardingOpen ||
+                                        Boolean(applicationBusyId)
+                                      }
+                                      onClick={() => void openDraftEditor(app)}
+                                    >
+                                      Edit draft
+                                    </button>
+                                    <button
+                                      type="button"
+                                      style={successBtn}
+                                      disabled={
+                                        busy ||
+                                        onboardingBusy ||
+                                        onboardingOpen ||
+                                        Boolean(applicationBusyId)
+                                      }
+                                      onClick={() => void submitDraftFromQueue(app)}
+                                    >
+                                      Submit draft
+                                    </button>
+                                  </>
+                                )}
+                                {app.status === 'SUBMITTED' && (
+                                  <button
+                                    type="button"
+                                    style={smallBtn}
+                                    disabled={busy}
+                                    onClick={() => void handleApplicationAction(app, 'review')}
+                                  >
+                                    Mark under review
+                                  </button>
+                                )}
+                                {canReviewOrDecide && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      style={successBtn}
+                                      disabled={busy}
+                                      onClick={() => void handleApplicationAction(app, 'approve')}
+                                    >
+                                      Approve
+                                    </button>
+                                    <input
+                                      aria-label={`Rejection reason for ${app.reference}`}
+                                      placeholder="Rejection reason"
+                                      value={rejectReasons[app.id] || ''}
+                                      onChange={(e) =>
+                                        setRejectReasons((cur) => ({
+                                          ...cur,
+                                          [app.id]: e.target.value,
+                                        }))
+                                      }
+                                      style={inlineInput}
+                                      disabled={busy}
+                                    />
+                                    <button
+                                      type="button"
+                                      style={dangerBtn}
+                                      disabled={busy || !(rejectReasons[app.id] || '').trim()}
+                                      onClick={() => void handleApplicationAction(app, 'reject')}
+                                    >
+                                      Reject
+                                    </button>
+                                  </>
+                                )}
+                                {canActivateFromApp && (
+                                  <button
+                                    type="button"
+                                    style={successBtn}
+                                    disabled={busy}
+                                    onClick={() => void handleApplicationAction(app, 'activate')}
+                                  >
+                                    Activate agent
+                                  </button>
+                                )}
+                                {app.agentId && (
+                                  <button
+                                    type="button"
+                                    style={smallBtn}
+                                    onClick={() => {
+                                      const found = agents.find((item) => item.id === app.agentId);
+                                      if (found) void openDetail(found);
+                                    }}
+                                  >
+                                    Open agent
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </ScrollRegion>
+              );
+            })()}
 
           {inspectedApplication && (
             <div style={{ ...card, marginTop: 12 }} data-testid="inspected-agent-application">
               <div style={sectionHead}>
                 <strong>Application Detail — {inspectedApplication.reference}</strong>
-                <button type="button" style={smallBtn} onClick={() => setInspectedApplication(null)}>
+                <button
+                  type="button"
+                  style={smallBtn}
+                  onClick={() => setInspectedApplication(null)}
+                >
                   Close detail
                 </button>
               </div>
-              <div style={{ marginTop: 6, fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div
+                style={{
+                  marginTop: 6,
+                  fontSize: 12,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                }}
+              >
                 <div>
                   <strong>Applicant:</strong> {inspectedApplication.applicantReference} ·{' '}
                   <strong>Business:</strong> {inspectedApplication.businessName || '—'} ·{' '}
@@ -2111,21 +3085,29 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                 <div>
                   <strong>Status:</strong> {inspectedApplication.status} ·{' '}
                   <strong>Class ID:</strong> <code>{inspectedApplication.agentClassId}</code>
-                  {inspectedApplication.version != null && <> · <strong>Version:</strong> {inspectedApplication.version}</>}
+                  {inspectedApplication.version != null && (
+                    <>
+                      {' '}
+                      · <strong>Version:</strong> {inspectedApplication.version}
+                    </>
+                  )}
                 </div>
-                {inspectedApplication.payload && Object.keys(inspectedApplication.payload).length > 0 && (
-                  <div style={{ marginTop: 4 }}>
-                    <strong>Submitted Questionnaire / Evidence Metadata:</strong>
-                    <ul style={compactList}>
-                      {Object.entries(inspectedApplication.payload).map(([k, v]) => (
-                        <li key={k} style={compactListItem}>
-                          <span><code>{k}</code></span>
-                          <span>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                {inspectedApplication.payload &&
+                  Object.keys(inspectedApplication.payload).length > 0 && (
+                    <div style={{ marginTop: 4 }}>
+                      <strong>Submitted Questionnaire / Evidence Metadata:</strong>
+                      <ul style={compactList}>
+                        {Object.entries(inspectedApplication.payload).map(([k, v]) => (
+                          <li key={k} style={compactListItem}>
+                            <span>
+                              <code>{k}</code>
+                            </span>
+                            <span>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
               </div>
             </div>
           )}
@@ -2133,71 +3115,111 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
       )}
 
       <div id="agent-directory" className="agent-network-directory-heading">
-        <div><p className="agent-network-eyebrow">NETWORK</p><h3>Agent directory</h3><p>Find an agent to inspect their profile, financial position and available controls.</p></div>
+        <div>
+          <p className="agent-network-eyebrow">NETWORK</p>
+          <h3>Agent directory</h3>
+          <p>Find an agent to inspect their profile, financial position and available controls.</p>
+        </div>
       </div>
       <div className="agent-network-filters" style={filters}>
-        <WorkspaceFilterTabs label="Agent status filter" value={statusFilter} options={[{value:'',label:'All agents'},{value:'PENDING',label:'Pending'},{value:'ACTIVE',label:'Active'},{value:'SUSPENDED',label:'Suspended'},{value:'TERMINATED',label:'Terminated'}]} onChange={(value) => { setStatusFilter(value); setPage(1); }} />
-        <button type="button" onClick={() => void fetchAgents()} style={btn} disabled={loading}>Refresh</button>
+        <WorkspaceFilterTabs
+          label="Agent status filter"
+          value={statusFilter}
+          options={[
+            { value: '', label: 'All agents' },
+            { value: 'PENDING', label: 'Pending' },
+            { value: 'ACTIVE', label: 'Active' },
+            { value: 'SUSPENDED', label: 'Suspended' },
+            { value: 'TERMINATED', label: 'Terminated' },
+          ]}
+          onChange={(value) => {
+            setStatusFilter(value);
+            setPage(1);
+          }}
+        />
+        <button type="button" onClick={() => void fetchAgents()} style={btn} disabled={loading}>
+          Refresh
+        </button>
       </div>
 
-      {error && <div style={errBox} role="alert">{error}</div>}
+      {error && (
+        <div style={errBox} role="alert">
+          {error}
+        </div>
+      )}
       {loading ? (
         <div style={loadingBox}>Loading agents…</div>
       ) : error ? null : agents.length === 0 ? (
         <div style={empty}>No agents found for this filter.</div>
       ) : (
-        <ScrollRegion label="Agent records" hint="Scroll horizontally to see all columns."><table className="mn-data-table agent-network-directory-table" style={table}>
-          <thead>
-            <tr>
-              <th>Reference</th>
-              <th>Status</th>
-              <th>Class</th>
-              <th>Created</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {agents.map((a) => (
-              <tr key={a.id}>
-                <td style={cell}>{a.reference}</td>
-                <td style={cell}><span style={badge(a.status)}>{a.status}</span></td>
-                <td style={cell}>{a.agentClassId ? <code>{a.agentClassId}</code> : '—'}</td>
-                <td style={cell}>{new Date(a.createdAt).toLocaleString()}</td>
-                <td style={cell}>
-                  <button type="button" disabled={agentBusy || (selectedAgentId.current === a.id && detailGuard)} onClick={() => void openDetail(a)} style={smallBtn}>
-                    View
-                  </button>
-                </td>
+        <ScrollRegion label="Agent records" hint="Scroll horizontally to see all columns.">
+          <table className="mn-data-table agent-network-directory-table" style={table}>
+            <thead>
+              <tr>
+                <th>Reference</th>
+                <th>Status</th>
+                <th>Class</th>
+                <th>Created</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table></ScrollRegion>
+            </thead>
+            <tbody>
+              {agents.map((a) => (
+                <tr key={a.id}>
+                  <td style={cell}>{a.reference}</td>
+                  <td style={cell}>
+                    <span style={badge(a.status)}>{a.status}</span>
+                  </td>
+                  <td style={cell}>{a.agentClassId ? <code>{a.agentClassId}</code> : '—'}</td>
+                  <td style={cell}>{new Date(a.createdAt).toLocaleString()}</td>
+                  <td style={cell}>
+                    <button
+                      type="button"
+                      disabled={agentBusy || (selectedAgentId.current === a.id && detailGuard)}
+                      onClick={() => void openDetail(a)}
+                      style={smallBtn}
+                    >
+                      View
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollRegion>
       )}
-      {!loading && !error && <div style={pager}>
-        Total: {total} — Page {page}{' '}
-        <button
-          type="button"
-          disabled={loading || page <= 1}
-          onClick={() => setPage((p) => Math.max(1, p - 1))}
-          style={smallBtn}
-        >
-          Prev
-        </button>{' '}
-        <button
-          type="button"
-          disabled={loading || !hasNextPage}
-          onClick={() => setPage((p) => p + 1)}
-          style={smallBtn}
-        >
-          Next
-        </button>
-      </div>}
+      {!loading && !error && (
+        <div style={pager}>
+          Total: {total} — Page {page}{' '}
+          <button
+            type="button"
+            disabled={loading || page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            style={smallBtn}
+          >
+            Prev
+          </button>{' '}
+          <button
+            type="button"
+            disabled={loading || !hasNextPage}
+            onClick={() => setPage((p) => p + 1)}
+            style={smallBtn}
+          >
+            Next
+          </button>
+        </div>
+      )}
 
       {selected && (
-        <WorkspaceDrawer label="Agent details" className="agent-network-drawer" onDismiss={closeDetail}>
+        <WorkspaceDrawer
+          label="Agent details"
+          className="agent-network-drawer"
+          onDismiss={closeDetail}
+        >
           <div className="agent-network-drawer__header" style={drawerHead}>
             <div>
-              <strong>{selected.reference}</strong> — <span style={badge(selected.status)}>{selected.status}</span>
+              <strong>{selected.reference}</strong> —{' '}
+              <span style={badge(selected.status)}>{selected.status}</span>
             </div>
             <div style={actionRow}>
               {canManageSupport && onNavigateToSupportTickets && (
@@ -2214,7 +3236,10 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                 <button
                   type="button"
                   style={smallBtn}
-                  onClick={() => { if (fundingTargetAgentId !== selected.id && mayChangeFundingTarget()) setFundingTargetAgentId(selected.id); }}
+                  onClick={() => {
+                    if (fundingTargetAgentId !== selected.id && mayChangeFundingTarget())
+                      setFundingTargetAgentId(selected.id);
+                  }}
                 >
                   Target in funding
                 </button>
@@ -2225,16 +3250,20 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
             </div>
           </div>
           <div className="agent-network-drawer__body" style={drawerBody}>
-            <div><strong>ID:</strong> <code>{selected.id}</code></div>
+            <div>
+              <strong>ID:</strong> <code>{selected.id}</code>
+            </div>
             <div>
               <strong>Class:</strong>{' '}
               {(() => {
                 const matched = classCatalog.find((c) => c.id === selected.agentClassId);
-                return matched
-                  ? `${matched.name} (${matched.code})`
-                  : selected.agentClassId
-                    ? <code>{selected.agentClassId}</code>
-                    : 'None assigned';
+                return matched ? (
+                  `${matched.name} (${matched.code})`
+                ) : selected.agentClassId ? (
+                  <code>{selected.agentClassId}</code>
+                ) : (
+                  'None assigned'
+                );
               })()}{' '}
               <button
                 type="button"
@@ -2242,7 +3271,11 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                 disabled={classCatalogLoading}
                 onClick={() => void loadClassCatalog()}
               >
-                {classCatalogLoading ? 'Loading classes…' : classCatalog.length > 0 ? 'Refresh class catalog' : 'Resolve class name'}
+                {classCatalogLoading
+                  ? 'Loading classes…'
+                  : classCatalog.length > 0
+                    ? 'Refresh class catalog'
+                    : 'Resolve class name'}
               </button>
             </div>
             <AgentClassAssignmentPanel
@@ -2252,16 +3285,25 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
               canManageClasses={canManageClasses}
             />
 
-            {detailError && <div style={errBox} role="alert">{detailError}</div>}
+            {detailError && (
+              <div style={errBox} role="alert">
+                {detailError}
+              </div>
+            )}
             {position ? (
               <div style={card}>
-                <strong>Financial Position ({position.currency || 'currency unavailable'} ledger-derived)</strong>
+                <strong>
+                  Financial Position ({position.currency || 'currency unavailable'} ledger-derived)
+                </strong>
                 <div>
                   Wallet: {position.walletExists ? <code>{position.walletId}</code> : 'none'}
                   {position.status ? ` (${position.status})` : ''} — Balance:{' '}
                   <strong>{formatMinor(position.balanceMinor, position.currency)}</strong>
                   {position.availableBalanceMinor !== undefined && (
-                    <> · Available: {formatMinor(position.availableBalanceMinor, position.currency)}</>
+                    <>
+                      {' '}
+                      · Available: {formatMinor(position.availableBalanceMinor, position.currency)}
+                    </>
                   )}
                 </div>
               </div>
@@ -2299,16 +3341,21 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   role="status"
                   data-testid="receiving-number-not-entitled"
                 >
-                  <strong>Not entitled:</strong> Viewing an Agent receiving number requires an authorized
-                  workforce principal (<code>OPERATOR</code>, <code>SERVICE</code>, or{' '}
-                  <code>PRIVILEGED</code>) with <code>agent.view</code>. Forbidden requests are not retried.
+                  <strong>Not entitled:</strong> Viewing an Agent receiving number requires an
+                  authorized workforce principal (<code>OPERATOR</code>, <code>SERVICE</code>, or{' '}
+                  <code>PRIVILEGED</code>) with <code>agent.view</code>. Forbidden requests are not
+                  retried.
                 </div>
               )}
-              {receivingError && <div style={errBox} role="alert">{receivingError}</div>}
+              {receivingError && (
+                <div style={errBox} role="alert">
+                  {receivingError}
+                </div>
+              )}
               {canViewReceivingNumber && !receivingNotEntitled && receivingInfo && (
                 <div style={{ marginTop: 6 }}>
-                  Number: <strong>{receivingInfo.receivingNumber ?? 'Not allocated'}</strong> · Status:{' '}
-                  <span style={badge(receivingInfo.status)}>{receivingInfo.status}</span>
+                  Number: <strong>{receivingInfo.receivingNumber ?? 'Not allocated'}</strong> ·
+                  Status: <span style={badge(receivingInfo.status)}>{receivingInfo.status}</span>
                 </div>
               )}
             </div>
@@ -2317,9 +3364,20 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
               <div style={card}>
                 <strong>Lifecycle Governance</strong>
                 <p style={{ ...smallMuted, marginTop: 4, marginBottom: 8 }}>
-                  <strong>Consequences:</strong> Suspending an Agent blocks operational services while retaining the receiving number; termination is irreversible and revokes the receiving number; residual wallet float is never moved automatically. Verify or revoke active Agent sessions via Credential &amp; session security when needed.
+                  <strong>Consequences:</strong> Suspending an Agent blocks operational services
+                  while retaining the receiving number; termination is irreversible and revokes the
+                  receiving number; residual wallet float is never moved automatically. Verify or
+                  revoke active Agent sessions via Credential &amp; session security when needed.
                 </p>
-                <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <div
+                  style={{
+                    marginTop: 8,
+                    display: 'flex',
+                    gap: 8,
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                  }}
+                >
                   {(canSuspend || canTerminate) && (
                     <input
                       aria-label="Lifecycle reason"
@@ -2334,7 +3392,20 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     {canSuspend && (
                       <button
                         type="button"
-                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || Boolean(newLimitProfileCode.trim()) || limitsBusy || limitUnconfirmed || !canPerformAgentLifecycle('suspend', selected.status)}
+                        disabled={
+                          lifecycleBusy ||
+                          lifecycleReviewBusy ||
+                          lifecycleUnconfirmed ||
+                          credentialGuard ||
+                          credentialBusy ||
+                          outletDraft ||
+                          outletBusy ||
+                          outletUnconfirmed ||
+                          Boolean(newLimitProfileCode.trim()) ||
+                          limitsBusy ||
+                          limitUnconfirmed ||
+                          !canPerformAgentLifecycle('suspend', selected.status)
+                        }
                         onClick={() => void doLifecycle('suspend', selected.id)}
                         style={warnBtn}
                       >
@@ -2344,7 +3415,20 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     {canTerminate && (
                       <button
                         type="button"
-                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || Boolean(newLimitProfileCode.trim()) || limitsBusy || limitUnconfirmed || !canPerformAgentLifecycle('terminate', selected.status)}
+                        disabled={
+                          lifecycleBusy ||
+                          lifecycleReviewBusy ||
+                          lifecycleUnconfirmed ||
+                          credentialGuard ||
+                          credentialBusy ||
+                          outletDraft ||
+                          outletBusy ||
+                          outletUnconfirmed ||
+                          Boolean(newLimitProfileCode.trim()) ||
+                          limitsBusy ||
+                          limitUnconfirmed ||
+                          !canPerformAgentLifecycle('terminate', selected.status)
+                        }
                         onClick={() => void doLifecycle('terminate', selected.id)}
                         style={dangerBtn}
                       >
@@ -2354,7 +3438,20 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     {canReactivate && (
                       <button
                         type="button"
-                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || Boolean(newLimitProfileCode.trim()) || limitsBusy || limitUnconfirmed || !canPerformAgentLifecycle('reactivate', selected.status)}
+                        disabled={
+                          lifecycleBusy ||
+                          lifecycleReviewBusy ||
+                          lifecycleUnconfirmed ||
+                          credentialGuard ||
+                          credentialBusy ||
+                          outletDraft ||
+                          outletBusy ||
+                          outletUnconfirmed ||
+                          Boolean(newLimitProfileCode.trim()) ||
+                          limitsBusy ||
+                          limitUnconfirmed ||
+                          !canPerformAgentLifecycle('reactivate', selected.status)
+                        }
                         onClick={() => void doLifecycle('reactivate', selected.id)}
                         style={successBtn}
                       >
@@ -2364,7 +3461,20 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     {canActivate && (
                       <button
                         type="button"
-                        disabled={lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || credentialGuard || credentialBusy || outletDraft || outletBusy || outletUnconfirmed || Boolean(newLimitProfileCode.trim()) || limitsBusy || limitUnconfirmed || !canPerformAgentLifecycle('activate', selected.status)}
+                        disabled={
+                          lifecycleBusy ||
+                          lifecycleReviewBusy ||
+                          lifecycleUnconfirmed ||
+                          credentialGuard ||
+                          credentialBusy ||
+                          outletDraft ||
+                          outletBusy ||
+                          outletUnconfirmed ||
+                          Boolean(newLimitProfileCode.trim()) ||
+                          limitsBusy ||
+                          limitUnconfirmed ||
+                          !canPerformAgentLifecycle('activate', selected.status)
+                        }
                         onClick={() => void doLifecycle('activate', selected.id)}
                         style={successBtn}
                       >
@@ -2376,41 +3486,149 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
               </div>
             ) : (
               <div style={denied}>
-                {principal?.readOnlyPrincipal ? 'Lifecycle actions are unavailable in a read-only session.' : <>Lifecycle actions require <code>agent.suspend / terminate / reactivate / activate</code>.</>}
+                {principal?.readOnlyPrincipal ? (
+                  'Lifecycle actions are unavailable in a read-only session.'
+                ) : (
+                  <>
+                    Lifecycle actions require{' '}
+                    <code>agent.suspend / terminate / reactivate / activate</code>.
+                  </>
+                )}
               </div>
             )}
-            {lifecycleUnconfirmed && <div style={errBox} role="status"><strong>Agent lifecycle review required.</strong> A prior action may have occurred. Refresh this Agent and inspect the authoritative audit history independently; a fresh read cannot exclude a late commit. This local lock is lost on confirmed exit or session change.
-              <div style={actionRow}><button type="button" style={smallBtn} disabled={lifecycleBusy || lifecycleReviewBusy} onClick={() => void reviewLifecycle()}>{lifecycleReviewBusy ? 'Loading Agent…' : 'Refresh Agent for review'}</button>
-              {lifecycleReviewStatus && <><span>Reviewed Agent status: {lifecycleReviewStatus}</span><button type="button" style={smallBtn} onClick={() => { setLifecycleUnconfirmed(false); setLifecycleReviewStatus(null); setActionErr(''); }}>I reviewed the status and audit history</button></>}</div></div>}
-            {actionMsg && <div style={successBox} role="status">{actionMsg}</div>}
-            {actionErr && <div style={errBox} role="alert">{actionErr}</div>}
-
-            {canManageCredentials && !lifecycleBusy && !lifecycleReviewBusy && !lifecycleUnconfirmed && (
-              <AgentCredentialPanel
-                agentId={selected.id}
-                agentStatus={selected.status}
-                canManage={canManageCredentials}
-                onGuardChange={reportCredentialGuard}
-              />
+            {lifecycleUnconfirmed && (
+              <div style={errBox} role="status">
+                <strong>Agent lifecycle review required.</strong> A prior action may have occurred.
+                Refresh this Agent and inspect the authoritative audit history independently; a
+                fresh read cannot exclude a late commit. This local lock is lost on confirmed exit
+                or session change.
+                <div style={actionRow}>
+                  <button
+                    type="button"
+                    style={smallBtn}
+                    disabled={lifecycleBusy || lifecycleReviewBusy}
+                    onClick={() => void reviewLifecycle()}
+                  >
+                    {lifecycleReviewBusy ? 'Loading Agent…' : 'Refresh Agent for review'}
+                  </button>
+                  {lifecycleReviewStatus && (
+                    <>
+                      <span>Reviewed Agent status: {lifecycleReviewStatus}</span>
+                      <button
+                        type="button"
+                        style={smallBtn}
+                        onClick={() => {
+                          setLifecycleUnconfirmed(false);
+                          setLifecycleReviewStatus(null);
+                          setActionErr('');
+                        }}
+                      >
+                        I reviewed the status and audit history
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
             )}
+            {actionMsg && (
+              <div style={successBox} role="status">
+                {actionMsg}
+              </div>
+            )}
+            {actionErr && (
+              <div style={errBox} role="alert">
+                {actionErr}
+              </div>
+            )}
+
+            {canManageCredentials &&
+              !lifecycleBusy &&
+              !lifecycleReviewBusy &&
+              !lifecycleUnconfirmed && (
+                <AgentCredentialPanel
+                  agentId={selected.id}
+                  agentStatus={selected.status}
+                  canManage={canManageCredentials}
+                  onGuardChange={reportCredentialGuard}
+                />
+              )}
 
             <section style={card} className="agent-sites" aria-label="Agent outlets and terminals">
               <div className="agent-sites__heading">
-                <div><p className="agent-network-eyebrow">NETWORK INFRASTRUCTURE</p><h3>Outlets &amp; terminals</h3><p>Review locations and their devices for this Agent. Changes to a parent do not automatically change its existing children.</p></div>
+                <div>
+                  <p className="agent-network-eyebrow">NETWORK INFRASTRUCTURE</p>
+                  <h3>Outlets &amp; terminals</h3>
+                  <p>
+                    Review locations and their devices for this Agent. Changes to a parent do not
+                    automatically change its existing children.
+                  </p>
+                </div>
                 <button
                   type="button"
                   style={smallBtn}
                   disabled={outletsLoading || outletBusy}
-                  onClick={() => { if (!outletUnconfirmed && (editingOutletId || editingTerminalId)) { if (!window.confirm('Refreshing closes the current metadata editor and discards its changes. Continue?')) return; setEditingOutletId(null); setEditingTerminalId(null); } void loadOutletsAndTerminals(selected.id); }}
+                  onClick={() => {
+                    if (!outletUnconfirmed && (editingOutletId || editingTerminalId)) {
+                      if (
+                        !window.confirm(
+                          'Refreshing closes the current metadata editor and discards its changes. Continue?',
+                        )
+                      )
+                        return;
+                      setEditingOutletId(null);
+                      setEditingTerminalId(null);
+                    }
+                    void loadOutletsAndTerminals(selected.id);
+                  }}
                 >
-                  {outletsLoading ? 'Loading…' : outletsLoaded ? 'Refresh outlets & terminals' : 'Load outlets & terminals'}
+                  {outletsLoading
+                    ? 'Loading…'
+                    : outletsLoaded
+                      ? 'Refresh outlets & terminals'
+                      : 'Load outlets & terminals'}
                 </button>
               </div>
-              {outletUnconfirmed && <div style={boundaryBox} role="status"><strong>Outlet and terminal review required.</strong> The previous operation may have completed; there is no client idempotency guarantee. Refresh both lists and independently inspect the affected record and audit history. A refresh does not exclude a late commit, and an absent record is not proof of failure. The local lock is lost on confirmed exit or session change.
-                {outletReviewReady && <button type="button" style={smallBtn} onClick={() => { if ((editingOutletId || editingTerminalId) && !window.confirm('Acknowledge review and discard the prior metadata editor? Copy any needed changes first; start a fresh editor from the refreshed record.')) return; setEditingOutletId(null); setEditingTerminalId(null); setOutletUnconfirmed(false); setOutletReviewReady(false); setOutletsError(''); }}>I reviewed the records and audit history</button>}
-              </div>}
-              {outletsError && <div style={errBox} role="alert">{outletsError}</div>}
-              {outletsMsg && <div style={successBox} role="status">{outletsMsg}</div>}
+              {outletUnconfirmed && (
+                <div style={boundaryBox} role="status">
+                  <strong>Outlet and terminal review required.</strong> The previous operation may
+                  have completed; there is no client idempotency guarantee. Refresh both lists and
+                  independently inspect the affected record and audit history. A refresh does not
+                  exclude a late commit, and an absent record is not proof of failure. The local
+                  lock is lost on confirmed exit or session change.
+                  {outletReviewReady && (
+                    <button
+                      type="button"
+                      style={smallBtn}
+                      onClick={() => {
+                        if (
+                          (editingOutletId || editingTerminalId) &&
+                          !window.confirm(
+                            'Acknowledge review and discard the prior metadata editor? Copy any needed changes first; start a fresh editor from the refreshed record.',
+                          )
+                        )
+                          return;
+                        setEditingOutletId(null);
+                        setEditingTerminalId(null);
+                        setOutletUnconfirmed(false);
+                        setOutletReviewReady(false);
+                        setOutletsError('');
+                      }}
+                    >
+                      I reviewed the records and audit history
+                    </button>
+                  )}
+                </div>
+              )}
+              {outletsError && (
+                <div style={errBox} role="alert">
+                  {outletsError}
+                </div>
+              )}
+              {outletsMsg && (
+                <div style={successBox} role="status">
+                  {outletsMsg}
+                </div>
+              )}
               {outletBoundaryMsg && (
                 <div style={boundaryBox} role="note" data-testid="outlet-edit-arena1-boundary">
                   <strong>Cross-Arena Integration Boundary:</strong> {outletBoundaryMsg}
@@ -2421,22 +3639,59 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   <strong>Cross-Arena Integration Boundary:</strong> {terminalBoundaryMsg}
                 </div>
               )}
-              {!outletsLoaded && !outletsLoading && !outletsError && <p className="agent-sites__notice">Load the current records to review locations, devices and available actions.</p>}
-              {outletsLoading && <p role="status" className="agent-sites__notice">Loading outlet and terminal records…</p>}
+              {!outletsLoaded && !outletsLoading && !outletsError && (
+                <p className="agent-sites__notice">
+                  Load the current records to review locations, devices and available actions.
+                </p>
+              )}
+              {outletsLoading && (
+                <p role="status" className="agent-sites__notice">
+                  Loading outlet and terminal records…
+                </p>
+              )}
               {outletsLoaded && (
                 <div className="agent-sites__content">
                   <section className="agent-sites__group" aria-label="Outlet records">
-                    <div className="agent-sites__group-heading"><div><p className="agent-network-eyebrow">LOCATIONS</p><h4>Outlets</h4></div><span>{outlets.length} {outlets.length === 1 ? 'record' : 'records'}</span></div>
+                    <div className="agent-sites__group-heading">
+                      <div>
+                        <p className="agent-network-eyebrow">LOCATIONS</p>
+                        <h4>Outlets</h4>
+                      </div>
+                      <span>
+                        {outlets.length} {outlets.length === 1 ? 'record' : 'records'}
+                      </span>
+                    </div>
                     {outlets.length === 0 ? (
                       <div style={smallMuted}>No outlets registered for this Agent.</div>
                     ) : (
                       <ul style={compactList}>
                         {outlets.map((outlet) => (
-                          <li key={outlet.id} style={{ ...compactListItem, flexDirection: 'column', alignItems: 'stretch' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <li
+                            key={outlet.id}
+                            style={{
+                              ...compactListItem,
+                              flexDirection: 'column',
+                              alignItems: 'stretch',
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                gap: 8,
+                                flexWrap: 'wrap',
+                              }}
+                            >
                               <span>
                                 <strong>{outlet.reference}</strong>
-                                {outlet.code ? <> (<code>{outlet.code}</code>)</> : null} — {outlet.name}
+                                {outlet.code ? (
+                                  <>
+                                    {' '}
+                                    (<code>{outlet.code}</code>)
+                                  </>
+                                ) : null}{' '}
+                                — {outlet.name}
                                 {outlet.displayName ? ` · "${outlet.displayName}"` : ''}
                                 {outlet.addressLine ? ` · ${outlet.addressLine}` : ''}
                                 {outlet.city || outlet.state || outlet.country
@@ -2450,7 +3705,14 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                     <button
                                       type="button"
                                       style={smallBtn}
-                                      disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
+                                      disabled={
+                                        outletBusy ||
+                                        outletsLoading ||
+                                        outletUnconfirmed ||
+                                        lifecycleBusy ||
+                                        lifecycleReviewBusy ||
+                                        lifecycleUnconfirmed
+                                      }
                                       onClick={() => startEditOutlet(outlet)}
                                     >
                                       Edit outlet
@@ -2459,7 +3721,16 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   <button
                                     type="button"
                                     style={warnBtn}
-                                    disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId) || outlet.status !== 'ACTIVE'}
+                                    disabled={
+                                      outletBusy ||
+                                      outletsLoading ||
+                                      outletUnconfirmed ||
+                                      lifecycleBusy ||
+                                      lifecycleReviewBusy ||
+                                      lifecycleUnconfirmed ||
+                                      Boolean(editingOutletId || editingTerminalId) ||
+                                      outlet.status !== 'ACTIVE'
+                                    }
                                     onClick={() => void doOutletLifecycle(outlet.id, 'suspend')}
                                   >
                                     Suspend outlet
@@ -2467,7 +3738,16 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   <button
                                     type="button"
                                     style={successBtn}
-                                    disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId) || outlet.status !== 'SUSPENDED'}
+                                    disabled={
+                                      outletBusy ||
+                                      outletsLoading ||
+                                      outletUnconfirmed ||
+                                      lifecycleBusy ||
+                                      lifecycleReviewBusy ||
+                                      lifecycleUnconfirmed ||
+                                      Boolean(editingOutletId || editingTerminalId) ||
+                                      outlet.status !== 'SUSPENDED'
+                                    }
                                     onClick={() => void doOutletLifecycle(outlet.id, 'reactivate')}
                                   >
                                     Reactivate outlet
@@ -2475,7 +3755,16 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   <button
                                     type="button"
                                     style={dangerBtn}
-                                    disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId) || outlet.status === 'TERMINATED'}
+                                    disabled={
+                                      outletBusy ||
+                                      outletsLoading ||
+                                      outletUnconfirmed ||
+                                      lifecycleBusy ||
+                                      lifecycleReviewBusy ||
+                                      lifecycleUnconfirmed ||
+                                      Boolean(editingOutletId || editingTerminalId) ||
+                                      outlet.status === 'TERMINATED'
+                                    }
                                     onClick={() => void doOutletLifecycle(outlet.id, 'terminate')}
                                   >
                                     Terminate outlet
@@ -2490,74 +3779,158 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                 className="agent-sites__editor"
                                 aria-label={`Edit outlet ${outlet.reference}`}
                               >
-                                <label className="agent-sites__field"><span>Name</span>
-<input
-                                  aria-label={`Edit outlet name for ${outlet.reference}`}
-                                  placeholder="Outlet name"
-                                  value={editingOutletForm.name}
-                                  onChange={(e) => setEditingOutletForm((c) => ({ ...c, name: e.target.value }))}
-
-                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                                />
-</label>
-                                <label className="agent-sites__field"><span>Display name</span>
-<input
-                                  aria-label={`Edit outlet display name for ${outlet.reference}`}
-                                  placeholder="Display name"
-                                  value={editingOutletForm.displayName}
-                                  onChange={(e) => setEditingOutletForm((c) => ({ ...c, displayName: e.target.value }))}
-
-                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                                />
-</label>
-                                <label className="agent-sites__field"><span>Address</span>
-<input
-                                  aria-label={`Edit outlet address for ${outlet.reference}`}
-                                  placeholder="Street address"
-                                  value={editingOutletForm.addressLine}
-                                  onChange={(e) => setEditingOutletForm((c) => ({ ...c, addressLine: e.target.value }))}
-
-                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                                />
-</label>
-                                <label className="agent-sites__field"><span>City</span>
-<input
-                                  aria-label={`Edit outlet city for ${outlet.reference}`}
-                                  placeholder="City"
-                                  value={editingOutletForm.city}
-                                  onChange={(e) => setEditingOutletForm((c) => ({ ...c, city: e.target.value }))}
-
-                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                                />
-</label>
-                                <label className="agent-sites__field"><span>State</span>
-<input
-                                  aria-label={`Edit outlet state for ${outlet.reference}`}
-                                  placeholder="State"
-                                  value={editingOutletForm.state}
-                                  onChange={(e) => setEditingOutletForm((c) => ({ ...c, state: e.target.value }))}
-
-                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                                />
-</label>
-                                <label className="agent-sites__field"><span>Country</span>
-<input
-                                  aria-label={`Edit outlet country for ${outlet.reference}`}
-                                  placeholder="Country"
-                                  value={editingOutletForm.country}
-                                  onChange={(e) => setEditingOutletForm((c) => ({ ...c, country: e.target.value }))}
-
-                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                                />
-</label>
-                                <button type="submit" style={successBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}>
+                                <label className="agent-sites__field">
+                                  <span>Name</span>
+                                  <input
+                                    aria-label={`Edit outlet name for ${outlet.reference}`}
+                                    placeholder="Outlet name"
+                                    value={editingOutletForm.name}
+                                    onChange={(e) =>
+                                      setEditingOutletForm((c) => ({ ...c, name: e.target.value }))
+                                    }
+                                    disabled={
+                                      outletBusy ||
+                                      outletsLoading ||
+                                      outletUnconfirmed ||
+                                      lifecycleBusy ||
+                                      lifecycleReviewBusy ||
+                                      lifecycleUnconfirmed
+                                    }
+                                  />
+                                </label>
+                                <label className="agent-sites__field">
+                                  <span>Display name</span>
+                                  <input
+                                    aria-label={`Edit outlet display name for ${outlet.reference}`}
+                                    placeholder="Display name"
+                                    value={editingOutletForm.displayName}
+                                    onChange={(e) =>
+                                      setEditingOutletForm((c) => ({
+                                        ...c,
+                                        displayName: e.target.value,
+                                      }))
+                                    }
+                                    disabled={
+                                      outletBusy ||
+                                      outletsLoading ||
+                                      outletUnconfirmed ||
+                                      lifecycleBusy ||
+                                      lifecycleReviewBusy ||
+                                      lifecycleUnconfirmed
+                                    }
+                                  />
+                                </label>
+                                <label className="agent-sites__field">
+                                  <span>Address</span>
+                                  <input
+                                    aria-label={`Edit outlet address for ${outlet.reference}`}
+                                    placeholder="Street address"
+                                    value={editingOutletForm.addressLine}
+                                    onChange={(e) =>
+                                      setEditingOutletForm((c) => ({
+                                        ...c,
+                                        addressLine: e.target.value,
+                                      }))
+                                    }
+                                    disabled={
+                                      outletBusy ||
+                                      outletsLoading ||
+                                      outletUnconfirmed ||
+                                      lifecycleBusy ||
+                                      lifecycleReviewBusy ||
+                                      lifecycleUnconfirmed
+                                    }
+                                  />
+                                </label>
+                                <label className="agent-sites__field">
+                                  <span>City</span>
+                                  <input
+                                    aria-label={`Edit outlet city for ${outlet.reference}`}
+                                    placeholder="City"
+                                    value={editingOutletForm.city}
+                                    onChange={(e) =>
+                                      setEditingOutletForm((c) => ({ ...c, city: e.target.value }))
+                                    }
+                                    disabled={
+                                      outletBusy ||
+                                      outletsLoading ||
+                                      outletUnconfirmed ||
+                                      lifecycleBusy ||
+                                      lifecycleReviewBusy ||
+                                      lifecycleUnconfirmed
+                                    }
+                                  />
+                                </label>
+                                <label className="agent-sites__field">
+                                  <span>State</span>
+                                  <input
+                                    aria-label={`Edit outlet state for ${outlet.reference}`}
+                                    placeholder="State"
+                                    value={editingOutletForm.state}
+                                    onChange={(e) =>
+                                      setEditingOutletForm((c) => ({ ...c, state: e.target.value }))
+                                    }
+                                    disabled={
+                                      outletBusy ||
+                                      outletsLoading ||
+                                      outletUnconfirmed ||
+                                      lifecycleBusy ||
+                                      lifecycleReviewBusy ||
+                                      lifecycleUnconfirmed
+                                    }
+                                  />
+                                </label>
+                                <label className="agent-sites__field">
+                                  <span>Country</span>
+                                  <input
+                                    aria-label={`Edit outlet country for ${outlet.reference}`}
+                                    placeholder="Country"
+                                    value={editingOutletForm.country}
+                                    onChange={(e) =>
+                                      setEditingOutletForm((c) => ({
+                                        ...c,
+                                        country: e.target.value,
+                                      }))
+                                    }
+                                    disabled={
+                                      outletBusy ||
+                                      outletsLoading ||
+                                      outletUnconfirmed ||
+                                      lifecycleBusy ||
+                                      lifecycleReviewBusy ||
+                                      lifecycleUnconfirmed
+                                    }
+                                  />
+                                </label>
+                                <button
+                                  type="submit"
+                                  style={successBtn}
+                                  disabled={
+                                    outletBusy ||
+                                    outletsLoading ||
+                                    outletUnconfirmed ||
+                                    lifecycleBusy ||
+                                    lifecycleReviewBusy ||
+                                    lifecycleUnconfirmed
+                                  }
+                                >
                                   Save outlet changes
                                 </button>
                                 <button
                                   type="button"
                                   style={smallBtn}
-                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                                  onClick={() => { if (window.confirm('Discard outlet metadata changes?')) setEditingOutletId(null); }}
+                                  disabled={
+                                    outletBusy ||
+                                    outletsLoading ||
+                                    outletUnconfirmed ||
+                                    lifecycleBusy ||
+                                    lifecycleReviewBusy ||
+                                    lifecycleUnconfirmed
+                                  }
+                                  onClick={() => {
+                                    if (window.confirm('Discard outlet metadata changes?'))
+                                      setEditingOutletId(null);
+                                  }}
                                 >
                                   Cancel
                                 </button>
@@ -2570,19 +3943,50 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                   </section>
 
                   <section className="agent-sites__group" aria-label="Terminal records">
-                    <div className="agent-sites__group-heading"><div><p className="agent-network-eyebrow">DEVICES</p><h4>Terminals</h4></div><span>{terminals.length} {terminals.length === 1 ? 'record' : 'records'}</span></div>
+                    <div className="agent-sites__group-heading">
+                      <div>
+                        <p className="agent-network-eyebrow">DEVICES</p>
+                        <h4>Terminals</h4>
+                      </div>
+                      <span>
+                        {terminals.length} {terminals.length === 1 ? 'record' : 'records'}
+                      </span>
+                    </div>
                     {terminals.length === 0 ? (
                       <div style={smallMuted}>No terminals registered for this Agent.</div>
                     ) : (
                       <ul style={compactList}>
                         {terminals.map((terminal) => (
-                          <li key={terminal.id} style={{ ...compactListItem, flexDirection: 'column', alignItems: 'stretch' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <li
+                            key={terminal.id}
+                            style={{
+                              ...compactListItem,
+                              flexDirection: 'column',
+                              alignItems: 'stretch',
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                gap: 8,
+                                flexWrap: 'wrap',
+                              }}
+                            >
                               <span>
                                 <strong>{terminal.reference}</strong>
-                                {terminal.code ? <> (<code>{terminal.code}</code>)</> : null}
+                                {terminal.code ? (
+                                  <>
+                                    {' '}
+                                    (<code>{terminal.code}</code>)
+                                  </>
+                                ) : null}
                                 {terminal.label ? ` — ${terminal.label}` : ''}
-                                {terminal.serialNumber ? ` · SN ${terminal.serialNumber}` : ''} · Outlet {outlets.find(outlet => outlet.id === terminal.outletId)?.reference ?? terminal.outletId}{' '}
+                                {terminal.serialNumber ? ` · SN ${terminal.serialNumber}` : ''} ·
+                                Outlet{' '}
+                                {outlets.find((outlet) => outlet.id === terminal.outletId)
+                                  ?.reference ?? terminal.outletId}{' '}
                                 <span style={badge(terminal.status)}>{terminal.status}</span>
                               </span>
                               {canManageOutletsTerminals && (
@@ -2591,7 +3995,14 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                     <button
                                       type="button"
                                       style={smallBtn}
-                                      disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
+                                      disabled={
+                                        outletBusy ||
+                                        outletsLoading ||
+                                        outletUnconfirmed ||
+                                        lifecycleBusy ||
+                                        lifecycleReviewBusy ||
+                                        lifecycleUnconfirmed
+                                      }
                                       onClick={() => startEditTerminal(terminal)}
                                     >
                                       Edit terminal
@@ -2600,7 +4011,16 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   <button
                                     type="button"
                                     style={warnBtn}
-                                    disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId) || terminal.status !== 'ACTIVE'}
+                                    disabled={
+                                      outletBusy ||
+                                      outletsLoading ||
+                                      outletUnconfirmed ||
+                                      lifecycleBusy ||
+                                      lifecycleReviewBusy ||
+                                      lifecycleUnconfirmed ||
+                                      Boolean(editingOutletId || editingTerminalId) ||
+                                      terminal.status !== 'ACTIVE'
+                                    }
                                     onClick={() => void doTerminalLifecycle(terminal.id, 'suspend')}
                                   >
                                     Suspend terminal
@@ -2608,16 +4028,38 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                   <button
                                     type="button"
                                     style={successBtn}
-                                    disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId) || terminal.status !== 'SUSPENDED'}
-                                    onClick={() => void doTerminalLifecycle(terminal.id, 'reactivate')}
+                                    disabled={
+                                      outletBusy ||
+                                      outletsLoading ||
+                                      outletUnconfirmed ||
+                                      lifecycleBusy ||
+                                      lifecycleReviewBusy ||
+                                      lifecycleUnconfirmed ||
+                                      Boolean(editingOutletId || editingTerminalId) ||
+                                      terminal.status !== 'SUSPENDED'
+                                    }
+                                    onClick={() =>
+                                      void doTerminalLifecycle(terminal.id, 'reactivate')
+                                    }
                                   >
                                     Reactivate terminal
                                   </button>
                                   <button
                                     type="button"
                                     style={dangerBtn}
-                                    disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId) || terminal.status === 'TERMINATED'}
-                                    onClick={() => void doTerminalLifecycle(terminal.id, 'terminate')}
+                                    disabled={
+                                      outletBusy ||
+                                      outletsLoading ||
+                                      outletUnconfirmed ||
+                                      lifecycleBusy ||
+                                      lifecycleReviewBusy ||
+                                      lifecycleUnconfirmed ||
+                                      Boolean(editingOutletId || editingTerminalId) ||
+                                      terminal.status === 'TERMINATED'
+                                    }
+                                    onClick={() =>
+                                      void doTerminalLifecycle(terminal.id, 'terminate')
+                                    }
                                   >
                                     Terminate terminal
                                   </button>
@@ -2631,34 +4073,79 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                                 className="agent-sites__editor"
                                 aria-label={`Edit terminal ${terminal.reference}`}
                               >
-                                <label className="agent-sites__field"><span>Label</span>
-<input
-                                  aria-label={`Edit terminal label for ${terminal.reference}`}
-                                  placeholder="Label"
-                                  value={editingTerminalForm.label}
-                                  onChange={(e) => setEditingTerminalForm((c) => ({ ...c, label: e.target.value }))}
-
-                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                                />
-</label>
-                                <label className="agent-sites__field"><span>Serial number</span>
-<input
-                                  aria-label={`Edit terminal serial number for ${terminal.reference}`}
-                                  placeholder="Serial number"
-                                  value={editingTerminalForm.serialNumber}
-                                  onChange={(e) => setEditingTerminalForm((c) => ({ ...c, serialNumber: e.target.value }))}
-
-                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                                />
-</label>
-                                <button type="submit" style={successBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}>
+                                <label className="agent-sites__field">
+                                  <span>Label</span>
+                                  <input
+                                    aria-label={`Edit terminal label for ${terminal.reference}`}
+                                    placeholder="Label"
+                                    value={editingTerminalForm.label}
+                                    onChange={(e) =>
+                                      setEditingTerminalForm((c) => ({
+                                        ...c,
+                                        label: e.target.value,
+                                      }))
+                                    }
+                                    disabled={
+                                      outletBusy ||
+                                      outletsLoading ||
+                                      outletUnconfirmed ||
+                                      lifecycleBusy ||
+                                      lifecycleReviewBusy ||
+                                      lifecycleUnconfirmed
+                                    }
+                                  />
+                                </label>
+                                <label className="agent-sites__field">
+                                  <span>Serial number</span>
+                                  <input
+                                    aria-label={`Edit terminal serial number for ${terminal.reference}`}
+                                    placeholder="Serial number"
+                                    value={editingTerminalForm.serialNumber}
+                                    onChange={(e) =>
+                                      setEditingTerminalForm((c) => ({
+                                        ...c,
+                                        serialNumber: e.target.value,
+                                      }))
+                                    }
+                                    disabled={
+                                      outletBusy ||
+                                      outletsLoading ||
+                                      outletUnconfirmed ||
+                                      lifecycleBusy ||
+                                      lifecycleReviewBusy ||
+                                      lifecycleUnconfirmed
+                                    }
+                                  />
+                                </label>
+                                <button
+                                  type="submit"
+                                  style={successBtn}
+                                  disabled={
+                                    outletBusy ||
+                                    outletsLoading ||
+                                    outletUnconfirmed ||
+                                    lifecycleBusy ||
+                                    lifecycleReviewBusy ||
+                                    lifecycleUnconfirmed
+                                  }
+                                >
                                   Save terminal changes
                                 </button>
                                 <button
                                   type="button"
                                   style={smallBtn}
-                                  disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                                  onClick={() => { if (window.confirm('Discard terminal metadata changes?')) setEditingTerminalId(null); }}
+                                  disabled={
+                                    outletBusy ||
+                                    outletsLoading ||
+                                    outletUnconfirmed ||
+                                    lifecycleBusy ||
+                                    lifecycleReviewBusy ||
+                                    lifecycleUnconfirmed
+                                  }
+                                  onClick={() => {
+                                    if (window.confirm('Discard terminal metadata changes?'))
+                                      setEditingTerminalId(null);
+                                  }}
                                 >
                                   Cancel
                                 </button>
@@ -2670,216 +4157,500 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     )}
                   </section>
 
-                  {!canManageOutletsTerminals && <p className="agent-sites__notice">Records are read-only in this session. Outlet and terminal changes require the appropriate management access.</p>}
-                  {canManageOutletsTerminals && (
-                    selected.status !== 'ACTIVE' ? (
-                      <div style={smallMuted}>Outlet and terminal creation requires an ACTIVE Agent.</div>
+                  {!canManageOutletsTerminals && (
+                    <p className="agent-sites__notice">
+                      Records are read-only in this session. Outlet and terminal changes require the
+                      appropriate management access.
+                    </p>
+                  )}
+                  {canManageOutletsTerminals &&
+                    (selected.status !== 'ACTIVE' ? (
+                      <div style={smallMuted}>
+                        Outlet and terminal creation requires an ACTIVE Agent.
+                      </div>
                     ) : (
                       <div className="agent-sites__creation">
-                        <form onSubmit={createOutlet} className="agent-sites__form" aria-label="Create outlet form">
-                          <div className="agent-sites__form-heading"><p className="agent-network-eyebrow">NEW LOCATION</p><h4>Create an outlet</h4><p>Reference and name are required. Country defaults to NG when left blank.</p></div>
+                        <form
+                          onSubmit={createOutlet}
+                          className="agent-sites__form"
+                          aria-label="Create outlet form"
+                        >
+                          <div className="agent-sites__form-heading">
+                            <p className="agent-network-eyebrow">NEW LOCATION</p>
+                            <h4>Create an outlet</h4>
+                            <p>
+                              Reference and name are required. Country defaults to NG when left
+                              blank.
+                            </p>
+                          </div>
                           <div className="agent-sites__fields">
-                          <label className="agent-sites__field"><span>Reference (required)</span>
-<input
-                            aria-label="Outlet reference"
-                            placeholder="Outlet ref (e.g. OUT-ABJ-01)"
-                            value={outletForm.reference}
-                            onChange={(e) => setOutletForm((c) => ({ ...c, reference: e.target.value }))}
-
-                            disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                          />
-</label>
-                          <label className="agent-sites__field"><span>Name (required)</span>
-<input
-                            aria-label="Outlet name"
-                            placeholder="Outlet name"
-                            value={outletForm.name}
-                            onChange={(e) => setOutletForm((c) => ({ ...c, name: e.target.value }))}
-
-                            disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                          />
-</label>
-                          <label className="agent-sites__field"><span>Display name (optional)</span>
-<input
-                            aria-label="Outlet display name"
-                            placeholder="Display name (optional)"
-                            value={outletForm.displayName}
-                            onChange={(e) => setOutletForm((c) => ({ ...c, displayName: e.target.value }))}
-
-                            disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                            maxLength={160}
-                          />
-</label>
-                          <label className="agent-sites__field"><span>Code (optional)</span>
-<input
-                            aria-label="Outlet code"
-                            placeholder="Outlet code (optional)"
-                            value={outletForm.code}
-                            onChange={(e) => setOutletForm((c) => ({ ...c, code: e.target.value }))}
-
-                            disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                            maxLength={80}
-                          />
-</label>
-                          <label className="agent-sites__field"><span>Address line (optional)</span>
-<input
-                            aria-label="Outlet address line"
-                            placeholder="Address line (optional)"
-                            value={outletForm.addressLine}
-                            onChange={(e) => setOutletForm((c) => ({ ...c, addressLine: e.target.value }))}
-
-                            disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                            maxLength={500}
-                          />
-</label>
-                          <label className="agent-sites__field"><span>City (optional)</span>
-<input
-                            aria-label="Outlet city"
-                            placeholder="City (optional)"
-                            value={outletForm.city}
-                            onChange={(e) => setOutletForm((c) => ({ ...c, city: e.target.value }))}
-
-                            disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                            maxLength={100}
-                          />
-</label>
-                          <label className="agent-sites__field"><span>State (optional)</span>
-<input
-                            aria-label="Outlet state"
-                            placeholder="State (optional)"
-                            value={outletForm.state}
-                            onChange={(e) => setOutletForm((c) => ({ ...c, state: e.target.value }))}
-
-                            disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                            maxLength={100}
-                          />
-</label>
-                          <label className="agent-sites__field"><span>Country (optional)</span>
-<input
-                            aria-label="Outlet country"
-                            placeholder="Country (optional, e.g. NG)"
-                            value={outletForm.country}
-                            onChange={(e) => setOutletForm((c) => ({ ...c, country: e.target.value }))}
-
-                            disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                            maxLength={100}
-                          />
-</label>
-                          </div><div className="agent-sites__actions">
-                          <button type="submit" style={smallBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId)}>
-                            Create outlet
-                          </button>
-                          <button type="button" style={smallBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || !Object.values(outletForm).some(value => value.trim())} onClick={() => { if (window.confirm('Discard the unsaved outlet entry?')) setOutletForm(EMPTY_OUTLET_FORM); }}>Clear outlet entry</button></div>
+                            <label className="agent-sites__field">
+                              <span>Reference (required)</span>
+                              <input
+                                aria-label="Outlet reference"
+                                placeholder="Outlet ref (e.g. OUT-ABJ-01)"
+                                value={outletForm.reference}
+                                onChange={(e) =>
+                                  setOutletForm((c) => ({ ...c, reference: e.target.value }))
+                                }
+                                disabled={
+                                  outletBusy ||
+                                  outletsLoading ||
+                                  outletUnconfirmed ||
+                                  lifecycleBusy ||
+                                  lifecycleReviewBusy ||
+                                  lifecycleUnconfirmed
+                                }
+                              />
+                            </label>
+                            <label className="agent-sites__field">
+                              <span>Name (required)</span>
+                              <input
+                                aria-label="Outlet name"
+                                placeholder="Outlet name"
+                                value={outletForm.name}
+                                onChange={(e) =>
+                                  setOutletForm((c) => ({ ...c, name: e.target.value }))
+                                }
+                                disabled={
+                                  outletBusy ||
+                                  outletsLoading ||
+                                  outletUnconfirmed ||
+                                  lifecycleBusy ||
+                                  lifecycleReviewBusy ||
+                                  lifecycleUnconfirmed
+                                }
+                              />
+                            </label>
+                            <label className="agent-sites__field">
+                              <span>Display name (optional)</span>
+                              <input
+                                aria-label="Outlet display name"
+                                placeholder="Display name (optional)"
+                                value={outletForm.displayName}
+                                onChange={(e) =>
+                                  setOutletForm((c) => ({ ...c, displayName: e.target.value }))
+                                }
+                                disabled={
+                                  outletBusy ||
+                                  outletsLoading ||
+                                  outletUnconfirmed ||
+                                  lifecycleBusy ||
+                                  lifecycleReviewBusy ||
+                                  lifecycleUnconfirmed
+                                }
+                                maxLength={160}
+                              />
+                            </label>
+                            <label className="agent-sites__field">
+                              <span>Code (optional)</span>
+                              <input
+                                aria-label="Outlet code"
+                                placeholder="Outlet code (optional)"
+                                value={outletForm.code}
+                                onChange={(e) =>
+                                  setOutletForm((c) => ({ ...c, code: e.target.value }))
+                                }
+                                disabled={
+                                  outletBusy ||
+                                  outletsLoading ||
+                                  outletUnconfirmed ||
+                                  lifecycleBusy ||
+                                  lifecycleReviewBusy ||
+                                  lifecycleUnconfirmed
+                                }
+                                maxLength={80}
+                              />
+                            </label>
+                            <label className="agent-sites__field">
+                              <span>Address line (optional)</span>
+                              <input
+                                aria-label="Outlet address line"
+                                placeholder="Address line (optional)"
+                                value={outletForm.addressLine}
+                                onChange={(e) =>
+                                  setOutletForm((c) => ({ ...c, addressLine: e.target.value }))
+                                }
+                                disabled={
+                                  outletBusy ||
+                                  outletsLoading ||
+                                  outletUnconfirmed ||
+                                  lifecycleBusy ||
+                                  lifecycleReviewBusy ||
+                                  lifecycleUnconfirmed
+                                }
+                                maxLength={500}
+                              />
+                            </label>
+                            <label className="agent-sites__field">
+                              <span>City (optional)</span>
+                              <input
+                                aria-label="Outlet city"
+                                placeholder="City (optional)"
+                                value={outletForm.city}
+                                onChange={(e) =>
+                                  setOutletForm((c) => ({ ...c, city: e.target.value }))
+                                }
+                                disabled={
+                                  outletBusy ||
+                                  outletsLoading ||
+                                  outletUnconfirmed ||
+                                  lifecycleBusy ||
+                                  lifecycleReviewBusy ||
+                                  lifecycleUnconfirmed
+                                }
+                                maxLength={100}
+                              />
+                            </label>
+                            <label className="agent-sites__field">
+                              <span>State (optional)</span>
+                              <input
+                                aria-label="Outlet state"
+                                placeholder="State (optional)"
+                                value={outletForm.state}
+                                onChange={(e) =>
+                                  setOutletForm((c) => ({ ...c, state: e.target.value }))
+                                }
+                                disabled={
+                                  outletBusy ||
+                                  outletsLoading ||
+                                  outletUnconfirmed ||
+                                  lifecycleBusy ||
+                                  lifecycleReviewBusy ||
+                                  lifecycleUnconfirmed
+                                }
+                                maxLength={100}
+                              />
+                            </label>
+                            <label className="agent-sites__field">
+                              <span>Country (optional)</span>
+                              <input
+                                aria-label="Outlet country"
+                                placeholder="Country (optional, e.g. NG)"
+                                value={outletForm.country}
+                                onChange={(e) =>
+                                  setOutletForm((c) => ({ ...c, country: e.target.value }))
+                                }
+                                disabled={
+                                  outletBusy ||
+                                  outletsLoading ||
+                                  outletUnconfirmed ||
+                                  lifecycleBusy ||
+                                  lifecycleReviewBusy ||
+                                  lifecycleUnconfirmed
+                                }
+                                maxLength={100}
+                              />
+                            </label>
+                          </div>
+                          <div className="agent-sites__actions">
+                            <button
+                              type="submit"
+                              style={smallBtn}
+                              disabled={
+                                outletBusy ||
+                                outletsLoading ||
+                                outletUnconfirmed ||
+                                lifecycleBusy ||
+                                lifecycleReviewBusy ||
+                                lifecycleUnconfirmed ||
+                                Boolean(editingOutletId || editingTerminalId)
+                              }
+                            >
+                              Create outlet
+                            </button>
+                            <button
+                              type="button"
+                              style={smallBtn}
+                              disabled={
+                                outletBusy ||
+                                outletsLoading ||
+                                outletUnconfirmed ||
+                                lifecycleBusy ||
+                                lifecycleReviewBusy ||
+                                lifecycleUnconfirmed ||
+                                !Object.values(outletForm).some((value) => value.trim())
+                              }
+                              onClick={() => {
+                                if (window.confirm('Discard the unsaved outlet entry?'))
+                                  setOutletForm(EMPTY_OUTLET_FORM);
+                              }}
+                            >
+                              Clear outlet entry
+                            </button>
+                          </div>
                         </form>
 
-                        {outlets.length === 0 && <p className="agent-sites__notice">Create an active outlet before adding a terminal.</p>}
+                        {outlets.length === 0 && (
+                          <p className="agent-sites__notice">
+                            Create an active outlet before adding a terminal.
+                          </p>
+                        )}
                         {outlets.length > 0 && (
-                          <form onSubmit={createTerminal} className="agent-sites__form" aria-label="Create terminal form">
-                            <div className="agent-sites__form-heading"><p className="agent-network-eyebrow">NEW DEVICE</p><h4>Create a terminal</h4><p>Reference and an active parent outlet are required. A later outlet status change does not cascade.</p></div>
+                          <form
+                            onSubmit={createTerminal}
+                            className="agent-sites__form"
+                            aria-label="Create terminal form"
+                          >
+                            <div className="agent-sites__form-heading">
+                              <p className="agent-network-eyebrow">NEW DEVICE</p>
+                              <h4>Create a terminal</h4>
+                              <p>
+                                Reference and an active parent outlet are required. A later outlet
+                                status change does not cascade.
+                              </p>
+                            </div>
                             <div className="agent-sites__fields">
-                            <label className="agent-sites__field"><span>Reference (required)</span>
-<input
-                              aria-label="Terminal reference"
-                              placeholder="Terminal ref (e.g. TRM-001)"
-                              value={terminalForm.reference}
-                              onChange={(e) => setTerminalForm((c) => ({ ...c, reference: e.target.value }))}
-
-                              disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                            />
-</label>
-                            <label className="agent-sites__field"><span>Code (optional)</span>
-<input
-                              aria-label="Terminal code"
-                              placeholder="Terminal code (optional)"
-                              value={terminalForm.code}
-                              onChange={(e) => setTerminalForm((c) => ({ ...c, code: e.target.value }))}
-
-                              disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                              maxLength={80}
-                            />
-</label>
-                            <label className="agent-sites__field"><span>Parent outlet (required)</span>
-<select
-                              aria-label="Terminal outlet"
-                              value={terminalForm.outletId}
-                              onChange={(e) => setTerminalForm((c) => ({ ...c, outletId: e.target.value }))}
-
-                              disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                            >
-                              {outlets.map((o) => (
-                                <option key={o.id} value={o.id}>
-                                  {o.reference} ({o.status})
-                                </option>
-                              ))}
-                            </select>
-</label>
-                            <label className="agent-sites__field"><span>Label (optional)</span>
-<input
-                              aria-label="Terminal label"
-                              placeholder="Label (optional)"
-                              value={terminalForm.label}
-                              onChange={(e) => setTerminalForm((c) => ({ ...c, label: e.target.value }))}
-
-                              disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                              maxLength={160}
-                            />
-</label>
-                            <label className="agent-sites__field"><span>Serial number (optional)</span>
-<input
-                              aria-label="Terminal serial number"
-                              placeholder="Serial number (optional)"
-                              value={terminalForm.serialNumber}
-                              onChange={(e) => setTerminalForm((c) => ({ ...c, serialNumber: e.target.value }))}
-
-                              disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                              maxLength={100}
-                            />
-</label>
-                            </div><div className="agent-sites__actions">
-                            <button type="submit" style={smallBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(editingOutletId || editingTerminalId)}>
-                              Create terminal
-                            </button>
-                            <button type="button" style={smallBtn} disabled={outletBusy || outletsLoading || outletUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || !Object.entries(terminalForm).some(([key,value]) => key !== 'outletId' && value.trim())} onClick={() => { if (window.confirm('Discard the unsaved terminal entry?')) setTerminalForm(cur => ({...EMPTY_TERMINAL_FORM, outletId: cur.outletId})); }}>Clear terminal entry</button></div>
+                              <label className="agent-sites__field">
+                                <span>Reference (required)</span>
+                                <input
+                                  aria-label="Terminal reference"
+                                  placeholder="Terminal ref (e.g. TRM-001)"
+                                  value={terminalForm.reference}
+                                  onChange={(e) =>
+                                    setTerminalForm((c) => ({ ...c, reference: e.target.value }))
+                                  }
+                                  disabled={
+                                    outletBusy ||
+                                    outletsLoading ||
+                                    outletUnconfirmed ||
+                                    lifecycleBusy ||
+                                    lifecycleReviewBusy ||
+                                    lifecycleUnconfirmed
+                                  }
+                                />
+                              </label>
+                              <label className="agent-sites__field">
+                                <span>Code (optional)</span>
+                                <input
+                                  aria-label="Terminal code"
+                                  placeholder="Terminal code (optional)"
+                                  value={terminalForm.code}
+                                  onChange={(e) =>
+                                    setTerminalForm((c) => ({ ...c, code: e.target.value }))
+                                  }
+                                  disabled={
+                                    outletBusy ||
+                                    outletsLoading ||
+                                    outletUnconfirmed ||
+                                    lifecycleBusy ||
+                                    lifecycleReviewBusy ||
+                                    lifecycleUnconfirmed
+                                  }
+                                  maxLength={80}
+                                />
+                              </label>
+                              <label className="agent-sites__field">
+                                <span>Parent outlet (required)</span>
+                                <select
+                                  aria-label="Terminal outlet"
+                                  value={terminalForm.outletId}
+                                  onChange={(e) =>
+                                    setTerminalForm((c) => ({ ...c, outletId: e.target.value }))
+                                  }
+                                  disabled={
+                                    outletBusy ||
+                                    outletsLoading ||
+                                    outletUnconfirmed ||
+                                    lifecycleBusy ||
+                                    lifecycleReviewBusy ||
+                                    lifecycleUnconfirmed
+                                  }
+                                >
+                                  {outlets.map((o) => (
+                                    <option key={o.id} value={o.id}>
+                                      {o.reference} ({o.status})
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="agent-sites__field">
+                                <span>Label (optional)</span>
+                                <input
+                                  aria-label="Terminal label"
+                                  placeholder="Label (optional)"
+                                  value={terminalForm.label}
+                                  onChange={(e) =>
+                                    setTerminalForm((c) => ({ ...c, label: e.target.value }))
+                                  }
+                                  disabled={
+                                    outletBusy ||
+                                    outletsLoading ||
+                                    outletUnconfirmed ||
+                                    lifecycleBusy ||
+                                    lifecycleReviewBusy ||
+                                    lifecycleUnconfirmed
+                                  }
+                                  maxLength={160}
+                                />
+                              </label>
+                              <label className="agent-sites__field">
+                                <span>Serial number (optional)</span>
+                                <input
+                                  aria-label="Terminal serial number"
+                                  placeholder="Serial number (optional)"
+                                  value={terminalForm.serialNumber}
+                                  onChange={(e) =>
+                                    setTerminalForm((c) => ({ ...c, serialNumber: e.target.value }))
+                                  }
+                                  disabled={
+                                    outletBusy ||
+                                    outletsLoading ||
+                                    outletUnconfirmed ||
+                                    lifecycleBusy ||
+                                    lifecycleReviewBusy ||
+                                    lifecycleUnconfirmed
+                                  }
+                                  maxLength={100}
+                                />
+                              </label>
+                            </div>
+                            <div className="agent-sites__actions">
+                              <button
+                                type="submit"
+                                style={smallBtn}
+                                disabled={
+                                  outletBusy ||
+                                  outletsLoading ||
+                                  outletUnconfirmed ||
+                                  lifecycleBusy ||
+                                  lifecycleReviewBusy ||
+                                  lifecycleUnconfirmed ||
+                                  Boolean(editingOutletId || editingTerminalId)
+                                }
+                              >
+                                Create terminal
+                              </button>
+                              <button
+                                type="button"
+                                style={smallBtn}
+                                disabled={
+                                  outletBusy ||
+                                  outletsLoading ||
+                                  outletUnconfirmed ||
+                                  lifecycleBusy ||
+                                  lifecycleReviewBusy ||
+                                  lifecycleUnconfirmed ||
+                                  !Object.entries(terminalForm).some(
+                                    ([key, value]) => key !== 'outletId' && value.trim(),
+                                  )
+                                }
+                                onClick={() => {
+                                  if (window.confirm('Discard the unsaved terminal entry?'))
+                                    setTerminalForm((cur) => ({
+                                      ...EMPTY_TERMINAL_FORM,
+                                      outletId: cur.outletId,
+                                    }));
+                                }}
+                              >
+                                Clear terminal entry
+                              </button>
+                            </div>
                           </form>
                         )}
                       </div>
-                    )
-                  )}
+                    ))}
                 </div>
               )}
             </section>
 
             {(canViewLimitCatalog || canAssignLimit) && (
-              <section style={card} className="agent-sites agent-limits" aria-label="Agent limit assignments">
+              <section
+                style={card}
+                className="agent-sites agent-limits"
+                aria-label="Agent limit assignments"
+              >
                 <div className="agent-sites__heading">
-                  <div><p className="agent-network-eyebrow">RISK CONTROLS</p><h3>Agent limit assignments</h3><p>Review profile assignments for this Agent or submit a new profile code. Assignment status is not a usage or reservation balance.</p></div>
+                  <div>
+                    <p className="agent-network-eyebrow">RISK CONTROLS</p>
+                    <h3>Agent limit assignments</h3>
+                    <p>
+                      Review profile assignments for this Agent or submit a new profile code.
+                      Assignment status is not a usage or reservation balance.
+                    </p>
+                  </div>
                   {canViewLimitCatalog && (
                     <button
                       type="button"
                       style={smallBtn}
                       disabled={limitsLoading || limitsBusy}
-                      onClick={() => void loadAgentLimits(selected.id, limitUnconfirmed ? 1 : limitPage)}
+                      onClick={() =>
+                        void loadAgentLimits(selected.id, limitUnconfirmed ? 1 : limitPage)
+                      }
                     >
-                      {limitsLoading ? 'Loading…' : limitsLoaded ? 'Refresh agent limits' : 'Load agent limits'}
+                      {limitsLoading
+                        ? 'Loading…'
+                        : limitsLoaded
+                          ? 'Refresh agent limits'
+                          : 'Load agent limits'}
                     </button>
                   )}
                 </div>
                 {!canViewLimitCatalog && canAssignLimit && (
                   <div style={boundaryBox} role="note" data-testid="agent-limits-view-required">
-                    Your principal holds <code>agent.assign_limit</code> without <code>limit.view</code>. Reading existing per-Agent limit assignments requires <code>limit.view</code>; you can still assign a limit profile below.
+                    Your principal holds <code>agent.assign_limit</code> without{' '}
+                    <code>limit.view</code>. Reading existing per-Agent limit assignments requires{' '}
+                    <code>limit.view</code>; you can still assign a limit profile below.
                   </div>
                 )}
-                {limitUnconfirmed && <div style={boundaryBox} role="status"><strong>Limit assignment review required.</strong> The action may have completed; no idempotency guarantee is available. Independently inspect assignments and available audit records before another action. {canViewLimitCatalog ? 'Refresh the list; pages not displayed may contain other assignments.' : 'This session cannot load assignments; use an independently authorized source.'} A read cannot exclude a late commit or prove absence. This local lock is lost on confirmed exit or session change.
-                  {(!canViewLimitCatalog || limitReviewReady) && <button type="button" style={smallBtn} onClick={() => { setLimitUnconfirmed(false); setLimitReviewReady(false); setLimitsError(''); }}>I reviewed assignments and audit history</button>}
-                </div>}
-                {limitsError && <div style={errBox} role="alert">{limitsError}</div>}
-                {limitsMsg && <div style={successBox} role="status">{limitsMsg}</div>}
-                {canViewLimitCatalog && !limitsLoaded && !limitsLoading && !limitsError && <p className="agent-sites__notice">Load assignments to review current records.</p>}
-                {limitsLoading && <p className="agent-sites__notice" role="status">Loading assignments…</p>}
+                {limitUnconfirmed && (
+                  <div style={boundaryBox} role="status">
+                    <strong>Limit assignment review required.</strong> The action may have
+                    completed; no idempotency guarantee is available. Independently inspect
+                    assignments and available audit records before another action.{' '}
+                    {canViewLimitCatalog
+                      ? 'Refresh the list; pages not displayed may contain other assignments.'
+                      : 'This session cannot load assignments; use an independently authorized source.'}{' '}
+                    A read cannot exclude a late commit or prove absence. This local lock is lost on
+                    confirmed exit or session change.
+                    {(!canViewLimitCatalog || limitReviewReady) && (
+                      <button
+                        type="button"
+                        style={smallBtn}
+                        onClick={() => {
+                          setLimitUnconfirmed(false);
+                          setLimitReviewReady(false);
+                          setLimitsError('');
+                        }}
+                      >
+                        I reviewed assignments and audit history
+                      </button>
+                    )}
+                  </div>
+                )}
+                {limitsError && (
+                  <div style={errBox} role="alert">
+                    {limitsError}
+                  </div>
+                )}
+                {limitsMsg && (
+                  <div style={successBox} role="status">
+                    {limitsMsg}
+                  </div>
+                )}
+                {canViewLimitCatalog && !limitsLoaded && !limitsLoading && !limitsError && (
+                  <p className="agent-sites__notice">Load assignments to review current records.</p>
+                )}
+                {limitsLoading && (
+                  <p className="agent-sites__notice" role="status">
+                    Loading assignments…
+                  </p>
+                )}
                 {canViewLimitCatalog && limitsLoaded && (
-                  <section className="agent-sites__group agent-limits__records" aria-label="Agent assignment records">
-                    <div className="agent-sites__group-heading"><div><p className="agent-network-eyebrow">ASSIGNMENTS</p><h4>Current page</h4></div></div>
-                    <p style={smallMuted}>Page {limitPage} · {limitTotal} total assignments. A page alone does not establish that an assignment is absent.</p>
+                  <section
+                    className="agent-sites__group agent-limits__records"
+                    aria-label="Agent assignment records"
+                  >
+                    <div className="agent-sites__group-heading">
+                      <div>
+                        <p className="agent-network-eyebrow">ASSIGNMENTS</p>
+                        <h4>Current page</h4>
+                      </div>
+                    </div>
+                    <p style={smallMuted}>
+                      Page {limitPage} · {limitTotal} total assignments. A page alone does not
+                      establish that an assignment is absent.
+                    </p>
                     {agentLimits.length === 0 ? (
                       <div style={smallMuted}>No limit assignments on this page.</div>
                     ) : (
@@ -2897,7 +4668,15 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                               <button
                                 type="button"
                                 style={smallBtn}
-                                disabled={limitsBusy || limitsLoading || limitUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed || Boolean(newLimitProfileCode.trim())}
+                                disabled={
+                                  limitsBusy ||
+                                  limitsLoading ||
+                                  limitUnconfirmed ||
+                                  lifecycleBusy ||
+                                  lifecycleReviewBusy ||
+                                  lifecycleUnconfirmed ||
+                                  Boolean(newLimitProfileCode.trim())
+                                }
                                 onClick={() => void toggleAgentLimit(item)}
                               >
                                 {item.isActive ? 'Deactivate limit' : 'Activate limit'}
@@ -2907,7 +4686,24 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                         ))}
                       </ul>
                     )}
-                    <div style={actionRow}><button type="button" style={smallBtn} disabled={limitsBusy || limitsLoading || limitPage <= 1} onClick={() => void loadAgentLimits(selected.id, limitPage - 1)}>Previous limit page</button><button type="button" style={smallBtn} disabled={limitsBusy || limitsLoading || !limitHasNext} onClick={() => void loadAgentLimits(selected.id, limitPage + 1)}>Next limit page</button></div>
+                    <div style={actionRow}>
+                      <button
+                        type="button"
+                        style={smallBtn}
+                        disabled={limitsBusy || limitsLoading || limitPage <= 1}
+                        onClick={() => void loadAgentLimits(selected.id, limitPage - 1)}
+                      >
+                        Previous limit page
+                      </button>
+                      <button
+                        type="button"
+                        style={smallBtn}
+                        disabled={limitsBusy || limitsLoading || !limitHasNext}
+                        onClick={() => void loadAgentLimits(selected.id, limitPage + 1)}
+                      >
+                        Next limit page
+                      </button>
+                    </div>
                   </section>
                 )}
 
@@ -2917,51 +4713,145 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                     className="agent-sites__form agent-limits__form"
                     aria-label="Assign agent limit form"
                   >
-                    <div className="agent-sites__form-heading"><p className="agent-network-eyebrow">NEW ASSIGNMENT</p><h4>Assign a profile</h4><p>Enter a profile code or choose one from the loaded catalogue. A submission creates an assignment for the selected Agent.</p></div>
+                    <div className="agent-sites__form-heading">
+                      <p className="agent-network-eyebrow">NEW ASSIGNMENT</p>
+                      <h4>Assign a profile</h4>
+                      <p>
+                        Enter a profile code or choose one from the loaded catalogue. A submission
+                        creates an assignment for the selected Agent.
+                      </p>
+                    </div>
                     <div className="agent-sites__fields">
-                    {canViewLimitCatalog && limitCatalogLoaded && limitCatalog.length > 0 && (
-                      <label className="agent-sites__field"><span>Choose a loaded profile (optional)</span><select
-                        aria-label="Select catalog limit profile"
-                        value={limitCatalog.some(profile => profile.code === newLimitProfileCode) ? newLimitProfileCode : ''}
-                        onChange={(e) => setNewLimitProfileCode(e.target.value)}
-                        disabled={limitsBusy || limitsLoading || limitUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
+                      {canViewLimitCatalog && limitCatalogLoaded && limitCatalog.length > 0 && (
+                        <label className="agent-sites__field">
+                          <span>Choose a loaded profile (optional)</span>
+                          <select
+                            aria-label="Select catalog limit profile"
+                            value={
+                              limitCatalog.some((profile) => profile.code === newLimitProfileCode)
+                                ? newLimitProfileCode
+                                : ''
+                            }
+                            onChange={(e) => setNewLimitProfileCode(e.target.value)}
+                            disabled={
+                              limitsBusy ||
+                              limitsLoading ||
+                              limitUnconfirmed ||
+                              lifecycleBusy ||
+                              lifecycleReviewBusy ||
+                              lifecycleUnconfirmed
+                            }
+                          >
+                            <option value="">Choose catalog profile…</option>
+                            {limitCatalog.map((profile) => (
+                              <option key={profile.code} value={profile.code}>
+                                {profile.code}
+                                {profile.name ? ` — ${profile.name}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      <label className="agent-sites__field">
+                        <span>Profile code (required)</span>
+                        <input
+                          aria-label="Agent limit profile code"
+                          placeholder="Profile code (e.g. AGENT_STANDARD)"
+                          value={newLimitProfileCode}
+                          onChange={(e) => setNewLimitProfileCode(e.target.value)}
+                          disabled={
+                            limitsBusy ||
+                            limitsLoading ||
+                            limitUnconfirmed ||
+                            lifecycleBusy ||
+                            lifecycleReviewBusy ||
+                            lifecycleUnconfirmed
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className="agent-sites__actions">
+                      {canViewLimitCatalog && (
+                        <button
+                          type="button"
+                          style={smallBtn}
+                          disabled={limitCatalogLoading}
+                          onClick={() =>
+                            void loadLimitCatalog(limitCatalogLoaded ? limitCatalogPage : 1)
+                          }
+                        >
+                          {limitCatalogLoading
+                            ? 'Loading catalog…'
+                            : limitCatalogLoaded
+                              ? 'Refresh limit catalog'
+                              : 'Load limit catalog'}
+                        </button>
+                      )}
+                      <button
+                        type="submit"
+                        style={smallBtn}
+                        disabled={
+                          limitsBusy ||
+                          limitsLoading ||
+                          limitUnconfirmed ||
+                          lifecycleBusy ||
+                          lifecycleReviewBusy ||
+                          lifecycleUnconfirmed
+                        }
                       >
-                        <option value="">Choose catalog profile…</option>
-                        {limitCatalog.map((profile) => (
-                          <option key={profile.code} value={profile.code}>
-                            {profile.code}{profile.name ? ` — ${profile.name}` : ''}
-                          </option>
-                        ))}
-                      </select></label>
-                    )}
-                    <label className="agent-sites__field"><span>Profile code (required)</span><input
-                      aria-label="Agent limit profile code"
-                      placeholder="Profile code (e.g. AGENT_STANDARD)"
-                      value={newLimitProfileCode}
-                      onChange={(e) => setNewLimitProfileCode(e.target.value)}
-                      disabled={limitsBusy || limitsLoading || limitUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}
-                    /></label>
-                    </div><div className="agent-sites__actions">
-                    {canViewLimitCatalog && (
+                        Assign limit profile
+                      </button>
                       <button
                         type="button"
                         style={smallBtn}
-                        disabled={limitCatalogLoading}
-                        onClick={() => void loadLimitCatalog(limitCatalogLoaded ? limitCatalogPage : 1)}
+                        disabled={
+                          limitsBusy ||
+                          limitsLoading ||
+                          limitUnconfirmed ||
+                          !newLimitProfileCode.trim()
+                        }
+                        onClick={() => {
+                          if (window.confirm('Discard the unsaved limit profile entry?'))
+                            setNewLimitProfileCode('');
+                        }}
                       >
-                        {limitCatalogLoading ? 'Loading catalog…' : limitCatalogLoaded ? 'Refresh limit catalog' : 'Load limit catalog'}
+                        Clear limit entry
                       </button>
+                    </div>
+                    {limitCatalogError && (
+                      <p role="alert" className="agent-limits__catalog-error">
+                        {limitCatalogError}
+                      </p>
                     )}
-                    <button type="submit" style={smallBtn} disabled={limitsBusy || limitsLoading || limitUnconfirmed || lifecycleBusy || lifecycleReviewBusy || lifecycleUnconfirmed}>
-                      Assign limit profile
-                    </button>
-                    <button type="button" style={smallBtn} disabled={limitsBusy || limitsLoading || limitUnconfirmed || !newLimitProfileCode.trim()} onClick={() => { if (window.confirm('Discard the unsaved limit profile entry?')) setNewLimitProfileCode(''); }}>Clear limit entry</button></div>
-                    {limitCatalogError && <p role="alert" className="agent-limits__catalog-error">{limitCatalogError}</p>}
-                    {limitCatalogLoaded && <div className="agent-limits__catalog-page" aria-label="Limit catalogue pagination">
-                      <p>Catalogue page {limitCatalogPage} · {limitCatalogTotal} total profiles. Selection is limited to this page; entered codes remain in the field.</p>
-                      <div className="agent-sites__actions"><button type="button" style={smallBtn} disabled={limitCatalogLoading || limitCatalogPage <= 1} onClick={() => void loadLimitCatalog(limitCatalogPage - 1)}>Previous catalogue page</button>
-                      <button type="button" style={smallBtn} disabled={limitCatalogLoading || !limitCatalogHasNext} onClick={() => void loadLimitCatalog(limitCatalogPage + 1)}>Next catalogue page</button></div>
-                    </div>}
+                    {limitCatalogLoaded && (
+                      <div
+                        className="agent-limits__catalog-page"
+                        aria-label="Limit catalogue pagination"
+                      >
+                        <p>
+                          Catalogue page {limitCatalogPage} · {limitCatalogTotal} total profiles.
+                          Selection is limited to this page; entered codes remain in the field.
+                        </p>
+                        <div className="agent-sites__actions">
+                          <button
+                            type="button"
+                            style={smallBtn}
+                            disabled={limitCatalogLoading || limitCatalogPage <= 1}
+                            onClick={() => void loadLimitCatalog(limitCatalogPage - 1)}
+                          >
+                            Previous catalogue page
+                          </button>
+                          <button
+                            type="button"
+                            style={smallBtn}
+                            disabled={limitCatalogLoading || !limitCatalogHasNext}
+                            onClick={() => void loadLimitCatalog(limitCatalogPage + 1)}
+                          >
+                            Next catalogue page
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </form>
                 )}
               </section>
@@ -2984,25 +4874,36 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                         : 'Load Agent transactions'}
                   </button>
                 </div>
-                {agentHistoryError && <div style={errBox} role="alert">{agentHistoryError}</div>}
+                {agentHistoryError && (
+                  <div style={errBox} role="alert">
+                    {agentHistoryError}
+                  </div>
+                )}
                 {agentHistoryLoaded && (
                   <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <div>
                       <strong>Wallet transfers · first page (up to 10)</strong>
                       {walletHistoryState === 'unavailable' ? (
-                        <div style={smallMuted}>Wallet position is unavailable; wallet transfers could not be queried.</div>
+                        <div style={smallMuted}>
+                          Wallet position is unavailable; wallet transfers could not be queried.
+                        </div>
                       ) : walletHistoryState === 'no-wallet' ? (
-                        <div style={smallMuted}>No NGN wallet was returned by the financial position read.</div>
+                        <div style={smallMuted}>
+                          No NGN wallet was returned by the financial position read.
+                        </div>
                       ) : walletHistoryState === 'failed' ? (
                         <div style={smallMuted}>Wallet transfers are unavailable.</div>
                       ) : walletTransfers.length === 0 ? (
-                        <div style={smallMuted}>No wallet transfers were returned on this page.</div>
+                        <div style={smallMuted}>
+                          No wallet transfers were returned on this page.
+                        </div>
                       ) : (
                         <ul style={compactList}>
                           {walletTransfers.map((tx) => (
                             <li key={tx.id} style={compactListItem}>
                               <span>
-                                <code>{tx.reference || tx.id.slice(0, 8)}</code> · {tx.direction || 'TRANSFER'} ·{' '}
+                                <code>{tx.reference || tx.id.slice(0, 8)}</code> ·{' '}
+                                {tx.direction || 'TRANSFER'} ·{' '}
                                 <strong>{formatMinor(tx.amountMinor, tx.currency)}</strong>
                               </span>
                               <span style={badge(tx.status)}>{tx.status}</span>
@@ -3017,13 +4918,16 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
                       {c2cHistoryState === 'failed' ? (
                         <div style={smallMuted}>Cash-to-Cash transfers are unavailable.</div>
                       ) : agentC2CRows.length === 0 ? (
-                        <div style={smallMuted}>No Cash-to-Cash transfers were returned on this page.</div>
+                        <div style={smallMuted}>
+                          No Cash-to-Cash transfers were returned on this page.
+                        </div>
                       ) : (
                         <ul style={compactList}>
                           {agentC2CRows.map((row) => (
                             <li key={row.id} style={compactListItem}>
                               <span>
-                                <code>{row.reference || row.id.slice(0, 8)}</code> · {row.beneficiaryPhoneMasked} ·{' '}
+                                <code>{row.reference || row.id.slice(0, 8)}</code> ·{' '}
+                                {row.beneficiaryPhoneMasked} ·{' '}
                                 <strong>{formatMinor(row.principalMinor, row.currency)}</strong>
                                 {row.redemptionMethod ? ` (${row.redemptionMethod})` : ''}
                               </span>
@@ -3062,41 +4966,250 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
 
 const wrap: React.CSSProperties = { padding: 'clamp(16px, 3vw, 32px)', maxWidth: 1100 };
 const h2: React.CSSProperties = { margin: '0 0 8px', color: 'var(--mn-nav-surface-deep, #082f23)' };
-const h3: React.CSSProperties = { margin: '0 0 4px', color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 16 };
-const sub: React.CSSProperties = { color: 'var(--mn-text-secondary, #52655f)', fontSize: 13, marginBottom: 16 };
-const smallMuted: React.CSSProperties = { color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 };
-const filters: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 16, marginBottom: 16, alignItems: 'end' };
-const btn: React.CSSProperties = { minHeight: 40, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--mn-border-control, #6d817a)', background: '#fff', color: 'var(--mn-action-primary, #0b624a)', font: 'inherit', fontWeight: 700, cursor: 'pointer' };
-const smallBtn: React.CSSProperties = { minHeight: 40, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--mn-border-control, #6d817a)', background: '#fff', color: 'var(--mn-action-primary, #0b624a)', cursor: 'pointer', fontSize: 13, fontWeight: 700 };
+const h3: React.CSSProperties = {
+  margin: '0 0 4px',
+  color: 'var(--mn-nav-surface-deep, #082f23)',
+  fontSize: 16,
+};
+const sub: React.CSSProperties = {
+  color: 'var(--mn-text-secondary, #52655f)',
+  fontSize: 13,
+  marginBottom: 16,
+};
+const smallMuted: React.CSSProperties = {
+  color: 'var(--mn-text-secondary, #52655f)',
+  fontSize: 12,
+};
+const filters: React.CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 12,
+  marginTop: 16,
+  marginBottom: 16,
+  alignItems: 'end',
+};
+const btn: React.CSSProperties = {
+  minHeight: 40,
+  padding: '8px 14px',
+  borderRadius: 8,
+  border: '1px solid var(--mn-border-control, #6d817a)',
+  background: '#fff',
+  color: 'var(--mn-action-primary, #0b624a)',
+  font: 'inherit',
+  fontWeight: 700,
+  cursor: 'pointer',
+};
+const smallBtn: React.CSSProperties = {
+  minHeight: 40,
+  padding: '8px 12px',
+  borderRadius: 8,
+  border: '1px solid var(--mn-border-control, #6d817a)',
+  background: '#fff',
+  color: 'var(--mn-action-primary, #0b624a)',
+  cursor: 'pointer',
+  fontSize: 13,
+  fontWeight: 700,
+};
 const warnBtn: React.CSSProperties = { ...smallBtn, background: '#FFF7ED', borderColor: '#FDBA74' };
-const dangerBtn: React.CSSProperties = { ...smallBtn, background: '#FEF2F2', borderColor: '#FCA5A5' };
-const successBtn: React.CSSProperties = { ...smallBtn, background: 'var(--mn-action-primary, #0b624a)', borderColor: 'var(--mn-action-primary, #0b624a)', color: '#fff' };
-const inlineInput: React.CSSProperties = { minHeight: 40, maxWidth: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--mn-border-control, #6d817a)', color: 'var(--mn-text-primary, #132b25)', fontSize: 14, background: '#fff' };
-const formGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 8 };
-const formFieldLabel: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--mn-text-primary, #132b25)', fontWeight: 600 };
-const table: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 8, overflow: 'hidden' };
-const cell: React.CSSProperties = { padding: '8px 10px', borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)', fontSize: 13, textAlign: 'left' };
+const dangerBtn: React.CSSProperties = {
+  ...smallBtn,
+  background: '#FEF2F2',
+  borderColor: '#FCA5A5',
+};
+const successBtn: React.CSSProperties = {
+  ...smallBtn,
+  background: 'var(--mn-action-primary, #0b624a)',
+  borderColor: 'var(--mn-action-primary, #0b624a)',
+  color: '#fff',
+};
+const inlineInput: React.CSSProperties = {
+  minHeight: 40,
+  maxWidth: '100%',
+  padding: '8px 10px',
+  borderRadius: 8,
+  border: '1px solid var(--mn-border-control, #6d817a)',
+  color: 'var(--mn-text-primary, #132b25)',
+  fontSize: 14,
+  background: '#fff',
+};
+const formGrid: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
+  gap: 8,
+};
+const formFieldLabel: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+  fontSize: 12,
+  color: 'var(--mn-text-primary, #132b25)',
+  fontWeight: 600,
+};
+const table: React.CSSProperties = {
+  width: '100%',
+  borderCollapse: 'collapse',
+  background: '#fff',
+  borderRadius: 8,
+  overflow: 'hidden',
+};
+const cell: React.CSSProperties = {
+  padding: '8px 10px',
+  borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)',
+  fontSize: 13,
+  textAlign: 'left',
+};
 const badge = (s: string): React.CSSProperties => ({
   padding: '2px 8px',
   borderRadius: 12,
   fontSize: 11,
   fontWeight: 700,
-  background: s === 'ACTIVE' || s === 'APPROVED' ? '#ECFDF5' : s === 'SUSPENDED' || s === 'UNDER_REVIEW' ? '#FFF7ED' : s === 'TERMINATED' || s === 'REJECTED' ? '#FEF2F2' : 'var(--mn-surface-sunken, #eef3f0)',
-  color: s === 'ACTIVE' || s === 'APPROVED' ? '#065F46' : s === 'SUSPENDED' || s === 'UNDER_REVIEW' ? '#92400E' : s === 'TERMINATED' || s === 'REJECTED' ? '#991B1B' : 'var(--mn-text-primary, #132b25)',
+  background:
+    s === 'ACTIVE' || s === 'APPROVED'
+      ? '#ECFDF5'
+      : s === 'SUSPENDED' || s === 'UNDER_REVIEW'
+        ? '#FFF7ED'
+        : s === 'TERMINATED' || s === 'REJECTED'
+          ? '#FEF2F2'
+          : 'var(--mn-surface-sunken, #eef3f0)',
+  color:
+    s === 'ACTIVE' || s === 'APPROVED'
+      ? '#065F46'
+      : s === 'SUSPENDED' || s === 'UNDER_REVIEW'
+        ? '#92400E'
+        : s === 'TERMINATED' || s === 'REJECTED'
+          ? '#991B1B'
+          : 'var(--mn-text-primary, #132b25)',
 });
-const errBox: React.CSSProperties = { background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#991B1B', padding: 10, borderRadius: 6, marginTop: 8, marginBottom: 8, fontSize: 13 };
-const successBox: React.CSSProperties = { background: '#ECFDF5', border: '1px solid #6EE7B7', color: '#065F46', padding: 10, borderRadius: 6, marginTop: 8, marginBottom: 8, fontSize: 13 };
-const boundaryBox: React.CSSProperties = { background: '#FFFBEB', border: '1px solid #FCD34D', color: '#78350F', padding: 10, borderRadius: 6, marginTop: 8, marginBottom: 8, fontSize: 12 };
-const noteBox: React.CSSProperties = { background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1E3A8A', padding: 10, borderRadius: 6, marginTop: 12, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 };
-const loadingBox: React.CSSProperties = { padding: 20, textAlign: 'center', color: 'var(--mn-text-secondary, #52655f)' };
-const empty: React.CSSProperties = { padding: 20, textAlign: 'center', color: 'var(--mn-text-secondary, #52655f)', background: '#fff', borderRadius: 8, border: '1px dashed var(--mn-border-subtle, #dde7e2)' };
-const pager: React.CSSProperties = { marginTop: 12, display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: 'var(--mn-text-secondary, #52655f)' };
-const denied: React.CSSProperties = { background: '#FFF7ED', border: '1px solid #FDBA74', color: '#92400E', padding: 12, borderRadius: 8, fontSize: 13 };
-const sectionCard: React.CSSProperties = { marginTop: 16, padding: 16, border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8, background: '#fff' };
-const sectionHead: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' };
-const drawerHead: React.CSSProperties = { padding: 12, background: 'var(--mn-surface-canvas, #f5f8f6)', borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 };
-const drawerBody: React.CSSProperties = { padding: 16, display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13 };
-const card: React.CSSProperties = { padding: 12, background: 'var(--mn-surface-canvas, #f5f8f6)', borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)' };
-const actionRow: React.CSSProperties = { display: 'flex', gap: 8, flexWrap: 'wrap' as const, alignItems: 'center' };
-const compactList: React.CSSProperties = { listStyle: 'none', padding: 0, margin: '6px 0 0', display: 'flex', flexDirection: 'column', gap: 6 };
-const compactListItem: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '6px 8px', background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 6 };
+const errBox: React.CSSProperties = {
+  background: '#FEF2F2',
+  border: '1px solid #FCA5A5',
+  color: '#991B1B',
+  padding: 10,
+  borderRadius: 6,
+  marginTop: 8,
+  marginBottom: 8,
+  fontSize: 13,
+};
+const successBox: React.CSSProperties = {
+  background: '#ECFDF5',
+  border: '1px solid #6EE7B7',
+  color: '#065F46',
+  padding: 10,
+  borderRadius: 6,
+  marginTop: 8,
+  marginBottom: 8,
+  fontSize: 13,
+};
+const boundaryBox: React.CSSProperties = {
+  background: '#FFFBEB',
+  border: '1px solid #FCD34D',
+  color: '#78350F',
+  padding: 10,
+  borderRadius: 6,
+  marginTop: 8,
+  marginBottom: 8,
+  fontSize: 12,
+};
+const noteBox: React.CSSProperties = {
+  background: '#EFF6FF',
+  border: '1px solid #BFDBFE',
+  color: '#1E3A8A',
+  padding: 10,
+  borderRadius: 6,
+  marginTop: 12,
+  fontSize: 12,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 8,
+};
+const loadingBox: React.CSSProperties = {
+  padding: 20,
+  textAlign: 'center',
+  color: 'var(--mn-text-secondary, #52655f)',
+};
+const empty: React.CSSProperties = {
+  padding: 20,
+  textAlign: 'center',
+  color: 'var(--mn-text-secondary, #52655f)',
+  background: '#fff',
+  borderRadius: 8,
+  border: '1px dashed var(--mn-border-subtle, #dde7e2)',
+};
+const pager: React.CSSProperties = {
+  marginTop: 12,
+  display: 'flex',
+  gap: 8,
+  alignItems: 'center',
+  fontSize: 13,
+  color: 'var(--mn-text-secondary, #52655f)',
+};
+const denied: React.CSSProperties = {
+  background: '#FFF7ED',
+  border: '1px solid #FDBA74',
+  color: '#92400E',
+  padding: 12,
+  borderRadius: 8,
+  fontSize: 13,
+};
+const sectionCard: React.CSSProperties = {
+  marginTop: 16,
+  padding: 16,
+  border: '1px solid var(--mn-border-subtle, #dde7e2)',
+  borderRadius: 8,
+  background: '#fff',
+};
+const sectionHead: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  gap: 12,
+  flexWrap: 'wrap',
+};
+const drawerHead: React.CSSProperties = {
+  padding: 12,
+  background: 'var(--mn-surface-canvas, #f5f8f6)',
+  borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)',
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  gap: 8,
+};
+const drawerBody: React.CSSProperties = {
+  padding: 16,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 12,
+  fontSize: 13,
+};
+const card: React.CSSProperties = {
+  padding: 12,
+  background: 'var(--mn-surface-canvas, #f5f8f6)',
+  borderRadius: 6,
+  border: '1px solid var(--mn-border-subtle, #dde7e2)',
+};
+const actionRow: React.CSSProperties = {
+  display: 'flex',
+  gap: 8,
+  flexWrap: 'wrap' as const,
+  alignItems: 'center',
+};
+const compactList: React.CSSProperties = {
+  listStyle: 'none',
+  padding: 0,
+  margin: '6px 0 0',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 6,
+};
+const compactListItem: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+  padding: '6px 8px',
+  background: '#fff',
+  border: '1px solid var(--mn-border-subtle, #dde7e2)',
+  borderRadius: 6,
+};

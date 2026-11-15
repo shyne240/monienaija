@@ -376,7 +376,13 @@ describe('registration session Nest/Fastify API on synthetic PostgreSQL', () => 
       {
         cwd: process.cwd(),
         env: { PATH: process.env.PATH ?? '', TS_NODE_PROJECT: 'tsconfig.json' },
-        input: JSON.stringify({ socket, port: cluster.port, schema, id: s.id, token: s.authorization }),
+        input: JSON.stringify({
+          socket,
+          port: cluster.port,
+          schema,
+          id: s.id,
+          token: s.authorization,
+        }),
         encoding: 'utf8',
         timeout: 20000,
       },

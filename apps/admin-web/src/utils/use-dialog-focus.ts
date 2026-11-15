@@ -18,10 +18,15 @@ export function useDialogFocus<T extends HTMLElement>(
     const root = dialog.current;
     dialogStack.push(root);
     const isTop = () => dialogStack[dialogStack.length - 1] === root;
-    const previous = restoreFocusRef?.current ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
-    const focusable = () => Array.from(root.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), a[href], iframe, [tabindex]:not([tabindex="-1"])',
-    )).filter(element => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
+    const previous =
+      restoreFocusRef?.current ??
+      (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    const focusable = () =>
+      Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), a[href], iframe, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
     (focusable()[0] ?? root).focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (!isTop()) return;
@@ -32,13 +37,23 @@ export function useDialogFocus<T extends HTMLElement>(
       }
       if (event.key !== 'Tab') return;
       const items = focusable();
-      if (!items.length) { event.preventDefault(); root.focus(); return; }
+      if (!items.length) {
+        event.preventDefault();
+        root.focus();
+        return;
+      }
       const index = items.indexOf(document.activeElement as HTMLElement);
-      if (event.shiftKey && index <= 0) { event.preventDefault(); items[items.length - 1].focus(); }
-      else if (!event.shiftKey && (index < 0 || index === items.length - 1)) { event.preventDefault(); items[0].focus(); }
+      if (event.shiftKey && index <= 0) {
+        event.preventDefault();
+        items[items.length - 1].focus();
+      } else if (!event.shiftKey && (index < 0 || index === items.length - 1)) {
+        event.preventDefault();
+        items[0].focus();
+      }
     };
     const onFocusIn = (event: FocusEvent) => {
-      if (isTop() && event.target instanceof Node && !root.contains(event.target)) (focusable()[0] ?? root).focus();
+      if (isTop() && event.target instanceof Node && !root.contains(event.target))
+        (focusable()[0] ?? root).focus();
     };
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('focusin', onFocusIn);

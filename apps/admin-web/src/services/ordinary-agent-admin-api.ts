@@ -95,8 +95,10 @@ export function normalizeApplicableServicesInput(raw: unknown): NormalizedApplic
     const token =
       typeof entry === 'string'
         ? entry.trim().toUpperCase()
-        : entry && typeof entry === 'object' && typeof (entry as { code?: unknown }).code === 'string'
-          ? ((entry as { code: string }).code).trim().toUpperCase()
+        : entry &&
+            typeof entry === 'object' &&
+            typeof (entry as { code?: unknown }).code === 'string'
+          ? (entry as { code: string }).code.trim().toUpperCase()
           : String(entry ?? '').trim();
 
     if (!token) continue;
@@ -111,9 +113,9 @@ export function normalizeApplicableServicesInput(raw: unknown): NormalizedApplic
     }
   }
 
-  const ordered = CANONICAL_AGENT_SERVICES
-    .map((option) => option.code)
-    .filter((code) => selected.has(code));
+  const ordered = CANONICAL_AGENT_SERVICES.map((option) => option.code).filter((code) =>
+    selected.has(code),
+  );
 
   return {
     canonical: ordered,
@@ -236,13 +238,30 @@ function stripApplicantToken(
   return rest;
 }
 
-function verifyApplicationReceipt(value: AgentApplicationDraftResponse, expected: { id?: string; status: 'DRAFT' | 'SUBMITTED'; applicantReference?: string; agentClassId?: string }): void {
-  if (!value || typeof value !== 'object' || typeof value.id !== 'string' || !value.id.trim() ||
-      typeof value.reference !== 'string' || !value.reference.trim() || value.status !== expected.status ||
-      !Number.isSafeInteger(value.version) || (value.version ?? 0) < 1 ||
-      (expected.id !== undefined && value.id !== expected.id) ||
-      (expected.applicantReference !== undefined && value.applicantReference !== expected.applicantReference) ||
-      (expected.agentClassId !== undefined && value.agentClassId !== expected.agentClassId)) {
+function verifyApplicationReceipt(
+  value: AgentApplicationDraftResponse,
+  expected: {
+    id?: string;
+    status: 'DRAFT' | 'SUBMITTED';
+    applicantReference?: string;
+    agentClassId?: string;
+  },
+): void {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    typeof value.id !== 'string' ||
+    !value.id.trim() ||
+    typeof value.reference !== 'string' ||
+    !value.reference.trim() ||
+    value.status !== expected.status ||
+    !Number.isSafeInteger(value.version) ||
+    (value.version ?? 0) < 1 ||
+    (expected.id !== undefined && value.id !== expected.id) ||
+    (expected.applicantReference !== undefined &&
+      value.applicantReference !== expected.applicantReference) ||
+    (expected.agentClassId !== undefined && value.agentClassId !== expected.agentClassId)
+  ) {
     throw new Error('Application receipt could not be verified.');
   }
 }
@@ -254,7 +273,8 @@ export async function createAgentApplicationDraft(
     applicantReference: input.applicantReference.trim(),
   };
   if (input.agentClassId?.trim()) body.agentClassId = input.agentClassId.trim();
-  else if (input.agentClassReference?.trim()) body.agentClassReference = input.agentClassReference.trim();
+  else if (input.agentClassReference?.trim())
+    body.agentClassReference = input.agentClassReference.trim();
   if (input.businessName !== undefined && input.businessName.trim()) {
     body.businessName = input.businessName.trim();
   }
@@ -266,7 +286,11 @@ export async function createAgentApplicationDraft(
   }
 
   const created = await ApiClient.post<AgentApplicationDraftResponse>('/agents/applications', body);
-  verifyApplicationReceipt(created, { status: 'DRAFT', applicantReference: input.applicantReference.trim(), agentClassId: input.agentClassId?.trim() || undefined });
+  verifyApplicationReceipt(created, {
+    status: 'DRAFT',
+    applicantReference: input.applicantReference.trim(),
+    agentClassId: input.agentClassId?.trim() || undefined,
+  });
   return stripApplicantToken(created);
 }
 
@@ -285,7 +309,11 @@ export async function updateAgentApplicationDraft(
     `/agents/applications/${encodeURIComponent(applicationId)}`,
     body,
   );
-  verifyApplicationReceipt(updated, { id: applicationId, status: 'DRAFT', agentClassId: input.agentClassId?.trim() || undefined });
+  verifyApplicationReceipt(updated, {
+    id: applicationId,
+    status: 'DRAFT',
+    agentClassId: input.agentClassId?.trim() || undefined,
+  });
   return stripApplicantToken(updated);
 }
 
@@ -449,12 +477,14 @@ export async function revokeAgentActiveSessions(
         : ApiClient.post<Record<string, unknown> | null>(endpoint),
   );
 
-  if (result.status === 'BLOCKED') return {
-    ...result,
-    message: result.httpStatus === 404
-      ? `Session revocation endpoint or Agent was not found (POST ${endpoint}, HTTP 404). Revocation was not confirmed.`
-      : result.message,
-  };
+  if (result.status === 'BLOCKED')
+    return {
+      ...result,
+      message:
+        result.httpStatus === 404
+          ? `Session revocation endpoint or Agent was not found (POST ${endpoint}, HTTP 404). Revocation was not confirmed.`
+          : result.message,
+    };
 
   const raw = result.data && typeof result.data === 'object' ? result.data : {};
   // Arena 1 returns `{ agentId, revokedSessionCount }` (admin-agent-credentials.controller.ts).
@@ -600,7 +630,8 @@ export async function fetchCashToCashExpiryStatus(): Promise<
       // configuration" from "enabled but timer idle". Process-local only — never fleet health.
       schedulerRunning:
         typeof worker.schedulerRunning === 'boolean' ? worker.schedulerRunning : undefined,
-      tickInProgress: typeof worker.tickInProgress === 'boolean' ? worker.tickInProgress : undefined,
+      tickInProgress:
+        typeof worker.tickInProgress === 'boolean' ? worker.tickInProgress : undefined,
       pollIntervalMs: optionalFiniteNumber(
         worker.pollIntervalMs ?? raw.pollIntervalMs ?? raw.intervalMs,
       ),

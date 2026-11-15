@@ -83,9 +83,7 @@ export const InstitutionWorkspaceScreen: React.FC<InstitutionWorkspaceScreenProp
 
   const detail = useConsoleData<InstitutionSummary | null>(
     () =>
-      institutionId
-        ? InstitutionAdminApi.getInstitution(institutionId)
-        : Promise.resolve(null),
+      institutionId ? InstitutionAdminApi.getInstitution(institutionId) : Promise.resolve(null),
     [institutionId],
     'The institution could not be loaded.',
   );
@@ -236,9 +234,7 @@ const OverviewTab: React.FC<{ institution: InstitutionSummary }> = ({ institutio
 
   const pending = useConsoleData<PendingApproval[]>(
     () =>
-      canSeePending
-        ? InstitutionAdminApi.pendingApprovals(institution.id)
-        : Promise.resolve([]),
+      canSeePending ? InstitutionAdminApi.pendingApprovals(institution.id) : Promise.resolve([]),
     [institution.id, canSeePending],
     'Pending governed actions could not be loaded.',
   );
@@ -324,7 +320,9 @@ const OverviewTab: React.FC<{ institution: InstitutionSummary }> = ({ institutio
           <div>
             <dt>Suspended / closed</dt>
             <dd>
-              {institution.suspendedAt ? `Suspended ${formatTimestamp(institution.suspendedAt)}` : '—'}
+              {institution.suspendedAt
+                ? `Suspended ${formatTimestamp(institution.suspendedAt)}`
+                : '—'}
               {institution.closedAt ? ` · Closed ${formatTimestamp(institution.closedAt)}` : ''}
             </dd>
           </div>
@@ -432,7 +430,8 @@ const LifecycleTab: React.FC<{
 }> = ({ institution, onInstitutionChanged }) => {
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
-  const canManage = hasAnyScope(scopes, INSTITUTION_FUNCTIONS.manage) && !principal?.readOnlyPrincipal;
+  const canManage =
+    hasAnyScope(scopes, INSTITUTION_FUNCTIONS.manage) && !principal?.readOnlyPrincipal;
   const canRequest =
     hasAnyScope(scopes, INSTITUTION_FUNCTIONS.lifecyclePrepare) && !principal?.readOnlyPrincipal;
   const canExecute =
@@ -442,9 +441,16 @@ const LifecycleTab: React.FC<{
     !principal?.readOnlyPrincipal &&
     principal?.assuranceLevel === 'MFA';
 
-  const [evidence, setEvidence] = useState({ evidenceReference: '', regulatorName: '', licenceReference: '' });
+  const [evidence, setEvidence] = useState({
+    evidenceReference: '',
+    regulatorName: '',
+    licenceReference: '',
+  });
   const [evidenceBusy, setEvidenceBusy] = useState(false);
-  const [evidenceMessage, setEvidenceMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
+  const [evidenceMessage, setEvidenceMessage] = useState<{
+    tone: 'success' | 'danger';
+    text: string;
+  } | null>(null);
 
   const [requestForm, setRequestForm] = useState<{
     targetStatus: 'APPROVED' | 'SUSPENDED' | 'CLOSED';
@@ -499,7 +505,10 @@ const LifecycleTab: React.FC<{
       });
       onInstitutionChanged();
     } catch (error) {
-      setEvidenceMessage({ tone: 'danger', text: describeError(error, 'Evidence could not be recorded.') });
+      setEvidenceMessage({
+        tone: 'danger',
+        text: describeError(error, 'Evidence could not be recorded.'),
+      });
     } finally {
       setEvidenceBusy(false);
     }
@@ -634,9 +643,14 @@ const LifecycleTab: React.FC<{
             Loading pending actions…
           </p>
         ) : (pending.data ?? []).length === 0 ? (
-          <p className="mn-inst__hint">No governed action with this institution as its subject is open.</p>
+          <p className="mn-inst__hint">
+            No governed action with this institution as its subject is open.
+          </p>
         ) : (
-          <ScrollRegion label="Pending governed actions" hint="Scroll horizontally for all columns.">
+          <ScrollRegion
+            label="Pending governed actions"
+            hint="Scroll horizontally for all columns."
+          >
             <table className="mn-inst__table">
               <thead>
                 <tr>
@@ -655,7 +669,8 @@ const LifecycleTab: React.FC<{
                 {lifecycleActions.length === 0 && (pending.data ?? []).length > 0 ? (
                   <tr>
                     <td colSpan={7} className="mn-inst__hint">
-                      These actions belong to other sections (affiliation, enrolment or attribution).
+                      These actions belong to other sections (affiliation, enrolment or
+                      attribution).
                     </td>
                   </tr>
                 ) : null}
@@ -741,8 +756,8 @@ const LifecycleTab: React.FC<{
             Record regulatory evidence
           </h2>
           <p className="mn-inst__panel-note">
-            Records the reference supplied for verification. Recording evidence moves the institution
-            no further than <strong>EVIDENCE_SUBMITTED</strong> and grants no authority.
+            Records the reference supplied for verification. Recording evidence moves the
+            institution no further than <strong>EVIDENCE_SUBMITTED</strong> and grants no authority.
           </p>
           <form className="mn-inst__grid" onSubmit={submitEvidence}>
             <Field label="Evidence reference" htmlFor="inst-evidence-ref">
@@ -763,7 +778,9 @@ const LifecycleTab: React.FC<{
                 className="mn-input"
                 value={evidence.regulatorName}
                 maxLength={160}
-                onChange={(event) => setEvidence({ ...evidence, regulatorName: event.target.value })}
+                onChange={(event) =>
+                  setEvidence({ ...evidence, regulatorName: event.target.value })
+                }
               />
             </Field>
             <Field label="Licence reference (optional)" htmlFor="inst-evidence-licence">
@@ -820,7 +837,11 @@ const LifecycleTab: React.FC<{
                 ))}
               </select>
             </Field>
-            <Field label="Reason" htmlFor="inst-request-reason" hint="At least 10 characters; stored on the approval.">
+            <Field
+              label="Reason"
+              htmlFor="inst-request-reason"
+              hint="At least 10 characters; stored on the approval."
+            >
               <textarea
                 id="inst-request-reason"
                 className="mn-input"
@@ -857,8 +878,8 @@ const LifecycleTab: React.FC<{
           </h2>
           <p className="mn-inst__panel-note">
             The target status and reason must match the approved request exactly. The approval is
-            bound to the request payload, so any difference is refused with{' '}
-            <code>403</code> rather than silently applied.
+            bound to the request payload, so any difference is refused with <code>403</code> rather
+            than silently applied.
           </p>
           <form className="mn-inst__grid" onSubmit={submitExecute}>
             <Field label="Approval id" htmlFor="inst-execute-approval">
@@ -988,7 +1009,10 @@ const ActivityTab: React.FC<{ institution: InstitutionSummary; scopes: readonly 
         ) : (events.data ?? []).length === 0 ? (
           <p className="mn-inst__hint">No audit events recorded for this institution yet.</p>
         ) : (
-          <ScrollRegion label="Institution audit events" hint="Scroll horizontally for all columns.">
+          <ScrollRegion
+            label="Institution audit events"
+            hint="Scroll horizontally for all columns."
+          >
             <table className="mn-inst__table">
               <thead>
                 <tr>

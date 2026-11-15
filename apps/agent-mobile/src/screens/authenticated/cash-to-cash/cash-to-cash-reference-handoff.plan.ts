@@ -14,8 +14,7 @@
 
 const SIX_DIGIT_TRANSFER_NUMBER_PATTERN = /^[0-9]{6}$/;
 
-const UUID_IDENTIFIER_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_IDENTIFIER_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const HUMAN_TRANSFER_REFERENCE_PATTERN = /^(?:CASH_TO_CASH[-_]|C2C[-_])[A-Za-z0-9_-]{3,120}$/i;
 

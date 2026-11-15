@@ -36,7 +36,13 @@ const profileFixture = {
   reference: 'agent-ref-42',
   status: 'ACTIVE',
   agentClassId: 'class-1',
-  agentClass: { id: 'class-1', reference: 'ac-1', code: 'SILVER', name: 'Silver Agent', isActive: true },
+  agentClass: {
+    id: 'class-1',
+    reference: 'ac-1',
+    code: 'SILVER',
+    name: 'Silver Agent',
+    isActive: true,
+  },
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
@@ -57,8 +63,18 @@ const capabilitiesFixture = {
   permittedServices: ['CASH_IN'],
   evaluations: [
     { service: 'CASH_IN', canonicalService: 'CASH_IN', allowed: true, reason: null },
-    { service: 'CASH_OUT', canonicalService: 'CASH_OUT', allowed: false, reason: 'Not assigned to your agent class' },
-    { service: 'CASH_TO_CASH', canonicalService: 'CASH_TO_CASH', allowed: false, reason: 'Not assigned to your agent class' },
+    {
+      service: 'CASH_OUT',
+      canonicalService: 'CASH_OUT',
+      allowed: false,
+      reason: 'Not assigned to your agent class',
+    },
+    {
+      service: 'CASH_TO_CASH',
+      canonicalService: 'CASH_TO_CASH',
+      allowed: false,
+      reason: 'Not assigned to your agent class',
+    },
   ],
 };
 
@@ -145,7 +161,9 @@ describe('HomeScreen (real Agent operating context)', () => {
     const { getByTestId, getByText, queryByText } = wrap(<HomeScreen />);
     await waitFor(() => expect(getByTestId('nav-cash-to-cash-claim')).toBeTruthy());
     expect(getByText('Cash→Cash — assist beneficiary claim')).toBeTruthy();
-    expect(getByTestId('c2c-redemption-method-note').props.children).toMatch(/Customer wallet or the claiming Agent.*NGN float for cash payout/);
+    expect(getByTestId('c2c-redemption-method-note').props.children).toMatch(
+      /Customer wallet or the claiming Agent.*NGN float for cash payout/,
+    );
     expect(queryByText(/physical cash payout is not available/i)).toBeNull();
   });
 
@@ -179,7 +197,11 @@ describe('HomeScreen (real Agent operating context)', () => {
   test('no-wallet state renders an explicit message instead of a fake balance', async () => {
     mockApi.getAgentProfile.mockResolvedValue(profileFixture);
     mockApi.getAgentFinancialPosition.mockResolvedValue({
-      agentId: 'agent-uuid-1', currency: 'NGN', balanceMinor: '0', availableBalanceMinor: '0', walletExists: false,
+      agentId: 'agent-uuid-1',
+      currency: 'NGN',
+      balanceMinor: '0',
+      availableBalanceMinor: '0',
+      walletExists: false,
     });
     mockApi.getAgentCapabilities.mockResolvedValue(capabilitiesFixture);
     mockApi.getAgentReceivingNumber.mockResolvedValue(receivingFixture);
@@ -208,7 +230,9 @@ describe('HomeScreen (real Agent operating context)', () => {
 
     const { getAllByText } = wrap(<HomeScreen />);
     await waitFor(() =>
-      expect(getAllByText('Your session has expired. Please log in again.').length).toBeGreaterThan(0),
+      expect(getAllByText('Your session has expired. Please log in again.').length).toBeGreaterThan(
+        0,
+      ),
     );
   });
 

@@ -82,18 +82,48 @@ describe('Admin Web Portal — V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02 real 
       totalFeeRevenueMinor: '15000',
       feeRevenueNote: 'Fee revenue note text',
       byType: [
-        { type: 'W2W', completedCount: 20, completedValueMinor: '500000', failedCount: 1, pendingCount: 0, feeRevenueMinor: '7500' },
-        { type: 'C2W', completedCount: 10, completedValueMinor: '300000', failedCount: 1, pendingCount: 1, feeRevenueMinor: null },
-        { type: 'W2C', completedCount: 8, completedValueMinor: '150000', failedCount: 1, pendingCount: 0, feeRevenueMinor: null },
-        { type: 'C2C', completedCount: 4, completedValueMinor: '50000', failedCount: 0, pendingCount: 0, feeRevenueMinor: '7500' },
+        {
+          type: 'W2W',
+          completedCount: 20,
+          completedValueMinor: '500000',
+          failedCount: 1,
+          pendingCount: 0,
+          feeRevenueMinor: '7500',
+        },
+        {
+          type: 'C2W',
+          completedCount: 10,
+          completedValueMinor: '300000',
+          failedCount: 1,
+          pendingCount: 1,
+          feeRevenueMinor: null,
+        },
+        {
+          type: 'W2C',
+          completedCount: 8,
+          completedValueMinor: '150000',
+          failedCount: 1,
+          pendingCount: 0,
+          feeRevenueMinor: null,
+        },
+        {
+          type: 'C2C',
+          completedCount: 4,
+          completedValueMinor: '50000',
+          failedCount: 0,
+          pendingCount: 0,
+          feeRevenueMinor: '7500',
+        },
       ],
       commission: null,
       commissionNote: 'No verified commission source.',
     };
 
     (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
-      if (url === '/internal/a2/workforce/dashboard/my-dashboard') return Promise.resolve(dashboard);
-      if (url.startsWith('/internal/a2/workforce/dashboard/widgets/transaction-summary')) return Promise.resolve(summary);
+      if (url === '/internal/a2/workforce/dashboard/my-dashboard')
+        return Promise.resolve(dashboard);
+      if (url.startsWith('/internal/a2/workforce/dashboard/widgets/transaction-summary'))
+        return Promise.resolve(summary);
       return Promise.resolve(undefined);
     });
 
@@ -128,7 +158,8 @@ describe('Admin Web Portal — V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02 real 
       ],
     };
     (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
-      if (url === '/internal/a2/workforce/dashboard/my-dashboard') return Promise.resolve(dashboard);
+      if (url === '/internal/a2/workforce/dashboard/my-dashboard')
+        return Promise.resolve(dashboard);
       return Promise.resolve(undefined);
     });
 
@@ -142,7 +173,8 @@ describe('Admin Web Portal — V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02 real 
 
   test('shows a clear error state when the dashboard fetch fails, without crashing the page', async () => {
     (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
-      if (url === '/internal/a2/workforce/dashboard/my-dashboard') return Promise.reject(new Error('Network unreachable'));
+      if (url === '/internal/a2/workforce/dashboard/my-dashboard')
+        return Promise.reject(new Error('Network unreachable'));
       return Promise.resolve(undefined);
     });
 
@@ -169,7 +201,10 @@ describe('Admin Web Portal — V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02 real 
 describe('Admin Web Portal — Dashboard Settings (role → template assignment)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    setPrincipal(['SUPER_ADMIN'], ['privileged:execute', 'workforce.dashboard.view', 'workforce.dashboard.assign']);
+    setPrincipal(
+      ['SUPER_ADMIN'],
+      ['privileged:execute', 'workforce.dashboard.view', 'workforce.dashboard.assign'],
+    );
   });
 
   const templates = [
@@ -197,16 +232,29 @@ describe('Admin Web Portal — Dashboard Settings (role → template assignment)
     },
   ];
   const assignments = [
-    { id: 'a1', roleKey: 'TREASURY', templateKey: 'RECONCILIATION_VISIBILITY', assignedBy: 'system-seed', assignedAt: new Date().toISOString() },
+    {
+      id: 'a1',
+      roleKey: 'TREASURY',
+      templateKey: 'RECONCILIATION_VISIBILITY',
+      assignedBy: 'system-seed',
+      assignedAt: new Date().toISOString(),
+    },
   ];
 
   test('lists templates and current role assignments, and successfully reassigns a role to a different existing template', async () => {
     (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
       if (url === '/internal/a2/workforce/dashboard/my-dashboard') {
-        return Promise.resolve({ templateKey: 'EXECUTIVE_GOVERNANCE', displayName: 'x', description: '', isFallback: false, widgets: [] });
+        return Promise.resolve({
+          templateKey: 'EXECUTIVE_GOVERNANCE',
+          displayName: 'x',
+          description: '',
+          isFallback: false,
+          widgets: [],
+        });
       }
       if (url === '/internal/a2/workforce/dashboard/templates') return Promise.resolve(templates);
-      if (url === '/internal/a2/workforce/dashboard/assignments') return Promise.resolve(assignments);
+      if (url === '/internal/a2/workforce/dashboard/assignments')
+        return Promise.resolve(assignments);
       if (url === '/internal/a2/workforce/dashboard/widget-registry') return Promise.resolve([]);
       return Promise.resolve(undefined);
     });
@@ -233,10 +281,13 @@ describe('Admin Web Portal — Dashboard Settings (role → template assignment)
     fireEvent.click(getByText('Confirm assignment'));
 
     await waitFor(() => {
-      expect(ApiClient.put).toHaveBeenCalledWith('/internal/a2/workforce/dashboard/assignments/TREASURY', {
-        templateKey: 'EXECUTIVE_GOVERNANCE',
-        reason: undefined,
-      });
+      expect(ApiClient.put).toHaveBeenCalledWith(
+        '/internal/a2/workforce/dashboard/assignments/TREASURY',
+        {
+          templateKey: 'EXECUTIVE_GOVERNANCE',
+          reason: undefined,
+        },
+      );
     });
     expect(await findByText(/now EXECUTIVE_GOVERNANCE/)).toBeTruthy();
   });
@@ -244,9 +295,17 @@ describe('Admin Web Portal — Dashboard Settings (role → template assignment)
   test('shows a clear permission-denied state (not a crash) when the backend returns 403', async () => {
     (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
       if (url === '/internal/a2/workforce/dashboard/my-dashboard') {
-        return Promise.resolve({ templateKey: 'DEFAULT_FALLBACK', displayName: 'x', description: '', isFallback: true, widgets: [] });
+        return Promise.resolve({
+          templateKey: 'DEFAULT_FALLBACK',
+          displayName: 'x',
+          description: '',
+          isFallback: true,
+          widgets: [],
+        });
       }
-      return Promise.reject(new ApiError('Caller lacks required function: workforce.dashboard.view', 403));
+      return Promise.reject(
+        new ApiError('Caller lacks required function: workforce.dashboard.view', 403),
+      );
     });
 
     const { getByText, findByText } = render(<App />);
@@ -258,19 +317,30 @@ describe('Admin Web Portal — Dashboard Settings (role → template assignment)
   test('shows a clear, specific error message (not a silent failure) when saving an assignment is rejected', async () => {
     (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
       if (url === '/internal/a2/workforce/dashboard/my-dashboard') {
-        return Promise.resolve({ templateKey: 'EXECUTIVE_GOVERNANCE', displayName: 'x', description: '', isFallback: false, widgets: [] });
+        return Promise.resolve({
+          templateKey: 'EXECUTIVE_GOVERNANCE',
+          displayName: 'x',
+          description: '',
+          isFallback: false,
+          widgets: [],
+        });
       }
       if (url === '/internal/a2/workforce/dashboard/templates') return Promise.resolve(templates);
-      if (url === '/internal/a2/workforce/dashboard/assignments') return Promise.resolve(assignments);
+      if (url === '/internal/a2/workforce/dashboard/assignments')
+        return Promise.resolve(assignments);
       if (url === '/internal/a2/workforce/dashboard/widget-registry') return Promise.resolve([]);
       return Promise.resolve(undefined);
     });
-    (ApiClient.put as jest.Mock).mockRejectedValue(new ApiError("Dashboard template 'GHOST' is not a known, active template.", 400));
+    (ApiClient.put as jest.Mock).mockRejectedValue(
+      new ApiError("Dashboard template 'GHOST' is not a known, active template.", 400),
+    );
 
     const { getByText, findByText, getByDisplayValue } = render(<App />);
     fireEvent.click(getByText('Dashboard Settings'));
 
-    const select = await waitFor(() => getByDisplayValue('RECONCILIATION_VISIBILITY') as HTMLSelectElement);
+    const select = await waitFor(
+      () => getByDisplayValue('RECONCILIATION_VISIBILITY') as HTMLSelectElement,
+    );
     fireEvent.change(select, { target: { value: 'EXECUTIVE_GOVERNANCE' } });
     fireEvent.click(getByText('Save'));
     fireEvent.click(getByText('Confirm assignment'));

@@ -160,8 +160,10 @@ function emptyAddress(): AddressFormState {
 }
 
 function requiresOutcomeReview(error: unknown): boolean {
-  const status = error && typeof error === 'object' && 'status' in error
-    ? Number((error as { status?: unknown }).status) : undefined;
+  const status =
+    error && typeof error === 'object' && 'status' in error
+      ? Number((error as { status?: unknown }).status)
+      : undefined;
   return ![400, 401, 403, 404, 413, 422].includes(status ?? 0);
 }
 
@@ -206,11 +208,19 @@ function fieldErrorsFrom(error: unknown, valueField = 'value'): Record<string, s
   );
 }
 
-function matchesCustomerReceipt(value: unknown, customerId: string, recordId?: string | null): value is Record<string, unknown> {
+function matchesCustomerReceipt(
+  value: unknown,
+  customerId: string,
+  recordId?: string | null,
+): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
-  return record.customerId === customerId && typeof record.id === 'string' && Boolean(record.id.trim()) &&
-    (!recordId || record.id === recordId);
+  return (
+    record.customerId === customerId &&
+    typeof record.id === 'string' &&
+    Boolean(record.id.trim()) &&
+    (!recordId || record.id === recordId)
+  );
 }
 
 function profileFormFrom(profile: ProfileRecord | null): ProfileFormState {
@@ -226,11 +236,23 @@ function profileFormFrom(profile: ProfileRecord | null): ProfileFormState {
   };
 }
 
-export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformationPanelProps> = (props) => {
+export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformationPanelProps> = (
+  props,
+) => {
   const { principal, sessionId } = useAuthStore();
-  const key = JSON.stringify([props.customerId, props.customerType, sessionId, principal?.principalId,
-    principal?.sessionId, principal?.type, principal?.roles, principal?.scopes,
-    principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  const key = JSON.stringify([
+    props.customerId,
+    props.customerType,
+    sessionId,
+    principal?.principalId,
+    principal?.sessionId,
+    principal?.type,
+    principal?.roles,
+    principal?.scopes,
+    principal?.assuranceLevel,
+    principal?.customerAccess,
+    principal?.readOnlyPrincipal,
+  ]);
   return <CustomerPersonalInformationWorkspace key={key} {...props} />;
 };
 
@@ -251,7 +273,8 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
   const canViewContacts = hasFunction('customer.view_contact_methods');
   const canWriteContacts = canViewContacts && canWriteProfile;
   const canViewIdentity = hasFunction('customer.view_identity_documents');
-  const canWriteIdentity = canViewIdentity && hasFunction('kyc.review') && !principal?.readOnlyPrincipal;
+  const canWriteIdentity =
+    canViewIdentity && hasFunction('kyc.review') && !principal?.readOnlyPrincipal;
   const scopesKey = scopes.join('|');
 
   const [loading, setLoading] = useState(true);
@@ -263,7 +286,9 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; };
+    return () => {
+      mounted.current = false;
+    };
   }, []);
   const [reloadVersion, setReloadVersion] = useState(0);
 
@@ -286,9 +311,13 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
   const [otpRequested, setOtpRequested] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [verificationToken, setVerificationToken] = useState('');
-  const [uncertain, setUncertain] = useState<'profile' | 'address' | 'contact' | 'identity' | 'otp' | null>(null);
+  const [uncertain, setUncertain] = useState<
+    'profile' | 'address' | 'contact' | 'identity' | 'otp' | null
+  >(null);
   const [reviewLoaded, setReviewLoaded] = useState(false);
-  const [discardSection, setDiscardSection] = useState<'profile' | 'address' | 'contact' | 'identity' | 'otp' | null>(null);
+  const [discardSection, setDiscardSection] = useState<
+    'profile' | 'address' | 'contact' | 'identity' | 'otp' | null
+  >(null);
   const preserveOnReload = useRef(false);
   const discardDialogRef = useRef<HTMLElement>(null);
   useDialogFocus(discardDialogRef, Boolean(discardSection), () => setDiscardSection(null));
@@ -297,13 +326,30 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
   const [identityStatus, setIdentityStatus] = useState<number | undefined>();
   const [identityForm, setIdentityForm] = useState<IdentityFormState | null>(null);
 
-  const editorActive = Boolean(profileEditing || addressForm || contactForm || identityForm || verifyContactId);
-  const draftTarget = profileEditing ? 'c360-profile-editor' : contactForm ? 'c360-contact-editor' : addressForm ? 'c360-address-editor' : identityForm ? 'c360-identity-editor' : verifyContactId && otpRequested ? 'c360-otp-editor' : null;
+  const editorActive = Boolean(
+    profileEditing || addressForm || contactForm || identityForm || verifyContactId,
+  );
+  const draftTarget = profileEditing
+    ? 'c360-profile-editor'
+    : contactForm
+      ? 'c360-contact-editor'
+      : addressForm
+        ? 'c360-address-editor'
+        : identityForm
+          ? 'c360-identity-editor'
+          : verifyContactId && otpRequested
+            ? 'c360-otp-editor'
+            : null;
   const guarded = editorActive || Boolean(uncertain) || busy;
-  useEffect(() => { onGuardChange?.(guarded, busy); }, [guarded, busy, onGuardChange]);
+  useEffect(() => {
+    onGuardChange?.(guarded, busy);
+  }, [guarded, busy, onGuardChange]);
   useEffect(() => {
     if (!guarded) return;
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [guarded]);
@@ -342,22 +388,108 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
     requests
       .then(([profileResult, addressResult, contactResult, identityResult]) => {
         if (!active) return;
-        const belongsToCustomer = (value: unknown) => Boolean(value && typeof value === 'object' && !Array.isArray(value) &&
-          (!('customerId' in value) || (value as { customerId?: unknown }).customerId === customerId));
-        setProfile(profileResult?.value && belongsToCustomer(profileResult.value) && typeof profileResult.value.displayName === 'string' ? profileResult.value : null);
+        const belongsToCustomer = (value: unknown) =>
+          Boolean(
+            value &&
+              typeof value === 'object' &&
+              !Array.isArray(value) &&
+              (!('customerId' in value) ||
+                (value as { customerId?: unknown }).customerId === customerId),
+          );
+        setProfile(
+          profileResult?.value &&
+            belongsToCustomer(profileResult.value) &&
+            typeof profileResult.value.displayName === 'string'
+            ? profileResult.value
+            : null,
+        );
         setProfileStatus(profileResult?.status);
-        setAddresses(Array.isArray(addressResult?.value) && addressResult.value.every(belongsToCustomer) ? addressResult.value : null);
+        setAddresses(
+          Array.isArray(addressResult?.value) && addressResult.value.every(belongsToCustomer)
+            ? addressResult.value
+            : null,
+        );
         setAddressStatus(addressResult?.status);
-        setContacts(Array.isArray(contactResult?.value) && contactResult.value.every(belongsToCustomer) ? contactResult.value : null);
+        setContacts(
+          Array.isArray(contactResult?.value) && contactResult.value.every(belongsToCustomer)
+            ? contactResult.value
+            : null,
+        );
         setContactStatus(contactResult?.status);
-        setIdentityDocuments(Array.isArray(identityResult?.value) && identityResult.value.every(belongsToCustomer) ? identityResult.value : null);
+        setIdentityDocuments(
+          Array.isArray(identityResult?.value) && identityResult.value.every(belongsToCustomer)
+            ? identityResult.value
+            : null,
+        );
         setIdentityStatus(identityResult?.status);
         if (preserveOnReload.current) {
-          const validProfile = Boolean(profileResult?.value && matchesCustomerReceipt(profileResult.value, customerId) && typeof profileResult.value.displayName === 'string' && ['legalName', 'firstName', 'middleName', 'lastName', 'dateOfBirth', 'nationality'].every(key => { const value = (profileResult.value as unknown as Record<string, unknown>)[key]; return value === null || typeof value === 'string'; }));
-          const validAddress = Array.isArray(addressResult?.value) && addressResult.value.every(item => item && (item as AddressRecord & { customerId?: string }).customerId === customerId && typeof item.id === 'string' && Boolean(item.id) && ['RESIDENTIAL', 'BUSINESS', 'MAILING'].includes(item.type) && typeof item.lineOne === 'string' && typeof item.city === 'string' && typeof item.state === 'string' && typeof item.country === 'string' && typeof item.isPrimary === 'boolean');
-          const validContact = Array.isArray(contactResult?.value) && contactResult.value.every(item => item && (item as ContactRecord & { customerId?: string }).customerId === customerId && typeof item.id === 'string' && Boolean(item.id) && ['PHONE', 'EMAIL'].includes(item.type) && typeof item.isPrimary === 'boolean' && (typeof item.maskedValue === 'string' || typeof item.value === 'string') && (item.verifiedAt == null || typeof item.verifiedAt === 'string'));
-          const validIdentity = Array.isArray(identityResult?.value) && identityResult.value.every(item => item && (item as IdentityRecord & { customerId?: string }).customerId === customerId && typeof item.id === 'string' && Boolean(item.id) && typeof item.type === 'string' && typeof item.maskedDocumentNumber === 'string' && typeof item.issuingCountry === 'string' && (item.issuedAt == null || typeof item.issuedAt === 'string') && (item.expiresAt == null || typeof item.expiresAt === 'string'));
-          setReviewLoaded(uncertain === 'profile' ? validProfile : uncertain === 'address' ? validAddress : uncertain === 'identity' ? validIdentity : validContact);
+          const validProfile = Boolean(
+            profileResult?.value &&
+              matchesCustomerReceipt(profileResult.value, customerId) &&
+              typeof profileResult.value.displayName === 'string' &&
+              [
+                'legalName',
+                'firstName',
+                'middleName',
+                'lastName',
+                'dateOfBirth',
+                'nationality',
+              ].every((key) => {
+                const value = (profileResult.value as unknown as Record<string, unknown>)[key];
+                return value === null || typeof value === 'string';
+              }),
+          );
+          const validAddress =
+            Array.isArray(addressResult?.value) &&
+            addressResult.value.every(
+              (item) =>
+                item &&
+                (item as AddressRecord & { customerId?: string }).customerId === customerId &&
+                typeof item.id === 'string' &&
+                Boolean(item.id) &&
+                ['RESIDENTIAL', 'BUSINESS', 'MAILING'].includes(item.type) &&
+                typeof item.lineOne === 'string' &&
+                typeof item.city === 'string' &&
+                typeof item.state === 'string' &&
+                typeof item.country === 'string' &&
+                typeof item.isPrimary === 'boolean',
+            );
+          const validContact =
+            Array.isArray(contactResult?.value) &&
+            contactResult.value.every(
+              (item) =>
+                item &&
+                (item as ContactRecord & { customerId?: string }).customerId === customerId &&
+                typeof item.id === 'string' &&
+                Boolean(item.id) &&
+                ['PHONE', 'EMAIL'].includes(item.type) &&
+                typeof item.isPrimary === 'boolean' &&
+                (typeof item.maskedValue === 'string' || typeof item.value === 'string') &&
+                (item.verifiedAt == null || typeof item.verifiedAt === 'string'),
+            );
+          const validIdentity =
+            Array.isArray(identityResult?.value) &&
+            identityResult.value.every(
+              (item) =>
+                item &&
+                (item as IdentityRecord & { customerId?: string }).customerId === customerId &&
+                typeof item.id === 'string' &&
+                Boolean(item.id) &&
+                typeof item.type === 'string' &&
+                typeof item.maskedDocumentNumber === 'string' &&
+                typeof item.issuingCountry === 'string' &&
+                (item.issuedAt == null || typeof item.issuedAt === 'string') &&
+                (item.expiresAt == null || typeof item.expiresAt === 'string'),
+            );
+          setReviewLoaded(
+            uncertain === 'profile'
+              ? validProfile
+              : uncertain === 'address'
+                ? validAddress
+                : uncertain === 'identity'
+                  ? validIdentity
+                  : validContact,
+          );
         }
         setLoading(false);
       })
@@ -371,20 +503,43 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
     };
   }, [customerId, scopesKey, reloadVersion]);
 
-  const refresh = (preserve = false) => { preserveOnReload.current = preserve; setReviewLoaded(false); setReloadVersion((value) => value + 1); };
-  const markUncertain = (kind: 'profile' | 'address' | 'contact' | 'identity' | 'otp') => { setUncertain(kind); setReviewLoaded(false); };
+  const refresh = (preserve = false) => {
+    preserveOnReload.current = preserve;
+    setReviewLoaded(false);
+    setReloadVersion((value) => value + 1);
+  };
+  const markUncertain = (kind: 'profile' | 'address' | 'contact' | 'identity' | 'otp') => {
+    setUncertain(kind);
+    setReviewLoaded(false);
+  };
   const discardEditor = (section: 'profile' | 'address' | 'contact' | 'identity' | 'otp') => {
     if (section === 'profile') setProfileEditing(false);
-    if (section === 'address') { setAddressForm(null); setAddressId(null); }
+    if (section === 'address') {
+      setAddressForm(null);
+      setAddressId(null);
+    }
     if (section === 'contact') setContactForm(null);
     if (section === 'identity') setIdentityForm(null);
-    if (section === 'otp') { setVerifyContactId(null); setOtpRequested(false); setOtpCode(''); setVerificationToken(''); }
-    setDiscardSection(null); setFieldErrors({});
+    if (section === 'otp') {
+      setVerifyContactId(null);
+      setOtpRequested(false);
+      setOtpCode('');
+      setVerificationToken('');
+    }
+    setDiscardSection(null);
+    setFieldErrors({});
   };
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (busyRef.current || uncertain || !canWriteProfile || !canViewProfile || (!profile && profileStatus !== 404)) return;
+    if (
+      busyRef.current ||
+      uncertain ||
+      !canWriteProfile ||
+      !canViewProfile ||
+      (!profile && profileStatus !== 404)
+    )
+      return;
     const displayNameChanged = !profile || profileForm.displayName !== profile.displayName;
     const legalNameChanged = !profile || profileForm.legalName !== (profile.legalName ?? '');
     const firstNameChanged = !profile || profileForm.firstName !== (profile.firstName ?? '');
@@ -489,8 +644,12 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
             body,
           );
       if (!mounted.current) return;
-      if (!matchesCustomerReceipt(saved, customerId, profile?.id) || typeof saved.displayName !== 'string' ||
-          (saved.legalName !== null && typeof saved.legalName !== 'string')) throw new Error('Unconfirmed profile receipt');
+      if (
+        !matchesCustomerReceipt(saved, customerId, profile?.id) ||
+        typeof saved.displayName !== 'string' ||
+        (saved.legalName !== null && typeof saved.legalName !== 'string')
+      )
+        throw new Error('Unconfirmed profile receipt');
       setProfile(saved);
       setProfileForm(profileFormFrom(saved));
       setProfileEditing(false);
@@ -623,12 +782,13 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
     try {
       const saved = addressId
         ? await ApiClient.patch(
-          `/customers/${encodeURIComponent(customerId)}/addresses/${encodeURIComponent(addressId)}`,
-          body,
-        )
+            `/customers/${encodeURIComponent(customerId)}/addresses/${encodeURIComponent(addressId)}`,
+            body,
+          )
         : await ApiClient.post(`/customers/${encodeURIComponent(customerId)}/address`, body);
       if (!mounted.current) return;
-      if (!matchesCustomerReceipt(saved, customerId, addressId)) throw new Error('Unconfirmed address receipt');
+      if (!matchesCustomerReceipt(saved, customerId, addressId))
+        throw new Error('Unconfirmed address receipt');
       setAddressForm(null);
       setAddressId(null);
       setFieldErrors({});
@@ -691,15 +851,19 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
     try {
       const saved = contactForm.id
         ? await ApiClient.patch(
-          `/customers/${encodeURIComponent(customerId)}/contact-methods/${encodeURIComponent(contactForm.id)}`,
-          body,
-        )
+            `/customers/${encodeURIComponent(customerId)}/contact-methods/${encodeURIComponent(contactForm.id)}`,
+            body,
+          )
         : await ApiClient.post(`/customers/${encodeURIComponent(customerId)}/contact-method`, {
-          type: contactForm.type,
-          ...body,
-        });
+            type: contactForm.type,
+            ...body,
+          });
       if (!mounted.current) return;
-      if (!matchesCustomerReceipt(saved, customerId, contactForm.id) || saved.type !== contactForm.type) throw new Error('Unconfirmed contact receipt');
+      if (
+        !matchesCustomerReceipt(saved, customerId, contactForm.id) ||
+        saved.type !== contactForm.type
+      )
+        throw new Error('Unconfirmed contact receipt');
       setContactForm(null);
       setFieldErrors({});
       setNotice(
@@ -736,15 +900,20 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
     setFieldErrors({});
     setNotice(null);
     try {
-      const receipt = await ApiClient.post<{ status: string }>('/customers/registration/otp', { phone: normalized.e164 });
+      const receipt = await ApiClient.post<{ status: string }>('/customers/registration/otp', {
+        phone: normalized.e164,
+      });
       if (!mounted.current) return;
-      if (!receipt || receipt.status !== 'OTP_REQUEST_ACCEPTED') throw new Error('Unconfirmed OTP request');
+      if (!receipt || receipt.status !== 'OTP_REQUEST_ACCEPTED')
+        throw new Error('Unconfirmed OTP request');
       setVerifyContactId(contact.id);
       setVerifyPhoneValue(normalized.e164);
       setOtpRequested(true);
       setOtpCode('');
       setVerificationToken('');
-      setNotice('OTP request accepted; delivery is not confirmed. Enter the one-time code if received.');
+      setNotice(
+        'OTP request accepted; delivery is not confirmed. Enter the one-time code if received.',
+      );
     } catch (otpError) {
       if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(otpError));
@@ -758,7 +927,8 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
 
   const verifyPhone = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canWriteContacts || !verifyContactId || busyRef.current || uncertain || !otpRequested) return;
+    if (!canWriteContacts || !verifyContactId || busyRef.current || uncertain || !otpRequested)
+      return;
     const normalized = normalizePhoneNumber(verifyPhoneValue, 'NG');
     if (!normalized.valid || !normalized.e164 || normalized.country !== 'NG') {
       setError('The existing OTP flow can verify Nigerian phone numbers only.');
@@ -778,7 +948,12 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
           { phone: normalized.e164, code: otpCode.trim() },
         );
         if (!mounted.current) return;
-        if (!result || result.status !== 'PHONE_VERIFIED' || typeof result.verificationToken !== 'string' || !result.verificationToken.trim()) {
+        if (
+          !result ||
+          result.status !== 'PHONE_VERIFIED' ||
+          typeof result.verificationToken !== 'string' ||
+          !result.verificationToken.trim()
+        ) {
           throw new Error('Verification token unavailable');
         }
         token = result.verificationToken;
@@ -796,8 +971,13 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
         },
       );
       if (!mounted.current) return;
-      if (!matchesCustomerReceipt(saved, customerId, verifyContactId) || saved.type !== 'PHONE' ||
-          typeof saved.verifiedAt !== 'string' || !Number.isFinite(Date.parse(saved.verifiedAt))) throw new Error('Unconfirmed phone verification receipt');
+      if (
+        !matchesCustomerReceipt(saved, customerId, verifyContactId) ||
+        saved.type !== 'PHONE' ||
+        typeof saved.verifiedAt !== 'string' ||
+        !Number.isFinite(Date.parse(saved.verifiedAt))
+      )
+        throw new Error('Unconfirmed phone verification receipt');
       setOtpRequested(false);
       setOtpCode('');
       setVerificationToken('');
@@ -809,7 +989,11 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
       if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(verifyError));
       if (requiresOutcomeReview(verifyError) || verificationSaveStarted) markUncertain('otp');
-      setError(verificationSaveStarted ? 'Phone verification outcome could not be confirmed. Refresh and review the contact before another action.' : messageFor(verifyError));
+      setError(
+        verificationSaveStarted
+          ? 'Phone verification outcome could not be confirmed. Refresh and review the contact before another action.'
+          : messageFor(verifyError),
+      );
     } finally {
       busyRef.current = false;
       if (mounted.current) setBusy(false);
@@ -818,7 +1002,8 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
 
   const saveIdentity = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!identityForm || !identityDocuments || busyRef.current || uncertain || !canWriteIdentity) return;
+    if (!identityForm || !identityDocuments || busyRef.current || uncertain || !canWriteIdentity)
+      return;
     const original = identityDocuments?.find((document) => document.id === identityForm.id);
     const typeChanged = Boolean(original) && identityForm.type !== original?.type;
     const countryChanged =
@@ -896,15 +1081,19 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
     try {
       const saved = identityForm.id
         ? await ApiClient.patch(
-          `/customers/${encodeURIComponent(customerId)}/identity-documents/${encodeURIComponent(identityForm.id)}`,
-          body,
-        )
+            `/customers/${encodeURIComponent(customerId)}/identity-documents/${encodeURIComponent(identityForm.id)}`,
+            body,
+          )
         : await ApiClient.post(
-          `/customers/${encodeURIComponent(customerId)}/identity-document`,
-          body,
-        );
+            `/customers/${encodeURIComponent(customerId)}/identity-document`,
+            body,
+          );
       if (!mounted.current) return;
-      if (!matchesCustomerReceipt(saved, customerId, identityForm.id) || saved.type !== identityForm.type) throw new Error('Unconfirmed identity receipt');
+      if (
+        !matchesCustomerReceipt(saved, customerId, identityForm.id) ||
+        saved.type !== identityForm.type
+      )
+        throw new Error('Unconfirmed identity receipt');
       setIdentityForm(null);
       setFieldErrors({});
       setNotice(
@@ -994,7 +1183,13 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
 
   return (
     <div className="cm-personal-grid">
-      <nav className="cm-section-nav cm-card-wide" aria-label="Personal information sections"><a href="#c360-profile">Profile</a><a href="#c360-contacts">Contacts</a><a href="#c360-addresses">Addresses</a><a href="#c360-identity">Identity metadata</a><a href="#c360-preferences">Preferences</a></nav>
+      <nav className="cm-section-nav cm-card-wide" aria-label="Personal information sections">
+        <a href="#c360-profile">Profile</a>
+        <a href="#c360-contacts">Contacts</a>
+        <a href="#c360-addresses">Addresses</a>
+        <a href="#c360-identity">Identity metadata</a>
+        <a href="#c360-preferences">Preferences</a>
+      </nav>
       {error && (
         <div className="cm-error cm-card-wide" role="alert">
           {error}
@@ -1006,27 +1201,115 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
         </div>
       )}
 
-      {editorActive && !uncertain && <div className="cm-personal-draft-banner cm-card-wide" role="status"><div><strong>Draft in progress</strong><p>Finish or discard the current draft before starting another action. Leaving the customer workspace or changing session discards local drafts and one-time proofs.</p></div>{draftTarget && <a href={`#${draftTarget}`}>Return to draft</a>}</div>}
-      {uncertain && <section className="cm-card cm-card-wide cm-policy-notice cm-policy-notice-warning" aria-labelledby="c360-review-title">
-        <h2 id="c360-review-title">Review an unconfirmed or conflicting action</h2>
-        <p>The {uncertain} action may already have taken effect. Further writes are blocked. Refresh and inspect the current records before deciding what to do. A refreshed list cannot prove whether an OTP was delivered or an earlier operation occurred.</p>
-        <p>The draft is retained here for comparison only; unlocking discards it and does not retry the action. Drafts and this lock are lost when leaving the customer workspace, changing session, or reloading the browser.</p>
-        <button type="button" className="cm-button cm-button-secondary" disabled={busy || loading} onClick={() => refresh(true)}>Refresh personal records for review</button>
-        {reviewLoaded && <div>
-          <p>Current {uncertain === 'otp' ? 'contact' : uncertain} records loaded. Inspect the relevant section and any available audit history. Masked values may not establish an exact match.</p>
-          {uncertain === 'profile' && profile && <p>Current profile: {profile.displayName} · {profile.legalName || 'No legal name recorded'} · {profile.firstName || 'No first name'} · {profile.middleName || 'No middle name'} · {profile.lastName || 'No last name'} · {profile.dateOfBirth || 'No birth date'} · {profile.nationality || 'No nationality'}</p>}
-          <button type="button" className="cm-button cm-button-secondary" onClick={() => { if (uncertain === 'otp') discardEditor('otp'); else discardEditor(uncertain); setUncertain(null); setReviewLoaded(false); setError(null); setNotice('Review acknowledged. The earlier action may still have occurred; start a new action only after checking the current record and audit history.'); }}>I reviewed the records; discard draft and unlock</button>
-        </div>}
-        {!reviewLoaded && <p>Review remains locked until the relevant records load successfully.</p>}
-      </section>}
-      {discardSection && <div className="cm-modal-backdrop" role="presentation">
-        <section ref={discardDialogRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="c360-discard-title">
-          <h2 id="c360-discard-title">Discard {discardSection} draft?</h2>
-          <p>Unsaved changes and any one-time proof in this workspace will be lost.{uncertain ? ' The earlier action may already have occurred; discarding does not unlock further writes.' : ''}</p>
-          <button type="button" className="cm-button cm-button-secondary" onClick={() => setDiscardSection(null)}>Keep editing</button>{' '}
-          <button type="button" className="cm-button cm-button-danger" onClick={() => discardEditor(discardSection)}>Discard draft</button>
+      {editorActive && !uncertain && (
+        <div className="cm-personal-draft-banner cm-card-wide" role="status">
+          <div>
+            <strong>Draft in progress</strong>
+            <p>
+              Finish or discard the current draft before starting another action. Leaving the
+              customer workspace or changing session discards local drafts and one-time proofs.
+            </p>
+          </div>
+          {draftTarget && <a href={`#${draftTarget}`}>Return to draft</a>}
+        </div>
+      )}
+      {uncertain && (
+        <section
+          className="cm-card cm-card-wide cm-policy-notice cm-policy-notice-warning"
+          aria-labelledby="c360-review-title"
+        >
+          <h2 id="c360-review-title">Review an unconfirmed or conflicting action</h2>
+          <p>
+            The {uncertain} action may already have taken effect. Further writes are blocked.
+            Refresh and inspect the current records before deciding what to do. A refreshed list
+            cannot prove whether an OTP was delivered or an earlier operation occurred.
+          </p>
+          <p>
+            The draft is retained here for comparison only; unlocking discards it and does not retry
+            the action. Drafts and this lock are lost when leaving the customer workspace, changing
+            session, or reloading the browser.
+          </p>
+          <button
+            type="button"
+            className="cm-button cm-button-secondary"
+            disabled={busy || loading}
+            onClick={() => refresh(true)}
+          >
+            Refresh personal records for review
+          </button>
+          {reviewLoaded && (
+            <div>
+              <p>
+                Current {uncertain === 'otp' ? 'contact' : uncertain} records loaded. Inspect the
+                relevant section and any available audit history. Masked values may not establish an
+                exact match.
+              </p>
+              {uncertain === 'profile' && profile && (
+                <p>
+                  Current profile: {profile.displayName} ·{' '}
+                  {profile.legalName || 'No legal name recorded'} ·{' '}
+                  {profile.firstName || 'No first name'} · {profile.middleName || 'No middle name'}{' '}
+                  · {profile.lastName || 'No last name'} · {profile.dateOfBirth || 'No birth date'}{' '}
+                  · {profile.nationality || 'No nationality'}
+                </p>
+              )}
+              <button
+                type="button"
+                className="cm-button cm-button-secondary"
+                onClick={() => {
+                  if (uncertain === 'otp') discardEditor('otp');
+                  else discardEditor(uncertain);
+                  setUncertain(null);
+                  setReviewLoaded(false);
+                  setError(null);
+                  setNotice(
+                    'Review acknowledged. The earlier action may still have occurred; start a new action only after checking the current record and audit history.',
+                  );
+                }}
+              >
+                I reviewed the records; discard draft and unlock
+              </button>
+            </div>
+          )}
+          {!reviewLoaded && (
+            <p>Review remains locked until the relevant records load successfully.</p>
+          )}
         </section>
-      </div>}
+      )}
+      {discardSection && (
+        <div className="cm-modal-backdrop" role="presentation">
+          <section
+            ref={discardDialogRef}
+            tabIndex={-1}
+            className="cm-confirm-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="c360-discard-title"
+          >
+            <h2 id="c360-discard-title">Discard {discardSection} draft?</h2>
+            <p>
+              Unsaved changes and any one-time proof in this workspace will be lost.
+              {uncertain
+                ? ' The earlier action may already have occurred; discarding does not unlock further writes.'
+                : ''}
+            </p>
+            <button
+              type="button"
+              className="cm-button cm-button-secondary"
+              onClick={() => setDiscardSection(null)}
+            >
+              Keep editing
+            </button>{' '}
+            <button
+              type="button"
+              className="cm-button cm-button-danger"
+              onClick={() => discardEditor(discardSection)}
+            >
+              Discard draft
+            </button>
+          </section>
+        </div>
+      )}
       <article id="c360-profile" className="cm-card cm-card-wide">
         <div className="cm-card-heading">
           <div>
@@ -1037,9 +1320,17 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
             <button
               className="cm-button cm-button-secondary"
               type="button"
-              disabled={editorActive || Boolean(uncertain) || busy || (!profile && profileStatus !== 404)}
+              disabled={
+                editorActive || Boolean(uncertain) || busy || (!profile && profileStatus !== 404)
+              }
               onClick={() => {
-                if (editorActive || uncertain || busyRef.current || (!profile && profileStatus !== 404)) return;
+                if (
+                  editorActive ||
+                  uncertain ||
+                  busyRef.current ||
+                  (!profile && profileStatus !== 404)
+                )
+                  return;
                 setProfileForm(profileFormFrom(profile));
                 setFieldErrors({});
                 setProfileEditing(true);
@@ -1052,8 +1343,17 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
         {!canViewProfile ? (
           <p className="cm-muted">Profile fields are restricted to authorized customer viewers.</p>
         ) : profileEditing ? (
-          <form id="c360-profile-editor" className="cm-editor-form cm-personal-editor" noValidate onSubmit={saveProfile}>
-            <div className="cm-personal-editor__heading"><p className="cm-eyebrow">PROFILE DRAFT</p><h3>Update personal information</h3><p>Changes remain local until saved.</p></div>
+          <form
+            id="c360-profile-editor"
+            className="cm-editor-form cm-personal-editor"
+            noValidate
+            onSubmit={saveProfile}
+          >
+            <div className="cm-personal-editor__heading">
+              <p className="cm-eyebrow">PROFILE DRAFT</p>
+              <h3>Update personal information</h3>
+              <p>Changes remain local until saved.</p>
+            </div>
             <div className="cm-wizard-field-grid">
               <label htmlFor="c360-display-name">
                 Display name <span className="cm-required-indicator">Required</span>
@@ -1321,7 +1621,12 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
                     ))}
                 </div>
                 {canWriteContacts && verifyContactId === contact.id && otpRequested && (
-                  <form id="c360-otp-editor" className="cm-otp-form cm-contact-otp" noValidate onSubmit={verifyPhone}>
+                  <form
+                    id="c360-otp-editor"
+                    className="cm-otp-form cm-contact-otp"
+                    noValidate
+                    onSubmit={verifyPhone}
+                  >
                     <label htmlFor="c360-otp-code">
                       One-time code
                       <input
@@ -1347,7 +1652,14 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
                           ? 'Retry verification save'
                           : 'Verify phone'}
                     </button>
-                    <button type="button" className="cm-button cm-button-secondary" disabled={busy} onClick={() => setDiscardSection('otp')}>Cancel verification</button>
+                    <button
+                      type="button"
+                      className="cm-button cm-button-secondary"
+                      disabled={busy}
+                      onClick={() => setDiscardSection('otp')}
+                    >
+                      Cancel verification
+                    </button>
                   </form>
                 )}
               </li>
@@ -1364,7 +1676,12 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
           </p>
         )}
         {contactForm && canWriteContacts && (
-          <form id="c360-contact-editor" className="cm-editor-form cm-personal-editor" noValidate onSubmit={saveContact}>
+          <form
+            id="c360-contact-editor"
+            className="cm-editor-form cm-personal-editor"
+            noValidate
+            onSubmit={saveContact}
+          >
             <h3>{contactForm.id ? 'Edit contact method' : 'Add contact method'}</h3>
             <div className="cm-wizard-field-grid">
               <label htmlFor="c360-contact-type">
@@ -1441,7 +1758,11 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
               </label>
             </div>
             <div className="cm-actions-row">
-              <button className="cm-button cm-button-primary" type="submit" disabled={busy || Boolean(uncertain)}>
+              <button
+                className="cm-button cm-button-primary"
+                type="submit"
+                disabled={busy || Boolean(uncertain)}
+              >
                 {busy ? 'Saving…' : 'Save contact'}
               </button>
               <button
@@ -1516,7 +1837,12 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
           </p>
         )}
         {addressForm && canWriteAddress && (
-          <form id="c360-address-editor" className="cm-editor-form cm-personal-editor" noValidate onSubmit={saveAddress}>
+          <form
+            id="c360-address-editor"
+            className="cm-editor-form cm-personal-editor"
+            noValidate
+            onSubmit={saveAddress}
+          >
             <h3>{addressId ? 'Edit address' : 'Add address'}</h3>
             <div className="cm-wizard-field-grid">
               <label htmlFor="c360-address-type">
@@ -1634,7 +1960,11 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
               uses the selected country’s rule where available.
             </p>
             <div className="cm-actions-row">
-              <button className="cm-button cm-button-primary" type="submit" disabled={busy || Boolean(uncertain)}>
+              <button
+                className="cm-button cm-button-primary"
+                type="submit"
+                disabled={busy || Boolean(uncertain)}
+              >
                 {busy ? 'Saving…' : 'Save address'}
               </button>
               <button
@@ -1720,7 +2050,12 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
           </p>
         )}
         {identityForm && canWriteIdentity && (
-          <form id="c360-identity-editor" className="cm-editor-form cm-personal-editor" noValidate onSubmit={saveIdentity}>
+          <form
+            id="c360-identity-editor"
+            className="cm-editor-form cm-personal-editor"
+            noValidate
+            onSubmit={saveIdentity}
+          >
             <h3>{identityForm.id ? 'Correct identity metadata' : 'Add identity metadata'}</h3>
             <div className="cm-wizard-field-grid">
               <label htmlFor="c360-identity-type">
@@ -1845,7 +2180,11 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
               digits, Nigeria as issuing country, and no issue/expiry dates.
             </p>
             <div className="cm-actions-row">
-              <button className="cm-button cm-button-primary" type="submit" disabled={busy || Boolean(uncertain)}>
+              <button
+                className="cm-button cm-button-primary"
+                type="submit"
+                disabled={busy || Boolean(uncertain)}
+              >
                 {busy ? 'Saving…' : 'Save identity details'}
               </button>
               <button

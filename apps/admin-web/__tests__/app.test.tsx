@@ -21,9 +21,15 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     Object.defineProperty(global, 'localStorage', {
       value: {
         getItem: (key: string) => mockStorage[key] || null,
-        setItem: (key: string, value: string) => { mockStorage[key] = value; },
-        removeItem: (key: string) => { delete mockStorage[key]; },
-        clear: () => { mockStorage = {}; },
+        setItem: (key: string, value: string) => {
+          mockStorage[key] = value;
+        },
+        removeItem: (key: string) => {
+          delete mockStorage[key];
+        },
+        clear: () => {
+          mockStorage = {};
+        },
       },
       writable: true,
     });
@@ -82,7 +88,9 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     (ApiClient.post as jest.Mock).mockResolvedValue(mockSessionResponse);
 
     const { getByLabelText, getByText } = render(<App />);
-    fireEvent.change(getByLabelText('Email or username'), { target: { value: 'admin@monienaija.local' } });
+    fireEvent.change(getByLabelText('Email or username'), {
+      target: { value: 'admin@monienaija.local' },
+    });
     fireEvent.change(getByLabelText('Password'), { target: { value: 'MonieNaijaAdmin123!' } });
     fireEvent.click(getByText('Sign In'));
 
@@ -96,10 +104,14 @@ describe('Admin Web Portal F1 Shell Tests', () => {
   });
 
   test('should show a clear error and stay on LoginScreen when credentials are rejected (401)', async () => {
-    (ApiClient.post as jest.Mock).mockRejectedValue(new Error('Invalid local administrator credentials'));
+    (ApiClient.post as jest.Mock).mockRejectedValue(
+      new Error('Invalid local administrator credentials'),
+    );
 
     const { getByLabelText, getByText, queryByText } = render(<App />);
-    fireEvent.change(getByLabelText('Email or username'), { target: { value: 'admin@monienaija.local' } });
+    fireEvent.change(getByLabelText('Email or username'), {
+      target: { value: 'admin@monienaija.local' },
+    });
     fireEvent.change(getByLabelText('Password'), { target: { value: 'wrong-password' } });
     fireEvent.click(getByText('Sign In'));
 
@@ -121,7 +133,13 @@ describe('Admin Web Portal F1 Shell Tests', () => {
         sessionId: 'admin-sess',
         audience: 'workforce-admin',
         roles: ['SUPER_ADMIN'],
-        scopes: ['workforce.role.assign', 'workforce.dashboard.view', 'workforce.dashboard.assign', 'customer.view', 'ledger.view'],
+        scopes: [
+          'workforce.role.assign',
+          'workforce.dashboard.view',
+          'workforce.dashboard.assign',
+          'customer.view',
+          'ledger.view',
+        ],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },
@@ -131,11 +149,11 @@ describe('Admin Web Portal F1 Shell Tests', () => {
 
     expect(getByText(/^Welcome back, /)).toBeTruthy();
     expect(getAllByText('SUPER_ADMIN').length).toBeGreaterThan(0);
-    
+
     // Admin links must be present for SUPER_ADMIN
     expect(getByText('Role governance')).toBeTruthy();
     expect(getByText('Dashboard Settings')).toBeTruthy();
-    
+
     // All major links present for SUPER_ADMIN
     expect(getByText('Ledger & reversals')).toBeTruthy();
   });
@@ -152,7 +170,13 @@ describe('Admin Web Portal F1 Shell Tests', () => {
         sessionId: 'controller-sess',
         audience: 'workforce-admin',
         roles: ['FINANCE_CONTROLLER'],
-        scopes: ['finance.control_policy.activate', 'workforce.role.assign', 'ledger.view', 'fee_rule.view', 'privileged:approve'],
+        scopes: [
+          'finance.control_policy.activate',
+          'workforce.role.assign',
+          'ledger.view',
+          'fee_rule.view',
+          'privileged:approve',
+        ],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },
@@ -162,11 +186,11 @@ describe('Admin Web Portal F1 Shell Tests', () => {
 
     expect(getByText(/^Welcome back, /)).toBeTruthy();
     expect(getAllByText('FINANCE_CONTROLLER').length).toBeGreaterThan(0);
-    
+
     // Controller links must be present via catalogue functions
     expect(getByText('Approvals')).toBeTruthy();
     expect(queryByText('Role governance')).toBeNull();
-    
+
     // Customers must NOT be present for finance controller
     expect(queryByText('Customers')).toBeNull();
   });
@@ -193,7 +217,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
 
     expect(getByText(/^Welcome back, /)).toBeTruthy();
     expect(getAllByText('FINANCE_AUDITOR').length).toBeGreaterThan(0);
-    
+
     // Admin & Controller controls must NOT be present for auditor (read-only)
     expect(queryByText('Role governance')).toBeNull();
     expect(queryByText('Approvals')).toBeNull();
@@ -219,7 +243,11 @@ describe('Admin Web Portal F1 Shell Tests', () => {
       },
     });
 
-    (ApiClient.post as jest.Mock).mockResolvedValue({ approved: true, reason: 'APPROVED', approval: { id: 'approval-uuid-555', status: 'APPROVED' } });
+    (ApiClient.post as jest.Mock).mockResolvedValue({
+      approved: true,
+      reason: 'APPROVED',
+      approval: { id: 'approval-uuid-555', status: 'APPROVED' },
+    });
 
     const { getByText, getByPlaceholderText } = render(<App />);
 
@@ -227,8 +255,12 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     fireEvent.click(getByText('Approvals'));
 
     // Fill verification form
-    fireEvent.change(getByPlaceholderText('e.g. 5e6f7g8h-1234-...'), { target: { value: 'approval-uuid-555' } });
-    fireEvent.change(getByPlaceholderText('Provide context or explanation for auditing...'), { target: { value: 'Approved for pilot compliance check' } });
+    fireEvent.change(getByPlaceholderText('e.g. 5e6f7g8h-1234-...'), {
+      target: { value: 'approval-uuid-555' },
+    });
+    fireEvent.change(getByPlaceholderText('Provide context or explanation for auditing...'), {
+      target: { value: 'Approved for pilot compliance check' },
+    });
 
     // Submit
     fireEvent.click(getByText('Sign & Approve Action'));
@@ -237,9 +269,13 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenCalledWith(
         '/internal/a2/workforce/approvals/approval-uuid-555/approve',
-        { comment: 'Approved for pilot compliance check' }
+        { comment: 'Approved for pilot compliance check' },
       );
-      expect(getByText('Approval recorded. The underlying action may require a separate execution step.')).toBeTruthy();
+      expect(
+        getByText(
+          'Approval recorded. The underlying action may require a separate execution step.',
+        ),
+      ).toBeTruthy();
     });
   });
 });

@@ -82,7 +82,9 @@ describe('Admin API client multipart and private-content requests', () => {
       json: async () => ({ message: 'Session expired', code: 'UNAUTHORIZED' }),
     } as unknown as Response);
 
-    await expect(ApiClient.postForm('/private-document', new FormData())).rejects.toBeInstanceOf(ApiError);
+    await expect(ApiClient.postForm('/private-document', new FormData())).rejects.toBeInstanceOf(
+      ApiError,
+    );
     expect(localStorage.getItem('admin_workforce_token')).toBeNull();
     expect(localStorage.getItem('admin_workforce_session_id')).toBeNull();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
@@ -123,7 +125,10 @@ describe('Admin API client multipart and private-content requests', () => {
       ok: false,
       status: 401,
       headers: { get: () => 'application/json' },
-      json: async () => ({ message: 'Invalid local administrator credentials', code: 'UNAUTHORIZED' }),
+      json: async () => ({
+        message: 'Invalid local administrator credentials',
+        code: 'UNAUTHORIZED',
+      }),
     } as unknown as Response);
 
     await expect(

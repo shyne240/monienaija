@@ -73,10 +73,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
   });
 
   test('Priority 1: validates Agent onboarding form, creates/edits DRAFT, enforces class requirements, and submits into review queue', async () => {
-    setPrincipal(
-      ['AGENT_NETWORK_MANAGER'],
-      ['agent.view', 'agent.review_application'],
-    );
+    setPrincipal(['AGENT_NETWORK_MANAGER'], ['agent.view', 'agent.review_application']);
 
     const activeClass = {
       id: CLASS_ID,
@@ -162,13 +159,21 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     // Client-side validation rejects short applicantReference on Save draft
     fireEvent.change(view.getByLabelText('Applicant reference'), { target: { value: 'AB' } });
     fireEvent.click(view.getByRole('button', { name: 'Save draft' }));
-    expect((await view.findByRole('alert')).textContent).toMatch(/Applicant reference is required/i);
+    expect((await view.findByRole('alert')).textContent).toMatch(
+      /Applicant reference is required/i,
+    );
     expect(ApiClient.post).not.toHaveBeenCalled();
 
     // Save valid DRAFT first
-    fireEvent.change(view.getByLabelText('Applicant reference'), { target: { value: 'AGT-WUSE-901' } });
-    fireEvent.change(view.getByLabelText('Business name'), { target: { value: 'Wuse Cash Point' } });
-    fireEvent.change(view.getByLabelText('Contact email'), { target: { value: 'desk@wusecash.ng' } });
+    fireEvent.change(view.getByLabelText('Applicant reference'), {
+      target: { value: 'AGT-WUSE-901' },
+    });
+    fireEvent.change(view.getByLabelText('Business name'), {
+      target: { value: 'Wuse Cash Point' },
+    });
+    fireEvent.change(view.getByLabelText('Contact email'), {
+      target: { value: 'desk@wusecash.ng' },
+    });
     fireEvent.click(view.getByRole('button', { name: 'Save draft' }));
 
     await waitFor(() =>
@@ -179,13 +184,17 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
         contactEmail: 'desk@wusecash.ng',
       }),
     );
-    expect((await view.findByRole('status')).textContent).toContain('Draft application APP-ORD-901 saved');
+    expect((await view.findByRole('status')).textContent).toContain(
+      'Draft application APP-ORD-901 saved',
+    );
     // Public capability token is never leaked into DOM
     expect(view.container.textContent).not.toContain('one-time-public-capability-never-stored');
 
     // Attempting full submission before completing required fields + class requirements is blocked
     fireEvent.click(view.getByRole('button', { name: 'Submit application' }));
-    expect((await view.findByRole('alert')).textContent).toMatch(/Principal contact name is required/i);
+    expect((await view.findByRole('alert')).textContent).toMatch(
+      /Principal contact name is required/i,
+    );
 
     // Filter queue by DRAFT and reopen via Edit draft
     fireEvent.click(view.getByRole('button', { name: 'Cancel' }));
@@ -198,13 +207,21 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     expect(await view.findByText(/Edit Draft Application — APP-ORD-901/i)).toBeTruthy();
 
     // Complete required applicant, address, primary evidence, and class-specific fields and submit
-    fireEvent.change(view.getByLabelText('Principal contact name'), { target: { value: 'Amina Bello' } });
+    fireEvent.change(view.getByLabelText('Principal contact name'), {
+      target: { value: 'Amina Bello' },
+    });
     fireEvent.change(view.getByLabelText('Contact phone'), { target: { value: '+2348030001122' } });
-    fireEvent.change(view.getByLabelText('Operating address'), { target: { value: '14 Aminu Kano Crescent' } });
+    fireEvent.change(view.getByLabelText('Operating address'), {
+      target: { value: '14 Aminu Kano Crescent' },
+    });
     fireEvent.change(view.getByLabelText('Operating city'), { target: { value: 'Abuja' } });
     fireEvent.change(view.getByLabelText('Operating state'), { target: { value: 'FCT' } });
-    fireEvent.change(view.getByLabelText('Primary evidence reference'), { target: { value: 'NIN-VERIFIED-901' } });
-    fireEvent.change(view.getByLabelText('Required info: bvn'), { target: { value: '22233344455' } });
+    fireEvent.change(view.getByLabelText('Primary evidence reference'), {
+      target: { value: 'NIN-VERIFIED-901' },
+    });
+    fireEvent.change(view.getByLabelText('Required info: bvn'), {
+      target: { value: '22233344455' },
+    });
     fireEvent.change(view.getByLabelText('Required evidence: UTILITY_BILL'), {
       target: { value: 'AEDC-2026-10-901' },
     });
@@ -246,12 +263,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
   test('Priority 2: creates full Outlet/Terminal metadata, handles Arena 1 PATCH boundary (404 vs 200), and revokes Agent sessions', async () => {
     setPrincipal(
       ['AGENT_NETWORK_MANAGER'],
-      [
-        'agent.view',
-        'agent.suspend',
-        'agent.manage_outlets_terminals',
-        'agent.manage_credentials',
-      ],
+      ['agent.view', 'agent.suspend', 'agent.manage_outlets_terminals', 'agent.manage_credentials'],
     );
 
     const activeAgent = {
@@ -291,7 +303,8 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     };
 
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-      if (path.startsWith('/internal/agents?')) return Promise.resolve({ data: [activeAgent], total: 1 });
+      if (path.startsWith('/internal/agents?'))
+        return Promise.resolve({ data: [activeAgent], total: 1 });
       if (path === `/internal/agents/${AGENT_ID}/financial-position`) {
         return Promise.resolve({
           agentId: AGENT_ID,
@@ -303,10 +316,20 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
         });
       }
       if (path === `/internal/agents/${AGENT_ID}/outlets`) return Promise.resolve([existingOutlet]);
-      if (path === `/internal/agents/${AGENT_ID}/terminals`) return Promise.resolve([existingTerminal]);
+      if (path === `/internal/agents/${AGENT_ID}/terminals`)
+        return Promise.resolve([existingTerminal]);
       return Promise.resolve([]);
     });
-    (ApiClient.post as jest.Mock).mockResolvedValue({ ...existingOutlet, id:'outlet-new', reference:'OUT-GRK-02', name:'Area 11 Annex', code:'GRK02', displayName:'Area 11 Express', addressLine:'5 Gimbiya Street', version:1 });
+    (ApiClient.post as jest.Mock).mockResolvedValue({
+      ...existingOutlet,
+      id: 'outlet-new',
+      reference: 'OUT-GRK-02',
+      name: 'Area 11 Annex',
+      code: 'GRK02',
+      displayName: 'Area 11 Express',
+      addressLine: '5 Gimbiya Street',
+      version: 1,
+    });
 
     const view = render(<AgentNetworkScreen />);
     fireEvent.click(await view.findByRole('button', { name: 'View' }));
@@ -316,9 +339,13 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     // Create outlet with full CreateOutletDto fields (displayName, code, addressLine, city, state, country)
     fireEvent.change(view.getByLabelText('Outlet reference'), { target: { value: 'OUT-GRK-02' } });
     fireEvent.change(view.getByLabelText('Outlet name'), { target: { value: 'Area 11 Annex' } });
-    fireEvent.change(view.getByLabelText('Outlet display name'), { target: { value: 'Area 11 Express' } });
+    fireEvent.change(view.getByLabelText('Outlet display name'), {
+      target: { value: 'Area 11 Express' },
+    });
     fireEvent.change(view.getByLabelText('Outlet code'), { target: { value: 'GRK02' } });
-    fireEvent.change(view.getByLabelText('Outlet address line'), { target: { value: '5 Gimbiya Street' } });
+    fireEvent.change(view.getByLabelText('Outlet address line'), {
+      target: { value: '5 Gimbiya Street' },
+    });
     fireEvent.change(view.getByLabelText('Outlet city'), { target: { value: 'Abuja' } });
     fireEvent.change(view.getByLabelText('Outlet state'), { target: { value: 'FCT' } });
     fireEvent.change(view.getByLabelText('Outlet country'), { target: { value: 'NG' } });
@@ -350,7 +377,11 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     );
 
     // Now simulate live Arena 1 200 response -> updates cleanly with expectedVersion
-    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ ...existingOutlet, addressLine:'18 Tafawa Balewa Way', version: 3 });
+    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({
+      ...existingOutlet,
+      addressLine: '18 Tafawa Balewa Way',
+      version: 3,
+    });
     fireEvent.click(view.getByRole('button', { name: 'Save outlet changes' }));
     await waitFor(() =>
       // `code` is NOT editable via PATCH: UpdateOutletMetadataDto omits it and the global
@@ -365,10 +396,16 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
         expectedVersion: 2,
       }),
     );
-    expect((await view.findByRole('status')).textContent).toContain('Outlet OUT-GRK-01 metadata updated');
+    expect((await view.findByRole('status')).textContent).toContain(
+      'Outlet OUT-GRK-01 metadata updated',
+    );
 
     // Edit terminal metadata -> verify live PATCH /internal/terminals/:terminalId
-    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ ...existingTerminal, label:'VIP Counter POS', version: 2 });
+    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({
+      ...existingTerminal,
+      label: 'VIP Counter POS',
+      version: 2,
+    });
     fireEvent.click(view.getByRole('button', { name: 'Edit terminal' }));
     fireEvent.change(view.getByLabelText('Edit terminal label for TRM-GRK-01'), {
       target: { value: 'VIP Counter POS' },
@@ -394,9 +431,9 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
 
     (ApiClient.post as jest.Mock).mockRejectedValueOnce(new ApiError('Not Found', 404));
     fireEvent.click(credView.getByRole('button', { name: 'Invalidate active sessions' }));
-    expect((await credView.findByTestId('agent-session-revoke-arena1-boundary')).textContent).toContain(
-      `/internal/admin/agents/${AGENT_ID}/sessions/revoke`,
-    );
+    expect(
+      (await credView.findByTestId('agent-session-revoke-arena1-boundary')).textContent,
+    ).toContain(`/internal/admin/agents/${AGENT_ID}/sessions/revoke`);
 
     (ApiClient.post as jest.Mock).mockResolvedValueOnce({ agentId: AGENT_ID, revokedCount: 2 });
     fireEvent.click(credView.getByRole('button', { name: 'Invalidate active sessions' }));
@@ -437,16 +474,23 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
       if (path === '/internal/agents/classes') return Promise.resolve([legacyClass]);
       if (path === `/internal/limit-assignments/agent-class/${CLASS_ID}?page=1&limit=20`) {
-        return Promise.resolve({data:[
-          {
-            id: 'cls-lim-1',
-            subjectType: 'AGENT_CLASS',
-            subjectId: CLASS_ID,
-            limitProfileCode: 'AGENT_CLASS_STD',
-            isActive: true,
-            version: 2,
-          },
-        ], page:1, limit:20, total:1, totalPages:1, hasNextPage:false});
+        return Promise.resolve({
+          data: [
+            {
+              id: 'cls-lim-1',
+              subjectType: 'AGENT_CLASS',
+              subjectId: CLASS_ID,
+              limitProfileCode: 'AGENT_CLASS_STD',
+              isActive: true,
+              version: 2,
+            },
+          ],
+          page: 1,
+          limit: 20,
+          total: 1,
+          totalPages: 1,
+          hasNextPage: false,
+        });
       }
       return Promise.resolve([]);
     });
@@ -455,7 +499,14 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
       applicableServices: ['CASH_IN', 'CASH_TO_CASH'],
       version: 5,
     });
-    (ApiClient.post as jest.Mock).mockResolvedValue({id:'new-limit',subjectType:'AGENT_CLASS',subjectId:CLASS_ID,limitProfileCode:'AGENT_CLASS_TIER2',isActive:true,version:1});
+    (ApiClient.post as jest.Mock).mockResolvedValue({
+      id: 'new-limit',
+      subjectType: 'AGENT_CLASS',
+      subjectId: CLASS_ID,
+      limitProfileCode: 'AGENT_CLASS_TIER2',
+      isActive: true,
+      version: 1,
+    });
 
     const classesView = render(<AgentClassesScreen />);
     fireEvent.click(await classesView.findByRole('button', { name: 'Review / edit' }));
@@ -486,7 +537,15 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     );
 
     // Load and manage AGENT_CLASS limit assignments directly inside AgentClassesScreen
-    await waitFor(() => expect((classesView.getByRole('button', { name: 'Load class limit assignments' }) as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect(
+        (
+          classesView.getByRole('button', {
+            name: 'Load class limit assignments',
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
+    );
     fireEvent.click(classesView.getByRole('button', { name: 'Load class limit assignments' }));
     expect(await classesView.findByText('AGENT_CLASS_STD')).toBeTruthy();
 
@@ -569,8 +628,22 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
         },
       ],
     });
-    (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'new-assignment', subjectType: 'AGENT_CLASS', subjectId: CLASS_ID, limitProfileCode: 'AGENT_CLASS_VIP', isActive: true, version: 1 });
-    (ApiClient.patch as jest.Mock).mockResolvedValue({ id: 'cls-assign-9', subjectType: 'AGENT_CLASS', subjectId: CLASS_ID, limitProfileCode: 'AGENT_CLASS_CAP', isActive: false, version: 4 });
+    (ApiClient.post as jest.Mock).mockResolvedValue({
+      id: 'new-assignment',
+      subjectType: 'AGENT_CLASS',
+      subjectId: CLASS_ID,
+      limitProfileCode: 'AGENT_CLASS_VIP',
+      isActive: true,
+      version: 1,
+    });
+    (ApiClient.patch as jest.Mock).mockResolvedValue({
+      id: 'cls-assign-9',
+      subjectType: 'AGENT_CLASS',
+      subjectId: CLASS_ID,
+      limitProfileCode: 'AGENT_CLASS_CAP',
+      isActive: false,
+      version: 4,
+    });
 
     const limitScreen = render(<LimitAssignmentScreen />);
     expect(await limitScreen.findByText(`AGENT_CLASS: ${CLASS_ID}`)).toBeTruthy();
@@ -590,7 +663,11 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
       }),
     );
 
-    fireEvent.click(await limitScreen.findByRole('button', { name: `Deactivate AGENT_CLASS_CAP for AGENT_CLASS ${CLASS_ID}` }));
+    fireEvent.click(
+      await limitScreen.findByRole('button', {
+        name: `Deactivate AGENT_CLASS_CAP for AGENT_CLASS ${CLASS_ID}`,
+      }),
+    );
     await waitFor(() =>
       expect(ApiClient.patch).toHaveBeenCalledWith('/internal/limit-assignments/cls-assign-9', {
         subjectType: 'AGENT_CLASS',
@@ -672,12 +749,8 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
 
     // Corrected Money Movement navigation labels (Deposits / Withdrawals instead of misleading C2W/W2C)
     const rail = appShell.getByTestId('desktop-nav');
-    expect(within(rail).getByTestId('nav-cashIn').textContent).toBe(
-      'Deposits',
-    );
-    expect(within(rail).getByTestId('nav-cashOut').textContent).toBe(
-      'Withdrawals',
-    );
+    expect(within(rail).getByTestId('nav-cashIn').textContent).toBe('Deposits');
+    expect(within(rail).getByTestId('nav-cashOut').textContent).toBe('Withdrawals');
 
     // Dashboard widget navigates directly to Agent Network Management
     fireEvent.click(await appShell.findByRole('button', { name: 'Agent network' }));
@@ -874,7 +947,9 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
 
     // 409 version conflict on Arena 1 outlet PATCH rethrows into error alert rather than boundary note
     const outletsSection = shell.getByLabelText('Agent outlets and terminals');
-    fireEvent.click(within(outletsSection).getByRole('button', { name: 'Load outlets & terminals' }));
+    fireEvent.click(
+      within(outletsSection).getByRole('button', { name: 'Load outlets & terminals' }),
+    );
     fireEvent.click(await within(outletsSection).findByRole('button', { name: 'Edit outlet' }));
     (ApiClient.patch as jest.Mock).mockRejectedValueOnce(
       new ApiError('Outlet version conflict (expected 2, actual 3)', 409, 'CONFLICT'),

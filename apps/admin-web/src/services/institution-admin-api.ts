@@ -486,8 +486,8 @@ export const InstitutionAdminApi = {
     ),
 
   attributionGaps: (limit = 50) =>
-    ApiClient.get<AttributionGap[]>(`${institutions}/attribution-gaps?limit=${limit}`).then((rows) =>
-      asArray<AttributionGap>(rows),
+    ApiClient.get<AttributionGap[]>(`${institutions}/attribution-gaps?limit=${limit}`).then(
+      (rows) => asArray<AttributionGap>(rows),
     ),
 
   attributionGapSummary: () =>

@@ -105,18 +105,29 @@ export const AccountScreen: React.FC = () => {
       <Card style={styles.card} testID="account-profile-card">
         <Text style={styles.sectionTitle}>Agent Profile</Text>
         {profileQuery.isLoading ? (
-          <Text style={styles.muted} testID="account-profile-loading">Loading profile...</Text>
+          <Text style={styles.muted} testID="account-profile-loading">
+            Loading profile...
+          </Text>
         ) : profileQuery.isError ? (
           <View>
             <Text style={styles.errorText} testID="account-profile-error">
               {describeApiError(profileQuery.error)}
             </Text>
-            <Button label="Retry" variant="outline" onPress={() => profileQuery.refetch()} testID="account-profile-retry" />
+            <Button
+              label="Retry"
+              variant="outline"
+              onPress={() => profileQuery.refetch()}
+              testID="account-profile-retry"
+            />
           </View>
         ) : (
           <>
             <InfoRow label="Agent ID" value={agentId ?? '—'} selectable />
-            <InfoRow label="Reference" value={profile?.reference ?? '—'} testID="account-reference" />
+            <InfoRow
+              label="Reference"
+              value={profile?.reference ?? '—'}
+              testID="account-reference"
+            />
             <InfoRow label="Status" value={profile?.status ?? '—'} testID="account-status" />
             {profile?.agentClass && (
               <InfoRow
@@ -134,13 +145,20 @@ export const AccountScreen: React.FC = () => {
       <Card style={styles.card} testID="account-pin-card">
         <Text style={styles.sectionTitle}>Agent Transaction PIN</Text>
         {pinStatusQuery.isLoading ? (
-          <Text style={styles.muted} testID="account-pin-loading">Loading PIN status...</Text>
+          <Text style={styles.muted} testID="account-pin-loading">
+            Loading PIN status...
+          </Text>
         ) : pinStatusQuery.isError ? (
           <View>
             <Text style={styles.errorText} testID="account-pin-error">
               {describeApiError(pinStatusQuery.error)}
             </Text>
-            <Button label="Retry" variant="outline" onPress={() => pinStatusQuery.refetch()} testID="account-pin-retry" />
+            <Button
+              label="Retry"
+              variant="outline"
+              onPress={() => pinStatusQuery.refetch()}
+              testID="account-pin-retry"
+            />
           </View>
         ) : (
           <>
@@ -178,7 +196,8 @@ export const AccountScreen: React.FC = () => {
       <Card style={styles.card} testID="account-support-card">
         <Text style={styles.sectionTitle}>Help & Support</Text>
         <Text style={styles.helper}>
-          Have an issue with your account, terminals, or transactions? Contact MonieNaija operations support.
+          Have an issue with your account, terminals, or transactions? Contact MonieNaija operations
+          support.
         </Text>
         <Button
           label="Contact Support"
@@ -196,7 +215,12 @@ export const AccountScreen: React.FC = () => {
         ) : receivingQuery.isError ? (
           <View>
             <Text style={styles.errorText}>{describeApiError(receivingQuery.error)}</Text>
-            <Button label="Retry" variant="outline" onPress={() => receivingQuery.refetch()} testID="account-receiving-retry" />
+            <Button
+              label="Retry"
+              variant="outline"
+              onPress={() => receivingQuery.refetch()}
+              testID="account-receiving-retry"
+            />
           </View>
         ) : receiving ? (
           <View>
@@ -204,7 +228,8 @@ export const AccountScreen: React.FC = () => {
               {receiving.receivingNumber}
             </Text>
             <Text style={styles.muted}>
-              Status: {receiving.status} · assigned {formatDate(receiving.assignedAt)}. Long-press to copy.
+              Status: {receiving.status} · assigned {formatDate(receiving.assignedAt)}. Long-press
+              to copy.
             </Text>
           </View>
         ) : (
@@ -222,10 +247,18 @@ export const AccountScreen: React.FC = () => {
         ) : capabilitiesQuery.isError ? (
           <View>
             <Text style={styles.errorText}>{describeApiError(capabilitiesQuery.error)}</Text>
-            <Button label="Retry" variant="outline" onPress={() => capabilitiesQuery.refetch()} testID="account-capabilities-retry" />
+            <Button
+              label="Retry"
+              variant="outline"
+              onPress={() => capabilitiesQuery.refetch()}
+              testID="account-capabilities-retry"
+            />
           </View>
         ) : capabilitiesQuery.data ? (
-          <CapabilitiesList capabilities={capabilitiesQuery.data} testID="account-capabilities-list" />
+          <CapabilitiesList
+            capabilities={capabilitiesQuery.data}
+            testID="account-capabilities-list"
+          />
         ) : null}
       </Card>
 
@@ -237,13 +270,24 @@ export const AccountScreen: React.FC = () => {
         ) : outletsQuery.isError ? (
           <View>
             <Text style={styles.errorText}>{describeApiError(outletsQuery.error)}</Text>
-            <Button label="Retry" variant="outline" onPress={() => outletsQuery.refetch()} testID="account-outlets-retry" />
+            <Button
+              label="Retry"
+              variant="outline"
+              onPress={() => outletsQuery.refetch()}
+              testID="account-outlets-retry"
+            />
           </View>
         ) : !outletsQuery.data || outletsQuery.data.length === 0 ? (
-          <Text style={styles.muted} testID="account-outlets-empty">No outlets registered for this agent.</Text>
+          <Text style={styles.muted} testID="account-outlets-empty">
+            No outlets registered for this agent.
+          </Text>
         ) : (
           outletsQuery.data.map((outlet, idx) => (
-            <OutletRow key={outlet.id} outlet={outlet} last={idx === outletsQuery.data!.length - 1} />
+            <OutletRow
+              key={outlet.id}
+              outlet={outlet}
+              last={idx === outletsQuery.data!.length - 1}
+            />
           ))
         )}
       </Card>
@@ -256,16 +300,25 @@ export const AccountScreen: React.FC = () => {
         ) : terminalsQuery.isError ? (
           <View>
             <Text style={styles.errorText}>{describeApiError(terminalsQuery.error)}</Text>
-            <Button label="Retry" variant="outline" onPress={() => terminalsQuery.refetch()} testID="account-terminals-retry" />
+            <Button
+              label="Retry"
+              variant="outline"
+              onPress={() => terminalsQuery.refetch()}
+              testID="account-terminals-retry"
+            />
           </View>
         ) : !terminalsQuery.data || terminalsQuery.data.length === 0 ? (
-          <Text style={styles.muted} testID="account-terminals-empty">No terminals registered for this agent.</Text>
+          <Text style={styles.muted} testID="account-terminals-empty">
+            No terminals registered for this agent.
+          </Text>
         ) : (
           terminalsQuery.data.map((terminal, idx) => (
             <TerminalRow
               key={terminal.id}
               terminal={terminal}
-              outletName={terminal.outletId ? outletLabelById.get(terminal.outletId) ?? null : null}
+              outletName={
+                terminal.outletId ? (outletLabelById.get(terminal.outletId) ?? null) : null
+              }
               last={idx === terminalsQuery.data!.length - 1}
             />
           ))
@@ -327,11 +380,11 @@ interface TerminalRowProps {
   last: boolean;
 }
 
-const TerminalRow: React.FC<{ terminal: AgentTerminal; outletName: string | null; last: boolean }> = ({
-  terminal,
-  outletName,
-  last,
-}) => (
+const TerminalRow: React.FC<{
+  terminal: AgentTerminal;
+  outletName: string | null;
+  last: boolean;
+}> = ({ terminal, outletName, last }) => (
   <View style={[styles.listRow, last && styles.listRowLast]} testID={`terminal-${terminal.id}`}>
     <View style={styles.listRowText}>
       <Text style={styles.listRowTitle}>{terminal.label || terminal.code}</Text>

@@ -67,11 +67,7 @@ function setPrincipal(options: {
   } as never);
 }
 
-const MAKER_SCOPES = [
-  'institution.view',
-  'institution.manage',
-  'institution.lifecycle.prepare',
-];
+const MAKER_SCOPES = ['institution.view', 'institution.manage', 'institution.lifecycle.prepare'];
 const CHECKER_SCOPES = [
   'institution.view',
   'institution.lifecycle.approve',
@@ -116,9 +112,9 @@ describe('ARENA 4 institutional console — navigation guard', () => {
         institutionId: INSTITUTION_ID,
       }),
     ).toBe(true);
-    expect(
-      canAccessAdminView('institutionWorkspace', ['institution.view'], ['OPERATIONS']),
-    ).toBe(false);
+    expect(canAccessAdminView('institutionWorkspace', ['institution.view'], ['OPERATIONS'])).toBe(
+      false,
+    );
   });
 });
 
@@ -175,9 +171,7 @@ describe('ARENA 4 institutional console — directory', () => {
 
 describe('ARENA 4 institutional console — workspace', () => {
   test('asks for an institution instead of guessing one', () => {
-    render(
-      <InstitutionWorkspaceScreen institutionId={undefined} onBackToDirectory={jest.fn()} />,
-    );
+    render(<InstitutionWorkspaceScreen institutionId={undefined} onBackToDirectory={jest.fn()} />);
     expect(screen.getByText(/Select an institution from the directory/i)).toBeTruthy();
     expect(ApiClient.get).not.toHaveBeenCalled();
   });
@@ -188,7 +182,9 @@ describe('ARENA 4 institutional console — workspace', () => {
     );
     expect(await screen.findByRole('heading', { name: 'Example MMO' })).toBeTruthy();
     expect(screen.getByText(/This institution is not operationally approved/i)).toBeTruthy();
-    expect(screen.getByText(/recorded evidence for verification, not a verified licence/i)).toBeTruthy();
+    expect(
+      screen.getByText(/recorded evidence for verification, not a verified licence/i),
+    ).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Execute approved change/i })).toBeNull();
   });
 
@@ -296,7 +292,10 @@ describe('ARENA 4 institutional console — workspace', () => {
       roles: ['FINANCE_CONTROLLER'],
       principalId: 'issuer:checker',
     });
-    (ApiClient.post as jest.Mock).mockResolvedValue({ approved: true, approval: { status: 'APPROVED' } });
+    (ApiClient.post as jest.Mock).mockResolvedValue({
+      approved: true,
+      approval: { status: 'APPROVED' },
+    });
     mockRoutes({
       [`/internal/institutions/${INSTITUTION_ID}/pending-approvals`]: [
         {
@@ -387,8 +386,6 @@ describe('ARENA 4 institutional console — workspace', () => {
     expect(await screen.findByText('Posted history — not attributable')).toBeTruthy();
     expect(screen.getByText(/no institutional attribution/i)).toBeTruthy();
     expect(screen.getByText(/never migrates a balance/i)).toBeTruthy();
-    expect(
-      screen.queryByRole('button', { name: /Request attribution/i }),
-    ).toBeNull();
+    expect(screen.queryByRole('button', { name: /Request attribution/i })).toBeNull();
   });
 });

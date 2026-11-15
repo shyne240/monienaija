@@ -77,8 +77,16 @@ export const AppNavigator: React.FC = () => {
         />
       ) : (
         <>
-          <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'MonieNaija Agent' }} />
-          <Stack.Screen name="Account" component={AccountScreen} options={{ title: 'Agent Account' }} />
+          <Stack.Screen
+            name="Home"
+            component={HomeScreen}
+            options={{ title: 'MonieNaija Agent' }}
+          />
+          <Stack.Screen
+            name="Account"
+            component={AccountScreen}
+            options={{ title: 'Agent Account' }}
+          />
           <Stack.Screen
             name="Support"
             component={SupportScreen}

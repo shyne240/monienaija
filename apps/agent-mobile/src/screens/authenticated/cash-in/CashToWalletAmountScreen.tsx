@@ -7,7 +7,11 @@ import { theme } from '../../../theme';
 import { Card } from '../../../components/Card';
 import { Button } from '../../../components/Button';
 import { Input } from '../../../components/Input';
-import { formatNairaFromMinor, newIdempotencyKey, parseNairaInputToMinor } from '../../../utils/format';
+import {
+  formatNairaFromMinor,
+  newIdempotencyKey,
+  parseNairaInputToMinor,
+} from '../../../utils/format';
 import type { RootStackParamList } from '../../../navigation/types';
 
 /**
@@ -27,7 +31,9 @@ export const CashToWalletAmountScreen: React.FC = () => {
   const [nairaInput, setNairaInput] = useState('');
   const [error, setError] = useState('');
   // Exactly ONE idempotency key per attempt (survives navigation + retries).
-  const idempotencyKeyRef = useRef<string>(route.params.amountMinor ? '' : newIdempotencyKey('c2w'));
+  const idempotencyKeyRef = useRef<string>(
+    route.params.amountMinor ? '' : newIdempotencyKey('c2w'),
+  );
   if (!idempotencyKeyRef.current) idempotencyKeyRef.current = newIdempotencyKey('c2w');
 
   const amountMinor = useMemo(() => parseNairaInputToMinor(nairaInput), [nairaInput]);
@@ -46,7 +52,10 @@ export const CashToWalletAmountScreen: React.FC = () => {
   };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.flex}
+    >
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>How much cash did you receive?</Text>
         <Text style={styles.helper}>
@@ -74,9 +83,18 @@ export const CashToWalletAmountScreen: React.FC = () => {
               You will credit {formatNairaFromMinor(amountMinor)} NGN
             </Text>
           )}
-          {!!error && <Text style={styles.errorText} testID="amount-error">{error}</Text>}
+          {!!error && (
+            <Text style={styles.errorText} testID="amount-error">
+              {error}
+            </Text>
+          )}
 
-          <Button label="Continue" onPress={handleContinue} testID="amount-continue" style={styles.button} />
+          <Button
+            label="Continue"
+            onPress={handleContinue}
+            testID="amount-continue"
+            style={styles.button}
+          />
         </Card>
 
         <Text style={styles.footerNote}>

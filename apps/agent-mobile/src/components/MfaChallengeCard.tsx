@@ -42,7 +42,13 @@ export interface MfaChallengeCardProps {
   /** Optional override — forwarded only because the caller supplied it. */
   ttlSeconds?: number;
   cashOutContext?: { amountMinor: string; currency: string; operationKey: string };
-  claimContext?: { senderPhone: string; transferNumber: string; redemptionMethod: 'AGENT_CASH' | 'CUSTOMER_WALLET' } | { transferId: string; redemptionMethod: 'AGENT_CASH' | 'CUSTOMER_WALLET' };
+  claimContext?:
+    | {
+        senderPhone: string;
+        transferNumber: string;
+        redemptionMethod: 'AGENT_CASH' | 'CUSTOMER_WALLET';
+      }
+    | { transferId: string; redemptionMethod: 'AGENT_CASH' | 'CUSTOMER_WALLET' };
   /**
    * Called with the server-issued challenge once delivered. The future
    * transaction flow uses this (challengeId) for its execution request.
@@ -100,7 +106,10 @@ export const MfaChallengeCard: React.FC<MfaChallengeCardProps> = ({
   }, [invalidatedRevision]);
 
   const requestMutation = useMutation({
-    mutationFn: () => cashOutContext || claimContext ? requestAgentMfaChallenge(customerId, purpose, ttlSeconds, cashOutContext ?? claimContext) : requestAgentMfaChallenge(customerId, purpose, ttlSeconds),
+    mutationFn: () =>
+      cashOutContext || claimContext
+        ? requestAgentMfaChallenge(customerId, purpose, ttlSeconds, cashOutContext ?? claimContext)
+        : requestAgentMfaChallenge(customerId, purpose, ttlSeconds),
     onSuccess: (issued) => {
       setConsumedNotice(false);
       setChallenge(issued);
@@ -156,10 +165,16 @@ export const MfaChallengeCard: React.FC<MfaChallengeCardProps> = ({
           <Text style={styles.body}>{copy.summary}</Text>
           {consumedNotice && (
             <Text style={styles.expiredText} testID="mfa-consumed-notice">
-              The previous verification code can no longer be used. Request a fresh code for the customer.
+              The previous verification code can no longer be used. Request a fresh code for the
+              customer.
             </Text>
           )}
-          <Button label="Send verification code" disabled={disabled} onPress={request} testID="mfa-request-button" />
+          <Button
+            label="Send verification code"
+            disabled={disabled}
+            onPress={request}
+            testID="mfa-request-button"
+          />
         </>
       )}
 
@@ -168,20 +183,30 @@ export const MfaChallengeCard: React.FC<MfaChallengeCardProps> = ({
           <Text style={styles.body} testID="mfa-requesting">
             Sending verification code to the customer's phone...
           </Text>
-          <Button loading label="Sending…" onPress={request} disabled testID="mfa-requesting-button" />
+          <Button
+            loading
+            label="Sending…"
+            onPress={request}
+            disabled
+            testID="mfa-requesting-button"
+          />
         </>
       )}
 
       {state.status === 'failed' && (
         <>
-          <Text style={styles.errorText} testID="mfa-failure">{state.failureMessage}</Text>
+          <Text style={styles.errorText} testID="mfa-failure">
+            {state.failureMessage}
+          </Text>
           <Button label="Try again" variant="outline" onPress={request} testID="mfa-retry-button" />
         </>
       )}
 
       {state.status === 'ready' && state.challenge && (
         <>
-          <Text style={styles.successTitle} testID="mfa-ready-title">Verification code sent</Text>
+          <Text style={styles.successTitle} testID="mfa-ready-title">
+            Verification code sent
+          </Text>
           <Text style={styles.body}>
             One-time code sent by {state.challenge.deliveryChannel} to the customer at{' '}
             <Text style={styles.masked} testID="mfa-destination-masked">
@@ -213,7 +238,13 @@ export const MfaChallengeCard: React.FC<MfaChallengeCardProps> = ({
           <Text style={styles.expiredText} testID="mfa-expired">
             The verification code has expired.
           </Text>
-          <Button label="Request a new code" variant="outline" disabled={disabled} onPress={request} testID="mfa-expired-resend" />
+          <Button
+            label="Request a new code"
+            variant="outline"
+            disabled={disabled}
+            onPress={request}
+            testID="mfa-expired-resend"
+          />
         </>
       )}
     </Card>

@@ -101,7 +101,11 @@ export function resolveAdminBuildConfig(
   const isDevelopmentMode = mode === 'development' && env.NODE_ENV !== 'production';
   const isLocalDevServe = isLocalDevelopmentSession(mode, env, options);
 
-  if (configured && (!isDevelopmentMode || options?.command === 'build') && isLoopbackApiBaseUrl(configured)) {
+  if (
+    configured &&
+    (!isDevelopmentMode || options?.command === 'build') &&
+    isLoopbackApiBaseUrl(configured)
+  ) {
     throw new Error(
       `Refusing to configure loopback ADMIN_WEB_API_BASE_URL ("${configured}") for non-local-dev Admin Web build (mode="${mode}", command="${options?.command ?? 'serve'}").`,
     );
@@ -121,7 +125,8 @@ export function resolveAdminDevServerProxy(
     return undefined;
   }
 
-  const target = normalizeApiBaseUrl(env.ADMIN_WEB_DEV_PROXY_TARGET) || LOCAL_DEV_DEFAULT_PROXY_TARGET;
+  const target =
+    normalizeApiBaseUrl(env.ADMIN_WEB_DEV_PROXY_TARGET) || LOCAL_DEV_DEFAULT_PROXY_TARGET;
   return {
     '/api/v1': {
       target,

@@ -4,7 +4,14 @@ import { StyleSheet, Text, View } from 'react-native';
 import { theme } from '../theme';
 
 export type BadgeStatus =
-  'SUCCESS' | 'FAILED' | 'PENDING' | 'REVERSED' | 'CANCELLED' | 'EXPIRED' | 'ACTIVE' | 'SUSPENDED';
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'PENDING'
+  | 'REVERSED'
+  | 'CANCELLED'
+  | 'EXPIRED'
+  | 'ACTIVE'
+  | 'SUSPENDED';
 
 interface StatusBadgeProps {
   status: BadgeStatus;

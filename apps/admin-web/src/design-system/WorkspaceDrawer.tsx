@@ -15,12 +15,25 @@ export const WorkspaceDrawer: React.FC<{
   useEffect(() => {
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = previous; };
+    return () => {
+      document.body.style.overflow = previous;
+    };
   }, []);
-  return <div className="one-workspace-drawer">
-    <div className="one-workspace-drawer__backdrop" aria-hidden="true" onClick={onDismiss} />
-    <section ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={label} className={['one-workspace-drawer__surface', className].filter(Boolean).join(' ')}>{children}</section>
-  </div>;
+  return (
+    <div className="one-workspace-drawer">
+      <div className="one-workspace-drawer__backdrop" aria-hidden="true" onClick={onDismiss} />
+      <section
+        ref={ref}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={label}
+        className={['one-workspace-drawer__surface', className].filter(Boolean).join(' ')}
+      >
+        {children}
+      </section>
+    </div>
+  );
 };
 
 export const WorkspaceFilterTabs: React.FC<{
@@ -33,7 +46,7 @@ export const WorkspaceFilterTabs: React.FC<{
   const ref = useRef<HTMLDivElement>(null);
   const [overflowing, setOverflowing] = useState(false);
   const hintId = useId();
-  const optionLabels = options.map(option => option.label).join('\u0000');
+  const optionLabels = options.map((option) => option.label).join('\u0000');
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
@@ -42,12 +55,39 @@ export const WorkspaceFilterTabs: React.FC<{
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
     observer?.observe(element);
     window.addEventListener('resize', measure);
-    return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
   }, [optionLabels]);
-  return <div className={`one-workspace-filter-control${overflowing ? ' one-workspace-filter-control--overflow' : ''}`}>
-    <div ref={ref} className="one-workspace-filter-tabs" role="group" aria-label={label} aria-describedby={overflowing ? hintId : undefined}>
-      {options.map(option => <button type="button" key={option.value} aria-pressed={value === option.value} disabled={disabled} onClick={() => onChange(option.value)}>{option.label}</button>)}
+  return (
+    <div
+      className={`one-workspace-filter-control${overflowing ? ' one-workspace-filter-control--overflow' : ''}`}
+    >
+      <div
+        ref={ref}
+        className="one-workspace-filter-tabs"
+        role="group"
+        aria-label={label}
+        aria-describedby={overflowing ? hintId : undefined}
+      >
+        {options.map((option) => (
+          <button
+            type="button"
+            key={option.value}
+            aria-pressed={value === option.value}
+            disabled={disabled}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      {overflowing && (
+        <p id={hintId} className="one-workspace-filter-hint">
+          Scroll horizontally to see all filters.
+        </p>
+      )}
     </div>
-    {overflowing && <p id={hintId} className="one-workspace-filter-hint">Scroll horizontally to see all filters.</p>}
-  </div>;
+  );
 };

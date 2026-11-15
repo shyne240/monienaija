@@ -1,12 +1,5 @@
 import React, { useState } from 'react';
-import {
-  FlatList,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
@@ -166,8 +159,8 @@ export const SupportScreen: React.FC = () => {
         <Text style={styles.emptyIcon}>💬</Text>
         <Text style={styles.emptyTitle}>No Support Requests</Text>
         <Text style={styles.emptyText}>
-          You have not submitted any support requests yet. If you encounter any issues, tap &quot;New
-          Support Request&quot; above to reach out.
+          You have not submitted any support requests yet. If you encounter any issues, tap
+          &quot;New Support Request&quot; above to reach out.
         </Text>
       </Card>
     );

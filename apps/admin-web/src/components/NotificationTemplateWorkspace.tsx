@@ -71,14 +71,21 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   const switchPromptRef = useRef<HTMLDivElement | null>(null);
   const replacementPromptRef = useRef<HTMLDivElement | null>(null);
   const replacementOrigin = useRef<HTMLButtonElement | null>(null);
-  const [pendingReplacement, setPendingReplacement] = useState<{ kind: 'history' | 'active'; version: NotificationTemplateVersion; baseVersion: number | null } | null>(null);
+  const [pendingReplacement, setPendingReplacement] = useState<{
+    kind: 'history' | 'active';
+    version: NotificationTemplateVersion;
+    baseVersion: number | null;
+  } | null>(null);
   const lastJumpSequence = useRef(0);
   const eventSelectRef = useRef<HTMLSelectElement | null>(null);
   const returnToEventSelect = useRef(false);
   const returnToReplacementOrigin = useRef(false);
   useEffect(() => {
     if (pendingEventType) switchPromptRef.current?.focus();
-    else if (returnToEventSelect.current) { returnToEventSelect.current = false; eventSelectRef.current?.focus(); }
+    else if (returnToEventSelect.current) {
+      returnToEventSelect.current = false;
+      eventSelectRef.current?.focus();
+    }
   }, [pendingEventType]);
   const [subject, setSubject] = useState<string>('');
   const [body, setBody] = useState<string>('');
@@ -101,7 +108,9 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   const [historyQuery, setHistoryQuery] = useState('');
   const comparisonRef = useRef<HTMLDivElement | null>(null);
   const comparisonOrigin = useRef<HTMLButtonElement | null>(null);
-  useEffect(() => { if (comparedVersion) comparisonRef.current?.focus(); }, [comparedVersion]);
+  useEffect(() => {
+    if (comparedVersion) comparisonRef.current?.focus();
+  }, [comparedVersion]);
   const [activatingTemplateId, setActivatingTemplateId] = useState<string | null>(null);
   const [activationComment, setActivationComment] = useState<string>('');
   const [activationFeedback, setActivationFeedback] = useState<{
@@ -116,14 +125,48 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   const mounted = useRef(true);
   const submitInFlight = useRef(false);
   const activationInFlight = useRef(false);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   useEffect(() => {
     const busy = isSubmitting || Boolean(activatingTemplateId);
-    onGuardChange?.(channel, Boolean(hasUserEditedRef.current || changeSummary.trim() || activationComment.trim() || proposalReviewRequired || busy), busy);
-  }, [onGuardChange, channel, subject, body, changeSummary, activationComment, selectedEventType, proposalReviewRequired, isSubmitting, activatingTemplateId]);
+    onGuardChange?.(
+      channel,
+      Boolean(
+        hasUserEditedRef.current ||
+          changeSummary.trim() ||
+          activationComment.trim() ||
+          proposalReviewRequired ||
+          busy,
+      ),
+      busy,
+    );
+  }, [
+    onGuardChange,
+    channel,
+    subject,
+    body,
+    changeSummary,
+    activationComment,
+    selectedEventType,
+    proposalReviewRequired,
+    isSubmitting,
+    activatingTemplateId,
+  ]);
   const previewGeneration = useRef(0);
   const previewContext = useRef('');
-  const previewKey = JSON.stringify([currentPrincipalId, permissions.canViewCatalogue, channel, selectedEventType, subject, body, sampleOverrides]);
+  const previewKey = JSON.stringify([
+    currentPrincipalId,
+    permissions.canViewCatalogue,
+    channel,
+    selectedEventType,
+    subject,
+    body,
+    sampleOverrides,
+  ]);
   previewContext.current = previewKey;
   useEffect(() => {
     previewGeneration.current += 1;
@@ -131,7 +174,9 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
     setPreviewError('');
     setPreviewBlockedMessage('');
     setIsPreviewLoading(false);
-    return () => { previewGeneration.current += 1; };
+    return () => {
+      previewGeneration.current += 1;
+    };
   }, [previewKey]);
 
   const selectedEvent = useMemo(
@@ -147,23 +192,52 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
     [templates, selectedEventType, channel],
   );
 
-  const visibleVersions = matchingVersions.filter(item => String(item.version).includes(historyQuery.trim()));
+  const visibleVersions = matchingVersions.filter((item) =>
+    String(item.version).includes(historyQuery.trim()),
+  );
 
   const activeVersion = useMemo(
-    () => matchingVersions.find((item) => item.isActive && item.sourceOrigin !== 'CODE_BASELINE') ?? null,
+    () =>
+      matchingVersions.find((item) => item.isActive && item.sourceOrigin !== 'CODE_BASELINE') ??
+      null,
     [matchingVersions],
   );
   const referenceVersion = activeVersion ?? matchingVersions[0] ?? null;
-  const activeVersionConfirmed = !templatesRegistryBlocked && !templatesReadPending && !templatesReadError && Boolean(activeVersion);
+  const activeVersionConfirmed =
+    !templatesRegistryBlocked &&
+    !templatesReadPending &&
+    !templatesReadError &&
+    Boolean(activeVersion);
   // A snapshot is not an authoritative comparison after registry data changes or fails.
-  const comparisonCurrent = Boolean(comparedVersion && activeVersionConfirmed && activeVersion && comparedVersion.id !== activeVersion.id && matchingVersions.some(item => item.id === comparedVersion.id && item.version === comparedVersion.version && item.subject === comparedVersion.subject && item.body === comparedVersion.body && item.approvalStatus === comparedVersion.approvalStatus));
-  useEffect(() => { if (comparedVersion && !comparisonCurrent) setComparedVersion(null); }, [comparedVersion, comparisonCurrent]);
+  const comparisonCurrent = Boolean(
+    comparedVersion &&
+      activeVersionConfirmed &&
+      activeVersion &&
+      comparedVersion.id !== activeVersion.id &&
+      matchingVersions.some(
+        (item) =>
+          item.id === comparedVersion.id &&
+          item.version === comparedVersion.version &&
+          item.subject === comparedVersion.subject &&
+          item.body === comparedVersion.body &&
+          item.approvalStatus === comparedVersion.approvalStatus,
+      ),
+  );
+  useEffect(() => {
+    if (comparedVersion && !comparisonCurrent) setComparedVersion(null);
+  }, [comparedVersion, comparisonCurrent]);
 
   useEffect(() => {
-    if (!eventJump || eventJump.sequence === lastJumpSequence.current || isSubmitting || activatingTemplateId) return;
+    if (
+      !eventJump ||
+      eventJump.sequence === lastJumpSequence.current ||
+      isSubmitting ||
+      activatingTemplateId
+    )
+      return;
     lastJumpSequence.current = eventJump.sequence;
     if (eventJump.eventType === selectedEventType) return;
-    if (!events.some(event => event.eventType === eventJump.eventType)) return;
+    if (!events.some((event) => event.eventType === eventJump.eventType)) return;
     setPendingReplacement(null);
     if (hasUserEditedRef.current || changeSummary.trim()) setPendingEventType(eventJump.eventType);
     else setSelectedEventType(eventJump.eventType);
@@ -177,30 +251,47 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
     }
   }, [pendingReplacement]);
 
-  const replacementCurrent = pendingReplacement && !templatesReadPending &&
-    matchingVersions.some(item => item.id === pendingReplacement.version.id && item.version === pendingReplacement.version.version && item.subject === pendingReplacement.version.subject && item.body === pendingReplacement.version.body) &&
-    (activeVersionConfirmed && activeVersion ? activeVersion.version : null) === pendingReplacement.baseVersion &&
-    (pendingReplacement.kind !== 'active' || (activeVersionConfirmed && activeVersion?.id === pendingReplacement.version.id));
+  const replacementCurrent =
+    pendingReplacement &&
+    !templatesReadPending &&
+    matchingVersions.some(
+      (item) =>
+        item.id === pendingReplacement.version.id &&
+        item.version === pendingReplacement.version.version &&
+        item.subject === pendingReplacement.version.subject &&
+        item.body === pendingReplacement.version.body,
+    ) &&
+    (activeVersionConfirmed && activeVersion ? activeVersion.version : null) ===
+      pendingReplacement.baseVersion &&
+    (pendingReplacement.kind !== 'active' ||
+      (activeVersionConfirmed && activeVersion?.id === pendingReplacement.version.id));
 
   const applyReplacement = (kind: 'history' | 'active', version: NotificationTemplateVersion) => {
     hasUserEditedRef.current = kind === 'history';
     setDraftBaseVersion(activeVersionConfirmed && activeVersion ? activeVersion.version : null);
-    setSubject(channel === 'EMAIL' ? version.subject ?? '' : '');
+    setSubject(channel === 'EMAIL' ? (version.subject ?? '') : '');
     setBody(version.body);
     if (kind === 'active') setChangeSummary('');
   };
-  const requestReplacement = (kind: 'history' | 'active', version: NotificationTemplateVersion, origin: HTMLButtonElement) => {
+  const requestReplacement = (
+    kind: 'history' | 'active',
+    version: NotificationTemplateVersion,
+    origin: HTMLButtonElement,
+  ) => {
     if (isSubmitting || activatingTemplateId || pendingEventType || pendingReplacement) return;
     if (hasUserEditedRef.current || changeSummary.trim()) {
       replacementOrigin.current = origin;
-      setPendingReplacement({ kind, version, baseVersion: activeVersionConfirmed && activeVersion ? activeVersion.version : null });
+      setPendingReplacement({
+        kind,
+        version,
+        baseVersion: activeVersionConfirmed && activeVersion ? activeVersion.version : null,
+      });
     } else applyReplacement(kind, version);
   };
   const closeReplacement = () => {
     returnToReplacementOrigin.current = true;
     setPendingReplacement(null);
   };
-
 
   // Sync editor content whenever the operator switches event or channel, or when live template
   // history finishes loading before the operator begins editing.
@@ -226,7 +317,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
     setDraftBaseVersion(activeVersionConfirmed && activeVersion ? activeVersion.version : null);
     if (referenceVersion) {
-      setSubject(channel === 'EMAIL' ? referenceVersion.subject ?? '' : '');
+      setSubject(channel === 'EMAIL' ? (referenceVersion.subject ?? '') : '');
       setBody(referenceVersion.body);
       if (switchedEventOrChannel) setChangeSummary('');
     } else if (selectedEvent && selectedEvent.templateEditable) {
@@ -249,13 +340,22 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
       setBody('');
       if (switchedEventOrChannel) setChangeSummary('');
     }
-  }, [selectedEventType, channel, referenceVersion?.id, activeVersionConfirmed, activeVersion?.version]);
+  }, [
+    selectedEventType,
+    channel,
+    referenceVersion?.id,
+    activeVersionConfirmed,
+    activeVersion?.version,
+  ]);
 
   const isSecurityFlow = Boolean(
     selectedEvent &&
-      (selectedEvent.deliveryClass === 'SECURITY' || SECURITY_LOCKED_EVENT_TYPES.has(selectedEvent.eventType)),
+      (selectedEvent.deliveryClass === 'SECURITY' ||
+        SECURITY_LOCKED_EVENT_TYPES.has(selectedEvent.eventType)),
   );
-  const isSecurityLocked = Boolean(selectedEvent && (isSecurityFlow || !selectedEvent.templateEditable));
+  const isSecurityLocked = Boolean(
+    selectedEvent && (isSecurityFlow || !selectedEvent.templateEditable),
+  );
 
   const canEditFields = permissions.canManageTemplates && !isSecurityLocked;
 
@@ -289,10 +389,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
     );
   }, [selectedEvent, sampleOverrides]);
 
-  const insertTokenIntoField = (
-    target: 'subject' | 'body',
-    variable: ApprovedTemplateVariable,
-  ) => {
+  const insertTokenIntoField = (target: 'subject' | 'body', variable: ApprovedTemplateVariable) => {
     if (!canEditFields || isSubmitting || activatingTemplateId) return;
     hasUserEditedRef.current = true;
     const token = `{{${variable.name}}}`;
@@ -306,7 +403,9 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         const next = `${subject.slice(0, start)}${token}${subject.slice(end)}`;
         setSubject(next);
       } else {
-        setSubject((prev) => (prev && !prev.endsWith(' ') ? `${prev} ${token}` : `${prev}${token}`));
+        setSubject((prev) =>
+          prev && !prev.endsWith(' ') ? `${prev} ${token}` : `${prev}${token}`,
+        );
       }
       return;
     }
@@ -325,7 +424,8 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   const handleServerPreview = async () => {
     if (!selectedEvent || isSecurityLocked) return;
     const request = ++previewGeneration.current;
-    const valid = () => request === previewGeneration.current && previewContext.current === previewKey;
+    const valid = () =>
+      request === previewGeneration.current && previewContext.current === previewKey;
     setIsPreviewLoading(true);
     setPreviewError('');
     setPreviewBlockedMessage('');
@@ -360,7 +460,16 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
   const handleSubmitTemplate = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance || submitInFlight.current || activationInFlight.current || pendingEventType || pendingReplacement || proposalReviewRequired) return;
+    if (
+      !permissions.canManageTemplates ||
+      !permissions.hasMfaAssurance ||
+      submitInFlight.current ||
+      activationInFlight.current ||
+      pendingEventType ||
+      pendingReplacement ||
+      proposalReviewRequired
+    )
+      return;
 
     setValidationErrors([]);
     setSubmitError('');
@@ -381,7 +490,9 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
     }
     if (!selectedEvent) return;
     if (!activeVersionConfirmed || !activeVersion || draftBaseVersion !== activeVersion.version) {
-      setSubmitError('A confirmed, current active template is required. Retain your draft, then reload the active version and review before submitting.');
+      setSubmitError(
+        'A confirmed, current active template is required. Retain your draft, then reload the active version and review before submitting.',
+      );
       return;
     }
 
@@ -405,17 +516,23 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         return;
       }
 
-      if (result.data.status !== 'PENDING_APPROVAL' || !result.data.approvalId || !result.data.updatedAt) throw new Error('Template proposal outcome not confirmed. Check the approval queue before retrying.');
-      const approvalNote = result.data.approvalId
-        ? ` Approval ID: ${result.data.approvalId}.`
-        : '';
-      setSubmitSuccessMessage(`Template version submitted for maker-checker approval.${approvalNote}`);
+      if (
+        result.data.status !== 'PENDING_APPROVAL' ||
+        !result.data.approvalId ||
+        !result.data.updatedAt
+      )
+        throw new Error(
+          'Template proposal outcome not confirmed. Check the approval queue before retrying.',
+        );
+      const approvalNote = result.data.approvalId ? ` Approval ID: ${result.data.approvalId}.` : '';
+      setSubmitSuccessMessage(
+        `Template version submitted for maker-checker approval.${approvalNote}`,
+      );
       setChangeSummary('');
 
       if (onTemplateSubmitted) {
         onTemplateSubmitted(result.data, {
-          id:
-            result.data.changeRequestId ?? result.data.approvalId,
+          id: result.data.changeRequestId ?? result.data.approvalId,
           approvalId: result.data.approvalId ?? null,
           changeType: 'TEMPLATE_CREATE',
           eventType: selectedEvent.eventType,
@@ -429,7 +546,14 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         });
       }
       if (onRefreshRequested) {
-        try { await onRefreshRequested(); } catch { if (mounted.current) setSubmitSuccessMessage((message) => `${message} Registry refresh failed; reload before another change.`); }
+        try {
+          await onRefreshRequested();
+        } catch {
+          if (mounted.current)
+            setSubmitSuccessMessage(
+              (message) => `${message} Registry refresh failed; reload before another change.`,
+            );
+        }
       }
     } catch (err: any) {
       if (!mounted.current) return;
@@ -439,7 +563,9 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         );
       } else {
         setProposalReviewRequired(true);
-        setSubmitError(`Template proposal outcome not confirmed. Check the approval queue before retrying. ${err?.message || 'Service unavailable.'}`);
+        setSubmitError(
+          `Template proposal outcome not confirmed. Check the approval queue before retrying. ${err?.message || 'Service unavailable.'}`,
+        );
       }
     } finally {
       submitInFlight.current = false;
@@ -452,7 +578,18 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
     // historical version is a governed TEMPLATE_ROLLBACK proposal created by the maker
     // (SUPER_ADMIN + MFA); a FINANCE_CONTROLLER checker approves and executes it from the
     // change queue (maker ≠ checker is enforced server-side at approval time).
-    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance || submitInFlight.current || activationInFlight.current || pendingEventType || pendingReplacement || proposalReviewRequired || !activeVersionConfirmed || !activeVersion) return;
+    if (
+      !permissions.canManageTemplates ||
+      !permissions.hasMfaAssurance ||
+      submitInFlight.current ||
+      activationInFlight.current ||
+      pendingEventType ||
+      pendingReplacement ||
+      proposalReviewRequired ||
+      !activeVersionConfirmed ||
+      !activeVersion
+    )
+      return;
     if (versionRow.sourceOrigin === 'CODE_BASELINE') {
       setActivationFeedback({
         kind: 'blocked',
@@ -475,7 +612,10 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         setProposalReviewRequired(true);
         setActivationFeedback({ kind: 'blocked', message: res.message });
       } else {
-        if (res.data.status !== 'PENDING_APPROVAL' || !res.data.approvalId) throw new Error('Rollback proposal outcome not confirmed. Check the approval queue before retrying.');
+        if (res.data.status !== 'PENDING_APPROVAL' || !res.data.approvalId)
+          throw new Error(
+            'Rollback proposal outcome not confirmed. Check the approval queue before retrying.',
+          );
         setActivationFeedback({
           kind: 'success',
           message:
@@ -484,7 +624,18 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               'A FINANCE_CONTROLLER checker must approve and execute it before this version becomes active.'),
         });
         setActivationComment('');
-        if (onRefreshRequested) { try { await onRefreshRequested(); } catch { if (mounted.current) setActivationFeedback({kind:'success', message:'Rollback proposal confirmed. Registry refresh failed; reload before another change.'}); } }
+        if (onRefreshRequested) {
+          try {
+            await onRefreshRequested();
+          } catch {
+            if (mounted.current)
+              setActivationFeedback({
+                kind: 'success',
+                message:
+                  'Rollback proposal confirmed. Registry refresh failed; reload before another change.',
+              });
+          }
+        }
       }
     } catch (err: any) {
       if (!mounted.current) return;
@@ -503,14 +654,19 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   const displayedPreview = serverPreview ?? localSafePreview;
 
   return (
-    <div className="mn-template-workspace" style={styles.wrapper} data-testid={`template-workspace-${channel.toLowerCase()}`}>
+    <div
+      className="mn-template-workspace"
+      style={styles.wrapper}
+      data-testid={`template-workspace-${channel.toLowerCase()}`}
+    >
       <header className="mn-template-intro">
         <p className="mn-template-kicker">TEMPLATE GOVERNANCE · {channel}</p>
         <h2>{channel === 'SMS' ? 'SMS templates' : 'Email templates'}</h2>
         <p>
           Choose an event, prepare a draft with approved variables, then review its preview and
-          version history. Proposals require approval before taking effect. Drafts are local to
-          this notification workspace while switching tabs; leaving the workspace or session discards them.
+          version history. Proposals require approval before taking effect. Drafts are local to this
+          notification workspace while switching tabs; leaving the workspace or session discards
+          them.
         </p>
         <nav aria-label={`${channel} template workspace sections`}>
           <a href={`#template-editor-${channel}`}>Editor</a>
@@ -519,7 +675,12 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
           <a href={`#template-history-${channel}`}>Version history</a>
         </nav>
       </header>
-      {templatesReadError && <div role="alert" style={styles.blockedBanner}>Template registry unavailable: {templatesReadError}. Displayed data is not confirmed current.</div>}
+      {templatesReadError && (
+        <div role="alert" style={styles.blockedBanner}>
+          Template registry unavailable: {templatesReadError}. Displayed data is not confirmed
+          current.
+        </div>
+      )}
       {/* Integration Status Banner */}
       {(templatesRegistryBlocked || (channel === 'EMAIL' && emailChannelBlocked)) && (
         <div
@@ -529,7 +690,11 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         >
           <div style={styles.blockedTitleRow}>
             <span style={styles.blockedBadge}>BLOCKED</span>
-            <strong>{templatesRegistryBlocked ? 'Template registry unavailable' : 'Email channel support unavailable'}</strong>
+            <strong>
+              {templatesRegistryBlocked
+                ? 'Template registry unavailable'
+                : 'Email channel support unavailable'}
+            </strong>
           </div>
           <p style={styles.blockedBodyText}>
             {templatesRegistryBlocked
@@ -543,12 +708,17 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
       {!permissions.canManageTemplates && (
         <div style={styles.readonlyNotice} data-testid="template-readonly-scope-notice">
           Read-only mode: Grant <code>notification.manage_templates</code> to draft or submit new{' '}
-          {channel} template versions. Template inspection, variable browsing, and safe preview remain available.
+          {channel} template versions. Template inspection, variable browsing, and safe preview
+          remain available.
         </div>
       )}
 
       {/* Event Selector Header Card */}
-      <section style={styles.card} className="mn-template-context" aria-label={`${channel} event context`}>
+      <section
+        style={styles.card}
+        className="mn-template-context"
+        aria-label={`${channel} event context`}
+      >
         <p className="mn-template-kicker">01 · SELECT AN EVENT</p>
         <h3>Template context</h3>
         <div style={styles.selectorRow}>
@@ -563,7 +733,12 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               data-testid="template-event-select"
               style={styles.select}
               value={selectedEventType}
-              disabled={isSubmitting || Boolean(activatingTemplateId) || Boolean(pendingEventType) || Boolean(pendingReplacement)}
+              disabled={
+                isSubmitting ||
+                Boolean(activatingTemplateId) ||
+                Boolean(pendingEventType) ||
+                Boolean(pendingReplacement)
+              }
               onChange={(e) => {
                 const next = e.target.value;
                 if (next === selectedEventType) return;
@@ -588,36 +763,89 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                 Active {channel}:{' '}
                 {activeVersionConfirmed && activeVersion
                   ? `v${activeVersion.version} (DB)`
-                  : templatesReadPending ? 'Loading registry…' : 'Not confirmed'}
+                  : templatesReadPending
+                    ? 'Loading registry…'
+                    : 'Not confirmed'}
               </span>
             </div>
           )}
         </div>
         {selectedEvent && <p style={styles.eventDescription}>{selectedEvent.description}</p>}
         {pendingEventType && (
-          <div className="mn-template-switch-prompt" ref={switchPromptRef} tabIndex={-1}
-            role="group" aria-label="Confirm event switch" data-testid="template-event-switch-prompt">
+          <div
+            className="mn-template-switch-prompt"
+            ref={switchPromptRef}
+            tabIndex={-1}
+            role="group"
+            aria-label="Confirm event switch"
+            data-testid="template-event-switch-prompt"
+          >
             <strong>Discard this event's draft?</strong>
             <p>
-              Switching from <code>{selectedEventType}</code> to <code>{pendingEventType}</code> replaces
-              the current editor draft and reason. This does not submit a proposal.
+              Switching from <code>{selectedEventType}</code> to <code>{pendingEventType}</code>{' '}
+              replaces the current editor draft and reason. This does not submit a proposal.
             </p>
             <div>
-              <button type="button" onClick={() => { returnToEventSelect.current = true; setPendingEventType(null); }}>Keep draft</button>
-              <button type="button" onClick={() => { setSelectedEventType(pendingEventType); returnToEventSelect.current = true; setPendingEventType(null); }}>Discard and switch</button>
+              <button
+                type="button"
+                onClick={() => {
+                  returnToEventSelect.current = true;
+                  setPendingEventType(null);
+                }}
+              >
+                Keep draft
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedEventType(pendingEventType);
+                  returnToEventSelect.current = true;
+                  setPendingEventType(null);
+                }}
+              >
+                Discard and switch
+              </button>
             </div>
           </div>
         )}
 
         {pendingReplacement && (
-          <div className="mn-template-switch-prompt" ref={replacementPromptRef} tabIndex={-1}
-            role="group" aria-label="Confirm draft replacement" data-testid="template-replacement-prompt">
+          <div
+            className="mn-template-switch-prompt"
+            ref={replacementPromptRef}
+            tabIndex={-1}
+            role="group"
+            aria-label="Confirm draft replacement"
+            data-testid="template-replacement-prompt"
+          >
             <strong>Replace the current draft?</strong>
-            <p>{pendingReplacement.kind === 'active' ? 'Reloading the active version replaces your editor content and clears the reason.' : `Loading version ${pendingReplacement.version.version} replaces the editor content; your reason is retained.`} This does not submit a proposal.</p>
-            {!replacementCurrent && <p role="status">The selected version or active registry state changed. Keep the draft and review the refreshed history before trying again.</p>}
+            <p>
+              {pendingReplacement.kind === 'active'
+                ? 'Reloading the active version replaces your editor content and clears the reason.'
+                : `Loading version ${pendingReplacement.version.version} replaces the editor content; your reason is retained.`}{' '}
+              This does not submit a proposal.
+            </p>
+            {!replacementCurrent && (
+              <p role="status">
+                The selected version or active registry state changed. Keep the draft and review the
+                refreshed history before trying again.
+              </p>
+            )}
             <div>
-              <button type="button" onClick={closeReplacement}>Keep draft</button>
-              <button type="button" disabled={!replacementCurrent} onClick={() => { if (!replacementCurrent) return; applyReplacement(pendingReplacement.kind, pendingReplacement.version); closeReplacement(); }}>Replace draft</button>
+              <button type="button" onClick={closeReplacement}>
+                Keep draft
+              </button>
+              <button
+                type="button"
+                disabled={!replacementCurrent}
+                onClick={() => {
+                  if (!replacementCurrent) return;
+                  applyReplacement(pendingReplacement.kind, pendingReplacement.version);
+                  closeReplacement();
+                }}
+              >
+                Replace draft
+              </button>
             </div>
           </div>
         )}
@@ -628,24 +856,26 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
             role="alert"
             data-testid="template-security-locked-banner"
           >
-            <strong>{isSecurityFlow ? 'Security flow — template editing prohibited' : 'Template editing prohibited for this event'}</strong>
+            <strong>
+              {isSecurityFlow
+                ? 'Security flow — template editing prohibited'
+                : 'Template editing prohibited for this event'}
+            </strong>
             <p style={{ margin: '6px 0 0 0', fontSize: 13 }}>
-              {isSecurityFlow ? 'Security templates are locked to protect direct-send credentials from admin editing.' : 'The loaded catalogue marks this event as not template-editable.'}
+              {isSecurityFlow
+                ? 'Security templates are locked to protect direct-send credentials from admin editing.'
+                : 'The loaded catalogue marks this event as not template-editable.'}
             </p>
           </div>
         )}
 
         {selectedEvent?.eventType === 'cash_to_cash.created' && (
-          <div
-            style={styles.c2cNoticeBox}
-            data-testid="template-c2c-nondisclosure-banner"
-          >
+          <div style={styles.c2cNoticeBox} data-testid="template-c2c-nondisclosure-banner">
             <strong>Cash-to-Cash Beneficiary Non-Disclosure Rule (Audit §4.7.3 / F-S2)</strong>
             <p style={{ margin: '6px 0 0 0', fontSize: 13 }}>
-              Beneficiary SMS templates may reference ONLY{' '}
-              <code>{'{{sender_name}}'}</code>, <code>{'{{amount}}'}</code>, and{' '}
-              <code>{'{{locator_clause}}'}</code>. Including the 6-digit{' '}
-              <code>transferNumber</code>, <code>senderPhone</code>, or secret{' '}
+              Beneficiary SMS templates may reference ONLY <code>{'{{sender_name}}'}</code>,{' '}
+              <code>{'{{amount}}'}</code>, and <code>{'{{locator_clause}}'}</code>. Including the
+              6-digit <code>transferNumber</code>, <code>senderPhone</code>, or secret{' '}
               <code>transferCode</code> is strictly rejected; the sender shares redemption details
               out-of-band.
             </p>
@@ -653,19 +883,45 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         )}
       </section>
 
-      {proposalReviewRequired && <div role="alert" data-testid="template-proposal-review-lock">
-        <strong>Template proposal outcome requires independent review.</strong> Review the proposal queue, template and audit records for this channel before acknowledging. A fresh read or absent proposal cannot exclude a late commit. This local safeguard is lost on exit or session change.
-        <button type="button" onClick={() => { if (window.confirm('Have you independently reviewed the proposal queue, template and audit records, including the possibility of a late commit?')) setProposalReviewRequired(false); }}>Acknowledge independent template review</button>
-      </div>}
+      {proposalReviewRequired && (
+        <div role="alert" data-testid="template-proposal-review-lock">
+          <strong>Template proposal outcome requires independent review.</strong> Review the
+          proposal queue, template and audit records for this channel before acknowledging. A fresh
+          read or absent proposal cannot exclude a late commit. This local safeguard is lost on exit
+          or session change.
+          <button
+            type="button"
+            onClick={() => {
+              if (
+                window.confirm(
+                  'Have you independently reviewed the proposal queue, template and audit records, including the possibility of a late commit?',
+                )
+              )
+                setProposalReviewRequired(false);
+            }}
+          >
+            Acknowledge independent template review
+          </button>
+        </div>
+      )}
       {/* Two-Column Authoring + Variable Browser & Preview */}
       <div style={styles.twoColGrid}>
         {/* Left Column: SMS / Email Template Editor */}
-        <section id={`template-editor-${channel}`} className="mn-template-card" style={styles.card} aria-label={`${channel} template editor`} tabIndex={-1}>
+        <section
+          id={`template-editor-${channel}`}
+          className="mn-template-card"
+          style={styles.card}
+          aria-label={`${channel} template editor`}
+          tabIndex={-1}
+        >
           <p className="mn-template-kicker">02 · COMPOSE</p>
           <h3 style={styles.sectionTitle}>
             {channel === 'SMS' ? 'SMS Template Editor' : 'Email Template Editor (Subject & Body)'}
           </h3>
-          <p style={styles.helperText}>Drafting does not change the active template. A confirmed active version and an approved proposal are required.</p>
+          <p style={styles.helperText}>
+            Drafting does not change the active template. A confirmed active version and an approved
+            proposal are required.
+          </p>
 
           <form onSubmit={handleSubmitTemplate} noValidate>
             {channel === 'EMAIL' && (
@@ -677,7 +933,10 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                   <span
                     style={{
                       fontSize: 12,
-                      color: subject.length > EMAIL_SUBJECT_MAX_LENGTH ? '#DC2626' : 'var(--mn-text-secondary, #52655f)',
+                      color:
+                        subject.length > EMAIL_SUBJECT_MAX_LENGTH
+                          ? '#DC2626'
+                          : 'var(--mn-text-secondary, #52655f)',
                     }}
                   >
                     {subject.length} / {EMAIL_SUBJECT_MAX_LENGTH} chars
@@ -711,7 +970,8 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                 <span
                   style={{
                     fontSize: 12,
-                    color: body.length > maxBodyLength ? '#DC2626' : 'var(--mn-text-secondary, #52655f)',
+                    color:
+                      body.length > maxBodyLength ? '#DC2626' : 'var(--mn-text-secondary, #52655f)',
                   }}
                   data-testid="template-char-counter"
                 >
@@ -743,11 +1003,15 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
             {/* Detected Variable Token Chips */}
             <div style={styles.tokenStatusBox}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--mn-text-primary, #132b25)' }}>
+              <span
+                style={{ fontSize: 12, fontWeight: 600, color: 'var(--mn-text-primary, #132b25)' }}
+              >
                 Referenced tokens ({detectedTokens.length}):
               </span>
               {detectedTokens.length === 0 ? (
-                <span style={{ fontSize: 12, color: 'var(--mn-text-secondary, #52655f)' }}>No variables referenced</span>
+                <span style={{ fontSize: 12, color: 'var(--mn-text-secondary, #52655f)' }}>
+                  No variables referenced
+                </span>
               ) : (
                 <div style={styles.tokenChipRow}>
                   {detectedTokens.map((token) => {
@@ -777,17 +1041,16 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                 style={styles.input}
                 placeholder="Describe why this template version is being proposed (min 10 chars)…"
                 value={changeSummary}
-                onChange={(e) => { hasUserEditedRef.current = true; setChangeSummary(e.target.value); }}
+                onChange={(e) => {
+                  hasUserEditedRef.current = true;
+                  setChangeSummary(e.target.value);
+                }}
                 disabled={!canEditFields || isSubmitting}
               />
             </div>
 
             {validationErrors.length > 0 && (
-              <div
-                style={styles.errorAlert}
-                role="alert"
-                data-testid="template-validation-errors"
-              >
+              <div style={styles.errorAlert} role="alert" data-testid="template-validation-errors">
                 <strong>Template validation failed:</strong>
                 <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
                   {validationErrors.map((err, index) => (
@@ -820,14 +1083,54 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               </div>
             )}
 
-            {activeVersionConfirmed && activeVersion && draftBaseVersion !== activeVersion.version && <div role="alert">The active template changed since this draft was loaded. Your draft is retained; reload and review the active version before submitting. <button type="button" disabled={isSubmitting || Boolean(activatingTemplateId) || Boolean(pendingEventType) || Boolean(pendingReplacement)} onClick={(event) => requestReplacement('active', activeVersion, event.currentTarget)}>Reload active version</button></div>}
-            {permissions.canManageTemplates && !permissions.hasMfaAssurance && <div role="note">MFA session assurance is required to submit template changes.</div>}
+            {activeVersionConfirmed &&
+              activeVersion &&
+              draftBaseVersion !== activeVersion.version && (
+                <div role="alert">
+                  The active template changed since this draft was loaded. Your draft is retained;
+                  reload and review the active version before submitting.{' '}
+                  <button
+                    type="button"
+                    disabled={
+                      isSubmitting ||
+                      Boolean(activatingTemplateId) ||
+                      Boolean(pendingEventType) ||
+                      Boolean(pendingReplacement)
+                    }
+                    onClick={(event) =>
+                      requestReplacement('active', activeVersion, event.currentTarget)
+                    }
+                  >
+                    Reload active version
+                  </button>
+                </div>
+              )}
+            {permissions.canManageTemplates && !permissions.hasMfaAssurance && (
+              <div role="note">MFA session assurance is required to submit template changes.</div>
+            )}
             <div style={styles.buttonRow}>
               <button
                 type="submit"
                 data-testid="submit-template-version-btn"
-                disabled={!canEditFields || !permissions.hasMfaAssurance || isSubmitting || Boolean(activatingTemplateId) || Boolean(pendingEventType) || Boolean(pendingReplacement) || proposalReviewRequired}
-                style={!canEditFields || !permissions.hasMfaAssurance || isSubmitting || activatingTemplateId || pendingEventType || pendingReplacement ? styles.primaryBtnDisabled : styles.primaryBtn}
+                disabled={
+                  !canEditFields ||
+                  !permissions.hasMfaAssurance ||
+                  isSubmitting ||
+                  Boolean(activatingTemplateId) ||
+                  Boolean(pendingEventType) ||
+                  Boolean(pendingReplacement) ||
+                  proposalReviewRequired
+                }
+                style={
+                  !canEditFields ||
+                  !permissions.hasMfaAssurance ||
+                  isSubmitting ||
+                  activatingTemplateId ||
+                  pendingEventType ||
+                  pendingReplacement
+                    ? styles.primaryBtnDisabled
+                    : styles.primaryBtn
+                }
               >
                 {isSubmitting
                   ? 'Submitting…'
@@ -843,7 +1146,9 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Capability 5: Approved Variable Browser & Insertion */}
           <section
-            id={`template-variables-${channel}`} tabIndex={-1} className="mn-template-card"
+            id={`template-variables-${channel}`}
+            tabIndex={-1}
+            className="mn-template-card"
             style={styles.card}
             aria-label="Approved variable browser"
             data-testid="approved-variable-browser"
@@ -876,7 +1181,13 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                         Resolver: <code>{variable.sourceSummary}</code>
                       </span>
                     </div>
-                    <p style={{ margin: '4px 0 8px 0', fontSize: 12, color: 'var(--mn-text-primary, #132b25)' }}>
+                    <p
+                      style={{
+                        margin: '4px 0 8px 0',
+                        fontSize: 12,
+                        color: 'var(--mn-text-primary, #132b25)',
+                      }}
+                    >
                       {variable.description} · Sample: <strong>{variable.sampleValue}</strong>
                     </p>
                     <div style={styles.variableActions}>
@@ -911,13 +1222,18 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
           {/* Capability 6: Template Preview Using Representative Safe Data */}
           <section
-            id={`template-preview-${channel}`} tabIndex={-1} className="mn-template-card"
+            id={`template-preview-${channel}`}
+            tabIndex={-1}
+            className="mn-template-card"
             style={styles.card}
             aria-label="Template safe preview"
             data-testid="template-safe-preview-card"
           >
             <div style={styles.labelRow}>
-              <div><p className="mn-template-kicker">04 · INSPECT</p><h3 style={styles.sectionTitle}>Safe Template Preview (Representative Data)</h3></div>
+              <div>
+                <p className="mn-template-kicker">04 · INSPECT</p>
+                <h3 style={styles.sectionTitle}>Safe Template Preview (Representative Data)</h3>
+              </div>
               <button
                 type="button"
                 data-testid="run-server-preview-btn"
@@ -941,7 +1257,11 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
             {selectedEvent && selectedEvent.approvedVariables.length > 0 && (
               <div>
                 <div
-                  style={{ fontSize: 11, color: 'var(--mn-text-secondary, #52655f)', marginBottom: 6 }}
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--mn-text-secondary, #52655f)',
+                    marginBottom: 6,
+                  }}
                   data-testid="sample-override-scope-hint"
                 >
                   <strong>Local Sample Overrides (Client-Side):</strong> Custom values below update
@@ -954,7 +1274,12 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                     <div key={variable.name}>
                       <label
                         htmlFor={`sample-${channel}-${variable.name}`}
-                        style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--mn-text-secondary, #52655f)' }}
+                        style={{
+                          display: 'block',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: 'var(--mn-text-secondary, #52655f)',
+                        }}
                       >
                         Sample <code>{`{{${variable.name}}}`}</code>
                       </label>
@@ -1014,7 +1339,8 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               >
                 <span>
                   <strong>Authoritative Server Preview Active:</strong> Rendered by the backend with
-                  fixed registry sample bindings (custom sample overrides are not sent over the wire).
+                  fixed registry sample bindings (custom sample overrides are not sent over the
+                  wire).
                 </span>
                 <button
                   type="button"
@@ -1053,10 +1379,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                     </span>
                   </div>
                 )}
-                <div
-                  style={styles.previewBodyBox}
-                  data-testid="local-custom-override-preview-body"
-                >
+                <div style={styles.previewBodyBox} data-testid="local-custom-override-preview-body">
                   {localSafePreview.renderedBody || '(empty message body)'}
                 </div>
               </div>
@@ -1129,7 +1452,9 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                       >
                         MonieNaija
                       </div>
-                      <div style={{ padding: '16px 18px', color: 'var(--mn-text-primary, #132b25)' }}>
+                      <div
+                        style={{ padding: '16px 18px', color: 'var(--mn-text-primary, #132b25)' }}
+                      >
                         <div
                           style={{
                             fontSize: 15,
@@ -1142,7 +1467,11 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                         </div>
                         <div
                           data-testid="rendered-preview-body"
-                          style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--mn-text-primary, #132b25)' }}
+                          style={{
+                            fontSize: 13,
+                            lineHeight: 1.55,
+                            color: 'var(--mn-text-primary, #132b25)',
+                          }}
                         >
                           {(displayedPreview.renderedBody || '(empty message body)')
                             .split(/\n{2,}/)
@@ -1192,15 +1521,21 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
       {/* Capability 7: Template Version History & Comparison */}
       <section
-        id={`template-history-${channel}`} tabIndex={-1} className="mn-template-card"
+        id={`template-history-${channel}`}
+        tabIndex={-1}
+        className="mn-template-card"
         style={styles.card}
         aria-label={`${channel} template version history`}
         data-testid="template-version-history-section"
       >
         <div style={styles.labelRow}>
-          <div><p className="mn-template-kicker">05 · VERSION RECORD</p><h3 style={styles.sectionTitle}>
-            {channel} Template Version {activeVersionConfirmed ? 'History' : 'References'} ({matchingVersions.length})
-          </h3></div>
+          <div>
+            <p className="mn-template-kicker">05 · VERSION RECORD</p>
+            <h3 style={styles.sectionTitle}>
+              {channel} Template Version {activeVersionConfirmed ? 'History' : 'References'} (
+              {matchingVersions.length})
+            </h3>
+          </div>
           {permissions.canManageTemplates && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input
@@ -1231,13 +1566,46 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
           </div>
         )}
 
-        {matchingVersions.length > 0 && <div className="mn-template-history-filters"><label>Filter loaded version numbers<input type="search" value={historyQuery} onChange={event => setHistoryQuery(event.target.value)} placeholder="Version number" aria-label={`${channel} version number filter`} /></label><p role="status">Showing {visibleVersions.length} of {matchingVersions.length} loaded versions. Filtering does not change a draft or propose a rollback.</p></div>}
+        {matchingVersions.length > 0 && (
+          <div className="mn-template-history-filters">
+            <label>
+              Filter loaded version numbers
+              <input
+                type="search"
+                value={historyQuery}
+                onChange={(event) => setHistoryQuery(event.target.value)}
+                placeholder="Version number"
+                aria-label={`${channel} version number filter`}
+              />
+            </label>
+            <p role="status">
+              Showing {visibleVersions.length} of {matchingVersions.length} loaded versions.
+              Filtering does not change a draft or propose a rollback.
+            </p>
+          </div>
+        )}
         {matchingVersions.length === 0 ? (
           <div style={styles.emptyBox}>
-            {templatesReadPending ? 'Loading template registry…' : templatesRegistryBlocked || templatesReadError ? 'Template registry unavailable; history cannot be confirmed.' : <>No persisted {channel} template versions exist yet for <code>{selectedEventType}</code>.</>}
+            {templatesReadPending ? (
+              'Loading template registry…'
+            ) : templatesRegistryBlocked || templatesReadError ? (
+              'Template registry unavailable; history cannot be confirmed.'
+            ) : (
+              <>
+                No persisted {channel} template versions exist yet for{' '}
+                <code>{selectedEventType}</code>.
+              </>
+            )}
           </div>
-        ) : visibleVersions.length === 0 ? <div style={styles.emptyBox}>No loaded versions match this filter.</div> : (
-          <div style={{ overflowX: 'auto' }} role="region" aria-label={`${channel} template versions`} tabIndex={0}>
+        ) : visibleVersions.length === 0 ? (
+          <div style={styles.emptyBox}>No loaded versions match this filter.</div>
+        ) : (
+          <div
+            style={{ overflowX: 'auto' }}
+            role="region"
+            aria-label={`${channel} template versions`}
+            tabIndex={0}
+          >
             <table style={styles.table} data-testid="template-version-history-table">
               <thead>
                 <tr>
@@ -1261,9 +1629,19 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                   const canActivateRow =
                     permissions.canManageTemplates &&
                     permissions.hasMfaAssurance &&
-                    activeVersionConfirmed && !isSubmitting && !activatingTemplateId && !pendingEventType && !pendingReplacement && !proposalReviewRequired &&
-                    !ver.isActive && ver.sourceOrigin !== 'CODE_BASELINE';
-                  const verifiedRegistry = !templatesReadPending && !templatesReadError && !templatesRegistryBlocked && ver.sourceOrigin !== 'CODE_BASELINE';
+                    activeVersionConfirmed &&
+                    !isSubmitting &&
+                    !activatingTemplateId &&
+                    !pendingEventType &&
+                    !pendingReplacement &&
+                    !proposalReviewRequired &&
+                    !ver.isActive &&
+                    ver.sourceOrigin !== 'CODE_BASELINE';
+                  const verifiedRegistry =
+                    !templatesReadPending &&
+                    !templatesReadError &&
+                    !templatesRegistryBlocked &&
+                    ver.sourceOrigin !== 'CODE_BASELINE';
 
                   return (
                     <tr key={ver.id}>
@@ -1287,12 +1665,16 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                                 : styles.mutedChip
                           }
                         >
-                          {ver.sourceOrigin === 'CODE_BASELINE' ? 'REFERENCE · activation unconfirmed' : !verifiedRegistry ? 'STATE UNCONFIRMED' : ver.isActive ? 'ACTIVE' : ver.approvalStatus}
+                          {ver.sourceOrigin === 'CODE_BASELINE'
+                            ? 'REFERENCE · activation unconfirmed'
+                            : !verifiedRegistry
+                              ? 'STATE UNCONFIRMED'
+                              : ver.isActive
+                                ? 'ACTIVE'
+                                : ver.approvalStatus}
                         </span>
                       </td>
-                      {channel === 'EMAIL' && (
-                        <td style={styles.td}>{ver.subject || '—'}</td>
-                      )}
+                      {channel === 'EMAIL' && <td style={styles.td}>{ver.subject || '—'}</td>}
                       <td style={{ ...styles.td, maxWidth: 280 }}>{ver.body}</td>
                       <td style={styles.td}>
                         <code>{ver.createdBy || '—'}</code>
@@ -1307,39 +1689,47 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                             <button
                               type="button"
                               style={styles.secondarySmallBtn}
-                              disabled={isSubmitting || Boolean(activatingTemplateId) || Boolean(pendingEventType) || Boolean(pendingReplacement)}
-                              onClick={(event) => requestReplacement('history', ver, event.currentTarget)}
+                              disabled={
+                                isSubmitting ||
+                                Boolean(activatingTemplateId) ||
+                                Boolean(pendingEventType) ||
+                                Boolean(pendingReplacement)
+                              }
+                              onClick={(event) =>
+                                requestReplacement('history', ver, event.currentTarget)
+                              }
                             >
                               Load v{ver.version}
                             </button>
                           )}
-                          {activeVersionConfirmed && activeVersion && activeVersion.id !== ver.id && (
-                            <button
-                              type="button"
-                              style={styles.secondarySmallBtn}
-                              aria-label={`Compare version ${ver.version} with active version`}
-                              onClick={(event) => { comparisonOrigin.current = event.currentTarget; setComparedVersion(ver); }}
-                            >
-                              Compare
-                            </button>
-                          )}
+                          {activeVersionConfirmed &&
+                            activeVersion &&
+                            activeVersion.id !== ver.id && (
+                              <button
+                                type="button"
+                                style={styles.secondarySmallBtn}
+                                aria-label={`Compare version ${ver.version} with active version`}
+                                onClick={(event) => {
+                                  comparisonOrigin.current = event.currentTarget;
+                                  setComparedVersion(ver);
+                                }}
+                              >
+                                Compare
+                              </button>
+                            )}
                           {permissions.canManageTemplates && !ver.isActive && (
                             <button
                               type="button"
                               data-testid={`activate-version-${ver.version}`}
                               aria-label={`Propose rollback to version ${ver.version}`}
-                              disabled={
-                                !canActivateRow || activatingTemplateId === ver.id
-                              }
+                              disabled={!canActivateRow || activatingTemplateId === ver.id}
                               title={
                                 !permissions.hasMfaAssurance
                                   ? 'MFA session assurance required'
                                   : 'Creates a governed rollback proposal — a FINANCE_CONTROLLER checker must approve and execute it (Maker ≠ Checker enforced server-side)'
                               }
                               style={
-                                canActivateRow
-                                  ? styles.approveSmallBtn
-                                  : styles.disabledSmallBtn
+                                canActivateRow ? styles.approveSmallBtn : styles.disabledSmallBtn
                               }
                               onClick={() => void handleActivateVersion(ver)}
                             >
@@ -1362,7 +1752,14 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
         {/* Structured Side-by-Side Comparison View */}
         {comparedVersion && comparisonCurrent && activeVersion && (
-          <div ref={comparisonRef} tabIndex={-1} className="mn-template-comparison" style={styles.compareBox} data-testid="template-version-comparison" aria-label={`${channel} template version comparison`}>
+          <div
+            ref={comparisonRef}
+            tabIndex={-1}
+            className="mn-template-comparison"
+            style={styles.compareBox}
+            data-testid="template-version-comparison"
+            aria-label={`${channel} template version comparison`}
+          >
             <div style={styles.labelRow}>
               <strong>
                 Comparing Active (v{activeVersion.version}) vs Selected (v{comparedVersion.version})
@@ -1370,7 +1767,11 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               <button
                 type="button"
                 style={styles.secondarySmallBtn}
-                onClick={() => { setComparedVersion(null); if (comparisonOrigin.current?.isConnected) comparisonOrigin.current.focus(); else document.getElementById(`template-history-${channel}`)?.focus(); }}
+                onClick={() => {
+                  setComparedVersion(null);
+                  if (comparisonOrigin.current?.isConnected) comparisonOrigin.current.focus();
+                  else document.getElementById(`template-history-${channel}`)?.focus();
+                }}
               >
                 Close Comparison
               </button>
@@ -1455,7 +1856,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     color: 'var(--mn-text-primary, #132b25)',
   },
-  eventDescription: { margin: '10px 0 0 0', fontSize: 13, color: 'var(--mn-text-secondary, #52655f)' },
+  eventDescription: {
+    margin: '10px 0 0 0',
+    fontSize: 13,
+    color: 'var(--mn-text-secondary, #52655f)',
+  },
   securityLockedBox: {
     marginTop: 12,
     background: '#FEF2F2',
@@ -1477,8 +1882,18 @@ const styles: Record<string, React.CSSProperties> = {
     gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))',
     gap: 16,
   },
-  sectionTitle: { margin: '0 0 8px 0', fontSize: 16, fontWeight: 700, color: 'var(--mn-text-primary, #132b25)' },
-  helperText: { margin: '0 0 12px 0', fontSize: 12, color: 'var(--mn-text-secondary, #52655f)', lineHeight: 1.45 },
+  sectionTitle: {
+    margin: '0 0 8px 0',
+    fontSize: 16,
+    fontWeight: 700,
+    color: 'var(--mn-text-primary, #132b25)',
+  },
+  helperText: {
+    margin: '0 0 12px 0',
+    fontSize: 12,
+    color: 'var(--mn-text-secondary, #52655f)',
+    lineHeight: 1.45,
+  },
   fieldGroup: { marginBottom: 14 },
   labelRow: {
     display: 'flex',
@@ -1488,7 +1903,12 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
     marginBottom: 6,
   },
-  label: { fontSize: 13, fontWeight: 600, color: 'var(--mn-text-primary, #132b25)', display: 'block' },
+  label: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'var(--mn-text-primary, #132b25)',
+    display: 'block',
+  },
   select: {
     width: '100%',
     padding: '9px 12px',
@@ -1776,6 +2196,11 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 8,
     padding: 12,
   },
-  compareHeader: { fontWeight: 700, fontSize: 12, color: 'var(--mn-text-primary, #132b25)', marginBottom: 6 },
+  compareHeader: {
+    fontWeight: 700,
+    fontSize: 12,
+    color: 'var(--mn-text-primary, #132b25)',
+    marginBottom: 6,
+  },
   compareBody: { whiteSpace: 'pre-wrap', fontSize: 13, color: 'var(--mn-text-primary, #132b25)' },
 };

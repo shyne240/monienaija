@@ -803,7 +803,9 @@ describe('ARENA 4 customer journey (real backend + PostgreSQL)', () => {
 
     // Restriction: a suspended wallet is surfaced as a restricted state, distinct from both an
     // active wallet and the no-wallet state.
-    await dataSource.query(`UPDATE wallet_accounts SET status='SUSPENDED' WHERE id=$1`, [wallet.id]);
+    await dataSource.query(`UPDATE wallet_accounts SET status='SUSPENDED' WHERE id=$1`, [
+      wallet.id,
+    ]);
     const restricted = await request(server())
       .get('/api/v1/customers/me/dashboard')
       .set(auth)

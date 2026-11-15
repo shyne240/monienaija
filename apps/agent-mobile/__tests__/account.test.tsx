@@ -34,7 +34,13 @@ const profileFixture = {
   reference: 'ref-agent-9',
   status: 'ACTIVE',
   agentClassId: 'class-2',
-  agentClass: { id: 'class-2', reference: 'ac-2', code: 'GOLD', name: 'Gold Agent', isActive: true },
+  agentClass: {
+    id: 'class-2',
+    reference: 'ac-2',
+    code: 'GOLD',
+    name: 'Gold Agent',
+    isActive: true,
+  },
   createdAt: '2025-06-15T00:00:00.000Z',
   updatedAt: '2025-06-15T00:00:00.000Z',
 };
@@ -45,7 +51,12 @@ const capabilitiesFixture = {
   evaluations: [
     { service: 'CASH_IN', canonicalService: 'CASH_IN', allowed: true, reason: null },
     { service: 'CASH_OUT', canonicalService: 'CASH_OUT', allowed: true, reason: null },
-    { service: 'CASH_TO_CASH', canonicalService: 'CASH_TO_CASH', allowed: false, reason: 'Requires upgraded class' },
+    {
+      service: 'CASH_TO_CASH',
+      canonicalService: 'CASH_TO_CASH',
+      allowed: false,
+      reason: 'Requires upgraded class',
+    },
   ],
 };
 
@@ -58,31 +69,61 @@ const pinStatusFixture = {
 
 const outletsFixture = [
   {
-    id: 'outlet-1', agentId: 'agent-uuid-9', reference: 'o-ref-1', code: 'OUT-01',
-    name: 'HQ Outlet', displayName: 'HQ — Wuse 2', status: 'ACTIVE',
-    addressLine: '12 Aminu Kano Cres', city: 'Abuja', state: 'FCT', country: 'NG',
-    createdAt: '2025-06-15T00:00:00.000Z', updatedAt: '2025-06-15T00:00:00.000Z',
+    id: 'outlet-1',
+    agentId: 'agent-uuid-9',
+    reference: 'o-ref-1',
+    code: 'OUT-01',
+    name: 'HQ Outlet',
+    displayName: 'HQ — Wuse 2',
+    status: 'ACTIVE',
+    addressLine: '12 Aminu Kano Cres',
+    city: 'Abuja',
+    state: 'FCT',
+    country: 'NG',
+    createdAt: '2025-06-15T00:00:00.000Z',
+    updatedAt: '2025-06-15T00:00:00.000Z',
   },
   {
-    id: 'outlet-2', agentId: 'agent-uuid-9', reference: 'o-ref-2', code: 'OUT-02',
-    name: 'Branch Outlet', displayName: null, status: 'SUSPENDED',
-    addressLine: null, city: 'Lagos', state: 'Lagos', country: 'NG',
-    createdAt: '2025-06-15T00:00:00.000Z', updatedAt: '2025-06-15T00:00:00.000Z',
+    id: 'outlet-2',
+    agentId: 'agent-uuid-9',
+    reference: 'o-ref-2',
+    code: 'OUT-02',
+    name: 'Branch Outlet',
+    displayName: null,
+    status: 'SUSPENDED',
+    addressLine: null,
+    city: 'Lagos',
+    state: 'Lagos',
+    country: 'NG',
+    createdAt: '2025-06-15T00:00:00.000Z',
+    updatedAt: '2025-06-15T00:00:00.000Z',
   },
 ];
 
 const terminalsFixture = [
   {
-    id: 'term-1', agentId: 'agent-uuid-9', outletId: 'outlet-1', reference: 't-ref-1',
-    code: 'TERM-01', label: 'Counter POS', status: 'ACTIVE', serialNumber: 'SN-9981',
-    createdAt: '2025-06-15T00:00:00.000Z', updatedAt: '2025-06-15T00:00:00.000Z',
+    id: 'term-1',
+    agentId: 'agent-uuid-9',
+    outletId: 'outlet-1',
+    reference: 't-ref-1',
+    code: 'TERM-01',
+    label: 'Counter POS',
+    status: 'ACTIVE',
+    serialNumber: 'SN-9981',
+    createdAt: '2025-06-15T00:00:00.000Z',
+    updatedAt: '2025-06-15T00:00:00.000Z',
   },
 ];
 
 const receivingFixture = {
-  id: 'recv-9', agentId: 'agent-uuid-9', receivingNumber: '2348000009', status: 'ACTIVE',
-  assignedAt: '2025-06-16T00:00:00.000Z', revokedAt: null,
-  createdAt: '2025-06-16T00:00:00.000Z', updatedAt: '2025-06-16T00:00:00.000Z',
+  id: 'recv-9',
+  agentId: 'agent-uuid-9',
+  receivingNumber: '2348000009',
+  status: 'ACTIVE',
+  assignedAt: '2025-06-16T00:00:00.000Z',
+  revokedAt: null,
+  createdAt: '2025-06-16T00:00:00.000Z',
+  updatedAt: '2025-06-16T00:00:00.000Z',
 };
 
 function wrap(ui: React.ReactElement) {
@@ -98,8 +139,11 @@ describe('AccountScreen (real Agent information)', () => {
       isLoading: false,
       agentId: 'agent-uuid-9',
       session: {
-        accessToken: 't', tokenType: 'Bearer',
-        expiresAt: new Date(Date.now() + 60000).toISOString(), agentId: 'agent-uuid-9', sessionId: 's',
+        accessToken: 't',
+        tokenType: 'Bearer',
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+        agentId: 'agent-uuid-9',
+        sessionId: 's',
       },
       pendingRotation: null,
       error: null,

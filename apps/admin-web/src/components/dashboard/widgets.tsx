@@ -6,7 +6,22 @@ import { WidgetCard } from './WidgetCard';
 import { KpiTile } from './KpiTile';
 import { PeriodControls } from './PeriodControls';
 import { useWidgetData } from './useWidgetData';
-import { isReconciliationWidgetData, isStatusCountData, isTransactionSummary, isTransactionTrend, isRecentTransactions, isLedgerSummary, isWorkforceOverview, isAuditEntries, parseDirectWidget, DIRECT_ENDPOINTS, type DirectWidgetKey, type DirectWidgetData, type ReconciliationWidgetData, type StatusCountData } from './widget-validation';
+import {
+  isReconciliationWidgetData,
+  isStatusCountData,
+  isTransactionSummary,
+  isTransactionTrend,
+  isRecentTransactions,
+  isLedgerSummary,
+  isWorkforceOverview,
+  isAuditEntries,
+  parseDirectWidget,
+  DIRECT_ENDPOINTS,
+  type DirectWidgetKey,
+  type DirectWidgetData,
+  type ReconciliationWidgetData,
+  type StatusCountData,
+} from './widget-validation';
 import {
   formatMinor,
   formatPercent,
@@ -28,12 +43,24 @@ function buildQuery(params: Record<string, string | undefined>): string {
 }
 
 /** Date inputs describe inclusive calendar days in UTC, as sent to the backend. */
-function periodParams(period: DashboardPeriod, from: string, to: string, maxDays?: number): Record<string, string | undefined> {
+function periodParams(
+  period: DashboardPeriod,
+  from: string,
+  to: string,
+  maxDays?: number,
+): Record<string, string | undefined> {
   if (period !== 'custom') return { period };
   if (!from || !to) throw new Error('Choose both dates for the custom UTC range.');
-  const start = new Date(`${from}T00:00:00.000Z`), end = new Date(`${to}T23:59:59.999Z`);
-  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start.getTime() > end.getTime()) throw new Error('Choose a valid custom UTC range with the start on or before the end.');
-  if (maxDays && end.getTime() - start.getTime() >= maxDays * 86400000) throw new Error(`Choose a range of at most ${maxDays} UTC days.`);
+  const start = new Date(`${from}T00:00:00.000Z`),
+    end = new Date(`${to}T23:59:59.999Z`);
+  if (
+    !Number.isFinite(start.getTime()) ||
+    !Number.isFinite(end.getTime()) ||
+    start.getTime() > end.getTime()
+  )
+    throw new Error('Choose a valid custom UTC range with the start on or before the end.');
+  if (maxDays && end.getTime() - start.getTime() >= maxDays * 86400000)
+    throw new Error(`Choose a range of at most ${maxDays} UTC days.`);
   return { period, from: start.toISOString(), to: end.toISOString() };
 }
 
@@ -52,7 +79,9 @@ export const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   } else if (['FAILED', 'CANCELLED', 'EXPIRED', 'REJECTED', 'ERROR'].includes(s)) {
     bg = colors.dangerBg;
     fg = colors.danger;
-  } else if (['PENDING', 'PROCESSING', 'UNCLAIMED', 'WARNING', 'UNDER_REVIEW', 'SUBMITTED'].includes(s)) {
+  } else if (
+    ['PENDING', 'PROCESSING', 'UNCLAIMED', 'WARNING', 'UNDER_REVIEW', 'SUBMITTED'].includes(s)
+  ) {
     bg = colors.warningBg;
     fg = colors.warning;
   }
@@ -72,15 +101,15 @@ export const TransactionSummaryWidget: React.FC = () => {
   const [to, setTo] = useState('');
   const [compare, setCompare] = useState(false);
 
-  const { data, loading, error } = useWidgetData<TransactionSummaryResponse>(
-    async () => {
-      const params = periodParams(period, from, to);
-      const result: unknown = await ApiClient.get(`${DASH}/widgets/transaction-summary${buildQuery({ ...params, compare: compare ? 'true' : undefined })}`);
-      if (!isTransactionSummary(result, period, compare)) throw new Error('Invalid transaction summary response.');
-      return result as TransactionSummaryResponse;
-    },
-    [period, from, to, compare],
-  );
+  const { data, loading, error } = useWidgetData<TransactionSummaryResponse>(async () => {
+    const params = periodParams(period, from, to);
+    const result: unknown = await ApiClient.get(
+      `${DASH}/widgets/transaction-summary${buildQuery({ ...params, compare: compare ? 'true' : undefined })}`,
+    );
+    if (!isTransactionSummary(result, period, compare))
+      throw new Error('Invalid transaction summary response.');
+    return result as TransactionSummaryResponse;
+  }, [period, from, to, compare]);
 
   return (
     <WidgetCard
@@ -108,49 +137,76 @@ export const TransactionSummaryWidget: React.FC = () => {
             <KpiTile
               label="Completed (volume / count)"
               value={String(data.totalCompletedCount)}
-              deltaLabel={data.comparison ? `${formatPercent(data.comparison.completedCountChangePercent)} vs prior period` : undefined}
+              deltaLabel={
+                data.comparison
+                  ? `${formatPercent(data.comparison.completedCountChangePercent)} vs prior period`
+                  : undefined
+              }
               deltaTone={deltaTone(data.comparison?.completedCountChangePercent)}
             />
             <KpiTile
               label="Completed Value"
               value={formatMinor(data.totalCompletedValueMinor, data.currency)}
-              deltaLabel={data.comparison ? `${formatPercent(data.comparison.completedValueChangePercent)} vs prior period` : undefined}
+              deltaLabel={
+                data.comparison
+                  ? `${formatPercent(data.comparison.completedValueChangePercent)} vs prior period`
+                  : undefined
+              }
               deltaTone={deltaTone(data.comparison?.completedValueChangePercent)}
             />
-            <KpiTile label="Success Rate" value={data.successRatePercent === null ? '—' : `${data.successRatePercent}%`} caption="Completed ÷ (Completed + Failed)" />
-            <KpiTile label="Fee Revenue (not profit)" value={formatMinor(data.totalFeeRevenueMinor, data.currency)} caption={data.feeRevenueNote} title={data.feeRevenueNote} />
+            <KpiTile
+              label="Success Rate"
+              value={data.successRatePercent === null ? '—' : `${data.successRatePercent}%`}
+              caption="Completed ÷ (Completed + Failed)"
+            />
+            <KpiTile
+              label="Fee Revenue (not profit)"
+              value={formatMinor(data.totalFeeRevenueMinor, data.currency)}
+              caption={data.feeRevenueNote}
+              title={data.feeRevenueNote}
+            />
             <KpiTile label="Failed" value={String(data.totalFailedCount)} />
             <KpiTile label="Pending" value={String(data.totalPendingCount)} />
           </div>
           <p style={styles.note}>
-            <strong>Definitions:</strong> &ldquo;Volume&rdquo; is a transaction count, not a currency amount. &ldquo;Fee Revenue&rdquo; is
-            recognized transaction fees only, not profit — no profit/margin figure is computed anywhere in this dashboard because no
+            <strong>Definitions:</strong> &ldquo;Volume&rdquo; is a transaction count, not a
+            currency amount. &ldquo;Fee Revenue&rdquo; is recognized transaction fees only, not
+            profit — no profit/margin figure is computed anywhere in this dashboard because no
             verified cost-accounting source exists in V1 ({data.commissionNote})
           </p>
-          <ScrollRegion label="Dashboard data table" hint="Scroll horizontally to view all columns."><table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Type</th>
-                <th style={styles.th}>Completed</th>
-                <th style={styles.th}>Value</th>
-                <th style={styles.th}>Failed</th>
-                <th style={styles.th}>Pending</th>
-                <th style={styles.th}>Fee Revenue</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.byType.map((t) => (
-                <tr key={t.type}>
-                  <td style={styles.td}>{t.type}</td>
-                  <td style={styles.td}>{t.completedCount}</td>
-                  <td style={styles.td}>{formatMinor(t.completedValueMinor, data.currency)}</td>
-                  <td style={styles.td}>{t.failedCount}</td>
-                  <td style={styles.td}>{t.pendingCount}</td>
-                  <td style={styles.td}>{t.feeRevenueMinor === null ? 'N/A (no fee column)' : formatMinor(t.feeRevenueMinor, data.currency)}</td>
+          <ScrollRegion
+            label="Dashboard data table"
+            hint="Scroll horizontally to view all columns."
+          >
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Type</th>
+                  <th style={styles.th}>Completed</th>
+                  <th style={styles.th}>Value</th>
+                  <th style={styles.th}>Failed</th>
+                  <th style={styles.th}>Pending</th>
+                  <th style={styles.th}>Fee Revenue</th>
                 </tr>
-              ))}
-            </tbody>
-          </table></ScrollRegion>
+              </thead>
+              <tbody>
+                {data.byType.map((t) => (
+                  <tr key={t.type}>
+                    <td style={styles.td}>{t.type}</td>
+                    <td style={styles.td}>{t.completedCount}</td>
+                    <td style={styles.td}>{formatMinor(t.completedValueMinor, data.currency)}</td>
+                    <td style={styles.td}>{t.failedCount}</td>
+                    <td style={styles.td}>{t.pendingCount}</td>
+                    <td style={styles.td}>
+                      {t.feeRevenueMinor === null
+                        ? 'N/A (no fee column)'
+                        : formatMinor(t.feeRevenueMinor, data.currency)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollRegion>
           {data.comparison && <p style={styles.note}>{data.comparison.definition}</p>}
         </>
       )}
@@ -164,15 +220,14 @@ export const TransactionTrendWidget: React.FC = () => {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
 
-  const { data, loading, error } = useWidgetData<TransactionTrendResponse>(
-    async () => {
-      const params = periodParams(period, from, to, 92);
-      const result: unknown = await ApiClient.get(`${DASH}/widgets/transaction-trend${buildQuery(params)}`);
-      if (!isTransactionTrend(result, period)) throw new Error('Invalid transaction trend response.');
-      return result as TransactionTrendResponse;
-    },
-    [period, from, to],
-  );
+  const { data, loading, error } = useWidgetData<TransactionTrendResponse>(async () => {
+    const params = periodParams(period, from, to, 92);
+    const result: unknown = await ApiClient.get(
+      `${DASH}/widgets/transaction-trend${buildQuery(params)}`,
+    );
+    if (!isTransactionTrend(result, period)) throw new Error('Invalid transaction trend response.');
+    return result as TransactionTrendResponse;
+  }, [period, from, to]);
 
   const daily = data?.daily ?? [];
   const maxCount = Math.max(1, ...daily.map((d) => d.completedCount));
@@ -180,7 +235,9 @@ export const TransactionTrendWidget: React.FC = () => {
     x: daily.length > 1 ? (index / (daily.length - 1)) * 1000 : 500,
     y: 118 - (day.completedCount / maxCount) * 100,
   }));
-  const trendLine = trendPoints.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
+  const trendLine = trendPoints
+    .map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`)
+    .join(' ');
 
   return (
     <WidgetCard
@@ -189,16 +246,66 @@ export const TransactionTrendWidget: React.FC = () => {
       loading={loading}
       error={error}
       empty={!!data && daily.length === 0}
-      actions={<PeriodControls period={period} from={from} to={to} onPeriodChange={setPeriod} onFromChange={setFrom} onToChange={setTo} />}
+      actions={
+        <PeriodControls
+          period={period}
+          from={from}
+          to={to}
+          onPeriodChange={setPeriod}
+          onFromChange={setFrom}
+          onToChange={setTo}
+        />
+      }
     >
       {daily.length > 0 && (
         <div style={styles.chartWrap}>
-          <svg width="100%" height={140} viewBox="0 0 1000 140" preserveAspectRatio="none" role="img" aria-label="Daily transaction volume trend">
-            <defs><linearGradient id="one-trend-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#58ba7d" stopOpacity=".35"/><stop offset="100%" stopColor="#58ba7d" stopOpacity=".03"/></linearGradient></defs>
-            {[18, 43, 68, 93, 118].map(y => <line key={y} x1="0" x2="1000" y1={y} y2={y} stroke="#e5ede6" vectorEffect="non-scaling-stroke" />)}
-            <path d={`${trendLine} L ${trendPoints[trendPoints.length - 1].x} 118 L ${trendPoints[0].x} 118 Z`} fill="url(#one-trend-fill)" />
-            <path d={trendLine} fill="none" stroke="#087346" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-            {daily.map((day, index) => <circle key={day.date} cx={trendPoints[index].x} cy={trendPoints[index].y} r="3" fill="#087346"><title>{`${day.date}: ${day.completedCount} completed, ${formatMinor(day.completedValueMinor, data?.currency)}`}</title></circle>)}
+          <svg
+            width="100%"
+            height={140}
+            viewBox="0 0 1000 140"
+            preserveAspectRatio="none"
+            role="img"
+            aria-label="Daily transaction volume trend"
+          >
+            <defs>
+              <linearGradient id="one-trend-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#58ba7d" stopOpacity=".35" />
+                <stop offset="100%" stopColor="#58ba7d" stopOpacity=".03" />
+              </linearGradient>
+            </defs>
+            {[18, 43, 68, 93, 118].map((y) => (
+              <line
+                key={y}
+                x1="0"
+                x2="1000"
+                y1={y}
+                y2={y}
+                stroke="#e5ede6"
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
+            <path
+              d={`${trendLine} L ${trendPoints[trendPoints.length - 1].x} 118 L ${trendPoints[0].x} 118 Z`}
+              fill="url(#one-trend-fill)"
+            />
+            <path
+              d={trendLine}
+              fill="none"
+              stroke="#087346"
+              strokeWidth="2"
+              vectorEffect="non-scaling-stroke"
+            />
+            {daily.map((day, index) => (
+              <circle
+                key={day.date}
+                cx={trendPoints[index].x}
+                cy={trendPoints[index].y}
+                r="3"
+                fill="#087346"
+              >
+                <title>{`${day.date}: ${day.completedCount} completed, ${formatMinor(day.completedValueMinor, data?.currency)}`}</title>
+              </circle>
+            ))}
           </svg>
           <div style={styles.chartAxis}>
             <span>{daily[0]?.date}</span>
@@ -206,10 +313,27 @@ export const TransactionTrendWidget: React.FC = () => {
           </div>
           <details>
             <summary>View daily trend data</summary>
-            <ScrollRegion label="Daily transaction trend data" hint="Scroll horizontally to view all columns.">
+            <ScrollRegion
+              label="Daily transaction trend data"
+              hint="Scroll horizontally to view all columns."
+            >
               <table style={styles.table}>
-                <thead><tr><th scope="col">Date</th><th scope="col">Completed count</th><th scope="col">Completed value</th></tr></thead>
-                <tbody>{daily.map((d) => <tr key={d.date}><td>{d.date}</td><td>{d.completedCount}</td><td>{formatMinor(d.completedValueMinor, data?.currency)}</td></tr>)}</tbody>
+                <thead>
+                  <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Completed count</th>
+                    <th scope="col">Completed value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {daily.map((d) => (
+                    <tr key={d.date}>
+                      <td>{d.date}</td>
+                      <td>{d.completedCount}</td>
+                      <td>{formatMinor(d.completedValueMinor, data?.currency)}</td>
+                    </tr>
+                  ))}
+                </tbody>
               </table>
             </ScrollRegion>
           </details>
@@ -221,7 +345,11 @@ export const TransactionTrendWidget: React.FC = () => {
 
 /** 4A. Recent transaction activity (Defects #3/#4 fixed: UNION ALL syntax + wrong completed-at column for cash-to-cash). */
 export const RecentTransactionsWidget: React.FC = () => {
-  const { data, loading, error } = useWidgetData<RecentTransactionRow[]>(async () => { const value: unknown = await ApiClient.get(`${DASH}/widgets/recent-transactions`); if (!isRecentTransactions(value)) throw new Error('Invalid recent transactions response.'); return value as RecentTransactionRow[]; }, []);
+  const { data, loading, error } = useWidgetData<RecentTransactionRow[]>(async () => {
+    const value: unknown = await ApiClient.get(`${DASH}/widgets/recent-transactions`);
+    if (!isRecentTransactions(value)) throw new Error('Invalid recent transactions response.');
+    return value as RecentTransactionRow[];
+  }, []);
   const rows = (data ?? []).slice(0, 5);
 
   return (
@@ -233,32 +361,34 @@ export const RecentTransactionsWidget: React.FC = () => {
       empty={!!data && rows.length === 0}
     >
       {rows.length > 0 && (
-        <ScrollRegion label="Dashboard data table" hint="Scroll horizontally to view all columns."><table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>Type</th>
-              <th style={styles.th}>Reference</th>
-              <th style={styles.th}>Amount</th>
-              <th style={styles.th}>Status</th>
-              <th style={styles.th}>Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.reference}>
-                <td style={styles.td}>{r.type}</td>
-                <td style={styles.td}>
-                  <code style={styles.code}>{r.reference.slice(0, 8)}…</code>
-                </td>
-                <td style={styles.td}>{formatMinor(r.amountMinor, r.currency)}</td>
-                <td style={styles.td}>
-                  <StatusBadge status={r.status} />
-                </td>
-                <td style={styles.td}>{formatDate(r.createdAt)}</td>
+        <ScrollRegion label="Dashboard data table" hint="Scroll horizontally to view all columns.">
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Type</th>
+                <th style={styles.th}>Reference</th>
+                <th style={styles.th}>Amount</th>
+                <th style={styles.th}>Status</th>
+                <th style={styles.th}>Created</th>
               </tr>
-            ))}
-          </tbody>
-        </table></ScrollRegion>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.reference}>
+                  <td style={styles.td}>{r.type}</td>
+                  <td style={styles.td}>
+                    <code style={styles.code}>{r.reference.slice(0, 8)}…</code>
+                  </td>
+                  <td style={styles.td}>{formatMinor(r.amountMinor, r.currency)}</td>
+                  <td style={styles.td}>
+                    <StatusBadge status={r.status} />
+                  </td>
+                  <td style={styles.td}>{formatDate(r.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollRegion>
       )}
     </WidgetCard>
   );
@@ -273,33 +403,45 @@ interface LedgerSummaryRow {
 }
 
 export const LedgerSummaryWidget: React.FC = () => {
-  const { data, loading, error } = useWidgetData<LedgerSummaryRow[]>(async () => { const value: unknown = await ApiClient.get(`${DASH}/widgets/ledger-summary`); if (!isLedgerSummary(value)) throw new Error('Invalid ledger summary response.'); return value as LedgerSummaryRow[]; }, []);
+  const { data, loading, error } = useWidgetData<LedgerSummaryRow[]>(async () => {
+    const value: unknown = await ApiClient.get(`${DASH}/widgets/ledger-summary`);
+    if (!isLedgerSummary(value)) throw new Error('Invalid ledger summary response.');
+    return value as LedgerSummaryRow[];
+  }, []);
   const rows = data ?? [];
   return (
-    <WidgetCard title="Ledger Summary" description="Ledger debit/credit totals by currency and accounting unit, sourced directly from ledger_journals/ledger_lines." loading={loading} error={error} empty={!!data && rows.length === 0}>
+    <WidgetCard
+      title="Ledger Summary"
+      description="Ledger debit/credit totals by currency and accounting unit, sourced directly from ledger_journals/ledger_lines."
+      loading={loading}
+      error={error}
+      empty={!!data && rows.length === 0}
+    >
       {rows.length > 0 && (
-        <ScrollRegion label="Dashboard data table" hint="Scroll horizontally to view all columns."><table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>Currency</th>
-              <th style={styles.th}>Accounting Unit</th>
-              <th style={styles.th}>Journals</th>
-              <th style={styles.th}>Debits</th>
-              <th style={styles.th}>Credits</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={`${r.currency}-${r.accounting_unit}`}>
-                <td style={styles.td}>{r.currency}</td>
-                <td style={styles.td}>{r.accounting_unit}</td>
-                <td style={styles.td}>{r.journal_count}</td>
-                <td style={styles.td}>{formatMinor(r.debits_minor, r.currency)}</td>
-                <td style={styles.td}>{formatMinor(r.credits_minor, r.currency)}</td>
+        <ScrollRegion label="Dashboard data table" hint="Scroll horizontally to view all columns.">
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Currency</th>
+                <th style={styles.th}>Accounting Unit</th>
+                <th style={styles.th}>Journals</th>
+                <th style={styles.th}>Debits</th>
+                <th style={styles.th}>Credits</th>
               </tr>
-            ))}
-          </tbody>
-        </table></ScrollRegion>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={`${r.currency}-${r.accounting_unit}`}>
+                  <td style={styles.td}>{r.currency}</td>
+                  <td style={styles.td}>{r.accounting_unit}</td>
+                  <td style={styles.td}>{r.journal_count}</td>
+                  <td style={styles.td}>{formatMinor(r.debits_minor, r.currency)}</td>
+                  <td style={styles.td}>{formatMinor(r.credits_minor, r.currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollRegion>
       )}
     </WidgetCard>
   );
@@ -308,23 +450,43 @@ export const LedgerSummaryWidget: React.FC = () => {
 export const ReconciliationStatusWidget: React.FC = () => {
   const { data, loading, error } = useWidgetData<ReconciliationWidgetData>(async () => {
     const response: unknown = await ApiClient.get(`${DASH}/widgets/reconciliation-status`);
-    if (!isReconciliationWidgetData(response)) throw new Error('Invalid reconciliation widget response.');
+    if (!isReconciliationWidgetData(response))
+      throw new Error('Invalid reconciliation widget response.');
     return response;
   }, []);
   return (
-    <WidgetCard title="Reconciliation Status" description="Independent reconciliation and trial-balance reports, generated separately." loading={loading} error={error}>
+    <WidgetCard
+      title="Reconciliation Status"
+      description="Independent reconciliation and trial-balance reports, generated separately."
+      loading={loading}
+      error={error}
+    >
       {data && (
         <>
           <div style={styles.kpiRow}>
-            <KpiTile label="Run Status" value={data.report.status} caption={`Reconciliation: ${formatDate(data.report.generatedAt)}`} />
-            <KpiTile label="Trial Balance" value={data.trialBalance.balanced ? 'Balanced' : 'Out of balance'} caption={`Trial balance: ${formatDate(data.trialBalance.generatedAt)}`} />
+            <KpiTile
+              label="Run Status"
+              value={data.report.status}
+              caption={`Reconciliation: ${formatDate(data.report.generatedAt)}`}
+            />
+            <KpiTile
+              label="Trial Balance"
+              value={data.trialBalance.balanced ? 'Balanced' : 'Out of balance'}
+              caption={`Trial balance: ${formatDate(data.trialBalance.generatedAt)}`}
+            />
           </div>
-          {data.trialBalance.dimensions.length === 0 && <p style={styles.note}>No trial-balance dimensions were returned; the reported balance does not establish account activity.</p>}
+          {data.trialBalance.dimensions.length === 0 && (
+            <p style={styles.note}>
+              No trial-balance dimensions were returned; the reported balance does not establish
+              account activity.
+            </p>
+          )}
           {data.report.checks.length > 0 && (
             <ul style={styles.list}>
               {data.report.checks.map((c) => (
                 <li key={c.name} style={styles.listItem}>
-                  <StatusBadge status={c.status} /> <span style={{ marginLeft: 6 }}>{c.message}</span>
+                  <StatusBadge status={c.status} />{' '}
+                  <span style={{ marginLeft: 6 }}>{c.message}</span>
                 </li>
               ))}
             </ul>
@@ -342,9 +504,18 @@ interface WorkforceOverviewResponse {
 }
 
 export const WorkforceOverviewWidget: React.FC = () => {
-  const { data, loading, error } = useWidgetData<WorkforceOverviewResponse>(async () => { const value: unknown = await ApiClient.get(`${DASH}/widgets/workforce-overview`); if (!isWorkforceOverview(value)) throw new Error('Invalid workforce overview response.'); return value as WorkforceOverviewResponse; }, []);
+  const { data, loading, error } = useWidgetData<WorkforceOverviewResponse>(async () => {
+    const value: unknown = await ApiClient.get(`${DASH}/widgets/workforce-overview`);
+    if (!isWorkforceOverview(value)) throw new Error('Invalid workforce overview response.');
+    return value as WorkforceOverviewResponse;
+  }, []);
   return (
-    <WidgetCard title="Workforce Overview" description="Active workforce headcount, role distribution and currently active sessions." loading={loading} error={error}>
+    <WidgetCard
+      title="Workforce Overview"
+      description="Active workforce headcount, role distribution and currently active sessions."
+      loading={loading}
+      error={error}
+    >
       {data && (
         <>
           <div style={styles.kpiRow}>
@@ -375,7 +546,8 @@ export const StatusCountWidget: React.FC<{
 }> = ({ widgetKey, title, description, actions }) => {
   const { data, loading, error } = useWidgetData<StatusCountData>(async () => {
     const response: unknown = await ApiClient.get(`${DASH}/widgets/${widgetKey}`);
-    if (!isStatusCountData(response, widgetKey)) throw new Error('Invalid status summary response.');
+    if (!isStatusCountData(response, widgetKey))
+      throw new Error('Invalid status summary response.');
     return response;
   }, [widgetKey]);
 
@@ -386,7 +558,8 @@ export const StatusCountWidget: React.FC<{
       for (const r of data.byStatus) rows.push({ label: String(r.status), count: r.count });
     }
     if (Array.isArray(data.byCategoryStatus)) {
-      for (const r of data.byCategoryStatus) rows.push({ label: `${r.category} / ${r.status}`, count: r.count });
+      for (const r of data.byCategoryStatus)
+        rows.push({ label: `${r.category} / ${r.status}`, count: r.count });
     }
     if (typeof data.pendingApplicationCount === 'number') {
       pendingApplicationCount = data.pendingApplicationCount;
@@ -424,23 +597,70 @@ export const StatusCountWidget: React.FC<{
   );
 };
 
-interface AuditWidgetRow { id: string; entityType: string; action: string; actor: string; occurredAt: string; }
+interface AuditWidgetRow {
+  id: string;
+  entityType: string;
+  action: string;
+  actor: string;
+  occurredAt: string;
+}
 export const AuditTrailWidget: React.FC = () => {
   const { data, loading, error } = useWidgetData<AuditWidgetRow[]>(async () => {
     const value: unknown = await ApiClient.get(`${DASH}/widgets/audit-trail`);
     if (!isAuditEntries(value)) throw new Error('Invalid audit activity response.');
     return value as AuditWidgetRow[];
   }, []);
-  return <WidgetCard title="Recent Audit Activity" description="Most recent authorized audit events; sensitive audit details are not shown here." loading={loading} error={error} empty={!!data && data.length === 0}>
-    {data && data.length > 0 && <ScrollRegion label="Recent audit activity" hint="Scroll horizontally to view all columns."><table style={{...styles.table, minWidth: 720}}>
-      <thead><tr><th scope="col" style={{...styles.th, minWidth: 130}}>Time</th><th scope="col" style={styles.th}>Entity</th><th scope="col" style={styles.th}>Action</th><th scope="col" style={styles.th}>Actor</th></tr></thead>
-      <tbody>{data.map(row => <tr key={row.id}><td style={styles.td}>{formatDate(row.occurredAt)}</td><td style={styles.td}>{row.entityType}</td><td style={styles.td}>{row.action}</td><td style={styles.td}>{row.actor}</td></tr>)}</tbody>
-    </table></ScrollRegion>}
-  </WidgetCard>;
+  return (
+    <WidgetCard
+      title="Recent Audit Activity"
+      description="Most recent authorized audit events; sensitive audit details are not shown here."
+      loading={loading}
+      error={error}
+      empty={!!data && data.length === 0}
+    >
+      {data && data.length > 0 && (
+        <ScrollRegion label="Recent audit activity" hint="Scroll horizontally to view all columns.">
+          <table style={{ ...styles.table, minWidth: 720 }}>
+            <thead>
+              <tr>
+                <th scope="col" style={{ ...styles.th, minWidth: 130 }}>
+                  Time
+                </th>
+                <th scope="col" style={styles.th}>
+                  Entity
+                </th>
+                <th scope="col" style={styles.th}>
+                  Action
+                </th>
+                <th scope="col" style={styles.th}>
+                  Actor
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((row) => (
+                <tr key={row.id}>
+                  <td style={styles.td}>{formatDate(row.occurredAt)}</td>
+                  <td style={styles.td}>{row.entityType}</td>
+                  <td style={styles.td}>{row.action}</td>
+                  <td style={styles.td}>{row.actor}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollRegion>
+      )}
+    </WidgetCard>
+  );
 };
 
 /** Direct sources use explicit projections; no arbitrary payload fields or PII are surfaced. */
-export const GenericDirectWidget: React.FC<{ title: string; description: string; widgetKey: DirectWidgetKey; actions?: React.ReactNode }> = ({ title, description, widgetKey, actions }) => {
+export const GenericDirectWidget: React.FC<{
+  title: string;
+  description: string;
+  widgetKey: DirectWidgetKey;
+  actions?: React.ReactNode;
+}> = ({ title, description, widgetKey, actions }) => {
   const { data, loading, error } = useWidgetData<DirectWidgetData>(async () => {
     const value: unknown = await ApiClient.get(DIRECT_ENDPOINTS[widgetKey]);
     const parsed = parseDirectWidget(value, widgetKey);
@@ -450,25 +670,95 @@ export const GenericDirectWidget: React.FC<{ title: string; description: string;
   const metrics = data?.metrics ? Object.entries(data.metrics) : [];
   const rows = data?.rows ?? [];
   const isMetrics = widgetKey === 'system-health';
-  const columns = widgetKey === 'role-governance-queue'
-    ? [{ key: 'targetRoleKey', label: 'Role' }, { key: 'proposalType', label: 'Type' }, { key: 'status', label: 'Status' }]
-    : [{ key: 'reference', label: 'Reference' }, { key: 'status', label: 'Status' }];
-  return <WidgetCard title={title} description={description} loading={loading} error={error} empty={!!data && (isMetrics ? metrics.length === 0 : rows.length === 0)} actions={actions}>
-    {isMetrics && data && <><p style={styles.note}>Metrics only, generated {formatDate(data.generatedAt)}. Diagnostics and outbox are not included in this widget.</p><div style={styles.kpiRow}>{metrics.slice(0, 8).map(([key, value]) => <KpiTile key={key} label={key} value={value} />)}</div>{metrics.length > 8 && <p style={styles.note}>Showing 8 of {metrics.length} metrics.</p>}</>}
-    {!isMetrics && data && <><p style={styles.note}>Recent records, all statuses. Showing {Math.min(rows.length, 10)}{data.total !== undefined ? ` of ${data.total} matching records` : ` of ${rows.length} returned records`}.</p>
-      <ScrollRegion label={`${title} records`} hint="Scroll horizontally to view all columns."><table style={styles.table}><thead><tr>{columns.map(column => <th key={column.key} scope="col" style={styles.th}>{column.label}</th>)}</tr></thead>
-        <tbody>{rows.slice(0, 10).map((row, index) => <tr key={String(row.id ?? index)}>{columns.map(column => <td key={column.key} style={styles.td}>{String(row[column.key])}</td>)}</tr>)}</tbody>
-      </table></ScrollRegion></>}
-  </WidgetCard>;
+  const columns =
+    widgetKey === 'role-governance-queue'
+      ? [
+          { key: 'targetRoleKey', label: 'Role' },
+          { key: 'proposalType', label: 'Type' },
+          { key: 'status', label: 'Status' },
+        ]
+      : [
+          { key: 'reference', label: 'Reference' },
+          { key: 'status', label: 'Status' },
+        ];
+  return (
+    <WidgetCard
+      title={title}
+      description={description}
+      loading={loading}
+      error={error}
+      empty={!!data && (isMetrics ? metrics.length === 0 : rows.length === 0)}
+      actions={actions}
+    >
+      {isMetrics && data && (
+        <>
+          <p style={styles.note}>
+            Metrics only, generated {formatDate(data.generatedAt)}. Diagnostics and outbox are not
+            included in this widget.
+          </p>
+          <div style={styles.kpiRow}>
+            {metrics.slice(0, 8).map(([key, value]) => (
+              <KpiTile key={key} label={key} value={value} />
+            ))}
+          </div>
+          {metrics.length > 8 && <p style={styles.note}>Showing 8 of {metrics.length} metrics.</p>}
+        </>
+      )}
+      {!isMetrics && data && (
+        <>
+          <p style={styles.note}>
+            Recent records, all statuses. Showing {Math.min(rows.length, 10)}
+            {data.total !== undefined
+              ? ` of ${data.total} matching records`
+              : ` of ${rows.length} returned records`}
+            .
+          </p>
+          <ScrollRegion label={`${title} records`} hint="Scroll horizontally to view all columns.">
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  {columns.map((column) => (
+                    <th key={column.key} scope="col" style={styles.th}>
+                      {column.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice(0, 10).map((row, index) => (
+                  <tr key={String(row.id ?? index)}>
+                    {columns.map((column) => (
+                      <td key={column.key} style={styles.td}>
+                        {String(row[column.key])}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollRegion>
+        </>
+      )}
+    </WidgetCard>
+  );
 };
 
-export const DirectoryLinkWidget: React.FC<{ title: string; description: string; onNavigate?: () => void }> = ({ title, description, onNavigate }) => (
+export const DirectoryLinkWidget: React.FC<{
+  title: string;
+  description: string;
+  onNavigate?: () => void;
+}> = ({ title, description, onNavigate }) => (
   <div style={styles.linkCard}>
     <div>
       <h3 style={styles.title}>{title}</h3>
       <p style={styles.description}>{description}</p>
     </div>
-    <button style={styles.linkButton} onClick={onNavigate} disabled={!onNavigate} aria-disabled={!onNavigate}>
+    <button
+      style={styles.linkButton}
+      onClick={onNavigate}
+      disabled={!onNavigate}
+      aria-disabled={!onNavigate}
+    >
       Open →
     </button>
   </div>
@@ -486,7 +776,13 @@ export const WidgetRenderer: React.FC<{
   onNavigateToAgents?: (options?: { openApplications?: boolean }) => void;
 }> = ({ widget, onNavigateToCustomers, onNavigateToAgents }) => {
   if (!widget.authorized) {
-    return <WidgetCard title={widget.title || widget.displayName} description={widget.description} restricted />;
+    return (
+      <WidgetCard
+        title={widget.title || widget.displayName}
+        description={widget.description}
+        restricted
+      />
+    );
   }
 
   switch (widget.widgetKey) {
@@ -512,11 +808,7 @@ export const WidgetRenderer: React.FC<{
           description={widget.description}
           actions={
             onNavigateToAgents ? (
-              <button
-                type="button"
-                style={styles.linkButton}
-                onClick={() => onNavigateToAgents()}
-              >
+              <button type="button" style={styles.linkButton} onClick={() => onNavigateToAgents()}>
                 Open Agent Network →
               </button>
             ) : undefined
@@ -526,9 +818,21 @@ export const WidgetRenderer: React.FC<{
     case 'kyc-queue-summary':
     case 'compliance-case-summary':
     case 'fraud-case-summary':
-      return <StatusCountWidget widgetKey={widget.widgetKey} title={widget.title || widget.displayName} description={widget.description} />;
+      return (
+        <StatusCountWidget
+          widgetKey={widget.widgetKey}
+          title={widget.title || widget.displayName}
+          description={widget.description}
+        />
+      );
     case 'customer-directory-shortcut':
-      return <DirectoryLinkWidget title={widget.title || widget.displayName} description={widget.description} onNavigate={onNavigateToCustomers} />;
+      return (
+        <DirectoryLinkWidget
+          title={widget.title || widget.displayName}
+          description={widget.description}
+          onNavigate={onNavigateToCustomers}
+        />
+      );
     case 'agent-network-shortcut':
       return (
         <DirectoryLinkWidget
@@ -538,13 +842,29 @@ export const WidgetRenderer: React.FC<{
         />
       );
     default:
-      if (widget.fetchMode === 'direct' && widget.widgetKey in DIRECT_ENDPOINTS && widget.endpoint === DIRECT_ENDPOINTS[widget.widgetKey as DirectWidgetKey]) {
+      if (
+        widget.fetchMode === 'direct' &&
+        widget.widgetKey in DIRECT_ENDPOINTS &&
+        widget.endpoint === DIRECT_ENDPOINTS[widget.widgetKey as DirectWidgetKey]
+      ) {
         const isAgentApplicationsQueue = widget.widgetKey === 'agent-applications-queue';
         const directCopy: Record<DirectWidgetKey, { title: string; description: string }> = {
-          'system-health': { title: 'Operational Metrics', description: 'Metrics from the operational metrics endpoint.' },
-          'role-governance-queue': { title: 'Role Definition Proposals', description: 'Recent proposals across all returned statuses.' },
-          'agent-applications-queue': { title: 'Agent Applications', description: 'Recent applications across all returned statuses.' },
-          'support-ticket-queue': { title: 'Support Tickets', description: 'Recent tickets across all returned statuses.' },
+          'system-health': {
+            title: 'Operational Metrics',
+            description: 'Metrics from the operational metrics endpoint.',
+          },
+          'role-governance-queue': {
+            title: 'Role Definition Proposals',
+            description: 'Recent proposals across all returned statuses.',
+          },
+          'agent-applications-queue': {
+            title: 'Agent Applications',
+            description: 'Recent applications across all returned statuses.',
+          },
+          'support-ticket-queue': {
+            title: 'Support Tickets',
+            description: 'Recent tickets across all returned statuses.',
+          },
         };
         return (
           <GenericDirectWidget
@@ -565,7 +885,13 @@ export const WidgetRenderer: React.FC<{
           />
         );
       }
-      return <WidgetCard title={widget.title || widget.displayName} description={widget.description} error="This widget is not yet supported in Admin Web." />;
+      return (
+        <WidgetCard
+          title={widget.title || widget.displayName}
+          description={widget.description}
+          error="This widget is not yet supported in Admin Web."
+        />
+      );
   }
 };
 

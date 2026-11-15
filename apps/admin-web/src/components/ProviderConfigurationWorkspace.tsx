@@ -41,7 +41,8 @@ function lifecycleBadgeVisual(state: ProviderLifecycleState): {
         bg: '#dcfce7',
         fg: '#166534',
         border: '#86efac',
-        summary: 'Configured, verified, enabled, live test-send confirmed, and background worker/domain checks satisfied.',
+        summary:
+          'Configured, verified, enabled, live test-send confirmed, and background worker/domain checks satisfied.',
       };
     case 'DELIVERY_TESTED':
       return {
@@ -49,7 +50,8 @@ function lifecycleBadgeVisual(state: ProviderLifecycleState): {
         bg: '#d1fae5',
         fg: '#065f46',
         border: '#6ee7b7',
-        summary: 'Controlled live provider test-send succeeded. Complete background worker / DNS authentication gates for full PRODUCTION_READY status.',
+        summary:
+          'Controlled live provider test-send succeeded. Complete background worker / DNS authentication gates for full PRODUCTION_READY status.',
       };
     case 'ENABLED':
       return {
@@ -57,7 +59,8 @@ function lifecycleBadgeVisual(state: ProviderLifecycleState): {
         bg: '#dbeafe',
         fg: '#1e40af',
         border: '#93c5fd',
-        summary: 'Provider is enabled for live dispatch, but controlled live delivery has not yet been confirmed for the active credential.',
+        summary:
+          'Provider is enabled for live dispatch, but controlled live delivery has not yet been confirmed for the active credential.',
       };
     case 'VERIFIED':
       return {
@@ -65,7 +68,8 @@ function lifecycleBadgeVisual(state: ProviderLifecycleState): {
         bg: '#e0e7ff',
         fg: '#3730a3',
         border: '#a5b4fc',
-        summary: 'Credentials and configuration verified, but provider remains disabled (fail-closed) until enabled via maker-checker.',
+        summary:
+          'Credentials and configuration verified, but provider remains disabled (fail-closed) until enabled via maker-checker.',
       };
     case 'CONFIGURED':
       return {
@@ -73,7 +77,8 @@ function lifecycleBadgeVisual(state: ProviderLifecycleState): {
         bg: '#fef9c3',
         fg: '#854d0e',
         border: '#fde047',
-        summary: 'Encrypted credentials saved. Run connection verification, enable via maker-checker, and execute a controlled test-send.',
+        summary:
+          'Encrypted credentials saved. Run connection verification, enable via maker-checker, and execute a controlled test-send.',
       };
     case 'CONSOLE_ONLY':
       return {
@@ -81,7 +86,8 @@ function lifecycleBadgeVisual(state: ProviderLifecycleState): {
         bg: '#fef3c7',
         fg: '#92400e',
         border: '#fcd34d',
-        summary: 'Development/test console adapter only — logs locally and never transmits real SMS or Email.',
+        summary:
+          'Development/test console adapter only — logs locally and never transmits real SMS or Email.',
       };
     case 'MISCONFIGURED':
       return {
@@ -89,7 +95,8 @@ function lifecycleBadgeVisual(state: ProviderLifecycleState): {
         bg: '#fee2e2',
         fg: '#991b1b',
         border: '#fca5a5',
-        summary: 'Missing server encryption key, undecryptable secret, or invalid sender — all dispatches fail closed.',
+        summary:
+          'Missing server encryption key, undecryptable secret, or invalid sender — all dispatches fail closed.',
       };
     case 'NOT_CONFIGURED':
     default:
@@ -106,7 +113,11 @@ function lifecycleBadgeVisual(state: ProviderLifecycleState): {
 function describeError(err: unknown): string {
   if (!err) return 'Operation failed.';
   if (typeof err === 'object' && err !== null) {
-    const rec = err as { status?: number; message?: string; details?: { message?: string; detail?: string } };
+    const rec = err as {
+      status?: number;
+      message?: string;
+      details?: { message?: string; detail?: string };
+    };
     const msg = rec.details?.detail || rec.details?.message || rec.message || 'Request failed';
     if (rec.status === 401) return `Authentication required (401): ${msg}`;
     if (rec.status === 403) return `Access or governance policy denied (403): ${msg}`;
@@ -117,20 +128,39 @@ function describeError(err: unknown): string {
   return String(err);
 }
 
-function matchesProposalReceipt(created: ProviderConfigProposal, payload: ProposeProviderConfigPayload, principalId: string | null): boolean {
+function matchesProposalReceipt(
+  created: ProviderConfigProposal,
+  payload: ProposeProviderConfigPayload,
+  principalId: string | null,
+): boolean {
   const baseUrl = payload.baseUrl ? payload.baseUrl.trim().replace(/\/+$/, '').toLowerCase() : null;
-  return Boolean(created && typeof created.id === 'string' && created.id.trim() && created.channel === payload.channel &&
-    created.status === 'REQUESTED' && created.expectedVersion === payload.expectedVersion && created.proposedProvider === payload.provider &&
-    created.proposedEnabled === payload.enabled && created.credentialAction === payload.credentialAction && created.reason === payload.reason &&
-    created.proposerPrincipalId === principalId && typeof created.approvalId === 'string' && created.approvalId.trim() &&
-    typeof created.createdAt === 'string' && !Number.isNaN(Date.parse(created.createdAt)) &&
-    created.proposedBaseUrl === baseUrl && created.proposedRequestTimeoutMs === payload.requestTimeoutMs &&
-    (payload.channel === 'SMS' ? created.proposedSenderId === (payload.senderId ?? null) :
-      created.proposedFromEmail === (payload.fromEmail?.toLowerCase() ?? null) && created.proposedFromName === (payload.fromName ?? null) &&
-      created.proposedReplyToEmail === (payload.replyToEmail?.toLowerCase() ?? null) &&
-      created.proposedDomainAuthentication?.spfConfigured === payload.spfConfigured &&
-      created.proposedDomainAuthentication?.dkimConfigured === payload.dkimConfigured &&
-      created.proposedDomainAuthentication?.dmarcConfigured === payload.dmarcConfigured));
+  return Boolean(
+    created &&
+      typeof created.id === 'string' &&
+      created.id.trim() &&
+      created.channel === payload.channel &&
+      created.status === 'REQUESTED' &&
+      created.expectedVersion === payload.expectedVersion &&
+      created.proposedProvider === payload.provider &&
+      created.proposedEnabled === payload.enabled &&
+      created.credentialAction === payload.credentialAction &&
+      created.reason === payload.reason &&
+      created.proposerPrincipalId === principalId &&
+      typeof created.approvalId === 'string' &&
+      created.approvalId.trim() &&
+      typeof created.createdAt === 'string' &&
+      !Number.isNaN(Date.parse(created.createdAt)) &&
+      created.proposedBaseUrl === baseUrl &&
+      created.proposedRequestTimeoutMs === payload.requestTimeoutMs &&
+      (payload.channel === 'SMS'
+        ? created.proposedSenderId === (payload.senderId ?? null)
+        : created.proposedFromEmail === (payload.fromEmail?.toLowerCase() ?? null) &&
+          created.proposedFromName === (payload.fromName ?? null) &&
+          created.proposedReplyToEmail === (payload.replyToEmail?.toLowerCase() ?? null) &&
+          created.proposedDomainAuthentication?.spfConfigured === payload.spfConfigured &&
+          created.proposedDomainAuthentication?.dkimConfigured === payload.dkimConfigured &&
+          created.proposedDomainAuthentication?.dmarcConfigured === payload.dmarcConfigured),
+  );
 }
 
 const GATE_LABELS: Array<{ key: keyof ProviderChannelSnapshot['gates']; label: string }> = [
@@ -145,7 +175,11 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   principalId,
   permissions,
   onRefreshParentStatus,
-  probeBusy = false, probeReview = false, beginProbe, finishProbe, onGuardChange,
+  probeBusy = false,
+  probeReview = false,
+  beginProbe,
+  finishProbe,
+  onGuardChange,
 }) => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -159,14 +193,30 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   const [providerActionBusy, setProviderActionBusy] = useState(false);
   const [providerReview, setProviderReview] = useState<string | null>(null);
   const [providerDirty, setProviderDirty] = useState(false);
-  useEffect(() => { onGuardChange?.(providerDirty || Boolean(providerReview) || providerActionBusy, providerActionBusy, Boolean(providerReview)); }, [onGuardChange, providerDirty, providerReview, providerActionBusy]);
+  useEffect(() => {
+    onGuardChange?.(
+      providerDirty || Boolean(providerReview) || providerActionBusy,
+      providerActionBusy,
+      Boolean(providerReview),
+    );
+  }, [onGuardChange, providerDirty, providerReview, providerActionBusy]);
   const beginProviderAction = () => {
     if (providerInFlight.current || providerReview || probeBusy || probeReview) return false;
-    providerInFlight.current = true; setProviderActionBusy(true); return true;
+    providerInFlight.current = true;
+    setProviderActionBusy(true);
+    return true;
   };
-  const endProviderAction = () => { providerInFlight.current = false; if (mounted.current) setProviderActionBusy(false); };
+  const endProviderAction = () => {
+    providerInFlight.current = false;
+    if (mounted.current) setProviderActionBusy(false);
+  };
 
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const currentAccess = useRef({ principalId, canView: permissions.canViewProviderConfig });
   currentAccess.current = { principalId, canView: permissions.canViewProviderConfig };
 
@@ -192,7 +242,9 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
 
   // Email (Brevo) draft state — API key is kept strictly in ephemeral React state and wiped on submit
   const [emailDraftVersion, setEmailDraftVersion] = useState<number | null>(null);
-  const [emailProvider, setEmailProvider] = useState<'brevo' | 'resend' | 'none' | 'console'>('brevo');
+  const [emailProvider, setEmailProvider] = useState<'brevo' | 'resend' | 'none' | 'console'>(
+    'brevo',
+  );
   const [emailEnabled, setEmailEnabled] = useState(false);
   const [emailBaseUrl, setEmailBaseUrl] = useState('https://api.brevo.com');
   const [emailFromAddress, setEmailFromAddress] = useState('');
@@ -206,34 +258,64 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   const [emailDmarc, setEmailDmarc] = useState(false);
   const [emailReason, setEmailReason] = useState('');
   const [emailFormErrors, setEmailFormErrors] = useState<string[]>([]);
-  const [emailFeedback, setEmailFeedback] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [emailFeedback, setEmailFeedback] = useState<{ kind: 'ok' | 'err'; text: string } | null>(
+    null,
+  );
   const [emailBusy, setEmailBusy] = useState(false);
 
   // Email quick test-send state
   const [emailTestDest, setEmailTestDest] = useState('');
   const [emailTestConfirmed, setEmailTestConfirmed] = useState(false);
   const [emailTestBusy, setEmailTestBusy] = useState(false);
-  const [emailTestMsg, setEmailTestMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [emailTestMsg, setEmailTestMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(
+    null,
+  );
 
   // Governance queue state
   const [decisionComments, setDecisionComments] = useState<Record<string, string>>({});
   const [queueBusyId, setQueueBusyId] = useState<string | null>(null);
   const [queueBanner, setQueueBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [queueChannel, setQueueChannel] = useState('ALL');
-  const queueFilteringLocked = Boolean(providerReview || probeReview || providerActionBusy || probeBusy || queueBusyId || loading || Object.values(decisionComments).some(comment => comment.trim()));
-  useEffect(() => { if (queueFilteringLocked) setQueueChannel('ALL'); }, [queueFilteringLocked]);
-  const visibleProposals = queueFilteringLocked || queueChannel === 'ALL' ? proposals : proposals.filter(proposal => proposal.channel === queueChannel);
+  const queueFilteringLocked = Boolean(
+    providerReview ||
+      probeReview ||
+      providerActionBusy ||
+      probeBusy ||
+      queueBusyId ||
+      loading ||
+      Object.values(decisionComments).some((comment) => comment.trim()),
+  );
+  useEffect(() => {
+    if (queueFilteringLocked) setQueueChannel('ALL');
+  }, [queueFilteringLocked]);
+  const visibleProposals =
+    queueFilteringLocked || queueChannel === 'ALL'
+      ? proposals
+      : proposals.filter((proposal) => proposal.channel === queueChannel);
 
   useEffect(() => {
     // Drafts and write-only credentials must never cross principals or a revoked view scope.
-    setSmsApiKey(''); setEmailApiKey(''); setSmsSenderId(''); setSmsReason('');
-    setEmailFromAddress(''); setEmailFromName(''); setEmailReplyTo(''); setEmailReason('');
-    setSmsTestDest(''); setEmailTestDest(''); setSmsFeedback(null); setEmailFeedback(null);
-    setSmsTestMsg(null); setEmailTestMsg(null); setQueueBanner(null);
+    setSmsApiKey('');
+    setEmailApiKey('');
+    setSmsSenderId('');
+    setSmsReason('');
+    setEmailFromAddress('');
+    setEmailFromName('');
+    setEmailReplyTo('');
+    setEmailReason('');
+    setSmsTestDest('');
+    setEmailTestDest('');
+    setSmsFeedback(null);
+    setEmailFeedback(null);
+    setSmsTestMsg(null);
+    setEmailTestMsg(null);
+    setQueueBanner(null);
   }, [principalId, permissions.canViewProviderConfig]);
 
   const hydrateSms = useCallback((sms: ProviderChannelSnapshot) => {
-    setSmsDraftVersion(sms.version); setSmsApiKey(''); setSmsReason('');
+    setSmsDraftVersion(sms.version);
+    setSmsApiKey('');
+    setSmsReason('');
     setSmsProvider(sms.provider === 'console' ? 'console' : 'robase');
     setSmsEnabled(sms.source === 'DATABASE' ? sms.enabled : false);
     setSmsBaseUrl(sms.baseUrl || 'https://api.robase.dev');
@@ -243,7 +325,9 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   }, []);
 
   const hydrateEmail = useCallback((email: ProviderChannelSnapshot) => {
-    setEmailDraftVersion(email.version); setEmailApiKey(''); setEmailReason('');
+    setEmailDraftVersion(email.version);
+    setEmailApiKey('');
+    setEmailReason('');
     setEmailProvider(
       email.provider === 'resend' || email.provider === 'console' || email.provider === 'none'
         ? email.provider
@@ -264,7 +348,13 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
     setEmailDmarc(Boolean(email.domainAuthentication?.dmarcConfigured));
   }, []);
 
-  const hydrateFormsFromSnapshot = useCallback((data: ProviderConfigurationOverview) => { hydrateSms(data.sms); hydrateEmail(data.email); }, [hydrateSms, hydrateEmail]);
+  const hydrateFormsFromSnapshot = useCallback(
+    (data: ProviderConfigurationOverview) => {
+      hydrateSms(data.sms);
+      hydrateEmail(data.email);
+    },
+    [hydrateSms, hydrateEmail],
+  );
 
   const loadWorkspace = useCallback(
     async (rehydrateDrafts = false) => {
@@ -273,7 +363,10 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
         return;
       }
       const request = ++requestGeneration.current;
-      const valid = () => request === requestGeneration.current && currentAccess.current.canView && currentAccess.current.principalId === principalId;
+      const valid = () =>
+        request === requestGeneration.current &&
+        currentAccess.current.canView &&
+        currentAccess.current.principalId === principalId;
       setLoading(true);
       setLoadError(null);
       setProposalsError(null);
@@ -284,12 +377,17 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
         ]);
         if (!valid()) return;
         if (propResult.status === 'rejected') {
-          setProposals([]); setProposalsError(describeError(propResult.reason));
+          setProposals([]);
+          setProposalsError(describeError(propResult.reason));
         } else if (propResult.value.status === 'LIVE' && Array.isArray(propResult.value.data)) {
           setProposals(propResult.value.data);
         } else {
           setProposals([]);
-          setProposalsError(propResult.value.status === 'BLOCKED' ? propResult.value.message : 'Invalid provider proposals response.');
+          setProposalsError(
+            propResult.value.status === 'BLOCKED'
+              ? propResult.value.message
+              : 'Invalid provider proposals response.',
+          );
         }
         if (cfgResult.status === 'rejected') throw cfgResult.reason;
         const cfgRes = cfgResult.value;
@@ -297,11 +395,30 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           setLoadError(cfgRes.message);
           setOverview(null);
         } else {
-          const validSnapshot = (snapshot: ProviderChannelSnapshot | undefined, channel: ManagedProviderChannel) =>
-            snapshot && snapshot.channel === channel && Number.isSafeInteger(snapshot.version) && snapshot.version >= 0 &&
-            typeof snapshot.provider === 'string' && typeof snapshot.enabled === 'boolean' && snapshot.gates &&
-            ['configured', 'verified', 'enabled', 'deliveryTested', 'productionReady'].every(gate => typeof snapshot.gates[gate as keyof ProviderChannelSnapshot['gates']] === 'boolean');
-          if (!validSnapshot(cfgRes.data?.sms, 'SMS') || !validSnapshot(cfgRes.data?.email, 'EMAIL') || !cfgRes.data?.encryption || typeof cfgRes.data.encryption.available !== 'boolean' || !cfgRes.data?.contracts || !cfgRes.data?.worker) throw new Error('Invalid provider configuration response.');
+          const validSnapshot = (
+            snapshot: ProviderChannelSnapshot | undefined,
+            channel: ManagedProviderChannel,
+          ) =>
+            snapshot &&
+            snapshot.channel === channel &&
+            Number.isSafeInteger(snapshot.version) &&
+            snapshot.version >= 0 &&
+            typeof snapshot.provider === 'string' &&
+            typeof snapshot.enabled === 'boolean' &&
+            snapshot.gates &&
+            ['configured', 'verified', 'enabled', 'deliveryTested', 'productionReady'].every(
+              (gate) =>
+                typeof snapshot.gates[gate as keyof ProviderChannelSnapshot['gates']] === 'boolean',
+            );
+          if (
+            !validSnapshot(cfgRes.data?.sms, 'SMS') ||
+            !validSnapshot(cfgRes.data?.email, 'EMAIL') ||
+            !cfgRes.data?.encryption ||
+            typeof cfgRes.data.encryption.available !== 'boolean' ||
+            !cfgRes.data?.contracts ||
+            !cfgRes.data?.worker
+          )
+            throw new Error('Invalid provider configuration response.');
           setOverview(cfgRes.data);
           if (rehydrateDrafts) {
             hydrateFormsFromSnapshot(cfgRes.data);
@@ -318,12 +435,24 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
 
   useEffect(() => {
     void loadWorkspace(true);
-    return () => { requestGeneration.current += 1; };
+    return () => {
+      requestGeneration.current += 1;
+    };
   }, [loadWorkspace]);
 
   const handleSubmitSmsProposal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!overview || !permissions.canProposeProviderConfig || !permissions.hasMfaAssurance || smsBusy || providerReview || providerInFlight.current || probeBusy || smsDraftVersion !== overview.sms.version) return;
+    if (
+      !overview ||
+      !permissions.canProposeProviderConfig ||
+      !permissions.hasMfaAssurance ||
+      smsBusy ||
+      providerReview ||
+      providerInFlight.current ||
+      probeBusy ||
+      smsDraftVersion !== overview.sms.version
+    )
+      return;
     setSmsFeedback(null);
 
     const payload: ProposeProviderConfigPayload = {
@@ -345,10 +474,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       payload,
       overview.sms.hasStoredCredential,
     );
-    if (
-      payload.credentialAction === 'SET_ENCRYPTED' &&
-      !overview.encryption.available
-    ) {
+    if (payload.credentialAction === 'SET_ENCRYPTED' && !overview.encryption.available) {
       validationErrors.push(
         'Server encryption key is not configured (set NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON or NOTIFICATION_PROVIDER_ENCRYPTION_KEY on the server before storing encrypted credentials).',
       );
@@ -356,13 +482,19 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
     setSmsFormErrors(validationErrors);
     if (validationErrors.length > 0) return;
 
-    if (!window.confirm(`Submit the SMS provider proposal for ${payload.provider} (${payload.enabled ? 'enabled' : 'disabled'}), based on version ${payload.expectedVersion}? The proposal requires independent approval before activation.`)) return;
+    if (
+      !window.confirm(
+        `Submit the SMS provider proposal for ${payload.provider} (${payload.enabled ? 'enabled' : 'disabled'}), based on version ${payload.expectedVersion}? The proposal requires independent approval before activation.`,
+      )
+    )
+      return;
     if (!beginProviderAction()) return;
     setSmsBusy(true);
     try {
       const created = await NotificationManagementApi.proposeProviderConfig(payload);
       if (!mounted.current) return;
-      if (!matchesProposalReceipt(created, payload, principalId)) throw new Error('Proposal receipt did not match the requested change');
+      if (!matchesProposalReceipt(created, payload, principalId))
+        throw new Error('Proposal receipt did not match the requested change');
       setSmsApiKey('');
       setSmsReason('');
       setSmsFeedback({
@@ -371,16 +503,35 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       });
       await loadWorkspace(false);
     } catch (err) {
-      if (mounted.current) { setProviderReview('SMS proposal'); setSmsFeedback({ kind: 'err', text: 'Proposal outcome not confirmed. Check the proposal queue and audit record before retrying.' }); }
+      if (mounted.current) {
+        setProviderReview('SMS proposal');
+        setSmsFeedback({
+          kind: 'err',
+          text: 'Proposal outcome not confirmed. Check the proposal queue and audit record before retrying.',
+        });
+      }
     } finally {
       endProviderAction();
-      if (mounted.current) { setSmsApiKey(''); setSmsBusy(false); }
+      if (mounted.current) {
+        setSmsApiKey('');
+        setSmsBusy(false);
+      }
     }
   };
 
   const handleSubmitEmailProposal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!overview || !permissions.canProposeProviderConfig || !permissions.hasMfaAssurance || emailBusy || providerReview || providerInFlight.current || probeBusy || emailDraftVersion !== overview.email.version) return;
+    if (
+      !overview ||
+      !permissions.canProposeProviderConfig ||
+      !permissions.hasMfaAssurance ||
+      emailBusy ||
+      providerReview ||
+      providerInFlight.current ||
+      probeBusy ||
+      emailDraftVersion !== overview.email.version
+    )
+      return;
     setEmailFeedback(null);
 
     const isExternal = emailProvider === 'brevo' || emailProvider === 'resend';
@@ -395,9 +546,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       fromName: isExternal ? emailFromName.trim() || null : null,
       replyToEmail: isExternal && emailReplyTo.trim() ? emailReplyTo.trim() : null,
       credentialAction: isExternal ? emailCredAction : 'CLEAR',
-      ...(isExternal && emailCredAction === 'SET_ENCRYPTED'
-        ? { apiKey: emailApiKey.trim() }
-        : {}),
+      ...(isExternal && emailCredAction === 'SET_ENCRYPTED' ? { apiKey: emailApiKey.trim() } : {}),
       spfConfigured: Boolean(emailSpf),
       dkimConfigured: Boolean(emailDkim),
       dmarcConfigured: Boolean(emailDmarc),
@@ -408,10 +557,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       payload,
       overview.email.hasStoredCredential,
     );
-    if (
-      payload.credentialAction === 'SET_ENCRYPTED' &&
-      !overview.encryption.available
-    ) {
+    if (payload.credentialAction === 'SET_ENCRYPTED' && !overview.encryption.available) {
       validationErrors.push(
         'Server encryption key is not configured (set NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON or NOTIFICATION_PROVIDER_ENCRYPTION_KEY on the server before storing encrypted credentials).',
       );
@@ -419,13 +565,19 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
     setEmailFormErrors(validationErrors);
     if (validationErrors.length > 0) return;
 
-    if (!window.confirm(`Submit the EMAIL provider proposal for ${payload.provider} (${payload.enabled ? 'enabled' : 'disabled'}), based on version ${payload.expectedVersion}? The proposal requires independent approval before activation.`)) return;
+    if (
+      !window.confirm(
+        `Submit the EMAIL provider proposal for ${payload.provider} (${payload.enabled ? 'enabled' : 'disabled'}), based on version ${payload.expectedVersion}? The proposal requires independent approval before activation.`,
+      )
+    )
+      return;
     if (!beginProviderAction()) return;
     setEmailBusy(true);
     try {
       const created = await NotificationManagementApi.proposeProviderConfig(payload);
       if (!mounted.current) return;
-      if (!matchesProposalReceipt(created, payload, principalId)) throw new Error('Proposal receipt did not match the requested change');
+      if (!matchesProposalReceipt(created, payload, principalId))
+        throw new Error('Proposal receipt did not match the requested change');
       setEmailApiKey('');
       setEmailReason('');
       setEmailFeedback({
@@ -434,16 +586,39 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       });
       await loadWorkspace(false);
     } catch (err) {
-      if (mounted.current) { setProviderReview('Email proposal'); setEmailFeedback({ kind: 'err', text: 'Proposal outcome not confirmed. Check the proposal queue and audit record before retrying.' }); }
+      if (mounted.current) {
+        setProviderReview('Email proposal');
+        setEmailFeedback({
+          kind: 'err',
+          text: 'Proposal outcome not confirmed. Check the proposal queue and audit record before retrying.',
+        });
+      }
     } finally {
       endProviderAction();
-      if (mounted.current) { setEmailApiKey(''); setEmailBusy(false); }
+      if (mounted.current) {
+        setEmailApiKey('');
+        setEmailBusy(false);
+      }
     }
   };
 
   const handleVerifyChannel = async (channel: ManagedProviderChannel) => {
-    if (!permissions.canTestSend || !overview || providerReview || providerInFlight.current || probeBusy || probeReview) return;
-    if (!window.confirm(`Verify the current ${channel} provider configuration? This may contact the provider and update verification state.`) || !beginProviderAction()) return;
+    if (
+      !permissions.canTestSend ||
+      !overview ||
+      providerReview ||
+      providerInFlight.current ||
+      probeBusy ||
+      probeReview
+    )
+      return;
+    if (
+      !window.confirm(
+        `Verify the current ${channel} provider configuration? This may contact the provider and update verification state.`,
+      ) ||
+      !beginProviderAction()
+    )
+      return;
     const setFeedback = channel === 'SMS' ? setSmsFeedback : setEmailFeedback;
     const setBusy = channel === 'SMS' ? setSmsBusy : setEmailBusy;
     setFeedback(null);
@@ -451,7 +626,18 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
     try {
       const res = await NotificationManagementApi.verifyProviderChannel(channel);
       if (!mounted.current) return;
-      if (!res || res.channel !== channel || typeof res.verified !== 'boolean' || res.snapshot?.channel !== channel || res.provider !== overview[channel === 'SMS' ? 'sms' : 'email'].provider || res.snapshot.provider !== res.provider || res.snapshot.version !== overview[channel === 'SMS' ? 'sms' : 'email'].version) throw new Error('Verification result is not confirmed. Refresh the provider configuration before retrying.');
+      if (
+        !res ||
+        res.channel !== channel ||
+        typeof res.verified !== 'boolean' ||
+        res.snapshot?.channel !== channel ||
+        res.provider !== overview[channel === 'SMS' ? 'sms' : 'email'].provider ||
+        res.snapshot.provider !== res.provider ||
+        res.snapshot.version !== overview[channel === 'SMS' ? 'sms' : 'email'].version
+      )
+        throw new Error(
+          'Verification result is not confirmed. Refresh the provider configuration before retrying.',
+        );
       if (res.verified) {
         setFeedback({
           kind: 'ok',
@@ -466,7 +652,13 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       await loadWorkspace(false);
       if (mounted.current) onRefreshParentStatus?.();
     } catch (err) {
-      if (mounted.current) { setProviderReview(`${channel} verification`); setFeedback({ kind: 'err', text: `Verification outcome not confirmed. ${describeError(err)}` }); }
+      if (mounted.current) {
+        setProviderReview(`${channel} verification`);
+        setFeedback({
+          kind: 'err',
+          text: `Verification outcome not confirmed. ${describeError(err)}`,
+        });
+      }
     } finally {
       endProviderAction();
       if (mounted.current) setBusy(false);
@@ -474,7 +666,14 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   };
 
   const handleQuickTestSend = async (channel: ManagedProviderChannel) => {
-    if (!permissions.canTestSend || probeBusy || probeReview || providerInFlight.current || providerReview) return;
+    if (
+      !permissions.canTestSend ||
+      probeBusy ||
+      probeReview ||
+      providerInFlight.current ||
+      providerReview
+    )
+      return;
     const rawDest = channel === 'SMS' ? smsTestDest : emailTestDest;
     const confirmed = channel === 'SMS' ? smsTestConfirmed : emailTestConfirmed;
     const setBusy = channel === 'SMS' ? setSmsTestBusy : setEmailTestBusy;
@@ -520,12 +719,19 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
         destination,
         workforceDestinationConfirmed: true,
       });
-      if (outcome.status === 'BLOCKED' || (outcome.status === 'LIVE' && outcome.data.status === 'FAILED')) uncertain = true;
+      if (
+        outcome.status === 'BLOCKED' ||
+        (outcome.status === 'LIVE' && outcome.data.status === 'FAILED')
+      )
+        uncertain = true;
       if (!mounted.current) return;
       if (outcome.status === 'BLOCKED') {
         setMsg({ kind: 'err', text: outcome.message });
       } else if (outcome.data.status === 'SENT' && outcome.data.provider === 'console') {
-        setMsg({ kind: 'ok', text: `${channel} console test was simulated. No live provider delivery was confirmed.` });
+        setMsg({
+          kind: 'ok',
+          text: `${channel} console test was simulated. No live provider delivery was confirmed.`,
+        });
       } else if (outcome.data.status === 'SENT') {
         setMsg({
           kind: 'ok',
@@ -540,9 +746,13 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       await loadWorkspace(false);
       if (mounted.current) onRefreshParentStatus?.();
     } catch (err) {
-      const status = (err as {status?: number})?.status;
+      const status = (err as { status?: number })?.status;
       uncertain = status !== 400 && status !== 403 && status !== 422 && status !== 429;
-      if (mounted.current) setMsg({ kind: 'err', text: `Test-send outcome not confirmed. Check authorized audit and provider records before retrying. ${describeError(err)}` });
+      if (mounted.current)
+        setMsg({
+          kind: 'err',
+          text: `Test-send outcome not confirmed. Check authorized audit and provider records before retrying. ${describeError(err)}`,
+        });
     } finally {
       finishProbe?.(channel, uncertain);
       if (mounted.current) setBusy(false);
@@ -553,25 +763,68 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
     proposal: ProviderConfigProposal,
     action: 'approve' | 'reject' | 'activate',
   ) => {
-    if (queueInFlight.current || providerInFlight.current || providerReview || probeBusy || loading || proposalsError || !proposals.some(item => item.id === proposal.id && item.status === proposal.status) || !permissions.hasMfaAssurance || (action === 'activate' ? !permissions.canActivateProviderConfig || proposal.status !== 'APPROVED' : !permissions.canApproveProviderConfig || proposal.status !== 'REQUESTED' || principalId === proposal.proposerPrincipalId)) return;
-    if (!window.confirm(`${action.toUpperCase()} ${proposal.channel} provider proposal ${proposal.id} for ${proposal.proposedProvider} (base version ${proposal.expectedVersion})?`) || !beginProviderAction()) return;
+    if (
+      queueInFlight.current ||
+      providerInFlight.current ||
+      providerReview ||
+      probeBusy ||
+      loading ||
+      proposalsError ||
+      !proposals.some((item) => item.id === proposal.id && item.status === proposal.status) ||
+      !permissions.hasMfaAssurance ||
+      (action === 'activate'
+        ? !permissions.canActivateProviderConfig || proposal.status !== 'APPROVED'
+        : !permissions.canApproveProviderConfig ||
+          proposal.status !== 'REQUESTED' ||
+          principalId === proposal.proposerPrincipalId)
+    )
+      return;
+    if (
+      !window.confirm(
+        `${action.toUpperCase()} ${proposal.channel} provider proposal ${proposal.id} for ${proposal.proposedProvider} (base version ${proposal.expectedVersion})?`,
+      ) ||
+      !beginProviderAction()
+    )
+      return;
     queueInFlight.current = true;
     setQueueBanner(null);
     setQueueBusyId(proposal.id);
     try {
       const comment = decisionComments[proposal.id]?.trim();
       if (action === 'approve') {
-        const receipt = await NotificationManagementApi.approveProviderConfigProposal(proposal.id, comment);
+        const receipt = await NotificationManagementApi.approveProviderConfigProposal(
+          proposal.id,
+          comment,
+        );
         if (!mounted.current) return;
-        if (!receipt || receipt.id !== proposal.id || receipt.channel !== proposal.channel || receipt.status !== 'APPROVED' || receipt.decidedBy !== principalId || !receipt.decidedAt) throw new Error('Approval receipt did not match the proposal');
+        if (
+          !receipt ||
+          receipt.id !== proposal.id ||
+          receipt.channel !== proposal.channel ||
+          receipt.status !== 'APPROVED' ||
+          receipt.decidedBy !== principalId ||
+          !receipt.decidedAt
+        )
+          throw new Error('Approval receipt did not match the proposal');
         setQueueBanner({
           kind: 'ok',
           text: `Proposal ${proposal.id.slice(0, 8)} (${proposal.channel}) approved. Ready for governed activation.`,
         });
       } else if (action === 'reject') {
-        const receipt = await NotificationManagementApi.rejectProviderConfigProposal(proposal.id, comment);
+        const receipt = await NotificationManagementApi.rejectProviderConfigProposal(
+          proposal.id,
+          comment,
+        );
         if (!mounted.current) return;
-        if (!receipt || receipt.id !== proposal.id || receipt.channel !== proposal.channel || receipt.status !== 'REJECTED' || receipt.decidedBy !== principalId || !receipt.decidedAt) throw new Error('Rejection receipt did not match the proposal');
+        if (
+          !receipt ||
+          receipt.id !== proposal.id ||
+          receipt.channel !== proposal.channel ||
+          receipt.status !== 'REJECTED' ||
+          receipt.decidedBy !== principalId ||
+          !receipt.decidedAt
+        )
+          throw new Error('Rejection receipt did not match the proposal');
         setQueueBanner({
           kind: 'ok',
           text: `Proposal ${proposal.id.slice(0, 8)} (${proposal.channel}) rejected.`,
@@ -579,7 +832,19 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       } else {
         const res = await NotificationManagementApi.activateProviderConfigProposal(proposal.id);
         if (!mounted.current) return;
-        if (!res || res.proposal?.id !== proposal.id || res.proposal.channel !== proposal.channel || res.proposal.status !== 'ACTIVATED' || res.proposal.activatedBy !== principalId || !res.proposal.activatedAt || res.configuration?.channel !== proposal.channel || res.configuration.provider !== proposal.proposedProvider || !Number.isSafeInteger(res.configuration.version) || res.proposal.resultingVersion !== res.configuration.version) throw new Error('Activation receipt did not match the proposal and configuration');
+        if (
+          !res ||
+          res.proposal?.id !== proposal.id ||
+          res.proposal.channel !== proposal.channel ||
+          res.proposal.status !== 'ACTIVATED' ||
+          res.proposal.activatedBy !== principalId ||
+          !res.proposal.activatedAt ||
+          res.configuration?.channel !== proposal.channel ||
+          res.configuration.provider !== proposal.proposedProvider ||
+          !Number.isSafeInteger(res.configuration.version) ||
+          res.proposal.resultingVersion !== res.configuration.version
+        )
+          throw new Error('Activation receipt did not match the proposal and configuration');
         setQueueBanner({
           kind: 'ok',
           text: `Activated ${res.configuration.channel} provider "${res.configuration.provider}" (v${res.configuration.version}, state: ${res.configuration.lifecycleState}).`,
@@ -588,7 +853,13 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       await loadWorkspace(false);
       if (mounted.current) onRefreshParentStatus?.();
     } catch (err) {
-      if (mounted.current) { setProviderReview(`${proposal.channel} ${action} ${proposal.id}`); setQueueBanner({ kind: 'err', text: `Outcome not confirmed. Check the proposal and current configuration before retrying. ${describeError(err)}` }); }
+      if (mounted.current) {
+        setProviderReview(`${proposal.channel} ${action} ${proposal.id}`);
+        setQueueBanner({
+          kind: 'err',
+          text: `Outcome not confirmed. Check the proposal and current configuration before retrying. ${describeError(err)}`,
+        });
+      }
     } finally {
       queueInFlight.current = false;
       endProviderAction();
@@ -597,17 +868,65 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   };
 
   const discardProviderDrafts = () => {
-    setSmsApiKey(''); setEmailApiKey(''); setSmsReason(''); setEmailReason('');
-    setSmsTestDest(''); setEmailTestDest(''); setSmsTestConfirmed(false); setEmailTestConfirmed(false);
-    setDecisionComments({}); setSmsFeedback(null); setEmailFeedback(null);
+    setSmsApiKey('');
+    setEmailApiKey('');
+    setSmsReason('');
+    setEmailReason('');
+    setSmsTestDest('');
+    setEmailTestDest('');
+    setSmsTestConfirmed(false);
+    setEmailTestConfirmed(false);
+    setDecisionComments({});
+    setSmsFeedback(null);
+    setEmailFeedback(null);
     if (overview) hydrateFormsFromSnapshot(overview);
     else {
-      setSmsDraftVersion(null); setSmsProvider('robase'); setSmsEnabled(false); setSmsBaseUrl('https://api.robase.dev'); setSmsSenderId('MonieNaija'); setSmsTimeoutMs(10000); setSmsCredAction('SET_ENCRYPTED');
-      setEmailDraftVersion(null); setEmailProvider('brevo'); setEmailEnabled(false); setEmailBaseUrl('https://api.brevo.com'); setEmailFromAddress(''); setEmailFromName('MonieNaija'); setEmailReplyTo(''); setEmailTimeoutMs(10000); setEmailCredAction('SET_ENCRYPTED'); setEmailSpf(false); setEmailDkim(false); setEmailDmarc(false);
+      setSmsDraftVersion(null);
+      setSmsProvider('robase');
+      setSmsEnabled(false);
+      setSmsBaseUrl('https://api.robase.dev');
+      setSmsSenderId('MonieNaija');
+      setSmsTimeoutMs(10000);
+      setSmsCredAction('SET_ENCRYPTED');
+      setEmailDraftVersion(null);
+      setEmailProvider('brevo');
+      setEmailEnabled(false);
+      setEmailBaseUrl('https://api.brevo.com');
+      setEmailFromAddress('');
+      setEmailFromName('MonieNaija');
+      setEmailReplyTo('');
+      setEmailTimeoutMs(10000);
+      setEmailCredAction('SET_ENCRYPTED');
+      setEmailSpf(false);
+      setEmailDkim(false);
+      setEmailDmarc(false);
     }
     setProviderDirty(false);
   };
-  const reviewNotice = providerReview && <div role="alert" data-testid="provider-review-lock">{providerReview} outcome requires independent review. Review provider configuration, proposal, approval and audit records before another action; a fresh read or absent entry cannot exclude a late commit. This local safeguard is lost on exit or session change. <button type="button" disabled={providerActionBusy || probeBusy} onClick={() => { if (window.confirm('Have you independently reviewed the provider configuration, proposal, approval and audit records, including a possible late commit? This discards provider drafts and credentials.')) { discardProviderDrafts(); setProviderReview(null); void loadWorkspace(true); } }}>Acknowledge independent provider review</button></div>;
+  const reviewNotice = providerReview && (
+    <div role="alert" data-testid="provider-review-lock">
+      {providerReview} outcome requires independent review. Review provider configuration, proposal,
+      approval and audit records before another action; a fresh read or absent entry cannot exclude
+      a late commit. This local safeguard is lost on exit or session change.{' '}
+      <button
+        type="button"
+        disabled={providerActionBusy || probeBusy}
+        onClick={() => {
+          if (
+            window.confirm(
+              'Have you independently reviewed the provider configuration, proposal, approval and audit records, including a possible late commit? This discards provider drafts and credentials.',
+            )
+          ) {
+            discardProviderDrafts();
+            setProviderReview(null);
+            void loadWorkspace(true);
+          }
+        }}
+      >
+        Acknowledge independent provider review
+      </button>
+    </div>
+  );
 
   if (!permissions.canViewProviderConfig) {
     return (
@@ -629,7 +948,10 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
 
   if (loading) {
     return (
-      <div data-testid="provider-config-loading" style={{ padding: 20, color: 'var(--mn-text-secondary, #52655f)' }}>
+      <div
+        data-testid="provider-config-loading"
+        style={{ padding: 20, color: 'var(--mn-text-secondary, #52655f)' }}
+      >
         {reviewNotice} Loading governed SMS (Robase) and Email (Brevo) provider configuration…
       </div>
     );
@@ -647,9 +969,16 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           color: '#92400e',
         }}
       >
-        {reviewNotice}<strong>Provider Configuration Unavailable:</strong> {loadError}
-        {overview && <p>Previously loaded configuration is not current. Draft values remain in this workspace.</p>}
-        <button type="button" onClick={() => void loadWorkspace(false)}>Retry configuration</button>
+        {reviewNotice}
+        <strong>Provider Configuration Unavailable:</strong> {loadError}
+        {overview && (
+          <p>
+            Previously loaded configuration is not current. Draft values remain in this workspace.
+          </p>
+        )}
+        <button type="button" onClick={() => void loadWorkspace(false)}>
+          Retry configuration
+        </button>
       </div>
     );
   }
@@ -660,11 +989,20 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   const emailVisual = lifecycleBadgeVisual(overview.email.lifecycleState);
 
   return (
-    <div className="mn-provider-workspace" data-testid="provider-config-workspace" onChange={() => setProviderDirty(true)} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div
+      className="mn-provider-workspace"
+      data-testid="provider-config-workspace"
+      onChange={() => setProviderDirty(true)}
+      style={{ display: 'flex', flexDirection: 'column', gap: 20 }}
+    >
       <header className="mn-provider-intro">
         <p className="mn-provider-kicker">PROVIDER GOVERNANCE</p>
         <h2>Provider configuration</h2>
-        <p>Review the loaded configuration and readiness gates, prepare a version-bound proposal, and inspect the separate approval queue. Opening this workspace does not verify connections, send tests, or start workers.</p>
+        <p>
+          Review the loaded configuration and readiness gates, prepare a version-bound proposal, and
+          inspect the separate approval queue. Opening this workspace does not verify connections,
+          send tests, or start workers.
+        </p>
         <nav aria-label="Provider configuration sections">
           <a href="#provider-sms">SMS configuration</a>
           <a href="#provider-email">Email configuration</a>
@@ -672,7 +1010,25 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
         </nav>
       </header>
       {reviewNotice}
-      {providerDirty && <p>Provider drafts and credentials are retained across sections. <button type="button" disabled={providerActionBusy || probeBusy || Boolean(providerReview)} onClick={() => { if (window.confirm('Discard provider drafts, checker notes and any entered credentials?')) discardProviderDrafts(); }}>Discard provider drafts</button></p>}
+      {providerDirty && (
+        <p>
+          Provider drafts and credentials are retained across sections.{' '}
+          <button
+            type="button"
+            disabled={providerActionBusy || probeBusy || Boolean(providerReview)}
+            onClick={() => {
+              if (
+                window.confirm(
+                  'Discard provider drafts, checker notes and any entered credentials?',
+                )
+              )
+                discardProviderDrafts();
+            }}
+          >
+            Discard provider drafts
+          </button>
+        </p>
+      )}
       {/* Top Governance & Server Encryption Key Health Banner */}
       <div
         data-testid="provider-encryption-banner"
@@ -689,7 +1045,13 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
         }}
       >
         <div>
-          <div style={{ fontWeight: 700, fontSize: 14, color: overview.encryption.available ? '#166534' : '#991b1b' }}>
+          <div
+            style={{
+              fontWeight: 700,
+              fontSize: 14,
+              color: overview.encryption.available ? '#166534' : '#991b1b',
+            }}
+          >
             {overview.encryption.available
               ? `AES-256-GCM Secret Encryption Active (${overview.encryption.mode}, key version "${overview.encryption.activeKeyVersion}")`
               : 'Server Secret Encryption Key Not Configured — Credential Storage Fail-Closed'}
@@ -728,7 +1090,10 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       >
         {/* ==================== SMS (ROBASE) PANEL ==================== */}
         <section
-          id="provider-sms" tabIndex={-1} className="mn-provider-panel" aria-label="SMS provider configuration"
+          id="provider-sms"
+          tabIndex={-1}
+          className="mn-provider-panel"
+          aria-label="SMS provider configuration"
           data-testid="sms-provider-config-panel"
           style={{
             background: '#ffffff',
@@ -740,12 +1105,23 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
             gap: 14,
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              gap: 10,
+              flexWrap: 'wrap',
+            }}
+          >
             <div>
               <p className="mn-provider-kicker">01 · CHANNEL CONFIGURATION</p>
-              <h3 style={{ margin: 0, fontSize: 16, color: '#0f172a' }}>SMS Provider Configuration (Robase)</h3>
+              <h3 style={{ margin: 0, fontSize: 16, color: '#0f172a' }}>
+                SMS Provider Configuration (Robase)
+              </h3>
               <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                Source: <strong>{overview.sms.source}</strong> · Version: <strong>v{overview.sms.version}</strong>
+                Source: <strong>{overview.sms.source}</strong> · Version:{' '}
+                <strong>v{overview.sms.version}</strong>
               </div>
             </div>
             <span
@@ -764,10 +1140,15 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
             </span>
           </div>
 
-          <div style={{ fontSize: 12, color: 'var(--mn-text-secondary, #52655f)' }}>{smsVisual.summary}</div>
+          <div style={{ fontSize: 12, color: 'var(--mn-text-secondary, #52655f)' }}>
+            {smsVisual.summary}
+          </div>
 
           {/* 5-Gate Readiness Strip */}
-          <div data-testid="sms-readiness-gates" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <div
+            data-testid="sms-readiness-gates"
+            style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}
+          >
             {GATE_LABELS.map((g) => {
               const passed = overview.sms.gates[g.key];
               return (
@@ -792,7 +1173,8 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           </div>
 
           {/* Non-Secret Active SMS Summary */}
-          <div className="mn-provider-summary"
+          <div
+            className="mn-provider-summary"
             style={{
               padding: 12,
               borderRadius: 8,
@@ -814,8 +1196,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
               </strong>
             </div>
             <div>
-              <strong>API Endpoint:</strong>{' '}
-              <code>{overview.sms.baseUrl || 'n/a (console)'}</code>
+              <strong>API Endpoint:</strong> <code>{overview.sms.baseUrl || 'n/a (console)'}</code>
             </div>
             <div>
               <strong>Stored Key Fingerprint:</strong>{' '}
@@ -834,13 +1215,31 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           </div>
 
           {overview.sms.misconfigurationCode && (
-            <div style={{ padding: 10, borderRadius: 6, background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: 12 }}>
+            <div
+              style={{
+                padding: 10,
+                borderRadius: 6,
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                color: '#991b1b',
+                fontSize: 12,
+              }}
+            >
               <strong>Fail-Closed Reason:</strong> <code>{overview.sms.misconfigurationCode}</code>
             </div>
           )}
 
           {/* Robase Verified Contract Note */}
-          <div style={{ padding: 10, borderRadius: 6, background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e3a8a', fontSize: 12 }}>
+          <div
+            style={{
+              padding: 10,
+              borderRadius: 6,
+              background: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              color: '#1e3a8a',
+              fontSize: 12,
+            }}
+          >
             <strong>Robase Contract Note:</strong> {overview.contracts.robase.verifiedEndpoint}.{' '}
             {overview.contracts.robase.senderIdBehaviour}
           </div>
@@ -874,13 +1273,40 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
 
           {/* Verify + Quick Test-Send Controls */}
           {permissions.canTestSend && (
-            <div style={{ padding: 12, borderRadius: 8, border: '1px dashed #cbd5e1', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <strong style={{ fontSize: 12 }}>Connection Check & Controlled SMS Test-Send</strong>
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 8,
+                border: '1px dashed #cbd5e1',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <strong style={{ fontSize: 12 }}>
+                  Connection Check & Controlled SMS Test-Send
+                </strong>
                 <button
                   type="button"
                   data-testid="verify-sms-provider-btn"
-                  disabled={smsBusy || providerActionBusy || probeBusy || probeReview || Boolean(providerReview) || overview.sms.source !== 'DATABASE' || overview.sms.provider === 'console'}
+                  disabled={
+                    smsBusy ||
+                    providerActionBusy ||
+                    probeBusy ||
+                    probeReview ||
+                    Boolean(providerReview) ||
+                    overview.sms.source !== 'DATABASE' ||
+                    overview.sms.provider === 'console'
+                  }
                   onClick={() => void handleVerifyChannel('SMS')}
                   style={{
                     padding: '5px 10px',
@@ -896,21 +1322,40 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                   Verify SMS Config
                 </button>
               </div>
-              <label htmlFor="sms-provider-test-destination" className="mn-provider-field-label">Workforce phone for controlled test</label>
+              <label htmlFor="sms-provider-test-destination" className="mn-provider-field-label">
+                Workforce phone for controlled test
+              </label>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <input
                   id="sms-provider-test-destination"
                   type="text"
-                  data-testid="sms-quick-test-destination" disabled={probeBusy || providerActionBusy}
+                  data-testid="sms-quick-test-destination"
+                  disabled={probeBusy || providerActionBusy}
                   placeholder="+2348012345678 (workforce phone)"
                   value={smsTestDest}
-                  onChange={(e) => { setSmsTestDest(e.target.value); setSmsTestConfirmed(false); }}
-                  style={{ flex: 1, minWidth: 190, padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
+                  onChange={(e) => {
+                    setSmsTestDest(e.target.value);
+                    setSmsTestConfirmed(false);
+                  }}
+                  style={{
+                    flex: 1,
+                    minWidth: 190,
+                    padding: '6px 8px',
+                    borderRadius: 6,
+                    border: '1px solid #cbd5e1',
+                    fontSize: 12,
+                  }}
                 />
                 <button
                   type="button"
                   data-testid="sms-quick-test-send-btn"
-                  disabled={smsTestBusy || probeBusy || probeReview || providerActionBusy || Boolean(providerReview)}
+                  disabled={
+                    smsTestBusy ||
+                    probeBusy ||
+                    probeReview ||
+                    providerActionBusy ||
+                    Boolean(providerReview)
+                  }
                   onClick={() => void handleQuickTestSend('SMS')}
                   style={{
                     padding: '6px 12px',
@@ -926,10 +1371,19 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                   {smsTestBusy ? 'Sending…' : 'Send Test SMS'}
                 </button>
               </div>
-              <label style={{ fontSize: 11, color: 'var(--mn-text-secondary, #52655f)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label
+                style={{
+                  fontSize: 11,
+                  color: 'var(--mn-text-secondary, #52655f)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
                 <input
                   type="checkbox"
-                  data-testid="sms-quick-test-confirm" disabled={probeBusy || providerActionBusy}
+                  data-testid="sms-quick-test-confirm"
+                  disabled={probeBusy || providerActionBusy}
                   checked={smsTestConfirmed}
                   onChange={(e) => setSmsTestConfirmed(e.target.checked)}
                 />
@@ -950,206 +1404,312 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           )}
 
           {/* Governed SMS Proposal Form */}
-          <form className="mn-provider-proposal-form" aria-label="SMS provider proposal" onSubmit={(e) => void handleSubmitSmsProposal(e)} style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}><fieldset disabled={providerActionBusy || probeBusy} style={{ border: 0, padding: 0, margin: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
-              Propose SMS Provider Change (Maker-Checker + MFA)
-            </div>
-            <p className="mn-provider-form-hint">Draft changes do not alter active configuration. Changing provider or credential action clears a typed key.</p>
-
-            {!permissions.canProposeProviderConfig && (
-              <div style={{ fontSize: 12, color: '#64748b', background: '#f8fafc', padding: 8, borderRadius: 6 }}>
-                Read-only view: Proposing provider changes requires <code>SUPER_ADMIN</code> with{' '}
-                <code>notification.provider.configure</code> and step-up MFA.
+          <form
+            className="mn-provider-proposal-form"
+            aria-label="SMS provider proposal"
+            onSubmit={(e) => void handleSubmitSmsProposal(e)}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+              borderTop: '1px solid #e2e8f0',
+              paddingTop: 12,
+            }}
+          >
+            <fieldset
+              disabled={providerActionBusy || probeBusy}
+              style={{ border: 0, padding: 0, margin: 0 }}
+            >
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
+                Propose SMS Provider Change (Maker-Checker + MFA)
               </div>
-            )}
+              <p className="mn-provider-form-hint">
+                Draft changes do not alter active configuration. Changing provider or credential
+                action clears a typed key.
+              </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span>SMS Provider</span>
-                <select
-                  data-testid="sms-provider-select"
-                  value={smsProvider}
-                  disabled={!permissions.canProposeProviderConfig}
-                  onChange={(e) => {
-                    const val = e.target.value as 'robase' | 'console';
-                    if (val !== smsProvider) setSmsApiKey('');
-                    setSmsProvider(val);
-                    if (val === 'robase' && !overview.sms.hasStoredCredential) {
-                      setSmsCredAction('SET_ENCRYPTED');
-                    }
+              {!permissions.canProposeProviderConfig && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: '#64748b',
+                    background: '#f8fafc',
+                    padding: 8,
+                    borderRadius: 6,
                   }}
-                  style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
                 >
-                  <option value="robase">robase (Robase Live SMS API)</option>
-                  <option value="console">console (Dev/Test Simulation Only)</option>
-                </select>
-              </label>
+                  Read-only view: Proposing provider changes requires <code>SUPER_ADMIN</code> with{' '}
+                  <code>notification.provider.configure</code> and step-up MFA.
+                </div>
+              )}
 
-              <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span>Workspace Sender ID</span>
-                <input
-                  type="text"
-                  data-testid="sms-sender-id-input"
-                  value={smsSenderId}
-                  maxLength={11}
-                  disabled={!permissions.canProposeProviderConfig}
-                  onChange={(e) => setSmsSenderId(e.target.value)}
-                  placeholder="MonieNaija"
-                  style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
-                />
-              </label>
-            </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span>SMS Provider</span>
+                  <select
+                    data-testid="sms-provider-select"
+                    value={smsProvider}
+                    disabled={!permissions.canProposeProviderConfig}
+                    onChange={(e) => {
+                      const val = e.target.value as 'robase' | 'console';
+                      if (val !== smsProvider) setSmsApiKey('');
+                      setSmsProvider(val);
+                      if (val === 'robase' && !overview.sms.hasStoredCredential) {
+                        setSmsCredAction('SET_ENCRYPTED');
+                      }
+                    }}
+                    style={{
+                      padding: '6px 8px',
+                      borderRadius: 6,
+                      border: '1px solid #cbd5e1',
+                      fontSize: 12,
+                    }}
+                  >
+                    <option value="robase">robase (Robase Live SMS API)</option>
+                    <option value="console">console (Dev/Test Simulation Only)</option>
+                  </select>
+                </label>
 
-            {smsProvider === 'robase' && (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
+                <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span>Workspace Sender ID</span>
+                  <input
+                    type="text"
+                    data-testid="sms-sender-id-input"
+                    value={smsSenderId}
+                    maxLength={11}
+                    disabled={!permissions.canProposeProviderConfig}
+                    onChange={(e) => setSmsSenderId(e.target.value)}
+                    placeholder="MonieNaija"
+                    style={{
+                      padding: '6px 8px',
+                      borderRadius: 6,
+                      border: '1px solid #cbd5e1',
+                      fontSize: 12,
+                    }}
+                  />
+                </label>
+              </div>
+
+              {smsProvider === 'robase' && (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
+                    <label
+                      style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}
+                    >
+                      <span>Robase Base URL (Pinned HTTPS Origin)</span>
+                      <input
+                        type="url"
+                        data-testid="sms-base-url-input"
+                        value={smsBaseUrl}
+                        readOnly
+                        disabled={!permissions.canProposeProviderConfig}
+                        style={{
+                          padding: '6px 8px',
+                          borderRadius: 6,
+                          border: '1px solid #cbd5e1',
+                          background: '#f8fafc',
+                          fontSize: 12,
+                        }}
+                      />
+                    </label>
+                    <label
+                      style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}
+                    >
+                      <span>Timeout (ms)</span>
+                      <input
+                        type="number"
+                        min={1000}
+                        max={60000}
+                        value={smsTimeoutMs}
+                        disabled={!permissions.canProposeProviderConfig}
+                        onChange={(e) => setSmsTimeoutMs(Number(e.target.value))}
+                        style={{
+                          padding: '6px 8px',
+                          borderRadius: 6,
+                          border: '1px solid #cbd5e1',
+                          fontSize: 12,
+                        }}
+                      />
+                    </label>
+                  </div>
+
                   <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <span>Robase Base URL (Pinned HTTPS Origin)</span>
-                    <input
-                      type="url"
-                      data-testid="sms-base-url-input"
-                      value={smsBaseUrl}
-                      readOnly
+                    <span>Credential Action</span>
+                    <select
+                      data-testid="sms-credential-action-select"
+                      value={smsCredAction}
                       disabled={!permissions.canProposeProviderConfig}
+                      onChange={(e) => {
+                        setSmsApiKey('');
+                        setSmsCredAction(e.target.value as ProviderCredentialAction);
+                      }}
                       style={{
                         padding: '6px 8px',
                         borderRadius: 6,
                         border: '1px solid #cbd5e1',
-                        background: '#f8fafc',
                         fontSize: 12,
                       }}
-                    />
+                    >
+                      <option value="SET_ENCRYPTED">
+                        Set / Rotate Encrypted API Key (AES-256-GCM)
+                      </option>
+                      <option value="KEEP_EXISTING">Keep Existing Stored Credential</option>
+                      <option value="USE_ENV_SECRET">
+                        Use Server Environment Secret (ROBASE_API_KEY)
+                      </option>
+                      <option value="CLEAR">Clear Stored Credential (Requires Disabled)</option>
+                    </select>
                   </label>
-                  <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <span>Timeout (ms)</span>
-                    <input
-                      type="number"
-                      min={1000}
-                      max={60000}
-                      value={smsTimeoutMs}
-                      disabled={!permissions.canProposeProviderConfig}
-                      onChange={(e) => setSmsTimeoutMs(Number(e.target.value))}
-                      style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
-                    />
-                  </label>
+
+                  {smsCredAction === 'SET_ENCRYPTED' && (
+                    <label
+                      style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}
+                    >
+                      <span>Robase Live API Key (write-only; never echoed after save)</span>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        data-testid="sms-api-key-input"
+                        value={smsApiKey}
+                        disabled={!permissions.canProposeProviderConfig}
+                        onChange={(e) => setSmsApiKey(e.target.value)}
+                        placeholder="Enter Robase live API key (robe_...)"
+                        style={{
+                          padding: '6px 8px',
+                          borderRadius: 6,
+                          border: '1px solid #cbd5e1',
+                          fontSize: 12,
+                        }}
+                      />
+                    </label>
+                  )}
+                </>
+              )}
+
+              <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  data-testid="sms-enabled-checkbox"
+                  checked={smsEnabled}
+                  disabled={!permissions.canProposeProviderConfig}
+                  onChange={(e) => setSmsEnabled(e.target.checked)}
+                />
+                <span>Enable SMS Provider for Runtime Dispatch</span>
+              </label>
+
+              <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span>Governance Audit Reason (10–500 chars)</span>
+                <input
+                  type="text"
+                  data-testid="sms-reason-input"
+                  value={smsReason}
+                  disabled={!permissions.canProposeProviderConfig}
+                  onChange={(e) => setSmsReason(e.target.value)}
+                  placeholder="e.g. Configure Robase live key and stage SMS provider for connectivity verification"
+                  style={{
+                    padding: '6px 8px',
+                    borderRadius: 6,
+                    border: '1px solid #cbd5e1',
+                    fontSize: 12,
+                  }}
+                />
+              </label>
+
+              {smsFormErrors.length > 0 && (
+                <div
+                  data-testid="sms-form-errors"
+                  style={{
+                    padding: 10,
+                    borderRadius: 6,
+                    background: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    color: '#991b1b',
+                    fontSize: 12,
+                  }}
+                >
+                  {smsFormErrors.map((err, i) => (
+                    <div key={i}>• {err}</div>
+                  ))}
                 </div>
+              )}
 
-                <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <span>Credential Action</span>
-                  <select
-                    data-testid="sms-credential-action-select"
-                    value={smsCredAction}
-                    disabled={!permissions.canProposeProviderConfig}
-                    onChange={(e) => { setSmsApiKey(''); setSmsCredAction(e.target.value as ProviderCredentialAction); }}
-                    style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
+              {smsFeedback && (
+                <div
+                  data-testid="sms-proposal-feedback"
+                  style={{
+                    padding: 10,
+                    borderRadius: 6,
+                    background: smsFeedback.kind === 'ok' ? '#f0fdf4' : '#fef2f2',
+                    border: `1px solid ${smsFeedback.kind === 'ok' ? '#86efac' : '#fecaca'}`,
+                    color: smsFeedback.kind === 'ok' ? '#166534' : '#991b1b',
+                    fontSize: 12,
+                  }}
+                >
+                  {smsFeedback.text}
+                </div>
+              )}
+
+              {smsDraftVersion !== overview.sms.version && (
+                <div role="alert">
+                  SMS configuration changed since this draft was loaded. The draft is retained but
+                  cannot be submitted until reset and reviewed.{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('Discard the SMS provider draft and entered credential?'))
+                        hydrateSms(overview.sms);
+                    }}
                   >
-                    <option value="SET_ENCRYPTED">Set / Rotate Encrypted API Key (AES-256-GCM)</option>
-                    <option value="KEEP_EXISTING">Keep Existing Stored Credential</option>
-                    <option value="USE_ENV_SECRET">Use Server Environment Secret (ROBASE_API_KEY)</option>
-                    <option value="CLEAR">Clear Stored Credential (Requires Disabled)</option>
-                  </select>
-                </label>
-
-                {smsCredAction === 'SET_ENCRYPTED' && (
-                  <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <span>Robase Live API Key (write-only; never echoed after save)</span>
-                    <input
-                      type="password"
-                      autoComplete="new-password"
-                      data-testid="sms-api-key-input"
-                      value={smsApiKey}
-                      disabled={!permissions.canProposeProviderConfig}
-                      onChange={(e) => setSmsApiKey(e.target.value)}
-                      placeholder="Enter Robase live API key (robe_...)"
-                      style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
-                    />
-                  </label>
-                )}
-              </>
-            )}
-
-            <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                data-testid="sms-enabled-checkbox"
-                checked={smsEnabled}
-                disabled={!permissions.canProposeProviderConfig}
-                onChange={(e) => setSmsEnabled(e.target.checked)}
-              />
-              <span>Enable SMS Provider for Runtime Dispatch</span>
-            </label>
-
-            <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span>Governance Audit Reason (10–500 chars)</span>
-              <input
-                type="text"
-                data-testid="sms-reason-input"
-                value={smsReason}
-                disabled={!permissions.canProposeProviderConfig}
-                onChange={(e) => setSmsReason(e.target.value)}
-                placeholder="e.g. Configure Robase live key and stage SMS provider for connectivity verification"
-                style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
-              />
-            </label>
-
-            {smsFormErrors.length > 0 && (
-              <div data-testid="sms-form-errors" style={{ padding: 10, borderRadius: 6, background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: 12 }}>
-                {smsFormErrors.map((err, i) => (
-                  <div key={i}>• {err}</div>
-                ))}
-              </div>
-            )}
-
-            {smsFeedback && (
-              <div
-                data-testid="sms-proposal-feedback"
+                    Reset SMS draft from current configuration
+                  </button>
+                </div>
+              )}
+              <button
+                type="submit"
+                data-testid="submit-sms-proposal-btn"
+                disabled={
+                  !permissions.canProposeProviderConfig ||
+                  !permissions.hasMfaAssurance ||
+                  smsBusy ||
+                  providerActionBusy ||
+                  probeBusy ||
+                  probeReview ||
+                  Boolean(providerReview) ||
+                  smsDraftVersion !== overview.sms.version
+                }
                 style={{
-                  padding: 10,
+                  padding: '8px 14px',
                   borderRadius: 6,
-                  background: smsFeedback.kind === 'ok' ? '#f0fdf4' : '#fef2f2',
-                  border: `1px solid ${smsFeedback.kind === 'ok' ? '#86efac' : '#fecaca'}`,
-                  color: smsFeedback.kind === 'ok' ? '#166534' : '#991b1b',
+                  border: 'none',
+                  background:
+                    permissions.canProposeProviderConfig && permissions.hasMfaAssurance
+                      ? 'var(--mn-action-primary, #075b45)'
+                      : '#94a3b8',
+                  color: '#ffffff',
+                  fontWeight: 600,
                   fontSize: 12,
+                  cursor:
+                    permissions.canProposeProviderConfig && permissions.hasMfaAssurance
+                      ? 'pointer'
+                      : 'not-allowed',
                 }}
               >
-                {smsFeedback.text}
-              </div>
-            )}
-
-            {smsDraftVersion !== overview.sms.version && <div role="alert">SMS configuration changed since this draft was loaded. The draft is retained but cannot be submitted until reset and reviewed. <button type="button" onClick={() => { if (window.confirm('Discard the SMS provider draft and entered credential?')) hydrateSms(overview.sms); }}>Reset SMS draft from current configuration</button></div>}
-            <button
-              type="submit"
-              data-testid="submit-sms-proposal-btn"
-              disabled={!permissions.canProposeProviderConfig || !permissions.hasMfaAssurance || smsBusy || providerActionBusy || probeBusy || probeReview || Boolean(providerReview) || smsDraftVersion !== overview.sms.version}
-              style={{
-                padding: '8px 14px',
-                borderRadius: 6,
-                border: 'none',
-                background:
-                  permissions.canProposeProviderConfig && permissions.hasMfaAssurance
-                    ? 'var(--mn-action-primary, #075b45)'
-                    : '#94a3b8',
-                color: '#ffffff',
-                fontWeight: 600,
-                fontSize: 12,
-                cursor:
-                  permissions.canProposeProviderConfig && permissions.hasMfaAssurance
-                    ? 'pointer'
-                    : 'not-allowed',
-              }}
-            >
-              {smsBusy
-                ? 'Submitting SMS Proposal…'
-                : !permissions.hasMfaAssurance && permissions.canProposeProviderConfig
-                  ? 'MFA Required to Propose SMS Change'
-                  : 'Submit SMS Configuration Proposal'}
-            </button>
-          </fieldset></form>
+                {smsBusy
+                  ? 'Submitting SMS Proposal…'
+                  : !permissions.hasMfaAssurance && permissions.canProposeProviderConfig
+                    ? 'MFA Required to Propose SMS Change'
+                    : 'Submit SMS Configuration Proposal'}
+              </button>
+            </fieldset>
+          </form>
         </section>
 
         {/* ==================== EMAIL (BREVO) PANEL ==================== */}
         <section
-          id="provider-email" tabIndex={-1} className="mn-provider-panel" aria-label="Email provider configuration"
+          id="provider-email"
+          tabIndex={-1}
+          className="mn-provider-panel"
+          aria-label="Email provider configuration"
           data-testid="email-provider-config-panel"
           style={{
             background: '#ffffff',
@@ -1161,12 +1721,23 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
             gap: 14,
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              gap: 10,
+              flexWrap: 'wrap',
+            }}
+          >
             <div>
               <p className="mn-provider-kicker">02 · CHANNEL CONFIGURATION</p>
-              <h3 style={{ margin: 0, fontSize: 16, color: '#0f172a' }}>Transactional Email Configuration (Brevo)</h3>
+              <h3 style={{ margin: 0, fontSize: 16, color: '#0f172a' }}>
+                Transactional Email Configuration (Brevo)
+              </h3>
               <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                Source: <strong>{overview.email.source}</strong> · Version: <strong>v{overview.email.version}</strong>
+                Source: <strong>{overview.email.source}</strong> · Version:{' '}
+                <strong>v{overview.email.version}</strong>
               </div>
             </div>
             <span
@@ -1185,10 +1756,15 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
             </span>
           </div>
 
-          <div style={{ fontSize: 12, color: 'var(--mn-text-secondary, #52655f)' }}>{emailVisual.summary}</div>
+          <div style={{ fontSize: 12, color: 'var(--mn-text-secondary, #52655f)' }}>
+            {emailVisual.summary}
+          </div>
 
           {/* 5-Gate Readiness Strip */}
-          <div data-testid="email-readiness-gates" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <div
+            data-testid="email-readiness-gates"
+            style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}
+          >
             {GATE_LABELS.map((g) => {
               const passed = overview.email.gates[g.key];
               return (
@@ -1213,7 +1789,8 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           </div>
 
           {/* Non-Secret Active Email Summary */}
-          <div className="mn-provider-summary"
+          <div
+            className="mn-provider-summary"
             style={{
               padding: 12,
               borderRadius: 8,
@@ -1235,8 +1812,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
               </strong>
             </div>
             <div>
-              <strong>API Endpoint:</strong>{' '}
-              <code>{overview.email.baseUrl || 'n/a'}</code>
+              <strong>API Endpoint:</strong> <code>{overview.email.baseUrl || 'n/a'}</code>
             </div>
             <div>
               <strong>Stored Key Fingerprint:</strong>{' '}
@@ -1265,8 +1841,18 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           </div>
 
           {overview.email.misconfigurationCode && (
-            <div style={{ padding: 10, borderRadius: 6, background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: 12 }}>
-              <strong>Fail-Closed Reason:</strong> <code>{overview.email.misconfigurationCode}</code>
+            <div
+              style={{
+                padding: 10,
+                borderRadius: 6,
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                color: '#991b1b',
+                fontSize: 12,
+              }}
+            >
+              <strong>Fail-Closed Reason:</strong>{' '}
+              <code>{overview.email.misconfigurationCode}</code>
             </div>
           )}
 
@@ -1321,14 +1907,37 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
 
           {/* Verify + Quick Test-Send Controls */}
           {permissions.canTestSend && (
-            <div style={{ padding: 12, borderRadius: 8, border: '1px dashed #cbd5e1', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <strong style={{ fontSize: 12 }}>Brevo Connection Check & Controlled Email Test-Send</strong>
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 8,
+                border: '1px dashed #cbd5e1',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <strong style={{ fontSize: 12 }}>
+                  Brevo Connection Check & Controlled Email Test-Send
+                </strong>
                 <button
                   type="button"
                   data-testid="verify-email-provider-btn"
                   disabled={
-                    emailBusy || providerActionBusy || probeBusy || probeReview || Boolean(providerReview) ||
+                    emailBusy ||
+                    providerActionBusy ||
+                    probeBusy ||
+                    probeReview ||
+                    Boolean(providerReview) ||
                     overview.email.source !== 'DATABASE' ||
                     overview.email.provider === 'none' ||
                     overview.email.provider === 'console'
@@ -1348,21 +1957,40 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                   Verify Brevo Connection & Sender
                 </button>
               </div>
-              <label htmlFor="email-provider-test-destination" className="mn-provider-field-label">Workforce email for controlled test</label>
+              <label htmlFor="email-provider-test-destination" className="mn-provider-field-label">
+                Workforce email for controlled test
+              </label>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <input
                   id="email-provider-test-destination"
                   type="email"
-                  data-testid="email-quick-test-destination" disabled={probeBusy || providerActionBusy}
+                  data-testid="email-quick-test-destination"
+                  disabled={probeBusy || providerActionBusy}
                   placeholder="ops@monienaija.ng (workforce email)"
                   value={emailTestDest}
-                  onChange={(e) => { setEmailTestDest(e.target.value); setEmailTestConfirmed(false); }}
-                  style={{ flex: 1, minWidth: 190, padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
+                  onChange={(e) => {
+                    setEmailTestDest(e.target.value);
+                    setEmailTestConfirmed(false);
+                  }}
+                  style={{
+                    flex: 1,
+                    minWidth: 190,
+                    padding: '6px 8px',
+                    borderRadius: 6,
+                    border: '1px solid #cbd5e1',
+                    fontSize: 12,
+                  }}
                 />
                 <button
                   type="button"
                   data-testid="email-quick-test-send-btn"
-                  disabled={emailTestBusy || probeBusy || probeReview || providerActionBusy || Boolean(providerReview)}
+                  disabled={
+                    emailTestBusy ||
+                    probeBusy ||
+                    probeReview ||
+                    providerActionBusy ||
+                    Boolean(providerReview)
+                  }
                   onClick={() => void handleQuickTestSend('EMAIL')}
                   style={{
                     padding: '6px 12px',
@@ -1378,10 +2006,19 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                   {emailTestBusy ? 'Sending…' : 'Send Test Email'}
                 </button>
               </div>
-              <label style={{ fontSize: 11, color: 'var(--mn-text-secondary, #52655f)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label
+                style={{
+                  fontSize: 11,
+                  color: 'var(--mn-text-secondary, #52655f)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
                 <input
                   type="checkbox"
-                  data-testid="email-quick-test-confirm" disabled={probeBusy || providerActionBusy}
+                  data-testid="email-quick-test-confirm"
+                  disabled={probeBusy || providerActionBusy}
                   checked={emailTestConfirmed}
                   onChange={(e) => setEmailTestConfirmed(e.target.checked)}
                 />
@@ -1402,279 +2039,398 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           )}
 
           {/* Governed Email Proposal Form */}
-          <form className="mn-provider-proposal-form" aria-label="Email provider proposal" onSubmit={(e) => void handleSubmitEmailProposal(e)} style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}><fieldset disabled={providerActionBusy || probeBusy} style={{ border: 0, padding: 0, margin: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
-              Propose Email Provider Change (Maker-Checker + MFA)
-            </div>
-            <p className="mn-provider-form-hint">Draft changes do not alter active configuration. Changing provider or credential action clears a typed key.</p>
-
-            {!permissions.canProposeProviderConfig && (
-              <div style={{ fontSize: 12, color: '#64748b', background: '#f8fafc', padding: 8, borderRadius: 6 }}>
-                Read-only view: Proposing provider changes requires <code>SUPER_ADMIN</code> with{' '}
-                <code>notification.provider.configure</code> and step-up MFA.
+          <form
+            className="mn-provider-proposal-form"
+            aria-label="Email provider proposal"
+            onSubmit={(e) => void handleSubmitEmailProposal(e)}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+              borderTop: '1px solid #e2e8f0',
+              paddingTop: 12,
+            }}
+          >
+            <fieldset
+              disabled={providerActionBusy || probeBusy}
+              style={{ border: 0, padding: 0, margin: 0 }}
+            >
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
+                Propose Email Provider Change (Maker-Checker + MFA)
               </div>
-            )}
+              <p className="mn-provider-form-hint">
+                Draft changes do not alter active configuration. Changing provider or credential
+                action clears a typed key.
+              </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span>Email Provider</span>
-                <select
-                  data-testid="email-provider-select"
-                  value={emailProvider}
-                  disabled={!permissions.canProposeProviderConfig}
-                  onChange={(e) => {
-                    const next = e.target.value as 'brevo' | 'resend' | 'none' | 'console';
-                    if (next !== emailProvider) setEmailApiKey('');
-                    setEmailProvider(next);
-                    if (next === 'brevo') setEmailBaseUrl('https://api.brevo.com');
-                    if (next === 'resend') setEmailBaseUrl('https://api.resend.com');
-                    if ((next === 'brevo' || next === 'resend') && !overview.email.hasStoredCredential) {
-                      setEmailCredAction('SET_ENCRYPTED');
-                    }
+              {!permissions.canProposeProviderConfig && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: '#64748b',
+                    background: '#f8fafc',
+                    padding: 8,
+                    borderRadius: 6,
                   }}
-                  style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
                 >
-                  <option value="brevo">brevo (Brevo v3 Transactional Email API)</option>
-                  <option value="resend">resend (Resend HTTP Email API)</option>
-                  <option value="none">none (Email Channel Dark / Disabled)</option>
-                  <option value="console">console (Dev/Test Simulation Only)</option>
-                </select>
-              </label>
+                  Read-only view: Proposing provider changes requires <code>SUPER_ADMIN</code> with{' '}
+                  <code>notification.provider.configure</code> and step-up MFA.
+                </div>
+              )}
 
-              <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span>Timeout (ms)</span>
-                <input
-                  type="number"
-                  min={1000}
-                  max={60000}
-                  value={emailTimeoutMs}
-                  disabled={!permissions.canProposeProviderConfig}
-                  onChange={(e) => setEmailTimeoutMs(Number(e.target.value))}
-                  style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
-                />
-              </label>
-            </div>
-
-            {(emailProvider === 'brevo' || emailProvider === 'resend') && (
-              <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <span>API Base URL (Pinned HTTPS Origin)</span>
-                  <input
-                    type="url"
-                    data-testid="email-base-url-input"
-                    value={emailBaseUrl}
-                    readOnly
+                  <span>Email Provider</span>
+                  <select
+                    data-testid="email-provider-select"
+                    value={emailProvider}
                     disabled={!permissions.canProposeProviderConfig}
+                    onChange={(e) => {
+                      const next = e.target.value as 'brevo' | 'resend' | 'none' | 'console';
+                      if (next !== emailProvider) setEmailApiKey('');
+                      setEmailProvider(next);
+                      if (next === 'brevo') setEmailBaseUrl('https://api.brevo.com');
+                      if (next === 'resend') setEmailBaseUrl('https://api.resend.com');
+                      if (
+                        (next === 'brevo' || next === 'resend') &&
+                        !overview.email.hasStoredCredential
+                      ) {
+                        setEmailCredAction('SET_ENCRYPTED');
+                      }
+                    }}
                     style={{
                       padding: '6px 8px',
                       borderRadius: 6,
                       border: '1px solid #cbd5e1',
-                      background: '#f8fafc',
+                      fontSize: 12,
+                    }}
+                  >
+                    <option value="brevo">brevo (Brevo v3 Transactional Email API)</option>
+                    <option value="resend">resend (Resend HTTP Email API)</option>
+                    <option value="none">none (Email Channel Dark / Disabled)</option>
+                    <option value="console">console (Dev/Test Simulation Only)</option>
+                  </select>
+                </label>
+
+                <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span>Timeout (ms)</span>
+                  <input
+                    type="number"
+                    min={1000}
+                    max={60000}
+                    value={emailTimeoutMs}
+                    disabled={!permissions.canProposeProviderConfig}
+                    onChange={(e) => setEmailTimeoutMs(Number(e.target.value))}
+                    style={{
+                      padding: '6px 8px',
+                      borderRadius: 6,
+                      border: '1px solid #cbd5e1',
                       fontSize: 12,
                     }}
                   />
                 </label>
+              </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              {(emailProvider === 'brevo' || emailProvider === 'resend') && (
+                <>
                   <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <span>Verified Sender Email</span>
+                    <span>API Base URL (Pinned HTTPS Origin)</span>
+                    <input
+                      type="url"
+                      data-testid="email-base-url-input"
+                      value={emailBaseUrl}
+                      readOnly
+                      disabled={!permissions.canProposeProviderConfig}
+                      style={{
+                        padding: '6px 8px',
+                        borderRadius: 6,
+                        border: '1px solid #cbd5e1',
+                        background: '#f8fafc',
+                        fontSize: 12,
+                      }}
+                    />
+                  </label>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <label
+                      style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}
+                    >
+                      <span>Verified Sender Email</span>
+                      <input
+                        type="email"
+                        data-testid="email-from-address-input"
+                        value={emailFromAddress}
+                        disabled={!permissions.canProposeProviderConfig}
+                        onChange={(e) => setEmailFromAddress(e.target.value)}
+                        placeholder="notifications@monienaija.ng"
+                        style={{
+                          padding: '6px 8px',
+                          borderRadius: 6,
+                          border: '1px solid #cbd5e1',
+                          fontSize: 12,
+                        }}
+                      />
+                    </label>
+                    <label
+                      style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}
+                    >
+                      <span>Sender Display Name</span>
+                      <input
+                        type="text"
+                        data-testid="email-from-name-input"
+                        value={emailFromName}
+                        disabled={!permissions.canProposeProviderConfig}
+                        onChange={(e) => setEmailFromName(e.target.value)}
+                        placeholder="MonieNaija"
+                        style={{
+                          padding: '6px 8px',
+                          borderRadius: 6,
+                          border: '1px solid #cbd5e1',
+                          fontSize: 12,
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <span>Reply-To Email (Optional)</span>
                     <input
                       type="email"
-                      data-testid="email-from-address-input"
-                      value={emailFromAddress}
+                      data-testid="email-reply-to-input"
+                      value={emailReplyTo}
                       disabled={!permissions.canProposeProviderConfig}
-                      onChange={(e) => setEmailFromAddress(e.target.value)}
-                      placeholder="notifications@monienaija.ng"
-                      style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
+                      onChange={(e) => setEmailReplyTo(e.target.value)}
+                      placeholder="support@monienaija.ng"
+                      style={{
+                        padding: '6px 8px',
+                        borderRadius: 6,
+                        border: '1px solid #cbd5e1',
+                        fontSize: 12,
+                      }}
                     />
                   </label>
-                  <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <span>Sender Display Name</span>
-                    <input
-                      type="text"
-                      data-testid="email-from-name-input"
-                      value={emailFromName}
-                      disabled={!permissions.canProposeProviderConfig}
-                      onChange={(e) => setEmailFromName(e.target.value)}
-                      placeholder="MonieNaija"
-                      style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
-                    />
-                  </label>
-                </div>
 
-                <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <span>Reply-To Email (Optional)</span>
+                  <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <span>Credential Action</span>
+                    <select
+                      data-testid="email-credential-action-select"
+                      value={emailCredAction}
+                      disabled={!permissions.canProposeProviderConfig}
+                      onChange={(e) => {
+                        setEmailApiKey('');
+                        setEmailCredAction(e.target.value as ProviderCredentialAction);
+                      }}
+                      style={{
+                        padding: '6px 8px',
+                        borderRadius: 6,
+                        border: '1px solid #cbd5e1',
+                        fontSize: 12,
+                      }}
+                    >
+                      <option value="SET_ENCRYPTED">
+                        Set / Rotate Encrypted API Key (AES-256-GCM)
+                      </option>
+                      <option value="KEEP_EXISTING">Keep Existing Stored Credential</option>
+                      <option value="USE_ENV_SECRET">Use Server Environment Secret</option>
+                      <option value="CLEAR">Clear Stored Credential (Requires Disabled)</option>
+                    </select>
+                  </label>
+
+                  {emailCredAction === 'SET_ENCRYPTED' && (
+                    <label
+                      style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}
+                    >
+                      <span>
+                        {emailProvider === 'brevo'
+                          ? 'Brevo v3 REST API Key (xkeysib-... — NOT xsmtpsib- SMTP password)'
+                          : 'Resend API Key (re_...)'}
+                      </span>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        data-testid="email-api-key-input"
+                        value={emailApiKey}
+                        disabled={!permissions.canProposeProviderConfig}
+                        onChange={(e) => setEmailApiKey(e.target.value)}
+                        placeholder={
+                          emailProvider === 'brevo'
+                            ? 'Enter Brevo v3 REST API key (xkeysib-...)'
+                            : 'Enter Resend API key (re_...)'
+                        }
+                        style={{
+                          padding: '6px 8px',
+                          borderRadius: 6,
+                          border: '1px solid #cbd5e1',
+                          fontSize: 12,
+                        }}
+                      />
+                    </label>
+                  )}
+
+                  <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <input
+                        type="checkbox"
+                        data-testid="email-spf-checkbox"
+                        checked={emailSpf}
+                        disabled={!permissions.canProposeProviderConfig}
+                        onChange={(e) => setEmailSpf(e.target.checked)}
+                      />
+                      SPF DNS Confirmed
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <input
+                        type="checkbox"
+                        data-testid="email-dkim-checkbox"
+                        checked={emailDkim}
+                        disabled={!permissions.canProposeProviderConfig}
+                        onChange={(e) => setEmailDkim(e.target.checked)}
+                      />
+                      DKIM DNS Confirmed
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <input
+                        type="checkbox"
+                        data-testid="email-dmarc-checkbox"
+                        checked={emailDmarc}
+                        disabled={!permissions.canProposeProviderConfig}
+                        onChange={(e) => setEmailDmarc(e.target.checked)}
+                      />
+                      DMARC DNS Confirmed
+                    </label>
+                  </div>
+                </>
+              )}
+
+              {emailProvider !== 'none' && (
+                <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                   <input
-                    type="email"
-                    data-testid="email-reply-to-input"
-                    value={emailReplyTo}
+                    type="checkbox"
+                    data-testid="email-enabled-checkbox"
+                    checked={emailEnabled}
                     disabled={!permissions.canProposeProviderConfig}
-                    onChange={(e) => setEmailReplyTo(e.target.value)}
-                    placeholder="support@monienaija.ng"
-                    style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
+                    onChange={(e) => setEmailEnabled(e.target.checked)}
                   />
+                  <span>Enable Email Provider for Customer Outbox & Transactional Dispatch</span>
                 </label>
+              )}
 
-                <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <span>Credential Action</span>
-                  <select
-                    data-testid="email-credential-action-select"
-                    value={emailCredAction}
-                    disabled={!permissions.canProposeProviderConfig}
-                    onChange={(e) => { setEmailApiKey(''); setEmailCredAction(e.target.value as ProviderCredentialAction); }}
-                    style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
-                  >
-                    <option value="SET_ENCRYPTED">Set / Rotate Encrypted API Key (AES-256-GCM)</option>
-                    <option value="KEEP_EXISTING">Keep Existing Stored Credential</option>
-                    <option value="USE_ENV_SECRET">Use Server Environment Secret</option>
-                    <option value="CLEAR">Clear Stored Credential (Requires Disabled)</option>
-                  </select>
-                </label>
-
-                {emailCredAction === 'SET_ENCRYPTED' && (
-                  <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <span>
-                      {emailProvider === 'brevo'
-                        ? 'Brevo v3 REST API Key (xkeysib-... — NOT xsmtpsib- SMTP password)'
-                        : 'Resend API Key (re_...)'}
-                    </span>
-                    <input
-                      type="password"
-                      autoComplete="new-password"
-                      data-testid="email-api-key-input"
-                      value={emailApiKey}
-                      disabled={!permissions.canProposeProviderConfig}
-                      onChange={(e) => setEmailApiKey(e.target.value)}
-                      placeholder={
-                        emailProvider === 'brevo'
-                          ? 'Enter Brevo v3 REST API key (xkeysib-...)'
-                          : 'Enter Resend API key (re_...)'
-                      }
-                      style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
-                    />
-                  </label>
-                )}
-
-                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <input
-                      type="checkbox"
-                      data-testid="email-spf-checkbox"
-                      checked={emailSpf}
-                      disabled={!permissions.canProposeProviderConfig}
-                      onChange={(e) => setEmailSpf(e.target.checked)}
-                    />
-                    SPF DNS Confirmed
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <input
-                      type="checkbox"
-                      data-testid="email-dkim-checkbox"
-                      checked={emailDkim}
-                      disabled={!permissions.canProposeProviderConfig}
-                      onChange={(e) => setEmailDkim(e.target.checked)}
-                    />
-                    DKIM DNS Confirmed
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <input
-                      type="checkbox"
-                      data-testid="email-dmarc-checkbox"
-                      checked={emailDmarc}
-                      disabled={!permissions.canProposeProviderConfig}
-                      onChange={(e) => setEmailDmarc(e.target.checked)}
-                    />
-                    DMARC DNS Confirmed
-                  </label>
-                </div>
-              </>
-            )}
-
-            {emailProvider !== 'none' && (
-              <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span>Governance Audit Reason (10–500 chars)</span>
                 <input
-                  type="checkbox"
-                  data-testid="email-enabled-checkbox"
-                  checked={emailEnabled}
+                  type="text"
+                  data-testid="email-reason-input"
+                  value={emailReason}
                   disabled={!permissions.canProposeProviderConfig}
-                  onChange={(e) => setEmailEnabled(e.target.checked)}
+                  onChange={(e) => setEmailReason(e.target.value)}
+                  placeholder="e.g. Configure Brevo v3 REST API key and verified sender identity"
+                  style={{
+                    padding: '6px 8px',
+                    borderRadius: 6,
+                    border: '1px solid #cbd5e1',
+                    fontSize: 12,
+                  }}
                 />
-                <span>Enable Email Provider for Customer Outbox & Transactional Dispatch</span>
               </label>
-            )}
 
-            <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span>Governance Audit Reason (10–500 chars)</span>
-              <input
-                type="text"
-                data-testid="email-reason-input"
-                value={emailReason}
-                disabled={!permissions.canProposeProviderConfig}
-                onChange={(e) => setEmailReason(e.target.value)}
-                placeholder="e.g. Configure Brevo v3 REST API key and verified sender identity"
-                style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
-              />
-            </label>
+              {emailFormErrors.length > 0 && (
+                <div
+                  data-testid="email-form-errors"
+                  style={{
+                    padding: 10,
+                    borderRadius: 6,
+                    background: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    color: '#991b1b',
+                    fontSize: 12,
+                  }}
+                >
+                  {emailFormErrors.map((err, i) => (
+                    <div key={i}>• {err}</div>
+                  ))}
+                </div>
+              )}
 
-            {emailFormErrors.length > 0 && (
-              <div data-testid="email-form-errors" style={{ padding: 10, borderRadius: 6, background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: 12 }}>
-                {emailFormErrors.map((err, i) => (
-                  <div key={i}>• {err}</div>
-                ))}
-              </div>
-            )}
+              {emailFeedback && (
+                <div
+                  data-testid="email-proposal-feedback"
+                  style={{
+                    padding: 10,
+                    borderRadius: 6,
+                    background: emailFeedback.kind === 'ok' ? '#f0fdf4' : '#fef2f2',
+                    border: `1px solid ${emailFeedback.kind === 'ok' ? '#86efac' : '#fecaca'}`,
+                    color: emailFeedback.kind === 'ok' ? '#166534' : '#991b1b',
+                    fontSize: 12,
+                  }}
+                >
+                  {emailFeedback.text}
+                </div>
+              )}
 
-            {emailFeedback && (
-              <div
-                data-testid="email-proposal-feedback"
+              {emailDraftVersion !== overview.email.version && (
+                <div role="alert">
+                  Email configuration changed since this draft was loaded. The draft is retained but
+                  cannot be submitted until reset and reviewed.{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (
+                        window.confirm('Discard the email provider draft and entered credential?')
+                      )
+                        hydrateEmail(overview.email);
+                    }}
+                  >
+                    Reset Email draft from current configuration
+                  </button>
+                </div>
+              )}
+              <button
+                type="submit"
+                data-testid="submit-email-proposal-btn"
+                disabled={
+                  !permissions.canProposeProviderConfig ||
+                  !permissions.hasMfaAssurance ||
+                  emailBusy ||
+                  providerActionBusy ||
+                  probeBusy ||
+                  probeReview ||
+                  Boolean(providerReview) ||
+                  emailDraftVersion !== overview.email.version
+                }
                 style={{
-                  padding: 10,
+                  padding: '8px 14px',
                   borderRadius: 6,
-                  background: emailFeedback.kind === 'ok' ? '#f0fdf4' : '#fef2f2',
-                  border: `1px solid ${emailFeedback.kind === 'ok' ? '#86efac' : '#fecaca'}`,
-                  color: emailFeedback.kind === 'ok' ? '#166534' : '#991b1b',
+                  border: 'none',
+                  background:
+                    permissions.canProposeProviderConfig && permissions.hasMfaAssurance
+                      ? 'var(--mn-action-primary, #075b45)'
+                      : '#94a3b8',
+                  color: '#ffffff',
+                  fontWeight: 600,
                   fontSize: 12,
+                  cursor:
+                    permissions.canProposeProviderConfig && permissions.hasMfaAssurance
+                      ? 'pointer'
+                      : 'not-allowed',
                 }}
               >
-                {emailFeedback.text}
-              </div>
-            )}
-
-            {emailDraftVersion !== overview.email.version && <div role="alert">Email configuration changed since this draft was loaded. The draft is retained but cannot be submitted until reset and reviewed. <button type="button" onClick={() => { if (window.confirm('Discard the email provider draft and entered credential?')) hydrateEmail(overview.email); }}>Reset Email draft from current configuration</button></div>}
-            <button
-              type="submit"
-              data-testid="submit-email-proposal-btn"
-              disabled={!permissions.canProposeProviderConfig || !permissions.hasMfaAssurance || emailBusy || providerActionBusy || probeBusy || probeReview || Boolean(providerReview) || emailDraftVersion !== overview.email.version}
-              style={{
-                padding: '8px 14px',
-                borderRadius: 6,
-                border: 'none',
-                background:
-                  permissions.canProposeProviderConfig && permissions.hasMfaAssurance
-                    ? 'var(--mn-action-primary, #075b45)'
-                    : '#94a3b8',
-                color: '#ffffff',
-                fontWeight: 600,
-                fontSize: 12,
-                cursor:
-                  permissions.canProposeProviderConfig && permissions.hasMfaAssurance
-                    ? 'pointer'
-                    : 'not-allowed',
-              }}
-            >
-              {emailBusy
-                ? 'Submitting Email Proposal…'
-                : !permissions.hasMfaAssurance && permissions.canProposeProviderConfig
-                  ? 'MFA Required to Propose Email Change'
-                  : 'Submit Email Configuration Proposal'}
-            </button>
-          </fieldset></form>
+                {emailBusy
+                  ? 'Submitting Email Proposal…'
+                  : !permissions.hasMfaAssurance && permissions.canProposeProviderConfig
+                    ? 'MFA Required to Propose Email Change'
+                    : 'Submit Email Configuration Proposal'}
+              </button>
+            </fieldset>
+          </form>
         </section>
       </div>
 
       {/* ==================== GOVERNED PROPOSALS QUEUE ==================== */}
       <section
-        id="provider-proposals" tabIndex={-1} className="mn-provider-panel" aria-label="Provider proposal queue"
+        id="provider-proposals"
+        tabIndex={-1}
+        className="mn-provider-panel"
+        aria-label="Provider proposal queue"
         data-testid="provider-proposals-section"
         style={{
           background: '#ffffff',
@@ -1683,15 +2439,23 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           padding: 20,
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 12,
+          }}
+        >
           <div>
             <p className="mn-provider-kicker">03 · CHECKER WORKSPACE</p>
             <h3 style={{ margin: 0, fontSize: 15, color: '#0f172a' }}>
               Governed Provider Configuration Proposals (Maker-Checker & Activation)
             </h3>
             <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-              Showing up to 25 returned proposals. Initiating administrator cannot approve their own change. Independent{' '}
-              <code>FINANCE_CONTROLLER</code> + MFA approval is required prior to activation.
+              Showing up to 25 returned proposals. Initiating administrator cannot approve their own
+              change. Independent <code>FINANCE_CONTROLLER</code> + MFA approval is required prior
+              to activation.
             </div>
           </div>
         </div>
@@ -1713,24 +2477,54 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           </div>
         )}
 
-        {!proposalsError && proposals.length > 0 && <div className="mn-provider-queue-filters">
-          <WorkspaceFilterTabs label="Filter loaded provider proposals by channel" value={queueFilteringLocked ? 'ALL' : queueChannel} onChange={setQueueChannel} disabled={queueFilteringLocked} options={[{ value: 'ALL', label: 'All channels' }, { value: 'SMS', label: 'SMS' }, { value: 'EMAIL', label: 'Email' }]} />
-          <p role="status">Showing {visibleProposals.length} of {proposals.length} returned proposals. {queueFilteringLocked ? 'Filtering is unavailable while a decision comment, action or independent review is held.' : 'This filters only the loaded query.'}</p>
-        </div>}
+        {!proposalsError && proposals.length > 0 && (
+          <div className="mn-provider-queue-filters">
+            <WorkspaceFilterTabs
+              label="Filter loaded provider proposals by channel"
+              value={queueFilteringLocked ? 'ALL' : queueChannel}
+              onChange={setQueueChannel}
+              disabled={queueFilteringLocked}
+              options={[
+                { value: 'ALL', label: 'All channels' },
+                { value: 'SMS', label: 'SMS' },
+                { value: 'EMAIL', label: 'Email' },
+              ]}
+            />
+            <p role="status">
+              Showing {visibleProposals.length} of {proposals.length} returned proposals.{' '}
+              {queueFilteringLocked
+                ? 'Filtering is unavailable while a decision comment, action or independent review is held.'
+                : 'This filters only the loaded query.'}
+            </p>
+          </div>
+        )}
         {proposalsError ? (
           <div role="alert">Provider proposals unavailable: {proposalsError}</div>
         ) : proposals.length === 0 ? (
           <div style={{ fontSize: 12, color: '#64748b', padding: 12 }}>
             No provider proposals returned in the current query.
           </div>
-        ) : visibleProposals.length === 0 ? <div className="mn-provider-queue-empty">No returned proposals match this channel.</div> : (
-          <div style={{ overflowX: 'auto' }} role="region" aria-label="Provider configuration proposals" tabIndex={0}>
+        ) : visibleProposals.length === 0 ? (
+          <div className="mn-provider-queue-empty">No returned proposals match this channel.</div>
+        ) : (
+          <div
+            style={{ overflowX: 'auto' }}
+            role="region"
+            aria-label="Provider configuration proposals"
+            tabIndex={0}
+          >
             <table
               data-testid="provider-proposals-table"
               style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}
             >
               <thead>
-                <tr style={{ background: '#f8fafc', textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
+                <tr
+                  style={{
+                    background: '#f8fafc',
+                    textAlign: 'left',
+                    borderBottom: '1px solid #e2e8f0',
+                  }}
+                >
                   <th style={{ padding: 8 }}>Channel</th>
                   <th style={{ padding: 8 }}>Proposed Change</th>
                   <th style={{ padding: 8 }}>Credential</th>
@@ -1742,9 +2536,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
               </thead>
               <tbody>
                 {visibleProposals.map((prop) => {
-                  const isSelf = Boolean(
-                    principalId && principalId === prop.proposerPrincipalId,
-                  );
+                  const isSelf = Boolean(principalId && principalId === prop.proposerPrincipalId);
                   const canApproveThis =
                     prop.status === 'REQUESTED' &&
                     permissions.canApproveProviderConfig &&
@@ -1754,20 +2546,28 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                     prop.status === 'APPROVED' &&
                     permissions.canActivateProviderConfig &&
                     permissions.hasMfaAssurance;
-                  const busy = queueBusyId !== null || providerActionBusy || probeBusy || probeReview || Boolean(providerReview);
+                  const busy =
+                    queueBusyId !== null ||
+                    providerActionBusy ||
+                    probeBusy ||
+                    probeReview ||
+                    Boolean(providerReview);
 
                   return (
-                    <tr key={prop.id} data-testid={`provider-proposal-row-${prop.id}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <tr
+                      key={prop.id}
+                      data-testid={`provider-proposal-row-${prop.id}`}
+                      style={{ borderBottom: '1px solid #f1f5f9' }}
+                    >
                       <td style={{ padding: 8, fontWeight: 700 }}>{prop.channel}</td>
                       <td style={{ padding: 8 }}>
                         <code>{prop.proposedProvider}</code> ·{' '}
-                        {prop.proposedEnabled ? 'ENABLED' : 'DISABLED'} (base v{prop.expectedVersion})
+                        {prop.proposedEnabled ? 'ENABLED' : 'DISABLED'} (base v
+                        {prop.expectedVersion})
                       </td>
                       <td style={{ padding: 8 }}>
                         <div>{prop.credentialAction}</div>
-                        {prop.proposedKeyFingerprint && (
-                          <code>{prop.proposedKeyFingerprint}</code>
-                        )}
+                        {prop.proposedKeyFingerprint && <code>{prop.proposedKeyFingerprint}</code>}
                       </td>
                       <td style={{ padding: 8 }}>
                         {prop.channel === 'SMS'
@@ -1780,14 +2580,14 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                         <div>
                           <strong>{prop.proposerPrincipalId}</strong>
                         </div>
-                        <div style={{ color: 'var(--mn-text-secondary, #52655f)' }}>{prop.reason}</div>
+                        <div style={{ color: 'var(--mn-text-secondary, #52655f)' }}>
+                          {prop.reason}
+                        </div>
                       </td>
                       <td style={{ padding: 8 }}>
                         <span style={{ fontWeight: 700 }}>{prop.status}</span>
                         {prop.decidedBy && (
-                          <div style={{ color: '#64748b', fontSize: 11 }}>
-                            by {prop.decidedBy}
-                          </div>
+                          <div style={{ color: '#64748b', fontSize: 11 }}>by {prop.decidedBy}</div>
                         )}
                         {prop.resultingVersion && (
                           <div style={{ color: '#166534', fontSize: 11 }}>
@@ -1812,65 +2612,78 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                             Self-Approval Prohibited
                           </span>
                         )}
-                        {prop.status === 'REQUESTED' && !isSelf && permissions.canApproveProviderConfig && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            <label htmlFor={`provider-decision-${prop.id}`} className="mn-provider-field-label">Checker note for {prop.id} (optional)</label>
-                            <input
-                              id={`provider-decision-${prop.id}`}
-                              type="text"
-                              data-testid={`decision-comment-${prop.id}`} disabled={providerActionBusy || probeBusy}
-                              placeholder="Checker note (optional)"
-                              value={decisionComments[prop.id] ?? ''}
-                              onChange={(e) =>
-                                setDecisionComments((prev) => ({
-                                  ...prev,
-                                  [prop.id]: e.target.value,
-                                }))
-                              }
-                              style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid #cbd5e1', fontSize: 11 }}
-                            />
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              <button
-                                type="button"
-                                data-testid={`approve-provider-proposal-${prop.id}`}
-                                aria-label={`Approve provider proposal ${prop.id}`}
-                                disabled={!canApproveThis || busy}
-                                onClick={() => void handleProposalAction(prop, 'approve')}
-                                style={{
-                                  padding: '4px 10px',
-                                  borderRadius: 4,
-                                  border: 'none',
-                                  background: canApproveThis ? '#16a34a' : '#94a3b8',
-                                  color: '#ffffff',
-                                  fontWeight: 600,
-                                  fontSize: 11,
-                                  cursor: canApproveThis ? 'pointer' : 'not-allowed',
-                                }}
+                        {prop.status === 'REQUESTED' &&
+                          !isSelf &&
+                          permissions.canApproveProviderConfig && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              <label
+                                htmlFor={`provider-decision-${prop.id}`}
+                                className="mn-provider-field-label"
                               >
-                                Approve
-                              </button>
-                              <button
-                                type="button"
-                                data-testid={`reject-provider-proposal-${prop.id}`}
-                                aria-label={`Reject provider proposal ${prop.id}`}
-                                disabled={!canApproveThis || busy}
-                                onClick={() => void handleProposalAction(prop, 'reject')}
+                                Checker note for {prop.id} (optional)
+                              </label>
+                              <input
+                                id={`provider-decision-${prop.id}`}
+                                type="text"
+                                data-testid={`decision-comment-${prop.id}`}
+                                disabled={providerActionBusy || probeBusy}
+                                placeholder="Checker note (optional)"
+                                value={decisionComments[prop.id] ?? ''}
+                                onChange={(e) =>
+                                  setDecisionComments((prev) => ({
+                                    ...prev,
+                                    [prop.id]: e.target.value,
+                                  }))
+                                }
                                 style={{
-                                  padding: '4px 10px',
+                                  padding: '4px 6px',
                                   borderRadius: 4,
-                                  border: '1px solid #dc2626',
-                                  background: '#ffffff',
-                                  color: '#dc2626',
-                                  fontWeight: 600,
+                                  border: '1px solid #cbd5e1',
                                   fontSize: 11,
-                                  cursor: canApproveThis ? 'pointer' : 'not-allowed',
                                 }}
-                              >
-                                Reject
-                              </button>
+                              />
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button
+                                  type="button"
+                                  data-testid={`approve-provider-proposal-${prop.id}`}
+                                  aria-label={`Approve provider proposal ${prop.id}`}
+                                  disabled={!canApproveThis || busy}
+                                  onClick={() => void handleProposalAction(prop, 'approve')}
+                                  style={{
+                                    padding: '4px 10px',
+                                    borderRadius: 4,
+                                    border: 'none',
+                                    background: canApproveThis ? '#16a34a' : '#94a3b8',
+                                    color: '#ffffff',
+                                    fontWeight: 600,
+                                    fontSize: 11,
+                                    cursor: canApproveThis ? 'pointer' : 'not-allowed',
+                                  }}
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  data-testid={`reject-provider-proposal-${prop.id}`}
+                                  aria-label={`Reject provider proposal ${prop.id}`}
+                                  disabled={!canApproveThis || busy}
+                                  onClick={() => void handleProposalAction(prop, 'reject')}
+                                  style={{
+                                    padding: '4px 10px',
+                                    borderRadius: 4,
+                                    border: '1px solid #dc2626',
+                                    background: '#ffffff',
+                                    color: '#dc2626',
+                                    fontWeight: 600,
+                                    fontSize: 11,
+                                    cursor: canApproveThis ? 'pointer' : 'not-allowed',
+                                  }}
+                                >
+                                  Reject
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          )}
                         {prop.status === 'APPROVED' && permissions.canActivateProviderConfig && (
                           <button
                             type="button"
@@ -1882,7 +2695,9 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                               padding: '5px 12px',
                               borderRadius: 4,
                               border: 'none',
-                              background: canActivateThis ? 'var(--mn-action-primary, #075b45)' : '#94a3b8',
+                              background: canActivateThis
+                                ? 'var(--mn-action-primary, #075b45)'
+                                : '#94a3b8',
                               color: '#ffffff',
                               fontWeight: 700,
                               fontSize: 11,
@@ -1898,7 +2713,9 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                 })}
               </tbody>
             </table>
-            <p className="mn-provider-form-hint">Scroll horizontally to inspect all proposal and governance columns.</p>
+            <p className="mn-provider-form-hint">
+              Scroll horizontally to inspect all proposal and governance columns.
+            </p>
           </div>
         )}
       </section>

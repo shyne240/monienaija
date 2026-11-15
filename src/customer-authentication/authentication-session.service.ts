@@ -304,10 +304,7 @@ export class AuthenticationSessionService implements CustomerSessionValidator {
     }
 
     if (session.status === AuthenticationSessionStatus.REVOKED) {
-      if (
-        allowWithdrawnLogout &&
-        session.revokeReason === FINANCIAL_ELIGIBILITY_WITHDRAWN_REASON
-      ) {
+      if (allowWithdrawnLogout && session.revokeReason === FINANCIAL_ELIGIBILITY_WITHDRAWN_REASON) {
         return { valid: true, principal: this.toPrincipal(session) };
       }
       return { valid: false, reason: 'REVOKED' };
@@ -370,7 +367,9 @@ export class AuthenticationSessionService implements CustomerSessionValidator {
       if (!hasQuery(manager)) {
         return;
       }
-      const rows = await manager.query<Array<{ status: AuthenticationSessionStatus; expires_at: Date; last_seen_at: Date }>>(
+      const rows = await manager.query<
+        Array<{ status: AuthenticationSessionStatus; expires_at: Date; last_seen_at: Date }>
+      >(
         `SELECT status, expires_at, last_seen_at
            FROM authentication_sessions
           WHERE id = $1
@@ -400,11 +399,7 @@ export class AuthenticationSessionService implements CustomerSessionValidator {
                  AND last_seen_at <= $3
                FOR NO KEY UPDATE SKIP LOCKED
             )`,
-          [
-            session.id,
-            now,
-            new Date(now.getTime() - READ_LAST_SEEN_REFRESH_INTERVAL_MS),
-          ],
+          [session.id, now, new Date(now.getTime() - READ_LAST_SEEN_REFRESH_INTERVAL_MS)],
         );
       }
     });

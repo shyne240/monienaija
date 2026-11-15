@@ -83,19 +83,31 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
       status: 'APPROVED',
     };
 
-    const rejectApp = { ...submittedApp, id: 'app-3', reference: 'APP-003', businessName: 'Other kiosk' };
+    const rejectApp = {
+      ...submittedApp,
+      id: 'app-3',
+      reference: 'APP-003',
+      businessName: 'Other kiosk',
+    };
     let apps = [submittedApp, approvedApp, rejectApp];
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-      if (path.startsWith('/internal/agents?')) return Promise.resolve({ data: [activeAgent], total: 1 });
+      if (path.startsWith('/internal/agents?'))
+        return Promise.resolve({ data: [activeAgent], total: 1 });
       if (path === '/internal/agents/applications') return Promise.resolve(apps);
       return Promise.resolve([]);
     });
     (ApiClient.post as jest.Mock).mockImplementation((path: string) => {
-      if (path.endsWith('/activate')) return Promise.resolve({ id: AGENT_ID, reference: approvedApp.applicantReference, status: 'ACTIVE' });
+      if (path.endsWith('/activate'))
+        return Promise.resolve({
+          id: AGENT_ID,
+          reference: approvedApp.applicantReference,
+          status: 'ACTIVE',
+        });
       const [, id, action] = path.match(/applications\/(.*?)\/(review|approve|reject)$/) || [];
-      const status = action === 'review' ? 'UNDER_REVIEW' : action === 'approve' ? 'APPROVED' : 'REJECTED';
-      apps = apps.map(app => app.id === id ? { ...app, status } : app);
-      return Promise.resolve(apps.find(app => app.id === id));
+      const status =
+        action === 'review' ? 'UNDER_REVIEW' : action === 'approve' ? 'APPROVED' : 'REJECTED';
+      apps = apps.map((app) => (app.id === id ? { ...app, status } : app));
+      return Promise.resolve(apps.find((app) => app.id === id));
     });
 
     const view = render(<AgentNetworkScreen />);
@@ -109,7 +121,11 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
     await waitFor(() =>
       expect(ApiClient.post).toHaveBeenCalledWith('/internal/agents/applications/app-1/review'),
     );
-    await waitFor(() => expect((view.getAllByRole('button', { name: 'Approve' })[0] as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect(
+        (view.getAllByRole('button', { name: 'Approve' })[0] as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
     fireEvent.click(view.getAllByRole('button', { name: 'Approve' })[0]);
     await waitFor(() =>
       expect(ApiClient.post).toHaveBeenCalledWith('/internal/agents/applications/app-1/approve'),
@@ -119,7 +135,11 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
     await waitFor(() => expect(view.getByText('Application APP-001 approved.')).toBeTruthy());
     const rejectBtn = view.getByRole('button', { name: 'Reject' }) as HTMLButtonElement;
     expect(rejectBtn.disabled).toBe(true);
-    await waitFor(() => expect((view.getByLabelText('Rejection reason for APP-003') as HTMLInputElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect(
+        (view.getByLabelText('Rejection reason for APP-003') as HTMLInputElement).disabled,
+      ).toBe(false),
+    );
     fireEvent.change(view.getByLabelText('Rejection reason for APP-003'), {
       target: { value: 'Incomplete CAC registration' },
     });
@@ -133,10 +153,16 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
 
     // Activate the previously approved application after rejection refresh completes.
     await waitFor(() => expect(view.getByText('Application APP-003 rejected.')).toBeTruthy());
-    await waitFor(() => expect((view.getAllByRole('button', { name: 'Activate agent' })[1] as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect(
+        (view.getAllByRole('button', { name: 'Activate agent' })[1] as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
     fireEvent.click(view.getAllByRole('button', { name: 'Activate agent' })[1]);
     await waitFor(() =>
-      expect(ApiClient.post).toHaveBeenCalledWith('/internal/admin/agents/applications/app-2/activate'),
+      expect(ApiClient.post).toHaveBeenCalledWith(
+        '/internal/admin/agents/applications/app-2/activate',
+      ),
     );
   });
 
@@ -157,7 +183,8 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
 
     let currentAgent = { ...activeAgent };
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-      if (path.startsWith('/internal/agents?')) return Promise.resolve({ data: [currentAgent], total: 1 });
+      if (path.startsWith('/internal/agents?'))
+        return Promise.resolve({ data: [currentAgent], total: 1 });
       if (path === `/internal/agents/${AGENT_ID}/financial-position`) {
         return Promise.resolve({
           agentId: AGENT_ID,
@@ -211,7 +238,11 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
       }
       if (path === `/internal/limit-assignments/agent/${AGENT_ID}?page=1&limit=20`) {
         return Promise.resolve({
-          page: 1, limit: 20, total: 1, totalPages: 1, hasNextPage: false,
+          page: 1,
+          limit: 20,
+          total: 1,
+          totalPages: 1,
+          hasNextPage: false,
           data: [
             {
               id: LIMIT_ASSIGNMENT_ID,
@@ -232,11 +263,43 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
         currentAgent = { ...currentAgent, status: 'SUSPENDED' };
         return Promise.resolve(currentAgent);
       }
-      if (path === `/internal/agents/${AGENT_ID}/outlets`) return Promise.resolve({id:'outlet-new',agentId:AGENT_ID,reference:'OUT-ABJ-02',name:'Maitama Desk',code:null,displayName:null,addressLine:null,city:null,state:null,country:'NG',status:'ACTIVE',version:1});
-      if (path === `/internal/agents/${AGENT_ID}/terminals`) return Promise.resolve({id:'terminal-new',agentId:AGENT_ID,outletId:OUTLET_ID,reference:'TRM-ABJ-02',code:null,label:'Counter POS 2',serialNumber:null,status:'ACTIVE',version:1});
+      if (path === `/internal/agents/${AGENT_ID}/outlets`)
+        return Promise.resolve({
+          id: 'outlet-new',
+          agentId: AGENT_ID,
+          reference: 'OUT-ABJ-02',
+          name: 'Maitama Desk',
+          code: null,
+          displayName: null,
+          addressLine: null,
+          city: null,
+          state: null,
+          country: 'NG',
+          status: 'ACTIVE',
+          version: 1,
+        });
+      if (path === `/internal/agents/${AGENT_ID}/terminals`)
+        return Promise.resolve({
+          id: 'terminal-new',
+          agentId: AGENT_ID,
+          outletId: OUTLET_ID,
+          reference: 'TRM-ABJ-02',
+          code: null,
+          label: 'Counter POS 2',
+          serialNumber: null,
+          status: 'ACTIVE',
+          version: 1,
+        });
       return Promise.resolve({});
     });
-    (ApiClient.patch as jest.Mock).mockResolvedValue({ id: LIMIT_ASSIGNMENT_ID, subjectType:'AGENT', subjectId:AGENT_ID, limitProfileCode:'AGENT_STANDARD', isActive:false, version:3 });
+    (ApiClient.patch as jest.Mock).mockResolvedValue({
+      id: LIMIT_ASSIGNMENT_ID,
+      subjectType: 'AGENT',
+      subjectId: AGENT_ID,
+      limitProfileCode: 'AGENT_STANDARD',
+      isActive: false,
+      version: 3,
+    });
 
     const view = render(<AgentNetworkScreen />);
     fireEvent.click(await view.findByRole('button', { name: 'View' }));
@@ -262,7 +325,9 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
     );
 
     await view.findByText('Outlet OUT-ABJ-02 created.');
-    fireEvent.change(view.getByLabelText('Terminal reference'), { target: { value: 'TRM-ABJ-02' } });
+    fireEvent.change(view.getByLabelText('Terminal reference'), {
+      target: { value: 'TRM-ABJ-02' },
+    });
     fireEvent.change(view.getByLabelText('Terminal label'), { target: { value: 'Counter POS 2' } });
     fireEvent.click(view.getByRole('button', { name: 'Create terminal' }));
     await waitFor(() =>
@@ -288,11 +353,21 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
     await view.findByText('Limit profile AGENT_STANDARD deactivated.');
     // Lifecycle state-machine: on ACTIVE agent, Suspend & Terminate are enabled while Reactivate & Activate are disabled
     const lifecycleBar = view.getByLabelText('Granted agent lifecycle actions');
-    expect((within(lifecycleBar).getByRole('button', { name: 'Suspend' }) as HTMLButtonElement).disabled).toBe(false);
-    expect((within(lifecycleBar).getByRole('button', { name: 'Reactivate' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((within(lifecycleBar).getByRole('button', { name: 'Activate' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (within(lifecycleBar).getByRole('button', { name: 'Suspend' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+    expect(
+      (within(lifecycleBar).getByRole('button', { name: 'Reactivate' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (within(lifecycleBar).getByRole('button', { name: 'Activate' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
 
-    fireEvent.change(view.getByLabelText('Lifecycle reason'), { target: { value: 'Compliance audit hold' } });
+    fireEvent.change(view.getByLabelText('Lifecycle reason'), {
+      target: { value: 'Compliance audit hold' },
+    });
     fireEvent.click(within(lifecycleBar).getByRole('button', { name: 'Suspend' }));
     await waitFor(() =>
       expect(ApiClient.post).toHaveBeenCalledWith(`/internal/admin/agents/${AGENT_ID}/suspend`, {
@@ -300,9 +375,14 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
       }),
     );
     await waitFor(() =>
-      expect((within(lifecycleBar).getByRole('button', { name: 'Reactivate' }) as HTMLButtonElement).disabled).toBe(false),
+      expect(
+        (within(lifecycleBar).getByRole('button', { name: 'Reactivate' }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
     );
-    expect((within(lifecycleBar).getByRole('button', { name: 'Suspend' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (within(lifecycleBar).getByRole('button', { name: 'Suspend' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 
   test('LimitAssignmentScreen filters by AGENT subject and toggles active status with optimistic version', async () => {
@@ -325,13 +405,17 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
     const view = render(<LimitAssignmentScreen />);
     expect(await view.findByText(`AGENT: ${AGENT_ID}`)).toBeTruthy();
 
-    fireEvent.change(view.getByLabelText('Assignment subject type'), { target: { value: 'AGENT' } });
+    fireEvent.change(view.getByLabelText('Assignment subject type'), {
+      target: { value: 'AGENT' },
+    });
     fireEvent.click(view.getByRole('button', { name: 'Filter assignments' }));
     await waitFor(() =>
       expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-assignments?subjectType=AGENT'),
     );
 
-    fireEvent.click(view.getByRole('button', { name: `Deactivate AGENT_STANDARD for AGENT ${AGENT_ID}` }));
+    fireEvent.click(
+      view.getByRole('button', { name: `Deactivate AGENT_STANDARD for AGENT ${AGENT_ID}` }),
+    );
     await waitFor(() =>
       expect(ApiClient.patch).toHaveBeenCalledWith(
         `/internal/limit-assignments/${LIMIT_ASSIGNMENT_ID}`,

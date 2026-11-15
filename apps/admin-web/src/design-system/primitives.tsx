@@ -24,7 +24,16 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'secondary', size = 'md', block = false, icon, className, type = 'button', children, ...rest },
+  {
+    variant = 'secondary',
+    size = 'md',
+    block = false,
+    icon,
+    className,
+    type = 'button',
+    children,
+    ...rest
+  },
   ref,
 ) {
   const classes = [
@@ -106,7 +115,10 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
   className,
   children,
 }) => (
-  <span className={['mn-badge', `mn-badge--${tone}`, className].filter(Boolean).join(' ')} title={title}>
+  <span
+    className={['mn-badge', `mn-badge--${tone}`, className].filter(Boolean).join(' ')}
+    title={title}
+  >
     <span className={`mn-badge__marker mn-badge__marker--${shape}`} aria-hidden="true" />
     {children}
   </span>
@@ -138,7 +150,11 @@ export const Alert: React.FC<AlertProps> = ({
   return (
     <div className={['mn-alert', `mn-alert--${tone}`, className].filter(Boolean).join(' ')}>
       <span className="mn-alert__mark" aria-hidden="true" />
-      <div className="mn-alert__body" role={role} aria-live={politeness === 'off' ? undefined : politeness}>
+      <div
+        className="mn-alert__body"
+        role={role}
+        aria-live={politeness === 'off' ? undefined : politeness}
+      >
         {title ? <p className="mn-alert__title">{title}</p> : null}
         <div className="mn-alert__text">{children}</div>
       </div>

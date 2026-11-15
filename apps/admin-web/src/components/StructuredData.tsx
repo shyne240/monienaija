@@ -40,7 +40,8 @@ export function humanizeKey(key: string): string {
 function formatScalar(key: string, value: string | number | boolean | null | undefined): string {
   if (value === null || value === undefined || value === '') return emptyValue;
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-  if (typeof value === 'number') return Number.isFinite(value) ? value.toLocaleString() : String(value);
+  if (typeof value === 'number')
+    return Number.isFinite(value) ? value.toLocaleString() : String(value);
 
   if (/(?:At|Date|Timestamp)$/i.test(key)) {
     const date = new Date(value);
@@ -49,18 +50,33 @@ function formatScalar(key: string, value: string | number | boolean | null | und
   return value;
 }
 
-function StructuredValue({ field, value, depth = 0 }: { field: string; value: unknown; depth?: number }) {
+function StructuredValue({
+  field,
+  value,
+  depth = 0,
+}: {
+  field: string;
+  value: unknown;
+  depth?: number;
+}) {
   if (value === null || value === undefined || value === '') return <span>{emptyValue}</span>;
-  if (typeof value !== 'object') return <span>{formatScalar(field, value as string | number | boolean)}</span>;
+  if (typeof value !== 'object')
+    return <span>{formatScalar(field, value as string | number | boolean)}</span>;
   if (depth >= 3) return <span>Structured value</span>;
 
   if (Array.isArray(value)) {
     if (value.length === 0) return <span>{emptyValue}</span>;
     return (
       <details>
-        <summary>{value.length} item{value.length === 1 ? '' : 's'}</summary>
+        <summary>
+          {value.length} item{value.length === 1 ? '' : 's'}
+        </summary>
         <ul style={styles.valueList}>
-          {value.map((item, index) => <li key={index}><StructuredValue field={field} value={item} depth={depth + 1} /></li>)}
+          {value.map((item, index) => (
+            <li key={index}>
+              <StructuredValue field={field} value={item} depth={depth + 1} />
+            </li>
+          ))}
         </ul>
       </details>
     );
@@ -69,7 +85,9 @@ function StructuredValue({ field, value, depth = 0 }: { field: string; value: un
   const record = value as DataRecord;
   return (
     <details>
-      <summary>{Object.keys(record).length} field{Object.keys(record).length === 1 ? '' : 's'}</summary>
+      <summary>
+        {Object.keys(record).length} field{Object.keys(record).length === 1 ? '' : 's'}
+      </summary>
       <StructuredKeyValueList data={record} depth={depth + 1} />
     </details>
   );
@@ -89,7 +107,9 @@ export function StructuredKeyValueList({
       {entries.map(([key, value]) => (
         <React.Fragment key={key}>
           <dt style={styles.term}>{humanizeKey(key)}</dt>
-          <dd style={styles.description}><StructuredValue field={key} value={value} depth={depth} /></dd>
+          <dd style={styles.description}>
+            <StructuredValue field={key} value={value} depth={depth} />
+          </dd>
         </React.Fragment>
       ))}
     </dl>
@@ -113,52 +133,104 @@ export function StructuredRecordTable({
 
   return (
     <ScrollRegion label="Records table" hint="Scroll horizontally to see all columns.">
-    <div style={styles.tableWrap}>
-      <table className="mn-data-table" style={styles.table}>
-        <thead>
-          <tr>
-            {columns.map((column) => <th key={column.key} scope="col" style={styles.headerCell}>{column.label}</th>)}
-            {showDetails && <th scope="col" style={styles.headerCell}>Details</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => {
-            const rowId = row.id ?? row.code ?? row.reference ?? row.eventKey ?? index;
-            return (
-              <tr key={String(rowId)}>
-                {columns.map((column) => (
-                  <td key={column.key} style={styles.cell}>
-                    {column.render
-                      ? column.render(row[column.key], row)
-                      : <StructuredValue field={column.key} value={row[column.key]} />}
-                  </td>
-                ))}
-                {showDetails && (
-                  <td style={styles.cell}>
-                    {onViewDetails ? <button type="button" className="commercial-detail-trigger" onClick={() => onViewDetails(row)}>View details</button> : <details>
-                      <summary>View details</summary>
-                      <StructuredKeyValueList data={row} />
-                    </details>}
-                  </td>
-                )}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+      <div style={styles.tableWrap}>
+        <table className="mn-data-table" style={styles.table}>
+          <thead>
+            <tr>
+              {columns.map((column) => (
+                <th key={column.key} scope="col" style={styles.headerCell}>
+                  {column.label}
+                </th>
+              ))}
+              {showDetails && (
+                <th scope="col" style={styles.headerCell}>
+                  Details
+                </th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => {
+              const rowId = row.id ?? row.code ?? row.reference ?? row.eventKey ?? index;
+              return (
+                <tr key={String(rowId)}>
+                  {columns.map((column) => (
+                    <td key={column.key} style={styles.cell}>
+                      {column.render ? (
+                        column.render(row[column.key], row)
+                      ) : (
+                        <StructuredValue field={column.key} value={row[column.key]} />
+                      )}
+                    </td>
+                  ))}
+                  {showDetails && (
+                    <td style={styles.cell}>
+                      {onViewDetails ? (
+                        <button
+                          type="button"
+                          className="commercial-detail-trigger"
+                          onClick={() => onViewDetails(row)}
+                        >
+                          View details
+                        </button>
+                      ) : (
+                        <details>
+                          <summary>View details</summary>
+                          <StructuredKeyValueList data={row} />
+                        </details>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </ScrollRegion>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  tableWrap: { minWidth: '100%', width: 'max-content', boxSizing: 'border-box', background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8 },
+  tableWrap: {
+    minWidth: '100%',
+    width: 'max-content',
+    boxSizing: 'border-box',
+    background: '#fff',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
+    borderRadius: 8,
+  },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 12 },
-  headerCell: { padding: '10px 12px', background: 'var(--mn-surface-canvas, #f5f8f6)', borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)', textAlign: 'left', color: 'var(--mn-text-secondary, #52655f)', whiteSpace: 'nowrap' },
-  cell: { padding: '10px 12px', borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)', verticalAlign: 'top', color: 'var(--mn-text-primary, #132b25)' },
-  definitionList: { display: 'grid', gridTemplateColumns: 'minmax(120px, max-content) minmax(0, 1fr)', gap: '6px 12px', margin: '10px 0 0', fontSize: 12 },
+  headerCell: {
+    padding: '10px 12px',
+    background: 'var(--mn-surface-canvas, #f5f8f6)',
+    borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)',
+    textAlign: 'left',
+    color: 'var(--mn-text-secondary, #52655f)',
+    whiteSpace: 'nowrap',
+  },
+  cell: {
+    padding: '10px 12px',
+    borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)',
+    verticalAlign: 'top',
+    color: 'var(--mn-text-primary, #132b25)',
+  },
+  definitionList: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(120px, max-content) minmax(0, 1fr)',
+    gap: '6px 12px',
+    margin: '10px 0 0',
+    fontSize: 12,
+  },
   term: { fontWeight: 600, color: 'var(--mn-text-secondary, #52655f)' },
   description: { margin: 0, overflowWrap: 'anywhere', color: 'var(--mn-text-primary, #132b25)' },
   valueList: { margin: '6px 0 6px 18px', padding: 0 },
-  empty: { padding: 16, margin: 0, color: 'var(--mn-text-secondary, #52655f)', fontSize: 13, background: 'var(--mn-surface-canvas, #f5f8f6)', borderRadius: 6 },
+  empty: {
+    padding: 16,
+    margin: 0,
+    color: 'var(--mn-text-secondary, #52655f)',
+    fontSize: 13,
+    background: 'var(--mn-surface-canvas, #f5f8f6)',
+    borderRadius: 6,
+  },
 };

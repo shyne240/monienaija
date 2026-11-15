@@ -79,20 +79,29 @@ export const HomeScreen: React.FC = () => {
       {/* Identity + class (GET /agents/me/profile) */}
       <Card style={styles.card} testID="agent-identity-card">
         {profileQuery.isLoading ? (
-          <Text style={styles.muted} testID="identity-loading">Loading Agent profile...</Text>
+          <Text style={styles.muted} testID="identity-loading">
+            Loading Agent profile...
+          </Text>
         ) : profileQuery.isError ? (
           <View>
             <Text style={styles.errorText} testID="identity-error">
               {describeApiError(profileQuery.error)}
             </Text>
-            <Button label="Retry" variant="outline" onPress={() => profileQuery.refetch()} testID="identity-retry" />
+            <Button
+              label="Retry"
+              variant="outline"
+              onPress={() => profileQuery.refetch()}
+              testID="identity-retry"
+            />
           </View>
         ) : (
           <>
             <View style={styles.headerRow}>
               <View style={styles.headerText}>
                 <Text style={styles.sectionTitle}>Agent</Text>
-                <Text style={styles.reference} testID="agent-reference">{profile?.reference}</Text>
+                <Text style={styles.reference} testID="agent-reference">
+                  {profile?.reference}
+                </Text>
                 {profile?.agentClass && (
                   <Text style={styles.classText} testID="agent-class">
                     {profile.agentClass.name} · Class {profile.agentClass.code}
@@ -100,9 +109,14 @@ export const HomeScreen: React.FC = () => {
                 )}
               </View>
               <View
-                style={[styles.statusBadge, profile?.status === 'ACTIVE' ? styles.statusActive : styles.statusInactive]}
+                style={[
+                  styles.statusBadge,
+                  profile?.status === 'ACTIVE' ? styles.statusActive : styles.statusInactive,
+                ]}
               >
-                <Text style={styles.statusText} testID="agent-status">{profile?.status ?? '—'}</Text>
+                <Text style={styles.statusText} testID="agent-status">
+                  {profile?.status ?? '—'}
+                </Text>
               </View>
             </View>
           </>
@@ -113,13 +127,20 @@ export const HomeScreen: React.FC = () => {
       <Card style={styles.card} testID="financial-position-card">
         <Text style={styles.sectionTitle}>Available Balance</Text>
         {financialQuery.isLoading ? (
-          <Text style={styles.muted} testID="financial-loading">Loading balance...</Text>
+          <Text style={styles.muted} testID="financial-loading">
+            Loading balance...
+          </Text>
         ) : financialQuery.isError ? (
           <View>
             <Text style={styles.errorText} testID="financial-error">
               {describeApiError(financialQuery.error)}
             </Text>
-            <Button label="Retry" variant="outline" onPress={() => financialQuery.refetch()} testID="financial-retry" />
+            <Button
+              label="Retry"
+              variant="outline"
+              onPress={() => financialQuery.refetch()}
+              testID="financial-retry"
+            />
           </View>
         ) : financial && !financial.walletExists ? (
           <View testID="financial-no-wallet">
@@ -145,13 +166,20 @@ export const HomeScreen: React.FC = () => {
       <Card style={styles.card} testID="receiving-number-card">
         <Text style={styles.sectionTitle}>Your Receiving Number</Text>
         {receivingQuery.isLoading ? (
-          <Text style={styles.muted} testID="receiving-loading">Loading receiving number...</Text>
+          <Text style={styles.muted} testID="receiving-loading">
+            Loading receiving number...
+          </Text>
         ) : receivingQuery.isError ? (
           <View>
             <Text style={styles.errorText} testID="receiving-error">
               {describeApiError(receivingQuery.error)}
             </Text>
-            <Button label="Retry" variant="outline" onPress={() => receivingQuery.refetch()} testID="receiving-retry" />
+            <Button
+              label="Retry"
+              variant="outline"
+              onPress={() => receivingQuery.refetch()}
+              testID="receiving-retry"
+            />
           </View>
         ) : receiving ? (
           <View>
@@ -173,20 +201,27 @@ export const HomeScreen: React.FC = () => {
       <Card style={styles.card} testID="capabilities-card">
         <Text style={styles.sectionTitle}>Agent Services</Text>
         {capabilitiesQuery.isLoading ? (
-          <Text style={styles.muted} testID="capabilities-loading">Loading services...</Text>
+          <Text style={styles.muted} testID="capabilities-loading">
+            Loading services...
+          </Text>
         ) : capabilitiesQuery.isError ? (
           <View>
             <Text style={styles.errorText} testID="capabilities-error">
               {describeApiError(capabilitiesQuery.error)}
             </Text>
-            <Button label="Retry" variant="outline" onPress={() => capabilitiesQuery.refetch()} testID="capabilities-retry" />
+            <Button
+              label="Retry"
+              variant="outline"
+              onPress={() => capabilitiesQuery.refetch()}
+              testID="capabilities-retry"
+            />
           </View>
         ) : capabilitiesQuery.data ? (
           <CapabilitiesList capabilities={capabilitiesQuery.data} testID="capabilities-list" />
         ) : null}
         <Text style={styles.helper}>
-          Enabled services unlock their transaction actions below. Disabled services remain unavailable
-          until granted to your agent class.
+          Enabled services unlock their transaction actions below. Disabled services remain
+          unavailable until granted to your agent class.
         </Text>
       </Card>
 
@@ -203,8 +238,8 @@ export const HomeScreen: React.FC = () => {
         testID="nav-transactions"
       />
       {/* Fail-closed: visible ONLY while the backend permits CASH_IN */}
-      {capabilitiesQuery.data?.evaluations.find((e) => e.canonicalService === 'CASH_IN')?.allowed ===
-        true && (
+      {capabilitiesQuery.data?.evaluations.find((e) => e.canonicalService === 'CASH_IN')
+        ?.allowed === true && (
         <Button
           label="Cash→Wallet — credit a customer wallet"
           onPress={() => navigation.navigate('CashToWallet')}
@@ -212,8 +247,8 @@ export const HomeScreen: React.FC = () => {
         />
       )}
       {/* Fail-closed: visible ONLY while the backend permits CASH_TO_CASH */}
-      {capabilitiesQuery.data?.evaluations.find((e) => e.canonicalService === 'CASH_TO_CASH')?.allowed ===
-        true && (
+      {capabilitiesQuery.data?.evaluations.find((e) => e.canonicalService === 'CASH_TO_CASH')
+        ?.allowed === true && (
         <>
           <Button
             label="Cash→Cash — send to beneficiary"
@@ -227,14 +262,14 @@ export const HomeScreen: React.FC = () => {
             testID="nav-cash-to-cash-claim"
           />
           <Text style={styles.helper} testID="c2c-redemption-method-note">
-            Claims can credit the beneficiary&apos;s Customer wallet or the claiming Agent&apos;s NGN float for
-            cash payout. Physical cash handover is separate from ledger settlement.
+            Claims can credit the beneficiary&apos;s Customer wallet or the claiming Agent&apos;s
+            NGN float for cash payout. Physical cash handover is separate from ledger settlement.
           </Text>
         </>
       )}
       {/* Fail-closed: visible ONLY while the backend permits CASH_OUT */}
-      {capabilitiesQuery.data?.evaluations.find((e) => e.canonicalService === 'CASH_OUT')?.allowed ===
-        true && (
+      {capabilitiesQuery.data?.evaluations.find((e) => e.canonicalService === 'CASH_OUT')
+        ?.allowed === true && (
         <Button
           label="Wallet→Cash — cash out a customer wallet"
           onPress={() => navigation.navigate('WalletToCash')}

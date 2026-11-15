@@ -42,9 +42,9 @@ describe('Admin Web build configuration', () => {
 
   it('never invents an API base URL', () => {
     expect(resolveAdminBuildConfig('production', {}).apiBaseUrl).toBe('');
-    expect(
-      resolveAdminBuildConfig('production', { ADMIN_WEB_API_BASE_URL: '  ' }).apiBaseUrl,
-    ).toBe('');
+    expect(resolveAdminBuildConfig('production', { ADMIN_WEB_API_BASE_URL: '  ' }).apiBaseUrl).toBe(
+      '',
+    );
   });
 });
 

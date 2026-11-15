@@ -91,23 +91,31 @@ describe('Agent classes and Cash-to-Cash Admin Web integrations', () => {
   test('Agent class manager lists and updates a class with its optimistic version', async () => {
     setPrincipal(['agent.view', 'agent.manage_classes']);
     (ApiClient.get as jest.Mock).mockResolvedValue([agentClass]);
-    (ApiClient.patch as jest.Mock).mockResolvedValue({ ...agentClass, name: 'Updated Test Class', version: 4 });
+    (ApiClient.patch as jest.Mock).mockResolvedValue({
+      ...agentClass,
+      name: 'Updated Test Class',
+      version: 4,
+    });
 
     const view = render(<AgentClassesScreen />);
     expect(await view.findByText('AGENT-CLASS-TEST')).toBeTruthy();
     fireEvent.click(view.getByRole('button', { name: 'Review / edit' }));
-    fireEvent.change(view.getByLabelText('Class name'), { target: { value: 'Updated Test Class' } });
+    fireEvent.change(view.getByLabelText('Class name'), {
+      target: { value: 'Updated Test Class' },
+    });
     fireEvent.click(view.getByRole('button', { name: 'Save class' }));
 
-    await waitFor(() => expect(ApiClient.patch).toHaveBeenCalledWith(
-      '/internal/agents/classes/class-uuid',
-      expect.objectContaining({
-        name: 'Updated Test Class',
-        expectedVersion: 3,
-        applicableServices: ['CASH_TO_CASH'],
-        applicableLimits: null,
-      }),
-    ));
+    await waitFor(() =>
+      expect(ApiClient.patch).toHaveBeenCalledWith(
+        '/internal/agents/classes/class-uuid',
+        expect.objectContaining({
+          name: 'Updated Test Class',
+          expectedVersion: 3,
+          applicableServices: ['CASH_TO_CASH'],
+          applicableLimits: null,
+        }),
+      ),
+    );
   });
 
   test('new Agent classes are submitted inactive and do not invent service or limit configuration', async () => {
@@ -115,19 +123,23 @@ describe('Agent classes and Cash-to-Cash Admin Web integrations', () => {
     (ApiClient.get as jest.Mock).mockResolvedValue([]);
     const view = render(<AgentClassesScreen />);
     fireEvent.click(await view.findByRole('button', { name: 'Create class' }));
-    fireEvent.change(view.getByLabelText('Class name'), { target: { value: 'Unconfigured Agent Class' } });
+    fireEvent.change(view.getByLabelText('Class name'), {
+      target: { value: 'Unconfigured Agent Class' },
+    });
     fireEvent.click(view.getByRole('button', { name: 'Create inactive class' }));
 
-    await waitFor(() => expect(ApiClient.post).toHaveBeenCalledWith(
-      '/internal/agents/classes',
-      expect.objectContaining({
-        name: 'Unconfigured Agent Class',
-        isActive: false,
-        applicableServices: null,
-        applicableLimits: null,
-        requiredDocumentCategories: null,
-      }),
-    ));
+    await waitFor(() =>
+      expect(ApiClient.post).toHaveBeenCalledWith(
+        '/internal/agents/classes',
+        expect.objectContaining({
+          name: 'Unconfigured Agent Class',
+          isActive: false,
+          applicableServices: null,
+          applicableLimits: null,
+          requiredDocumentCategories: null,
+        }),
+      ),
+    );
     expect(ApiClient.post).toHaveBeenCalledTimes(1);
   });
 
@@ -136,45 +148,73 @@ describe('Agent classes and Cash-to-Cash Admin Web integrations', () => {
     (ApiClient.get as jest.Mock).mockResolvedValue([]);
     const view = render(<AgentClassesScreen />);
     fireEvent.click(await view.findByRole('button', { name: 'Create class' }));
-    fireEvent.change(view.getByLabelText('Class name'), { target: { value: 'Invalid JSON Class' } });
+    fireEvent.change(view.getByLabelText('Class name'), {
+      target: { value: 'Invalid JSON Class' },
+    });
     fireEvent.change(view.getByLabelText('Required information JSON'), { target: { value: '[' } });
     fireEvent.click(view.getByRole('button', { name: 'Create inactive class' }));
 
-    expect((await view.findByRole('alert')).textContent).toMatch(/Required information must contain valid JSON/i);
+    expect((await view.findByRole('alert')).textContent).toMatch(
+      /Required information must contain valid JSON/i,
+    );
     expect(ApiClient.post).not.toHaveBeenCalled();
   });
 
   test('Cash-to-Cash operations show paginated lifecycle and receipt data with masked phone', async () => {
     setPrincipal(['transaction.view']);
-    (ApiClient.get as jest.Mock).mockResolvedValue({ data: [transfer], total: 21, page: 1, limit: 20, totalPages: 2 });
+    (ApiClient.get as jest.Mock).mockResolvedValue({
+      data: [transfer],
+      total: 21,
+      page: 1,
+      limit: 20,
+      totalPages: 2,
+    });
 
     const view = render(<CashToCashOperationsScreen />);
     expect(await view.findByText('Cash-to-Cash Operations')).toBeTruthy();
     expect(view.getByText('••••••0123')).toBeTruthy();
     expect(view.getByText('NGN 1,234.56')).toBeTruthy();
     expect(view.queryByText('07000000123')).toBeNull();
-    expect(ApiClient.get).toHaveBeenCalledWith('/internal/admin/cash-to-cash/transfers?page=1&limit=20');
+    expect(ApiClient.get).toHaveBeenCalledWith(
+      '/internal/admin/cash-to-cash/transfers?page=1&limit=20',
+    );
 
     fireEvent.click(view.getByRole('button', { name: 'Inspect receipt' }));
-    expect(view.getByLabelText('Cash-to-Cash receipt details').textContent).toContain('C2C-REF-001');
-    expect(view.getByLabelText('Cash-to-Cash receipt details').textContent).toContain('journal-claim');
+    expect(view.getByLabelText('Cash-to-Cash receipt details').textContent).toContain(
+      'C2C-REF-001',
+    );
+    expect(view.getByLabelText('Cash-to-Cash receipt details').textContent).toContain(
+      'journal-claim',
+    );
     expect(view.getByLabelText('Cash-to-Cash receipt details').textContent).toContain('AGENT_CASH');
 
     fireEvent.click(view.getByRole('button', { name: 'Next' }));
-    await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith('/internal/admin/cash-to-cash/transfers?page=2&limit=20'));
+    await waitFor(() =>
+      expect(ApiClient.get).toHaveBeenCalledWith(
+        '/internal/admin/cash-to-cash/transfers?page=2&limit=20',
+      ),
+    );
   });
 
   test('Cash-to-Cash filters are encoded and the route is hidden without transaction.view', async () => {
     setPrincipal(['transaction.view']);
-    (ApiClient.get as jest.Mock).mockResolvedValue({ data: [], total: 0, page: 1, limit: 20, totalPages: 0 });
+    (ApiClient.get as jest.Mock).mockResolvedValue({
+      data: [],
+      total: 0,
+      page: 1,
+      limit: 20,
+      totalPages: 0,
+    });
     const view = render(<CashToCashOperationsScreen />);
     await view.findByText('No Cash-to-Cash transfers match these filters.');
     fireEvent.click(view.getByRole('button', { name: 'Claimed' }));
     fireEvent.change(view.getByLabelText('Agent UUID'), { target: { value: 'agent-uuid' } });
     fireEvent.click(view.getByRole('button', { name: 'Search' }));
-    await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith(
-      '/internal/admin/cash-to-cash/transfers?page=1&limit=20&status=CLAIMED&agentId=agent-uuid',
-    ));
+    await waitFor(() =>
+      expect(ApiClient.get).toHaveBeenCalledWith(
+        '/internal/admin/cash-to-cash/transfers?page=1&limit=20&status=CLAIMED&agentId=agent-uuid',
+      ),
+    );
     view.unmount();
 
     setPrincipal([]);
@@ -193,30 +233,48 @@ describe('Agent classes and Cash-to-Cash Admin Web integrations', () => {
       deliveryNotice: 'Temporary credential — deliver out-of-band.',
     };
     (ApiClient.post as jest.Mock).mockResolvedValue(issued);
-    const view = render(<AgentCredentialPanel agentId="agent-uuid" agentStatus="ACTIVE" canManage />);
+    const view = render(
+      <AgentCredentialPanel agentId="agent-uuid" agentStatus="ACTIVE" canManage />,
+    );
 
     fireEvent.click(view.getByRole('button', { name: 'Issue initial credential' }));
-    await waitFor(() => expect(ApiClient.post).toHaveBeenCalledWith('/internal/admin/agents/agent-uuid/credentials'));
-    expect((await view.findByTestId('temporary-agent-password')).textContent).toContain('one-time-only-secret');
+    await waitFor(() =>
+      expect(ApiClient.post).toHaveBeenCalledWith('/internal/admin/agents/agent-uuid/credentials'),
+    );
+    expect((await view.findByTestId('temporary-agent-password')).textContent).toContain(
+      'one-time-only-secret',
+    );
     fireEvent.click(view.getByRole('button', { name: 'Hide one-time value' }));
     expect(view.queryByTestId('temporary-agent-password')).toBeNull();
 
     const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
     fireEvent.click(view.getByRole('button', { name: 'Reissue + invalidate sessions' }));
-    await waitFor(() => expect(ApiClient.post).toHaveBeenCalledWith('/internal/admin/agents/agent-uuid/credentials/reissue'));
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('all sessions using it will be invalidated'));
-    expect(await view.findByText(/previous credential and its active sessions were invalidated/i)).toBeTruthy();
+    await waitFor(() =>
+      expect(ApiClient.post).toHaveBeenCalledWith(
+        '/internal/admin/agents/agent-uuid/credentials/reissue',
+      ),
+    );
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining('all sessions using it will be invalidated'),
+    );
+    expect(
+      await view.findByText(/previous credential and its active sessions were invalidated/i),
+    ).toBeTruthy();
     confirm.mockRestore();
   });
 
   test('credential controls disappear without agent.manage_credentials and when the Agent is inactive', () => {
     setPrincipal(['agent.view']);
-    const denied = render(<AgentCredentialPanel agentId="agent-uuid" agentStatus="ACTIVE" canManage={false} />);
+    const denied = render(
+      <AgentCredentialPanel agentId="agent-uuid" agentStatus="ACTIVE" canManage={false} />,
+    );
     expect(denied.container.textContent).toBe('');
     denied.unmount();
 
     setPrincipal(['agent.manage_credentials']);
-    const inactive = render(<AgentCredentialPanel agentId="agent-uuid" agentStatus="SUSPENDED" canManage />);
+    const inactive = render(
+      <AgentCredentialPanel agentId="agent-uuid" agentStatus="SUSPENDED" canManage />,
+    );
     expect(inactive.getByText(/available only for an ACTIVE Agent/i)).toBeTruthy();
     expect(inactive.queryByRole('button', { name: 'Issue initial credential' })).toBeNull();
     expect(ApiClient.post).not.toHaveBeenCalled();
@@ -242,14 +300,18 @@ describe('Agent classes and Cash-to-Cash Admin Web integrations', () => {
 
     const view = render(<AgentCredentialPanel agentId="agent-1" agentStatus="ACTIVE" canManage />);
     fireEvent.click(view.getByRole('button', { name: 'Issue initial credential' }));
-    expect((await view.findByTestId('temporary-agent-password')).textContent).toBe('secret-for-agent-1');
+    expect((await view.findByTestId('temporary-agent-password')).textContent).toBe(
+      'secret-for-agent-1',
+    );
 
     // Switching selected agent must wipe the previous agent's one-time secret immediately
     view.rerender(<AgentCredentialPanel agentId="agent-2" agentStatus="ACTIVE" canManage />);
     expect(view.queryByTestId('temporary-agent-password')).toBeNull();
 
     // A 409 can also reflect an inactive Agent; do not assume a credential already exists
-    const conflict = Object.assign(new Error('Initial credential already exists for this Agent'), { status: 409 });
+    const conflict = Object.assign(new Error('Initial credential already exists for this Agent'), {
+      status: 409,
+    });
     (ApiClient.post as jest.Mock).mockRejectedValueOnce(conflict);
     fireEvent.click(view.getByRole('button', { name: 'Issue initial credential' }));
     const alertText = (await view.findByRole('alert')).textContent ?? '';
@@ -271,7 +333,9 @@ describe('Agent classes and Cash-to-Cash Admin Web integrations', () => {
     await view.findByText('••••••0123');
     fireEvent.click(view.getByRole('button', { name: 'Next' }));
     await waitFor(() =>
-      expect(ApiClient.get).toHaveBeenCalledWith('/internal/admin/cash-to-cash/transfers?page=2&limit=20'),
+      expect(ApiClient.get).toHaveBeenCalledWith(
+        '/internal/admin/cash-to-cash/transfers?page=2&limit=20',
+      ),
     );
 
     (ApiClient.get as jest.Mock).mockClear();
@@ -288,7 +352,9 @@ describe('Agent classes and Cash-to-Cash Admin Web integrations', () => {
     (ApiClient.get as jest.Mock).mockClear();
     fireEvent.click(view.getByRole('button', { name: 'Reset' }));
     await waitFor(() =>
-      expect(ApiClient.get).toHaveBeenCalledWith('/internal/admin/cash-to-cash/transfers?page=1&limit=20'),
+      expect(ApiClient.get).toHaveBeenCalledWith(
+        '/internal/admin/cash-to-cash/transfers?page=1&limit=20',
+      ),
     );
   });
 });

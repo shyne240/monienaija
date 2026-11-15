@@ -145,7 +145,8 @@ export function formatMinor(minor: string | number | null | undefined, currency?
   if (minor === null || minor === undefined) return '—';
   if (typeof minor === 'number' && !Number.isSafeInteger(minor)) return 'Amount unavailable';
   const raw = String(minor);
-  if (!/^-?\d+$/.test(raw) || typeof currency !== 'string' || !currency.trim()) return 'Amount unavailable';
+  if (!/^-?\d+$/.test(raw) || typeof currency !== 'string' || !currency.trim())
+    return 'Amount unavailable';
   return formatFinancialAmount(raw, currency);
 }
 

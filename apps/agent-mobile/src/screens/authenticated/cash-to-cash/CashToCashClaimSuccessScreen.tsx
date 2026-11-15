@@ -8,7 +8,10 @@ import { Card } from '../../../components/Card';
 import { Button } from '../../../components/Button';
 import { AgentReceipt, receiptFromCashToCashClaimResult } from '../../../components/AgentReceipt';
 import { formatNairaFromMinor } from '../../../utils/format';
-import { clearPendingCashToCashLocatorClaim, loadPendingCashToCashLocatorClaim } from '../../../services/pending-operation';
+import {
+  clearPendingCashToCashLocatorClaim,
+  loadPendingCashToCashLocatorClaim,
+} from '../../../services/pending-operation';
 import { useAuthStore } from '../../../store/auth-store';
 import type { RootStackParamList } from '../../../navigation/types';
 
@@ -30,12 +33,15 @@ export const CashToCashClaimSuccessScreen: React.FC = () => {
       if (pendingLocatorClaim) {
         if (!agentId) throw new Error('Agent session unavailable');
         const pending = await loadPendingCashToCashLocatorClaim(agentId);
-        if (!pending || pending.idempotencyKey !== result.idempotencyKey) throw new Error('Claim identity mismatch');
+        if (!pending || pending.idempotencyKey !== result.idempotencyKey)
+          throw new Error('Claim identity mismatch');
         await clearPendingCashToCashLocatorClaim(agentId);
       }
-      navigation.reset(destination === 'Transactions'
-        ? { index: 1, routes: [{ name: 'Home' }, { name: 'Transactions' }] }
-        : { index: 0, routes: [{ name: destination }] });
+      navigation.reset(
+        destination === 'Transactions'
+          ? { index: 1, routes: [{ name: 'Home' }, { name: 'Transactions' }] }
+          : { index: 0, routes: [{ name: destination }] },
+      );
     } catch {
       setStorageError('Unable to acknowledge this receipt. Keep this screen and try again.');
     }
@@ -43,7 +49,11 @@ export const CashToCashClaimSuccessScreen: React.FC = () => {
 
   const replayed = result.replayed === true || result.status === 'REPLAYED';
   const cashPayout = result.redemptionMethod === 'AGENT_CASH';
-  const receipt = receiptFromCashToCashClaimResult(result, customerDisplay, customerReceivingNumber);
+  const receipt = receiptFromCashToCashClaimResult(
+    result,
+    customerDisplay,
+    customerReceivingNumber,
+  );
   const amountMinor = result.principalMinor || result.amountMinor;
 
   return (
@@ -52,8 +62,12 @@ export const CashToCashClaimSuccessScreen: React.FC = () => {
         <Text style={styles.checkMark}>✓</Text>
         <Text style={styles.heroTitle} testID="c2c-claim-success-title">
           {cashPayout
-            ? replayed ? 'Cash payout settlement already recorded' : 'Agent float credited'
-            : replayed ? 'Wallet claim already recorded' : 'Customer wallet credited'}
+            ? replayed
+              ? 'Cash payout settlement already recorded'
+              : 'Agent float credited'
+            : replayed
+              ? 'Wallet claim already recorded'
+              : 'Customer wallet credited'}
         </Text>
         <Text style={styles.heroSubtitle}>
           {cashPayout
@@ -92,18 +106,24 @@ export const CashToCashClaimSuccessScreen: React.FC = () => {
       <Button
         label="View transaction history"
         variant="outline"
-        onPress={() => { void acknowledge('Transactions'); }}
+        onPress={() => {
+          void acknowledge('Transactions');
+        }}
         testID="c2c-claim-success-history"
       />
       <Button
         label="New Cash-to-Cash claim"
         variant="outline"
-        onPress={() => { void acknowledge('CashToCashClaim'); }}
+        onPress={() => {
+          void acknowledge('CashToCashClaim');
+        }}
         testID="c2c-claim-success-new"
       />
       <Button
         label="Done"
-        onPress={() => { void acknowledge('Home'); }}
+        onPress={() => {
+          void acknowledge('Home');
+        }}
         testID="c2c-claim-success-done"
       />
     </ScrollView>

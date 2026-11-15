@@ -477,7 +477,9 @@ export class RuntimeAccessGuard implements CanActivate {
   private isCustomerSelfLogoutRoute(method: string, rawPath: string): boolean {
     const upper = method.toUpperCase();
     if (upper === 'POST') {
-      return rawPath === '/api/v1/customers/sessions/logout' || rawPath === '/api/v1/customers/logout';
+      return (
+        rawPath === '/api/v1/customers/sessions/logout' || rawPath === '/api/v1/customers/logout'
+      );
     }
     if (upper === 'DELETE') {
       return /^\/api\/v1\/customers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/sessions(?:\/current)?$/i.test(

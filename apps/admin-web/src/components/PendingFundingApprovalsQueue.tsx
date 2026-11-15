@@ -129,7 +129,9 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
   loadQueue,
   onSelectRequest,
 }) => {
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'REJECTED' | 'EXECUTED'>('PENDING');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'REJECTED' | 'EXECUTED'>(
+    'PENDING',
+  );
   const [directionFilter, setDirectionFilter] = useState<'ALL' | 'FUND' | 'DEFUND'>('ALL');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
@@ -183,7 +185,10 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
     ) => {
       if (!canReviewFunding || !canAccessGlobalInbox || forbiddenMessage) return;
       const current = ++generation.current;
-      const valid = () => generation.current === current && access.current.canReviewFunding && access.current.canAccessGlobalInbox;
+      const valid = () =>
+        generation.current === current &&
+        access.current.canReviewFunding &&
+        access.current.canAccessGlobalInbox;
       setLoaded(false);
       setInspectedItem(null);
       setLoading(true);
@@ -197,12 +202,19 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
           ...(targetDirection !== 'ALL' ? { direction: targetDirection } : {}),
         });
         if (!valid()) return;
-        if (!res || !Array.isArray(res.items) || typeof res.total !== 'number' || !Number.isFinite(res.total) || res.total < 0) throw new Error('Invalid funding inbox response.');
+        if (
+          !res ||
+          !Array.isArray(res.items) ||
+          typeof res.total !== 'number' ||
+          !Number.isFinite(res.total) ||
+          res.total < 0
+        )
+          throw new Error('Invalid funding inbox response.');
         const rows = res.items;
         setItems(rows);
         setTotal(res.total);
         setLoaded(true);
-        setInspectedItem((cur) => (cur ? rows.find((r) => r.id === cur.id) ?? null : null));
+        setInspectedItem((cur) => (cur ? (rows.find((r) => r.id === cur.id) ?? null) : null));
       } catch (err: unknown) {
         if (!valid()) return;
         setItems([]);
@@ -238,8 +250,20 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
   useEffect(() => {
     if (!canReviewFunding || !canAccessGlobalInbox || forbiddenMessage) return;
     void loadPage(page, limit, statusFilter, directionFilter);
-    return () => { generation.current += 1; };
-  }, [canReviewFunding, canAccessGlobalInbox, page, limit, statusFilter, directionFilter, refreshTrigger, loadPage, forbiddenMessage]);
+    return () => {
+      generation.current += 1;
+    };
+  }, [
+    canReviewFunding,
+    canAccessGlobalInbox,
+    page,
+    limit,
+    statusFilter,
+    directionFilter,
+    refreshTrigger,
+    loadPage,
+    forbiddenMessage,
+  ]);
 
   if (!canReviewFunding) return null;
 
@@ -264,10 +288,12 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
     >
       <div className="mn-agent-workspace__header">
         <div>
-          <h3 className="mn-agent-workspace__title">Global Funding &amp; Defunding Approvals Inbox</h3>
+          <h3 className="mn-agent-workspace__title">
+            Global Funding &amp; Defunding Approvals Inbox
+          </h3>
           <p className="mn-agent-workspace__description">
-            Live read-only checker discovery (<code>GET /internal/agents/funding-requests</code>). Own maker
-            requests are excluded server-side; <code>agent.view</code> is not required.
+            Live read-only checker discovery (<code>GET /internal/agents/funding-requests</code>).
+            Own maker requests are excluded server-side; <code>agent.view</code> is not required.
           </p>
         </div>
         {canAccessGlobalInbox && !forbiddenMessage && (
@@ -283,29 +309,17 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
       </div>
 
       {!canAccessGlobalInbox ? (
-        <div
-          style={styles.unauthorizedBox}
-          role="status"
-          data-testid="funding-inbox-unauthorized"
-        >
+        <div style={styles.unauthorizedBox} role="status" data-testid="funding-inbox-unauthorized">
           <strong>Not entitled to global funding inbox:</strong>{' '}
           {unauthorizedReason ||
             'Decision 7 requires a non-SUPER_ADMIN FINANCE_CONTROLLER signed in with MFA and holding both agent.fund and agent.defund.'}
         </div>
       ) : forbiddenMessage ? (
-        <div
-          style={styles.unauthorizedBox}
-          role="status"
-          data-testid="funding-inbox-unauthorized"
-        >
+        <div style={styles.unauthorizedBox} role="status" data-testid="funding-inbox-unauthorized">
           {forbiddenMessage}
         </div>
       ) : unauthorizedSessionMessage ? (
-        <div
-          style={styles.errorBox}
-          role="alert"
-          data-testid="funding-inbox-unauthorized"
-        >
+        <div style={styles.errorBox} role="alert" data-testid="funding-inbox-unauthorized">
           {unauthorizedSessionMessage}
         </div>
       ) : (
@@ -387,97 +401,107 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
             </div>
           ) : loaded && items.length === 0 ? (
             <div style={styles.empty} data-testid="funding-inbox-empty">
-              No funding instructions match these filters. Instructions initiated by your own principal are
-              excluded by Decision 7 maker-checker separation.
+              No funding instructions match these filters. Instructions initiated by your own
+              principal are excluded by Decision 7 maker-checker separation.
             </div>
           ) : loaded ? (
             <div>
-              <p className="mn-agent-workspace__description">Scroll horizontally to see all funding instruction columns.</p>
-              <div className="mn-agent-workspace__scroll" role="region" aria-label="Funding instructions table" tabIndex={0}>
-              <table className="mn-agent-workspace__table">
-                <thead>
-                  <tr>
-                    <th style={styles.th}>Created / Expires</th>
-                    <th style={styles.th}>Request / Approval</th>
-                    <th style={styles.th}>Agent</th>
-                    <th style={styles.th}>Direction &amp; Amount</th>
-                    <th style={styles.th}>State</th>
-                    <th style={styles.th}>Maker &amp; Reason</th>
-                    <th style={styles.th}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item) => {
-                    const isActiveTarget = activeRequestId === item.id;
-                    return (
-                      <tr
-                        key={item.id}
-                        style={isActiveTarget ? styles.activeRow : undefined}
-                      >
-                        <td style={styles.td}>
-                          <div>{formatTimestamp(item.createdAt)}</div>
-                          <div style={styles.muted}>Exp: {formatTimestamp(item.approvalExpiresAt)}</div>
-                        </td>
-                        <td style={styles.td}>
-                          <code>{item.id}</code>
-                          <div style={styles.muted}>
-                            Approval: <code>{item.approvalId}</code>
-                          </div>
-                        </td>
-                        <td style={styles.td}>
-                          <strong>{item.agentReference || item.agentId}</strong>
-                          {item.agentReference && (
+              <p className="mn-agent-workspace__description">
+                Scroll horizontally to see all funding instruction columns.
+              </p>
+              <div
+                className="mn-agent-workspace__scroll"
+                role="region"
+                aria-label="Funding instructions table"
+                tabIndex={0}
+              >
+                <table className="mn-agent-workspace__table">
+                  <thead>
+                    <tr>
+                      <th style={styles.th}>Created / Expires</th>
+                      <th style={styles.th}>Request / Approval</th>
+                      <th style={styles.th}>Agent</th>
+                      <th style={styles.th}>Direction &amp; Amount</th>
+                      <th style={styles.th}>State</th>
+                      <th style={styles.th}>Maker &amp; Reason</th>
+                      <th style={styles.th}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item) => {
+                      const isActiveTarget = activeRequestId === item.id;
+                      return (
+                        <tr key={item.id} style={isActiveTarget ? styles.activeRow : undefined}>
+                          <td style={styles.td}>
+                            <div>{formatTimestamp(item.createdAt)}</div>
                             <div style={styles.muted}>
-                              <code>{item.agentId}</code>
+                              Exp: {formatTimestamp(item.approvalExpiresAt)}
                             </div>
-                          )}
-                        </td>
-                        <td style={styles.td}>
-                          <strong>{item.direction}</strong> · {formatMinor(item.amountMinor, item.currency)}
-                        </td>
-                        <td style={styles.td}>
-                          <span style={styles.badge}>{item.status}</span>{' '}
-                          <span style={styles.subBadge}>{item.approvalStatus}</span>
-                        </td>
-                        <td style={styles.td}>
-                          <div>{item.reason}</div>
-                          <div style={styles.muted}>
-                            Maker: <code>{item.makerPrincipalId || item.requesterPrincipalId}</code>
-                            {item.makerRole ? ` (${item.makerRole})` : ''}
-                          </div>
-                        </td>
-                        <td style={styles.td}>
-                          <div style={styles.actionGroup}>
-                            <button
-                              type="button"
-                              className="mn-agent-workspace__button"
-                              onClick={() =>
-                                setInspectedItem((cur) => (cur?.id === item.id ? null : item))
-                              }
-                            >
-                              {inspectedItem?.id === item.id ? 'Hide details' : 'Inspect details'}
-                            </button>
-                            <button
-                              type="button"
-                              className="mn-agent-workspace__button mn-agent-workspace__button--primary"
-                              onClick={() =>
-                                onSelectRequest(item.agentId, item.idempotencyKey, {
-                                  agentId: item.agentId,
-                                  idempotencyKey: item.idempotencyKey,
-                                  requestId: item.id,
-                                  approvalId: item.approvalId,
-                                })
-                              }
-                            >
-                              {item.status === 'PENDING' ? 'Review in Checker' : 'Load in Checker'}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          </td>
+                          <td style={styles.td}>
+                            <code>{item.id}</code>
+                            <div style={styles.muted}>
+                              Approval: <code>{item.approvalId}</code>
+                            </div>
+                          </td>
+                          <td style={styles.td}>
+                            <strong>{item.agentReference || item.agentId}</strong>
+                            {item.agentReference && (
+                              <div style={styles.muted}>
+                                <code>{item.agentId}</code>
+                              </div>
+                            )}
+                          </td>
+                          <td style={styles.td}>
+                            <strong>{item.direction}</strong> ·{' '}
+                            {formatMinor(item.amountMinor, item.currency)}
+                          </td>
+                          <td style={styles.td}>
+                            <span style={styles.badge}>{item.status}</span>{' '}
+                            <span style={styles.subBadge}>{item.approvalStatus}</span>
+                          </td>
+                          <td style={styles.td}>
+                            <div>{item.reason}</div>
+                            <div style={styles.muted}>
+                              Maker:{' '}
+                              <code>{item.makerPrincipalId || item.requesterPrincipalId}</code>
+                              {item.makerRole ? ` (${item.makerRole})` : ''}
+                            </div>
+                          </td>
+                          <td style={styles.td}>
+                            <div style={styles.actionGroup}>
+                              <button
+                                type="button"
+                                className="mn-agent-workspace__button"
+                                onClick={() =>
+                                  setInspectedItem((cur) => (cur?.id === item.id ? null : item))
+                                }
+                              >
+                                {inspectedItem?.id === item.id ? 'Hide details' : 'Inspect details'}
+                              </button>
+                              <button
+                                type="button"
+                                className="mn-agent-workspace__button mn-agent-workspace__button--primary"
+                                onClick={() =>
+                                  onSelectRequest(item.agentId, item.idempotencyKey, {
+                                    agentId: item.agentId,
+                                    idempotencyKey: item.idempotencyKey,
+                                    requestId: item.id,
+                                    approvalId: item.approvalId,
+                                  })
+                                }
+                              >
+                                {item.status === 'PENDING'
+                                  ? 'Review in Checker'
+                                  : 'Load in Checker'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           ) : null}
@@ -509,135 +533,148 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
           )}
 
           {loaded && !loading && !error && inspectedItem && (
-            <WorkspaceDrawer label="Inspected funding request details" className="funding-inbox-drawer" onDismiss={() => setInspectedItem(null)}>
-            <section
-              aria-label="Inspected funding request details"
-              data-testid="funding-inbox-detail"
-              style={styles.detailCard}
+            <WorkspaceDrawer
+              label="Inspected funding request details"
+              className="funding-inbox-drawer"
+              onDismiss={() => setInspectedItem(null)}
             >
-              <div style={styles.detailHeader}>
-                <strong>
-                  Funding Instruction Details — <code>{inspectedItem.id}</code>
-                </strong>
-                <div style={styles.actionGroup}>
-                  <button
-                    type="button"
-                    className="mn-agent-workspace__button mn-agent-workspace__button--primary"
-                    onClick={() => {
-                      const accepted = onSelectRequest(inspectedItem.agentId, inspectedItem.idempotencyKey, {
-                        agentId: inspectedItem.agentId,
-                        idempotencyKey: inspectedItem.idempotencyKey,
-                        requestId: inspectedItem.id,
-                        approvalId: inspectedItem.approvalId,
-                      });
-                      if (accepted !== false) setInspectedItem(null);
-                    }}
-                  >
-                    {inspectedItem.status === 'PENDING'
-                      ? 'Proceed to Checker Decision'
-                      : 'Open in Checker Recovery'}
-                  </button>
-                  <button
-                    type="button"
-                    className="mn-agent-workspace__button"
-                    onClick={() => setInspectedItem(null)}
-                  >
-                    Close details
-                  </button>
+              <section
+                aria-label="Inspected funding request details"
+                data-testid="funding-inbox-detail"
+                style={styles.detailCard}
+              >
+                <div style={styles.detailHeader}>
+                  <strong>
+                    Funding Instruction Details — <code>{inspectedItem.id}</code>
+                  </strong>
+                  <div style={styles.actionGroup}>
+                    <button
+                      type="button"
+                      className="mn-agent-workspace__button mn-agent-workspace__button--primary"
+                      onClick={() => {
+                        const accepted = onSelectRequest(
+                          inspectedItem.agentId,
+                          inspectedItem.idempotencyKey,
+                          {
+                            agentId: inspectedItem.agentId,
+                            idempotencyKey: inspectedItem.idempotencyKey,
+                            requestId: inspectedItem.id,
+                            approvalId: inspectedItem.approvalId,
+                          },
+                        );
+                        if (accepted !== false) setInspectedItem(null);
+                      }}
+                    >
+                      {inspectedItem.status === 'PENDING'
+                        ? 'Proceed to Checker Decision'
+                        : 'Open in Checker Recovery'}
+                    </button>
+                    <button
+                      type="button"
+                      className="mn-agent-workspace__button"
+                      onClick={() => setInspectedItem(null)}
+                    >
+                      Close details
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <div style={styles.detailGrid}>
-                <div>
-                  <strong>Agent ID:</strong> <code>{inspectedItem.agentId}</code>
-                  {inspectedItem.aggregatorId && (
+                <div style={styles.detailGrid}>
+                  <div>
+                    <strong>Agent ID:</strong> <code>{inspectedItem.agentId}</code>
+                    {inspectedItem.aggregatorId && (
+                      <div>
+                        <strong>Aggregator ID:</strong> <code>{inspectedItem.aggregatorId}</code>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <strong>Direction &amp; Amount:</strong> {inspectedItem.direction} ·{' '}
+                    {formatMinor(inspectedItem.amountMinor, inspectedItem.currency)} (
+                    <code>{inspectedItem.amountMinor}</code> minor)
+                  </div>
+                  <div>
+                    <strong>Request / Approval State:</strong> {inspectedItem.status} /{' '}
+                    {inspectedItem.approvalStatus}
+                  </div>
+                  <div>
+                    <strong>Approval ID:</strong> <code>{inspectedItem.approvalId}</code>
+                  </div>
+                  {inspectedItem.reference && (
                     <div>
-                      <strong>Aggregator ID:</strong> <code>{inspectedItem.aggregatorId}</code>
+                      <strong>Reference:</strong> <code>{inspectedItem.reference}</code>
+                    </div>
+                  )}
+                  {inspectedItem.idempotencyKey && (
+                    <div>
+                      <strong>Idempotency Key:</strong> <code>{inspectedItem.idempotencyKey}</code>
+                    </div>
+                  )}
+                  <div>
+                    <strong>Maker:</strong>{' '}
+                    <code>
+                      {inspectedItem.makerPrincipalId || inspectedItem.requesterPrincipalId}
+                    </code>
+                    {inspectedItem.makerRole ? ` (${inspectedItem.makerRole})` : ''}
+                  </div>
+                  <div>
+                    <strong>Approved / Checked By:</strong>{' '}
+                    {inspectedItem.checkerPrincipalId || inspectedItem.approvalApprovedBy ? (
+                      <code>
+                        {inspectedItem.checkerPrincipalId || inspectedItem.approvalApprovedBy}
+                      </code>
+                    ) : (
+                      'Awaiting checker'
+                    )}
+                  </div>
+                  <div>
+                    <strong>Created:</strong> {formatTimestamp(inspectedItem.createdAt)}
+                  </div>
+                  <div>
+                    <strong>Approval Expires:</strong>{' '}
+                    {formatTimestamp(inspectedItem.approvalExpiresAt)}
+                  </div>
+                  {inspectedItem.executedAt && (
+                    <div>
+                      <strong>Executed:</strong> {formatTimestamp(inspectedItem.executedAt)}
+                    </div>
+                  )}
+                  {inspectedItem.journalId && (
+                    <div>
+                      <strong>Ledger Journal ID:</strong> <code>{inspectedItem.journalId}</code>
+                    </div>
+                  )}
+                  {inspectedItem.rejectionReason && (
+                    <div>
+                      <strong>Rejection Reason:</strong> {inspectedItem.rejectionReason}
                     </div>
                   )}
                 </div>
-                <div>
-                  <strong>Direction &amp; Amount:</strong> {inspectedItem.direction} ·{' '}
-                  {formatMinor(inspectedItem.amountMinor, inspectedItem.currency)} (
-                  <code>{inspectedItem.amountMinor}</code> minor)
+
+                <div style={{ marginTop: 8 }}>
+                  <strong>Business Reason:</strong> {inspectedItem.reason}
+                  {inspectedItem.description ? ` — ${inspectedItem.description}` : ''}
                 </div>
-                <div>
-                  <strong>Request / Approval State:</strong> {inspectedItem.status} /{' '}
-                  {inspectedItem.approvalStatus}
-                </div>
-                <div>
-                  <strong>Approval ID:</strong> <code>{inspectedItem.approvalId}</code>
-                </div>
-                {inspectedItem.reference && (
-                  <div>
-                    <strong>Reference:</strong> <code>{inspectedItem.reference}</code>
-                  </div>
-                )}
-                {inspectedItem.idempotencyKey && (
-                  <div>
-                    <strong>Idempotency Key:</strong> <code>{inspectedItem.idempotencyKey}</code>
-                  </div>
-                )}
-                <div>
-                  <strong>Maker:</strong>{' '}
-                  <code>{inspectedItem.makerPrincipalId || inspectedItem.requesterPrincipalId}</code>
-                  {inspectedItem.makerRole ? ` (${inspectedItem.makerRole})` : ''}
-                </div>
-                <div>
-                  <strong>Approved / Checked By:</strong>{' '}
-                  {inspectedItem.checkerPrincipalId || inspectedItem.approvalApprovedBy ? (
-                    <code>{inspectedItem.checkerPrincipalId || inspectedItem.approvalApprovedBy}</code>
-                  ) : (
-                    'Awaiting checker'
+
+                <div style={styles.handoffRow}>
+                  <strong>Maker-Checker Handoff Token:</strong>{' '}
+                  <code>{buildHandoffJson(inspectedItem)}</code>
+                  {typeof navigator !== 'undefined' && navigator.clipboard && (
+                    <button
+                      type="button"
+                      className="mn-agent-workspace__button"
+                      onClick={() => {
+                        void navigator.clipboard
+                          .writeText(buildHandoffJson(inspectedItem))
+                          .then(() => setHandoffCopiedId(inspectedItem.id))
+                          .catch(() => setHandoffCopiedId(null));
+                      }}
+                    >
+                      {handoffCopiedId === inspectedItem.id ? 'Copied' : 'Copy handoff'}
+                    </button>
                   )}
                 </div>
-                <div>
-                  <strong>Created:</strong> {formatTimestamp(inspectedItem.createdAt)}
-                </div>
-                <div>
-                  <strong>Approval Expires:</strong> {formatTimestamp(inspectedItem.approvalExpiresAt)}
-                </div>
-                {inspectedItem.executedAt && (
-                  <div>
-                    <strong>Executed:</strong> {formatTimestamp(inspectedItem.executedAt)}
-                  </div>
-                )}
-                {inspectedItem.journalId && (
-                  <div>
-                    <strong>Ledger Journal ID:</strong> <code>{inspectedItem.journalId}</code>
-                  </div>
-                )}
-                {inspectedItem.rejectionReason && (
-                  <div>
-                    <strong>Rejection Reason:</strong> {inspectedItem.rejectionReason}
-                  </div>
-                )}
-              </div>
-
-              <div style={{ marginTop: 8 }}>
-                <strong>Business Reason:</strong> {inspectedItem.reason}
-                {inspectedItem.description ? ` — ${inspectedItem.description}` : ''}
-              </div>
-
-              <div style={styles.handoffRow}>
-                <strong>Maker-Checker Handoff Token:</strong>{' '}
-                <code>{buildHandoffJson(inspectedItem)}</code>
-                {typeof navigator !== 'undefined' && navigator.clipboard && (
-                  <button
-                    type="button"
-                    className="mn-agent-workspace__button"
-                    onClick={() => {
-                      void navigator.clipboard
-                        .writeText(buildHandoffJson(inspectedItem))
-                        .then(() => setHandoffCopiedId(inspectedItem.id))
-                        .catch(() => setHandoffCopiedId(null));
-                    }}
-                  >
-                    {handoffCopiedId === inspectedItem.id ? 'Copied' : 'Copy handoff'}
-                  </button>
-                )}
-              </div>
-            </section>
+              </section>
             </WorkspaceDrawer>
           )}
         </>

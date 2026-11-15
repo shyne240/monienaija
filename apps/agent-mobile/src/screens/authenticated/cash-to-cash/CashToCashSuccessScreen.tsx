@@ -11,10 +11,7 @@ import {
   buildPublicCashToCashLocatorShareText,
   receiptFromCashToCashResult,
 } from '../../../components/AgentReceipt';
-import {
-  clearPendingTransferCode,
-  consumePendingTransferCode,
-} from '../../../services/agent-api';
+import { clearPendingTransferCode, consumePendingTransferCode } from '../../../services/agent-api';
 import type { RootStackParamList } from '../../../navigation/types';
 
 /**
@@ -37,7 +34,9 @@ export const CashToCashSuccessScreen: React.FC = () => {
   const { result } = route.params;
 
   // Single-use retrieval from ephemeral in-memory handover.
-  const [transferCode, setTransferCode] = useState<string | null>(() => consumePendingTransferCode());
+  const [transferCode, setTransferCode] = useState<string | null>(() =>
+    consumePendingTransferCode(),
+  );
   const [copyFeedback, setCopyFeedback] = useState('');
 
   // Strict cleanup on exit/unmount
@@ -146,18 +145,20 @@ export const CashToCashSuccessScreen: React.FC = () => {
           <View style={styles.warningBox}>
             <Text style={styles.warningText}>
               DISPLAY-ONCE CODE: Share this secret code PRIVATELY ONLY with the named beneficiary (
-              {result.beneficiaryPhone}). Do NOT include this secret code in any public notification or
-              ordinary share message. Redemption requires the public locator above PLUS this secret code
-              and beneficiary OTP verification. Agent-cash mode also requires the claiming Agent&apos;s
-              CASH_TO_CASH capability and transaction PIN. The code alone does not authorize physical cash
-              handover and cannot be viewed again after leaving this screen.
+              {result.beneficiaryPhone}). Do NOT include this secret code in any public notification
+              or ordinary share message. Redemption requires the public locator above PLUS this
+              secret code and beneficiary OTP verification. Agent-cash mode also requires the
+              claiming Agent&apos;s CASH_TO_CASH capability and transaction PIN. The code alone does
+              not authorize physical cash handover and cannot be viewed again after leaving this
+              screen.
             </Text>
           </View>
         </Card>
       ) : (
         <Card style={styles.card} testID="c2c-replay-card">
           <Text style={styles.muted} testID="c2c-replay-note">
-            Transfer code was issued during initial creation and is not shown on replay or subsequent views.
+            Transfer code was issued during initial creation and is not shown on replay or
+            subsequent views.
           </Text>
         </Card>
       )}

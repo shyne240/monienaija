@@ -113,8 +113,14 @@ describe('Shared Agent receipt renderer', () => {
     expect(getByText('₦5,000.00 NGN')).toBeTruthy();
     expect(getByText('8098765000')).toBeTruthy();
     expect(getByText('CASH_TO_CASH-c2c-xyz')).toBeTruthy();
-    expect(getByText(/eligible claim can credit the beneficiary Customer wallet or the claiming Agent’s NGN float for cash payout/)).toBeTruthy();
-    expect(getByText(/physical cash handover is separate from this ledger settlement/i)).toBeTruthy();
+    expect(
+      getByText(
+        /eligible claim can credit the beneficiary Customer wallet or the claiming Agent’s NGN float for cash payout/,
+      ),
+    ).toBeTruthy();
+    expect(
+      getByText(/physical cash handover is separate from this ledger settlement/i),
+    ).toBeTruthy();
 
     // transferCode must NOT be anywhere in rendered text, view model, or share text:
     expect(queryByText(/SECRET_CODE_9999/)).toBeNull();
@@ -137,13 +143,19 @@ describe('Shared Agent receipt renderer', () => {
     expect(getByText('Emeka Obi')).toBeTruthy();
     expect(getByText('CASH_TO_CASH_CLAIM-claim-key-1')).toBeTruthy();
     expect(getByText(/No physical cash payout is included/)).toBeTruthy();
-    expect(queryByText(/internal-claim-journal-uuid|internal-claim-customer-uuid|internal-claim-hash/)).toBeNull();
+    expect(
+      queryByText(/internal-claim-journal-uuid|internal-claim-customer-uuid|internal-claim-hash/),
+    ).toBeNull();
     expectSecretFree(JSON.stringify(receipt));
     expectSecretFree(receipt.shareText);
   });
 
   test('C2: replayed result renders honest REPLAYED state and note', () => {
-    const receipt = receiptFromCashInResult({ ...completedResult, status: 'REPLAYED', replayed: true });
+    const receipt = receiptFromCashInResult({
+      ...completedResult,
+      status: 'REPLAYED',
+      replayed: true,
+    });
     const { getByTestId, getByText } = render(<AgentReceipt receipt={receipt} />);
     expect(getByTestId('receipt-status').props.children).toBe('REPLAYED');
     expect(getByText(/new credit was NOT created/)).toBeTruthy();
@@ -163,12 +175,21 @@ describe('Shared Agent receipt renderer', () => {
 
   test('C3: history item receipt includes fee/commission/narration only when authoritative', () => {
     const item: AgentHistoryItem = {
-      id: 'id-scm-1', type: 'CASH_TO_CASH', status: 'CLAIMED', amountMinor: '500000', currency: 'NGN',
-      direction: 'DEBIT', createdAt: '2026-06-03T09:00:00.000Z', completedAt: '2026-06-03T11:00:00.000Z',
-      reference: 'C2C-x1', narration: 'Cash→Cash for 08030000099', feeMinor: '5000',
+      id: 'id-scm-1',
+      type: 'CASH_TO_CASH',
+      status: 'CLAIMED',
+      amountMinor: '500000',
+      currency: 'NGN',
+      direction: 'DEBIT',
+      createdAt: '2026-06-03T09:00:00.000Z',
+      completedAt: '2026-06-03T11:00:00.000Z',
+      reference: 'C2C-x1',
+      narration: 'Cash→Cash for 08030000099',
+      feeMinor: '5000',
       counterparty: { type: 'CUSTOMER', beneficiaryPhone: '08030000099' },
       commission: { commissionMinor: '2500', payable: true, treatment: 'ACCRUE' },
-      failureCode: null, failureMessage: null,
+      failureCode: null,
+      failureMessage: null,
     };
     const receipt = receiptFromHistoryItem(item);
     const { getByText } = render(<AgentReceipt receipt={receipt} />);
@@ -201,7 +222,9 @@ describe('Shared Agent receipt renderer', () => {
     const receipt = receiptFromHistoryItem(item);
     const { getByTestId, getByText } = render(<AgentReceipt receipt={receipt} />);
 
-    expect(getByTestId('receipt-heading').props.children).toBe('Cash→Cash wallet redemption Receipt');
+    expect(getByTestId('receipt-heading').props.children).toBe(
+      'Cash→Cash wallet redemption Receipt',
+    );
     expect(getByTestId('receipt-status').props.children).toBe('COMPLETED');
     expect(getByText('₦4,500.00 NGN')).toBeTruthy();
     expect(getByText('Processed')).toBeTruthy();
@@ -240,11 +263,21 @@ describe('Shared Agent receipt renderer', () => {
 
   test('C4: missing optional fields are omitted gracefully', () => {
     const item: AgentHistoryItem = {
-      id: 'id-x', type: 'CASH_IN', status: 'COMPLETED', amountMinor: '10000', currency: 'NGN',
-      direction: 'DEBIT', createdAt: '2026-06-01T08:00:00.000Z', completedAt: null,
-      reference: null, narration: null, feeMinor: '0',
-      counterparty: { type: 'CUSTOMER' }, commission: null,
-      failureCode: null, failureMessage: null,
+      id: 'id-x',
+      type: 'CASH_IN',
+      status: 'COMPLETED',
+      amountMinor: '10000',
+      currency: 'NGN',
+      direction: 'DEBIT',
+      createdAt: '2026-06-01T08:00:00.000Z',
+      completedAt: null,
+      reference: null,
+      narration: null,
+      feeMinor: '0',
+      counterparty: { type: 'CUSTOMER' },
+      commission: null,
+      failureCode: null,
+      failureMessage: null,
     };
     const receipt = receiptFromHistoryItem(item);
     const { getByText, queryByText } = render(<AgentReceipt receipt={receipt} />);
@@ -257,13 +290,17 @@ describe('Shared Agent receipt renderer', () => {
   test('C1b: no PIN/OTP exists anywhere in the receipt architecture (model accepts only safe fields)', () => {
     // Type contract inspection: the view model has no secret keys at all.
     const receipt = receiptFromCashInResult(completedResult);
-    const keys = JSON.stringify(Object.keys(receipt)) + JSON.stringify(receipt.lines.map((l) => Object.keys(l)));
+    const keys =
+      JSON.stringify(Object.keys(receipt)) +
+      JSON.stringify(receipt.lines.map((l) => Object.keys(l)));
     expectSecretFree(keys);
     expectSecretFree(receipt.shareText);
   });
 
   test('share action asks RN Share with sanitized text only (no image export)', async () => {
-    const shareSpy = jest.spyOn(Share, 'share').mockResolvedValueOnce({ action: 'sharedAction' } as never);
+    const shareSpy = jest
+      .spyOn(Share, 'share')
+      .mockResolvedValueOnce({ action: 'sharedAction' } as never);
     const receipt = receiptFromCashToCashResult(completedCashToCashResult);
     const { getByTestId } = render(<AgentReceipt receipt={receipt} />);
     fireEvent.press(getByTestId('receipt-share'));
@@ -279,11 +316,21 @@ describe('Shared Agent receipt renderer', () => {
     // History items never carry transferCode by contract; assert a hacked row
     // still can't smuggle display-once secrets into the receipt model.
     const hacked = receiptFromHistoryItem({
-      id: 'hacked-id', type: 'CASH_TO_CASH', status: 'UNCLAIMED', amountMinor: '100000', currency: 'NGN',
-      direction: 'DEBIT', createdAt: '2026-06-04T10:00:00.000Z', completedAt: null,
-      reference: 'C2C-h', narration: null, feeMinor: '0',
-      counterparty: { type: 'CUSTOMER' }, commission: null,
-      failureCode: null, failureMessage: null,
+      id: 'hacked-id',
+      type: 'CASH_TO_CASH',
+      status: 'UNCLAIMED',
+      amountMinor: '100000',
+      currency: 'NGN',
+      direction: 'DEBIT',
+      createdAt: '2026-06-04T10:00:00.000Z',
+      completedAt: null,
+      reference: 'C2C-h',
+      narration: null,
+      feeMinor: '0',
+      counterparty: { type: 'CUSTOMER' },
+      commission: null,
+      failureCode: null,
+      failureMessage: null,
       // @ts-expect-error deliberately polluted fixture simulating a leak attempt
       transferCode: 'ABCD-1234',
     });

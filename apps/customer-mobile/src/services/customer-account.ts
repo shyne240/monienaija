@@ -62,7 +62,10 @@ export interface CustomerDashboard {
 }
 
 export type KycUpgradePathwayStatus =
-  'TOP_TIER' | 'POLICY_NOT_CONFIGURED' | 'MANUAL_REVIEW' | 'EVIDENCE_UNAVAILABLE';
+  | 'TOP_TIER'
+  | 'POLICY_NOT_CONFIGURED'
+  | 'MANUAL_REVIEW'
+  | 'EVIDENCE_UNAVAILABLE';
 
 export interface CustomerKycProjection {
   customerId: string;

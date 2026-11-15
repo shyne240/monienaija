@@ -1,5 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -258,8 +266,17 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
     if (isLocatorMode) {
       void (async () => {
         let existing;
-        try { existing = await loadPendingCashToCashLocatorClaim(agentId); }
-        catch { if (active) { setRecoveryStatus('ERROR'); setRecoveryError('Claim recovery storage is unavailable. Do not submit another claim; contact support.'); } return; }
+        try {
+          existing = await loadPendingCashToCashLocatorClaim(agentId);
+        } catch {
+          if (active) {
+            setRecoveryStatus('ERROR');
+            setRecoveryError(
+              'Claim recovery storage is unavailable. Do not submit another claim; contact support.',
+            );
+          }
+          return;
+        }
         if (!active) return;
         const matches =
           existing &&
@@ -269,8 +286,17 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
             beneficiaryPhone,
             customerId: customer.customerId,
           });
-        if (!existing) { setRecoveryStatus('READY'); return; }
-        if (!matches) { setRecoveryStatus('ERROR'); setRecoveryError('A previous claim is unresolved. Recover it before starting another claim.'); return; }
+        if (!existing) {
+          setRecoveryStatus('READY');
+          return;
+        }
+        if (!matches) {
+          setRecoveryStatus('ERROR');
+          setRecoveryError(
+            'A previous claim is unresolved. Recover it before starting another claim.',
+          );
+          return;
+        }
 
         // Restore exact persisted idempotency key and payout method before recovering.
         idempotencyKeyRef.current = existing.idempotencyKey;
@@ -290,7 +316,9 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
           if (!active) return;
           if (isApiNotFound(error)) {
             setRecoveryStatus('ERROR');
-            setRecoveryError('The previous claim is unresolved. Check again or contact support; do not submit another claim.');
+            setRecoveryError(
+              'The previous claim is unresolved. Check again or contact support; do not submit another claim.',
+            );
             return;
           }
           setRecoveryStatus('ERROR');
@@ -350,7 +378,9 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
 
   const handleSubmit = () => {
     if (postSubmitRecoveryUnknown) {
-      setClientError('Confirm whether the previous claim attempt completed before submitting again.');
+      setClientError(
+        'Confirm whether the previous claim attempt completed before submitting again.',
+      );
       return;
     }
     if (!challenge) {
@@ -400,13 +430,24 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
       : '';
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.flex}
+    >
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>Confirm Cash→Cash Claim</Text>
 
         <Card style={styles.card} testID="c2c-claim-summary-card">
-          <SummaryRow label="Beneficiary" value={customer.display} testID="c2c-claim-summary-customer" />
-          <SummaryRow label="Beneficiary Phone" value={customer.receivingNumber} testID="c2c-claim-summary-phone" />
+          <SummaryRow
+            label="Beneficiary"
+            value={customer.display}
+            testID="c2c-claim-summary-customer"
+          />
+          <SummaryRow
+            label="Beneficiary Phone"
+            value={customer.receivingNumber}
+            testID="c2c-claim-summary-phone"
+          />
           {isLocatorMode ? (
             <>
               <SummaryRow
@@ -428,8 +469,8 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
             />
           )}
           <Text style={styles.note} testID="c2c-redemption-method-intro">
-            Select how this claim will settle below. Cash payout requires a current approved Customer
-            KYC assessment and your Agent transaction PIN.
+            Select how this claim will settle below. Cash payout requires a current approved
+            Customer KYC assessment and your Agent transaction PIN.
           </Text>
         </Card>
 
@@ -459,7 +500,11 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
                 ) {
                   return;
                 }
-                if (challenge && redemptionMethod !== 'CUSTOMER_WALLET') { setChallenge(null); setOtp(''); setMfaInvalidatedRevision((rev) => rev + 1); }
+                if (challenge && redemptionMethod !== 'CUSTOMER_WALLET') {
+                  setChallenge(null);
+                  setOtp('');
+                  setMfaInvalidatedRevision((rev) => rev + 1);
+                }
                 setRedemptionMethod('CUSTOMER_WALLET');
                 setAgentPin('');
                 setClientError('');
@@ -492,14 +537,20 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
                 ) {
                   return;
                 }
-                if (challenge && redemptionMethod !== 'AGENT_CASH') { setChallenge(null); setOtp(''); setMfaInvalidatedRevision((rev) => rev + 1); }
+                if (challenge && redemptionMethod !== 'AGENT_CASH') {
+                  setChallenge(null);
+                  setOtp('');
+                  setMfaInvalidatedRevision((rev) => rev + 1);
+                }
                 setRedemptionMethod('AGENT_CASH');
                 setClientError('');
               }}
               testID="c2c-claim-method-cash"
             >
               <Text style={styles.methodOptionTitle}>Agent cash payout</Text>
-              <Text style={styles.methodOptionText}>Credit this Agent&apos;s NGN float; cash handover is separate.</Text>
+              <Text style={styles.methodOptionText}>
+                Credit this Agent&apos;s NGN float; cash handover is separate.
+              </Text>
             </Pressable>
           </View>
           <Text style={styles.methodNotice} testID="c2c-claim-method-notice">
@@ -510,28 +561,35 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
           {lockedRedemptionMethod !== null && (
             <View style={{ marginTop: theme.spacing.sm, gap: theme.spacing.xs }}>
               <Text style={styles.methodNotice} testID="c2c-claim-method-locked-notice">
-                Payout method ({lockedRedemptionMethod === 'AGENT_CASH' ? 'Agent cash payout' : 'Customer wallet'}) and idempotency key are locked to protect retry safety after an interrupted or rolled-back attempt.
+                Payout method (
+                {lockedRedemptionMethod === 'AGENT_CASH' ? 'Agent cash payout' : 'Customer wallet'})
+                and idempotency key are locked to protect retry safety after an interrupted or
+                rolled-back attempt.
               </Text>
-              {rollbackRetryReady && !postSubmitRecoveryUnknown && !postSubmitChecking && !claimMutation.isPending && (
-                <>
-                  <Text style={styles.helper} testID="c2c-claim-rollback-retry-notice">
-                    Request a fresh customer OTP code if the previous code was already used, then retry with the same payout method and unchanged idempotency key.
-                  </Text>
-                  {!hasAmbiguousHistory && (
-                    <Button
-                      label="Change payout method (new attempt)"
-                      variant="outline"
-                      onPress={() => {
-                        setLockedRedemptionMethod(null);
-                        setRollbackRetryReady(false);
-                        idempotencyKeyRef.current = newIdempotencyKey('c2c-claim');
-                        setClientError('');
-                      }}
-                      testID="c2c-claim-unlock-method-button"
-                    />
-                  )}
-                </>
-              )}
+              {rollbackRetryReady &&
+                !postSubmitRecoveryUnknown &&
+                !postSubmitChecking &&
+                !claimMutation.isPending && (
+                  <>
+                    <Text style={styles.helper} testID="c2c-claim-rollback-retry-notice">
+                      Request a fresh customer OTP code if the previous code was already used, then
+                      retry with the same payout method and unchanged idempotency key.
+                    </Text>
+                    {!hasAmbiguousHistory && (
+                      <Button
+                        label="Change payout method (new attempt)"
+                        variant="outline"
+                        onPress={() => {
+                          setLockedRedemptionMethod(null);
+                          setRollbackRetryReady(false);
+                          idempotencyKeyRef.current = newIdempotencyKey('c2c-claim');
+                          setClientError('');
+                        }}
+                        testID="c2c-claim-unlock-method-button"
+                      />
+                    )}
+                  </>
+                )}
             </View>
           )}
         </Card>
@@ -543,7 +601,9 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
         )}
         {recoveryStatus === 'ERROR' && (
           <Card style={styles.card} testID="c2c-claim-recovery-error-card">
-            <Text style={styles.errorText} testID="c2c-claim-recovery-error">{recoveryError}</Text>
+            <Text style={styles.errorText} testID="c2c-claim-recovery-error">
+              {recoveryError}
+            </Text>
             <Button
               label="Check claim status again"
               variant="outline"
@@ -565,9 +625,11 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
             <MfaChallengeCard
               customerId={customer.customerId}
               purpose="CASH_TO_CASH_CLAIM"
-              claimContext={isLocatorMode
-                ? { senderPhone: senderPhone!, transferNumber: transferNumber!, redemptionMethod }
-                : { transferId: legacyTransferId!, redemptionMethod }}
+              claimContext={
+                isLocatorMode
+                  ? { senderPhone: senderPhone!, transferNumber: transferNumber!, redemptionMethod }
+                  : { transferId: legacyTransferId!, redemptionMethod }
+              }
               invalidatedRevision={mfaInvalidatedRevision}
               disabled={postSubmitRecoveryUnknown || postSubmitChecking || claimMutation.isPending}
               onChallengeReady={(issued) => {
@@ -599,8 +661,8 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
                 }}
               />
               <Text style={styles.helper}>
-                Ask the beneficiary for the secret transfer code given to them privately by the sender
-                (distinct from the 6-digit transfer number).
+                Ask the beneficiary for the secret transfer code given to them privately by the
+                sender (distinct from the 6-digit transfer number).
               </Text>
 
               {redemptionMethod === 'AGENT_CASH' && (
@@ -621,7 +683,8 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
                     }}
                   />
                   <Text style={styles.helper} testID="c2c-claim-agent-pin-note">
-                    Required to authorize cash redemption. It is sent securely for verification and is never included in the receipt.
+                    Required to authorize cash redemption. It is sent securely for verification and
+                    is never included in the receipt.
                   </Text>
                 </>
               )}
@@ -645,14 +708,20 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
               </Text>
 
               {!!failureText && (
-                <Text style={styles.errorText} testID="c2c-claim-confirm-error">{failureText}</Text>
+                <Text style={styles.errorText} testID="c2c-claim-confirm-error">
+                  {failureText}
+                </Text>
               )}
 
               {postSubmitRecoveryUnknown && (
                 <View style={styles.recoveryNoticeBox} testID="c2c-claim-post-submit-recovery-card">
-                  <Text style={styles.recoveryNoticeText} testID="c2c-claim-post-submit-recovery-text">
-                    The previous submission response was lost or indeterminate and claim status could not be
-                    confirmed yet. Check claim status before requesting a new OTP or submitting again.
+                  <Text
+                    style={styles.recoveryNoticeText}
+                    testID="c2c-claim-post-submit-recovery-text"
+                  >
+                    The previous submission response was lost or indeterminate and claim status
+                    could not be confirmed yet. Check claim status before requesting a new OTP or
+                    submitting again.
                   </Text>
                   {!!postSubmitRecoveryNoticeError && (
                     <Text style={styles.errorText} testID="c2c-claim-post-submit-recovery-error">
@@ -740,7 +809,9 @@ function shouldRecoverAfterLegacyClaimError(error: unknown): boolean {
     const status = (error as Error & { status?: number }).status;
     if (
       status === 409 &&
-      /already claimed|concurrent retries|TRANSACTION_CONTENTION_RETRY_EXHAUSTED/i.test(error.message)
+      /already claimed|concurrent retries|TRANSACTION_CONTENTION_RETRY_EXHAUSTED/i.test(
+        error.message,
+      )
     ) {
       return true;
     }
@@ -760,7 +831,9 @@ interface SummaryRowProps {
 const SummaryRow: React.FC<SummaryRowProps> = ({ label, value, testID }) => (
   <View style={styles.row}>
     <Text style={styles.rowLabel}>{label}</Text>
-    <Text style={styles.rowValue} testID={testID}>{value}</Text>
+    <Text style={styles.rowValue} testID={testID}>
+      {value}
+    </Text>
   </View>
 );
 

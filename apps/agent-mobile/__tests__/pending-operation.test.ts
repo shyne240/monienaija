@@ -58,8 +58,12 @@ describe('pending-operation — save/load round trip', () => {
 
 describe('pending-operation — Agent isolation (PART 5/7)', () => {
   test('4. Agent A cannot read Agent B pending operation of the same type', async () => {
-    await savePendingAgentOperation(makeIntent({ agentId: 'agent-A-iso', idempotencyKey: 'a-key' }));
-    await savePendingAgentOperation(makeIntent({ agentId: 'agent-B-iso', idempotencyKey: 'b-key' }));
+    await savePendingAgentOperation(
+      makeIntent({ agentId: 'agent-A-iso', idempotencyKey: 'a-key' }),
+    );
+    await savePendingAgentOperation(
+      makeIntent({ agentId: 'agent-B-iso', idempotencyKey: 'b-key' }),
+    );
 
     const loadedA = await loadPendingAgentOperation('agent-A-iso', 'CASH_IN');
     const loadedB = await loadPendingAgentOperation('agent-B-iso', 'CASH_IN');
@@ -72,10 +76,18 @@ describe('pending-operation — Agent isolation (PART 5/7)', () => {
 
   test('5. different operation types for the SAME Agent never collide', async () => {
     await savePendingAgentOperation(
-      makeIntent({ agentId: 'agent-multi', operationType: 'CASH_IN', idempotencyKey: 'cash-in-key' }),
+      makeIntent({
+        agentId: 'agent-multi',
+        operationType: 'CASH_IN',
+        idempotencyKey: 'cash-in-key',
+      }),
     );
     await savePendingAgentOperation(
-      makeIntent({ agentId: 'agent-multi', operationType: 'CASH_OUT', idempotencyKey: 'cash-out-key' }),
+      makeIntent({
+        agentId: 'agent-multi',
+        operationType: 'CASH_OUT',
+        idempotencyKey: 'cash-out-key',
+      }),
     );
     await savePendingAgentOperation(
       makeIntent({
@@ -85,19 +97,25 @@ describe('pending-operation — Agent isolation (PART 5/7)', () => {
       }),
     );
 
-    expect((await loadPendingAgentOperation('agent-multi', 'CASH_IN'))?.idempotencyKey).toBe('cash-in-key');
-    expect((await loadPendingAgentOperation('agent-multi', 'CASH_OUT'))?.idempotencyKey).toBe('cash-out-key');
-    expect((await loadPendingAgentOperation('agent-multi', 'CASH_TO_CASH_SEND'))?.idempotencyKey).toBe(
-      'c2c-send-key',
+    expect((await loadPendingAgentOperation('agent-multi', 'CASH_IN'))?.idempotencyKey).toBe(
+      'cash-in-key',
     );
+    expect((await loadPendingAgentOperation('agent-multi', 'CASH_OUT'))?.idempotencyKey).toBe(
+      'cash-out-key',
+    );
+    expect(
+      (await loadPendingAgentOperation('agent-multi', 'CASH_TO_CASH_SEND'))?.idempotencyKey,
+    ).toBe('c2c-send-key');
 
     // Clearing one type leaves the others intact.
     await clearPendingAgentOperation('agent-multi', 'CASH_IN');
     expect(await loadPendingAgentOperation('agent-multi', 'CASH_IN')).toBeNull();
-    expect((await loadPendingAgentOperation('agent-multi', 'CASH_OUT'))?.idempotencyKey).toBe('cash-out-key');
-    expect((await loadPendingAgentOperation('agent-multi', 'CASH_TO_CASH_SEND'))?.idempotencyKey).toBe(
-      'c2c-send-key',
+    expect((await loadPendingAgentOperation('agent-multi', 'CASH_OUT'))?.idempotencyKey).toBe(
+      'cash-out-key',
     );
+    expect(
+      (await loadPendingAgentOperation('agent-multi', 'CASH_TO_CASH_SEND'))?.idempotencyKey,
+    ).toBe('c2c-send-key');
   });
 
   test('6. a stored record whose own fields disagree with the key it was read from is never trusted', async () => {
@@ -113,7 +131,9 @@ describe('pending-operation — Agent isolation (PART 5/7)', () => {
 
 describe('pending-operation — staleness window (24h)', () => {
   test('7. a fresh intent (just created) is returned', async () => {
-    await savePendingAgentOperation(makeIntent({ agentId: 'agent-fresh', createdAt: new Date().toISOString() }));
+    await savePendingAgentOperation(
+      makeIntent({ agentId: 'agent-fresh', createdAt: new Date().toISOString() }),
+    );
     expect(await loadPendingAgentOperation('agent-fresh', 'CASH_IN')).not.toBeNull();
   });
 
@@ -147,23 +167,43 @@ describe('pending-operation — matching is exact-field, never fuzzy (PART 6)', 
   test('11. a different counterparty, amount, or currency never matches — no fuzzy attribution', () => {
     const intent = makeIntent();
     expect(
-      matchesPendingAgentOperation(intent, { counterpartyId: '8099999999', amountMinor: '250000', currency: 'NGN' }),
+      matchesPendingAgentOperation(intent, {
+        counterpartyId: '8099999999',
+        amountMinor: '250000',
+        currency: 'NGN',
+      }),
     ).toBe(false);
     expect(
-      matchesPendingAgentOperation(intent, { counterpartyId: '8000000001', amountMinor: '999999', currency: 'NGN' }),
+      matchesPendingAgentOperation(intent, {
+        counterpartyId: '8000000001',
+        amountMinor: '999999',
+        currency: 'NGN',
+      }),
     ).toBe(false);
     expect(
-      matchesPendingAgentOperation(intent, { counterpartyId: '8000000001', amountMinor: '250000', currency: 'USD' }),
+      matchesPendingAgentOperation(intent, {
+        counterpartyId: '8000000001',
+        amountMinor: '250000',
+        currency: 'USD',
+      }),
     ).toBe(false);
   });
 });
 
 describe('pending-operation — logout clears all pending operations for an Agent (PART 7)', () => {
   test('12. clearAllPendingAgentOperations wipes every operation type for that Agent only', async () => {
-    await savePendingAgentOperation(makeIntent({ agentId: 'agent-logout', operationType: 'CASH_IN' }));
-    await savePendingAgentOperation(makeIntent({ agentId: 'agent-logout', operationType: 'CASH_OUT' }));
-    await savePendingAgentOperation(makeIntent({ agentId: 'agent-logout', operationType: 'CASH_TO_CASH_SEND' }));
-    await savePendingAgentOperation(makeIntent({ agentId: 'agent-survivor', operationType: 'CASH_IN' }));
+    await savePendingAgentOperation(
+      makeIntent({ agentId: 'agent-logout', operationType: 'CASH_IN' }),
+    );
+    await savePendingAgentOperation(
+      makeIntent({ agentId: 'agent-logout', operationType: 'CASH_OUT' }),
+    );
+    await savePendingAgentOperation(
+      makeIntent({ agentId: 'agent-logout', operationType: 'CASH_TO_CASH_SEND' }),
+    );
+    await savePendingAgentOperation(
+      makeIntent({ agentId: 'agent-survivor', operationType: 'CASH_IN' }),
+    );
 
     await clearAllPendingAgentOperations('agent-logout');
 
@@ -223,15 +263,28 @@ describe('pending-operation — logout clears all pending operations for an Agen
 
 describe('cash-to-cash unresolved operation safety', () => {
   test('retains an old operation under a durable native-compatible key', async () => {
-    const intent = makeIntent({agentId:'agent-retain', operationType:'CASH_TO_CASH_SEND', idempotencyKey:'original', createdAt:'2020-01-01T00:00:00.000Z'});
+    const intent = makeIntent({
+      agentId: 'agent-retain',
+      operationType: 'CASH_TO_CASH_SEND',
+      idempotencyKey: 'original',
+      createdAt: '2020-01-01T00:00:00.000Z',
+    });
     await savePendingAgentOperation(intent);
     expect(await loadPendingAgentOperation('agent-retain', 'CASH_TO_CASH_SEND')).toEqual(intent);
-    expect(await SecureStorage.getDurable('pending_agent_operation.agent-retain.CASH_TO_CASH_SEND')).not.toBeNull();
+    expect(
+      await SecureStorage.getDurable('pending_agent_operation.agent-retain.CASH_TO_CASH_SEND'),
+    ).not.toBeNull();
     await clearPendingAgentOperation('agent-retain', 'CASH_TO_CASH_SEND');
   });
   test('does not silently fall back when durable storage fails', async () => {
-    const failure = jest.spyOn(SecureStorage,'setDurable').mockRejectedValueOnce(new Error('storage unavailable'));
-    await expect(savePendingAgentOperation(makeIntent({agentId:'agent-failure', operationType:'CASH_TO_CASH_SEND'}))).rejects.toThrow('storage unavailable');
+    const failure = jest
+      .spyOn(SecureStorage, 'setDurable')
+      .mockRejectedValueOnce(new Error('storage unavailable'));
+    await expect(
+      savePendingAgentOperation(
+        makeIntent({ agentId: 'agent-failure', operationType: 'CASH_TO_CASH_SEND' }),
+      ),
+    ).rejects.toThrow('storage unavailable');
     failure.mockRestore();
   });
 });

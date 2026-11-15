@@ -7,7 +7,11 @@ import { theme } from '../../../theme';
 import { Card } from '../../../components/Card';
 import { Button } from '../../../components/Button';
 import { Input } from '../../../components/Input';
-import { formatNairaFromMinor, newIdempotencyKey, parseNairaInputToMinor } from '../../../utils/format';
+import {
+  formatNairaFromMinor,
+  newIdempotencyKey,
+  parseNairaInputToMinor,
+} from '../../../utils/format';
 import type { RootStackParamList } from '../../../navigation/types';
 
 /**
@@ -27,7 +31,9 @@ export const CashToCashAmountScreen: React.FC = () => {
   const [error, setError] = useState('');
 
   // Exactly ONE idempotency key per attempt (survives navigation + retries).
-  const idempotencyKeyRef = useRef<string>(route.params.amountMinor ? '' : newIdempotencyKey('c2c'));
+  const idempotencyKeyRef = useRef<string>(
+    route.params.amountMinor ? '' : newIdempotencyKey('c2c'),
+  );
   if (!idempotencyKeyRef.current) idempotencyKeyRef.current = newIdempotencyKey('c2c');
 
   const amountMinor = useMemo(() => parseNairaInputToMinor(nairaInput), [nairaInput]);
@@ -47,7 +53,10 @@ export const CashToCashAmountScreen: React.FC = () => {
   };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.flex}
+    >
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>How much cash to send?</Text>
         <Text style={styles.helper}>
@@ -75,7 +84,11 @@ export const CashToCashAmountScreen: React.FC = () => {
               You will send {formatNairaFromMinor(amountMinor)} NGN
             </Text>
           )}
-          {!!error && <Text style={styles.errorText} testID="c2c-amount-error">{error}</Text>}
+          {!!error && (
+            <Text style={styles.errorText} testID="c2c-amount-error">
+              {error}
+            </Text>
+          )}
 
           <Button
             label="Continue"
@@ -87,9 +100,9 @@ export const CashToCashAmountScreen: React.FC = () => {
 
         <Text style={styles.footerNote}>
           Your Agent float is debited and the principal reserved as unclaimed funds until claim. An
-          eligible claim can credit the beneficiary Customer wallet or the claiming Agent's NGN float for
-          cash payout; physical cash handover is separate from this ledger settlement. Limits and
-          authorization are decided by the server.
+          eligible claim can credit the beneficiary Customer wallet or the claiming Agent's NGN
+          float for cash payout; physical cash handover is separate from this ledger settlement.
+          Limits and authorization are decided by the server.
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>

@@ -1,4 +1,11 @@
-import { ApiClient, ApiError, NetworkError, AGENT_SESSION_KEYS, setBaseUrl, getBaseUrl } from '../src/services/api-client';
+import {
+  ApiClient,
+  ApiError,
+  NetworkError,
+  AGENT_SESSION_KEYS,
+  setBaseUrl,
+  getBaseUrl,
+} from '../src/services/api-client';
 import { SecureStorage } from '../src/services/secure-storage';
 import { useAuthStore } from '../src/store/auth-store';
 
@@ -78,7 +85,9 @@ describe('Agent Mobile API client', () => {
 
   test('cash-in-style 401 with preserveSessionOn401 keeps the stored session (PIN failure ≠ expiry)', async () => {
     await SecureStorage.set(AGENT_SESSION_KEYS.token, 'live-session');
-    fetchMock.mockResolvedValue(jsonResponse(401, { message: 'Transaction PIN invalid: PIN_INVALID' }));
+    fetchMock.mockResolvedValue(
+      jsonResponse(401, { message: 'Transaction PIN invalid: PIN_INVALID' }),
+    );
 
     await expect(
       ApiClient.post('api/v1/agents/cash-in', {}, { preserveSessionOn401: true }),

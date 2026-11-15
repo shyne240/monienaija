@@ -10,7 +10,14 @@ interface KpiTileProps {
   title?: string;
 }
 
-export const KpiTile: React.FC<KpiTileProps> = ({ label, value, caption, deltaLabel, deltaTone = 'neutral', title }) => (
+export const KpiTile: React.FC<KpiTileProps> = ({
+  label,
+  value,
+  caption,
+  deltaLabel,
+  deltaTone = 'neutral',
+  title,
+}) => (
   <div style={styles.tile} title={title}>
     <span style={styles.label}>{label}</span>
     <span style={styles.value}>{value}</span>
@@ -18,7 +25,12 @@ export const KpiTile: React.FC<KpiTileProps> = ({ label, value, caption, deltaLa
       <span
         style={{
           ...styles.delta,
-          color: deltaTone === 'positive' ? colors.success : deltaTone === 'negative' ? colors.danger : colors.textMuted,
+          color:
+            deltaTone === 'positive'
+              ? colors.success
+              : deltaTone === 'negative'
+                ? colors.danger
+                : colors.textMuted,
         }}
       >
         {deltaLabel}

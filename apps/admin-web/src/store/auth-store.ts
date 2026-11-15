@@ -93,9 +93,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (idToken: string) => {
     set({ isLoading: true, error: null });
     try {
-      const sessionData = await ApiClient.post<WorkforceSession>('/internal/a2/workforce/sessions', {
-        idToken: idToken.trim(),
-      });
+      const sessionData = await ApiClient.post<WorkforceSession>(
+        '/internal/a2/workforce/sessions',
+        {
+          idToken: idToken.trim(),
+        },
+      );
       persistSession(set, sessionData);
     } catch (err: any) {
       set({

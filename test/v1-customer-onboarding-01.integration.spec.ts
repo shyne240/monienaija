@@ -88,7 +88,6 @@ describe('V1-CUSTOMER-ONBOARDING-01 registration + phone verification (real Post
     return match![1]!;
   }
 
-
   const onboardingContext = (): ControlledOnboardingContext => ({
     app,
     dataSource,

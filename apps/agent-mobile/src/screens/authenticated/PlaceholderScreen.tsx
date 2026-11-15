@@ -18,7 +18,9 @@ export const PlaceholderScreen: React.FC<PlaceholderScreenProps> = ({ title, mes
   return (
     <View style={styles.container}>
       <Card variant="flat" style={styles.card} testID="placeholder-card">
-        <Text style={styles.icon} testID="placeholder-icon">🚧</Text>
+        <Text style={styles.icon} testID="placeholder-icon">
+          🚧
+        </Text>
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.phasePill}>COMING IN A LATER PHASE</Text>
         <Text style={styles.message}>{message}</Text>

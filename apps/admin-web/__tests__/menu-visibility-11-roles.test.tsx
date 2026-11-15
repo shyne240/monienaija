@@ -30,46 +30,287 @@ jest.mock('../src/services/api-client', () => ({
 // principals receive the union; the menu itself is always driven by principal.scopes.
 const ROLE_PRINCIPALS = {
   SUPER_ADMIN: {
-    type: 'PRIVILEGED', roles: ['SUPER_ADMIN'],
-    scopes: ['agent.activate','agent.assign_limit','agent.manage_credentials','agent.manage_outlets_terminals','agent.reactivate','agent.review_application','agent.suspend','agent.terminate','agent.view','aggregator.manage','aggregator.view','audit.search','audit.view','commission_rule.view','compliance.manage_case','compliance.manage_risk_profile','customer.activate','customer.close','customer.create','customer.create_wallet','customer.manage_support_case','customer.suspend','customer.view','customer.view_address','customer.view_contact_methods','customer.view_identity_documents','customer.view_transactions','customer.view_wallets','diagnostics.view','fee_rule.view','institution.attribution.view','institution.manage','institution.view','institution.workforce.assign','kyc.approve','kyc.reject','kyc.review','kyc.view','ledger.view','limit.view','metrics.view','notification.provider.configure','notification.provider.view','notification.test_send','notification.view_deliveries','outbox.view','product.view','reconciliation.view','reporting.transaction_summary.view','reward_rule.view','transaction.view','workforce.dashboard.assign','workforce.dashboard.view','workforce.role.assign','workforce.role.assign_operational','workforce.role.create','workforce.role.modify','workforce.role.revoke','workforce.role.revoke_operational','workforce.role.view','workforce.user.create','workforce.user.suspend','workforce.user.view','privileged:execute'],
+    type: 'PRIVILEGED',
+    roles: ['SUPER_ADMIN'],
+    scopes: [
+      'agent.activate',
+      'agent.assign_limit',
+      'agent.manage_credentials',
+      'agent.manage_outlets_terminals',
+      'agent.reactivate',
+      'agent.review_application',
+      'agent.suspend',
+      'agent.terminate',
+      'agent.view',
+      'aggregator.manage',
+      'aggregator.view',
+      'audit.search',
+      'audit.view',
+      'commission_rule.view',
+      'compliance.manage_case',
+      'compliance.manage_risk_profile',
+      'customer.activate',
+      'customer.close',
+      'customer.create',
+      'customer.create_wallet',
+      'customer.manage_support_case',
+      'customer.suspend',
+      'customer.view',
+      'customer.view_address',
+      'customer.view_contact_methods',
+      'customer.view_identity_documents',
+      'customer.view_transactions',
+      'customer.view_wallets',
+      'diagnostics.view',
+      'fee_rule.view',
+      'institution.attribution.view',
+      'institution.manage',
+      'institution.view',
+      'institution.workforce.assign',
+      'kyc.approve',
+      'kyc.reject',
+      'kyc.review',
+      'kyc.view',
+      'ledger.view',
+      'limit.view',
+      'metrics.view',
+      'notification.provider.configure',
+      'notification.provider.view',
+      'notification.test_send',
+      'notification.view_deliveries',
+      'outbox.view',
+      'product.view',
+      'reconciliation.view',
+      'reporting.transaction_summary.view',
+      'reward_rule.view',
+      'transaction.view',
+      'workforce.dashboard.assign',
+      'workforce.dashboard.view',
+      'workforce.role.assign',
+      'workforce.role.assign_operational',
+      'workforce.role.create',
+      'workforce.role.modify',
+      'workforce.role.revoke',
+      'workforce.role.revoke_operational',
+      'workforce.role.view',
+      'workforce.user.create',
+      'workforce.user.suspend',
+      'workforce.user.view',
+      'privileged:execute',
+    ],
   },
   FINANCE_PREPARER: {
-    type: 'OPERATOR', roles: ['FINANCE_PREPARER'],
-    scopes: ['commission_rule.create','commission_rule.modify','commission_rule.view','fee_rule.create','fee_rule.modify','fee_rule.view','finance.control_policy.activate','institution.attribution.prepare','institution.view','ledger.post','ledger.reverse','ledger.view','limit.modify','limit.view','product.governance','product.modify','product.view','reporting.transaction_summary.view','reward_rule.create','reward_rule.modify','reward_rule.view','finance:prepare'],
+    type: 'OPERATOR',
+    roles: ['FINANCE_PREPARER'],
+    scopes: [
+      'commission_rule.create',
+      'commission_rule.modify',
+      'commission_rule.view',
+      'fee_rule.create',
+      'fee_rule.modify',
+      'fee_rule.view',
+      'finance.control_policy.activate',
+      'institution.attribution.prepare',
+      'institution.view',
+      'ledger.post',
+      'ledger.reverse',
+      'ledger.view',
+      'limit.modify',
+      'limit.view',
+      'product.governance',
+      'product.modify',
+      'product.view',
+      'reporting.transaction_summary.view',
+      'reward_rule.create',
+      'reward_rule.modify',
+      'reward_rule.view',
+      'finance:prepare',
+    ],
   },
   FINANCE_CONTROLLER: {
-    type: 'OPERATOR', roles: ['FINANCE_CONTROLLER'],
-    scopes: ['agent.defund','agent.fund','commission_rule.create','commission_rule.modify','commission_rule.view','fee_rule.create','fee_rule.modify','fee_rule.view','finance.control_policy.activate','institution.affiliation.approve','institution.attribution.approve','institution.attribution.view','institution.enrolment.approve','institution.lifecycle.approve','institution.view','ledger.view','limit.modify','limit.view','notification.provider.configure','notification.provider.view','product.governance','product.modify','product.view','reporting.transaction_summary.view','reward_rule.create','reward_rule.modify','reward_rule.view','workforce.role.assign','workforce.role.create','workforce.role.modify','workforce.role.revoke','workforce.role.view','privileged:approve','privileged:execute'],
+    type: 'OPERATOR',
+    roles: ['FINANCE_CONTROLLER'],
+    scopes: [
+      'agent.defund',
+      'agent.fund',
+      'commission_rule.create',
+      'commission_rule.modify',
+      'commission_rule.view',
+      'fee_rule.create',
+      'fee_rule.modify',
+      'fee_rule.view',
+      'finance.control_policy.activate',
+      'institution.affiliation.approve',
+      'institution.attribution.approve',
+      'institution.attribution.view',
+      'institution.enrolment.approve',
+      'institution.lifecycle.approve',
+      'institution.view',
+      'ledger.view',
+      'limit.modify',
+      'limit.view',
+      'notification.provider.configure',
+      'notification.provider.view',
+      'product.governance',
+      'product.modify',
+      'product.view',
+      'reporting.transaction_summary.view',
+      'reward_rule.create',
+      'reward_rule.modify',
+      'reward_rule.view',
+      'workforce.role.assign',
+      'workforce.role.create',
+      'workforce.role.modify',
+      'workforce.role.revoke',
+      'workforce.role.view',
+      'privileged:approve',
+      'privileged:execute',
+    ],
   },
   FINANCE_AUDITOR: {
-    type: 'OPERATOR', roles: ['FINANCE_AUDITOR'],
-    scopes: ['agent.view','aggregator.view','audit.search','audit.view','commission_rule.view','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','diagnostics.view','fee_rule.view','institution.attribution.view','institution.view','kyc.view','ledger.view','limit.view','metrics.view','notification.provider.view','notification.view_deliveries','outbox.view','product.view','reconciliation.view','reporting.transaction_summary.view','reward_rule.view','transaction.view','workforce.role.view','finance:audit'],
+    type: 'OPERATOR',
+    roles: ['FINANCE_AUDITOR'],
+    scopes: [
+      'agent.view',
+      'aggregator.view',
+      'audit.search',
+      'audit.view',
+      'commission_rule.view',
+      'customer.view',
+      'customer.view_address',
+      'customer.view_contact_methods',
+      'customer.view_transactions',
+      'diagnostics.view',
+      'fee_rule.view',
+      'institution.attribution.view',
+      'institution.view',
+      'kyc.view',
+      'ledger.view',
+      'limit.view',
+      'metrics.view',
+      'notification.provider.view',
+      'notification.view_deliveries',
+      'outbox.view',
+      'product.view',
+      'reconciliation.view',
+      'reporting.transaction_summary.view',
+      'reward_rule.view',
+      'transaction.view',
+      'workforce.role.view',
+      'finance:audit',
+    ],
   },
   ADMINISTRATOR: {
-    type: 'OPERATOR', roles: ['ADMINISTRATOR'],
-    scopes: ['agent.view','aggregator.view','customer.view','workforce.dashboard.assign','workforce.dashboard.view','workforce.role.assign_operational','workforce.role.revoke_operational','workforce.role.view','workforce.super_admin.recover','workforce.user.create','workforce.user.suspend','workforce.user.view'],
+    type: 'OPERATOR',
+    roles: ['ADMINISTRATOR'],
+    scopes: [
+      'agent.view',
+      'aggregator.view',
+      'customer.view',
+      'workforce.dashboard.assign',
+      'workforce.dashboard.view',
+      'workforce.role.assign_operational',
+      'workforce.role.revoke_operational',
+      'workforce.role.view',
+      'workforce.super_admin.recover',
+      'workforce.user.create',
+      'workforce.user.suspend',
+      'workforce.user.view',
+    ],
   },
   OPERATIONS: {
-    type: 'OPERATOR', roles: ['OPERATIONS'],
-    scopes: ['aggregator.manage','aggregator.view','customer.activate','customer.close','customer.create','customer.create_wallet','customer.manage_support_case','customer.suspend','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','customer.view_wallets','diagnostics.view','institution.lifecycle.prepare','institution.manage','institution.view','metrics.view','notification.provider.view','notification.test_send','notification.view_deliveries','outbox.view','reporting.transaction_summary.view','transaction.view','workforce.user.create','workforce.user.suspend','workforce.user.view'],
+    type: 'OPERATOR',
+    roles: ['OPERATIONS'],
+    scopes: [
+      'aggregator.manage',
+      'aggregator.view',
+      'customer.activate',
+      'customer.close',
+      'customer.create',
+      'customer.create_wallet',
+      'customer.manage_support_case',
+      'customer.suspend',
+      'customer.view',
+      'customer.view_address',
+      'customer.view_contact_methods',
+      'customer.view_transactions',
+      'customer.view_wallets',
+      'diagnostics.view',
+      'institution.lifecycle.prepare',
+      'institution.manage',
+      'institution.view',
+      'metrics.view',
+      'notification.provider.view',
+      'notification.test_send',
+      'notification.view_deliveries',
+      'outbox.view',
+      'reporting.transaction_summary.view',
+      'transaction.view',
+      'workforce.user.create',
+      'workforce.user.suspend',
+      'workforce.user.view',
+    ],
   },
   AGENT_NETWORK_MANAGER: {
-    type: 'OPERATOR', roles: ['AGENT_NETWORK_MANAGER'],
-    scopes: ['agent.activate','agent.assign_limit','agent.defund','agent.fund','agent.manage_credentials','agent.manage_outlets_terminals','agent.reactivate','agent.review_application','agent.suspend','agent.terminate','agent.view','institution.affiliation.prepare','institution.enrolment.prepare','institution.view','limit.view'],
+    type: 'OPERATOR',
+    roles: ['AGENT_NETWORK_MANAGER'],
+    scopes: [
+      'agent.activate',
+      'agent.assign_limit',
+      'agent.defund',
+      'agent.fund',
+      'agent.manage_credentials',
+      'agent.manage_outlets_terminals',
+      'agent.reactivate',
+      'agent.review_application',
+      'agent.suspend',
+      'agent.terminate',
+      'agent.view',
+      'institution.affiliation.prepare',
+      'institution.enrolment.prepare',
+      'institution.view',
+      'limit.view',
+    ],
   },
   COMPLIANCE: {
-    type: 'OPERATOR', roles: ['COMPLIANCE'],
-    scopes: ['compliance.manage_case','compliance.manage_risk_profile','customer.view','customer.view_address','customer.view_contact_methods','customer.view_identity_documents','institution.attribution.view','institution.view','kyc.approve','kyc.reject','kyc.review','kyc.view'],
+    type: 'OPERATOR',
+    roles: ['COMPLIANCE'],
+    scopes: [
+      'compliance.manage_case',
+      'compliance.manage_risk_profile',
+      'customer.view',
+      'customer.view_address',
+      'customer.view_contact_methods',
+      'customer.view_identity_documents',
+      'institution.attribution.view',
+      'institution.view',
+      'kyc.approve',
+      'kyc.reject',
+      'kyc.review',
+      'kyc.view',
+    ],
   },
   RISK_FRAUD: {
-    type: 'OPERATOR', roles: ['RISK_FRAUD'], scopes: ['risk_fraud.manage_fraud_case'],
+    type: 'OPERATOR',
+    roles: ['RISK_FRAUD'],
+    scopes: ['risk_fraud.manage_fraud_case'],
   },
   CUSTOMER_SERVICE: {
-    type: 'OPERATOR', roles: ['CUSTOMER_SERVICE'],
-    scopes: ['customer.manage_support_case','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','customer.view_wallets'],
+    type: 'OPERATOR',
+    roles: ['CUSTOMER_SERVICE'],
+    scopes: [
+      'customer.manage_support_case',
+      'customer.view',
+      'customer.view_address',
+      'customer.view_contact_methods',
+      'customer.view_transactions',
+      'customer.view_wallets',
+    ],
   },
   TREASURY: {
-    type: 'OPERATOR', roles: ['TREASURY'], scopes: ['reconciliation.view'],
+    type: 'OPERATOR',
+    roles: ['TREASURY'],
+    scopes: ['reconciliation.view'],
   },
 } as const;
 
@@ -77,43 +318,183 @@ type RoleKey = keyof typeof ROLE_PRINCIPALS;
 const ALL_ROLES = Object.keys(ROLE_PRINCIPALS) as RoleKey[];
 
 const ALL_NAV_KEYS = [
-  'dashboard','dashboardSettings','customers','agents','agentClasses','support','institutions','transfers','cashIn','cashOut','cashToCashOps',
-  'ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue',
-  'limitCatalogue','limitAssignments','kycQueue','complianceCases','fraudCases','workforceAccess',
-  'roleGovernance','approvalsInbox','superAdminRecovery','notifications','systemHealth','auditEvents',
+  'dashboard',
+  'dashboardSettings',
+  'customers',
+  'agents',
+  'agentClasses',
+  'support',
+  'institutions',
+  'transfers',
+  'cashIn',
+  'cashOut',
+  'cashToCashOps',
+  'ledgerExplorer',
+  'reconciliation',
+  'feeRules',
+  'commissionRules',
+  'rewardRules',
+  'productCatalogue',
+  'limitCatalogue',
+  'limitAssignments',
+  'kycQueue',
+  'complianceCases',
+  'fraudCases',
+  'workforceAccess',
+  'roleGovernance',
+  'approvalsInbox',
+  'superAdminRecovery',
+  'notifications',
+  'systemHealth',
+  'auditEvents',
 ] as const;
-type NavKey = typeof ALL_NAV_KEYS[number];
+type NavKey = (typeof ALL_NAV_KEYS)[number];
 
 // Visible sidebar routes, derived from each role's seeded function-code set and the existing
 // legacy approval/execution scopes. Customer-service transaction history is contextual, not a
 // global sidebar route.
 const EXPECTED: Record<RoleKey, readonly NavKey[]> = {
-  SUPER_ADMIN: ['dashboard','dashboardSettings','customers','agents','agentClasses','support','institutions','transfers','cashIn','cashOut','cashToCashOps','ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','kycQueue','complianceCases','workforceAccess','roleGovernance','notifications','systemHealth','auditEvents'],
-  FINANCE_PREPARER: ['dashboard','institutions','ledgerExplorer','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments'],
+  SUPER_ADMIN: [
+    'dashboard',
+    'dashboardSettings',
+    'customers',
+    'agents',
+    'agentClasses',
+    'support',
+    'institutions',
+    'transfers',
+    'cashIn',
+    'cashOut',
+    'cashToCashOps',
+    'ledgerExplorer',
+    'reconciliation',
+    'feeRules',
+    'commissionRules',
+    'rewardRules',
+    'productCatalogue',
+    'limitCatalogue',
+    'limitAssignments',
+    'kycQueue',
+    'complianceCases',
+    'workforceAccess',
+    'roleGovernance',
+    'notifications',
+    'systemHealth',
+    'auditEvents',
+  ],
+  FINANCE_PREPARER: [
+    'dashboard',
+    'institutions',
+    'ledgerExplorer',
+    'feeRules',
+    'commissionRules',
+    'rewardRules',
+    'productCatalogue',
+    'limitCatalogue',
+    'limitAssignments',
+  ],
   // INTEGRATION (Arena 3 Phase 5): FINANCE_CONTROLLER + privileged:approve is the notification
   // change-request CHECKER — the Arena 1 registry requireRead admits FC (MFA-verified per
   // request), so the console must be reachable to inspect frozen proposals before deciding.
-  FINANCE_CONTROLLER: ['dashboard','agents','institutions','ledgerExplorer','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','approvalsInbox','notifications'],
-  FINANCE_AUDITOR: ['dashboard','customers','agents','agentClasses','institutions','transfers','cashIn','cashOut','cashToCashOps','ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','kycQueue','notifications','systemHealth','auditEvents'],
-  ADMINISTRATOR: ['dashboard','dashboardSettings','customers','agents','agentClasses','workforceAccess','roleGovernance','superAdminRecovery'],
-  OPERATIONS: ['dashboard','customers','support','institutions','transfers','cashIn','cashOut','cashToCashOps','workforceAccess','notifications','systemHealth'],
-  AGENT_NETWORK_MANAGER: ['dashboard','agents','agentClasses','institutions','limitCatalogue','limitAssignments'],
-  COMPLIANCE: ['dashboard','customers','institutions','kycQueue','complianceCases'],
-  RISK_FRAUD: ['dashboard','fraudCases'],
-  CUSTOMER_SERVICE: ['dashboard','customers','support'],
-  TREASURY: ['dashboard','reconciliation'],
+  FINANCE_CONTROLLER: [
+    'dashboard',
+    'agents',
+    'institutions',
+    'ledgerExplorer',
+    'feeRules',
+    'commissionRules',
+    'rewardRules',
+    'productCatalogue',
+    'limitCatalogue',
+    'limitAssignments',
+    'approvalsInbox',
+    'notifications',
+  ],
+  FINANCE_AUDITOR: [
+    'dashboard',
+    'customers',
+    'agents',
+    'agentClasses',
+    'institutions',
+    'transfers',
+    'cashIn',
+    'cashOut',
+    'cashToCashOps',
+    'ledgerExplorer',
+    'reconciliation',
+    'feeRules',
+    'commissionRules',
+    'rewardRules',
+    'productCatalogue',
+    'limitCatalogue',
+    'limitAssignments',
+    'kycQueue',
+    'notifications',
+    'systemHealth',
+    'auditEvents',
+  ],
+  ADMINISTRATOR: [
+    'dashboard',
+    'dashboardSettings',
+    'customers',
+    'agents',
+    'agentClasses',
+    'workforceAccess',
+    'roleGovernance',
+    'superAdminRecovery',
+  ],
+  OPERATIONS: [
+    'dashboard',
+    'customers',
+    'support',
+    'institutions',
+    'transfers',
+    'cashIn',
+    'cashOut',
+    'cashToCashOps',
+    'workforceAccess',
+    'notifications',
+    'systemHealth',
+  ],
+  AGENT_NETWORK_MANAGER: [
+    'dashboard',
+    'agents',
+    'agentClasses',
+    'institutions',
+    'limitCatalogue',
+    'limitAssignments',
+  ],
+  COMPLIANCE: ['dashboard', 'customers', 'institutions', 'kycQueue', 'complianceCases'],
+  RISK_FRAUD: ['dashboard', 'fraudCases'],
+  CUSTOMER_SERVICE: ['dashboard', 'customers', 'support'],
+  TREASURY: ['dashboard', 'reconciliation'],
 };
 
 const SECTION_KEYS: Record<string, readonly NavKey[]> = {
-  home: ['dashboard','dashboardSettings'],
-  servicing: ['customers','agents','agentClasses','support'],
+  home: ['dashboard', 'dashboardSettings'],
+  servicing: ['customers', 'agents', 'agentClasses', 'support'],
   // ARENA 4 — institutional administration console.
   institutions: ['institutions'],
-  money: ['transfers','cashIn','cashOut','cashToCashOps'],
-  finance: ['ledgerExplorer','reconciliation'],
-  commercial: ['feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments'],
-  compliance: ['kycQueue','complianceCases','fraudCases'],
-  platform: ['workforceAccess','roleGovernance','approvalsInbox','superAdminRecovery','notifications','systemHealth','auditEvents'],
+  money: ['transfers', 'cashIn', 'cashOut', 'cashToCashOps'],
+  finance: ['ledgerExplorer', 'reconciliation'],
+  commercial: [
+    'feeRules',
+    'commissionRules',
+    'rewardRules',
+    'productCatalogue',
+    'limitCatalogue',
+    'limitAssignments',
+  ],
+  compliance: ['kycQueue', 'complianceCases', 'fraudCases'],
+  platform: [
+    'workforceAccess',
+    'roleGovernance',
+    'approvalsInbox',
+    'superAdminRecovery',
+    'notifications',
+    'systemHealth',
+    'auditEvents',
+  ],
 };
 
 const SCREEN_MARKERS: Record<NavKey, RegExp> = {
@@ -171,15 +552,33 @@ function setPrincipal(roleKey: RoleKey) {
 describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue roles', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (global as any).localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {}, clear: () => {} };
+    (global as any).localStorage = {
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => {},
+      clear: () => {},
+    };
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
       if (path === '/internal/a2/workforce/dashboard/my-dashboard') {
-        return Promise.resolve({ templateKey: 'DEFAULT_FALLBACK', displayName: 'Default Dashboard', description: '', isFallback: true, widgets: [] });
+        return Promise.resolve({
+          templateKey: 'DEFAULT_FALLBACK',
+          displayName: 'Default Dashboard',
+          description: '',
+          isFallback: true,
+          widgets: [],
+        });
       }
       if (path.startsWith('/internal/agents?')) return Promise.resolve({ data: [], total: 0 });
-      if (path.startsWith('/internal/admin/cash-to-cash/transfers?')) return Promise.resolve({ data: [], total: 0, page: 1, limit: 20, totalPages: 0 });
+      if (path.startsWith('/internal/admin/cash-to-cash/transfers?'))
+        return Promise.resolve({ data: [], total: 0, page: 1, limit: 20, totalPages: 0 });
       if (path.startsWith('/internal/agents/') && path.endsWith('/financial-position')) {
-        return Promise.resolve({ agentId: 'agent-id', currency: 'NGN', balanceMinor: '0', walletExists: false, walletId: null });
+        return Promise.resolve({
+          agentId: 'agent-id',
+          currency: 'NGN',
+          balanceMinor: '0',
+          walletExists: false,
+          walletId: null,
+        });
       }
       return Promise.resolve([]);
     });
@@ -187,64 +586,97 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
     (ApiClient.put as jest.Mock).mockResolvedValue({});
     (ApiClient.patch as jest.Mock).mockResolvedValue({});
     (ApiClient.delete as jest.Mock).mockResolvedValue({});
-    useAuthStore.setState({ isAuthenticated: false, isLoading: false, token: null, sessionId: null, principal: null, error: null });
+    useAuthStore.setState({
+      isAuthenticated: false,
+      isLoading: false,
+      token: null,
+      sessionId: null,
+      principal: null,
+      error: null,
+    });
   });
 
-  test.each(ALL_ROLES)('desktop and mobile navigation for %s matches its granted routes', async (roleKey) => {
-    setPrincipal(roleKey);
-    let view: ReturnType<typeof render> | undefined;
-    await act(async () => {
-      view = render(<Layout />);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    const { queryByTestId } = view!;
-    const expected = new Set<NavKey>(EXPECTED[roleKey]);
-
-    for (const key of ALL_NAV_KEYS) {
-      expect(queryByTestId(`nav-${key}`) !== null).toBe(expected.has(key));
-    }
-    for (const [section, keys] of Object.entries(SECTION_KEYS)) {
-      expect(queryByTestId(`section-${section}`) !== null).toBe(keys.some((key) => expected.has(key)));
-    }
-
-    const hamburger = queryByTestId('mobile-menu-toggle');
-    expect(hamburger).not.toBeNull();
-    fireEvent.click(hamburger!);
-    expect(queryByTestId('mobile-nav')).not.toBeNull();
-    for (const key of ALL_NAV_KEYS) {
-      expect(queryByTestId(`mobile-nav-${key}`) !== null).toBe(expected.has(key));
-    }
-  });
-
-  test.each(ALL_ROLES)('each visible route for %s renders its implemented screen', async (roleKey) => {
-    setPrincipal(roleKey);
-    let view: ReturnType<typeof render> | undefined;
-    await act(async () => {
-      view = render(<Layout />);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    const { container, getByTestId } = view!;
-    for (const key of EXPECTED[roleKey]) {
+  test.each(ALL_ROLES)(
+    'desktop and mobile navigation for %s matches its granted routes',
+    async (roleKey) => {
+      setPrincipal(roleKey);
+      let view: ReturnType<typeof render> | undefined;
       await act(async () => {
-        fireEvent.click(getByTestId(`nav-${key}`));
+        view = render(<Layout />);
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      const marker = key === 'agents' && !ROLE_PRINCIPALS[roleKey].scopes.includes('agent.view' as never) ? /Agent directory and Agent receiving-number lookup require/ : SCREEN_MARKERS[key];
-      if (!marker.test(container.textContent ?? '')) throw new Error(`Missing screen marker for ${key} (${roleKey})`);
-      expect(container.textContent).toMatch(marker);
-    }
-  });
+      const { queryByTestId } = view!;
+      const expected = new Set<NavKey>(EXPECTED[roleKey]);
+
+      for (const key of ALL_NAV_KEYS) {
+        expect(queryByTestId(`nav-${key}`) !== null).toBe(expected.has(key));
+      }
+      for (const [section, keys] of Object.entries(SECTION_KEYS)) {
+        expect(queryByTestId(`section-${section}`) !== null).toBe(
+          keys.some((key) => expected.has(key)),
+        );
+      }
+
+      const hamburger = queryByTestId('mobile-menu-toggle');
+      expect(hamburger).not.toBeNull();
+      fireEvent.click(hamburger!);
+      expect(queryByTestId('mobile-nav')).not.toBeNull();
+      for (const key of ALL_NAV_KEYS) {
+        expect(queryByTestId(`mobile-nav-${key}`) !== null).toBe(expected.has(key));
+      }
+    },
+  );
+
+  test.each(ALL_ROLES)(
+    'each visible route for %s renders its implemented screen',
+    async (roleKey) => {
+      setPrincipal(roleKey);
+      let view: ReturnType<typeof render> | undefined;
+      await act(async () => {
+        view = render(<Layout />);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      const { container, getByTestId } = view!;
+      for (const key of EXPECTED[roleKey]) {
+        await act(async () => {
+          fireEvent.click(getByTestId(`nav-${key}`));
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+        const marker =
+          key === 'agents' && !ROLE_PRINCIPALS[roleKey].scopes.includes('agent.view' as never)
+            ? /Agent directory and Agent receiving-number lookup require/
+            : SCREEN_MARKERS[key];
+        if (!marker.test(container.textContent ?? ''))
+          throw new Error(`Missing screen marker for ${key} (${roleKey})`);
+        expect(container.textContent).toMatch(marker);
+      }
+    },
+  );
 
   test('customer-scoped history is contextual; it is not a substitute for global transaction.view', () => {
-    expect(canAccessAdminView('transfers', ['transaction.view'], ['CUSTOMER_SERVICE'], { customerId: 'customer-1' })).toBe(false);
-    expect(canAccessAdminView('transactions', ['customer.view_transactions'], ['CUSTOMER_SERVICE'], { customerId: 'customer-1' })).toBe(true);
-    expect(canAccessAdminView('transactions', ['customer.view_transactions'], ['CUSTOMER_SERVICE'])).toBe(false);
+    expect(
+      canAccessAdminView('transfers', ['transaction.view'], ['CUSTOMER_SERVICE'], {
+        customerId: 'customer-1',
+      }),
+    ).toBe(false);
+    expect(
+      canAccessAdminView('transactions', ['customer.view_transactions'], ['CUSTOMER_SERVICE'], {
+        customerId: 'customer-1',
+      }),
+    ).toBe(true);
+    expect(
+      canAccessAdminView('transactions', ['customer.view_transactions'], ['CUSTOMER_SERVICE']),
+    ).toBe(false);
   });
 
   test('approval navigation requires both the configured checker role and approval scope', () => {
-    expect(canAccessAdminView('approvalsInbox', ['privileged:approve'], ['FINANCE_AUDITOR'])).toBe(false);
+    expect(canAccessAdminView('approvalsInbox', ['privileged:approve'], ['FINANCE_AUDITOR'])).toBe(
+      false,
+    );
     expect(canAccessAdminView('approvalsInbox', [], ['FINANCE_CONTROLLER'])).toBe(false);
-    expect(canAccessAdminView('approvalsInbox', ['privileged:approve'], ['FINANCE_CONTROLLER'])).toBe(true);
+    expect(
+      canAccessAdminView('approvalsInbox', ['privileged:approve'], ['FINANCE_CONTROLLER']),
+    ).toBe(true);
   });
 
   test('funding workflow navigation requires the maker/checker role and a funding function', () => {
@@ -256,14 +688,35 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
 
   test('notification management navigation is unlocked only by notification.* or checker authorization scopes across all 11 catalogue roles', () => {
     expect(canAccessAdminView('notifications', [], ['OPERATIONS'])).toBe(false);
-    expect(canAccessAdminView('notifications', ['metrics.view', 'outbox.view'], ['OPERATIONS'])).toBe(false);
-    expect(canAccessAdminView('notifications', ['notification.view_deliveries'], ['FINANCE_AUDITOR'])).toBe(true);
-    expect(canAccessAdminView('notifications', ['notification.manage_templates'], ['OPERATIONS'])).toBe(true);
-    expect(canAccessAdminView('notifications', ['notification.approve_templates'], ['FINANCE_CONTROLLER'])).toBe(true);
-    expect(canAccessAdminView('notifications', ['notification.manage_configuration'], ['OPERATIONS'])).toBe(true);
-    expect(canAccessAdminView('notifications', ['notification.test_send'], ['OPERATIONS'])).toBe(true);
+    expect(
+      canAccessAdminView('notifications', ['metrics.view', 'outbox.view'], ['OPERATIONS']),
+    ).toBe(false);
+    expect(
+      canAccessAdminView('notifications', ['notification.view_deliveries'], ['FINANCE_AUDITOR']),
+    ).toBe(true);
+    expect(
+      canAccessAdminView('notifications', ['notification.manage_templates'], ['OPERATIONS']),
+    ).toBe(true);
+    expect(
+      canAccessAdminView(
+        'notifications',
+        ['notification.approve_templates'],
+        ['FINANCE_CONTROLLER'],
+      ),
+    ).toBe(true);
+    expect(
+      canAccessAdminView('notifications', ['notification.manage_configuration'], ['OPERATIONS']),
+    ).toBe(true);
+    expect(canAccessAdminView('notifications', ['notification.test_send'], ['OPERATIONS'])).toBe(
+      true,
+    );
 
-    const activeRoles: RoleKey[] = ['SUPER_ADMIN', 'FINANCE_CONTROLLER', 'FINANCE_AUDITOR', 'OPERATIONS'];
+    const activeRoles: RoleKey[] = [
+      'SUPER_ADMIN',
+      'FINANCE_CONTROLLER',
+      'FINANCE_AUDITOR',
+      'OPERATIONS',
+    ];
     const deniedRoles: RoleKey[] = [
       'FINANCE_PREPARER',
       'ADMINISTRATOR',
@@ -274,18 +727,44 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
       'TREASURY',
     ];
     for (const roleKey of activeRoles) {
-      expect(canAccessAdminView('notifications', ROLE_PRINCIPALS[roleKey].scopes, ROLE_PRINCIPALS[roleKey].roles)).toBe(true);
+      expect(
+        canAccessAdminView(
+          'notifications',
+          ROLE_PRINCIPALS[roleKey].scopes,
+          ROLE_PRINCIPALS[roleKey].roles,
+        ),
+      ).toBe(true);
     }
     for (const roleKey of deniedRoles) {
-      expect(canAccessAdminView('notifications', ROLE_PRINCIPALS[roleKey].scopes, ROLE_PRINCIPALS[roleKey].roles)).toBe(false);
+      expect(
+        canAccessAdminView(
+          'notifications',
+          ROLE_PRINCIPALS[roleKey].scopes,
+          ROLE_PRINCIPALS[roleKey].roles,
+        ),
+      ).toBe(false);
     }
   });
 
   test('agent list and lifecycle affordances use exact function scopes, not role-name fallbacks', async () => {
-    const agent = { id: 'agent-id', reference: 'AG-001', status: 'ACTIVE', agentClassId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    const agent = {
+      id: 'agent-id',
+      reference: 'AG-001',
+      status: 'ACTIVE',
+      agentClassId: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
       if (path.startsWith('/internal/agents?')) return Promise.resolve({ data: [agent], total: 1 });
-      if (path.endsWith('/financial-position')) return Promise.resolve({ agentId: agent.id, currency: 'NGN', balanceMinor: '0', walletExists: false, walletId: null });
+      if (path.endsWith('/financial-position'))
+        return Promise.resolve({
+          agentId: agent.id,
+          currency: 'NGN',
+          balanceMinor: '0',
+          walletExists: false,
+          walletId: null,
+        });
       return Promise.resolve([]);
     });
 
@@ -317,22 +796,48 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
 
   test('commercial tabs are individually scope-gated instead of inherited from role labels', async () => {
     useAuthStore.setState({
-      isAuthenticated: true, isLoading: false, token: 't', sessionId: 's',
-      principal: { type: 'PRIVILEGED', principalId: 'issuer:SUPER_ADMIN', sessionId: 's', audience: 'workforce-admin', roles: ['SUPER_ADMIN'], scopes: ['fee_rule.view'], customerAccess: 'NONE', assuranceLevel: 'MFA' },
+      isAuthenticated: true,
+      isLoading: false,
+      token: 't',
+      sessionId: 's',
+      principal: {
+        type: 'PRIVILEGED',
+        principalId: 'issuer:SUPER_ADMIN',
+        sessionId: 's',
+        audience: 'workforce-admin',
+        roles: ['SUPER_ADMIN'],
+        scopes: ['fee_rule.view'],
+        customerAccess: 'NONE',
+        assuranceLevel: 'MFA',
+      },
     });
     (ApiClient.get as jest.Mock).mockImplementation(() => new Promise(() => {}));
     const screen = render(<CommercialRulesScreen initialTab="fees" />);
     expect(screen.getByRole('tab', { name: 'Fees' })).toBeTruthy();
     expect(screen.queryByText('Commissions')).toBeNull();
     expect(screen.queryByText('Products')).toBeNull();
-    await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith('/internal/fee-rules?page=1&limit=20'));
+    await waitFor(() =>
+      expect(ApiClient.get).toHaveBeenCalledWith('/internal/fee-rules?page=1&limit=20'),
+    );
     expect(ApiClient.get).not.toHaveBeenCalledWith('/internal/commission-rules?page=1&limit=20');
   });
 
   test('ledger read screen does not use SUPER_ADMIN role alone as a substitute for ledger.view', () => {
     useAuthStore.setState({
-      isAuthenticated: true, isLoading: false, token: 't', sessionId: 's',
-      principal: { type: 'PRIVILEGED', principalId: 'issuer:SUPER_ADMIN', sessionId: 's', audience: 'workforce-admin', roles: ['SUPER_ADMIN'], scopes: [], customerAccess: 'NONE', assuranceLevel: 'MFA' },
+      isAuthenticated: true,
+      isLoading: false,
+      token: 't',
+      sessionId: 's',
+      principal: {
+        type: 'PRIVILEGED',
+        principalId: 'issuer:SUPER_ADMIN',
+        sessionId: 's',
+        audience: 'workforce-admin',
+        roles: ['SUPER_ADMIN'],
+        scopes: [],
+        customerAccess: 'NONE',
+        assuranceLevel: 'MFA',
+      },
     });
     const screen = render(<LedgerOperationsScreen />);
     expect(screen.getByRole('alert').textContent).toMatch(/requires ledger.view/i);
@@ -341,8 +846,20 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
 
   test('reconciliation screen requires reconciliation.view even when rendered directly', () => {
     useAuthStore.setState({
-      isAuthenticated: true, isLoading: false, token: 't', sessionId: 's',
-      principal: { type: 'PRIVILEGED', principalId: 'issuer:SUPER_ADMIN', sessionId: 's', audience: 'workforce-admin', roles: ['SUPER_ADMIN'], scopes: [], customerAccess: 'NONE', assuranceLevel: 'MFA' },
+      isAuthenticated: true,
+      isLoading: false,
+      token: 't',
+      sessionId: 's',
+      principal: {
+        type: 'PRIVILEGED',
+        principalId: 'issuer:SUPER_ADMIN',
+        sessionId: 's',
+        audience: 'workforce-admin',
+        roles: ['SUPER_ADMIN'],
+        scopes: [],
+        customerAccess: 'NONE',
+        assuranceLevel: 'MFA',
+      },
     });
     const screen = render(<ReconciliationObservabilityScreen />);
     expect(screen.getByRole('alert').textContent).toMatch(/requires reconciliation.view/i);

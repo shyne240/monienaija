@@ -13,39 +13,78 @@ jest.mock('../src/services/api-client', () => ({ ApiClient: { get: jest.fn(), po
 
 beforeEach(() => {
   jest.resetAllMocks();
-  useAuthStore.setState({ principal: { type: 'OPERATOR', principalId: 'synthetic', sessionId: 'synthetic', audience: 'workforce-admin', roles: [], scopes: ['fee_rule.view', 'commission_rule.view', 'customer.manage_support_case', 'kyc.view', 'compliance.manage_case', 'risk_fraud.manage_fraud_case'], customerAccess: 'NONE', assuranceLevel: 'MFA' } });
+  useAuthStore.setState({
+    principal: {
+      type: 'OPERATOR',
+      principalId: 'synthetic',
+      sessionId: 'synthetic',
+      audience: 'workforce-admin',
+      roles: [],
+      scopes: [
+        'fee_rule.view',
+        'commission_rule.view',
+        'customer.manage_support_case',
+        'kyc.view',
+        'compliance.manage_case',
+        'risk_fraud.manage_fraud_case',
+      ],
+      customerAccess: 'NONE',
+      assuranceLevel: 'MFA',
+    },
+  });
 });
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>(r => { resolve = r; });
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
   return { promise, resolve };
 }
 
 test('dashboard widget discards old responses when dependencies change', async () => {
-  const old = deferred<string>(); const current = deferred<string>();
-  const Widget = ({ query }: {query: string}) => {
-    const { data } = useWidgetData(() => query === 'old' ? old.promise : current.promise, [query]);
+  const old = deferred<string>();
+  const current = deferred<string>();
+  const Widget = ({ query }: { query: string }) => {
+    const { data } = useWidgetData(
+      () => (query === 'old' ? old.promise : current.promise),
+      [query],
+    );
     return <div>{data}</div>;
   };
   const view = render(<Widget query="old" />);
   view.rerender(<Widget query="new" />);
-  await act(async () => { current.resolve('current'); await current.promise; });
+  await act(async () => {
+    current.resolve('current');
+    await current.promise;
+  });
   expect(screen.getByText('current')).toBeTruthy();
-  await act(async () => { old.resolve('stale'); await old.promise; });
+  await act(async () => {
+    old.resolve('stale');
+    await old.promise;
+  });
   expect(screen.getByText('current')).toBeTruthy();
   expect(screen.queryByText('stale')).toBeNull();
 });
 
 test('commercial tabs reject out-of-order responses', async () => {
-  const fees = deferred<unknown>(); const commissions = deferred<unknown>();
-  (ApiClient.get as jest.Mock).mockImplementation((url: string) => url.includes('commission') ? commissions.promise : fees.promise);
+  const fees = deferred<unknown>();
+  const commissions = deferred<unknown>();
+  (ApiClient.get as jest.Mock).mockImplementation((url: string) =>
+    url.includes('commission') ? commissions.promise : fees.promise,
+  );
   render(<CommercialRulesScreen initialTab="fees" />);
   fireEvent.click(screen.getByRole('tab', { name: 'Commissions' }));
-  await act(async () => { commissions.resolve([{ id: 'c1', code: 'COMMISSION' }]); await commissions.promise; });
+  await act(async () => {
+    commissions.resolve([{ id: 'c1', code: 'COMMISSION' }]);
+    await commissions.promise;
+  });
   fireEvent.click(screen.getByRole('button', { name: 'View details' }));
   expect(screen.getAllByText('COMMISSION').length).toBeGreaterThan(0);
-  await act(async () => { fees.resolve([{ id: 'f1', code: 'OLD FEE' }]); await fees.promise; });
+  await act(async () => {
+    fees.resolve([{ id: 'f1', code: 'OLD FEE' }]);
+    await fees.promise;
+  });
   expect(screen.queryByText('OLD FEE')).toBeNull();
   expect(screen.getAllByText('COMMISSION').length).toBeGreaterThan(0);
 });
@@ -70,7 +109,9 @@ test('KYC and compliance failures are not shown as successful empty searches', a
 });
 
 test('fraud search distinguishes an empty response from an error', async () => {
-  (ApiClient.get as jest.Mock).mockRejectedValueOnce(new Error('Fraud service unavailable')).mockResolvedValueOnce([]);
+  (ApiClient.get as jest.Mock)
+    .mockRejectedValueOnce(new Error('Fraud service unavailable'))
+    .mockResolvedValueOnce([]);
   render(<RiskFraudScreen />);
   fireEvent.change(screen.getByLabelText('Customer UUID'), { target: { value: 'synthetic' } });
   fireEvent.click(screen.getByRole('button', { name: 'Search FRAUD cases' }));

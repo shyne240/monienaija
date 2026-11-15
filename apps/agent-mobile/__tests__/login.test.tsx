@@ -42,10 +42,7 @@ describe('LoginScreen', () => {
     fireEvent.changeText(getByTestId('password-input'), 'secret');
     fireEvent.press(getByTestId('login-button'));
     await Promise.resolve();
-    expect(loginMock).toHaveBeenCalledWith(
-      ' 9f0c19e4-1111-4abc-9def-111122223333 ',
-      'secret',
-    );
+    expect(loginMock).toHaveBeenCalledWith(' 9f0c19e4-1111-4abc-9def-111122223333 ', 'secret');
   });
 
   test('shows backend error surfaced by the store', () => {

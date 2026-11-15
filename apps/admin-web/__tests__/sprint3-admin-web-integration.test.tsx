@@ -143,7 +143,11 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
           approvalApprovedBy: 'checker-fc-99',
           checkerPrincipalId: 'checker-fc-99',
         };
-        return Promise.resolve({ approved: true, reason: 'APPROVED', approval: {id: baseRequest.approvalId, status: 'APPROVED'} });
+        return Promise.resolve({
+          approved: true,
+          reason: 'APPROVED',
+          approval: { id: baseRequest.approvalId, status: 'APPROVED' },
+        });
       }
       if (url === `/internal/agents/funding-requests/${baseRequest.id}/execute`) {
         liveRow = {
@@ -154,7 +158,15 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
           checkerPrincipalId: 'checker-fc-99',
           journalId: 'jrn-executed-101',
         };
-        return Promise.resolve({ status: 'COMPLETED', journalId: 'jrn-executed-101', agentId:baseRequest.agentId, amountMinor:baseRequest.amountMinor, currency:baseRequest.currency, idempotencyKey:baseRequest.idempotencyKey, requestHash:baseRequest.requestHash });
+        return Promise.resolve({
+          status: 'COMPLETED',
+          journalId: 'jrn-executed-101',
+          agentId: baseRequest.agentId,
+          amountMinor: baseRequest.amountMinor,
+          currency: baseRequest.currency,
+          idempotencyKey: baseRequest.idempotencyKey,
+          requestHash: baseRequest.requestHash,
+        });
       }
       return Promise.resolve({});
     });
@@ -205,16 +217,22 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
         `/internal/agents/${baseRequest.agentId}/funding-requests?idempotencyKey=idem-inbox-101`,
       ),
     );
-    expect(view.getByTestId('funding-inbox-selected-banner').textContent).toContain('req-inbox-101');
+    expect(view.getByTestId('funding-inbox-selected-banner').textContent).toContain(
+      'req-inbox-101',
+    );
 
     const countBeforeApprove = inboxCalls.length;
-    fireEvent.click(view.getByLabelText('I reviewed this Agent, amount, direction and business reason'));
+    fireEvent.click(
+      view.getByLabelText('I reviewed this Agent, amount, direction and business reason'),
+    );
     fireEvent.click(view.getByRole('button', { name: 'Approve funding instruction' }));
     await waitFor(() => expect(inboxCalls.length).toBeGreaterThan(countBeforeApprove));
 
     await view.findByRole('button', { name: 'Execute approved instruction' });
     const countBeforeExecute = inboxCalls.length;
-    fireEvent.click(view.getByLabelText('I reviewed this Agent, amount, direction and business reason'));
+    fireEvent.click(
+      view.getByLabelText('I reviewed this Agent, amount, direction and business reason'),
+    );
     fireEvent.click(view.getByRole('button', { name: 'Execute approved instruction' }));
     await waitFor(() => expect(inboxCalls.length).toBeGreaterThan(countBeforeExecute));
 
@@ -293,9 +311,7 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
       }
       if (url.startsWith(`/internal/agents/${defundItem.agentId}/funding-requests`)) {
         return Promise.resolve([
-          rejected
-            ? { ...defundItem, status: 'REJECTED', approvalStatus: 'REJECTED' }
-            : defundItem,
+          rejected ? { ...defundItem, status: 'REJECTED', approvalStatus: 'REJECTED' } : defundItem,
         ]);
       }
       return Promise.resolve([]);
@@ -318,7 +334,9 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
 
     fireEvent.click(view.getByRole('button', { name: 'Review in Checker' }));
     await view.findByText('Business reason: Disputed sweep amount');
-    fireEvent.click(view.getByLabelText('I reviewed this Agent, amount, direction and business reason'));
+    fireEvent.click(
+      view.getByLabelText('I reviewed this Agent, amount, direction and business reason'),
+    );
     fireEvent.change(view.getByLabelText('Rejection reason'), {
       target: { value: 'Outlet settlement receipt mismatch' },
     });
@@ -511,7 +529,10 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
           data: [
             {
               id: 'c2c-surviving-1',
-              agentId: 'agent-ops-1', beneficiaryPhoneMasked: '•••••••5678', principalMinor: '25000', redemptionMethod: 'AGENT_CASH',
+              agentId: 'agent-ops-1',
+              beneficiaryPhoneMasked: '•••••••5678',
+              principalMinor: '25000',
+              redemptionMethod: 'AGENT_CASH',
               reference: 'C2C-SURVIVING-01',
               status: 'CLAIMED',
               amountMinor: '25000',
@@ -536,16 +557,21 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
     // Policy-blocked buttons are visibly rendered & disabled with zero speculative backend calls;
     // Unified history is now live and enabled via GET /internal/agents/:id/transactions
     expect(
-      (netView.getByRole('button', { name: 'Reclassify Agent (Policy blocked)' }) as HTMLButtonElement)
-        .disabled,
+      (
+        netView.getByRole('button', {
+          name: 'Reclassify Agent (Policy blocked)',
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
     expect(
-      (netView.getByRole('button', { name: 'Clear PIN Lockout (Policy blocked)' }) as HTMLButtonElement)
-        .disabled,
+      (
+        netView.getByRole('button', {
+          name: 'Clear PIN Lockout (Policy blocked)',
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
     expect(
-      (netView.getByRole('button', { name: 'Load unified stream' }) as HTMLButtonElement)
-        .disabled,
+      (netView.getByRole('button', { name: 'Load unified stream' }) as HTMLButtonElement).disabled,
     ).toBe(false);
 
     // Partial failure in wallet transfers still renders Cash-to-Cash history + error notice
@@ -777,7 +803,9 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
     expect(await errView.findByText('AG-UH-403')).toBeTruthy();
     fireEvent.click(errView.getByRole('button', { name: 'View' }));
     await waitFor(() =>
-      expect(ApiClient.get).toHaveBeenCalledWith('/internal/agents/agent-uh-403/financial-position'),
+      expect(ApiClient.get).toHaveBeenCalledWith(
+        '/internal/agents/agent-uh-403/financial-position',
+      ),
     );
 
     fireEvent.click(errView.getByRole('button', { name: 'Load unified stream' }));

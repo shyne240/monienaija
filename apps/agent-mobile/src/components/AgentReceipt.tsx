@@ -230,7 +230,6 @@ export function receiptFromCashOutResult(
   };
 }
 
-
 /** Cash→Cash Claim result → receipt (V1-AGENT-MOBILE-09 / CLM-6). transferCode and OTP are NEVER included. */
 export function receiptFromCashToCashClaimResult(
   result: AgentCashToCashClaimResult,
@@ -277,12 +276,7 @@ export function receiptFromCashToCashClaimResult(
     stateTone: replayed ? 'info' : 'success',
     lines,
     footerNote: note,
-    shareText: buildShareText(
-      heading,
-      replayed ? 'REPLAYED' : result.status,
-      lines,
-      note,
-    ),
+    shareText: buildShareText(heading, replayed ? 'REPLAYED' : result.status, lines, note),
   };
 }
 
@@ -293,9 +287,8 @@ export function receiptFromHistoryItem(item: AgentHistoryItem): AgentReceiptView
       CASH_IN: 'Cash→Wallet',
       CASH_OUT: 'Wallet→Cash',
       CASH_TO_CASH: 'Cash→Cash send',
-      CASH_TO_CASH_CLAIM: item.direction === 'CREDIT'
-        ? 'Cash→Cash cash payout'
-        : 'Cash→Cash wallet redemption',
+      CASH_TO_CASH_CLAIM:
+        item.direction === 'CREDIT' ? 'Cash→Cash cash payout' : 'Cash→Cash wallet redemption',
       AGENT_FUNDING: 'Agent Funding',
       AGENT_DEFUNDING: 'Agent Defunding',
     }[item.type] ?? item.type;
@@ -345,13 +338,14 @@ export function receiptFromHistoryItem(item: AgentHistoryItem): AgentReceiptView
     lines.push({ label: 'Narration', value: item.narration });
   }
 
-  const footerNote = item.type === 'CASH_TO_CASH_CLAIM'
-    ? item.direction === 'CREDIT'
-      ? 'The claiming Agent float was credited. Physical cash handover is separate from this ledger settlement and is not recorded in this receipt.'
-      : 'The beneficiary Customer wallet was credited. No physical cash payout is included in this settlement.'
-    : item.type === 'CASH_TO_CASH' && item.status === 'EXPIRED'
-      ? 'This Cash→Cash transfer expired before beneficiary redemption.'
-      : 'Values are server-recorded entries from your Agent history.';
+  const footerNote =
+    item.type === 'CASH_TO_CASH_CLAIM'
+      ? item.direction === 'CREDIT'
+        ? 'The claiming Agent float was credited. Physical cash handover is separate from this ledger settlement and is not recorded in this receipt.'
+        : 'The beneficiary Customer wallet was credited. No physical cash payout is included in this settlement.'
+      : item.type === 'CASH_TO_CASH' && item.status === 'EXPIRED'
+        ? 'This Cash→Cash transfer expired before beneficiary redemption.'
+        : 'Values are server-recorded entries from your Agent history.';
 
   return {
     heading: `${typeLabel} Receipt`,

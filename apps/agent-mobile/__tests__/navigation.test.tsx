@@ -26,7 +26,11 @@ jest.mock('@react-navigation/native-stack', () => {
       };
       const Screen = ({ name, component: Component, children }: any) => {
         const label = Component?.name || Component?.displayName || name;
-        return mockReact.createElement('mock-screen', { name, 'component-name': label, hasChildren: !!children });
+        return mockReact.createElement('mock-screen', {
+          name,
+          'component-name': label,
+          hasChildren: !!children,
+        });
       };
       return {
         Navigator,

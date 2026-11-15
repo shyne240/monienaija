@@ -39,26 +39,75 @@ interface Journal {
   lines: JournalLine[];
 }
 
-const validJournal = (value: any, id: string): value is Journal => value && value.id === id && typeof value.status === 'string' && typeof value.currency === 'string' && typeof value.accountingUnit === 'string' && Array.isArray(value.lines) && value.lines.every((line: any) => line && typeof line.id === 'string' && typeof line.accountId === 'string' && ['DEBIT','CREDIT'].includes(line.direction) && typeof line.amountMinor === 'string' && /^\d+$/.test(line.amountMinor));
+const validJournal = (value: any, id: string): value is Journal =>
+  value &&
+  value.id === id &&
+  typeof value.status === 'string' &&
+  typeof value.currency === 'string' &&
+  typeof value.accountingUnit === 'string' &&
+  Array.isArray(value.lines) &&
+  value.lines.every(
+    (line: any) =>
+      line &&
+      typeof line.id === 'string' &&
+      typeof line.accountId === 'string' &&
+      ['DEBIT', 'CREDIT'].includes(line.direction) &&
+      typeof line.amountMinor === 'string' &&
+      /^\d+$/.test(line.amountMinor),
+  );
 
 function canVerifyReversal(journal: Journal): boolean {
-  return journal.lines.some(line => line.direction === 'DEBIT') && journal.lines.some(line => line.direction === 'CREDIT');
+  return (
+    journal.lines.some((line) => line.direction === 'DEBIT') &&
+    journal.lines.some((line) => line.direction === 'CREDIT')
+  );
 }
 function matchesReversedLines(original: JournalLine[], reversed: JournalLine[]): boolean {
-  const signature = (line: JournalLine, invert: boolean) => JSON.stringify([line.accountId, invert ? (line.direction === 'DEBIT' ? 'CREDIT' : 'DEBIT') : line.direction, BigInt(line.amountMinor).toString()]);
-  const expected = original.map(line => signature(line, true)).sort();
-  const actual = reversed.map(line => signature(line, false)).sort();
-  return expected.length === actual.length && expected.every((line, index) => line === actual[index]);
+  const signature = (line: JournalLine, invert: boolean) =>
+    JSON.stringify([
+      line.accountId,
+      invert ? (line.direction === 'DEBIT' ? 'CREDIT' : 'DEBIT') : line.direction,
+      BigInt(line.amountMinor).toString(),
+    ]);
+  const expected = original.map((line) => signature(line, true)).sort();
+  const actual = reversed.map((line) => signature(line, false)).sort();
+  return (
+    expected.length === actual.length && expected.every((line, index) => line === actual[index])
+  );
 }
 
-export const LedgerOperationsScreen: React.FC<{onLedgerGuardChange?: (guarded: boolean, busy: boolean) => void}> = ({onLedgerGuardChange}) => {
+export const LedgerOperationsScreen: React.FC<{
+  onLedgerGuardChange?: (guarded: boolean, busy: boolean) => void;
+}> = ({ onLedgerGuardChange }) => {
   const { principal, sessionId } = useAuthStore();
-  const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
-  return <LedgerWorkspace key={key} principal={principal} onLedgerGuardChange={onLedgerGuardChange} />;
+  const key = JSON.stringify([
+    sessionId,
+    principal?.principalId,
+    principal?.sessionId,
+    principal?.type,
+    principal?.roles,
+    principal?.scopes,
+    principal?.assuranceLevel,
+    principal?.customerAccess,
+    principal?.readOnlyPrincipal,
+  ]);
+  return (
+    <LedgerWorkspace key={key} principal={principal} onLedgerGuardChange={onLedgerGuardChange} />
+  );
 };
-const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getState>['principal']; onLedgerGuardChange?: (guarded: boolean, busy: boolean) => void}> = ({principal, onLedgerGuardChange}) => {
-  const generations = useRef({accounts:0, journal:0, reversal:0});
-  useEffect(() => () => { generations.current.accounts++; generations.current.journal++; generations.current.reversal++; }, []);
+const LedgerWorkspace: React.FC<{
+  principal: ReturnType<typeof useAuthStore.getState>['principal'];
+  onLedgerGuardChange?: (guarded: boolean, busy: boolean) => void;
+}> = ({ principal, onLedgerGuardChange }) => {
+  const generations = useRef({ accounts: 0, journal: 0, reversal: 0 });
+  useEffect(
+    () => () => {
+      generations.current.accounts++;
+      generations.current.journal++;
+      generations.current.reversal++;
+    },
+    [],
+  );
   const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
   const [searchCurrency, setSearchCurrency] = useState('');
   const [accountQuery, setAccountQuery] = useState('');
@@ -79,18 +128,31 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
   const [reversalSuccess, setReversalSuccess] = useState('');
   const [reversalLoading, setReversalLoading] = useState(false);
   const reversalLock = useRef(false);
-  const [reversalReviews, setReversalReviews] = useState<Record<string, 'uncertain' | 'requested' | 'executed'>>({});
+  const [reversalReviews, setReversalReviews] = useState<
+    Record<string, 'uncertain' | 'requested' | 'executed'>
+  >({});
   const [reviewedJournalReads, setReviewedJournalReads] = useState<Record<string, boolean>>({});
   const [reviewReadLoading, setReviewReadLoading] = useState(false);
   const [confirmReversal, setConfirmReversal] = useState(false);
   const [confirmClearDraft, setConfirmClearDraft] = useState(false);
-  const ledgerGuard = reversalLoading || confirmReversal || confirmClearDraft || Boolean(reversalReason.trim() || reversalApprovalId.trim()) || Object.keys(reversalReviews).length > 0;
-  useEffect(() => { onLedgerGuardChange?.(ledgerGuard, reversalLoading); }, [onLedgerGuardChange, ledgerGuard, reversalLoading]);
+  const ledgerGuard =
+    reversalLoading ||
+    confirmReversal ||
+    confirmClearDraft ||
+    Boolean(reversalReason.trim() || reversalApprovalId.trim()) ||
+    Object.keys(reversalReviews).length > 0;
+  useEffect(() => {
+    onLedgerGuardChange?.(ledgerGuard, reversalLoading);
+  }, [onLedgerGuardChange, ledgerGuard, reversalLoading]);
   useEffect(() => () => onLedgerGuardChange?.(false, false), [onLedgerGuardChange]);
   useEffect(() => {
     if (!ledgerGuard) return;
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
-    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
   }, [ledgerGuard]);
 
   const reviewCancelRef = useRef<HTMLButtonElement>(null);
@@ -98,7 +160,10 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
   const returnReviewFocus = useRef(false);
   useEffect(() => {
     if (confirmReversal) reviewCancelRef.current?.focus();
-    else if (returnReviewFocus.current) { returnReviewFocus.current = false; reviewTriggerRef.current?.focus(); }
+    else if (returnReviewFocus.current) {
+      returnReviewFocus.current = false;
+      reviewTriggerRef.current?.focus();
+    }
   }, [confirmReversal]);
 
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
@@ -111,7 +176,8 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
   // The backend reversal executor explicitly accepts a FINANCE_CONTROLLER role or
   // privileged:execute; keep this UI condition in lockstep with that source policy.
   const isController =
-    !principal?.readOnlyPrincipal && (principal?.roles.includes('FINANCE_CONTROLLER') === true || hasFn('privileged:execute'));
+    !principal?.readOnlyPrincipal &&
+    (principal?.roles.includes('FINANCE_CONTROLLER') === true || hasFn('privileged:execute'));
 
   const fetchAccounts = async () => {
     if (!canViewLedger) {
@@ -119,17 +185,33 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
       return;
     }
     const request = ++generations.current.accounts;
-    setIsLoading(true); setAccounts([]); setSelectedAccount(null);
+    setIsLoading(true);
+    setAccounts([]);
+    setSelectedAccount(null);
     setError('');
     try {
       // GET /ledger/accounts
       const query = searchCurrency ? `?currency=${searchCurrency}` : '';
       const list = await ApiClient.get<LedgerAccount[]>(`/ledger/accounts${query}`);
       if (request !== generations.current.accounts) return;
-      if (!Array.isArray(list) || list.some(a => !a || typeof a.id !== 'string' || typeof a.name !== 'string' || typeof a.code !== 'string' || typeof a.currency !== 'string' || (a.balanceMinor !== undefined && (typeof a.balanceMinor !== 'string' || !/^-?\d+$/.test(a.balanceMinor))))) throw new Error('Ledger account list returned an invalid response.');
+      if (
+        !Array.isArray(list) ||
+        list.some(
+          (a) =>
+            !a ||
+            typeof a.id !== 'string' ||
+            typeof a.name !== 'string' ||
+            typeof a.code !== 'string' ||
+            typeof a.currency !== 'string' ||
+            (a.balanceMinor !== undefined &&
+              (typeof a.balanceMinor !== 'string' || !/^-?\d+$/.test(a.balanceMinor))),
+        )
+      )
+        throw new Error('Ledger account list returned an invalid response.');
       setAccounts(list);
     } catch (err: any) {
-      if (request === generations.current.accounts) setError(err?.message || 'Failed to fetch ledger accounts.');
+      if (request === generations.current.accounts)
+        setError(err?.message || 'Failed to fetch ledger accounts.');
     } finally {
       if (request === generations.current.accounts) setIsLoading(false);
     }
@@ -142,7 +224,17 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
 
   const handleSearchJournal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canViewLedger || reversalLoading || reviewReadLoading || reversalLock.current || confirmReversal || confirmClearDraft || Boolean(reversalReason.trim()) || Boolean(reversalApprovalId.trim())) return;
+    if (
+      !canViewLedger ||
+      reversalLoading ||
+      reviewReadLoading ||
+      reversalLock.current ||
+      confirmReversal ||
+      confirmClearDraft ||
+      Boolean(reversalReason.trim()) ||
+      Boolean(reversalApprovalId.trim())
+    )
+      return;
     if (!searchJournalId.trim()) {
       setJournalError('Journal ID is required');
       return;
@@ -159,34 +251,64 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
       // GET /ledger/journals/:id
       const res = await ApiClient.get<Journal>(`/ledger/journals/${encodeURIComponent(id)}`);
       if (request !== generations.current.journal) return;
-      if (!validJournal(res, id)) throw new Error('Journal response is invalid or does not match the requested ID.');
+      if (!validJournal(res, id))
+        throw new Error('Journal response is invalid or does not match the requested ID.');
       setJournal(res);
     } catch (err: any) {
-      if (request === generations.current.journal) setJournalError(err?.message || 'Journal entry not found.');
+      if (request === generations.current.journal)
+        setJournalError(err?.message || 'Journal entry not found.');
     } finally {
       if (request === generations.current.journal) setJournalLoading(false);
     }
   };
 
   const refreshJournalForReview = async () => {
-    if (!journal || !reversalReviews[journal.id] || reviewReadLoading || reversalLock.current) return;
+    if (!journal || !reversalReviews[journal.id] || reviewReadLoading || reversalLock.current)
+      return;
     const id = journal.id;
     const request = ++generations.current.journal;
-    setReviewReadLoading(true); setJournalError('');
+    setReviewReadLoading(true);
+    setJournalError('');
     try {
       const refreshed = await ApiClient.get<Journal>(`/ledger/journals/${encodeURIComponent(id)}`);
       if (request !== generations.current.journal) return;
       if (!validJournal(refreshed, id)) throw new Error('Journal refresh returned invalid data.');
-      setJournal(refreshed); setReviewedJournalReads(current => ({ ...current, [id]: true }));
+      setJournal(refreshed);
+      setReviewedJournalReads((current) => ({ ...current, [id]: true }));
     } catch (err: any) {
-      if (request === generations.current.journal) { setReviewedJournalReads(current => ({ ...current, [id]: false })); setJournalError(`Journal review refresh failed: ${err?.message || 'Service unavailable.'}`); }
-    } finally { if (request === generations.current.journal) setReviewReadLoading(false); }
+      if (request === generations.current.journal) {
+        setReviewedJournalReads((current) => ({ ...current, [id]: false }));
+        setJournalError(`Journal review refresh failed: ${err?.message || 'Service unavailable.'}`);
+      }
+    } finally {
+      if (request === generations.current.journal) setReviewReadLoading(false);
+    }
   };
 
   const handleReverseJournal = async () => {
-    if (!canViewLedger || !journal || reversalLoading || reversalLock.current || !confirmReversal || reversalReviews[journal.id] || (!isPreparer && !isController)) return;
-    if (!reversalReason.trim() || reversalReason.trim().length > 500 || journal.status !== 'POSTED' || journal.reversalOfJournalId || (isController && !canVerifyReversal(journal))) return;
-    if (isController && !reversalApprovalId.trim()) { setReversalSuccess(''); setReversalError('Approved maker-checker request ID (approvalId) is required.'); return; }
+    if (
+      !canViewLedger ||
+      !journal ||
+      reversalLoading ||
+      reversalLock.current ||
+      !confirmReversal ||
+      reversalReviews[journal.id] ||
+      (!isPreparer && !isController)
+    )
+      return;
+    if (
+      !reversalReason.trim() ||
+      reversalReason.trim().length > 500 ||
+      journal.status !== 'POSTED' ||
+      journal.reversalOfJournalId ||
+      (isController && !canVerifyReversal(journal))
+    )
+      return;
+    if (isController && !reversalApprovalId.trim()) {
+      setReversalSuccess('');
+      setReversalError('Approved maker-checker request ID (approvalId) is required.');
+      return;
+    }
     reversalLock.current = true;
     setConfirmReversal(false);
     const generation = ++generations.current.reversal;
@@ -196,49 +318,94 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
     setReversalLoading(true);
 
     try {
-      if (isController && !globalThis.crypto?.getRandomValues) throw new Error('Secure reversal key generation unavailable.');
-      const idempotencyKey = isController ? `rev-${journal.id}-${Array.from(globalThis.crypto.getRandomValues(new Uint8Array(24)), value => value.toString(16).padStart(2, '0')).join('')}` : '';
+      if (isController && !globalThis.crypto?.getRandomValues)
+        throw new Error('Secure reversal key generation unavailable.');
+      const idempotencyKey = isController
+        ? `rev-${journal.id}-${Array.from(globalThis.crypto.getRandomValues(new Uint8Array(24)), (value) => value.toString(16).padStart(2, '0')).join('')}`
+        : '';
       if (isController) {
         // Checker-execution (P0-B): consumes the APPROVED maker-checker request. The reason
         // must match the approved maker request exactly — it is fingerprint-bound server-side.
-        const receipt = await ApiClient.post<Journal>(`/ledger/journals/${encodeURIComponent(journalId)}/reversal`, {
-          idempotencyKey,
-          reason: reversalReason.trim(),
-          approvalId: reversalApprovalId.trim(),
-        }, {
-          idempotencyKey,
-        });
+        const receipt = await ApiClient.post<Journal>(
+          `/ledger/journals/${encodeURIComponent(journalId)}/reversal`,
+          {
+            idempotencyKey,
+            reason: reversalReason.trim(),
+            approvalId: reversalApprovalId.trim(),
+          },
+          {
+            idempotencyKey,
+          },
+        );
         if (generation !== generations.current.reversal) return;
-        if (!receipt || typeof receipt.id !== 'string' || !receipt.id.trim() || receipt.id === journalId || !validJournal(receipt, receipt.id) || receipt.status !== 'POSTED' || receipt.reversalOfJournalId !== journalId || receipt.idempotencyKey !== idempotencyKey || receipt.currency !== journal.currency || receipt.accountingUnit !== journal.accountingUnit || !matchesReversedLines(journal.lines, receipt.lines)) throw new Error('Reversal receipt was incomplete or mismatched.');
-        setReviewedJournalReads(current => ({ ...current, [journalId]: false }));
-        setReversalReviews(current => ({ ...current, [journalId]: 'executed' }));
+        if (
+          !receipt ||
+          typeof receipt.id !== 'string' ||
+          !receipt.id.trim() ||
+          receipt.id === journalId ||
+          !validJournal(receipt, receipt.id) ||
+          receipt.status !== 'POSTED' ||
+          receipt.reversalOfJournalId !== journalId ||
+          receipt.idempotencyKey !== idempotencyKey ||
+          receipt.currency !== journal.currency ||
+          receipt.accountingUnit !== journal.accountingUnit ||
+          !matchesReversedLines(journal.lines, receipt.lines)
+        )
+          throw new Error('Reversal receipt was incomplete or mismatched.');
+        setReviewedJournalReads((current) => ({ ...current, [journalId]: false }));
+        setReversalReviews((current) => ({ ...current, [journalId]: 'executed' }));
         setReversalSuccess('Governed journal reversal executed from the approved request.');
         setReversalReason('');
         setReversalApprovalId('');
 
         // Reload journal to view status changes
         try {
-          const res = await ApiClient.get<Journal>(`/ledger/journals/${encodeURIComponent(journalId)}`);
+          const res = await ApiClient.get<Journal>(
+            `/ledger/journals/${encodeURIComponent(journalId)}`,
+          );
           if (generation !== generations.current.reversal) return;
-          if (!validJournal(res, journalId)) throw new Error('Journal refresh returned invalid data.');
+          if (!validJournal(res, journalId))
+            throw new Error('Journal refresh returned invalid data.');
           setJournal(res);
           void fetchAccounts();
         } catch (refreshError: any) {
-          if (generation === generations.current.reversal) { setJournal(null); setJournalError(`Reversal was recorded, but journal refresh failed: ${refreshError?.message || 'Service unavailable.'}`); }
+          if (generation === generations.current.reversal) {
+            setJournal(null);
+            setJournalError(
+              `Reversal was recorded, but journal refresh failed: ${refreshError?.message || 'Service unavailable.'}`,
+            );
+          }
         }
       } else if (isPreparer) {
         // Maker request (P0-B): the backend computes the deterministic action fingerprint of the
         // ACTUAL reversal request (LEDGER_JOURNAL_REVERSAL / LEDGER_JOURNAL) — the client never
         // supplies one. The result is a PENDING maker-checker request a FINANCE_CONTROLLER must
         // independently approve before it can be executed.
-        const request = await ApiClient.post<{ approvalId: string; actionFingerprint: string; status: string; resourceId: string; actionType: string; resourceType: string }>(
-          `/ledger/journals/${encodeURIComponent(journalId)}/reversal-request`,
-          { reason: reversalReason.trim() },
-        );
+        const request = await ApiClient.post<{
+          approvalId: string;
+          actionFingerprint: string;
+          status: string;
+          resourceId: string;
+          actionType: string;
+          resourceType: string;
+        }>(`/ledger/journals/${encodeURIComponent(journalId)}/reversal-request`, {
+          reason: reversalReason.trim(),
+        });
         if (generation !== generations.current.reversal) return;
-        if (!request || typeof request.approvalId !== 'string' || !request.approvalId || request.status !== 'REQUESTED' || request.actionType !== 'LEDGER_JOURNAL_REVERSAL' || request.resourceType !== 'LEDGER_JOURNAL' || request.resourceId !== journalId || typeof request.actionFingerprint !== 'string' || !request.actionFingerprint) throw new Error('Reversal request receipt was incomplete or mismatched.');
-        setReviewedJournalReads(current => ({ ...current, [journalId]: false }));
-        setReversalReviews(current => ({ ...current, [journalId]: 'requested' }));
+        if (
+          !request ||
+          typeof request.approvalId !== 'string' ||
+          !request.approvalId ||
+          request.status !== 'REQUESTED' ||
+          request.actionType !== 'LEDGER_JOURNAL_REVERSAL' ||
+          request.resourceType !== 'LEDGER_JOURNAL' ||
+          request.resourceId !== journalId ||
+          typeof request.actionFingerprint !== 'string' ||
+          !request.actionFingerprint
+        )
+          throw new Error('Reversal request receipt was incomplete or mismatched.');
+        setReviewedJournalReads((current) => ({ ...current, [journalId]: false }));
+        setReversalReviews((current) => ({ ...current, [journalId]: 'requested' }));
         setReversalSuccess(
           `Reversal maker request created (request ID ${request.approvalId}). Awaiting independent FINANCE_CONTROLLER approval.`,
         );
@@ -247,7 +414,13 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
         throw new Error('Unauthorized operational action.');
       }
     } catch (err: any) {
-      if (generation === generations.current.reversal) { setReviewedJournalReads(current => ({ ...current, [journalId]: false })); setReversalReviews(current => ({ ...current, [journalId]: 'uncertain' })); setReversalError(`Reversal outcome not confirmed. Check the journal and approval/audit records before retrying. ${err?.message || 'Service unavailable.'}`); }
+      if (generation === generations.current.reversal) {
+        setReviewedJournalReads((current) => ({ ...current, [journalId]: false }));
+        setReversalReviews((current) => ({ ...current, [journalId]: 'uncertain' }));
+        setReversalError(
+          `Reversal outcome not confirmed. Check the journal and approval/audit records before retrying. ${err?.message || 'Service unavailable.'}`,
+        );
+      }
     } finally {
       reversalLock.current = false;
       if (generation === generations.current.reversal) setReversalLoading(false);
@@ -257,19 +430,42 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
   if (!canViewLedger) {
     return (
       <div className="mn-operational" style={styles.container} role="alert">
-        <div style={styles.errorBox}>Ledger account and journal lookup requires <code>ledger.view</code>.</div>
+        <div style={styles.errorBox}>
+          Ledger account and journal lookup requires <code>ledger.view</code>.
+        </div>
       </div>
     );
   }
 
-  const matchingAccounts = accounts.filter(account => `${account.name} ${account.code}`.toLocaleLowerCase().includes(accountQuery.trim().toLocaleLowerCase()));
+  const matchingAccounts = accounts.filter((account) =>
+    `${account.name} ${account.code}`
+      .toLocaleLowerCase()
+      .includes(accountQuery.trim().toLocaleLowerCase()),
+  );
 
   return (
     <div className="mn-operational mn-ledger" style={styles.container}>
-      <PageHeader eyebrow="Finance and ledger" title="Ledger Core & Reversals Desk" description="Inspect accounts and journal postings, and use the existing governed reversal workflow." />
-      {Object.keys(reversalReviews).length > 0 && <div role="status" style={styles.gapWarning}>Local journal safeguards: {Object.entries(reversalReviews).map(([id, status]) => `${id} (${status})`).join(', ')}. Confirmed exit or session change loses these safeguards; inspect journal, approval and audit records before acting again. A fresh read cannot exclude a late commit.</div>}
+      <PageHeader
+        eyebrow="Finance and ledger"
+        title="Ledger Core & Reversals Desk"
+        description="Inspect accounts and journal postings, and use the existing governed reversal workflow."
+      />
+      {Object.keys(reversalReviews).length > 0 && (
+        <div role="status" style={styles.gapWarning}>
+          Local journal safeguards:{' '}
+          {Object.entries(reversalReviews)
+            .map(([id, status]) => `${id} (${status})`)
+            .join(', ')}
+          . Confirmed exit or session change loses these safeguards; inspect journal, approval and
+          audit records before acting again. A fresh read cannot exclude a late commit.
+        </div>
+      )}
 
-      {error && <div style={styles.errorBox} role="alert">{error}</div>}
+      {error && (
+        <div style={styles.errorBox} role="alert">
+          {error}
+        </div>
+      )}
 
       <div style={styles.gapWarning}>
         <span style={styles.gapTitle}>Journal listing and backlog search unavailable</span>
@@ -280,41 +476,113 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
 
       <div style={styles.splitLayout}>
         {/* Chart of Accounts */}
-        <section className="mn-ledger__panel" style={styles.leftSection} aria-label="Chart of accounts">
+        <section
+          className="mn-ledger__panel"
+          style={styles.leftSection}
+          aria-label="Chart of accounts"
+        >
           <p className="mn-ledger__eyebrow">ACCOUNTS</p>
           <div className="mn-ledger__section-head" style={styles.sectionHeader}>
             <h2 style={styles.sectionTitle}>Chart of Accounts</h2>
-            <select aria-label="Account currency" style={styles.select} value={searchCurrency} onChange={(e) => setSearchCurrency(e.target.value)}>
+            <select
+              aria-label="Account currency"
+              style={styles.select}
+              value={searchCurrency}
+              onChange={(e) => setSearchCurrency(e.target.value)}
+            >
               <option value="">All Currencies</option>
               <option value="NGN">NGN (Naira)</option>
             </select>
           </div>
 
-          <label className="mn-ledger__account-search">Search returned accounts<input type="search" value={accountQuery} onChange={event => { setAccountQuery(event.target.value); setSelectedAccount(null); }} placeholder="Account name or code" /></label>
-          <p className="mn-ledger__hint">Search filters the accounts returned for the selected currency.</p>
+          <label className="mn-ledger__account-search">
+            Search returned accounts
+            <input
+              type="search"
+              value={accountQuery}
+              onChange={(event) => {
+                setAccountQuery(event.target.value);
+                setSelectedAccount(null);
+              }}
+              placeholder="Account name or code"
+            />
+          </label>
+          <p className="mn-ledger__hint">
+            Search filters the accounts returned for the selected currency.
+          </p>
           {isLoading ? (
             <p style={styles.loadingText}>Fetching ledger accounts...</p>
           ) : error ? null : accounts.length === 0 ? (
             <p style={styles.emptyText}>No ledger accounts found.</p>
-          ) : matchingAccounts.length === 0 ? <p style={styles.emptyText}>No returned accounts match this search.</p> : <>
-            <p className="mn-ledger__count">{matchingAccounts.length} of {accounts.length} returned accounts</p>
-            <ScrollRegion label="Ledger accounts" hint="Scroll horizontally to see all account columns.">
-              <table className="mn-ledger__accounts"><thead><tr><th scope="col">Account</th><th scope="col">Type</th><th scope="col">Normal</th><th scope="col">Balance</th><th scope="col">Details</th></tr></thead>
-                <tbody>{matchingAccounts.map(acc => <tr key={acc.id}><td><strong>{acc.name}</strong><br/><code>{acc.code}</code></td><td>{acc.accountType}</td><td>{acc.normalBalance}</td><td>{acc.balanceMinor === undefined ? `Balance unavailable · ${acc.currency}` : formatFinancialAmount(acc.balanceMinor, acc.currency)}</td><td><button type="button" className="mn-ledger__detail-button" aria-label={`View account ${acc.code}`} onClick={() => setSelectedAccount(acc)}>View details</button></td></tr>)}</tbody>
-              </table>
-            </ScrollRegion>
-          </>}
-
+          ) : matchingAccounts.length === 0 ? (
+            <p style={styles.emptyText}>No returned accounts match this search.</p>
+          ) : (
+            <>
+              <p className="mn-ledger__count">
+                {matchingAccounts.length} of {accounts.length} returned accounts
+              </p>
+              <ScrollRegion
+                label="Ledger accounts"
+                hint="Scroll horizontally to see all account columns."
+              >
+                <table className="mn-ledger__accounts">
+                  <thead>
+                    <tr>
+                      <th scope="col">Account</th>
+                      <th scope="col">Type</th>
+                      <th scope="col">Normal</th>
+                      <th scope="col">Balance</th>
+                      <th scope="col">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matchingAccounts.map((acc) => (
+                      <tr key={acc.id}>
+                        <td>
+                          <strong>{acc.name}</strong>
+                          <br />
+                          <code>{acc.code}</code>
+                        </td>
+                        <td>{acc.accountType}</td>
+                        <td>{acc.normalBalance}</td>
+                        <td>
+                          {acc.balanceMinor === undefined
+                            ? `Balance unavailable · ${acc.currency}`
+                            : formatFinancialAmount(acc.balanceMinor, acc.currency)}
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="mn-ledger__detail-button"
+                            aria-label={`View account ${acc.code}`}
+                            onClick={() => setSelectedAccount(acc)}
+                          >
+                            View details
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </ScrollRegion>
+            </>
+          )}
         </section>
 
         {/* Journal Inspection & Reversals */}
-        <section className="mn-ledger__panel" style={styles.rightSection} aria-label="Journal inspection">
+        <section
+          className="mn-ledger__panel"
+          style={styles.rightSection}
+          aria-label="Journal inspection"
+        >
           <p className="mn-ledger__eyebrow">JOURNAL INVESTIGATION</p>
           <h2 style={styles.sectionTitle}>Journal Audit & Compensations</h2>
-          
+
           <form onSubmit={handleSearchJournal} style={styles.searchForm}>
             <div style={styles.inputGroup}>
-              <label htmlFor="ledger-journal-id" style={styles.label}>Audit Journal ID (UUID)</label>
+              <label htmlFor="ledger-journal-id" style={styles.label}>
+                Audit Journal ID (UUID)
+              </label>
               <div style={styles.searchRow}>
                 <input
                   id="ledger-journal-id"
@@ -322,35 +590,120 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
                   style={styles.input}
                   placeholder="e.g. ecd61345-..."
                   value={searchJournalId}
-                  onChange={(e) => { setSearchJournalId(e.target.value); setJournal(null); setJournalError(''); setReversalSuccess(''); setReversalError(''); }}
-                  disabled={journalLoading || reversalLoading || reviewReadLoading || confirmReversal || confirmClearDraft || Boolean(reversalReason.trim()) || Boolean(reversalApprovalId.trim())}
+                  onChange={(e) => {
+                    setSearchJournalId(e.target.value);
+                    setJournal(null);
+                    setJournalError('');
+                    setReversalSuccess('');
+                    setReversalError('');
+                  }}
+                  disabled={
+                    journalLoading ||
+                    reversalLoading ||
+                    reviewReadLoading ||
+                    confirmReversal ||
+                    confirmClearDraft ||
+                    Boolean(reversalReason.trim()) ||
+                    Boolean(reversalApprovalId.trim())
+                  }
                 />
-                <button type="submit" disabled={journalLoading || reversalLoading || reviewReadLoading || confirmReversal || confirmClearDraft || Boolean(reversalReason.trim()) || Boolean(reversalApprovalId.trim())} style={styles.searchBtn}>
+                <button
+                  type="submit"
+                  disabled={
+                    journalLoading ||
+                    reversalLoading ||
+                    reviewReadLoading ||
+                    confirmReversal ||
+                    confirmClearDraft ||
+                    Boolean(reversalReason.trim()) ||
+                    Boolean(reversalApprovalId.trim())
+                  }
+                  style={styles.searchBtn}
+                >
                   {journalLoading ? 'Loading...' : 'Audit Journal'}
                 </button>
               </div>
             </div>
           </form>
 
-          {(reversalReason.trim() || reversalApprovalId.trim()) && !reversalLoading && !confirmReversal && <div role="note">Reversal details are local to this journal. Clear them before looking up another journal.{' '}
-            {!confirmClearDraft ? <button type="button" onClick={() => setConfirmClearDraft(true)}>Clear reversal details</button> : <span>Discard the local reversal details?{' '}<button type="button" onClick={() => setConfirmClearDraft(false)}>Keep details</button>{' '}<button type="button" onClick={() => { setReversalReason(''); setReversalApprovalId(''); setConfirmClearDraft(false); }}>Discard details</button></span>}
-          </div>}
-          {journalError && <div style={styles.errorBox} role="alert">{journalError}</div>}
-          {reversalError && <div style={styles.errorBox} role="alert">{reversalError}</div>}
-          {reversalSuccess && <div style={styles.successBox} role="status">{reversalSuccess}</div>}
+          {(reversalReason.trim() || reversalApprovalId.trim()) &&
+            !reversalLoading &&
+            !confirmReversal && (
+              <div role="note">
+                Reversal details are local to this journal. Clear them before looking up another
+                journal.{' '}
+                {!confirmClearDraft ? (
+                  <button type="button" onClick={() => setConfirmClearDraft(true)}>
+                    Clear reversal details
+                  </button>
+                ) : (
+                  <span>
+                    Discard the local reversal details?{' '}
+                    <button type="button" onClick={() => setConfirmClearDraft(false)}>
+                      Keep details
+                    </button>{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReversalReason('');
+                        setReversalApprovalId('');
+                        setConfirmClearDraft(false);
+                      }}
+                    >
+                      Discard details
+                    </button>
+                  </span>
+                )}
+              </div>
+            )}
+          {journalError && (
+            <div style={styles.errorBox} role="alert">
+              {journalError}
+            </div>
+          )}
+          {reversalError && (
+            <div style={styles.errorBox} role="alert">
+              {reversalError}
+            </div>
+          )}
+          {reversalSuccess && (
+            <div style={styles.successBox} role="status">
+              {reversalSuccess}
+            </div>
+          )}
 
           {journal && (
             <div style={styles.journalCard}>
               <h4 style={styles.journalTitle}>Journal Entry Details</h4>
               <div style={styles.journalMetaGrid}>
-                <p style={styles.metaItem}><strong>ID:</strong> {journal.id}</p>
-                <p style={styles.metaItem}><strong>Status:</strong> <span style={journal.status === 'POSTED' ? styles.postedStatus : styles.reversedStatus}>{journal.status}</span></p>
-                <p style={styles.metaItem}><strong>Description:</strong> {journal.description || 'N/A'}</p>
-                <p style={styles.metaItem}><strong>Accounting Unit:</strong> {journal.accountingUnit}</p>
+                <p style={styles.metaItem}>
+                  <strong>ID:</strong> {journal.id}
+                </p>
+                <p style={styles.metaItem}>
+                  <strong>Status:</strong>{' '}
+                  <span
+                    style={
+                      journal.status === 'POSTED' ? styles.postedStatus : styles.reversedStatus
+                    }
+                  >
+                    {journal.status}
+                  </span>
+                </p>
+                <p style={styles.metaItem}>
+                  <strong>Description:</strong> {journal.description || 'N/A'}
+                </p>
+                <p style={styles.metaItem}>
+                  <strong>Accounting Unit:</strong> {journal.accountingUnit}
+                </p>
               </div>
 
               <h5 style={styles.linesTitle}>Double-Entry Postings Lines</h5>
-              <div style={styles.linesTableWrapper} role="region" aria-label="Journal posting lines" tabIndex={0}>
+              <div
+                style={styles.linesTableWrapper}
+                role="region"
+                aria-label="Journal posting lines"
+                tabIndex={0}
+              >
                 <table style={styles.table}>
                   <thead>
                     <tr style={styles.thRow}>
@@ -364,10 +717,14 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
                       <tr key={l.id} style={styles.tableRow}>
                         <td style={styles.td}>{l.accountId}</td>
                         <td style={styles.td}>
-                          {l.direction === 'DEBIT' ? formatFinancialAmount(l.amountMinor, journal.currency) : '-'}
+                          {l.direction === 'DEBIT'
+                            ? formatFinancialAmount(l.amountMinor, journal.currency)
+                            : '-'}
                         </td>
                         <td style={styles.td}>
-                          {l.direction === 'CREDIT' ? formatFinancialAmount(l.amountMinor, journal.currency) : '-'}
+                          {l.direction === 'CREDIT'
+                            ? formatFinancialAmount(l.amountMinor, journal.currency)
+                            : '-'}
                         </td>
                       </tr>
                     ))}
@@ -375,79 +732,214 @@ const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getSt
                 </table>
               </div>
 
+              {journal.reversalOfJournalId && (
+                <div role="note" style={styles.gapWarning}>
+                  This journal is itself a reversal and cannot be reversed here.
+                </div>
+              )}
+              {journal.status === 'POSTED' &&
+                !journal.reversalOfJournalId &&
+                (isPreparer || isController) && (
+                  <div style={styles.reversalBlock}>
+                    <h5 style={styles.reversalTitle}>
+                      Governed Journal Reversal (Maker / Checker)
+                    </h5>
+                    <p style={styles.gapText}>
+                      Reversal details and outcome safeguards are held only in this workspace.
+                      Leaving, refreshing or changing session clears them. Check journal, approval
+                      and audit records before taking a later action.
+                    </p>
+                    {isController && !canVerifyReversal(journal) && (
+                      <div role="note" style={styles.gapWarning}>
+                        The posting lines are insufficient to verify a reversal receipt. Execution
+                        is unavailable.
+                      </div>
+                    )}
+                    {reversalReviews[journal.id] && (
+                      <div role="status" style={styles.gapWarning}>
+                        {reversalReviews[journal.id] === 'executed'
+                          ? 'A reversal receipt was confirmed for this journal in this session. Further reversal attempts are unavailable.'
+                          : 'Refresh the journal and independently inspect the approval and audit records before any further action. A previous request may exist or an execution may have consumed approval. The original journal can remain POSTED after reversal; its status alone does not establish eligibility, and a fresh read cannot exclude a late commit.'}
+                        {reversalReviews[journal.id] !== 'executed' && (
+                          <div>
+                            <button
+                              type="button"
+                              disabled={reviewReadLoading}
+                              onClick={() => void refreshJournalForReview()}
+                            >
+                              {reviewReadLoading
+                                ? 'Refreshing journal…'
+                                : 'Refresh journal for review'}
+                            </button>{' '}
+                            <button
+                              type="button"
+                              disabled={reviewReadLoading || !reviewedJournalReads[journal.id]}
+                              onClick={() =>
+                                setReversalReviews((current) => {
+                                  const next = { ...current };
+                                  delete next[journal.id];
+                                  return next;
+                                })
+                              }
+                            >
+                              I reviewed the journal and approval records
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
-              {journal.reversalOfJournalId && <div role="note" style={styles.gapWarning}>This journal is itself a reversal and cannot be reversed here.</div>}
-              {journal.status === 'POSTED' && !journal.reversalOfJournalId && (isPreparer || isController) && (
-                <div style={styles.reversalBlock}>
-                  <h5 style={styles.reversalTitle}>Governed Journal Reversal (Maker / Checker)</h5>
-                  <p style={styles.gapText}>Reversal details and outcome safeguards are held only in this workspace. Leaving, refreshing or changing session clears them. Check journal, approval and audit records before taking a later action.</p>
-                  {isController && !canVerifyReversal(journal) && <div role="note" style={styles.gapWarning}>The posting lines are insufficient to verify a reversal receipt. Execution is unavailable.</div>}
-                  {reversalReviews[journal.id] && <div role="status" style={styles.gapWarning}>
-                    {reversalReviews[journal.id] === 'executed' ? 'A reversal receipt was confirmed for this journal in this session. Further reversal attempts are unavailable.' : 'Refresh the journal and independently inspect the approval and audit records before any further action. A previous request may exist or an execution may have consumed approval. The original journal can remain POSTED after reversal; its status alone does not establish eligibility, and a fresh read cannot exclude a late commit.'}
-                    {reversalReviews[journal.id] !== 'executed' && <div>
-                      <button type="button" disabled={reviewReadLoading} onClick={() => void refreshJournalForReview()}>{reviewReadLoading ? 'Refreshing journal…' : 'Refresh journal for review'}</button>{' '}
-                      <button type="button" disabled={reviewReadLoading || !reviewedJournalReads[journal.id]} onClick={() => setReversalReviews(current => { const next = { ...current }; delete next[journal.id]; return next; })}>I reviewed the journal and approval records</button>
-                    </div>}
-                  </div>}
-                  
-                  <div style={styles.inputGroup}>
-                    <label htmlFor="ledger-reversal-reason" style={styles.label}>Audit Reason for Reversal {isController ? '(must match the approved request exactly)' : ''}</label>
-                    <input
-                      id="ledger-reversal-reason"
-                      type="text"
-                      style={{...styles.input, flex: '0 0 40px'}}
-                      placeholder="e.g. Correct posting duplicate entry"
-                      value={reversalReason}
-                      onChange={(e) => setReversalReason(e.target.value)}
-                      disabled={reversalLoading || confirmReversal || confirmClearDraft}
-                    />
-                  </div>
-
-                  {isController && (
                     <div style={styles.inputGroup}>
-                      <label htmlFor="ledger-approval-id" style={styles.label}>Approved Maker-Checker Request ID</label>
+                      <label htmlFor="ledger-reversal-reason" style={styles.label}>
+                        Audit Reason for Reversal{' '}
+                        {isController ? '(must match the approved request exactly)' : ''}
+                      </label>
                       <input
-                        id="ledger-approval-id"
+                        id="ledger-reversal-reason"
                         type="text"
-                        style={{...styles.input, flex: '0 0 40px'}}
-                        placeholder="e.g. 3f2c1a00-... (from the approved reversal request)"
-                        value={reversalApprovalId}
-                        onChange={(e) => setReversalApprovalId(e.target.value)}
+                        style={{ ...styles.input, flex: '0 0 40px' }}
+                        placeholder="e.g. Correct posting duplicate entry"
+                        value={reversalReason}
+                        onChange={(e) => setReversalReason(e.target.value)}
                         disabled={reversalLoading || confirmReversal || confirmClearDraft}
                       />
                     </div>
-                  )}
 
-                  {confirmReversal ? <div role="group" aria-label="Confirm journal reversal" style={styles.gapWarning}>
-                    <p>{isController ? 'Execute the approved reversal' : 'Create a reversal approval request'} for journal <code>{journal.id}</code>.</p>
-                    <p>Reason: {reversalReason.trim()}</p>{isController && <p>Approval ID: <code>{reversalApprovalId.trim()}</code></p>}
-                    <button ref={reviewCancelRef} type="button" onClick={() => { returnReviewFocus.current = true; setConfirmReversal(false); }}>Keep editing</button>{' '}
-                    <button type="button" disabled={reversalLoading} onClick={() => void handleReverseJournal()}>{isController ? 'Confirm reversal execution' : 'Confirm reversal request'}</button>
-                  </div> : <button
-                    ref={reviewTriggerRef}
-                    type="button"
-                    disabled={reversalLoading || reviewReadLoading || confirmClearDraft || Boolean(reversalReviews[journal.id]) || (isController && !canVerifyReversal(journal))}
-                    onClick={() => {
-                      if (!reversalReason.trim() || reversalReason.trim().length > 500) { setReversalError('Reversal reason must contain 1–500 characters.'); return; }
-                      if (isController && !reversalApprovalId.trim()) { setReversalError('Approved maker-checker request ID (approvalId) is required.'); return; }
-                      setReversalError(''); setConfirmReversal(true);
-                    }}
-                    style={styles.reverseBtn}
-                  >
-                    {reversalLoading ? 'Processing...' : isController ? 'Execute Approved Reversal' : 'Request Reversal Approval'}
-                  </button>}
-                </div>
-              )}
+                    {isController && (
+                      <div style={styles.inputGroup}>
+                        <label htmlFor="ledger-approval-id" style={styles.label}>
+                          Approved Maker-Checker Request ID
+                        </label>
+                        <input
+                          id="ledger-approval-id"
+                          type="text"
+                          style={{ ...styles.input, flex: '0 0 40px' }}
+                          placeholder="e.g. 3f2c1a00-... (from the approved reversal request)"
+                          value={reversalApprovalId}
+                          onChange={(e) => setReversalApprovalId(e.target.value)}
+                          disabled={reversalLoading || confirmReversal || confirmClearDraft}
+                        />
+                      </div>
+                    )}
+
+                    {confirmReversal ? (
+                      <div
+                        role="group"
+                        aria-label="Confirm journal reversal"
+                        style={styles.gapWarning}
+                      >
+                        <p>
+                          {isController
+                            ? 'Execute the approved reversal'
+                            : 'Create a reversal approval request'}{' '}
+                          for journal <code>{journal.id}</code>.
+                        </p>
+                        <p>Reason: {reversalReason.trim()}</p>
+                        {isController && (
+                          <p>
+                            Approval ID: <code>{reversalApprovalId.trim()}</code>
+                          </p>
+                        )}
+                        <button
+                          ref={reviewCancelRef}
+                          type="button"
+                          onClick={() => {
+                            returnReviewFocus.current = true;
+                            setConfirmReversal(false);
+                          }}
+                        >
+                          Keep editing
+                        </button>{' '}
+                        <button
+                          type="button"
+                          disabled={reversalLoading}
+                          onClick={() => void handleReverseJournal()}
+                        >
+                          {isController ? 'Confirm reversal execution' : 'Confirm reversal request'}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        ref={reviewTriggerRef}
+                        type="button"
+                        disabled={
+                          reversalLoading ||
+                          reviewReadLoading ||
+                          confirmClearDraft ||
+                          Boolean(reversalReviews[journal.id]) ||
+                          (isController && !canVerifyReversal(journal))
+                        }
+                        onClick={() => {
+                          if (!reversalReason.trim() || reversalReason.trim().length > 500) {
+                            setReversalError('Reversal reason must contain 1–500 characters.');
+                            return;
+                          }
+                          if (isController && !reversalApprovalId.trim()) {
+                            setReversalError(
+                              'Approved maker-checker request ID (approvalId) is required.',
+                            );
+                            return;
+                          }
+                          setReversalError('');
+                          setConfirmReversal(true);
+                        }}
+                        style={styles.reverseBtn}
+                      >
+                        {reversalLoading
+                          ? 'Processing...'
+                          : isController
+                            ? 'Execute Approved Reversal'
+                            : 'Request Reversal Approval'}
+                      </button>
+                    )}
+                  </div>
+                )}
             </div>
           )}
         </section>
       </div>
-      {selectedAccount && <WorkspaceDrawer label="Ledger account details" className="mn-ledger__drawer" onDismiss={() => setSelectedAccount(null)}>
-        <header className="mn-ledger__drawer-header"><div><p className="mn-ledger__eyebrow">CHART OF ACCOUNTS</p><h2>Account details</h2></div><button type="button" className="mn-ledger__detail-button" onClick={() => setSelectedAccount(null)}>Close</button></header>
-        <div className="mn-ledger__drawer-body"><p>Read-only values returned by the account list.</p><dl>
-          <dt>Account</dt><dd>{selectedAccount.name}</dd><dt>Code</dt><dd>{selectedAccount.code}</dd><dt>Account ID</dt><dd>{selectedAccount.id}</dd><dt>Type</dt><dd>{selectedAccount.accountType || '—'}</dd><dt>Normal balance</dt><dd>{selectedAccount.normalBalance || '—'}</dd><dt>Balance</dt><dd>{selectedAccount.balanceMinor === undefined ? `Balance unavailable · ${selectedAccount.currency}` : formatFinancialAmount(selectedAccount.balanceMinor, selectedAccount.currency)}</dd>
-        </dl></div>
-      </WorkspaceDrawer>}
+      {selectedAccount && (
+        <WorkspaceDrawer
+          label="Ledger account details"
+          className="mn-ledger__drawer"
+          onDismiss={() => setSelectedAccount(null)}
+        >
+          <header className="mn-ledger__drawer-header">
+            <div>
+              <p className="mn-ledger__eyebrow">CHART OF ACCOUNTS</p>
+              <h2>Account details</h2>
+            </div>
+            <button
+              type="button"
+              className="mn-ledger__detail-button"
+              onClick={() => setSelectedAccount(null)}
+            >
+              Close
+            </button>
+          </header>
+          <div className="mn-ledger__drawer-body">
+            <p>Read-only values returned by the account list.</p>
+            <dl>
+              <dt>Account</dt>
+              <dd>{selectedAccount.name}</dd>
+              <dt>Code</dt>
+              <dd>{selectedAccount.code}</dd>
+              <dt>Account ID</dt>
+              <dd>{selectedAccount.id}</dd>
+              <dt>Type</dt>
+              <dd>{selectedAccount.accountType || '—'}</dd>
+              <dt>Normal balance</dt>
+              <dd>{selectedAccount.normalBalance || '—'}</dd>
+              <dt>Balance</dt>
+              <dd>
+                {selectedAccount.balanceMinor === undefined
+                  ? `Balance unavailable · ${selectedAccount.currency}`
+                  : formatFinancialAmount(selectedAccount.balanceMinor, selectedAccount.currency)}
+              </dd>
+            </dl>
+          </div>
+        </WorkspaceDrawer>
+      )}
     </div>
   );
 };
@@ -574,7 +1066,11 @@ const styles = {
     color: 'var(--mn-action-primary, #0b624a)',
     textAlign: 'right' as const,
   },
-  accountBalanceUnavailable: { fontSize: '12px', color: 'var(--mn-text-secondary, #52655f)', lineHeight: 1.4 },
+  accountBalanceUnavailable: {
+    fontSize: '12px',
+    color: 'var(--mn-text-secondary, #52655f)',
+    lineHeight: 1.4,
+  },
   rightSection: {
     flex: '1 1 340px',
     minWidth: 0,

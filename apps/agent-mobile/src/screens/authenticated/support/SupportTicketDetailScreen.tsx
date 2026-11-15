@@ -219,8 +219,8 @@ export const SupportTicketDetailScreen: React.FC = () => {
       {ticket.status === 'CLOSED' ? (
         <Card style={styles.closedCard}>
           <Text style={styles.closedText}>
-            This support ticket is closed. If you need further assistance, please create a new support
-            request.
+            This support ticket is closed. If you need further assistance, please create a new
+            support request.
           </Text>
         </Card>
       ) : (

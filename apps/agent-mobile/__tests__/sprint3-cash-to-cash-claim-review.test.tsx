@@ -121,47 +121,110 @@ describe('Sprint 3 Final — Agent Mobile Six-Digit Cash-to-Cash Redemption & Re
   });
 
   test('entry recovers the saved claim without another OTP or redemption and retains it until receipt acknowledgement', async () => {
-    const pending = { agentId: AGENT_ID, senderPhone: '8031234567', transferNumber: '000042',
-      beneficiaryPhone: '8012345678', customerId: customerFixture.customerId, redemptionMethod: 'AGENT_CASH' as const,
-      idempotencyKey: settledClaimFixture.idempotencyKey, createdAt: new Date().toISOString() };
+    const pending = {
+      agentId: AGENT_ID,
+      senderPhone: '8031234567',
+      transferNumber: '000042',
+      beneficiaryPhone: '8012345678',
+      customerId: customerFixture.customerId,
+      redemptionMethod: 'AGENT_CASH' as const,
+      idempotencyKey: settledClaimFixture.idempotencyKey,
+      createdAt: new Date().toISOString(),
+    };
     await savePendingCashToCashLocatorClaim(pending);
     mockApi.recoverAgentCashToCashClaimByNumber.mockResolvedValue(settledClaimFixture);
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    const view = render(<QueryClientProvider client={client}><CashToCashClaimRecipientScreen /></QueryClientProvider>);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <CashToCashClaimRecipientScreen />
+      </QueryClientProvider>,
+    );
     await waitFor(() => expect(view.getByTestId('c2c-recover-pending-claim')).toBeTruthy());
     expect(view.queryByTestId('c2c-claim-verify-button')).toBeNull();
     fireEvent.press(view.getByTestId('c2c-recover-pending-claim'));
-    await waitFor(() => expect(mockReset).toHaveBeenCalledWith(expect.objectContaining({ routes: [expect.objectContaining({ name: 'CashToCashClaimSuccess', params: expect.objectContaining({ result: settledClaimFixture, pendingLocatorClaim: true }) })] })));
-    expect(mockApi.recoverAgentCashToCashClaimByNumber).toHaveBeenCalledWith({senderPhone:pending.senderPhone, transferNumber:pending.transferNumber,idempotencyKey:pending.idempotencyKey});
+    await waitFor(() =>
+      expect(mockReset).toHaveBeenCalledWith(
+        expect.objectContaining({
+          routes: [
+            expect.objectContaining({
+              name: 'CashToCashClaimSuccess',
+              params: expect.objectContaining({
+                result: settledClaimFixture,
+                pendingLocatorClaim: true,
+              }),
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(mockApi.recoverAgentCashToCashClaimByNumber).toHaveBeenCalledWith({
+      senderPhone: pending.senderPhone,
+      transferNumber: pending.transferNumber,
+      idempotencyKey: pending.idempotencyKey,
+    });
     expect(mockApi.requestAgentMfaChallenge).not.toHaveBeenCalled();
     expect(mockApi.agentCashToCashClaimByNumber).not.toHaveBeenCalled();
     expect(await loadPendingCashToCashLocatorClaim(AGENT_ID)).toEqual(pending);
-    view.unmount(); client.clear();
+    view.unmount();
+    client.clear();
   });
 
   test('receipt acknowledgement clears only its own persisted claim', async () => {
-    const pending = { agentId:AGENT_ID,senderPhone:'8031234567',transferNumber:'000042',beneficiaryPhone:'8012345678',customerId:customerFixture.customerId,redemptionMethod:'AGENT_CASH' as const,idempotencyKey:settledClaimFixture.idempotencyKey,createdAt:new Date().toISOString() };
+    const pending = {
+      agentId: AGENT_ID,
+      senderPhone: '8031234567',
+      transferNumber: '000042',
+      beneficiaryPhone: '8012345678',
+      customerId: customerFixture.customerId,
+      redemptionMethod: 'AGENT_CASH' as const,
+      idempotencyKey: settledClaimFixture.idempotencyKey,
+      createdAt: new Date().toISOString(),
+    };
     await savePendingCashToCashLocatorClaim(pending);
-    mockRoute = { key:'receipt',name:'CashToCashClaimSuccess',params:{result:settledClaimFixture,pendingLocatorClaim:true} };
+    mockRoute = {
+      key: 'receipt',
+      name: 'CashToCashClaimSuccess',
+      params: { result: settledClaimFixture, pendingLocatorClaim: true },
+    };
     const view = render(<CashToCashClaimSuccessScreen />);
     fireEvent.press(view.getByTestId('c2c-claim-success-done'));
-    await waitFor(() => expect(mockReset).toHaveBeenCalledWith({index:0,routes:[{name:'Home'}]}));
+    await waitFor(() =>
+      expect(mockReset).toHaveBeenCalledWith({ index: 0, routes: [{ name: 'Home' }] }),
+    );
     expect(await loadPendingCashToCashLocatorClaim(AGENT_ID)).toBeNull();
     view.unmount();
   });
 
   test('unknown receipt recovery stays unresolved and blocks replacement claim', async () => {
-    await savePendingCashToCashLocatorClaim({ agentId:AGENT_ID,senderPhone:'8031234567',transferNumber:'000042',beneficiaryPhone:'8012345678',customerId:customerFixture.customerId,redemptionMethod:'CUSTOMER_WALLET',idempotencyKey:'unknown-key',createdAt:new Date().toISOString() });
-    mockApi.recoverAgentCashToCashClaimByNumber.mockRejectedValue(makeApiError('Not found',404));
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    const view = render(<QueryClientProvider client={client}><CashToCashClaimRecipientScreen /></QueryClientProvider>);
+    await savePendingCashToCashLocatorClaim({
+      agentId: AGENT_ID,
+      senderPhone: '8031234567',
+      transferNumber: '000042',
+      beneficiaryPhone: '8012345678',
+      customerId: customerFixture.customerId,
+      redemptionMethod: 'CUSTOMER_WALLET',
+      idempotencyKey: 'unknown-key',
+      createdAt: new Date().toISOString(),
+    });
+    mockApi.recoverAgentCashToCashClaimByNumber.mockRejectedValue(makeApiError('Not found', 404));
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <CashToCashClaimRecipientScreen />
+      </QueryClientProvider>,
+    );
     await waitFor(() => expect(view.getByTestId('c2c-recover-pending-claim')).toBeTruthy());
     fireEvent.press(view.getByTestId('c2c-recover-pending-claim'));
     await waitFor(() => expect(view.getByTestId('c2c-pending-claim-error')).toBeTruthy());
     expect(view.queryByTestId('c2c-claim-verify-button')).toBeNull();
     expect((await loadPendingCashToCashLocatorClaim(AGENT_ID))?.idempotencyKey).toBe('unknown-key');
     expect(mockApi.requestAgentMfaChallenge).not.toHaveBeenCalled();
-    view.unmount(); client.clear();
+    view.unmount();
+    client.clear();
   });
 
   test('validateSixDigitTransferNumber & classifyCashToCashClaimIdentifier preserve leading zeros and reject unpadded/invalid values', () => {
@@ -179,9 +242,7 @@ describe('Sprint 3 Final — Agent Mobile Six-Digit Cash-to-Cash Redemption & Re
       kind: 'TRANSFER_NUMBER',
       normalized: '000042',
     });
-    expect(
-      classifyCashToCashClaimIdentifier(' 55555555-5555-4555-8555-555555555555 '),
-    ).toEqual({
+    expect(classifyCashToCashClaimIdentifier(' 55555555-5555-4555-8555-555555555555 ')).toEqual({
       kind: 'UUID',
       normalized: '55555555-5555-4555-8555-555555555555',
     });
@@ -450,9 +511,7 @@ describe('Sprint 3 Final — Agent Mobile Six-Digit Cash-to-Cash Redemption & Re
       .mockRejectedValueOnce(
         makeApiError('Too many locator requests; retry later', 429, 'C2C_LOCATOR_RATE_LIMITED'),
       )
-      .mockRejectedValueOnce(
-        makeApiError('Claim not available', 404, 'C2C_CLAIM_NOT_AVAILABLE'),
-      )
+      .mockRejectedValueOnce(makeApiError('Claim not available', 404, 'C2C_CLAIM_NOT_AVAILABLE'))
       .mockResolvedValueOnce(settledClaimFixture);
 
     const queryClient = new QueryClient({
@@ -510,9 +569,9 @@ describe('Sprint 3 Final — Agent Mobile Six-Digit Cash-to-Cash Redemption & Re
   });
 
   test('Preserves session-purge 401 detection, Sprint 2 claim security exceptions, and legacy UUID claim compatibility', async () => {
-    expect(isBearerSessionExpired401Message('A current Agent session is required for this claim')).toBe(
-      true,
-    );
+    expect(
+      isBearerSessionExpired401Message('A current Agent session is required for this claim'),
+    ).toBe(true);
     expect(isBearerSessionExpired401Message('Agent session expired or revoked during claim')).toBe(
       true,
     );
@@ -528,7 +587,11 @@ describe('Sprint 3 Final — Agent Mobile Six-Digit Cash-to-Cash Redemption & Re
       json: async () => ({ message: 'Agent PIN changed or was revoked during claim' }),
     });
     await expect(
-      ApiClient.post('api/v1/agents/cash-to-cash/claim-by-number', {}, { preserveSessionOn401: true }),
+      ApiClient.post(
+        'api/v1/agents/cash-to-cash/claim-by-number',
+        {},
+        { preserveSessionOn401: true },
+      ),
     ).rejects.toThrow('Agent PIN changed or was revoked during claim');
     expect(await SecureStorage.get(AGENT_SESSION_KEYS.token)).toBe('sprint3-agent-token');
 
@@ -540,7 +603,11 @@ describe('Sprint 3 Final — Agent Mobile Six-Digit Cash-to-Cash Redemption & Re
       json: async () => ({ message: 'Agent session expired or revoked during claim' }),
     });
     await expect(
-      ApiClient.post('api/v1/agents/cash-to-cash/claim-by-number', {}, { preserveSessionOn401: true }),
+      ApiClient.post(
+        'api/v1/agents/cash-to-cash/claim-by-number',
+        {},
+        { preserveSessionOn401: true },
+      ),
     ).rejects.toThrow('Agent session expired or revoked during claim');
     expect(await SecureStorage.get(AGENT_SESSION_KEYS.token)).toBeNull();
 
