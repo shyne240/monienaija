@@ -1,0 +1,29 @@
+=== ARENA 1 consolidation — Stages 3, 4 and 5 targeted acceptance ===
+tested commit: 89ce499
+environment: 2 vCPU / 3.8 GiB sandbox, embedded PostgreSQL 18.4, NODE_ENV=test, DB_HOST=127.0.0.1,
+             PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes, --runInBand, nothing else running.
+
+Stage 3 — atomic governed ledger reversal (migration 1785753600117)
+  test/v1-ledger-reversal-governance.integration.spec.ts + test/a5-ledger-reversal.integration.spec.ts
+  + test/protected-authority-boundary.integration.spec.ts      36/36 PASS
+  test/ledger-reversal-governance.service.spec.ts (unit)         6/6  PASS
+  test/governed-ledger-reversal.isolated-pg.test.ts (isolated)   part of the 10-suite isolated group PASS
+
+Stage 4 — A6 financial commitments and outbound settlement (0140, 0141)
+  test/a6-settlement-lifecycle.integration.spec.ts              20/20 PASS
+  test/financial-commitment-schema.integration.spec.ts          in the 34-test migration-readiness group PASS
+  test/financial-commitment-initiation.integration.spec.ts
+  + test/a7-inbound-admission.spec.ts (unit)                    41/41 PASS
+  test/external-settlement.service.spec.ts (unit)               in the 250-suite unit run PASS
+
+Stage 5 — A7 inbound observations, receipts and lifecycle (0142-0146)
+  test/a7-authoritative-persistence.integration.spec.ts         37/37 PASS
+  test/a7-product-financial-effect.integration.spec.ts
+  + test/a7-product-lifecycle.integration.spec.ts               14/14 PASS
+  test/a7-persistence-obligations.integration.spec.ts
+  + test/v1-admin-p1-authorization-hardening.integration.spec.ts 16/16 PASS
+
+Notes
+  - The receipt prototype remains a controlled test verifier; it is not provider verification and is
+    not wired to A7 or any production module.
+  - Unverified outcomes stay in suspense; no automatic release, refund or transfer-code replacement.

@@ -1,0 +1,36 @@
+=== Stages 7 and 9 — shared authorization, institutional isolation, protected authority ===
+tested commit: 89ce499
+
+Stage 9 protected-authority and institutional security regression
+  command: NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
+           npx jest --config jest.integration.config.js \
+           test/protected-authority-boundary.integration.spec.ts \
+           test/wallet-ownership-resolution.integration.spec.ts \
+           test/institution-foundation.integration.spec.ts \
+           test/institution-financial-ownership.integration.spec.ts \
+           test/governed-financial-fixture.integration.spec.ts --runInBand
+  5 suites / 88 tests PASS
+
+  The four original reproductions remain rejected:
+    1. direct-SQL checker approval forgery .......................... rejected
+    2. checker forgery with ordinary non-owner DML credentials ...... rejected
+    3. MFA checker impersonation by mutating the session hash ....... rejected
+    4. forged wallet-ownership approval by runtime SQL .............. rejected
+  Role separation (migrator / runtime / authority) is exercised against real provisioned logins.
+  No trigger, RLS policy, ownership guard, grant or protected function was weakened, disabled or
+  bypassed anywhere in this consolidation.
+
+  No bypass via internal operation identifiers (the consolidation-specific case):
+    a6-settlement-lifecycle    "rejects evidence belonging to another operation without creating
+                                settlement or poisoning retry"
+    a7-authoritative-persistence "binds an observation to the real destination and prevents a second
+                                command for it", "rechecks original authorization and current binding
+                                under the admission transaction", "rejects missing authority evidence
+                                and a stale inbound route"
+    financial-commitment-initiation "server-resolved destination; caller cannot supply a preselected
+                                target hash"
+  All pass in the consolidated matrix below.
+
+Stage 7 shared authorization / financial isolation reconciliation
+  Seven flows reconciled against the shared guards, per-flow evidence and intentional refusals:
+  docs/integration/STAGE-7-SHARED-AUTHORIZATION-ISOLATION-MATRIX.md

@@ -1,0 +1,41 @@
+=== Stage 8 — migration consolidation and historical upgrade acceptance ===
+tested commit: 89ce499
+command: NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
+         npx jest --config jest.integration.config.js \
+         test/stage8-financial-engine-migration.integration.spec.ts --runInBand
+
+Result: 17/17 PASS (real PostgreSQL, 2 empty databases + 4 upgrade databases)
+
+Chain shape
+  1. starts from a genuinely empty database
+  2. executes the whole published chain exactly once (count derived from the filesystem: 142 files)
+  3. leaves zero pending migrations
+  4. records exactly the discovered migrations in the ledger (unique names, unique timestamps)
+  5. adopts the published financial-engine identifiers in strict order (0116 < 0117 < 0118 <
+     0140 ... 0146 < 0400)
+  6. keeps the published institutional head 1785753600503-CashOutInstitutionalScope
+  7. never renumbers or duplicates a published financial-engine identifier
+     (exactly one 13-digit identifier per file, and it is the published one)
+
+Integrity
+  8. every foreign key is validated
+  9. governed schemas present (governed_ledger_reversal_executions.approval_id,
+     a7_product_lifecycles.execution_receipt_id)
+ 10. fabricates no approvals, commitments, receipts, observations, lifecycles or commands
+
+Upgrade from the Arena 2 baseline
+ 11. upgrades from <= 0116 to the financial-engine head and ends at 0503 with zero pending
+ 12. preserves historical financial rows byte-for-byte (journal, status, idempotency key, line count,
+     institutional scope stays UNATTRIBUTED)
+ 13. backfills nothing into the new tables on upgrade (pre-existing customer untouched; zero
+     commitments, reversals, receipts)
+ 14. refuses to revert financial-engine evidence (forward-only) and keeps the chain fully applied
+
+Readiness
+ 15. reports the consolidated chain as schema-compatible; overall readiness still refuses with
+     financial_dependencies_not_ready (financial dependency gates unverified by design)
+ 16. detects a missing EARLIER migration (deleted 0140 row) instead of trusting the head:
+     compatible=false, reason=schema_incompatible, missing lists 0140
+ 17. restores readiness once the earlier migration row is back
+
+No migration was edited, reordered, squashed or renumbered. Nothing was fabricated.

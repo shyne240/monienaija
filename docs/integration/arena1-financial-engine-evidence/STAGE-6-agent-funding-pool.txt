@@ -1,0 +1,22 @@
+=== Stage 6 — AGENT_FUNDING_POOL-NGN economic classification ===
+tested commit: 89ce499
+command: NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
+         npx jest --config jest.integration.config.js \
+         test/agent-funding-pool-classification.integration.spec.ts --runInBand
+
+Result: 4/4 PASS (real PostgreSQL)
+  1. published platform classification preserved and the platform Agent rail still posts
+  2. institution-attributed Agent wallet is refused from platform float: no journal, no ledger
+     line, no consumed idempotency authority
+  3. the database itself refuses to attribute the platform pool to an institution
+     (governed wallet attribution required), and the rail still works afterwards
+  4. pool in another accounting unit / currency / inactive is refused
+
+Regression on the surrounding rail (same commit):
+  a19-agent-funding + v1-commission-runtime-wiring ................ 45/45 PASS
+  a8-agent-lifecycle + a20-outlets-terminals + v1-agent-history-01 . 63/63 PASS
+
+Decision record: docs/integration/AGENT-FUNDING-POOL-CLASSIFICATION.md
+  The pool stays a platform-level CUSTOMER_FUNDS counterparty liability. It is NOT assigned to any
+  institution, NOT treated as settlement/treasury, and no funding authority is invented. The exact
+  product-owner / licensed-institution decisions still required are enumerated there.

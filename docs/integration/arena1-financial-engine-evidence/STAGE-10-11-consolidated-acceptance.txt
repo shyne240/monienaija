@@ -1,0 +1,50 @@
+=== Stages 10 and 11 — consolidated acceptance matrix and execution reliability ===
+tested commit: 89ce499
+Frozen sources untouched: Arena 1 arena/44f00580-* (8e4da1a), Arena 2 arena/ea070127-* (0472687),
+Arena 4 arena/5ee539a0-* (7167fe9). Arena 4 HTTP API only; the Arena 4 customer application is NOT
+integrated.
+
+Environment (Stage 11 execution model)
+  sandbox ................ 2 vCPU / 3.8 GiB
+  database ............... embedded PostgreSQL 18.4 on 127.0.0.1:5432, disposable cluster
+  PG_TEST_CONCURRENCY .... 1        (nothing runs concurrently with the matrix)
+  PG_TEST_BATCH_SIZE ..... 6
+  PG_TEST_MAX_OLD_SPACE_MB  2560
+  runner ................. scripts/run-pg-integration-tests.js (NODE_ENV=test, DB_HOST=127.0.0.1)
+  All groups below were executed sequentially, in this order, and nothing else was run alongside
+  the PostgreSQL matrix.
+
+1. Backend PostgreSQL integration matrix  `npm run test:pg:bounded`
+   150/150 suites, 2,722/2,722 tests, 25/25 batches, exit 0
+   duration 3,297,722 ms (~55 min), memoryFailures 0, timeouts 0, unexplainedCrashes 0
+   (log: PG_TEST_SUMMARY runId rd931b0832c48)
+
+2. Backend unit suite  `npm test`
+   250/250 suites, 2,923/2,923 tests, exit 0
+
+3. Isolated KYC PostgreSQL group  `KYC_ISOLATED_CONFIRM_DISPOSABLE=yes npm run test:pg:isolated-kyc`
+   10/10 suites, 114/114 tests, exit 0
+
+4. Application workspaces (all three, none omitted)
+   apps/admin-web     85 suites / 868 tests  exit 0
+   apps/agent-mobile  20 suites / 310 tests  exit 0
+   apps/customer-mobile 14 suites / 125 tests exit 0
+
+5. Compilation, build, lint, format
+   npx tsc --noEmit -p tsconfig.json .......... 0 errors in src/ and test/
+   npm run build (nest build) ................. exit 0
+   npm run lint ............................... 0 errors, 7 warnings (unused eslint-disable directives)
+   npm run format:check ....................... fails on exactly the 30 pre-existing files documented in
+                                                the Stage 1 tooling-exception record; no file touched by
+                                                this consolidation is in that list
+
+Flaky classification (Stage 11)
+  No suite was re-run to "make it green" and no retry count was raised. The first full matrix of this
+  consolidation reported 4 failing suites / 4 failing tests; every one was diagnosed to a deterministic
+  cause and corrected with a narrow, non-weakening change:
+    wallet-ownership-resolution  assertion ran before a governed policy existed -> seeded the policy
+    kyc-fixture-contract         expected an older refusal message -> asserted the accurate fail-closed one
+    a13 / a14 pending-Agent      pre-provisioned a wallet for a non-ACTIVE Agent -> removed the fixture
+  After those corrections, both the individual suites and the complete matrix pass. The three
+  "Console" entries in the runner summary are console.log noise from notification providers, not test
+  failures (failingBatches = 0).
