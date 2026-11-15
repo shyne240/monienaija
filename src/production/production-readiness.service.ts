@@ -197,9 +197,10 @@ export class ProductionReadinessService {
    * The deployed repository's loaded migration classes are the source of truth. Every loaded
    * migration must be recorded as applied and no unknown migration may be applied. That detects a
    * skipped EARLIER id (for example a database that somehow applied 0401 but not 0400, or missed a
-   * whole range), instead of a head-only check silently accepting it. Intentionally absent ids
-   * (0117 and the unfinished Arena 1 0120-0132 range) are simply not part of the loaded inventory,
-   * so they are neither required nor fabricated. See `test/migration-inventory.spec.ts`.
+   * whole range), instead of a head-only check silently accepting it. The consolidated financial
+   * engine's published ids (0117 reversal executions, 0140-0146 commitments/inbound/A7) are part of
+   * the loaded inventory like any other migration: they are required as published and are never
+   * renumbered or fabricated. See `test/migration-inventory.spec.ts`.
    */
   private async checkMigrations() {
     try {
