@@ -4,7 +4,11 @@
 
 **Branch:** `arena/5b239ff5-monienaija` (active)
 
-**Repository HEAD:** `75300342666b7acc25207667a4a262fb23d4e191`; the implementation and tests below are uncommitted working-tree changes. No commit or push was made.
+**Base commit:** `75300342666b7acc25207667a4a262fb23d4e191`.
+
+**Durable checkpoint:** `449c4b0ffd31e6abbba5a2fcd39646a930ba848d`, pushed to this branch and verified as matching local and remote HEAD. The working tree was clean at checkpoint verification.
+
+**Scope:** targeted acceptance only; the comprehensive provider, evidence, tier-to-limit and customer-journey mission remains in progress.
 
 ## Delivery summary
 
