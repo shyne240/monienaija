@@ -1636,14 +1636,62 @@ export class AgentFundingService {
         `Agent does not have ${expectedService} capability: ${capability.reason}`,
       );
     }
-    const pools = databaseRows<{ id: string }>(
-      await this.dataSource.query(`SELECT id FROM ledger_accounts WHERE code=$1 LIMIT 1`, [
-        FUNDING_POOL_CODE,
-      ]),
+    const pools = databaseRows<{
+      id: string;
+      currency: string;
+      accounting_unit: string;
+      institutional_scope: string | null;
+      institution_id: string | null;
+      is_active: boolean;
+    }>(
+      await this.dataSource.query(
+        `SELECT id, currency, accounting_unit, institutional_scope, institution_id, is_active
+           FROM ledger_accounts WHERE code=$1 LIMIT 1`,
+        [FUNDING_POOL_CODE],
+      ),
     );
-    if (!pools[0])
+    const pool = pools[0];
+    if (!pool)
       throw new NotFoundException('Funding pool ledger account not found — migration missing');
-    return { poolId: pools[0].id };
+
+    // ECONOMIC CLASSIFICATION (Stage 6, A19): `AGENT_FUNDING_POOL-NGN` is a platform-level
+    // counterparty liability in the CUSTOMER_FUNDS accounting unit. It is explicitly NOT a bank,
+    // settlement, CBN/NIBSS, treasury or institution account, and no licensed institution owns it.
+    // Assigning it to an institution (or letting it hold another currency/accounting unit) would
+    // silently invent an institution-bound funding rail, so both are refused fail-closed.
+    if ((pool.institutional_scope ?? 'UNATTRIBUTED') === 'INSTITUTION' || pool.institution_id)
+      throw new ConflictException(
+        'The agent funding pool is a platform-level account and must never be institution-attributed',
+      );
+    if (!pool.is_active)
+      throw new ConflictException('The agent funding pool ledger account is not active');
+    if (pool.currency !== String(payload.currency))
+      throw new ConflictException(
+        'The agent funding pool does not hold the requested funding currency',
+      );
+    if (pool.accounting_unit !== 'CUSTOMER_FUNDS')
+      throw new ConflictException(
+        'The agent funding pool is not classified in the CUSTOMER_FUNDS accounting unit',
+      );
+
+    // Fail closed on institution-attributed agents. Platform float is not a funding authority: an
+    // attributed agent wallet may only be funded from that institution's own verified funding
+    // authority. No such authority integration exists, so such funding is refused rather than
+    // posting platform float into an institution-attributed account.
+    const attributedWallets = databaseRows<{ id: string }>(
+      await this.dataSource.query(
+        `SELECT id FROM wallet_accounts
+          WHERE customer_id=$1 AND currency=$2 AND institution_id IS NOT NULL
+          LIMIT 1`,
+        [payload.agentId, payload.currency],
+      ),
+    );
+    if (attributedWallets[0])
+      throw new ConflictException(
+        'Institutional agent float must be funded from the institution funds authority; the platform funding pool cannot fund an institution-attributed wallet',
+      );
+
+    return { poolId: pool.id };
   }
 
   private payloadFromFundingRequest(row: AgentFundingRequestDbRow): NormalizedFundingPayload {
