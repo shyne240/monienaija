@@ -18,8 +18,7 @@ export async function appendKycGovernanceDecision(
   state: KycGovernanceDecision,
   checker: AuthorizationPrincipal,
 ): Promise<Date> {
-  const table =
-    kind === 'PROVIDER' ? 'kyc_provider_change_proposals' : 'kyc_tier_policy_proposals';
+  const table = kind === 'PROVIDER' ? 'kyc_provider_change_proposals' : 'kyc_tier_policy_proposals';
   const rows = await manager.query<Array<{ decided_at: Date }>>(
     `INSERT INTO protected_authority.kyc_governance_decisions(
        proposal_schema,proposal_kind,proposal_id,payload_digest,decision,
@@ -34,7 +33,6 @@ export async function appendKycGovernanceDecision(
      RETURNING decided_at`,
     [proposalId, kind, state, checker.principalId, checker.sessionId],
   );
-  if (!rows[0] || !(rows[0].decided_at instanceof Date))
-    throw new KycFoundationError('CONFLICT');
+  if (!rows[0] || !(rows[0].decided_at instanceof Date)) throw new KycFoundationError('CONFLICT');
   return rows[0].decided_at;
 }

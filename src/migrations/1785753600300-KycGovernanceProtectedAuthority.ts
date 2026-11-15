@@ -35,8 +35,12 @@ export class KycGovernanceProtectedAuthority1785753600300 implements MigrationIn
     await q.query('GRANT USAGE ON SCHEMA protected_authority TO monienaija_authority_core');
     await q.query('GRANT USAGE ON SCHEMA public TO monienaija_authority_core');
 
-    await q.query('ALTER TABLE kyc_provider_configuration ADD COLUMN IF NOT EXISTS last_proposal_id uuid');
-    await q.query('ALTER TABLE kyc_tier_policy_head ADD COLUMN IF NOT EXISTS last_proposal_id uuid');
+    await q.query(
+      'ALTER TABLE kyc_provider_configuration ADD COLUMN IF NOT EXISTS last_proposal_id uuid',
+    );
+    await q.query(
+      'ALTER TABLE kyc_tier_policy_head ADD COLUMN IF NOT EXISTS last_proposal_id uuid',
+    );
     await q.query(`DO $$ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='kyc_provider_configuration'::regclass AND conname='fk_kyc_provider_configuration_last_proposal') THEN
         ALTER TABLE kyc_provider_configuration ADD CONSTRAINT fk_kyc_provider_configuration_last_proposal FOREIGN KEY(last_proposal_id) REFERENCES kyc_provider_change_proposals(id) ON DELETE RESTRICT;
@@ -177,7 +181,9 @@ export class KycGovernanceProtectedAuthority1785753600300 implements MigrationIn
         END IF;
         RETURN NEW;
       END $$`);
-    await q.query('DROP TRIGGER IF EXISTS kyc_governance_decisions_immutable ON protected_authority.kyc_governance_decisions');
+    await q.query(
+      'DROP TRIGGER IF EXISTS kyc_governance_decisions_immutable ON protected_authority.kyc_governance_decisions',
+    );
     await q.query(`CREATE TRIGGER kyc_governance_decisions_immutable
       BEFORE INSERT OR UPDATE OR DELETE ON protected_authority.kyc_governance_decisions
       FOR EACH ROW EXECUTE FUNCTION protected_authority.kyc_governance_decision_guard()`);
@@ -337,28 +343,42 @@ export class KycGovernanceProtectedAuthority1785753600300 implements MigrationIn
       'kyc_tier_head_guard()',
     ];
     for (const signature of protectedFunctions) {
-      await q.query(`ALTER FUNCTION protected_authority.${signature} OWNER TO monienaija_authority_core`);
+      await q.query(
+        `ALTER FUNCTION protected_authority.${signature} OWNER TO monienaija_authority_core`,
+      );
       await q.query(`REVOKE ALL ON FUNCTION protected_authority.${signature} FROM PUBLIC`);
-      await q.query(`GRANT EXECUTE ON FUNCTION protected_authority.${signature} TO monienaija_authority_core`);
+      await q.query(
+        `GRANT EXECUTE ON FUNCTION protected_authority.${signature} TO monienaija_authority_core`,
+      );
     }
 
-    await q.query('DROP TRIGGER IF EXISTS kyc_provider_proposal_authority_guard ON kyc_provider_change_proposals');
+    await q.query(
+      'DROP TRIGGER IF EXISTS kyc_provider_proposal_authority_guard ON kyc_provider_change_proposals',
+    );
     await q.query(`CREATE TRIGGER kyc_provider_proposal_authority_guard
       BEFORE INSERT OR UPDATE OR DELETE ON kyc_provider_change_proposals
       FOR EACH ROW EXECUTE FUNCTION protected_authority.kyc_proposal_transition_guard()`);
-    await q.query('DROP TRIGGER IF EXISTS kyc_tier_proposal_authority_guard ON kyc_tier_policy_proposals');
+    await q.query(
+      'DROP TRIGGER IF EXISTS kyc_tier_proposal_authority_guard ON kyc_tier_policy_proposals',
+    );
     await q.query(`CREATE TRIGGER kyc_tier_proposal_authority_guard
       BEFORE INSERT OR UPDATE OR DELETE ON kyc_tier_policy_proposals
       FOR EACH ROW EXECUTE FUNCTION protected_authority.kyc_proposal_transition_guard()`);
-    await q.query('DROP TRIGGER IF EXISTS kyc_provider_configuration_authority_guard ON kyc_provider_configuration');
+    await q.query(
+      'DROP TRIGGER IF EXISTS kyc_provider_configuration_authority_guard ON kyc_provider_configuration',
+    );
     await q.query(`CREATE TRIGGER kyc_provider_configuration_authority_guard
       BEFORE INSERT OR UPDATE OR DELETE ON kyc_provider_configuration
       FOR EACH ROW EXECUTE FUNCTION protected_authority.kyc_provider_configuration_guard()`);
-    await q.query('DROP TRIGGER IF EXISTS kyc_provider_history_authority_guard ON kyc_provider_configuration_history');
+    await q.query(
+      'DROP TRIGGER IF EXISTS kyc_provider_history_authority_guard ON kyc_provider_configuration_history',
+    );
     await q.query(`CREATE TRIGGER kyc_provider_history_authority_guard
       BEFORE INSERT OR UPDATE OR DELETE ON kyc_provider_configuration_history
       FOR EACH ROW EXECUTE FUNCTION protected_authority.kyc_provider_history_guard()`);
-    await q.query('DROP TRIGGER IF EXISTS kyc_tier_version_authority_guard ON kyc_tier_policy_versions');
+    await q.query(
+      'DROP TRIGGER IF EXISTS kyc_tier_version_authority_guard ON kyc_tier_policy_versions',
+    );
     await q.query(`CREATE TRIGGER kyc_tier_version_authority_guard
       BEFORE INSERT OR UPDATE OR DELETE ON kyc_tier_policy_versions
       FOR EACH ROW EXECUTE FUNCTION protected_authority.kyc_tier_version_guard()`);
@@ -368,7 +388,9 @@ export class KycGovernanceProtectedAuthority1785753600300 implements MigrationIn
       FOR EACH ROW EXECUTE FUNCTION protected_authority.kyc_tier_head_guard()`);
 
     await q.query('GRANT SELECT ON kyc_tier_evaluations TO monienaija_authority_core');
-    await q.query('GRANT SELECT,INSERT,UPDATE ON kyc_evaluation_refresh TO monienaija_authority_core');
+    await q.query(
+      'GRANT SELECT,INSERT,UPDATE ON kyc_evaluation_refresh TO monienaija_authority_core',
+    );
     for (const table of [
       'kyc_provider_configuration',
       'kyc_provider_change_proposals',
@@ -378,7 +400,9 @@ export class KycGovernanceProtectedAuthority1785753600300 implements MigrationIn
       'kyc_tier_policy_versions',
     ]) {
       await q.query(`GRANT SELECT ON ${table} TO monienaija_runtime`);
-      await q.query(`REVOKE INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER ON ${table} FROM PUBLIC,monienaija_runtime`);
+      await q.query(
+        `REVOKE INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER ON ${table} FROM PUBLIC,monienaija_runtime`,
+      );
       await q.query(`GRANT SELECT,INSERT,UPDATE,DELETE ON ${table} TO monienaija_authority_core`);
     }
     await q.query(`DO $$ BEGIN
@@ -395,7 +419,8 @@ export class KycGovernanceProtectedAuthority1785753600300 implements MigrationIn
       EXISTS(SELECT 1 FROM protected_authority.kyc_governance_decisions) AS has_history`)) as Array<{
       has_history: boolean;
     }>;
-    if (rows[0]?.has_history) throw new Error('Refusing to remove protected KYC governance history');
+    if (rows[0]?.has_history)
+      throw new Error('Refusing to remove protected KYC governance history');
 
     for (const [table, trigger] of [
       ['kyc_provider_change_proposals', 'kyc_provider_proposal_authority_guard'],
@@ -420,7 +445,8 @@ export class KycGovernanceProtectedAuthority1785753600300 implements MigrationIn
       'kyc_tier_head_guard()',
     ];
     await q.query('DROP TABLE protected_authority.kyc_governance_decisions');
-    for (const signature of functions) await q.query(`DROP FUNCTION protected_authority.${signature}`);
+    for (const signature of functions)
+      await q.query(`DROP FUNCTION protected_authority.${signature}`);
     await q.query(`ALTER TABLE kyc_provider_configuration
       DROP CONSTRAINT fk_kyc_provider_configuration_last_proposal,
       DROP COLUMN last_proposal_id`);

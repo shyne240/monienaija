@@ -296,16 +296,20 @@ test('separate authority login publishes tier policy while runtime cannot forge 
     const service = new KycTierPolicyService(connections.runtime, auth, protectedAuthority);
 
     await expect(
-      connections.runtime.query('UPDATE kyc_tier_policy_head SET version=version+1 WHERE singleton=true'),
+      connections.runtime.query(
+        'UPDATE kyc_tier_policy_head SET version=version+1 WHERE singleton=true',
+      ),
     ).rejects.toThrow();
     await expect(
       connections.runtime.query('SELECT * FROM protected_authority.kyc_governance_decisions'),
     ).rejects.toThrow();
     expect((await service.view(checker))[0]?.version).toBe(3);
     expect(
-      (await connections.runtime.transaction((manager) =>
-        service.effective(manager, new Date('2026-11-01T00:00:00.000Z')),
-      ))?.version,
+      (
+        await connections.runtime.transaction((manager) =>
+          service.effective(manager, new Date('2026-11-01T00:00:00.000Z')),
+        )
+      )?.version,
     ).toBe('3');
 
     const proposal = await service.propose(maker, {
@@ -321,7 +325,9 @@ test('separate authority login publishes tier policy while runtime cannot forge 
     await expect(service.decide(checker, proposal.id, true)).rejects.toMatchObject({
       code: 'CONFLICT',
     });
-    const evidence = await connections.authority.query<Array<{ decision: string; payload_digest: string }>>(
+    const evidence = await connections.authority.query<
+      Array<{ decision: string; payload_digest: string }>
+    >(
       'SELECT decision,payload_digest FROM protected_authority.kyc_governance_decisions WHERE proposal_schema=$1 AND proposal_kind=$2 AND proposal_id=$3',
       [schema, 'TIER_POLICY', proposal.id],
     );

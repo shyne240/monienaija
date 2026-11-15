@@ -120,7 +120,8 @@ export class KycTierPolicyService {
     return principal;
   }
   private async lockPolicy(m: EntityManager, mode: 'SHARE' | 'UPDATE'): Promise<void> {
-    const functionName = mode === 'UPDATE' ? 'pg_advisory_xact_lock' : 'pg_advisory_xact_lock_shared';
+    const functionName =
+      mode === 'UPDATE' ? 'pg_advisory_xact_lock' : 'pg_advisory_xact_lock_shared';
     await m.query(
       `SELECT ${functionName}(hashtext(current_schema()),hashtext('monienaija:kyc-tier-policy-v1'))`,
     );
