@@ -132,18 +132,20 @@ describe('Dojah documented verification adapter (mock transport only)', () => {
   });
 
   it('returns only the documented identity fields from Advanced NIN, discarding photo and extras', async () => {
-    const transport = jest.fn().mockResolvedValue(
-      response({
-        entity: {
-          nin: '70123456789',
-          first_name: 'SYNTHETIC',
-          last_name: 'PERSON',
-          date_of_birth: '2000-01-01',
-          photo: 'never-return-or-persist-this',
-          tax_id: 'not-requested',
-        },
-      }),
-    );
+    const transport = jest
+      .fn<ReturnType<DojahTransport>, Parameters<DojahTransport>>()
+      .mockResolvedValue(
+        response({
+          entity: {
+            nin: '70123456789',
+            first_name: 'SYNTHETIC',
+            last_name: 'PERSON',
+            date_of_birth: '2000-01-01',
+            photo: 'never-return-or-persist-this',
+            tax_id: 'not-requested',
+          },
+        }),
+      );
     await expect(
       new DojahVerificationProvider({ ...config, transport }).getNinAdvanced('70123456789'),
     ).resolves.toEqual({

@@ -127,6 +127,9 @@ beforeAll(async () => {
     `CREATE TABLE customers(id uuid PRIMARY KEY,status varchar(20) NOT NULL DEFAULT 'ACTIVE',kyc_level varchar(20) NOT NULL DEFAULT 'NONE',kyc_status varchar(20) NOT NULL DEFAULT 'NOT_STARTED',version int NOT NULL DEFAULT 1,updated_at timestamptz NOT NULL DEFAULT now(),deleted_at timestamptz)`,
   );
   await db.query(
+    `CREATE TABLE kyc_customer_identity_revisions(customer_id uuid PRIMARY KEY,revision bigint NOT NULL CHECK(revision>0))`,
+  );
+  await db.query(
     `CREATE TABLE customer_profiles(customer_id uuid,first_name varchar(100),last_name varchar(100),date_of_birth date,is_active boolean NOT NULL DEFAULT true,deleted_at timestamptz)`,
   );
   await db.query(

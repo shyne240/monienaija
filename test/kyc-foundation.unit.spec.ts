@@ -127,6 +127,49 @@ describe('KYC foundation policy and orchestration', () => {
     expect(JSON.stringify(db.reserve.mock.calls)).not.toContain(input.identifier);
     expect(JSON.stringify(db.reserve.mock.calls)).not.toContain('Synthetic');
   });
+  it('passes the trusted onboarding audience, identity revision, and consent route version to storage', async () => {
+    const db = store();
+    const verify = jest.fn().mockResolvedValue({ outcome: 'REVIEW' as const });
+    await new KycOrchestrator(
+      db,
+      provider(verify),
+      policy,
+      Buffer.alloc(32, 1),
+      'v1',
+      Buffer.alloc(32, 2),
+      'owner-v1',
+      testRouting,
+    ).verify({
+      ...command,
+      audience: 'customer-onboarding',
+      identityRevision: '7',
+      providerRouteVersion: 3,
+    });
+    expect(db.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: 'customer-onboarding',
+        identityRevision: '7',
+        providerRouteVersion: 3,
+      }),
+    );
+  });
+  it('rejects an invalid provider route version before reservation', async () => {
+    const db = store();
+    const verify = jest.fn();
+    await expect(
+      new KycOrchestrator(
+        db,
+        provider(verify),
+        policy,
+        Buffer.alloc(32, 1),
+        'v1',
+        Buffer.alloc(32, 2),
+        'owner-v1',
+        testRouting,
+      ).verify({ ...command, providerRouteVersion: 0 }),
+    ).rejects.toMatchObject({ code: 'INVALID' });
+    expect(db.reserve).not.toHaveBeenCalled();
+  });
   it('treats timeouts and thrown errors as unknown, never mismatch', async () => {
     const db = store();
     const verify: KycProvider['verify'] = () => new Promise(() => undefined);

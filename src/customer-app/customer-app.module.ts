@@ -19,6 +19,7 @@ import { CustomerTransactionHistoryService } from './customer-transaction-histor
 import { CustomerKycController } from './customer-kyc.controller';
 import { CustomerKycViewService } from './customer-kyc-view.service';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
+import { KycTierModule } from '../kyc-verification/kyc-tier.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
     OperationsModule,
     CustomerBeneficiaryModule,
     LimitCatalogModule,
+    KycTierModule,
   ],
   controllers: [CustomerAppController, CustomerBeneficiaryMeController, CustomerKycController],
   providers: [CustomerTransactionHistoryService, CustomerKycViewService],

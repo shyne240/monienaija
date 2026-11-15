@@ -1,13 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Crypto from 'expo-crypto';
 import { Button } from '../../components/Button';
+import { CustomerKycVerificationPanel } from '../../components/CustomerKycVerificationPanel';
 import { Input } from '../../components/Input';
 import { VerificationNotice, type VerificationState } from '../../components/VerificationNotice';
 import { RootStackParamList } from '../../navigation/types';
 import { ApiClient, ApiError } from '../../services/api-client';
+import {
+  customerOnboardingKycWorkflowApi,
+  type CustomerKycWorkflowStatus,
+} from '../../services/customer-kyc-verification';
 import { SecureStorage } from '../../services/secure-storage';
 import { theme } from '../../theme';
 import { useAuthStore } from '../../store/auth-store';
@@ -98,6 +103,9 @@ export const RegistrationScreen: React.FC = () => {
   const [pin, setPin] = useState('');
   const [pinConfirmation, setPinConfirmation] = useState('');
   const [onboardingToken, setOnboardingToken] = useState<string | null>(null);
+  const [onboardingKyc, setOnboardingKyc] = useState<CustomerKycWorkflowStatus | null>(null);
+  const [onboardingKycError, setOnboardingKycError] = useState('');
+  const [onboardingKycLoading, setOnboardingKycLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [verification, setVerification] = useState<{
     state: VerificationState;
@@ -126,6 +134,29 @@ export const RegistrationScreen: React.FC = () => {
     setVerification(null);
     setStep('PHONE');
   };
+  const refreshOnboardingKyc = useCallback(async () => {
+    if (!onboardingToken) return;
+    setOnboardingKycLoading(true);
+    setOnboardingKycError('');
+    try {
+      setOnboardingKyc(await customerOnboardingKycWorkflowApi(onboardingToken).status());
+    } catch {
+      setOnboardingKyc(null);
+      setOnboardingKycError(
+        'KYC status could not be loaded. Retry before submitting any information.',
+      );
+    } finally {
+      setOnboardingKycLoading(false);
+    }
+  }, [onboardingToken]);
+  useEffect(() => {
+    if (step !== 'ONBOARDING_AUTHENTICATED' || !onboardingToken) {
+      setOnboardingKyc(null);
+      setOnboardingKycError('');
+      return;
+    }
+    void refreshOnboardingKyc();
+  }, [onboardingToken, refreshOnboardingKyc, step]);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -804,6 +835,15 @@ export const RegistrationScreen: React.FC = () => {
               },
             ]}
           />
+          {onboardingKycLoading ? <Text>Loading verification status…</Text> : null}
+          {onboardingKycError ? <Text style={styles.error}>{onboardingKycError}</Text> : null}
+          {onboardingToken ? (
+            <CustomerKycVerificationPanel
+              api={customerOnboardingKycWorkflowApi(onboardingToken)}
+              workflow={onboardingKyc}
+              onRefresh={refreshOnboardingKyc}
+            />
+          ) : null}
           <Button label="Sign out of onboarding" loading={busy} onPress={onboardingLogout} />
         </View>
       )}

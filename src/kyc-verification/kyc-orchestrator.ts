@@ -96,6 +96,10 @@ export class KycOrchestrator {
     requestId: string;
     sessionToken: string;
     input: VerificationInput;
+    /** Route-selected session audience and database identity snapshot revision. */
+    audience?: string;
+    identityRevision?: string;
+    providerRouteVersion?: number;
   }): Promise<Attempt> {
     const policy = { ...this.policy };
     assertPolicy(policy);
@@ -113,6 +117,13 @@ export class KycOrchestrator {
       !/^[A-Za-z0-9._-]{1,64}$/.test(this.ownershipKeyVersion) ||
       typeof command.sessionToken !== 'string' ||
       !/^[A-Za-z0-9_-]{43}$/.test(command.sessionToken) ||
+      (command.audience !== undefined &&
+        !['customer-api', 'customer-onboarding'].includes(command.audience)) ||
+      (command.identityRevision !== undefined &&
+        !/^[1-9][0-9]{0,18}$/.test(command.identityRevision)) ||
+      (command.providerRouteVersion !== undefined &&
+        (!Number.isSafeInteger(command.providerRouteVersion) ||
+          command.providerRouteVersion < 1)) ||
       !/^[A-Za-z0-9._-]{1,64}$/.test(this.macKeyVersion)
     )
       throw new KycFoundationError('INVALID');
@@ -147,6 +158,11 @@ export class KycOrchestrator {
       kind,
       provider: this.provider.code,
       sessionToken: command.sessionToken,
+      ...(command.audience ? { audience: command.audience } : {}),
+      ...(command.identityRevision ? { identityRevision: command.identityRevision } : {}),
+      ...(command.providerRouteVersion !== undefined
+        ? { providerRouteVersion: command.providerRouteVersion }
+        : {}),
       identifierMac: createHmac('sha256', this.ownershipKey)
         .update('kyc-identifier-v1\0')
         .update(kind)

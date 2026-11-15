@@ -12,10 +12,16 @@ import type { CustomerFinancialEligibilityService } from '../src/kyc-verificatio
 import type { AuditService } from '../src/operations/audit.service';
 import { KycExceptionReviewService } from '../src/kyc-verification/kyc-exception-review.service';
 import { KycReconciliationReview1785753600106 } from '../src/migrations/1785753600106-KycReconciliationReview';
+import { KycIdentityRevisionAndEvidenceRead1785753600505 } from '../src/migrations/1785753600505-KycIdentityRevisionAndEvidenceRead';
 import { KycReconciliationService } from '../src/kyc-verification/kyc-reconciliation.service';
 import { KycSessionAndOwnership1785753600105 } from '../src/migrations/1785753600105-KycSessionAndOwnership';
 import { CreateKycFoundation1785753600104 } from '../src/migrations/1785753600104-CreateKycFoundation';
 import { KycOrchestrator } from '../src/kyc-verification/kyc-orchestrator';
+import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { KycCustomerSessionValidator } from '../src/kyc-verification/kyc-customer-session-validator';
+import { KycCustomerVerificationService } from '../src/kyc-verification/kyc-customer-verification.service';
+import type { KycTierPolicyService } from '../src/kyc-verification/kyc-tier-policy.service';
+import type { KycProviderGovernanceService } from '../src/kyc-verification/kyc-provider-governance.service';
 import { PostgresKycStore } from '../src/kyc-verification/postgres-kyc.store';
 import type {
   KycPolicy,
@@ -65,8 +71,9 @@ const input: VerificationInput = {
   },
 };
 let store: PostgresKycStore;
+let sessions: AuthenticationSessionService;
 let schemaCreated = false;
-const customers = Array.from({ length: 14 }, () => randomUUID());
+const customers = Array.from({ length: 22 }, () => randomUUID());
 const tokenFor = (id: string) =>
   Buffer.alloc(32, customers.indexOf(id as (typeof customers)[number]) + 1).toString('base64url');
 const inputFor = (id: string): VerificationInput => ({
@@ -88,6 +95,26 @@ const makeProvider = (verify: KycProvider['verify'], code = 'SYNTHETIC'): KycPro
   code,
   verify,
 });
+const customerWorkflowPolicy: KycPolicy = { ...policy, version: 'customer-ops-v1' };
+const customerWorkflowConfiguration = {
+  enabled: true,
+  policy: customerWorkflowPolicy,
+  consentNoticeVersion: 'customer-notice-v1',
+  consentNoticeText: 'I authorize this identity check for the stated verification purpose.',
+  consentValiditySeconds: 7200,
+  ownershipKey: ownerKey,
+  ownershipKeyVersion: 'owner-v1',
+};
+async function seedActualCustomerIdentity(customerId: string) {
+  await db.query(
+    'INSERT INTO customer_profiles(customer_id,first_name,last_name,date_of_birth) VALUES($1,$2,$3,$4)',
+    [customerId, 'Amina', 'Danladi', '1990-01-01'],
+  );
+  await db.query(
+    "INSERT INTO customer_contact_methods(customer_id,type,normalized_value,is_primary,verified_at) VALUES($1,'PHONE','+2348012345678',true,clock_timestamp())",
+    [customerId],
+  );
+}
 
 beforeAll(async () => {
   await db.initialize();
@@ -97,8 +124,30 @@ beforeAll(async () => {
   await db.query(`CREATE SCHEMA ${schema}`);
   schemaCreated = true;
   await db.query(
-    "CREATE TABLE customers (id uuid PRIMARY KEY, deleted_at timestamptz, status text NOT NULL DEFAULT 'ACTIVE')",
+    "CREATE TABLE customers (id uuid PRIMARY KEY, deleted_at timestamptz, status text NOT NULL DEFAULT 'ACTIVE', customer_type text NOT NULL DEFAULT 'INDIVIDUAL', is_synthetic boolean NOT NULL DEFAULT false, kyc_level text NOT NULL DEFAULT 'NONE', kyc_status text NOT NULL DEFAULT 'NOT_STARTED')",
   );
+  await db.query(`CREATE TABLE customer_profiles (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),customer_id uuid NOT NULL REFERENCES customers(id),
+    display_name text NOT NULL DEFAULT 'Fixture Customer',legal_name text,first_name text,middle_name text,
+    last_name text,date_of_birth date,nationality text,is_active boolean NOT NULL DEFAULT true,
+    deleted_at timestamptz,updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
+  )`);
+  await db.query(`CREATE TABLE customer_contact_methods (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),customer_id uuid NOT NULL REFERENCES customers(id),
+    type text NOT NULL,normalized_value text NOT NULL,is_primary boolean NOT NULL DEFAULT false,
+    verified_at timestamptz,deleted_at timestamptz,updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
+  )`);
+  await db.query(`CREATE TABLE customer_addresses (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),customer_id uuid NOT NULL REFERENCES customers(id),
+    type text NOT NULL,line_one text NOT NULL DEFAULT 'Fixture Road',line_two text,city text NOT NULL DEFAULT 'Jos',
+    state text NOT NULL DEFAULT 'Plateau',country text NOT NULL DEFAULT 'NG',postal_code text,
+    is_primary boolean NOT NULL DEFAULT false,deleted_at timestamptz
+  )`);
+  await db.query(`CREATE TABLE customer_identity_documents (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),customer_id uuid NOT NULL REFERENCES customers(id),
+    type text NOT NULL,document_number text NOT NULL DEFAULT 'fixture',issuing_country text NOT NULL DEFAULT 'NG',
+    issued_at date,expires_at date,deleted_at timestamptz
+  )`);
   await db.query(
     "CREATE TABLE customer_authentication_credentials (id uuid PRIMARY KEY, customer_id uuid NOT NULL REFERENCES customers(id), deleted_at timestamptz, status text NOT NULL DEFAULT 'ACTIVE', account_locked boolean NOT NULL DEFAULT false, rotation_required boolean NOT NULL DEFAULT false, password_version integer NOT NULL DEFAULT 1, password_expires_at timestamptz)",
   );
@@ -121,6 +170,7 @@ beforeAll(async () => {
   await new CreateKycFoundation1785753600104().up(runner);
   await new KycSessionAndOwnership1785753600105().up(runner);
   await new KycReconciliationReview1785753600106().up(runner);
+  await new KycIdentityRevisionAndEvidenceRead1785753600505().up(runner);
   await runner.release();
   const foundationEligibility: Pick<CustomerFinancialEligibilityService, 'require'> = {
     async require(m: EntityManager, customerId: string) {
@@ -131,16 +181,17 @@ beforeAll(async () => {
       if (!rows[0]) {
         throw new ConflictException('Customer is not eligible for financial access');
       }
+      return 'LEVEL_1';
     },
   };
-  const sessionService = new AuthenticationSessionService(
+  sessions = new AuthenticationSessionService(
     {} as Repository<AuthenticationSession>,
     db,
     { record: () => Promise.resolve() } as unknown as AuditService,
     {} as Repository<Customer>,
     foundationEligibility as CustomerFinancialEligibilityService,
   );
-  store = new PostgresKycStore(db, sessionService);
+  store = new PostgresKycStore(db, sessions);
 });
 afterAll(async () => {
   if (db.isInitialized) {
@@ -870,6 +921,194 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
       code: 'CONFLICT',
     });
   });
+  it('advances the database-managed identity revision for profile, contact, address, document, and customer-type changes', async () => {
+    const customerId = customers[17]!;
+    const revision = async () =>
+      (
+        await db.query<Array<{ revision: string }>>(
+          'SELECT revision::text AS revision FROM kyc_customer_identity_revisions WHERE customer_id=$1',
+          [customerId],
+        )
+      )[0]!.revision;
+    expect(await revision()).toBe('1');
+    await db.query(
+      'INSERT INTO customer_profiles(customer_id,first_name,last_name,date_of_birth) VALUES($1,$2,$3,$4)',
+      [customerId, 'Amina', 'Danladi', '1990-01-01'],
+    );
+    expect(await revision()).toBe('2');
+    await db.query('UPDATE customer_profiles SET first_name=$2 WHERE customer_id=$1', [
+      customerId,
+      'Amina-Bello',
+    ]);
+    expect(await revision()).toBe('3');
+    await db.query(
+      "INSERT INTO customer_contact_methods(customer_id,type,normalized_value,is_primary,verified_at) VALUES($1,'PHONE','+2348000000000',true,clock_timestamp())",
+      [customerId],
+    );
+    expect(await revision()).toBe('4');
+    await db.query("INSERT INTO customer_addresses(customer_id,type) VALUES($1,'RESIDENTIAL')", [
+      customerId,
+    ]);
+    expect(await revision()).toBe('5');
+    await db.query("INSERT INTO customer_identity_documents(customer_id,type) VALUES($1,'NIN')", [
+      customerId,
+    ]);
+    expect(await revision()).toBe('6');
+    await db.query("UPDATE customers SET customer_type='BUSINESS' WHERE id=$1", [customerId]);
+    expect(await revision()).toBe('7');
+  });
+  it('records the consented provider route and downgrades a result completed after identity change', async () => {
+    const customerId = customers[14]!;
+    const revisions = await db.query<Array<{ revision: string }>>(
+      'SELECT revision::text AS revision FROM kyc_customer_identity_revisions WHERE customer_id=$1',
+      [customerId],
+    );
+    const identityRevision = revisions[0]!.revision;
+    const consentId = await store.grantConsent({
+      customerId,
+      sessionToken: tokenFor(customerId),
+      kind: 'BVN',
+      noticeVersion: 'provider-route-v1',
+      expiresAt: new Date(Date.now() + 60_000),
+      requestId: randomUUID(),
+      provider: 'MONNIFY',
+      routeVersion: 3,
+      identityRevision,
+    });
+    const verify = jest.fn(async () => {
+      await db.query(
+        'UPDATE kyc_customer_identity_revisions SET revision=revision+1 WHERE customer_id=$1',
+        [customerId],
+      );
+      return { outcome: 'MATCH' as const };
+    });
+    const orchestrator = new KycOrchestrator(
+      store,
+      makeProvider(verify, 'MONNIFY'),
+      policy,
+      key,
+      'test-key-v1',
+      ownerKey,
+      'owner-v1',
+      testRouting,
+    );
+    const attempt = await orchestrator.verify({
+      customerId,
+      consentId,
+      requestId: randomUUID(),
+      sessionToken: tokenFor(customerId),
+      audience: 'customer-api',
+      identityRevision,
+      providerRouteVersion: 3,
+      input: inputFor(customerId),
+    });
+    expect(attempt.outcome).toBe('REVIEW');
+    expect(verify).toHaveBeenCalledTimes(1);
+    const claim = await db.query<Array<{ status: string }>>(
+      'SELECT status FROM kyc_identity_claims WHERE attempt_id=$1',
+      [attempt.id],
+    );
+    expect(claim[0]?.status).toBe('REVIEW');
+    const evidence = await new KycTierEvidenceReader().read(db.manager, customerId);
+    expect(evidence).toMatchObject({
+      identityRevision: String(Number(identityRevision) + 1),
+      evidence: [],
+    });
+  });
+  it('admits only a completed provider match bound to the current identity revision and route', async () => {
+    const customerId = customers[16]!;
+    const revisions = await db.query<Array<{ revision: string }>>(
+      'SELECT revision::text AS revision FROM kyc_customer_identity_revisions WHERE customer_id=$1',
+      [customerId],
+    );
+    const consentId = await store.grantConsent({
+      customerId,
+      sessionToken: tokenFor(customerId),
+      kind: 'BVN',
+      noticeVersion: 'provider-route-v1',
+      expiresAt: new Date(Date.now() + 60_000),
+      requestId: randomUUID(),
+      provider: 'MONNIFY',
+      routeVersion: 3,
+      identityRevision: revisions[0]!.revision,
+    });
+    const verify = jest
+      .fn<ReturnType<KycProvider['verify']>, Parameters<KycProvider['verify']>>()
+      .mockResolvedValue({ outcome: 'MATCH' });
+    const orchestrator = new KycOrchestrator(
+      store,
+      makeProvider(verify, 'MONNIFY'),
+      policy,
+      key,
+      'test-key-v1',
+      ownerKey,
+      'owner-v1',
+      testRouting,
+    );
+    const attempt = await orchestrator.verify({
+      customerId,
+      consentId,
+      requestId: randomUUID(),
+      sessionToken: tokenFor(customerId),
+      identityRevision: revisions[0]!.revision,
+      providerRouteVersion: 3,
+      input: inputFor(customerId),
+    });
+    expect(attempt.outcome).toBe('MATCH');
+    const snapshot = await new KycTierEvidenceReader().read(db.manager, customerId);
+    expect(snapshot?.identityRevision).toBe(revisions[0]!.revision);
+    expect(snapshot?.evidence).toMatchObject([
+      {
+        id: attempt.id,
+        customerId,
+        identityRevision: revisions[0]!.revision,
+        type: 'BVN',
+        status: 'VERIFIED',
+        provenance: 'VERIFIED_PROVIDER',
+      },
+    ]);
+  });
+  it('rejects a dispatch whose provider route differs from the route recorded in consent', async () => {
+    const customerId = customers[15]!;
+    const revisions = await db.query<Array<{ revision: string }>>(
+      'SELECT revision::text AS revision FROM kyc_customer_identity_revisions WHERE customer_id=$1',
+      [customerId],
+    );
+    const consentId = await store.grantConsent({
+      customerId,
+      sessionToken: tokenFor(customerId),
+      kind: 'BVN',
+      noticeVersion: 'provider-route-v1',
+      expiresAt: new Date(Date.now() + 60_000),
+      provider: 'MONNIFY',
+      routeVersion: 3,
+      identityRevision: revisions[0]!.revision,
+    });
+    const verify = jest.fn<ReturnType<KycProvider['verify']>, Parameters<KycProvider['verify']>>();
+    const orchestrator = new KycOrchestrator(
+      store,
+      makeProvider(verify, 'MONNIFY'),
+      policy,
+      key,
+      'test-key-v1',
+      ownerKey,
+      'owner-v1',
+      testRouting,
+    );
+    await expect(
+      orchestrator.verify({
+        customerId,
+        consentId,
+        requestId: randomUUID(),
+        sessionToken: tokenFor(customerId),
+        identityRevision: revisions[0]!.revision,
+        providerRouteVersion: 4,
+        input: inputFor(customerId),
+      }),
+    ).rejects.toMatchObject({ code: 'BLOCKED' });
+    expect(verify).not.toHaveBeenCalled();
+    expect(await store.listHistory(customerId)).toHaveLength(0);
+  });
   it('fails closed if the ownership key changes without migration', async () => {
     const customerId = customers[12]!;
     const consentId = await makeConsent(customerId);
@@ -895,6 +1134,226 @@ describe('KYC foundation on an isolated synthetic PostgreSQL instance', () => {
     ).rejects.toMatchObject({ code: 'BLOCKED' });
     expect(verify).not.toHaveBeenCalled();
   });
+  it.each(['BVN', 'NIN'] as const)(
+    'runs the actual customer %s verification workflow with idempotent consent, durable attempts, and safe history',
+    async (kind) => {
+      const customerId = customers[kind === 'BVN' ? 18 : 20]!;
+      const identifier = kind === 'BVN' ? '91234567890' : '81234567890';
+      await seedActualCustomerIdentity(customerId);
+      const verify = jest
+        .fn<ReturnType<KycProvider['verify']>, Parameters<KycProvider['verify']>>()
+        .mockResolvedValue({ outcome: 'MATCH' });
+      const provider = makeProvider(verify, 'MONNIFY');
+      const governance = {
+        resolve: jest.fn().mockResolvedValue({ provider: 'MONNIFY', version: 7 }),
+      } as unknown as KycProviderGovernanceService;
+      const tierPolicies = {
+        effective: jest.fn().mockResolvedValue(null),
+      } as unknown as KycTierPolicyService;
+      const service = new KycCustomerVerificationService(
+        db,
+        sessions,
+        governance,
+        [provider],
+        customerWorkflowConfiguration,
+        tierPolicies,
+        new KycTierEvidenceReader(),
+      );
+
+      const availability = await service.availability(tokenFor(customerId), 'customer-api', kind);
+      expect(availability.status).toBe('AVAILABLE');
+      expect(availability.provider).toBe('MONNIFY');
+      expect(availability.routeVersion).toBe(7);
+      expect(availability.consentNotice?.version).toBe('customer-notice-v1');
+      const consentCommand = {
+        token: tokenFor(customerId),
+        audience: 'customer-api',
+        requestId: randomUUID(),
+        kind,
+        noticeVersion: 'customer-notice-v1',
+        accepted: true,
+        expectedProvider: 'MONNIFY' as const,
+        expectedRouteVersion: 7,
+      };
+      const firstConsent = await service.grantConsent(consentCommand);
+      const replayedConsent = await service.grantConsent(consentCommand);
+      expect(replayedConsent.id).toBe(firstConsent.id);
+      expect(replayedConsent.routeVersion).toBe(7);
+
+      const verificationCommand = {
+        token: tokenFor(customerId),
+        audience: 'customer-api',
+        requestId: randomUUID(),
+        consentId: firstConsent.id,
+        kind,
+        identifier,
+      };
+      const result = await service.verify(verificationCommand);
+      expect(result).toMatchObject({ status: 'MATCH', provider: 'MONNIFY' });
+      expect(await service.verify(verificationCommand)).toMatchObject({
+        id: result.id,
+        status: 'MATCH',
+      });
+      expect(verify).toHaveBeenCalledTimes(1);
+
+      const status = await service.status(tokenFor(customerId), 'customer-api');
+      expect(status).toMatchObject({
+        customer: { status: 'ACTIVE' },
+        verificationEnabled: true,
+        consentNotice: { version: 'customer-notice-v1' },
+        candidateAssessment: { status: 'NOT_CONFIGURED' },
+      });
+      expect(status.history).toMatchObject([
+        { id: result.id, kind, provider: 'MONNIFY', status: 'MATCH' },
+      ]);
+      const stored = await db.query<unknown[]>(
+        'SELECT request_mac,identity_mac,provider_reference_mac FROM kyc_verification_attempts WHERE id=$1',
+        [result.id],
+      );
+      expect(JSON.stringify({ status, stored })).not.toContain(identifier);
+      expect(await new KycTierEvidenceReader().read(db.manager, customerId)).toMatchObject({
+        evidence: [
+          { id: result.id, type: kind, status: 'VERIFIED', provenance: 'VERIFIED_PROVIDER' },
+        ],
+      });
+    },
+  );
+
+  it('withdraws a customer consent idempotently and blocks verification after withdrawal', async () => {
+    const customerId = customers[21]!;
+    await seedActualCustomerIdentity(customerId);
+    const verify = jest
+      .fn<ReturnType<KycProvider['verify']>, Parameters<KycProvider['verify']>>()
+      .mockResolvedValue({ outcome: 'MATCH' });
+    const governance = {
+      resolve: jest.fn().mockResolvedValue({ provider: 'MONNIFY', version: 8 }),
+    } as unknown as KycProviderGovernanceService;
+    const service = new KycCustomerVerificationService(
+      db,
+      sessions,
+      governance,
+      [makeProvider(verify, 'MONNIFY')],
+      customerWorkflowConfiguration,
+      { effective: jest.fn().mockResolvedValue(null) } as unknown as KycTierPolicyService,
+      new KycTierEvidenceReader(),
+    );
+    const consent = await service.grantConsent({
+      token: tokenFor(customerId),
+      audience: 'customer-api',
+      requestId: randomUUID(),
+      kind: 'BVN',
+      noticeVersion: 'customer-notice-v1',
+      accepted: true,
+      expectedProvider: 'MONNIFY',
+      expectedRouteVersion: 8,
+    });
+
+    await service.withdrawConsent({
+      token: tokenFor(customerId),
+      audience: 'customer-api',
+      consentId: consent.id,
+    });
+    await service.withdrawConsent({
+      token: tokenFor(customerId),
+      audience: 'customer-api',
+      consentId: consent.id,
+    });
+    const audit = await db.query<Array<{ count: string }>>(
+      "SELECT count(*)::text AS count FROM kyc_private_audit WHERE resource_id=$1 AND action='CONSENT_WITHDRAWN'",
+      [consent.id],
+    );
+    expect(audit[0]?.count).toBe('1');
+    await expect(
+      service.verify({
+        token: tokenFor(customerId),
+        audience: 'customer-api',
+        requestId: randomUUID(),
+        consentId: consent.id,
+        kind: 'BVN',
+        identifier: '91234567890',
+      }),
+    ).rejects.toMatchObject({ code: 'BLOCKED' });
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  it('keeps onboarding KYC capability separate from the ordinary customer audience', async () => {
+    const customerId = customers[19]!;
+    await seedActualCustomerIdentity(customerId);
+    const credentials = await db.query<Array<{ id: string }>>(
+      'SELECT id FROM customer_authentication_credentials WHERE customer_id=$1',
+      [customerId],
+    );
+    const onboardingToken = Buffer.alloc(32, 201).toString('base64url');
+    await db.query(
+      `INSERT INTO authentication_sessions(id,customer_id,credential_id,token_hash,audience,onboarding_password_version,status,expires_at)
+       VALUES($1,$2,$3,$4,'customer-onboarding',1,'ACTIVE',clock_timestamp()+interval '1 hour')`,
+      [
+        randomUUID(),
+        customerId,
+        credentials[0]!.id,
+        createHash('sha256').update(onboardingToken).digest('hex'),
+      ],
+    );
+    const governance = {
+      resolve: jest.fn().mockResolvedValue({ provider: 'DOJAH', version: 4 }),
+    } as unknown as KycProviderGovernanceService;
+    const tierPolicies = {
+      effective: jest.fn().mockResolvedValue(null),
+    } as unknown as KycTierPolicyService;
+    const verify = jest
+      .fn<ReturnType<KycProvider['verify']>, Parameters<KycProvider['verify']>>()
+      .mockResolvedValue({ outcome: 'REVIEW' });
+    const service = new KycCustomerVerificationService(
+      db,
+      new KycCustomerSessionValidator(sessions),
+      governance,
+      [makeProvider(verify, 'DOJAH')],
+      customerWorkflowConfiguration,
+      tierPolicies,
+      new KycTierEvidenceReader(),
+    );
+
+    await expect(service.status(onboardingToken, 'customer-onboarding')).resolves.toMatchObject({
+      customer: { status: 'ACTIVE' },
+      verificationEnabled: true,
+    });
+    await expect(service.status(onboardingToken, 'customer-api')).rejects.toMatchObject({
+      code: 'BLOCKED',
+    });
+    const availability = await service.availability(onboardingToken, 'customer-onboarding', 'NIN');
+    expect(availability).toMatchObject({
+      status: 'AVAILABLE',
+      provider: 'DOJAH',
+      routeVersion: 4,
+    });
+    const consent = await service.grantConsent({
+      token: onboardingToken,
+      audience: 'customer-onboarding',
+      requestId: randomUUID(),
+      kind: 'NIN',
+      noticeVersion: 'customer-notice-v1',
+      accepted: true,
+      expectedProvider: 'DOJAH',
+      expectedRouteVersion: 4,
+    });
+    const verificationCommand = {
+      token: onboardingToken,
+      audience: 'customer-onboarding',
+      requestId: randomUUID(),
+      consentId: consent.id,
+      kind: 'NIN' as const,
+      identifier: '71234567890',
+    };
+    const first = await service.verify(verificationCommand);
+    const replay = await service.verify(verificationCommand);
+    expect(first.status).toBe('REVIEW');
+    expect(replay.id).toBe(first.id);
+    expect(verify).toHaveBeenCalledTimes(1);
+    await expect(service.status(onboardingToken, 'customer-onboarding')).resolves.toMatchObject({
+      history: [{ id: first.id, kind: 'NIN', provider: 'DOJAH', status: 'REVIEW' }],
+    });
+  });
+
   it('keeps audit records transactional and does not permit destructive rollback of history', async () => {
     const rows = await db.query<Array<{ action: string }>>('SELECT action FROM kyc_private_audit');
     expect(rows.map((r) => r.action)).toEqual(

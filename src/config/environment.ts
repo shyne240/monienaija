@@ -33,6 +33,10 @@ const optionalEnvironmentJson = z.preprocess(
   (value) => (value === '' ? undefined : value),
   z.string().min(2).max(65_535).optional(),
 );
+const optionalEnvironmentText = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().trim().min(20).max(10_000).optional(),
+);
 
 export const environmentSchema = z
   .object({
@@ -166,6 +170,42 @@ export const environmentSchema = z
       .min(250)
       .max(3_600_000)
       .default(30000),
+    // Actual customer verification remains inert until an explicit operational policy, the
+    // compliance-approved customer notice, secret references, provider contracts, and a separate
+    // live-call release gate are all present. No rate/freshness values are seeded here.
+    KYC_CUSTOMER_VERIFICATION_ENABLED: booleanFromEnvironment.default(false),
+    KYC_VERIFICATION_POLICY_JSON: optionalEnvironmentJson,
+    KYC_CONSENT_NOTICE_VERSION: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z
+        .string()
+        .trim()
+        .regex(/^[A-Za-z0-9._-]{1,64}$/)
+        .optional(),
+    ),
+    KYC_CONSENT_NOTICE_TEXT: optionalEnvironmentText,
+    KYC_CONSENT_VALIDITY_SECONDS: z.coerce.number().int().min(60).max(31_536_000).optional(),
+    KYC_OWNERSHIP_KEY_BASE64: optionalEnvironmentString,
+    KYC_OWNERSHIP_KEY_VERSION: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z
+        .string()
+        .trim()
+        .regex(/^[A-Za-z0-9._-]{1,64}$/)
+        .optional(),
+    ),
+    KYC_PROVIDER_CONTRACTS_REVIEWED: booleanFromEnvironment.default(false),
+    KYC_PROVIDER_LIVE_CALLS_ENABLED: booleanFromEnvironment.default(false),
+    MONNIFY_VERIFICATION_ENABLED: booleanFromEnvironment.default(false),
+    MONNIFY_API_KEY: optionalEnvironmentSecret,
+    MONNIFY_SECRET_KEY: optionalEnvironmentSecret,
+    DOJAH_VERIFICATION_ENABLED: booleanFromEnvironment.default(false),
+    DOJAH_VERIFICATION_ENV: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.enum(['production', 'sandbox']).optional(),
+    ),
+    DOJAH_SECRET_KEY: optionalEnvironmentSecret,
+    DOJAH_APP_ID: optionalEnvironmentString,
     A5_PILOT_EMERGENCY_STOP: booleanFromEnvironment.default(false),
     A6_PARTNER_ENABLED: booleanFromEnvironment.default(false),
     A6_PARTNER_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),
@@ -681,6 +721,10 @@ export const environmentSchema = z
     for (const [field, value] of [
       ['DB_PASSWORD', config.DB_PASSWORD],
       ['PROTECTED_AUTHORITY_DB_PASSWORD', config.PROTECTED_AUTHORITY_DB_PASSWORD],
+      ['KYC_OWNERSHIP_KEY_BASE64', config.KYC_OWNERSHIP_KEY_BASE64],
+      ['MONNIFY_API_KEY', config.MONNIFY_API_KEY],
+      ['MONNIFY_SECRET_KEY', config.MONNIFY_SECRET_KEY],
+      ['DOJAH_SECRET_KEY', config.DOJAH_SECRET_KEY],
       ['A6_PARTNER_SANDBOX_CALLBACK_SECRET', config.A6_PARTNER_SANDBOX_CALLBACK_SECRET],
       ['A6_PARTNER_PRODUCTION_CALLBACK_SECRET', config.A6_PARTNER_PRODUCTION_CALLBACK_SECRET],
     ] as const) {

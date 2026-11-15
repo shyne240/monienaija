@@ -10,6 +10,18 @@ import { OperationsModule } from '../operations/operations.module';
 import { AuditService } from '../operations/audit.service';
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { AuthenticationSessionService } from '../customer-authentication/authentication-session.service';
+import {
+  MonnifyVerificationProvider,
+  monnifyOptionsFromEnvironment,
+} from '../identity-verification/monnify-verification.provider';
+import {
+  DojahVerificationProvider,
+  dojahOptionsFromEnvironment,
+} from '../identity-verification/dojah-verification.provider';
+import {
+  KycProviderGovernanceService,
+  type KycProviderRuntimeReadiness,
+} from './kyc-provider-governance.service';
 import { KycTierPolicyService } from './kyc-tier-policy.service';
 import { KycTierPolicyController } from './kyc-tier-policy.controller';
 import { KycTierEvidenceReader } from './kyc-tier-evidence.reader';
@@ -17,6 +29,66 @@ import { KycTierTransitionService } from './kyc-tier-transition.service';
 import { KycTierReviewController } from './kyc-tier-review.controller';
 import { CustomerFinancialEligibilityService } from './customer-financial-eligibility.service';
 import { KycTierWorker } from './kyc-tier-worker.service';
+import { KycCustomerSessionValidator } from './kyc-customer-session-validator';
+import { KycCustomerVerificationService } from './kyc-customer-verification.service';
+import { customerKycConfigurationFromEnvironment } from './kyc-customer-verification.config';
+import { DojahKycProvider } from './dojah-kyc.provider';
+import { MonnifyKycProvider } from './monnify-kyc.provider';
+import type { KycProvider } from './kyc.types';
+
+const KYC_PROVIDER_RUNTIME = 'KYC_PROVIDER_RUNTIME';
+type ProviderRuntime = {
+  providers: readonly KycProvider[];
+  readiness: KycProviderRuntimeReadiness;
+};
+function providerRuntimeFromConfig(config: ConfigService<Environment, true>): ProviderRuntime {
+  const monnifyOptions = monnifyOptionsFromEnvironment({
+    MONNIFY_VERIFICATION_ENABLED: config.get('MONNIFY_VERIFICATION_ENABLED', { infer: true })
+      ? 'true'
+      : 'false',
+    MONNIFY_API_KEY: config.get('MONNIFY_API_KEY', { infer: true }),
+    MONNIFY_SECRET_KEY: config.get('MONNIFY_SECRET_KEY', { infer: true }),
+  });
+  const dojahOptions = dojahOptionsFromEnvironment({
+    DOJAH_VERIFICATION_ENABLED: config.get('DOJAH_VERIFICATION_ENABLED', { infer: true })
+      ? 'true'
+      : 'false',
+    DOJAH_VERIFICATION_ENV: config.get('DOJAH_VERIFICATION_ENV', { infer: true }),
+    DOJAH_SECRET_KEY: config.get('DOJAH_SECRET_KEY', { infer: true }),
+    DOJAH_APP_ID: config.get('DOJAH_APP_ID', { infer: true }),
+  });
+  const contractsReviewed = config.get('KYC_PROVIDER_CONTRACTS_REVIEWED', { infer: true });
+  const liveCallsReleased = config.get('KYC_PROVIDER_LIVE_CALLS_ENABLED', { infer: true });
+  const readiness: KycProviderRuntimeReadiness = {
+    MONNIFY:
+      contractsReviewed &&
+      liveCallsReleased &&
+      monnifyOptions.enabled === true &&
+      typeof monnifyOptions.apiKey === 'string' &&
+      monnifyOptions.apiKey.length > 0 &&
+      !monnifyOptions.apiKey.includes(':') &&
+      typeof monnifyOptions.secretKey === 'string' &&
+      monnifyOptions.secretKey.length > 0,
+    DOJAH:
+      contractsReviewed &&
+      liveCallsReleased &&
+      dojahOptions.enabled === true &&
+      typeof dojahOptions.environment === 'string' &&
+      typeof dojahOptions.secretKey === 'string' &&
+      dojahOptions.secretKey.length > 0 &&
+      typeof dojahOptions.appId === 'string' &&
+      dojahOptions.appId.length > 0,
+    SYNTHETIC: config.get('NODE_ENV', { infer: true }) === 'test',
+  };
+  return {
+    providers: [
+      new MonnifyKycProvider(new MonnifyVerificationProvider(monnifyOptions)),
+      new DojahKycProvider(new DojahVerificationProvider(dojahOptions)),
+    ],
+    readiness,
+  };
+}
+
 @Module({
   imports: [
     ProtectedAuthorityModule,
@@ -37,6 +109,71 @@ import { KycTierWorker } from './kyc-tier-worker.service';
       ) => new KycTierPolicyService(db, auth, protectedAuthority),
     },
     { provide: KycTierEvidenceReader, useFactory: () => new KycTierEvidenceReader() },
+    {
+      provide: KYC_PROVIDER_RUNTIME,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Environment, true>) => providerRuntimeFromConfig(config),
+    },
+    {
+      provide: KycProviderGovernanceService,
+      inject: [DataSource, AuthorizationService, ProtectedAuthorityService, KYC_PROVIDER_RUNTIME],
+      useFactory: (
+        db: DataSource,
+        auth: AuthorizationService,
+        protectedAuthority: ProtectedAuthorityService,
+        runtime: ProviderRuntime,
+      ) => new KycProviderGovernanceService(db, auth, protectedAuthority, runtime.readiness),
+    },
+    {
+      provide: KycCustomerSessionValidator,
+      inject: [AuthenticationSessionService],
+      useFactory: (sessions: AuthenticationSessionService) =>
+        new KycCustomerSessionValidator(sessions),
+    },
+    {
+      provide: KycCustomerVerificationService,
+      inject: [
+        DataSource,
+        KycCustomerSessionValidator,
+        KycProviderGovernanceService,
+        KYC_PROVIDER_RUNTIME,
+        ConfigService,
+        KycTierPolicyService,
+        KycTierEvidenceReader,
+      ],
+      useFactory: (
+        db: DataSource,
+        sessions: KycCustomerSessionValidator,
+        governance: KycProviderGovernanceService,
+        runtime: ProviderRuntime,
+        config: ConfigService<Environment, true>,
+        policies: KycTierPolicyService,
+        reader: KycTierEvidenceReader,
+      ) =>
+        new KycCustomerVerificationService(
+          db,
+          sessions,
+          governance,
+          runtime.providers,
+          customerKycConfigurationFromEnvironment({
+            KYC_CUSTOMER_VERIFICATION_ENABLED: config.get('KYC_CUSTOMER_VERIFICATION_ENABLED', {
+              infer: true,
+            }),
+            KYC_VERIFICATION_POLICY_JSON: config.get('KYC_VERIFICATION_POLICY_JSON', {
+              infer: true,
+            }),
+            KYC_CONSENT_NOTICE_VERSION: config.get('KYC_CONSENT_NOTICE_VERSION', { infer: true }),
+            KYC_CONSENT_NOTICE_TEXT: config.get('KYC_CONSENT_NOTICE_TEXT', { infer: true }),
+            KYC_CONSENT_VALIDITY_SECONDS: config.get('KYC_CONSENT_VALIDITY_SECONDS', {
+              infer: true,
+            }),
+            KYC_OWNERSHIP_KEY_BASE64: config.get('KYC_OWNERSHIP_KEY_BASE64', { infer: true }),
+            KYC_OWNERSHIP_KEY_VERSION: config.get('KYC_OWNERSHIP_KEY_VERSION', { infer: true }),
+          }),
+          policies,
+          reader,
+        ),
+    },
     {
       provide: KycTierTransitionService,
       inject: [
@@ -71,6 +208,12 @@ import { KycTierWorker } from './kyc-tier-worker.service';
         }),
     },
   ],
-  exports: [KycTierTransitionService, CustomerFinancialEligibilityService, KycTierEvidenceReader],
+  exports: [
+    KycTierTransitionService,
+    CustomerFinancialEligibilityService,
+    KycTierEvidenceReader,
+    KycProviderGovernanceService,
+    KycCustomerVerificationService,
+  ],
 })
 export class KycTierModule {}

@@ -60,6 +60,12 @@ export interface Reservation {
   kind: IdentityKind;
   provider: string;
   sessionToken: string;
+  /** Internal audience selected by the route, never supplied by a customer request body. */
+  audience?: string;
+  /** Revision read with the authoritative profile; reservation rejects if it has since changed. */
+  identityRevision?: string;
+  /** Route version selected server-side and recorded in the customer's consent. */
+  providerRouteVersion?: number;
   identifierMac: string;
   ownershipKeyProof: string;
   ownershipKeyVersion: string;

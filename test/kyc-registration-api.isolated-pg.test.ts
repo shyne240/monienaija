@@ -27,6 +27,7 @@ import { TestNotificationProvider } from '../src/notification/notification-provi
 import { KycRegistrationSessionController } from '../src/kyc-verification/kyc-registration-session.controller';
 import { KycRegistrationSessionService } from '../src/kyc-verification/kyc-registration-session.service';
 import { KycRegistrationVerificationService } from '../src/kyc-verification/kyc-registration-verification.service';
+import { KycCustomerVerificationService } from '../src/kyc-verification/kyc-customer-verification.service';
 import type {
   KycProvider,
   ProviderResult,
@@ -63,6 +64,23 @@ const call = jest
   .fn<Promise<ProviderResult>, [VerificationInput, AbortSignal]>()
   .mockResolvedValue({ outcome: 'MATCH' });
 const provider: KycProvider = { code: 'SYNTHETIC', verify: call };
+const customerKyc = {
+  status: jest.fn().mockResolvedValue({ verificationEnabled: false, history: [] }),
+  availability: jest.fn().mockResolvedValue({ status: 'CONFIGURATION_INCOMPLETE' }),
+  grantConsent: jest.fn().mockResolvedValue({
+    id: '00000000-0000-4000-8000-000000000010',
+    expiresAt: new Date(Date.now() + 60000).toISOString(),
+    provider: 'MONNIFY',
+    routeVersion: 3,
+  }),
+  withdrawConsent: jest.fn().mockResolvedValue(undefined),
+  verify: jest.fn().mockResolvedValue({
+    id: '00000000-0000-4000-8000-000000000011',
+    status: 'MATCH',
+    provider: 'MONNIFY',
+    expiresAt: new Date(Date.now() + 3600000).toISOString(),
+  }),
+};
 const url = '/api/v1/customers/registration-sessions/';
 const phone = (n: number) => `080${String(n).padStart(8, '0')}`;
 async function post(path: string, payload: Record<string, unknown>, token?: string) {
@@ -139,13 +157,11 @@ beforeAll(async () => {
       typeof entry === 'object' &&
       entry !== null &&
       'provide' in entry &&
-      [
-        KycRegistrationSessionService,
-        KycRegistrationVerificationService,
-        KycProviderGovernanceService,
-      ].includes(entry.provide as typeof KycRegistrationSessionService),
+      [KycRegistrationSessionService, KycRegistrationVerificationService].includes(
+        entry.provide as typeof KycRegistrationSessionService,
+      ),
   );
-  expect(wired).toHaveLength(3);
+  expect(wired).toHaveLength(2);
   expect(Reflect.getMetadata(MODULE_METADATA.CONTROLLERS, CustomerRegistrationModule)).toContain(
     KycRegistrationSessionController,
   );
@@ -170,6 +186,16 @@ beforeAll(async () => {
         } as never),
       },
       { provide: ProtectedAuthorityService, useValue: new ProtectedAuthorityService(db) },
+      {
+        provide: KycProviderGovernanceService,
+        inject: [DataSource, AuthorizationService, ProtectedAuthorityService],
+        useFactory: (
+          dataSource: DataSource,
+          authorization: AuthorizationService,
+          authority: ProtectedAuthorityService,
+        ) => new KycProviderGovernanceService(dataSource, authorization, authority),
+      },
+      { provide: KycCustomerVerificationService, useValue: customerKyc },
       { provide: NOTIFICATION_PROVIDER_TOKEN, useValue: sms },
       { provide: A2SecurityRateLimitService, useValue: limiter },
       { provide: REGISTRATION_SYNTHETIC_PROVIDER, useValue: provider },
@@ -195,9 +221,89 @@ beforeEach(async () => {
   await db.query('DELETE FROM a2_security_rate_buckets');
   await db.query('DELETE FROM kyc_registration_rate_buckets');
   call.mockReset().mockResolvedValue({ outcome: 'MATCH' });
+  Object.values(customerKyc).forEach((operation) => operation.mockClear());
 });
 
 describe('registration session Nest/Fastify API on synthetic PostgreSQL', () => {
+  it('exposes the real customer KYC action contract only through the restricted onboarding bearer', async () => {
+    const onboardingBearer = Buffer.alloc(32, 45).toString('base64url');
+    const status = await post('customer-kyc/status', {}, onboardingBearer);
+    expect(status.statusCode).toBe(200);
+    expect(status.headers['cache-control']).toBe('no-store');
+    expect(customerKyc.status).toHaveBeenCalledWith(onboardingBearer, 'customer-onboarding');
+    expect((await post('customer-kyc/status', {})).statusCode).toBe(401);
+
+    const availability = await post('customer-kyc/availability', { kind: 'BVN' }, onboardingBearer);
+    expect(availability.statusCode).toBe(200);
+    expect(customerKyc.availability).toHaveBeenCalledWith(
+      onboardingBearer,
+      'customer-onboarding',
+      'BVN',
+    );
+    expect(
+      (await post('customer-kyc/availability', { kind: 'TIN' }, onboardingBearer)).statusCode,
+    ).toBe(400);
+
+    const requestId = randomUUID();
+    const consent = await post(
+      'customer-kyc/consent',
+      {
+        requestId,
+        kind: 'BVN',
+        accepted: true,
+        noticeVersion: 'notice-v1',
+        expectedProvider: 'MONNIFY',
+        expectedRouteVersion: 3,
+      },
+      onboardingBearer,
+    );
+    expect(consent.statusCode).toBe(200);
+    expect(customerKyc.grantConsent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: onboardingBearer,
+        audience: 'customer-onboarding',
+        requestId,
+        expectedProvider: 'MONNIFY',
+        expectedRouteVersion: 3,
+      }),
+    );
+    const consentId = consent.json<{ id: string }>().id;
+    const withdrawal = await post('customer-kyc/consent/withdraw', { consentId }, onboardingBearer);
+    expect(withdrawal.statusCode).toBe(200);
+    expect(withdrawal.json()).toEqual({ status: 'WITHDRAWN' });
+    expect(customerKyc.withdrawConsent).toHaveBeenCalledWith({
+      token: onboardingBearer,
+      audience: 'customer-onboarding',
+      consentId,
+    });
+
+    const verificationId = randomUUID();
+    const verificationResponse = await post(
+      'customer-kyc/verification',
+      { requestId: verificationId, consentId, kind: 'BVN', identifier: '12345678901' },
+      onboardingBearer,
+    );
+    expect(verificationResponse.statusCode).toBe(200);
+    expect(verificationResponse.headers['cache-control']).toBe('no-store');
+    expect(customerKyc.verify).toHaveBeenCalledWith({
+      token: onboardingBearer,
+      audience: 'customer-onboarding',
+      requestId: verificationId,
+      consentId,
+      kind: 'BVN',
+      identifier: '12345678901',
+    });
+    expect(
+      (
+        await post(
+          'customer-kyc/verification',
+          { requestId: verificationId, consentId, kind: 'BVN', identifier: 'not-an-id' },
+          onboardingBearer,
+        )
+      ).statusCode,
+    ).toBe(400);
+  });
+
   it.each(['BVN', 'NIN'] as const)(
     'uses session-owned profile and consent for %s synthetic identity matching',
     async (kind) => {

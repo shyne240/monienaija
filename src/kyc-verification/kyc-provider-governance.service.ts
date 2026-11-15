@@ -17,6 +17,16 @@ export type ProviderConfiguration = {
 };
 type Snapshot = { version: number; configuration: ProviderConfiguration };
 type Reason = 'INITIAL_SETUP' | 'ROUTING_CHANGE' | 'PROVIDER_DISABLE';
+export interface KycProviderRuntimeReadiness {
+  MONNIFY: boolean;
+  DOJAH: boolean;
+  SYNTHETIC: boolean;
+}
+const defaultRuntimeReadiness = (): KycProviderRuntimeReadiness => ({
+  MONNIFY: false,
+  DOJAH: false,
+  SYNTHETIC: process.env.NODE_ENV === 'test',
+});
 const fingerprint = (
   requestId: string,
   version: number,
@@ -118,6 +128,7 @@ export class KycProviderGovernanceService {
     private readonly db: DataSource,
     private readonly auth: AuthorizationService,
     private readonly protectedAuthority?: ProtectedAuthorityService,
+    private readonly runtimeReadiness: KycProviderRuntimeReadiness = defaultRuntimeReadiness(),
   ) {}
   private get authoritySource(): DataSource {
     return this.protectedAuthority?.dataSource ?? this.db;
@@ -176,7 +187,7 @@ export class KycProviderGovernanceService {
       ...(await this.snapshot(m, 'SHARE')),
       catalogue: KYC_PROVIDER_CATALOGUE.map((item) => ({
         ...item,
-        ready: item.code === 'SYNTHETIC' && process.env.NODE_ENV === 'test',
+        ready: this.runtimeReadiness[item.code],
       })),
     }));
   }
@@ -379,9 +390,11 @@ export class KycProviderGovernanceService {
       if (!code) continue;
       const item = snap.configuration.providers[code];
       if (!item.enabled || !item.capabilities.includes(kind)) continue;
-      // Account access, endpoint entitlements/contracts and credentials are unconfirmed for both
-      // real providers. A published candidate route must not activate either adapter.
-      if (code === 'MONNIFY' || code === 'DOJAH') continue;
+      // A maker-checker-approved route is necessary but not sufficient. Runtime readiness is a
+      // separate launch gate that requires explicitly approved provider contracts, enabled adapter
+      // configuration, credentials, and the independent live-call release flag. Defaults are all
+      // false; candidate routing never activates a billable adapter by itself.
+      if (!this.runtimeReadiness[code]) continue;
       if (code === 'SYNTHETIC' && process.env.NODE_ENV !== 'test') continue;
       if (expectedProvider && code !== expectedProvider) throw new KycFoundationError('BLOCKED');
       return { provider: code, version: snap.version };

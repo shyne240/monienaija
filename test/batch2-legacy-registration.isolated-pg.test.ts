@@ -787,7 +787,8 @@ test.each(['BVN', 'NIN'] as const)(
         [consent, id, kind, oldSession],
       );
       await db.query(
-        `INSERT INTO kyc_verification_attempts(id,customer_id,consent_id,request_id,kind,provider,policy_version,request_mac,identity_mac,mac_key_version,outcome,completed_at,expires_at) VALUES($1,$2,$3,$4,$5,'MONNIFY','test',$6,$6,'test','MATCH',clock_timestamp(),clock_timestamp()+interval '1 day')`,
+        `INSERT INTO kyc_verification_attempts(id,customer_id,consent_id,request_id,kind,provider,policy_version,request_mac,identity_mac,mac_key_version,identity_revision,outcome,completed_at,expires_at)
+         VALUES($1,$2,$3,$4,$5,'MONNIFY','test',$6,$6,'test',(SELECT revision FROM kyc_customer_identity_revisions WHERE customer_id=$2),'MATCH',clock_timestamp(),clock_timestamp()+interval '1 day')`,
         [attempt, id, consent, randomUUID(), kind, 'a'.repeat(64)],
       );
       await db.query(

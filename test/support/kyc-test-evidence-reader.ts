@@ -11,10 +11,10 @@ import { identityBindingMac } from '../../src/kyc-verification/kyc-orchestrator'
 /**
  * Shared **test-only** trusted-evidence reader.
  *
- * The production `KycTierEvidenceReader` returns `null` unconditionally, because no provider's
- * account, contract, authenticated provenance and key source have been confirmed for live use.
- * That is correct in production, and it is also why every integration suite that reaches a
- * financial gate fails closed with "Trusted KYC evidence is unavailable".
+ * The production `KycTierEvidenceReader` admits only current-revision attempts bound to a live
+ * customer consent, the consented provider route, and a verified ownership claim. Production
+ * provider activation still defaults off. This helper is an explicit test-only source for suites
+ * that need controlled identity evidence without weakening those production checks.
  *
  * This module supplies the missing seam **for tests only**, without weakening the production
  * reader and without adding any bypass to application code:
@@ -30,8 +30,9 @@ import { identityBindingMac } from '../../src/kyc-verification/kyc-orchestrator'
  *     so an eligible customer still needs genuine, current, consent-backed evidence in the
  *     database. Nothing is fabricated in memory.
  *
- * The identity binding reuses the production `identityBindingMac` contract, so the revision this
- * reader reports is exactly the one the production reader would compute from the same rows.
+ * The identity binding reuses the production `identityBindingMac` contract, but the opaque
+ * `identityRevision` value returned here is test-only and is intentionally not the production
+ * database-managed monotonic revision.
  */
 
 export type TrustedEvidenceMode = 'UNAVAILABLE' | 'ELIGIBLE';

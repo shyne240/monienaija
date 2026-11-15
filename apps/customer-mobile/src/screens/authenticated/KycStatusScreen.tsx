@@ -12,6 +12,11 @@ import {
 import { theme } from '../../theme';
 import { Button } from '../../components/Button';
 import { StatusBadge } from '../../components/StatusBadge';
+import { CustomerKycVerificationPanel } from '../../components/CustomerKycVerificationPanel';
+import {
+  customerKycWorkflowApi,
+  type CustomerKycWorkflowStatus,
+} from '../../services/customer-kyc-verification';
 import {
   CustomerAccountApi,
   type CustomerKycProjection,
@@ -53,12 +58,13 @@ function requirementGroups(projection: CustomerKycProjection | null): Requiremen
  * requirement *shape*, the evidence-assessment state and the upgrade pathway) and
  * `GET /customers/me/limits` (per-product windows and remaining allowances).
  *
- * The screen never derives a tier, never states a regulatory threshold the policy did not publish,
- * and never reports evidence as failed: the backend reports evidence assessment as UNAVAILABLE
- * because MonieNaija has no confirmed identity-evidence source, and that is exactly what is shown.
+ * The screen never derives a tier or states a regulatory threshold the policy did not publish.
+ * Customer verification uses a separate backend-owned workflow projection and explicit consent;
+ * an identity-provider result is not treated as a tier change until the governed transition applies.
  */
 export const KycStatusScreen: React.FC = () => {
   const [kyc, setKyc] = useState<CustomerKycProjection | null>(null);
+  const [workflow, setWorkflow] = useState<CustomerKycWorkflowStatus | null>(null);
   const [limits, setLimits] = useState<CustomerLimits | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -66,6 +72,7 @@ export const KycStatusScreen: React.FC = () => {
   const [limitsError, setLimitsError] = useState('');
   const scrollRef = useRef<ScrollView | null>(null);
   const requirementsOffset = useRef(0);
+  const verificationOffset = useRef(0);
 
   const load = useCallback(async () => {
     setError('');
@@ -79,6 +86,11 @@ export const KycStatusScreen: React.FC = () => {
           ? caught.message
           : 'Verification status is temporarily unavailable.',
       );
+    }
+    try {
+      setWorkflow(await customerKycWorkflowApi().status());
+    } catch {
+      setWorkflow(null);
     }
     try {
       setLimits(await CustomerAccountApi.limits());
@@ -115,12 +127,20 @@ export const KycStatusScreen: React.FC = () => {
 
   const tierLabel = KYC_LEVEL_LABELS[kyc?.kycLevel ?? ''] ?? 'Tier unavailable';
   const statusLabelText = KYC_STATUS_LABELS[kyc?.kycStatus ?? ''] ?? kyc?.kycStatus ?? 'Unknown';
-  const pathway = kycPathwayCopy(
-    kyc?.upgradePathway.status,
-    kyc?.upgradePathway.nextLevel,
-    tierLabel,
-  );
+  const pathway = workflow?.verificationEnabled
+    ? {
+        title: 'Review your identity verification options',
+        body: 'Check the approved route and read the configured consent notice before you decide whether to submit an identity number. A provider response alone does not change your tier or financial eligibility.',
+        actionLabel: 'Review verification options',
+      }
+    : kycPathwayCopy(kyc?.upgradePathway.status, kyc?.upgradePathway.nextLevel, tierLabel);
   const groups = requirementGroups(kyc);
+  const evidenceNote =
+    workflow?.candidateAssessment.status && workflow.candidateAssessment.status !== 'UNAVAILABLE'
+      ? 'Trusted evidence is available for a governed candidate assessment. The candidate status below does not itself change your tier or financial eligibility.'
+      : (kyc?.evidenceAssessment.note ??
+        'MonieNaija cannot assess trusted identity evidence yet, so no requirement is marked satisfied or missing.');
+  const candidateStatus = workflow?.candidateAssessment.status;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -192,15 +212,24 @@ export const KycStatusScreen: React.FC = () => {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>{pathway.title}</Text>
           <Text style={styles.cardBody}>{pathway.body}</Text>
-          {pathway.actionLabel && groups.length > 0 ? (
+          {pathway.actionLabel && (workflow?.verificationEnabled || groups.length > 0) ? (
             <Button
               label={pathway.actionLabel}
               variant="outline"
               size="small"
-              accessibilityHint="Scrolls to the published next-tier requirements. It does not submit identity data or start a verification check."
+              accessibilityHint={
+                workflow?.verificationEnabled
+                  ? 'Scrolls to the verification options. Nothing is submitted until you review the notice and consent.'
+                  : 'Scrolls to the published next-tier requirements. It does not submit identity data or start a verification check.'
+              }
               onPress={() =>
                 scrollRef.current?.scrollTo({
-                  y: Math.max(0, requirementsOffset.current - 12),
+                  y: Math.max(
+                    0,
+                    (workflow?.verificationEnabled
+                      ? verificationOffset.current
+                      : requirementsOffset.current) - 12,
+                  ),
                   animated: true,
                 })
               }
@@ -208,11 +237,13 @@ export const KycStatusScreen: React.FC = () => {
           ) : null}
           <View style={styles.evidenceBlock}>
             <Text style={styles.evidenceTitle}>Evidence assessment</Text>
-            <Text style={styles.cardMeta}>
-              {kyc?.evidenceAssessment.note ??
-                'MonieNaija cannot assess verified identity evidence yet, so no requirement is marked satisfied or missing.'}
-            </Text>
-            {kyc?.evidenceAssessment.reason ? (
+            <Text style={styles.cardMeta}>{evidenceNote}</Text>
+            {candidateStatus && candidateStatus !== 'UNAVAILABLE' ? (
+              <Text style={styles.reasonCode}>
+                Candidate status · {statusLabel(candidateStatus)} — not a tier or financial-access
+                decision.
+              </Text>
+            ) : kyc?.evidenceAssessment.reason ? (
               <Text style={styles.reasonCode}>{kyc.evidenceAssessment.reason}</Text>
             ) : null}
           </View>
@@ -250,6 +281,15 @@ export const KycStatusScreen: React.FC = () => {
             </View>
           ) : null}
         </View>
+
+        <CustomerKycVerificationPanel
+          api={customerKycWorkflowApi()}
+          workflow={workflow}
+          onRefresh={load}
+          onLayout={(event) => {
+            verificationOffset.current = event.nativeEvent.layout.y;
+          }}
+        />
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Transaction limits</Text>

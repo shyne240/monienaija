@@ -74,7 +74,7 @@ const limitsFixture = {
   ],
 };
 
-const route = (kyc: unknown, limits: unknown) =>
+const route = (kyc: unknown, limits: unknown) => {
   (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
     if (url === '/customers/me/kyc') {
       return kyc instanceof Error ? Promise.reject(kyc) : Promise.resolve(kyc);
@@ -84,6 +84,21 @@ const route = (kyc: unknown, limits: unknown) =>
     }
     return Promise.reject(new Error(`unexpected ${url}`));
   });
+  (ApiClient.post as jest.Mock).mockResolvedValue({
+    customer: { status: 'ACTIVE', kycLevel: 'LEVEL_1', kycStatus: 'APPROVED' },
+    policy: { configured: true, version: 'test-policy-v1' },
+    requirements: null,
+    candidateAssessment: {
+      status: 'UNAVAILABLE',
+      level: null,
+      reason: 'TRUSTED_EVIDENCE_UNAVAILABLE',
+    },
+    consentNotice: null,
+    verificationEnabled: false,
+    consents: [],
+    history: [],
+  });
+};
 
 describe('KycStatusScreen (real backend policy projection)', () => {
   beforeEach(() => jest.clearAllMocks());
@@ -121,7 +136,12 @@ describe('KycStatusScreen (real backend policy projection)', () => {
     const action = await waitFor(() => getByText('See what the upgrade needs'));
     fireEvent.press(action);
     expect(getByText(/not a statement about your verification/)).toBeTruthy();
-    expect(ApiClient.post).not.toHaveBeenCalled();
+    expect(ApiClient.post).toHaveBeenCalledWith('/customers/me/kyc/status', {});
+    expect(ApiClient.post).not.toHaveBeenCalledWith('/customers/me/kyc/consent', expect.anything());
+    expect(ApiClient.post).not.toHaveBeenCalledWith(
+      '/customers/me/kyc/verification',
+      expect.anything(),
+    );
   });
 
   test('states that evidence assessment is unavailable instead of implying a pass or fail', async () => {

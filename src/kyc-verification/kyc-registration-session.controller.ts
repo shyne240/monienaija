@@ -15,17 +15,21 @@ import {
   Equals,
   IsEmail,
   IsIn,
+  IsInt,
   IsISO8601,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
   MaxLength,
+  Min,
 } from 'class-validator';
 import type { FastifyRequest } from 'fastify';
 import { KycRegistrationSessionService } from './kyc-registration-session.service';
 import { KycRegistrationVerificationService } from './kyc-registration-verification.service';
 import { KycFoundationError } from './kyc.types';
+import { KycCustomerVerificationService } from './kyc-customer-verification.service';
+import { CUSTOMER_ONBOARDING_AUDIENCE } from './kyc-customer-session-validator';
 
 class StartDto {
   @IsString() @MaxLength(40) phone!: string;
@@ -63,12 +67,31 @@ class VerifyDto extends WithdrawDto {
   @IsIn(['BVN', 'NIN']) kind!: 'BVN' | 'NIN';
   @Matches(/^0000000000[0-9]$/) identifier!: string;
 }
+class CustomerKycKindDto {
+  @IsIn(['BVN', 'NIN']) kind!: 'BVN' | 'NIN';
+}
+class CustomerKycConsentDto extends CustomerKycKindDto {
+  @IsUUID() requestId!: string;
+  @Equals(true) accepted!: boolean;
+  @IsString() @MaxLength(64) noticeVersion!: string;
+  @IsIn(['MONNIFY', 'DOJAH']) expectedProvider!: 'MONNIFY' | 'DOJAH';
+  @IsInt() @Min(1) expectedRouteVersion!: number;
+}
+class CustomerKycWithdrawDto {
+  @IsUUID() consentId!: string;
+}
+class CustomerKycVerifyDto extends CustomerKycWithdrawDto {
+  @IsUUID() requestId!: string;
+  @IsIn(['BVN', 'NIN']) kind!: 'BVN' | 'NIN';
+  @Matches(/^\d{11}$/) identifier!: string;
+}
 /** Public entrypoints authenticate with a purpose-limited registration bearer, never a customer session. */
 @Controller('customers/registration-sessions')
 export class KycRegistrationSessionController {
   constructor(
     private readonly sessions: KycRegistrationSessionService,
     private readonly verification: KycRegistrationVerificationService,
+    private readonly customerKyc: KycCustomerVerificationService,
   ) {}
   private bearer(req: FastifyRequest): string {
     const value = req.headers.authorization;
@@ -222,5 +245,66 @@ export class KycRegistrationSessionController {
       await this.sessions.revoke(body.sessionId, this.bearer(req));
       return { status: 'REVOKED' };
     });
+  }
+
+  /** Financially restricted onboarding session: KYC only, never a customer financial session. */
+  @Header('Cache-Control', 'no-store')
+  @Post('customer-kyc/status')
+  @HttpCode(200)
+  customerKycStatus(@Req() req: FastifyRequest) {
+    return this.run(() => this.customerKyc.status(this.bearer(req), CUSTOMER_ONBOARDING_AUDIENCE));
+  }
+  @Header('Cache-Control', 'no-store')
+  @Post('customer-kyc/availability')
+  @HttpCode(200)
+  customerKycAvailability(@Body() body: CustomerKycKindDto, @Req() req: FastifyRequest) {
+    return this.run(() =>
+      this.customerKyc.availability(this.bearer(req), CUSTOMER_ONBOARDING_AUDIENCE, body.kind),
+    );
+  }
+  @Header('Cache-Control', 'no-store')
+  @Post('customer-kyc/consent')
+  @HttpCode(200)
+  customerKycConsent(@Body() body: CustomerKycConsentDto, @Req() req: FastifyRequest) {
+    return this.run(() =>
+      this.customerKyc.grantConsent({
+        token: this.bearer(req),
+        audience: CUSTOMER_ONBOARDING_AUDIENCE,
+        requestId: body.requestId,
+        kind: body.kind,
+        noticeVersion: body.noticeVersion,
+        accepted: body.accepted,
+        expectedProvider: body.expectedProvider,
+        expectedRouteVersion: body.expectedRouteVersion,
+      }),
+    );
+  }
+  @Header('Cache-Control', 'no-store')
+  @Post('customer-kyc/consent/withdraw')
+  @HttpCode(200)
+  customerKycWithdraw(@Body() body: CustomerKycWithdrawDto, @Req() req: FastifyRequest) {
+    return this.run(async () => {
+      await this.customerKyc.withdrawConsent({
+        token: this.bearer(req),
+        audience: CUSTOMER_ONBOARDING_AUDIENCE,
+        consentId: body.consentId,
+      });
+      return { status: 'WITHDRAWN' };
+    });
+  }
+  @Header('Cache-Control', 'no-store')
+  @Post('customer-kyc/verification')
+  @HttpCode(200)
+  customerKycVerify(@Body() body: CustomerKycVerifyDto, @Req() req: FastifyRequest) {
+    return this.run(() =>
+      this.customerKyc.verify({
+        token: this.bearer(req),
+        audience: CUSTOMER_ONBOARDING_AUDIENCE,
+        requestId: body.requestId,
+        consentId: body.consentId,
+        kind: body.kind,
+        identifier: body.identifier,
+      }),
+    );
   }
 }

@@ -4,7 +4,6 @@ import { createHash } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
-  HttpException,
   Injectable,
   Optional,
   ServiceUnavailableException,
@@ -46,6 +45,7 @@ import {
   rewardNone,
 } from '../commercial-decision/commercial-decision.defaults';
 import type { EnforceResult } from '../limit-catalog/limit-enforcement.service';
+import { AgentService } from './agent-service.enum';
 import type {
   AgentFinancialExecutionInput,
   AgentFinancialExecutionResult,
@@ -274,70 +274,81 @@ export class AgentFinancialExecutionService {
           // customer's tier-specific product receipt/withdrawal policy and the Agent's existing
           // class/profile product limit. The two reservations commit or roll back with the journal.
           const limitIdempotencyKeys: string[] = [idempotencyKey];
-          const customerLimitOutcome = await this.limitEnforcementService!.enforceWithManager(manager, {
-            principalType: input.limit!.principalType,
-            principalId: input.limit!.principalId,
-            agentClassId: input.limit!.agentClassId ?? null,
-            product: input.limit!.product,
-            currency: input.limit!.currency ?? currency,
-            direction: input.limit!.direction,
-            channel: input.limit!.channel ?? null,
-            amountMinor: input.limit!.amountMinor,
-            idempotencyKey,
-            requestHash,
-            correlationId: input.correlationId ?? null,
-            now: new Date(),
-            walletLedgerAccountId: input.limit!.walletLedgerAccountId ?? null,
-            principalWalletCustomerId:
-              input.limit!.principalWalletCustomerId ?? input.limit!.principalId,
-            requireConfiguration: true,
-            requireKycTierPolicy: input.limit!.principalType.toUpperCase() === 'CUSTOMER',
-            institutionId: input.limit!.institutionId,
-            serviceClass: input.limit!.serviceClass ?? null,
-          });
+          const customerLimitOutcome = await this.limitEnforcementService!.enforceWithManager(
+            manager,
+            {
+              principalType: input.limit!.principalType,
+              principalId: input.limit!.principalId,
+              agentClassId: input.limit!.agentClassId ?? null,
+              product: input.limit!.product,
+              currency: input.limit!.currency ?? currency,
+              direction: input.limit!.direction,
+              channel: input.limit!.channel ?? null,
+              amountMinor: input.limit!.amountMinor,
+              idempotencyKey,
+              requestHash,
+              correlationId: input.correlationId ?? null,
+              now: new Date(),
+              walletLedgerAccountId: input.limit!.walletLedgerAccountId ?? null,
+              principalWalletCustomerId:
+                input.limit!.principalWalletCustomerId ?? input.limit!.principalId,
+              requireConfiguration: true,
+              requireKycTierPolicy: input.limit!.principalType.toUpperCase() === 'CUSTOMER',
+              institutionId: input.limit!.institutionId,
+              serviceClass: input.limit!.serviceClass ?? null,
+            },
+          );
           const agentRows = await manager.query<Array<{ agent_class_id: string | null }>>(
             `SELECT agent_class_id FROM agents WHERE id=$1 AND deleted_at IS NULL FOR SHARE`,
             [agentId],
           );
-          const agentWalletRows = await manager.query<Array<{ ledger_account_id: string; institution_id: string | null }>>(
+          const agentWalletRows = await manager.query<
+            Array<{ ledger_account_id: string; institution_id: string | null }>
+          >(
             `SELECT ledger_account_id,institution_id FROM wallet_accounts
               WHERE customer_id=$1 AND owner_class='AGENT' AND currency=$2 AND status='ACTIVE'
               FOR SHARE`,
-            [agentId,currency],
+            [agentId, currency],
           );
           if (agentRows.length !== 1 || agentWalletRows.length !== 1) {
             throw new ServiceUnavailableException('Agent limit context is unavailable');
           }
           const agentClassId = agentRows[0]!.agent_class_id;
-          if (!agentClassId) throw new ServiceUnavailableException('Agent service class is unavailable');
+          if (!agentClassId)
+            throw new ServiceUnavailableException('Agent service class is unavailable');
           const agentLimitIdempotencyKey = `agent-limit:${createHash('sha256')
             .update(`${agentId}:${idempotencyKey}`)
             .digest('hex')}`;
           limitIdempotencyKeys.push(agentLimitIdempotencyKey);
-          const agentDirection = ctx.canonicalService === 'CASH_IN'
-            ? 'OUTGOING'
-            : ctx.canonicalService === 'CASH_OUT'
-              ? 'INCOMING'
-              : null;
-          if (!agentDirection) throw new ServiceUnavailableException('Agent limit operation mapping is unavailable');
-          const agentLimitOutcome = await this.limitEnforcementService!.enforceWithManager(manager, {
-            principalType: 'AGENT',
-            principalId: agentId,
-            agentClassId,
-            product: input.limit!.product,
-            currency,
-            direction: agentDirection,
-            channel: input.limit!.channel ?? null,
-            amountMinor: String(input.limit!.amountMinor),
-            idempotencyKey: agentLimitIdempotencyKey,
-            requestHash: createHash('sha256').update(`${requestHash}:agent-limit`).digest('hex'),
-            correlationId: input.correlationId ?? null,
-            now: new Date(),
-            walletLedgerAccountId: agentWalletRows[0]!.ledger_account_id,
-            principalWalletCustomerId: agentId,
-            requireConfiguration: true,
-            institutionId: agentWalletRows[0]!.institution_id,
-          });
+          const agentDirection =
+            ctx.canonicalService === AgentService.CASH_IN
+              ? 'OUTGOING'
+              : ctx.canonicalService === AgentService.CASH_OUT
+                ? 'INCOMING'
+                : null;
+          if (!agentDirection)
+            throw new ServiceUnavailableException('Agent limit operation mapping is unavailable');
+          const agentLimitOutcome = await this.limitEnforcementService!.enforceWithManager(
+            manager,
+            {
+              principalType: 'AGENT',
+              principalId: agentId,
+              agentClassId,
+              product: input.limit!.product,
+              currency,
+              direction: agentDirection,
+              channel: input.limit!.channel ?? null,
+              amountMinor: String(input.limit!.amountMinor),
+              idempotencyKey: agentLimitIdempotencyKey,
+              requestHash: createHash('sha256').update(`${requestHash}:agent-limit`).digest('hex'),
+              correlationId: input.correlationId ?? null,
+              now: new Date(),
+              walletLedgerAccountId: agentWalletRows[0]!.ledger_account_id,
+              principalWalletCustomerId: agentId,
+              requireConfiguration: true,
+              institutionId: agentWalletRows[0]!.institution_id,
+            },
+          );
           const limitOutcome: EnforceResult = {
             ...customerLimitOutcome,
             ruleRefs: [

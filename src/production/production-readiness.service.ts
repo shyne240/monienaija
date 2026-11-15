@@ -11,8 +11,8 @@ import {
 // See test/v1-release-01-production-readiness-migration-sync.integration.spec.ts, which runs the
 // full migration chain against real PostgreSQL and fails the build if this constant and the
 // actual latest migration file ever diverge.
-const EXPECTED_MIGRATION_TIMESTAMP = '1785753600504';
-const EXPECTED_MIGRATION_NAME = 'InstitutionKycTierLimitGovernance1785753600504';
+const EXPECTED_MIGRATION_TIMESTAMP = '1785753600505';
+const EXPECTED_MIGRATION_NAME = 'KycIdentityRevisionAndEvidenceRead1785753600505';
 
 type Row = Record<string, unknown>;
 
@@ -21,7 +21,8 @@ type Row = Record<string, unknown>;
 // test evidence into a readiness override. Replace these blockers only alongside real,
 // independently verified integrations and their readiness checks.
 const FINANCIAL_DEPENDENCY_BLOCKERS: readonly string[] = [
-  'trusted_kyc_evidence_reader_unavailable',
+  'trusted_kyc_provider_activation_unverified',
+  'customer_kyc_consent_notice_and_policy_unverified',
   'identity_key_versions_unverified',
   'effective_kyc_policy_unverified',
   'provider_governance_and_routing_unverified',
