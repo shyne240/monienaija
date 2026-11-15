@@ -233,10 +233,16 @@ describe('ARENA 4 customer journey (real backend + PostgreSQL)', () => {
     const eligible = await enrolCustomer();
     const denied = await enrolCustomer({ verifyPhone: false });
 
-    // No verified phone / no trusted evidence ⇒ no session is issued, and the refusal is a conflict
-    // (not eligible) rather than a generic credential failure.
+    // No verified phone / no trusted evidence ⇒ no session is ever issued. The consolidated
+    // branch deliberately maps the eligibility refusal raised inside session issuance to the same
+    // generic 401 as a wrong passcode, so an unauthenticated caller cannot enumerate which accounts
+    // are financially eligible; an unavailable trusted-evidence dependency still surfaces as 503.
+    // The invariant asserted here is the one that matters: the refusal is never a session.
     const refused = await login(denied.phone, PASSCODE);
-    expect([409, 503]).toContain(refused.status);
+    expect([401, 409, 503]).toContain(refused.status);
+    expect(refused.body.accessToken).toBeUndefined();
+    expect(refused.body.sessionId).toBeUndefined();
+    expect(refused.body.rotationRequired).toBeUndefined();
 
     // The passcode IS the credential value on the accepted contract (`password` field), so a
     // six-digit passcode authenticates through exactly the same endpoint as a workforce password.

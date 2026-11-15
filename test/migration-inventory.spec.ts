@@ -49,9 +49,10 @@ describe('migration inventory', () => {
   it('adopts the published Arena 2 range and the Arena 1 financial engine range', () => {
     const timestamps = new Set(migrations.map((migration) => migration.timestamp));
     // ARENA 1/Arena 2 consolidation (Stage 3-5): the governed ledger reversal `0117` and the A6/A7
-    // financial-engine migrations `0140`-`0146` now ship with their published identifiers. They are
+    // financial-engine migrations `0140`-`0146` now ship with their published identifiers. Arena 4's
+    // customer credential recovery adds `0402` inside its allocated institutional range. They are all
     // adopted as published and never renumbered or duplicated.
-    for (const id of [117, 140, 141, 142, 143, 144, 145, 146]) {
+    for (const id of [117, 140, 141, 142, 143, 144, 145, 146, 402]) {
       expect(timestamps.has(`1785753600${id}`)).toBe(true);
     }
     for (const id of [120, 130, 131, 132, 200, 201, 202, 203, 204, 205]) {
