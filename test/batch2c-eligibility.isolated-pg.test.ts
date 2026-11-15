@@ -30,6 +30,10 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { DataSource } from 'typeorm';
 import { assertIsolatedKycCluster, isolatedKycCluster } from './support/kyc-isolated-cluster';
 import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
+import {
+  createControlledFundingPolicy,
+  overrideCashToCashFundingPolicy,
+} from './support/controlled-funding-policy';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
 
 // Portable provenance: see test/support/kyc-isolated-cluster.ts. No absolute path from any one
@@ -58,6 +62,10 @@ const snapshots = new Map<string, TierEvidenceSnapshot>();
 // Only explicitly provisioned synthetic subjects are authorized. Client inputs are lookup
 // values; these server-side fixtures represent independently verified policy and identity.
 const workforceInstitutions = new Map<string, string>();
+// ARENA 3B: Cash-to-Cash now resolves the *funding institution's* own suspense obligation. The
+// controlled funding-authority double below answers with the institution the governed fixture
+// actually provisioned (registered, activated, agent affiliated, wallet attributed).
+let c2cInstitutionId = '11111111-1111-4111-8111-111111111111';
 const fundingSubjects = new Map<string, { senderPhone: string; recipient: string }>();
 
 beforeAll(async () => {
@@ -83,23 +91,23 @@ beforeAll(async () => {
   await assertIsolatedKycCluster(db, cluster);
   await db.runMigrations({ transaction: 'all' });
   const { AppModule } = await import('../src/app.module');
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(DataSource)
-    .useValue(db)
+  // ARENA 3B: Cash-to-Cash funding admission requires an explicitly declared approved policy.
+  // The production binding stays fail-closed (`UnavailableCashToCashFundingPolicyAuthority`); this
+  // declares the exact policy the run relies on without weakening any institutional check.
+  const fundingPolicy = createControlledFundingPolicy();
+  const moduleRef = await overrideCashToCashFundingPolicy(
+    Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(DataSource)
+      .useValue(db),
+    fundingPolicy,
+  )
     .overrideProvider(A2_WORKFORCE_CONFIG)
-    .useValue({
-      ...workforceConfiguration({}),
-      enabled: true,
-      // Synthetic catalogue grant only: integration must use Arena 4's approved authority.
-      roles: [
-        {
-          roleKey: 'FINANCE_AUDITOR',
-          enabled: true,
-          scopes: ['institution.attribution.view'],
-          administrativeCapability: false,
-        },
-      ],
-    })
+    // The application's own workforce configuration, built from the same environment the app
+    // reads (`.env`, loaded by ConfigModule when AppModule is imported). The governed
+    // institutional workflow needs the real role catalogue, maker-checker rules and
+    // privileged-approval rate policy; inventing a parallel catalogue here would be a second
+    // authorization mechanism.
+    .useValue({ ...workforceConfiguration(process.env), enabled: true })
     .overrideProvider(CashOutInstitutionResolver)
     .useValue({
       resolve: (_manager: unknown, agentId: string) =>
@@ -131,7 +139,7 @@ beforeAll(async () => {
         if (wallets.length !== 1)
           throw new ServiceUnavailableException('fixture wallet unavailable');
         return {
-          institutionId: '11111111-1111-4111-8111-111111111111',
+          institutionId: c2cInstitutionId,
           senderIdentityFingerprint: 'a'.repeat(64),
           senderPolicyFingerprint: 'b'.repeat(64),
           fundingAuthorizationFingerprint: 'c'.repeat(64),
@@ -155,7 +163,7 @@ beforeAll(async () => {
     .useValue({
       resolve: () =>
         Promise.resolve({
-          institutionId: '11111111-1111-4111-8111-111111111111',
+          institutionId: c2cInstitutionId,
           evidenceFingerprint: 'a'.repeat(64),
         }),
     })
@@ -2225,6 +2233,20 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
   await app
     .get(WalletService)
     .createWallet({ customerId, currency: 'NGN', idempotencyKey: randomUUID() });
+  // ARENA 3B: the unclaimed Cash-to-Cash obligation is now the FUNDING INSTITUTION's own suspense
+  // liability, so the whole institutional context is provisioned through the governed workflows:
+  // institution registration/activation, customer enrolment, wallet attribution and the suspense
+  // account itself. No row is inserted directly and no approval is fabricated.
+  const { GovernedFinancialFixture } = await import('./support/governed-financial-fixture');
+  const governed = new GovernedFinancialFixture({ app, dataSource: db, label: 'b2c-c2c' });
+  c2cInstitutionId = await governed.institution();
+  await governed.enrolCustomer(customerId, c2cInstitutionId);
+  await governed.openInstitutionCashToCashSuspenseAccount(c2cInstitutionId);
+  const [customerWalletRow] = await db.query<Array<{ id: string }>>(
+    `SELECT id FROM wallet_accounts WHERE customer_id=$1 AND currency='NGN'`,
+    [customerId],
+  );
+  await governed.attributeWallet(customerWalletRow!.id, c2cInstitutionId);
   const agentId = randomUUID();
   await db.query(`INSERT INTO agents(id,reference,status) VALUES($1,$2,'ACTIVE')`, [
     agentId,
@@ -2255,9 +2277,12 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     pinVersion: 1,
     actor: agentId,
   });
-  await app
-    .get(WalletService)
-    .createWallet({ customerId: agentId, currency: 'NGN', idempotencyKey: randomUUID() });
+  // Governed affiliation + wallet + attribution + institutionally funded float.
+  const agentFunding = await governed.prepareAgentFundingWallet(agentId, {
+    institutionId: c2cInstitutionId,
+    fundAmountMinor: '1000',
+  });
+  expect(agentFunding.attribution.ledgerAccountId).toBeTruthy();
   const agentCredential = randomUUID(),
     deskSession = randomUUID();
   await db.query(
@@ -2280,42 +2305,31 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     agentAccess: 'SELF' as const,
   };
   const ledger = app.get(LedgerService);
-  const source = await ledger.createAccount({
-    code: `claim-source-${randomUUID()}`,
-    name: 'fixture source',
+  const suspenseAccountId =
+    await governed.openInstitutionCashToCashSuspenseAccount(c2cInstitutionId);
+  // Historical scenario in this test: a transfer with NO funding evidence must remain bound to the
+  // legacy platform obligation account, exactly as the accepted historical-compatibility contract
+  // requires. It is a platform account created through the ledger service, not an attribution.
+  const legacySource = await ledger.createAccount({
+    code: `legacy-source-${randomUUID()}`,
+    name: 'legacy fixture source',
     currency: 'NGN',
     accountType: LedgerAccountType.ASSET,
     allowNegativeBalance: true,
   });
-  let unclaimed = await db.query<Array<{ id: string }>>(
+  let legacyUnclaimed = await db.query<Array<{ id: string }>>(
     `SELECT id FROM ledger_accounts WHERE code='CASH_TO_CASH-UNCLAIMED-NGN'`,
   );
-  if (!unclaimed.length) {
+  if (!legacyUnclaimed.length) {
     const account = await ledger.createAccount({
       code: 'CASH_TO_CASH-UNCLAIMED-NGN',
-      name: 'fixture unclaimed',
+      name: 'legacy unclaimed fixture',
       currency: 'NGN',
       accountType: LedgerAccountType.LIABILITY,
       allowNegativeBalance: false,
     });
-    unclaimed = [{ id: account.id }];
+    legacyUnclaimed = [{ id: account.id }];
   }
-  const agentWallet = await db.query<Array<{ id: string; ledger_account_id: string }>>(
-    `SELECT id,ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
-    [agentId],
-  );
-  await ledger.postJournal({
-    idempotencyKey: randomUUID(),
-    currency: 'NGN',
-    lines: [
-      { accountId: source.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '1000' },
-      {
-        accountId: agentWallet[0]!.ledger_account_id,
-        direction: LedgerEntryDirection.CREDIT,
-        amountMinor: '1000',
-      },
-    ],
-  });
   const server = app.getHttpAdapter().getInstance();
   fundingSubjects.set(agentId, { senderPhone: '8011111111', recipient: phone });
   const fundingPayload = {
@@ -2368,7 +2382,7 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
   const affiliation = {
     outcome: 'RESOLVED' as const,
     agentId,
-    institutionId: '11111111-1111-4111-8111-111111111111',
+    institutionId: c2cInstitutionId,
     affiliationId: randomUUID(),
     institutionStatus: FinancialInstitutionStatus.APPROVED,
     resolvedAt: new Date().toISOString(),
@@ -2650,14 +2664,14 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
   ).toEqual([
     {
       funding_agent_id: agentId,
-      funding_wallet_id: agentWallet[0]!.id,
+      funding_wallet_id: agentFunding.wallet.walletId,
       funding_journal_id: funding.journalId,
     },
   ]);
   expect(
     await db.query(
       `SELECT direction,amount_minor::text FROM ledger_lines WHERE journal_id=$1 AND ledger_account_id=$2`,
-      [funding.journalId, agentWallet[0]!.ledger_account_id],
+      [funding.journalId, agentFunding.wallet.ledgerAccountId],
     ),
   ).toEqual([{ direction: 'DEBIT', amount_minor: '100' }]);
   const deniedSender = await server.inject({
@@ -2917,8 +2931,12 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
       idempotencyKey: randomUUID(),
       currency: 'NGN',
       lines: [
-        { accountId: source.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '100' },
-        { accountId: unclaimed[0]!.id, direction: LedgerEntryDirection.CREDIT, amountMinor: '100' },
+        { accountId: legacySource.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '100' },
+        {
+          accountId: legacyUnclaimed[0]!.id,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: '100',
+        },
       ],
     });
     const otherTransferId = randomUUID();
@@ -3117,7 +3135,7 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     expect(
       await db.query(
         `SELECT direction,amount_minor::text FROM ledger_lines WHERE journal_id=$1 AND ledger_account_id=$2`,
-        [rows[0]!.claim_journal_id, unclaimed[0]!.id],
+        [rows[0]!.claim_journal_id, suspenseAccountId],
       ),
     ).toEqual([{ direction: 'DEBIT', amount_minor: '100' }]);
     expect(
@@ -3376,9 +3394,13 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
       idempotencyKey: randomUUID(),
       currency: 'NGN',
       lines: [
-        { accountId: source.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '200' },
         {
-          accountId: agentWallet[0]!.ledger_account_id,
+          accountId: await governed.openInstitutionSettlementAccount(c2cInstitutionId),
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: '200',
+        },
+        {
+          accountId: agentFunding.wallet.ledgerAccountId,
           direction: LedgerEntryDirection.CREDIT,
           amountMinor: '200',
         },
