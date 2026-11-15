@@ -15,8 +15,8 @@ const policy = (): TierDecisionPolicy => ({
   regulatoryRequirementsConfirmed: true,
   effectiveFrom: new Date('2026-01-01T00:00:00Z'),
   effectiveUntil: null,
-  regulatory: { LEVEL_1: req(), LEVEL_2: req() },
-  operator: { LEVEL_1: req(), LEVEL_2: req() },
+  regulatory: { LEVEL_1: req(), LEVEL_2: req(), LEVEL_3: req() },
+  operator: { LEVEL_1: req(), LEVEL_2: req(), LEVEL_3: req() },
 });
 const evidence = (type: TierEvidenceType, override: Partial<TierEvidence> = {}): TierEvidence => ({
   id: randomUUID(),
@@ -46,6 +46,48 @@ describe('non-authoritative KYC tier decision', () => {
       highestTier: 'LEVEL_2',
       supportingEvidenceIds: [a.id, b.id].sort(),
     });
+  });
+  it('requires an explicit additional non-identity rule and trusted evidence for Tier 3', () => {
+    const p = policy();
+    p.regulatory.LEVEL_3.all = ['ADDRESS_VERIFICATION'];
+    const bvn = evidence('BVN'),
+      nin = evidence('NIN'),
+      address = evidence('ADDRESS_VERIFICATION');
+    expect(evaluate([bvn, nin], p).highestTier).toBe('LEVEL_2');
+    expect(evaluate([bvn, nin, address], p)).toMatchObject({
+      status: 'ELIGIBLE',
+      highestTier: 'LEVEL_3',
+      reason: 'TIER_3_REQUIREMENTS_MET',
+      supportingEvidenceIds: [bvn.id, nin.id, address.id].sort(),
+    });
+  });
+  it('does not let a Tier 3 any-of group be satisfied by BVN or NIN alone', () => {
+    const p = policy();
+    p.operator.LEVEL_3.any = [['BVN', 'ADDRESS_VERIFICATION']];
+    const bvn = evidence('BVN'),
+      nin = evidence('NIN'),
+      address = evidence('ADDRESS_VERIFICATION');
+    expect(evaluate([bvn, nin, address], p).highestTier).toBe('LEVEL_2');
+    p.operator.LEVEL_3.any = [['ADDRESS_VERIFICATION', 'UTILITY_BILL']];
+    expect(evaluate([bvn, nin, address], p)).toMatchObject({
+      status: 'ELIGIBLE',
+      highestTier: 'LEVEL_3',
+      supportingEvidenceIds: [bvn.id, nin.id, address.id].sort(),
+    });
+  });
+  it('does not treat synthetic additional Tier 3 evidence as trusted', () => {
+    const p = policy();
+    p.regulatory.LEVEL_3.all = ['ADDRESS_VERIFICATION'];
+    expect(
+      evaluate(
+        [
+          evidence('BVN'),
+          evidence('NIN'),
+          evidence('ADDRESS_VERIFICATION', { provenance: 'SYNTHETIC' }),
+        ],
+        p,
+      ).highestTier,
+    ).toBe('LEVEL_2');
   });
   it('never accepts synthetic evidence as a real approval', () => {
     expect(
@@ -142,7 +184,7 @@ describe('non-authoritative transition planning', () => {
       planTierTransition({ currentTier: 'LEVEL_1', legacyAssessment: false, decision: expired }),
     ).toMatchObject({ action: 'PROPOSE_TRANSITION', newTier: 'NONE', direction: 'DOWNGRADE' });
   });
-  it('does not propose downgrades for ambiguous, unconfigured, legacy or Tier 3 assessments', () => {
+  it('does not propose downgrades for ambiguous, unconfigured, or legacy assessments', () => {
     const review = evaluate([evidence('BVN', { status: 'REVIEW' })]);
     expect(
       planTierTransition({ currentTier: 'LEVEL_2', legacyAssessment: false, decision: review })
@@ -159,9 +201,13 @@ describe('non-authoritative transition planning', () => {
         .action,
     ).toBe('HOLD_FOR_REVIEW');
     expect(
-      planTierTransition({ currentTier: 'LEVEL_3', legacyAssessment: false, decision: eligible })
-        .action,
-    ).toBe('HOLD_FOR_REVIEW');
+      planTierTransition({ currentTier: 'LEVEL_3', legacyAssessment: false, decision: eligible }),
+    ).toMatchObject({
+      action: 'PROPOSE_TRANSITION',
+      oldTier: 'LEVEL_3',
+      newTier: 'LEVEL_1',
+      direction: 'DOWNGRADE',
+    });
   });
   it('refuses contradictory or forged decision shapes', () => {
     const d = evaluate([]);

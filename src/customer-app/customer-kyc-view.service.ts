@@ -5,7 +5,10 @@ import {
   validateTierPolicyDefinition,
   type TierPolicyDefinition,
 } from '../kyc-verification/kyc-tier-policy.service';
-import type { TierRequirements } from '../kyc-verification/kyc-tier-decision';
+import {
+  tier3HasAdditionalRequirement,
+  type TierRequirements,
+} from '../kyc-verification/kyc-tier-decision';
 
 /**
  * ARENA 4 (customer app) — customer-safe KYC projection.
@@ -26,7 +29,7 @@ import type { TierRequirements } from '../kyc-verification/kyc-tier-decision';
  *      rejection.
  */
 export interface CustomerKycRequirementView {
-  level: 'LEVEL_1' | 'LEVEL_2';
+  level: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3';
   regulatory: TierRequirements;
   operator: TierRequirements;
 }
@@ -58,7 +61,7 @@ export interface CustomerKycView {
   manualHold: { reason: string; since: string } | null;
   upgradePathway: {
     status: 'TOP_TIER' | 'POLICY_NOT_CONFIGURED' | 'MANUAL_REVIEW' | 'EVIDENCE_UNAVAILABLE';
-    nextLevel: 'LEVEL_1' | 'LEVEL_2' | null;
+    nextLevel: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3' | null;
   };
   asOf: string;
 }
@@ -67,14 +70,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const EVIDENCE_UNAVAILABLE_NOTE =
   'MonieNaija cannot yet assess verified identity evidence for tier upgrades. Your current tier is unchanged, and this summary does not judge any requirement satisfied or otherwise.';
 
-function nextLevelFor(level: string): 'LEVEL_1' | 'LEVEL_2' | null {
+function nextLevelFor(level: string): 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3' | null {
   switch (level.toUpperCase()) {
     case 'NONE':
       return 'LEVEL_1';
     case 'LEVEL_1':
       return 'LEVEL_2';
-    // LEVEL_2 is the highest tier in the managed tier model and LEVEL_3 is outside it, so neither
-    // has a managed upgrade path to offer here.
+    case 'LEVEL_2':
+      return 'LEVEL_3';
     default:
       return null;
   }
@@ -158,7 +161,9 @@ export class CustomerKycViewService {
 
     const policyConfigured = headVersion > 0 && definitions.length > 0;
     const requirements: CustomerKycRequirementView | null =
-      effective && nextLevel
+      effective &&
+      nextLevel &&
+      (nextLevel !== 'LEVEL_3' || tier3HasAdditionalRequirement(effective.definition))
         ? {
             level: nextLevel,
             regulatory: effective.definition.regulatory[nextLevel],

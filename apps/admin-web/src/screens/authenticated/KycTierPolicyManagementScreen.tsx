@@ -24,10 +24,14 @@ interface TierPolicyEditor {
   regulatoryLevel1Any: string;
   regulatoryLevel2All: string;
   regulatoryLevel2Any: string;
+  regulatoryLevel3All: string;
+  regulatoryLevel3Any: string;
   operatorLevel1All: string;
   operatorLevel1Any: string;
   operatorLevel2All: string;
   operatorLevel2Any: string;
+  operatorLevel3All: string;
+  operatorLevel3Any: string;
 }
 
 const EVIDENCE_CODES: readonly TierEvidenceCode[] = [
@@ -36,8 +40,19 @@ const EVIDENCE_CODES: readonly TierEvidenceCode[] = [
   'PHONE',
   'BIOMETRIC',
   'ADDRESS',
+  'ADDRESS_VERIFICATION',
   'UTILITY_BILL',
   'GPS',
+  'IDENTITY_DOCUMENT',
+  'DATE_OF_BIRTH',
+  'OCCUPATION',
+  'SOURCE_OF_FUNDS',
+  'SOURCE_OF_WEALTH',
+  'BUSINESS_PURPOSE',
+  'PEP_SCREENING',
+  'SANCTIONS_SCREENING',
+  'CUSTOMER_RISK_ASSESSMENT',
+  'ENHANCED_DUE_DILIGENCE',
 ];
 const EMPTY_EDITOR: TierPolicyEditor = {
   regulatoryRequirementsConfirmed: false,
@@ -47,10 +62,14 @@ const EMPTY_EDITOR: TierPolicyEditor = {
   regulatoryLevel1Any: '',
   regulatoryLevel2All: '',
   regulatoryLevel2Any: '',
+  regulatoryLevel3All: '',
+  regulatoryLevel3Any: '',
   operatorLevel1All: '',
   operatorLevel1Any: '',
   operatorLevel2All: '',
   operatorLevel2Any: '',
+  operatorLevel3All: '',
+  operatorLevel3Any: '',
 };
 
 function toLocalDateTime(value: string | null): string {
@@ -76,10 +95,14 @@ function editorFromDefinition(definition: KycTierPolicyDefinition | undefined): 
     regulatoryLevel1Any: groupText(definition.regulatory.LEVEL_1.any),
     regulatoryLevel2All: listText(definition.regulatory.LEVEL_2.all),
     regulatoryLevel2Any: groupText(definition.regulatory.LEVEL_2.any),
+    regulatoryLevel3All: listText(definition.regulatory.LEVEL_3.all),
+    regulatoryLevel3Any: groupText(definition.regulatory.LEVEL_3.any),
     operatorLevel1All: listText(definition.operator.LEVEL_1.all),
     operatorLevel1Any: groupText(definition.operator.LEVEL_1.any),
     operatorLevel2All: listText(definition.operator.LEVEL_2.all),
     operatorLevel2Any: groupText(definition.operator.LEVEL_2.any),
+    operatorLevel3All: listText(definition.operator.LEVEL_3.all),
+    operatorLevel3Any: groupText(definition.operator.LEVEL_3.any),
   };
 }
 function parseAll(value: string): TierEvidenceCode[] {
@@ -137,10 +160,12 @@ function definitionFromEditor(editor: TierPolicyEditor): KycTierPolicyDefinition
     regulatory: {
       LEVEL_1: requirements(editor.regulatoryLevel1All, editor.regulatoryLevel1Any),
       LEVEL_2: requirements(editor.regulatoryLevel2All, editor.regulatoryLevel2Any),
+      LEVEL_3: requirements(editor.regulatoryLevel3All, editor.regulatoryLevel3Any),
     },
     operator: {
       LEVEL_1: requirements(editor.operatorLevel1All, editor.operatorLevel1Any),
       LEVEL_2: requirements(editor.operatorLevel2All, editor.operatorLevel2Any),
+      LEVEL_3: requirements(editor.operatorLevel3All, editor.operatorLevel3Any),
     },
   };
 }
@@ -365,8 +390,9 @@ const KycTierPolicyManagementWorkspace: React.FC<
         <Alert tone="warning" title="Policy and evidence safeguards">
           Do not invent regulatory requirements: submit only values approved by the responsible
           governance process. The engine always retains the built-in Tier 1 BVN-or-NIN and Tier 2
-          BVN-and-NIN floors. Provider responses, synthetic fixtures, and policy approval alone do
-          not create trusted KYC evidence or manually assign a customer tier.
+          and Tier 3 BVN-and-NIN floors; Tier 3 also requires a separately approved, additional
+          non-BVN/NIN evidence rule. Provider responses, synthetic fixtures, and policy approval
+          alone do not create trusted KYC evidence or manually assign a customer tier.
         </Alert>
       </div>
 
@@ -469,10 +495,14 @@ const KycTierPolicyManagementWorkspace: React.FC<
               ['regulatoryLevel1Any', 'Regulatory · Tier 1 · any-of groups'],
               ['regulatoryLevel2All', 'Regulatory · Tier 2 · all required'],
               ['regulatoryLevel2Any', 'Regulatory · Tier 2 · any-of groups'],
+              ['regulatoryLevel3All', 'Regulatory · Tier 3 · all required'],
+              ['regulatoryLevel3Any', 'Regulatory · Tier 3 · any-of groups'],
               ['operatorLevel1All', 'Operator · Tier 1 · all required'],
               ['operatorLevel1Any', 'Operator · Tier 1 · any-of groups'],
               ['operatorLevel2All', 'Operator · Tier 2 · all required'],
               ['operatorLevel2Any', 'Operator · Tier 2 · any-of groups'],
+              ['operatorLevel3All', 'Operator · Tier 3 · all required'],
+              ['operatorLevel3Any', 'Operator · Tier 3 · any-of groups'],
             ] as const
           ).map(([key, label]) => (
             <Field

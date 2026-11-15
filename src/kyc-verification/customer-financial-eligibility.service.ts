@@ -50,7 +50,7 @@ export class CustomerFinancialEligibilityService {
       (requireActive && customer.status !== 'ACTIVE') ||
       (!requireActive && !['DRAFT', 'ACTIVE', 'SUSPENDED'].includes(customer.status)) ||
       customer.kyc_status !== 'APPROVED' ||
-      !['LEVEL_1', 'LEVEL_2'].includes(customer.kyc_level)
+      !['LEVEL_1', 'LEVEL_2', 'LEVEL_3'].includes(customer.kyc_level)
     )
       throw new ConflictException('Customer is not eligible for financial access');
     const now = (await manager.query<Array<{ now: Date }>>('SELECT clock_timestamp() AS now'))[0]!
@@ -93,8 +93,8 @@ export class CustomerFinancialEligibilityService {
       policy,
       evidence: source.evidence,
     });
-    const rank = { NONE: 0, LEVEL_1: 1, LEVEL_2: 2 } as const;
-    const approvedLevel = customer.kyc_level as 'LEVEL_1' | 'LEVEL_2';
+    const rank = { NONE: 0, LEVEL_1: 1, LEVEL_2: 2, LEVEL_3: 3 } as const;
+    const approvedLevel = customer.kyc_level as 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3';
     if (
       decision.status !== 'ELIGIBLE' ||
       !decision.highestTier ||

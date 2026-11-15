@@ -131,8 +131,19 @@ export const EVIDENCE_LABELS: Record<string, string> = {
   PHONE: 'Verified phone number',
   BIOMETRIC: 'Biometric verification',
   ADDRESS: 'Residential address',
+  ADDRESS_VERIFICATION: 'Address verification',
   UTILITY_BILL: 'Utility bill',
   GPS: 'Location confirmation',
+  IDENTITY_DOCUMENT: 'Government-issued identity document',
+  DATE_OF_BIRTH: 'Date of birth',
+  OCCUPATION: 'Occupation or business activity',
+  SOURCE_OF_FUNDS: 'Source of funds',
+  SOURCE_OF_WEALTH: 'Source of wealth',
+  BUSINESS_PURPOSE: 'Purpose of the account or service',
+  PEP_SCREENING: 'Politically exposed person screening',
+  SANCTIONS_SCREENING: 'Sanctions screening',
+  CUSTOMER_RISK_ASSESSMENT: 'Customer risk assessment',
+  ENHANCED_DUE_DILIGENCE: 'Enhanced due diligence',
 };
 
 export function evidenceLabel(code: string): string {

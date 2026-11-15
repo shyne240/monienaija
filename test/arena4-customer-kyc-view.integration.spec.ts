@@ -6,6 +6,8 @@ import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 
 import { CustomerKycViewService } from '../src/customer-app/customer-kyc-view.service';
+import { KycTierPolicyService } from '../src/kyc-verification/kyc-tier-policy.service';
+import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 
 import { AppModule } from '../src/app.module';
 import {
@@ -30,17 +32,38 @@ const POLICY_DEFINITION = {
   regulatory: {
     LEVEL_1: { all: ['PHONE'], any: [['BVN', 'NIN']] },
     LEVEL_2: { all: ['PHONE', 'ADDRESS'], any: [['BVN'], ['NIN']] },
+    LEVEL_3: { all: ['ADDRESS_VERIFICATION'], any: [] },
   },
   operator: {
     LEVEL_1: { all: [], any: [] },
     LEVEL_2: { all: ['UTILITY_BILL'], any: [] },
+    LEVEL_3: { all: [], any: [] },
   },
+};
+const policyMaker: AuthorizationPrincipal = {
+  type: 'OPERATOR',
+  principalId: 'maker:a4',
+  sessionId: '11111111-1111-4111-8111-111111111111',
+  roles: ['SUPER_ADMIN'],
+  scopes: ['kyc.policy.propose'],
+  customerAccess: 'NONE',
+  assuranceLevel: 'MFA',
+};
+const policyChecker: AuthorizationPrincipal = {
+  type: 'OPERATOR',
+  principalId: 'checker:a4',
+  sessionId: '22222222-2222-4222-8222-222222222222',
+  roles: ['COMPLIANCE'],
+  scopes: ['kyc.policy.approve'],
+  customerAccess: 'NONE',
+  assuranceLevel: 'MFA',
 };
 
 describe('ARENA 4 customer KYC projection (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
   let view: CustomerKycViewService;
+  let policies: KycTierPolicyService;
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a4custkyc');
@@ -56,6 +79,7 @@ describe('ARENA 4 customer KYC projection (real PostgreSQL)', () => {
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     view = app.get(CustomerKycViewService);
+    policies = app.get(KycTierPolicyService);
   }, 180000);
 
   afterAll(async () => {
@@ -94,26 +118,14 @@ describe('ARENA 4 customer KYC projection (real PostgreSQL)', () => {
     return { customerId };
   }
 
-  async function publishPolicy(): Promise<number> {
-    const proposalId = randomUUID();
-    await dataSource.query(
-      `INSERT INTO kyc_tier_policy_proposals
-        (id, request_id, expected_version, definition, fingerprint, maker_id, maker_session_id, checker_id, checker_session_id, state, decided_at)
-       VALUES ($1,$2,0,$3::jsonb,$4,'maker:a4','11111111-1111-4111-8111-111111111111','checker:a4','22222222-2222-4222-8222-222222222222','APPROVED',now())`,
-      [proposalId, randomUUID(), JSON.stringify(POLICY_DEFINITION), 'a'.repeat(64)],
-    );
-    await dataSource.query(
-      `INSERT INTO kyc_tier_policy_versions (version, proposal_id, definition, maker_id, checker_id)
-       VALUES (1,$1,$2::jsonb,'maker:a4','checker:a4')`,
-      [proposalId, JSON.stringify(POLICY_DEFINITION)],
-    );
-    // `truncateAllTables` removes the singleton head row created by the migration, so the head is
-    // restored explicitly rather than relying on an UPDATE that would silently affect no rows.
-    await dataSource.query(
-      `INSERT INTO kyc_tier_policy_head (singleton, version) VALUES (true, 1)
-       ON CONFLICT (singleton) DO UPDATE SET version=1`,
-    );
-    return 1;
+  async function publishPolicy(definition: unknown = POLICY_DEFINITION): Promise<number> {
+    const proposal = await policies.propose(policyMaker, {
+      requestId: randomUUID(),
+      expectedVersion: 0,
+      definition,
+    });
+    const decision = await policies.decide(policyChecker, proposal.id, true);
+    return decision.version;
   }
 
   it('rejects unauthenticated and foreign-token callers at the HTTP surface', async () => {
@@ -165,9 +177,21 @@ describe('ARENA 4 customer KYC projection (real PostgreSQL)', () => {
     expect(JSON.stringify(projection)).not.toMatch(/unmet|failed|rejected/i);
   });
 
-  it('offers no managed upgrade path for LEVEL_2 and reports a manual hold', async () => {
+  it('offers the governed Tier 3 requirements after LEVEL_2 and reports a manual hold', async () => {
     await publishPolicy();
-    const top = await createCustomer({ kycLevel: 'LEVEL_2', kycStatus: 'APPROVED' });
+    const tierTwo = await createCustomer({ kycLevel: 'LEVEL_2', kycStatus: 'APPROVED' });
+    const tierTwoProjection = await view.view(tierTwo.customerId);
+    expect(tierTwoProjection.upgradePathway).toEqual({
+      status: 'EVIDENCE_UNAVAILABLE',
+      nextLevel: 'LEVEL_3',
+    });
+    expect(tierTwoProjection.requirements).toEqual({
+      level: 'LEVEL_3',
+      regulatory: POLICY_DEFINITION.regulatory.LEVEL_3,
+      operator: POLICY_DEFINITION.operator.LEVEL_3,
+    });
+
+    const top = await createCustomer({ kycLevel: 'LEVEL_3', kycStatus: 'APPROVED' });
     const topProjection = await view.view(top.customerId);
     expect(topProjection.upgradePathway).toEqual({ status: 'TOP_TIER', nextLevel: null });
     expect(topProjection.requirements).toBeNull();
@@ -183,6 +207,32 @@ describe('ARENA 4 customer KYC projection (real PostgreSQL)', () => {
       nextLevel: 'LEVEL_2',
     });
     expect(heldProjection.manualHold?.reason).toBe('MANUAL_REVIEW');
+  });
+
+  it('does not present an empty legacy Level 3 policy as a published upgrade requirement', async () => {
+    const { regulatoryRequirementsConfirmed, effectiveFrom, effectiveUntil } = POLICY_DEFINITION;
+    const legacyDefinition = {
+      regulatoryRequirementsConfirmed,
+      effectiveFrom,
+      effectiveUntil,
+      regulatory: {
+        LEVEL_1: POLICY_DEFINITION.regulatory.LEVEL_1,
+        LEVEL_2: POLICY_DEFINITION.regulatory.LEVEL_2,
+      },
+      operator: {
+        LEVEL_1: POLICY_DEFINITION.operator.LEVEL_1,
+        LEVEL_2: POLICY_DEFINITION.operator.LEVEL_2,
+      },
+    };
+    await publishPolicy(legacyDefinition);
+    const tierTwo = await createCustomer({ kycLevel: 'LEVEL_2', kycStatus: 'APPROVED' });
+    const projection = await view.view(tierTwo.customerId);
+    expect(projection.policy).toEqual({ configured: true, version: 1 });
+    expect(projection.requirements).toBeNull();
+    expect(projection.upgradePathway).toEqual({
+      status: 'POLICY_NOT_CONFIGURED',
+      nextLevel: 'LEVEL_3',
+    });
   });
 
   it('surfaces the current assessment and last evaluation, and stays per-customer', async () => {

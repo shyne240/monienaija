@@ -131,7 +131,7 @@ test('tier policy workspace stays unconfigured and does not allow proposals with
   ).toBeTruthy();
   expect(
     screen.getByText(
-      /The engine always retains the built-in Tier 1 BVN-or-NIN and Tier 2 BVN-and-NIN floors/,
+      /The engine always retains the built-in Tier 1 BVN-or-NIN and Tier 2 and Tier 3 BVN-and-NIN floors/,
     ),
   ).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Submit policy proposal' })).toHaveProperty(
@@ -171,10 +171,12 @@ test('proposal and decision wrappers match the provider and tier-policy controll
       regulatory: {
         LEVEL_1: { all: [], any: [] },
         LEVEL_2: { all: [], any: [] },
+        LEVEL_3: { all: [], any: [] },
       },
       operator: {
         LEVEL_1: { all: [], any: [] },
         LEVEL_2: { all: [], any: [] },
+        LEVEL_3: { all: [], any: [] },
       },
     },
   };

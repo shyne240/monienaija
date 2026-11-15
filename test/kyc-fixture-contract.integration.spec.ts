@@ -5,6 +5,7 @@ import { createIntegrationDataSource, truncateAllTables } from './support/pg-har
 import {
   KYC_INITIAL_SINGLETON_STATE,
   makeCustomerFinanciallyEligible,
+  resetKycSingletons,
   restoreKycSingletons,
   seedGovernedTierPolicy,
 } from './support/kyc-test-fixtures';
@@ -97,10 +98,12 @@ describe('Shared KYC fixtures (real PostgreSQL)', () => {
     expect(config[0]!.configuration).toEqual(KYC_INITIAL_SINGLETON_STATE.providerConfiguration);
   });
 
-  it('restores those singletons even when a suite deleted them', async () => {
-    await dataSource.query('DELETE FROM kyc_registration_synthetic_provider_lock');
-    await dataSource.query('DELETE FROM kyc_provider_configuration');
-    await dataSource.query('DELETE FROM kyc_tier_policy_head');
+  it('restores those singletons after a disposable test-schema truncate', async () => {
+    // Protected row-level guards intentionally reject ordinary DELETEs, so exercise the same
+    // admin-only TRUNCATE path used by the shared integration harness before restoring seeds.
+    await dataSource.query(
+      'TRUNCATE TABLE kyc_registration_synthetic_provider_lock, kyc_provider_configuration, kyc_tier_policy_head',
+    );
     await restoreKycSingletons(dataSource);
     const lock: Array<{ provider: string }> = await dataSource.query(
       'SELECT provider FROM kyc_registration_synthetic_provider_lock',
@@ -168,9 +171,9 @@ describe('Shared KYC fixtures (real PostgreSQL)', () => {
     const handle = createTestEvidenceReader({ mode: 'ELIGIBLE' });
     const customerId = await createRawCustomer();
     await makeCustomerFinanciallyEligible(dataSource, customerId, handle);
-    // Return the governance tables to their migration-seeded "no approved policy" state.
-    await dataSource.query('DELETE FROM kyc_tier_policy_versions');
-    await dataSource.query('UPDATE kyc_tier_policy_head SET version=0 WHERE singleton=true');
+    // Return the governance tables to their migration-seeded "no approved policy" state using
+    // the disposable database reset, not ordinary writes against protected governance tables.
+    await resetKycSingletons(dataSource);
     await expect(requireEligible(serviceUsing(handle.reader), customerId)).rejects.toThrow(
       // The governed policy reader fails closed: with no approved policy version the gate refuses
       // with the financial-policy-unavailable branch instead of reaching the eligibility decision.

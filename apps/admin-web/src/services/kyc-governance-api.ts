@@ -54,8 +54,19 @@ export type TierEvidenceCode =
   | 'PHONE'
   | 'BIOMETRIC'
   | 'ADDRESS'
+  | 'ADDRESS_VERIFICATION'
   | 'UTILITY_BILL'
-  | 'GPS';
+  | 'GPS'
+  | 'IDENTITY_DOCUMENT'
+  | 'DATE_OF_BIRTH'
+  | 'OCCUPATION'
+  | 'SOURCE_OF_FUNDS'
+  | 'SOURCE_OF_WEALTH'
+  | 'BUSINESS_PURPOSE'
+  | 'PEP_SCREENING'
+  | 'SANCTIONS_SCREENING'
+  | 'CUSTOMER_RISK_ASSESSMENT'
+  | 'ENHANCED_DUE_DILIGENCE';
 export interface KycTierRequirements {
   all: TierEvidenceCode[];
   any: TierEvidenceCode[][];
@@ -64,8 +75,16 @@ export interface KycTierPolicyDefinition {
   regulatoryRequirementsConfirmed: true;
   effectiveFrom: string;
   effectiveUntil: string | null;
-  regulatory: { LEVEL_1: KycTierRequirements; LEVEL_2: KycTierRequirements };
-  operator: { LEVEL_1: KycTierRequirements; LEVEL_2: KycTierRequirements };
+  regulatory: {
+    LEVEL_1: KycTierRequirements;
+    LEVEL_2: KycTierRequirements;
+    LEVEL_3: KycTierRequirements;
+  };
+  operator: {
+    LEVEL_1: KycTierRequirements;
+    LEVEL_2: KycTierRequirements;
+    LEVEL_3: KycTierRequirements;
+  };
 }
 export interface KycTierPolicyVersion {
   version: number;

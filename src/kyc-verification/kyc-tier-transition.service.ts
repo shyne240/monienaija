@@ -17,7 +17,7 @@ import { UUID } from './kyc-orchestrator';
 
 type CustomerRow = {
   id: string;
-  kyc_level: TierLevel | 'LEVEL_3';
+  kyc_level: TierLevel;
   kyc_status: string;
   deleted_at: Date | null;
 };
@@ -113,7 +113,7 @@ export class KycTierTransitionService {
     if (!UUID.test(customerId)) throw new ConflictException('Invalid customer');
     // An approval is evaluated from locked authoritative evidence, never from the body.
     if (command.status === CustomerKycStatus.APPROVED) {
-      if (!['LEVEL_1', 'LEVEL_2'].includes(command.level))
+      if (!['LEVEL_1', 'LEVEL_2', 'LEVEL_3'].includes(command.level))
         throw new ConflictException('Invalid requested tier');
       const result = await this.processInternal(customerId, {
         actor: principal.principalId,
@@ -134,8 +134,6 @@ export class KycTierTransitionService {
       throw new ConflictException('A reason and a non-privileged tier are required');
     return this.db.transaction(async (m) => {
       const c = await this.lockCustomer(m, customerId);
-      if (c.kyc_level === 'LEVEL_3')
-        throw new ConflictException('Level 3 is outside this workflow');
       const current = await m.query<Array<{ id: string }>>(
         'SELECT id FROM customer_kyc_assessments WHERE customer_id=$1 AND is_current=true FOR UPDATE',
         [customerId],
@@ -271,8 +269,6 @@ export class KycTierTransitionService {
         (decision.status !== 'ELIGIBLE' || decision.highestTier !== context.expected)
       )
         throw new ConflictException('Evidence requirements are not satisfied');
-      if (context.allowLegacy && c.kyc_level === 'LEVEL_3')
-        throw new ConflictException('Level 3 is outside this workflow');
       if (context.allowLegacy) {
         if (holds.length > 0 || c.kyc_status !== 'APPROVED' || c.kyc_level === 'NONE') {
           await this.sessions?.revokeAllForCustomerInManager(
@@ -298,7 +294,6 @@ export class KycTierTransitionService {
       const reviewSuspension =
         !context.allowLegacy &&
         !legacy &&
-        c.kyc_level !== 'LEVEL_3' &&
         !holds[0] &&
         c.kyc_status === 'APPROVED' &&
         !!source &&
@@ -306,7 +301,6 @@ export class KycTierTransitionService {
       const expiredSuspension =
         !context.allowLegacy &&
         !legacy &&
-        c.kyc_level !== 'LEVEL_3' &&
         c.kyc_status === 'APPROVED' &&
         !!currentAssessment[0]?.expires_at &&
         currentAssessment[0].expires_at <= now &&

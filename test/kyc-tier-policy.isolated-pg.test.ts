@@ -47,8 +47,16 @@ const definition = () => ({
   regulatoryRequirementsConfirmed: true,
   effectiveFrom: '2026-01-01T00:00:00.000Z',
   effectiveUntil: null,
-  regulatory: { LEVEL_1: { all: [], any: [] }, LEVEL_2: { all: ['PHONE'], any: [] } },
-  operator: { LEVEL_1: { all: [], any: [] }, LEVEL_2: { all: [], any: [] } },
+  regulatory: {
+    LEVEL_1: { all: [], any: [] },
+    LEVEL_2: { all: ['PHONE'], any: [] },
+    LEVEL_3: { all: [], any: [] },
+  },
+  operator: {
+    LEVEL_1: { all: [], any: [] },
+    LEVEL_2: { all: [], any: [] },
+    LEVEL_3: { all: [], any: [] },
+  },
 });
 let svc: KycTierPolicyService;
 let created = false;
@@ -123,7 +131,11 @@ it('rejects malformed, unconfirmed and weakened-by-omission policy objects', asy
       ...cmd,
       definition: {
         ...definition(),
-        operator: { LEVEL_1: { all: [], any: [[]] }, LEVEL_2: { all: [], any: [] } },
+        operator: {
+          LEVEL_1: { all: [], any: [[]] },
+          LEVEL_2: { all: [], any: [] },
+          LEVEL_3: { all: [], any: [] },
+        },
       },
     }),
   ).rejects.toMatchObject({ code: 'INVALID' });

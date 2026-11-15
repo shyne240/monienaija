@@ -1,5 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { DataSource, EntityManager } from 'typeorm';
+import { AuthorizationService } from '../../src/authorization/authorization.service';
+import type { AuthorizationPrincipal } from '../../src/authorization/authorization.types';
+import { AuditEvent } from '../../src/operations/audit-event.entity';
+import { AuditService } from '../../src/operations/audit.service';
+import { KycTierPolicyService } from '../../src/kyc-verification/kyc-tier-policy.service';
 
 /**
  * Shared, real-PostgreSQL KYC fixtures.
@@ -77,6 +82,41 @@ async function tableExists(dataSource: DataSource, table: string): Promise<boole
  * A no-op when the suite's schema predates the KYC migrations (some older suites create a
  * partial schema), so this can be called unconditionally from `truncateAllTables`.
  */
+async function restoreGovernedSingleton(
+  dataSource: DataSource,
+  table: 'kyc_provider_configuration' | 'kyc_tier_policy_head',
+  trigger: 'kyc_provider_configuration_authority_guard' | 'kyc_tier_head_authority_guard',
+  insertSql: string,
+  parameters: unknown[],
+): Promise<void> {
+  const rows: Array<{ present: boolean }> = await dataSource.query(
+    `SELECT EXISTS (SELECT 1 FROM public.${table} WHERE singleton=true) AS present`,
+  );
+  if (rows[0]?.present) return;
+
+  const triggers: Array<{ present: boolean }> = await dataSource.query(
+    `SELECT EXISTS (
+       SELECT 1 FROM pg_trigger
+        WHERE tgrelid = to_regclass($1) AND tgname = $2 AND NOT tgisinternal
+     ) AS present`,
+    [`public.${table}`, trigger],
+  );
+  // The protected governance triggers correctly reject raw application inserts. This test-only
+  // reset is needed only after the integration harness has TRUNCATEd a disposable schema; restore
+  // the migration seed row, then immediately re-enable the exact guard on the table.
+  if (!triggers[0]?.present) {
+    await dataSource.query(insertSql, parameters);
+    return;
+  }
+
+  await dataSource.query(`ALTER TABLE public.${table} DISABLE TRIGGER ${trigger}`);
+  try {
+    await dataSource.query(insertSql, parameters);
+  } finally {
+    await dataSource.query(`ALTER TABLE public.${table} ENABLE TRIGGER ${trigger}`);
+  }
+}
+
 export async function restoreKycSingletons(dataSource: DataSource): Promise<void> {
   if (await tableExists(dataSource, 'kyc_registration_synthetic_provider_lock')) {
     for (const provider of KYC_INITIAL_SINGLETON_STATE.syntheticProviderLock) {
@@ -89,10 +129,12 @@ export async function restoreKycSingletons(dataSource: DataSource): Promise<void
   }
 
   if (await tableExists(dataSource, 'kyc_provider_configuration')) {
-    await dataSource.query(
-      `INSERT INTO kyc_provider_configuration (singleton, version, configuration)
-       VALUES (true, $1, $2::jsonb)
-       ON CONFLICT (singleton) DO NOTHING`,
+    await restoreGovernedSingleton(
+      dataSource,
+      'kyc_provider_configuration',
+      'kyc_provider_configuration_authority_guard',
+      `INSERT INTO public.kyc_provider_configuration (singleton, version, configuration)
+       VALUES (true, $1, $2::jsonb)`,
       [
         KYC_INITIAL_SINGLETON_STATE.providerConfigurationVersion,
         JSON.stringify(KYC_INITIAL_SINGLETON_STATE.providerConfiguration),
@@ -101,9 +143,11 @@ export async function restoreKycSingletons(dataSource: DataSource): Promise<void
   }
 
   if (await tableExists(dataSource, 'kyc_tier_policy_head')) {
-    await dataSource.query(
-      `INSERT INTO kyc_tier_policy_head (singleton, version) VALUES (true, $1)
-       ON CONFLICT (singleton) DO NOTHING`,
+    await restoreGovernedSingleton(
+      dataSource,
+      'kyc_tier_policy_head',
+      'kyc_tier_head_authority_guard',
+      `INSERT INTO public.kyc_tier_policy_head (singleton, version) VALUES (true, $1)`,
       [KYC_INITIAL_SINGLETON_STATE.tierPolicyVersion],
     );
   }
@@ -111,20 +155,31 @@ export async function restoreKycSingletons(dataSource: DataSource): Promise<void
 
 /**
  * Forces the singletons back to their migration-seeded state, discarding any policy a test
- * approved. Only for tests that are specifically about "unconfigured" behaviour.
+ * approved. This is an admin-only TRUNCATE reset for disposable integration databases; ordinary
+ * DELETE/UPDATE paths remain protected by the governance guards.
  */
 export async function resetKycSingletons(dataSource: DataSource): Promise<void> {
-  if (await tableExists(dataSource, 'kyc_tier_policy_versions')) {
-    await dataSource.query('DELETE FROM kyc_tier_policy_versions');
+  const governanceTables = [
+    'kyc_registration_synthetic_provider_lock',
+    'kyc_provider_configuration',
+    'kyc_provider_change_proposals',
+    'kyc_provider_configuration_history',
+    'kyc_tier_policy_head',
+    'kyc_tier_policy_proposals',
+    'kyc_tier_policy_versions',
+  ];
+  const present: string[] = [];
+  for (const table of governanceTables) {
+    if (await tableExists(dataSource, table)) present.push(`public.${table}`);
   }
-  if (await tableExists(dataSource, 'kyc_tier_policy_head')) {
-    await dataSource.query('DELETE FROM kyc_tier_policy_head');
+  if (present.length > 0) {
+    await dataSource.query(`TRUNCATE TABLE ${present.join(', ')} CASCADE`);
   }
-  if (await tableExists(dataSource, 'kyc_provider_configuration')) {
-    await dataSource.query('DELETE FROM kyc_provider_configuration');
-  }
-  if (await tableExists(dataSource, 'kyc_registration_synthetic_provider_lock')) {
-    await dataSource.query('DELETE FROM kyc_registration_synthetic_provider_lock');
+  const protectedRows: Array<{ present: boolean }> = await dataSource.query(
+    `SELECT to_regclass('protected_authority.kyc_governance_decisions') IS NOT NULL AS present`,
+  );
+  if (protectedRows[0]?.present) {
+    await dataSource.query('TRUNCATE TABLE protected_authority.kyc_governance_decisions');
   }
   await restoreKycSingletons(dataSource);
 }
@@ -151,10 +206,12 @@ export const DEFAULT_GOVERNED_TIER_POLICY = {
   regulatory: {
     LEVEL_1: { all: [], any: [] },
     LEVEL_2: { all: ['PHONE'], any: [] },
+    LEVEL_3: { all: [], any: [] },
   },
   operator: {
     LEVEL_1: { all: [], any: [] },
     LEVEL_2: { all: [], any: [] },
+    LEVEL_3: { all: [], any: [] },
   },
 } as const;
 
@@ -165,8 +222,9 @@ export interface GovernedTierPolicy {
 
 /**
  * Installs a governed (maker-checker approved) tier policy as version 1 and points the head at
- * it, exercising the real read path (`kyc_tier_policy_versions` + `kyc_tier_policy_head`).
- * Idempotent: if an approved version already exists, its version number is returned unchanged.
+ * it through the real KycTierPolicyService proposal/decision path, including protected checker
+ * evidence. Idempotent: if an approved version already exists, its version number is returned
+ * unchanged.
  */
 export async function seedGovernedTierPolicy(
   dataSource: DataSource,
@@ -181,31 +239,50 @@ export async function seedGovernedTierPolicy(
   const existing: Array<{ version: number; proposal_id: string }> = await dataSource.query(
     'SELECT version, proposal_id FROM kyc_tier_policy_versions ORDER BY version DESC LIMIT 1',
   );
+  const heads: Array<{ version: number }> = await dataSource.query(
+    'SELECT version FROM kyc_tier_policy_head WHERE singleton=true',
+  );
+  if (!heads[0]) throw new Error('KYC tier policy head singleton is unavailable');
   if (existing[0]) {
-    await dataSource.query('UPDATE kyc_tier_policy_head SET version=$1 WHERE singleton=true', [
-      existing[0].version,
-    ]);
+    if (heads[0].version !== existing[0].version) {
+      throw new Error('KYC tier policy fixture history and protected head disagree');
+    }
     return { version: existing[0].version, proposalId: existing[0].proposal_id };
   }
-  const version = 1;
-  const proposalId = randomUUID();
-  await dataSource.query(
-    `INSERT INTO kyc_tier_policy_proposals
-       (id, request_id, expected_version, definition, fingerprint, maker_id, maker_session_id,
-        checker_id, checker_session_id, state, decided_at)
-     VALUES ($1, $2, 0, $3::jsonb, $4, $5, $2, $6, $2, 'APPROVED', clock_timestamp())`,
-    [proposalId, randomUUID(), JSON.stringify(definition), '0'.repeat(64), makerId, checkerId],
+  if (heads[0].version !== 0) {
+    throw new Error('KYC tier policy fixture has a nonzero head without an approved version');
+  }
+
+  const principal = (
+    principalId: string,
+    role: string,
+    functionCode: string,
+  ): AuthorizationPrincipal => ({
+    type: 'OPERATOR',
+    principalId,
+    sessionId: randomUUID(),
+    roles: [role],
+    scopes: [functionCode],
+    customerAccess: 'NONE',
+    assuranceLevel: 'MFA',
+  });
+  const maker = principal(makerId, 'SUPER_ADMIN', 'kyc.policy.propose');
+  const checker = principal(checkerId, 'COMPLIANCE', 'kyc.policy.approve');
+  const authorization = new AuthorizationService(
+    dataSource,
+    new AuditService(dataSource.getRepository(AuditEvent)),
   );
-  await dataSource.query(
-    `INSERT INTO kyc_tier_policy_versions
-       (version, proposal_id, definition, maker_id, checker_id)
-     VALUES ($1, $2, $3::jsonb, $4, $5)`,
-    [version, proposalId, JSON.stringify(definition), makerId, checkerId],
-  );
-  await dataSource.query('UPDATE kyc_tier_policy_head SET version = $1 WHERE singleton = true', [
-    version,
-  ]);
-  return { version, proposalId };
+  const policies = new KycTierPolicyService(dataSource, authorization);
+  const proposal = await policies.propose(maker, {
+    requestId: randomUUID(),
+    expectedVersion: heads[0].version,
+    definition,
+  });
+  const decision = await policies.decide(checker, proposal.id, true);
+  if (decision.state !== 'APPROVED') {
+    throw new Error('KYC tier policy fixture was not approved');
+  }
+  return { version: decision.version, proposalId: proposal.id };
 }
 
 export interface SeedIdentityEvidenceOptions {

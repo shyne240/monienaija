@@ -79,7 +79,7 @@ export interface CustomerKycProjection {
   } | null;
   policy: { configured: boolean; version: number | null };
   requirements: {
-    level: 'LEVEL_1' | 'LEVEL_2';
+    level: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3';
     regulatory: { all: string[]; any: string[][] };
     operator: { all: string[]; any: string[][] };
   } | null;
@@ -96,7 +96,10 @@ export interface CustomerKycProjection {
     decidedAt: string;
   } | null;
   manualHold: { reason: string; since: string } | null;
-  upgradePathway: { status: KycUpgradePathwayStatus; nextLevel: 'LEVEL_1' | 'LEVEL_2' | null };
+  upgradePathway: {
+    status: KycUpgradePathwayStatus;
+    nextLevel: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3' | null;
+  };
   asOf: string;
 }
 

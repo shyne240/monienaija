@@ -65,8 +65,16 @@ const definition = () => ({
   regulatoryRequirementsConfirmed: true,
   effectiveFrom: '2020-01-01T00:00:00.000Z',
   effectiveUntil: null,
-  regulatory: { LEVEL_1: { all: [], any: [] }, LEVEL_2: { all: [], any: [] } },
-  operator: { LEVEL_1: { all: [], any: [] }, LEVEL_2: { all: [], any: [] } },
+  regulatory: {
+    LEVEL_1: { all: [], any: [] },
+    LEVEL_2: { all: [], any: [] },
+    LEVEL_3: { all: [], any: [] },
+  },
+  operator: {
+    LEVEL_1: { all: [], any: [] },
+    LEVEL_2: { all: [], any: [] },
+    LEVEL_3: { all: [], any: [] },
+  },
 });
 async function customer() {
   const id = randomUUID();

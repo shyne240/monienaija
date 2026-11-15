@@ -9,7 +9,12 @@ import { KycFoundationError } from './kyc.types';
 import { appendKycGovernanceDecision } from './kyc-governance-authority';
 import { decideTier, type TierDecisionPolicy, type TierRequirements } from './kyc-tier-decision';
 
-type Pair = { LEVEL_1: TierRequirements; LEVEL_2: TierRequirements };
+type Pair = {
+  LEVEL_1: TierRequirements;
+  LEVEL_2: TierRequirements;
+  LEVEL_3: TierRequirements;
+};
+const emptyRequirements = (): TierRequirements => ({ all: [], any: [] });
 export interface TierPolicyDefinition {
   regulatoryRequirementsConfirmed: true;
   effectiveFrom: string;
@@ -35,8 +40,20 @@ export function validateTierPolicyDefinition(input: unknown): TierPolicyDefiniti
     input.regulatoryRequirementsConfirmed !== true ||
     typeof input.effectiveFrom !== 'string' ||
     (input.effectiveUntil !== null && typeof input.effectiveUntil !== 'string') ||
-    !exact(input.regulatory, ['LEVEL_1', 'LEVEL_2']) ||
-    !exact(input.operator, ['LEVEL_1', 'LEVEL_2'])
+    !input.regulatory ||
+    !exact(
+      input.regulatory,
+      Object.keys(input.regulatory).includes('LEVEL_3')
+        ? ['LEVEL_1', 'LEVEL_2', 'LEVEL_3']
+        : ['LEVEL_1', 'LEVEL_2'],
+    ) ||
+    !input.operator ||
+    !exact(
+      input.operator,
+      Object.keys(input.operator).includes('LEVEL_3')
+        ? ['LEVEL_1', 'LEVEL_2', 'LEVEL_3']
+        : ['LEVEL_1', 'LEVEL_2'],
+    )
   )
     throw new KycFoundationError('INVALID');
   const date = (x: string) => {
@@ -47,8 +64,13 @@ export function validateTierPolicyDefinition(input: unknown): TierPolicyDefiniti
   };
   const from = date(input.effectiveFrom);
   const until = input.effectiveUntil === null ? null : date(input.effectiveUntil);
-  const regulatory = input.regulatory as unknown as Pair,
-    operator = input.operator as unknown as Pair;
+  const normalize = (value: Record<string, unknown>): Pair => ({
+    LEVEL_1: value.LEVEL_1 as TierRequirements,
+    LEVEL_2: value.LEVEL_2 as TierRequirements,
+    LEVEL_3: (value.LEVEL_3 as TierRequirements | undefined) ?? emptyRequirements(),
+  });
+  const regulatory = normalize(input.regulatory),
+    operator = normalize(input.operator);
   const policy: TierDecisionPolicy = {
     version: 'check',
     approved: true,

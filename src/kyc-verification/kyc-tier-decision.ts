@@ -9,11 +9,23 @@ export const TIER_EVIDENCE_TYPES = [
   'PHONE',
   'BIOMETRIC',
   'ADDRESS',
+  'ADDRESS_VERIFICATION',
   'UTILITY_BILL',
   'GPS',
+  'IDENTITY_DOCUMENT',
+  'DATE_OF_BIRTH',
+  'OCCUPATION',
+  'SOURCE_OF_FUNDS',
+  'SOURCE_OF_WEALTH',
+  'BUSINESS_PURPOSE',
+  'PEP_SCREENING',
+  'SANCTIONS_SCREENING',
+  'CUSTOMER_RISK_ASSESSMENT',
+  'ENHANCED_DUE_DILIGENCE',
 ] as const;
 export type TierEvidenceType = (typeof TIER_EVIDENCE_TYPES)[number];
-export type TierLevel = 'NONE' | 'LEVEL_1' | 'LEVEL_2';
+export type TierLevel = 'NONE' | 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3';
+export type AssessedTierLevel = Exclude<TierLevel, 'NONE'>;
 export type TierEvidenceStatus = 'VERIFIED' | 'REJECTED' | 'REVIEW' | 'REVOKED';
 export type TierEvidenceProvenance = 'VERIFIED_PROVIDER' | 'AUTHORIZED_REVIEW' | 'SYNTHETIC';
 export interface TierEvidence {
@@ -38,9 +50,9 @@ export interface TierDecisionPolicy {
   effectiveFrom: Date;
   effectiveUntil: Date | null;
   /** Additional confirmed regulatory requirements, separate from the fixed mission floor. */
-  regulatory: { LEVEL_1: TierRequirements; LEVEL_2: TierRequirements };
+  regulatory: Record<AssessedTierLevel, TierRequirements>;
   /** Operator requirements can add constraints, never remove either regulatory layer. */
-  operator: { LEVEL_1: TierRequirements; LEVEL_2: TierRequirements };
+  operator: Record<AssessedTierLevel, TierRequirements>;
 }
 export interface TierDecision {
   status: 'NOT_CONFIGURED' | 'PENDING' | 'REVIEW' | 'ELIGIBLE';
@@ -92,17 +104,54 @@ function validPolicy(p: TierDecisionPolicy | null, now: Date): p is TierDecision
     !p.operator
   )
     return false;
-  return (
-    validRequirements(p.regulatory.LEVEL_1) &&
-    validRequirements(p.regulatory.LEVEL_2) &&
-    validRequirements(p.operator.LEVEL_1) &&
-    validRequirements(p.operator.LEVEL_2)
+  const tiers: AssessedTierLevel[] = ['LEVEL_1', 'LEVEL_2', 'LEVEL_3'];
+  if (
+    !tiers.every(
+      (tier) => validRequirements(p.regulatory[tier]) && validRequirements(p.operator[tier]),
+    )
+  )
+    return false;
+  return true;
+}
+const isTier3AdditionalType = (type: TierEvidenceType): boolean => type !== 'BVN' && type !== 'NIN';
+
+/**
+ * A Tier 3 rule must require at least one non-BVN/NIN item on every satisfying path. An any-of
+ * group that mixes BVN/NIN with an extra code is not enough: that group could be satisfied by the
+ * identity floor alone. Legacy two-tier policies normalize to empty Level 3 rules and therefore
+ * leave Level 3 unavailable until a separately approved extra requirement is published.
+ */
+export function tier3HasAdditionalRequirement(
+  p: Pick<TierDecisionPolicy, 'regulatory' | 'operator'>,
+): boolean {
+  return [p.regulatory.LEVEL_3, p.operator.LEVEL_3].some(
+    (requirements) =>
+      requirements.all.some(isTier3AdditionalType) ||
+      requirements.any.some((group) => group.every(isTier3AdditionalType)),
   );
+}
+
+function tier3AdditionalEvidenceType(
+  p: TierDecisionPolicy,
+  have: (type: TierEvidenceType) => boolean,
+): TierEvidenceType | null {
+  for (const requirements of [p.regulatory.LEVEL_3, p.operator.LEVEL_3]) {
+    const required = requirements.all.find((type) => isTier3AdditionalType(type) && have(type));
+    if (required) return required;
+    for (const group of requirements.any) {
+      if (group.every(isTier3AdditionalType)) {
+        const available = group.find(have);
+        if (available) return available;
+      }
+    }
+  }
+  return null;
 }
 /**
  * This computes a candidate only. Positive output does not establish provenance,
  * policy approval, consent or regulatory sufficiency; those must be verified by a
- * future transactional adapter. Tier 3 is intentionally outside this model.
+ * transactional adapter. Tier 3 requires both identity numbers plus an explicit extra
+ * all-of/any-of requirement in the approved policy.
  */
 export function decideTier(input: {
   customerId: string;
@@ -176,6 +225,13 @@ export function decideTier(input: {
     (have('BVN') || have('NIN')) && meets(p.regulatory.LEVEL_1) && meets(p.operator.LEVEL_1);
   const two =
     one && have('BVN') && have('NIN') && meets(p.regulatory.LEVEL_2) && meets(p.operator.LEVEL_2);
+  const tier3AdditionalEvidence = tier3AdditionalEvidenceType(p, have);
+  const three =
+    two &&
+    tier3HasAdditionalRequirement(p) &&
+    tier3AdditionalEvidence !== null &&
+    meets(p.regulatory.LEVEL_3) &&
+    meets(p.operator.LEVEL_3);
   if (!one) return result('PENDING', 'NONE', 'REQUIREMENTS_NOT_MET');
   // Select a deterministic, minimal set of evidence types actually used by the rules.
   const types = new Set<TierEvidenceType>(two ? ['BVN', 'NIN'] : [have('BVN') ? 'BVN' : 'NIN']);
@@ -183,15 +239,21 @@ export function decideTier(input: {
     p.regulatory.LEVEL_1,
     p.operator.LEVEL_1,
     ...(two ? [p.regulatory.LEVEL_2, p.operator.LEVEL_2] : []),
+    ...(three ? [p.regulatory.LEVEL_3, p.operator.LEVEL_3] : []),
   ];
   for (const rule of required) {
     for (const type of rule.all) types.add(type);
     for (const group of rule.any) {
+      const preferAdditional =
+        three && group.every(isTier3AdditionalType) ? group.find(have) : undefined;
       const existing = group.find((type) => types.has(type));
-      const chosen = existing ?? group.find(have);
+      const chosen = preferAdditional ?? existing ?? group.find(have);
       if (chosen) types.add(chosen);
     }
   }
+  // Ensure the evidence item that makes the additional Tier 3 floor actionable is included in the
+  // audited supporting set, even if a prior inherited any-of group selected another item.
+  if (three && tier3AdditionalEvidence) types.add(tier3AdditionalEvidence);
   const supporting = [...types].map(
     (type) =>
       usable
@@ -201,8 +263,8 @@ export function decideTier(input: {
   );
   return result(
     'ELIGIBLE',
-    two ? 'LEVEL_2' : 'LEVEL_1',
-    two ? 'TIER_2_REQUIREMENTS_MET' : 'TIER_1_REQUIREMENTS_MET',
+    three ? 'LEVEL_3' : two ? 'LEVEL_2' : 'LEVEL_1',
+    three ? 'TIER_3_REQUIREMENTS_MET' : two ? 'TIER_2_REQUIREMENTS_MET' : 'TIER_1_REQUIREMENTS_MET',
     supporting.sort(),
   );
 }
@@ -221,11 +283,12 @@ export type TierTransitionPlan =
 
 /**
  * Candidate plan only, never a mutation. Callers must re-evaluate in the same
- * transaction as any eventual authorized change. In particular a legacy or
- * Level 3 assessment is not silently downgraded by missing new evidence.
+ * transaction as any eventual authorized change. A legacy assessment is not
+ * silently changed by a new evidence model; managed Level 3 assessments use the
+ * same explicit evidence/reassessment rules as the lower tiers.
  */
 export function planTierTransition(input: {
-  currentTier: TierLevel | 'LEVEL_3';
+  currentTier: TierLevel;
   legacyAssessment: boolean;
   decision: TierDecision;
 }): TierTransitionPlan {
@@ -242,14 +305,13 @@ export function planTierTransition(input: {
     (decision.status === 'PENDING' &&
       (decision.highestTier !== 'NONE' || decision.supportingEvidenceIds.length !== 0)) ||
     (decision.status === 'ELIGIBLE' &&
-      (!['LEVEL_1', 'LEVEL_2'].includes(decision.highestTier ?? '') ||
+      (!['LEVEL_1', 'LEVEL_2', 'LEVEL_3'].includes(decision.highestTier ?? '') ||
         decision.supportingEvidenceIds.length === 0)) ||
     decision.highestTier === null
   )
     return { action: 'HOLD_FOR_REVIEW', reason: 'DECISION_NOT_ACTIONABLE', decision };
-  if (currentTier === 'LEVEL_3' || legacyAssessment)
-    return { action: 'HOLD_FOR_REVIEW', reason: 'LEGACY_OR_LEVEL_3', decision };
-  const rank: Record<TierLevel, number> = { NONE: 0, LEVEL_1: 1, LEVEL_2: 2 };
+  if (legacyAssessment) return { action: 'HOLD_FOR_REVIEW', reason: 'LEGACY_ASSESSMENT', decision };
+  const rank: Record<TierLevel, number> = { NONE: 0, LEVEL_1: 1, LEVEL_2: 2, LEVEL_3: 3 };
   if (!(decision.highestTier in rank))
     return { action: 'HOLD_FOR_REVIEW', reason: 'INVALID_CANDIDATE', decision };
   if (decision.highestTier === currentTier)
