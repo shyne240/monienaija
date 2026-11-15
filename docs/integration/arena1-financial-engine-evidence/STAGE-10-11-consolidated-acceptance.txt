@@ -33,7 +33,9 @@ Environment (Stage 11 execution model)
 5. Compilation, build, lint, format
    npx tsc --noEmit -p tsconfig.json .......... 0 errors in src/ and test/
    npm run build (nest build) ................. exit 0
-   npm run lint ............................... 0 errors, 7 warnings (unused eslint-disable directives)
+   npm run lint ............................... 0 errors, 5 warnings (unused eslint-disable directives,
+                                                all pre-existing: the two directives added by the new pool
+                                                spec were removed rather than kept unused)
    npm run format:check ....................... fails on exactly the 30 pre-existing files documented in
                                                 the Stage 1 tooling-exception record; no file touched by
                                                 this consolidation is in that list

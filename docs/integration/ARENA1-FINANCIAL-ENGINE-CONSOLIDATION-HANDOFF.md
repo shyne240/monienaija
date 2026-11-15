@@ -75,7 +75,7 @@ Full detail: `docs/integration/arena1-financial-engine-evidence/`.
 | `apps/customer-mobile`                                            | **14 suites / 125 tests**, exit 0                                                                    |
 | `npx tsc --noEmit`                                                | 0 errors                                                                                             |
 | `npm run build`                                                   | exit 0                                                                                               |
-| `npm run lint`                                                    | 0 errors, 7 warnings (unused eslint-disable directives)                                              |
+| `npm run lint`                                                    | 0 errors, 5 warnings (pre-existing unused eslint-disable directives)                                 |
 | `npm run format:check`                                            | fails on exactly the 30 pre-existing files (§5), none touched here                                   |
 
 Stage-specific evidence:
@@ -117,15 +117,15 @@ No group is claimed as accepted that was not executed; no failed group was softe
 8. **Commitment recovery for settled-but-returned payments** — rejected by design until an
    authenticated, operation- and amount-bound return outcome and an approved accounting policy exist.
 9. **Release-remediation tooling exceptions** — repo-wide Prettier on 30 untouched files, the
-   `apps/customer-mobile` `npm ci` lockfile drift (EUSAGE), 7 lint warnings.
+   `apps/customer-mobile` `npm ci` lockfile drift (EUSAGE), 5 pre-existing lint warnings.
 
 ## 5. Pre-existing tooling exceptions (unchanged, tracked)
 
 | Item                            | Status                                                                              |
-| ------------------------------- | ----------------------------------------------------------------------------------- |
+| ------------------------------- | ----------------------------------------------------------------------------------- | --- |
 | `npm run format:check`          | fails on 30 files, all pre-existing and untouched by this consolidation             |
 | `apps/customer-mobile` `npm ci` | fails with EUSAGE lockfile drift; the workspace's test suite still runs (125 tests) |
-| `npm run lint` warnings         | 7 unused eslint-disable directives                                                  |
+| `npm run lint` warnings         | 5 unused eslint-disable directives, all pre-existing                                |     |
 
 ## 6. Arena 4 integration instructions
 
