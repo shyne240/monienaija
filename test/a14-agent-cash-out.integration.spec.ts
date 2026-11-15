@@ -931,11 +931,8 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       pinVersion: 1,
       actor: pendingId,
     });
-    await walletService.createWallet({
-      customerId: pendingId,
-      currency: 'NGN',
-      idempotencyKey: `pend-wallet-${pendingId}-${randomUUID()}`,
-    });
+    // Wallet creation authority refuses a non-ACTIVE Agent owner, so no wallet is provisioned: the
+    // denial must come from Agent authorization, not from a missing wallet.
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
     // A PENDING Agent cannot hold an authenticated session, so the governed challenge is never

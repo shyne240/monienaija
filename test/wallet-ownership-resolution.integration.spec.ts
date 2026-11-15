@@ -45,6 +45,7 @@ import type { AuthorizationPrincipal } from '../src/authorization/authorization.
 import { walletOwnershipResolutionFingerprint } from '../src/wallet/wallet-ownership-resolution.service';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
+import { seedGovernedTierPolicy } from './support/kyc-test-fixtures';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 import {
   createIntegrationDataSource,
@@ -1398,6 +1399,9 @@ describe('Governed wallet ownership resolution — real PostgreSQL + real HTTP',
 
     const resolved = await walletRow(wallet.id);
     expect(resolved.owner_class).toBe(WalletOwnerClass.CUSTOMER);
+    // A governed policy is in force, so the refusal below is the eligibility decision itself rather
+    // than the fail-closed "policy unavailable" branch that also closes the gate.
+    await seedGovernedTierPolicy(dataSource);
     // No verified contact or KYC evidence was provisioned as part of ownership resolution.
     await expect(
       boundary.requireCustomerWallet(

@@ -602,12 +602,8 @@ describe('A13 Agent Cash→Wallet (real PostgreSQL)', () => {
       pinVersion: 1,
       actor: pendingId,
     });
-    // also need wallet for pending agent to avoid wallet not found masking auth failure
-    await walletService.createWallet({
-      customerId: pendingId,
-      currency: 'NGN',
-      idempotencyKey: `pend-wallet-${pendingId}-${randomUUID()}`,
-    });
+    // Wallet creation authority refuses a non-ACTIVE Agent owner, so no wallet is provisioned: the
+    // authorization denial must be the reason the operation is refused, not a missing wallet.
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     await createCustomerWithPhone(phone);
     await expect(

@@ -172,7 +172,9 @@ describe('Shared KYC fixtures (real PostgreSQL)', () => {
     await dataSource.query('DELETE FROM kyc_tier_policy_versions');
     await dataSource.query('UPDATE kyc_tier_policy_head SET version=0 WHERE singleton=true');
     await expect(requireEligible(serviceUsing(handle.reader), customerId)).rejects.toThrow(
-      /not eligible for financial access|DISABLED/,
+      // The governed policy reader fails closed: with no approved policy version the gate refuses
+      // with the financial-policy-unavailable branch instead of reaching the eligibility decision.
+      /not eligible for financial access|DISABLED|financial policy is unavailable/,
     );
   });
 
