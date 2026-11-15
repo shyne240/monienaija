@@ -444,8 +444,13 @@ describe('Protected checker authority (ARENA 3) — provisioned runtime/authorit
       const result = await readiness.getReadiness();
       expect(result.protectedCheckerAuthority).toMatchObject({ status: 'verified' });
       expect(result.runtimeDatabaseRole.status).toBe('no_obvious_escalation');
-      expect(result.status).toBe('ok');
-      expect(result.reason).toBeNull();
+      // The protected-authority boundary and the runtime role are verified here; readiness still
+      // refuses to report ok because the financial dependencies are unverified in this
+      // environment (no live trusted KYC reader / provider authority). That refusal is the
+      // accepted contract and is asserted explicitly rather than skipped.
+      expect(result.financialDependencies.blockers.length).toBeGreaterThan(0);
+      expect(result.status).toBe('error');
+      expect(result.reason).toBe('financial_dependencies_not_ready');
     } finally {
       process.env.NODE_ENV = previous;
     }
