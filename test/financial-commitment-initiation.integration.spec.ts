@@ -1604,43 +1604,39 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
     const provision = async (roleKey: string) => {
       const principalId = `a6-commitment-recovery-test:${roleKey}:${randomUUID()}`;
       const now = new Date();
-      await db
-        .getRepository(A2FinanceRoleAssignment)
-        .save({
-          id: randomUUID(),
-          assignmentReference: `a6-commitment-test:${principalId}`,
-          assignmentVersion: 1,
-          principalId,
-          roleKey,
-          scopes: [],
-          status: 'ACTIVE',
-          initiatedScope: 'SUPER_ADMIN_SCOPE',
-          interim: true,
-          effectiveFrom: new Date(now.getTime() - 60000),
-          effectiveTo: new Date(now.getTime() + 3600000),
-          assignedBy: 'test-harness',
-          assignedAt: now,
-          revokedBy: null,
-          revokedAt: null,
-          bootstrapReference: null,
-          approvalIds: [],
-          auditReferences: [],
-        } as DeepPartial<A2FinanceRoleAssignment>);
-      const session = await app
-        .get(A2WorkforceSessionService)
-        .establish({
-          issuer: 'https://local-dev-identity.monienaija.invalid',
-          subject: principalId,
-          principalId,
-          audience: ['workforce-admin'],
-          issuedAt: now.toISOString(),
-          expiresAt: new Date(now.getTime() + 3600000).toISOString(),
-          authenticatedAt: now.toISOString(),
-          assuranceLevel: 'MFA',
-          amr: ['pwd', 'otp'],
-          acr: null,
-          signingKeyId: 'test-harness-key',
-        });
+      await db.getRepository(A2FinanceRoleAssignment).save({
+        id: randomUUID(),
+        assignmentReference: `a6-commitment-test:${principalId}`,
+        assignmentVersion: 1,
+        principalId,
+        roleKey,
+        scopes: [],
+        status: 'ACTIVE',
+        initiatedScope: 'SUPER_ADMIN_SCOPE',
+        interim: true,
+        effectiveFrom: new Date(now.getTime() - 60000),
+        effectiveTo: new Date(now.getTime() + 3600000),
+        assignedBy: 'test-harness',
+        assignedAt: now,
+        revokedBy: null,
+        revokedAt: null,
+        bootstrapReference: null,
+        approvalIds: [],
+        auditReferences: [],
+      } as DeepPartial<A2FinanceRoleAssignment>);
+      const session = await app.get(A2WorkforceSessionService).establish({
+        issuer: 'https://local-dev-identity.monienaija.invalid',
+        subject: principalId,
+        principalId,
+        audience: ['workforce-admin'],
+        issuedAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + 3600000).toISOString(),
+        authenticatedAt: now.toISOString(),
+        assuranceLevel: 'MFA',
+        amr: ['pwd', 'otp'],
+        acr: null,
+        signingKeyId: 'test-harness-key',
+      });
       return session.accessToken;
     };
     const maker = await provision('FINANCE_PREPARER');

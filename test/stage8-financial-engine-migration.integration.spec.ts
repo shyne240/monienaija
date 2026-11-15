@@ -58,9 +58,8 @@ describe('Stage 8 consolidated financial-engine migration acceptance (real Postg
   it('2. executes the whole published chain exactly once', async () => {
     const executed = await db.runMigrations({ transaction: 'all' });
     expect(executed).toHaveLength(expectedCount);
-    expect(executed.map((migration) => `${migration.name!.slice(-13)}`)).toEqual(
-      [...executed.map((migration) => `${migration.name!.slice(-13)}`)].sort(),
-    );
+    const applied = executed.map((migration) => String(migration.name).slice(-13));
+    expect(applied).toEqual([...applied].sort());
   });
 
   it('3. leaves zero pending migrations', async () => {
@@ -199,11 +198,11 @@ describe('Stage 8 consolidated financial-engine migration acceptance (real Postg
       );
       expect(baseline).toHaveLength(0);
       const executed = await upgrade.runMigrations({ transaction: 'all' });
-      const applied = executed.map((migration) => migration.name!);
-      expect(applied).toContain('CreateGovernedLedgerReversalExecutions1785753600117');
-      expect(applied).toContain('CreateFinancialCommitments1785753600140');
-      expect(applied).toContain('LinkA7InboundExecution1785753600146');
-      expect(applied.at(-1)).toBe('CashOutInstitutionalScope1785753600503');
+      const appliedNames = executed.map((migration) => String(migration.name));
+      expect(appliedNames).toContain('CreateGovernedLedgerReversalExecutions1785753600117');
+      expect(appliedNames).toContain('CreateFinancialCommitments1785753600140');
+      expect(appliedNames).toContain('LinkA7InboundExecution1785753600146');
+      expect(appliedNames.at(-1)).toBe('CashOutInstitutionalScope1785753600503');
       expect(await upgrade.showMigrations()).toBe(false);
     } finally {
       await destroyIntegrationDataSource(upgrade);
