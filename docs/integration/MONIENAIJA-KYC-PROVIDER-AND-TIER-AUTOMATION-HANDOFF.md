@@ -466,3 +466,90 @@ migration-rollback message).
 - **No physical-device acceptance.** No handset was used.
 - **No live provider calls, no production credentials, no real financial transactions.** Every
   provider interaction in the test suite is against a stub or a captured contract.
+
+---
+
+## 11. Commit index
+
+Every checkpoint on `arena/defdd0fd-monienaija`, recovered from
+`004dd80008edbadc41cebf3c67222d6abbcd2cff`:
+
+| Commit     | Content                                                                | Kind |
+| ---------- | ---------------------------------------------------------------------- | ---- |
+| `5f414863` | Continuation record opened                                             | docs |
+| `e3947e52` | Separate tier-bound admission from the legacy permissive contract      | fix  |
+| `a3072b27` | Tier→limit acceptance suite + savepoint fix for a real `25P02` defect  | test |
+| `7e5a0408` | Three admitted paths the tier rollout was stranding                    | fix  |
+| `8fe022d2` | Documented Dojah address-verification transport and adapter            | feat |
+| `6f2f603c` | Continuation record through `8fe022d2`                                 | docs |
+| `b4ffa7d0` | Address assurance contract + claim redemption enforcement gap          | feat |
+| `85f15c9f` | This handoff, first version                                            | docs |
+| `e51d216d` | `a6` approves its settlement tier policy through governed governance   | test |
+| `6bda9489` | Every seeded tier policy publishes through maker/checker               | test |
+| `96d96416` | Continuation record through `6bda9489`                                 | docs |
+| `41db05eb` | Acceptance transcript for provider, tier and limit work                | docs |
+| `b4f733b2` | Protected-authority inspection repaired; runtime privilege leak closed | fix  |
+| `c637a831` | Checkpoint 6 — boundary defects and the scheduler trap                 | docs |
+| `b8796fe5` | Limit migration inventory asserted by name, not by a fragile count     | test |
+| `ebea45a0` | Stop a transient 503 masquerading as a limit decision                  | fix  |
+| `55a72a41` | Type the error-code helper so the harness lints clean                  | test |
+| `a34574c5` | SERIALIZABLE retries back off with full jitter                         | fix  |
+| `e0ef1d22` | Claim fixture provisioned through the governed institution workflows   | test |
+| `ba3f638f` | Acceptance record updated to the authoritative matrix                  | docs |
+| `28a4ac25` | Handoff open items closed or restated accurately                       | docs |
+| `1f6ab426` | Continuation record points at the current state, not the history       | docs |
+| `a4f09aec` | Acceptance unit figures corrected                                      | docs |
+| `14ad3549` | Handoff §6 given the real evidence and the three mechanism traps       | docs |
+| `740883df` | Workforce seeding race fixed — the "ECONNRESET contention artefact"    | fix  |
+| `ba8349bc` | Continuation record: checkpoint 8                                      | docs |
+| `8f00f596` | Unit totals updated                                                    | docs |
+| `4e81a30c` | Acceptance records the full isolated sweep                             | docs |
+| `dce763f6` | Continuation record: a16 passes inside the matrix                      | docs |
+| `e9609925` | `a12` PIN-leak assertion scoped to its own execution                   | test |
+| `50f28d95` | Continuation record: checkpoint 9                                      | docs |
+| `591e5932` | Continuation record: authoritative matrix passes                       | docs |
+| `0a4d6510` | Acceptance: authoritative run passes 153/153                           | docs |
+| `72e4ea7c` | Handoff §10 totals; §9 corrects its own earlier conclusion             | docs |
+| `fe38f910` | All three gates re-verified on the same commit                         | docs |
+
+Frozen branches (`arena/44f00580`, `arena/ea070127`, `arena/8e59e188`, `arena/ca576774`,
+`arena/5b239ff5`, `arena/5ee539a0`) were **read only**. Nothing was cherry-picked, reset or replayed,
+and `main` was never touched.
+
+---
+
+## 12. Production activation dependencies
+
+This section separates what is **implemented and executed here** from what **cannot be activated
+without artefacts this sandbox is not authorised to hold**. It exists so that nobody reads a green
+matrix as "ready to switch on in production".
+
+### 12.1 What is implemented and proven here
+
+| Capability                                  | State                                                                 |
+| ------------------------------------------- | --------------------------------------------------------------------- |
+| Trusted evidence ingestion, binding, expiry | implemented, executed against real PostgreSQL                         |
+| Tier 1 / 2 / 3 automation                   | implemented, executed; Tier 3 requires non-BVN/NIN evidence           |
+| Authoritative tier→limit mapping            | implemented, executed; refuses when unapproved or unmapped            |
+| Transaction-bound admission enforcement     | implemented, executed; reservations commit/roll back with the journal |
+| Maker/checker governance, separate PG roles | implemented, executed; runtime write revoked and verified             |
+| Admin + customer workflows                  | implemented, unit-tested; **not** visually accepted                   |
+| Production fail-closed safeguard            | implemented, unit-tested                                              |
+
+### 12.2 What cannot be activated here
+
+| Dependency                           | Why it is absent                                                                 | What happens without it                                                                                 |
+| ------------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Monnify / Dojah credentials          | Not authorised. No live or billable call was made, none is claimed.              | Capabilities 1–4 stay **E**; production refuses to run them unconfigured.                               |
+| Final production monetary thresholds | Institutional policy decision; inventing one would be a regulatory misstatement. | Admission refuses (`LIMIT_PROFILE_MISSING`), never defaults to unlimited.                               |
+| Approval of the CBN policy basis     | Requires the institution's own compliance sign-off                               | A tier policy without `regulatoryRequirementsConfirmed === true` is **invalid**, so no tier is granted. |
+| Protected-authority credentials      | Held by the institution, not this environment                                    | Production fails closed rather than downgrading to a permissive contract.                               |
+| Browser / device harness             | Missing `libnspr4`/`libnss3`/`libnssutil3`; no handset                           | **No** visual or physical-device acceptance is claimed.                                                 |
+
+### 12.3 The one thing to check before enabling
+
+`KYC_TIER_LIMIT_ENFORCEMENT_ENABLED` defaults to **false**. While it is false, a non-production
+profile falls back to the legacy contract and a **production** profile throws. That asymmetry is
+deliberate: it lets a committed rollout preserve existing obligations without ever letting production
+run unenforced. Before enabling, publish an approved institution tier→limit policy through
+maker/checker — an unapproved institution, profile or mapping refuses admission rather than defaulting.
