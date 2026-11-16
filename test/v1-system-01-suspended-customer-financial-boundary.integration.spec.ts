@@ -19,6 +19,7 @@ import { createIntegrationDataSource, destroyIntegrationDataSource } from './sup
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
+import { seedGovernedTierPolicy } from './support/kyc-test-fixtures';
 
 /**
  * V1-SYSTEM-01 regression: WalletAccount.status is created ACTIVE and is NEVER transitioned
@@ -81,31 +82,20 @@ describe('V1-SYSTEM-01 suspended-customer financial boundary (real PostgreSQL)',
     ledgerService = moduleRef.get(LedgerService);
     // Controlled local policy and synthetic trusted reader: exercise the real
     // eligibility gate without activating or asserting a production policy.
-    const proposal = randomUUID(),
-      requirements = { all: [], any: [] };
-    const definition = {
-      regulatoryRequirementsConfirmed: true,
-      effectiveFrom: '2020-01-01T00:00:00.000Z',
-      effectiveUntil: null,
-      regulatory: { LEVEL_1: requirements, LEVEL_2: requirements },
-      operator: { LEVEL_1: requirements, LEVEL_2: requirements },
-    };
-    await dataSource.query(
-      `INSERT INTO kyc_tier_policy_proposals(id,request_id,expected_version,definition,fingerprint,maker_id,maker_session_id,checker_id,checker_session_id,state) VALUES($1,$2,0,$3,$4,'maker',$5,'checker',$6,'APPROVED')`,
-      [
-        proposal,
-        randomUUID(),
-        JSON.stringify(definition),
-        'a'.repeat(64),
-        randomUUID(),
-        randomUUID(),
-      ],
-    );
-    await dataSource.query(
-      `INSERT INTO kyc_tier_policy_versions(version,proposal_id,definition,maker_id,checker_id) VALUES(1,$1,$2,'maker','checker')`,
-      [proposal, JSON.stringify(definition)],
-    );
-    await dataSource.query('UPDATE kyc_tier_policy_head SET version=1');
+    const requirements = { all: [], any: [] };
+    // Governed maker/checker approval. A direct APPROVED insert is refused by the
+    // protected-authority transition trigger; the policy has to be published properly here too.
+    await seedGovernedTierPolicy(dataSource, {
+      definition: {
+        regulatoryRequirementsConfirmed: true,
+        effectiveFrom: '2020-01-01T00:00:00.000Z',
+        effectiveUntil: null,
+        regulatory: { LEVEL_1: requirements, LEVEL_2: requirements, LEVEL_3: requirements },
+        operator: { LEVEL_1: requirements, LEVEL_2: requirements, LEVEL_3: requirements },
+      },
+      makerId: 'sys01-maker',
+      checkerId: 'sys01-checker',
+    });
   }, 180000);
 
   afterAll(async () => {

@@ -42,6 +42,7 @@ import {
 import { InstitutionAttributionEvidenceType } from '../../src/institution/institution.enums';
 import { WalletService } from '../../src/wallet/wallet.service';
 import { makeCustomerFinanciallyEligible, type EligibleEvidenceSource } from './kyc-test-fixtures';
+import { seedGovernedTierPolicy } from './kyc-test-fixtures';
 
 export const GOVERNED_SETUP_ORDER = [
   'institutional-authority',
@@ -531,26 +532,13 @@ export class GovernedFinancialFixture {
       regulatory: { LEVEL_1: requirement, LEVEL_2: requirement },
       operator: { LEVEL_1: requirement, LEVEL_2: requirement },
     };
-    const proposalId = randomUUID();
-    await this.dataSource.query(
-      `INSERT INTO kyc_tier_policy_proposals
-         (id,request_id,expected_version,definition,fingerprint,maker_id,maker_session_id,checker_id,checker_session_id,state)
-       VALUES($1,$2,0,$3,$4,'fixture-maker',$5,'fixture-checker',$6,'APPROVED')`,
-      [
-        proposalId,
-        randomUUID(),
-        JSON.stringify(definition),
-        'a'.repeat(64),
-        randomUUID(),
-        randomUUID(),
-      ],
-    );
-    await this.dataSource.query(
-      `INSERT INTO kyc_tier_policy_versions(version,proposal_id,definition,maker_id,checker_id)
-       VALUES(1,$1,$2,'fixture-maker','fixture-checker')`,
-      [proposalId, JSON.stringify(definition)],
-    );
-    await this.dataSource.query('UPDATE kyc_tier_policy_head SET version=1');
+    // The policy must be approved through governed maker/checker; a direct APPROVED insert is
+    // refused by the protected-authority transition trigger and would fail this fixture outright.
+    await seedGovernedTierPolicy(this.dataSource, {
+      definition,
+      makerId: 'fixture-maker',
+      checkerId: 'fixture-checker',
+    });
   }
 
   // ------------------------------------------------------------------ wallets and attribution

@@ -12,6 +12,7 @@ import type { ConfigService } from '@nestjs/config';
 import type { DataSource } from 'typeorm';
 
 import { LedgerAccount } from '../src/ledger/ledger-account.entity';
+import { seedGovernedTierPolicy } from './support/kyc-test-fixtures';
 import { LedgerJournal } from '../src/ledger/ledger-journal.entity';
 import { LedgerLine } from '../src/ledger/ledger-line.entity';
 import {
@@ -495,33 +496,20 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
     providerVerificationState = 'VERIFIED_SETTLED';
     overrideVerificationHash = null;
     snapshots.clear();
-    const proposal = randomUUID();
     const requirements = { all: [], any: [] };
-    const definition = {
-      regulatoryRequirementsConfirmed: true,
-      effectiveFrom: '2020-01-01T00:00:00.000Z',
-      effectiveUntil: null,
-      regulatory: { LEVEL_1: requirements, LEVEL_2: requirements },
-      operator: { LEVEL_1: requirements, LEVEL_2: requirements },
-    };
-    await dataSource.query(
-      `INSERT INTO kyc_tier_policy_proposals(id,request_id,expected_version,definition,fingerprint,maker_id,maker_session_id,checker_id,checker_session_id,state) VALUES($1,$2,0,$3,$4,'maker',$5,'checker',$6,'APPROVED')`,
-      [
-        proposal,
-        randomUUID(),
-        JSON.stringify(definition),
-        'a'.repeat(64),
-        randomUUID(),
-        randomUUID(),
-      ],
-    );
-    await dataSource.query(
-      `INSERT INTO kyc_tier_policy_versions(version,proposal_id,definition,maker_id,checker_id) VALUES(1,$1,$2,'maker','checker')`,
-      [proposal, JSON.stringify(definition)],
-    );
-    await dataSource.query(
-      'INSERT INTO kyc_tier_policy_head (singleton, version) VALUES (true, 1) ON CONFLICT (singleton) DO UPDATE SET version=EXCLUDED.version',
-    );
+    // Governed maker/checker approval; the protected-authority trigger refuses a direct APPROVED
+    // insert, and this suite must exercise that guarantee rather than bypass it.
+    await seedGovernedTierPolicy(dataSource, {
+      definition: {
+        regulatoryRequirementsConfirmed: true,
+        effectiveFrom: '2020-01-01T00:00:00.000Z',
+        effectiveUntil: null,
+        regulatory: { LEVEL_1: requirements, LEVEL_2: requirements, LEVEL_3: requirements },
+        operator: { LEVEL_1: requirements, LEVEL_2: requirements, LEVEL_3: requirements },
+      },
+      makerId: 'a7fx-maker',
+      checkerId: 'a7fx-checker',
+    });
     partnerEnv.A6_PARTNER_ENABLED = 'false';
     externalOperationId = randomUUID();
 
