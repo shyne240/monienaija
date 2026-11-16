@@ -2268,7 +2268,7 @@ test('bound wallet-redemption claim wiring rolls back OTP with a failed posting 
   );
   const { AgentDeskOtpService } = await import('../src/agent/agent-desk-otp.service');
   const { LedgerService } = await import('../src/ledger/ledger.service');
-  const { LedgerAccountType, LedgerEntryDirection } = await import('../src/ledger/ledger.enums');
+  const { LedgerEntryDirection } = await import('../src/ledger/ledger.enums');
   const { randomBytes, pbkdf2Sync } = await import('node:crypto');
   const customerId = await subject('LEVEL_1', ['BVN']);
   await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [customerId]);
@@ -2281,9 +2281,31 @@ test('bound wallet-redemption claim wiring rolls back OTP with a failed posting 
     `INSERT INTO customer_authentication_credentials(id,customer_id,password_hash,hash_algorithm,password_version,status) VALUES($1,$2,'fixture-hash','PBKDF2',1,'ACTIVE')`,
     [randomUUID(), customerId],
   );
-  await app
+  const claimWallet = await app
     .get(WalletService)
     .createWallet({ customerId, currency: 'NGN', idempotencyKey: randomUUID() });
+  // A CUSTOMER claim settles into a real wallet, so it is admitted under the same tier-bound
+  // contract as every other customer financial boundary: the wallet needs an institutional
+  // attribution and that institution needs an approved tier->limit mapping. Provisioning both
+  // through the governed workflows is what makes this test exercise the wiring instead of the
+  // fail-closed guard.
+  const { GovernedFinancialFixture: ClaimGovernedFixture } = await import(
+    './support/governed-financial-fixture'
+  );
+  const claimGoverned = new ClaimGovernedFixture({
+    app,
+    dataSource: db,
+    label: 'b2c-claim',
+  });
+  const claimInstitutionId = await claimGoverned.institution('claim');
+  await claimGoverned.enrolCustomer(customerId, claimInstitutionId);
+  await approveIsolatedInstitutionKycTierLimitPolicy(
+    db,
+    cluster,
+    claimInstitutionId,
+    'CASH_TO_CASH',
+  );
+  await claimGoverned.attributeWallet(claimWallet.id, claimInstitutionId);
   const agentId = randomUUID();
   await db.query(`INSERT INTO agents(id,reference,status) VALUES($1,$2,'ACTIVE')`, [
     agentId,
@@ -2321,32 +2343,32 @@ test('bound wallet-redemption claim wiring rolls back OTP with a failed posting 
     agentAccess: 'SELF' as const,
   };
   const ledger = app.get(LedgerService);
-  const source = await ledger.createAccount({
-    code: `claim-source-${randomUUID()}`,
-    name: 'fixture source',
-    currency: 'NGN',
-    accountType: LedgerAccountType.ASSET,
-    allowNegativeBalance: true,
-  });
-  let unclaimed = await db.query<Array<{ id: string }>>(
-    `SELECT id FROM ledger_accounts WHERE code='CASH_TO_CASH-UNCLAIMED-NGN'`,
+  // The funding leg is institution-attributed too. A journal may not mix an UNATTRIBUTED platform
+  // account with an institution-attributed one — the ledger's institutional-context resolver
+  // refuses exactly that, because such a posting has no single owner. Real Cash→Cash funding debits
+  // the funding institution's own settlement asset, so the fixture does the same.
+  const source = {
+    id: await claimGoverned.openInstitutionSettlementAccount(claimInstitutionId, {
+      code: `claim-source-${randomUUID().slice(0, 8).toUpperCase()}`,
+      name: 'fixture source',
+    }),
+  };
+  // The obligation account is the FUNDING INSTITUTION's own suspense liability, resolved from the
+  // transfer's funding evidence — not a shared platform account. Recording that evidence is what
+  // makes this a genuinely institutionalised transfer rather than a legacy one.
+  const suspenseAccountId = await claimGoverned.openInstitutionCashToCashSuspenseAccount(
+    claimInstitutionId,
   );
-  if (!unclaimed.length) {
-    const account = await ledger.createAccount({
-      code: 'CASH_TO_CASH-UNCLAIMED-NGN',
-      name: 'fixture unclaimed',
-      currency: 'NGN',
-      accountType: LedgerAccountType.LIABILITY,
-      allowNegativeBalance: false,
-    });
-    unclaimed = [{ id: account.id }];
-  }
+  // NOTE ordering: attribution is executed BEFORE this wallet's ledger account carries any posted
+  // history. The governed attribution workflow deliberately refuses a wallet whose ledger account
+  // already has journal lines, because attributing it afterwards would fabricate historical
+  // attribution. Seeding in the other order is exactly the mistake this comment prevents.
   const funding = await ledger.postJournal({
     idempotencyKey: randomUUID(),
     currency: 'NGN',
     lines: [
       { accountId: source.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '100' },
-      { accountId: unclaimed[0]!.id, direction: LedgerEntryDirection.CREDIT, amountMinor: '100' },
+      { accountId: suspenseAccountId, direction: LedgerEntryDirection.CREDIT, amountMinor: '100' },
     ],
   });
   const transferId = randomUUID();
@@ -2356,6 +2378,34 @@ test('bound wallet-redemption claim wiring rolls back OTP with a failed posting 
   await db.query(
     `INSERT INTO cash_to_cash_transfers(id,agent_id,beneficiary_phone,principal_minor,total_minor,currency,status,transfer_code_hash,hash_algorithm,journal_id,idempotency_key,expires_at) VALUES($1,$2,$3,100,100,'NGN','UNCLAIMED',$4,'PBKDF2',$5,$6,clock_timestamp()+interval '1 hour')`,
     [transferId, agentId, phone, codeHash, funding.id, randomUUID()],
+  );
+  // Bind the transfer to its funding institution: this is the evidence the claim reads to decide
+  // WHICH obligation account the money sits in, and it is what makes the settlement journal and
+  // the destination wallet agree on one institution.
+  const claimAgentWallet = await app
+    .get(WalletService)
+    .createWallet({ customerId: agentId, currency: 'NGN', idempotencyKey: randomUUID() });
+  await db.query(
+    `INSERT INTO cash_to_cash_funding_evidence
+       (transfer_id,funding_agent_id,funding_wallet_id,funding_ledger_account_id,
+        unclaimed_ledger_account_id,funding_journal_id,institution_id,request_hash,
+        sender_identity_fingerprint,sender_policy_fingerprint,
+        funding_authorization_fingerprint,institution_evidence_fingerprint)
+     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+    [
+      transferId,
+      agentId,
+      claimAgentWallet.id,
+      claimAgentWallet.ledgerAccountId,
+      suspenseAccountId,
+      funding.id,
+      claimInstitutionId,
+      'a'.repeat(64),
+      'b'.repeat(64),
+      'c'.repeat(64),
+      'd'.repeat(64),
+      'e'.repeat(64),
+    ],
   );
   sms.clear();
   const challenge = await app.get(AgentDeskOtpService).issue({
