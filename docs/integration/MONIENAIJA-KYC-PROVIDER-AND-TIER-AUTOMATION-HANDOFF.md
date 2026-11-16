@@ -216,26 +216,71 @@ it, and approximating it from the address endpoint would fabricate a capability.
 
 ## 6. Test evidence
 
-| Suite                                    | Result                              | Nature                         |
-| ---------------------------------------- | ----------------------------------- | ------------------------------ |
-| `kyc-tier-limit-enforcement`             | **21/21**                           | isolated disposable PostgreSQL |
-| `financial-commitment-initiation`        | **41/41**                           | real PostgreSQL                |
-| `a14-agent-cash-out`                     | **33/33**                           | real PostgreSQL                |
-| `a13-agent-cash-in`                      | **37/37**                           | real PostgreSQL                |
-| `a7-authoritative-persistence`           | **33/33**                           | real PostgreSQL                |
-| `a24-customer-transaction-pin-hardening` | **19/19**                           | real PostgreSQL                |
-| `dojah-address-verification`             | **18/18**                           | unit, mock transport only      |
-| Root unit baseline                       | **255/255 suites, 2957/2957 tests** | baseline preserved             |
+Authoritative results at the final tree. Full totals and commands are in §10.
+
+| Gate                                     | Result                                 | Nature                         |
+| ---------------------------------------- | -------------------------------------- | ------------------------------ |
+| **Full PostgreSQL matrix**               | **153/153 suites, 2751 tests, exit 0** | real PostgreSQL, run alone     |
+| Root unit suite                          | **256/256 suites, 2978/2978 tests**    | unit                           |
+| **Isolated KYC sweep (11 suites)**       | **11/11 suites, 149/149 tests**        | isolated disposable PostgreSQL |
+| `kyc-tier-limit-enforcement`             | 21/21                                  | isolated disposable PostgreSQL |
+| `dojah-address-verification`             | 18/18                                  | unit, mock transport only      |
+| `financial-commitment-initiation`        | 41/41                                  | real PostgreSQL                |
+| `a14-agent-cash-out`                     | 33/33                                  | real PostgreSQL                |
+| `a13-agent-cash-in`                      | 37/37                                  | real PostgreSQL                |
+| `a7-authoritative-persistence`           | 33/33                                  | real PostgreSQL                |
+| `a24-customer-transaction-pin-hardening` | 19/19                                  | real PostgreSQL                |
+| `a6-settlement-lifecycle`                | 20/20                                  | real PostgreSQL                |
+| `a16-agent-cash-to-cash-claim`           | 88/88                                  | real PostgreSQL                |
+| `protected-authority-boundary`           | 7/7                                    | real PostgreSQL                |
+| `v1-limit-02-limit-assignment`           | 18/18                                  | real PostgreSQL                |
+| `v1-limit-05-flow-matrix`                | 205/205                                | real PostgreSQL                |
+| `v1-test-01-...-retry-exhaustion`        | 5/5                                    | unit                           |
 
 `tsc --noEmit`, ESLint and Prettier are clean on every changed file.
 
-### 6.1 A run that was discarded rather than reported
+### 6.1 Runs that were discarded rather than reported
 
-A full-matrix run was started while files were still being edited. Batches compiled half-written
-modules and produced spurious `TS2724 … has no exported member` errors for symbols that existed by
-the time the run finished. It was **stopped and discarded**. The matrix must only be run against a
-committed, quiescent tree. This is recorded because those numbers would have looked like real
-failures.
+Three full-matrix runs were **stopped and discarded**, and none of their numbers appear anywhere in
+this document as results:
+
+| Run                  | Why discarded                                                                                                                                                                            |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/tmp/pg-full2.log`  | Files were still being edited. Batches compiled half-written modules and emitted `TS2724 … has no exported member` for symbols that exist in the final tree.                             |
+| `/tmp/pg-full3.log`  | Same cause, and it predated the governed-fixture sweep, so it reported `a6` and `a7-product-financial-effect` failures that were fixed in `6bda9489`.                                    |
+| `/tmp/pg-final4.log` | **The tree was edited mid-run.** This is the trap: even a documentation-only edit is safe, but a source edit invalidates every batch compiled afterwards. Never edit source under a run. |
+
+Two further runs were contaminated by **sharing the machine**: a matrix and the isolated sweep ran
+concurrently, and suites that normally take seconds hit `Exceeded timeout of 180000 ms for a hook`.
+In this workspace, a `beforeAll` timeout is evidence of contention — re-run it alone before
+believing it.
+
+### 6.2 A defect the matrix found that no unit test could
+
+`v1-limit-05-flow-matrix`'s concurrent `C2C_INIT` case expected `LIMIT_DAILY_AMOUNT_EXCEEDED` and
+received a 503. The cause was real: the Cash→Cash SERIALIZABLE retry loop retried **immediately**,
+so every retrier woke at the same instant and re-created the collision it was retrying. Under
+six-suite batch load this exhausted all three attempts and surfaced as contention rather than as a
+limit decision.
+
+Fixed in `a34574c5` with `serializationRetryDelayMs` — exponential from 5 ms, doubling, capped at
+100 ms, with **full jitter** (without jitter the retriers still synchronise and the jitter test
+fails on a fixed delay). Three unit tests pin growth, cap and jitter. Retry exhaustion now returns
+a stable `409 TRANSACTION_CONTENTION_RETRY_EXHAUSTED` instead of an ambiguous 503.
+
+### 6.3 The last fixture that lied
+
+The isolated sweep's only failure was in `batch2c-eligibility`: the claim test seeded a CUSTOMER
+wallet-redemption claim the **legacy** way — destination wallet unattributed, funded into the shared
+`CASH_TO_CASH-UNCLAIMED-NGN` platform account. Once tier-bound admission and the ledger's
+institutional-context resolver existed, that seeding described a transfer that can no longer exist.
+
+It failed closed three times, each time for a **correct** reason (tier profile missing; attributed
+suspense debited against an unattributed source; attribution refused because the wallet already had
+posted history). None was worked around. The fixture was rebuilt along the governed path — enrol,
+approve the tier→limit policy, attribute the wallet _before_ it carries history, fund from the
+institution's own settlement asset into its suspense liability, and record
+`cash_to_cash_funding_evidence`. **No assertion was weakened.** Result: 18/18.
 
 ---
 
