@@ -881,9 +881,20 @@ describe('A12 Agent financial execution foundation (real PostgreSQL)', () => {
     expect(serial.toLowerCase()).not.toContain('pin');
     expect(serial.toLowerCase()).not.toContain('pinhash');
     expect(serial.toLowerCase()).not.toContain('4321');
+    // Scope the audit assertion to the execution THIS test just made. Scanning the five most recent
+    // AGENT_FINANCIAL_EXECUTION rows instead reaches evidence written by other tests, and a bare
+    // substring search over random identifiers is not a secret test -- it is a coin flip:
+    //   idempotencykey "m2-074321e6-6d74-41e3-8696-9b5aefe18ef9" contains "4321"
+    // which failed this suite in a full-matrix run while proving nothing about the PIN. Matching
+    // the execution's own audit row keeps the assertion exact: if the PIN were ever recorded, it
+    // would be recorded here.
     const audits: Array<{ new_values: any; previous_values: any }> = await dataSource.query(
-      `SELECT new_values, previous_values FROM audit_events WHERE entity_type='AGENT_FINANCIAL_EXECUTION' ORDER BY occurred_at DESC LIMIT 5`,
+      `SELECT new_values, previous_values FROM audit_events
+        WHERE entity_type='AGENT_FINANCIAL_EXECUTION'
+          AND new_values->>'journalId' = $1`,
+      [res.journalId],
     );
+    expect(audits).toHaveLength(1);
     const auditSerial = JSON.stringify(audits).toLowerCase();
     expect(auditSerial).not.toContain('pin');
     expect(auditSerial).not.toContain('4321');
