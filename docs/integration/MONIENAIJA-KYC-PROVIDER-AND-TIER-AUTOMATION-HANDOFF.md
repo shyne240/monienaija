@@ -221,7 +221,7 @@ Authoritative results at the final tree. Full totals and commands are in §10.
 | Gate                                     | Result                                 | Nature                         |
 | ---------------------------------------- | -------------------------------------- | ------------------------------ |
 | **Full PostgreSQL matrix**               | **153/153 suites, 2751 tests, exit 0** | real PostgreSQL, run alone     |
-| Root unit suite                          | **256/256 suites, 2978/2978 tests**    | unit                           |
+| Root unit suite                          | **257/257 suites, 2981/2981 tests**    | unit                           |
 | **Isolated KYC sweep (11 suites)**       | **11/11 suites, 149/149 tests**        | isolated disposable PostgreSQL |
 | `kyc-tier-limit-enforcement`             | 21/21                                  | isolated disposable PostgreSQL |
 | `dojah-address-verification`             | 18/18                                  | unit, mock transport only      |
@@ -367,7 +367,7 @@ clean.
 | ------- | ------------------------------------------- |
 | Command | `npx jest --config jest.config.js --silent` |
 | Suites  | **256 / 256 PASS**                          |
-| Tests   | **2978 / 2978 PASS**                        |
+| Tests   | **2981 / 2981 PASS**                        |
 | Wall    | 81.2 s                                      |
 
 ### 10.2 Full PostgreSQL integration matrix

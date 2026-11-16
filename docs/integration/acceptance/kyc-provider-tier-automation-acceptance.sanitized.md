@@ -40,20 +40,21 @@ npx jest --config jest.config.js --silent
 ```
 
 ```text
-Test Suites: 256 passed, 256 total
-Tests:       2978 passed, 2978 total
+Test Suites: 257 passed, 257 total
+Tests:       2981 passed, 2981 total
 Snapshots:   0 total
-Time:        81.2 s
+Time:        97.066 s
 ```
 
 The accepted pre-existing baseline was **255 suites / 2957 tests**. The delta decomposes exactly:
-the new `test/dojah-address-verification.unit.spec.ts` (1 suite, 18 tests), plus 3 tests appended to
+`+1` suite / `+18` tests for `test/dojah-address-verification.unit.spec.ts`, `+3` tests appended to
 `test/v1-test-01-agent-cash-to-cash-retry-exhaustion.spec.ts` covering the serialization backoff
-(growth, cap, jitter). i.e. `255 + 1 = 256` suites and `2957 + 18 + 3 = 2978` tests. No pre-existing
-unit test changed status.
+(growth, cap, jitter), and `+1` suite / `+3` tests for
+`test/governed-financial-fixture-workforce.spec.ts`. That is `255 + 2 = 257` suites and
+`2957 + 18 + 3 + 3 = 2981` tests. No pre-existing unit test changed status.
 
-An earlier revision of this document recorded **2975** tests at 115.677 s. That was accurate then;
-the three backoff tests were added afterwards, when the matrix showed the retry loop had no delay.
+Earlier revisions of this document recorded **2975** then **2978** tests. Both were accurate when
+written; each count grew as a defect the matrix exposed was fixed and pinned.
 
 ---
 

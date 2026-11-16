@@ -14,7 +14,7 @@ uncommitted working tree.
 >
 > | Gate                                      | Current result                     |
 > | ----------------------------------------- | ---------------------------------- |
-> | Root unit suite                           | 256/256 suites, 2978/2978 tests    |
+> | Root unit suite                           | 257/257 suites, 2981/2981 tests    |
 > | Full PostgreSQL matrix                    | 153/153 suites, 2751 tests, exit 0 |
 > | Isolated KYC sweep (11 suites, run alone) | 11/11 suites, 149/149 tests        |
 >
@@ -366,6 +366,10 @@ migration-rollback message.
 ## 7.2 Root unit suite — PASS
 
 `npx jest --config jest.config.js --silent` → **256/256 suites, 2978/2978 tests**, 81.2 s.
+
+Re-run at `740883df`, after the fixture race was fixed and pinned by
+`test/governed-financial-fixture-workforce.spec.ts`:
+**257/257 suites, 2981/2981 tests**, 97.066 s.
 
 ## 7.3 The isolated KYC sweep found one real defect — in a fixture
 
