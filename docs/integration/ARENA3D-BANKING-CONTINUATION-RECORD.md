@@ -218,6 +218,28 @@ Groups 2, 3 and 6 are complete; group 1's contracts and registry are complete an
 application code calls it yet, so nothing in this repository can move money today. Group 3 governs
 _who may be engaged_; it does not yet gate a live call, because no live call exists.
 
+## 7.0d Group 12 — reconciliation that cannot move money
+
+`1785753600602` + `src/banking/banking-reconciliation.service.ts`. The design constraint is that
+reconciliation has **no ability to change a financial record**. It observes, compares, and raises
+exceptions. Asserted structurally, so a future change cannot quietly add the ability:
+
+- observations are append-only: UPDATE and DELETE are refused by trigger _and_ withheld by grant;
+- an exception's raising evidence (kind, subject, observation, both amounts) is immutable, so a
+  difference cannot be edited to look smaller;
+- the resolution vocabulary is `MATCHED | ACCEPTED_DIFFERENCE | ESCALATED` — there is no `ADJUSTED`,
+  and `banking_reconciliation_runs` has no `adjust`/`journal`/`ledger` column at all;
+- a resolved exception cannot be reopened; a new difference is a new exception;
+- **an unverifiable check becomes an exception, not a pass.** This is how Monnify's missing settlement
+  schema stays honest: `UNVERIFIABLE` is loud in the worklist rather than silently absent from it;
+- one open exception per subject and kind (partial unique index), so repeated runs record fresh
+  evidence without duplicating the question;
+- no amount comparison is invented when one side has no amount to compare.
+
+**A defect the tests caught:** the run's `observations` counter only incremented when an exception was
+raised, so a run that checked a thousand clean records reported checking none. Fixed by counting every
+observation. The test that found it asserted the counter's _meaning_, not its existence.
+
 ## 7.0c Group 5 — virtual accounts, where a retry creates a second NUBAN
 
 `src/banking/banking-virtual-account.service.ts`. The dangerous case is a provisioning timeout: the
