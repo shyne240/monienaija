@@ -5,8 +5,10 @@ import {
   Injectable,
   Optional,
 } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import { DataSource, EntityManager } from 'typeorm';
 
+import type { Environment } from '../config/environment';
 import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { InstitutionKycLimitPolicyService } from './institution-kyc-limit-policy.service';
 import { LimitFailureCode, dimensionToFailureCode } from './limit-error.codes';
@@ -36,9 +38,28 @@ export interface EnforceInput {
   // If not provided but dimension requires, we fetch wallet inside manager
   walletLedgerAccountId?: string | null; // for WALLET_BALANCE_MAX check
   principalWalletCustomerId?: string; // customerId for wallet lookup if ledgerAccountId not provided
-  /** Reject absent assignments/profiles/rules instead of interpreting missing config as unlimited. */
+  /**
+   * Pin the resolved limit profile and rules as immutable evidence of what governed this
+   * admission (commercial-accounting snapshot). This never changes admission behaviour: a missing
+   * assignment/profile/rule still follows the legacy advisory contract described on
+   * `enforceWithManager`. Do not use it as a fail-closed switch — use `requireConfiguration` or
+   * `requireKycTierPolicy` for that.
+   */
   requireConfiguration?: boolean;
-  /** Require institution-scoped trusted customer eligibility and an approved tier mapping. */
+  /**
+   * Institution-scoped tier-bound admission. Supplying it *selects* the authoritative tier path:
+   * trusted financial eligibility, an approved institution tier mapping that binds this exact
+   * product/currency/service-class key, and applicable rules for the direction.
+   *
+   * Behaviour is deliberately asymmetric so that a committed rollout preserves existing
+   * obligations:
+   *  - `KYC_TIER_LIMIT_ENFORCEMENT_ENABLED=true`  → fail closed on every missing prerequisite.
+   *  - flag unset/false, non-production profile    → the tier path is inactive and the legacy
+   *    assignment/permissive contract applies, so already-committed settlement, reversal,
+   *    compensation, claim and recovery flows keep working.
+   *  - flag unset/false, production profile        → fail closed. Production never downgrades to
+   *    the legacy permissive contract (see `resolveTierEnforcementMode`).
+   */
   requireKycTierPolicy?: boolean;
   institutionId?: string | null;
   /** Exact service-class key. Null means the explicitly configured unclassified-service key. */
@@ -71,6 +92,9 @@ export interface EnforceResult {
   customerKycTier?: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3';
 }
 
+/** How a single admission treats missing limit/tier configuration. */
+export type TierEnforcementMode = 'ENFORCED' | 'LEGACY_UNENFORCED';
+
 @Injectable()
 export class LimitEnforcementService {
   constructor(
@@ -79,7 +103,44 @@ export class LimitEnforcementService {
     private readonly usageService: LimitUsageService,
     @Optional() private readonly tierLimitPolicies?: InstitutionKycLimitPolicyService,
     @Optional() private readonly customerEligibility?: CustomerFinancialEligibilityService,
-  ) {}
+    @Optional() config?: ConfigService<Environment, true>,
+  ) {
+    this.profile = config?.get('NODE_ENV', { infer: true }) ?? process.env.NODE_ENV;
+  }
+
+  private readonly profile: string | undefined;
+
+  /**
+   * Decide whether tier-bound admission is actually in force for this call.
+   *
+   * This is the single place that separates the three states, so no caller can accidentally
+   * degrade production to the permissive legacy contract:
+   *
+   *  - `requireKycTierPolicy` not requested            → `LEGACY_UNENFORCED` (nothing to enforce).
+   *  - activation flag on                              → `ENFORCED`.
+   *  - activation flag off, non-production profile     → `LEGACY_UNENFORCED`, but *reported* so the
+   *    caller and the commercial snapshot can see that no tier bound applied.
+   *  - activation flag off, production profile         → throws. Production must never interpret a
+   *    missing activation as "tier limits not applicable".
+   *
+   * A missing policy service is never silently downgraded: absent dependency + requested tier
+   * enforcement is a configuration failure in every profile.
+   */
+  private resolveTierEnforcement(input: EnforceInput): TierEnforcementMode {
+    if (!input.requireKycTierPolicy) return 'LEGACY_UNENFORCED';
+    if (!this.customerEligibility || !this.tierLimitPolicies) {
+      throw this.configurationException(
+        'Trusted customer eligibility or tier policy is unavailable',
+      );
+    }
+    if (this.tierLimitPolicies.enforcementEnabled) return 'ENFORCED';
+    if (this.profile === 'production') {
+      throw this.configurationException(
+        'Institutional KYC tier-limit enforcement must be enabled in production',
+      );
+    }
+    return 'LEGACY_UNENFORCED';
+  }
 
   /**
    * Enforce limits inside an existing SERIALIZABLE manager transaction.
@@ -110,22 +171,23 @@ export class LimitEnforcementService {
 
     // Tier-bound operations derive the level from the trusted financial-eligibility gate inside
     // this same transaction. A caller-supplied `customers.kyc_level` or a synthetic fixture is
-    // never accepted as admission evidence.
+    // never accepted as admission evidence. `tierEnforcement` decides whether the authoritative
+    // tier path is actually in force for this admission (see `resolveTierEnforcement`).
+    const tierEnforcement = this.resolveTierEnforcement(input);
     let tierPolicyVersion: number | undefined;
     let customerKycTier: 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3' | undefined;
     let tierProfileCode: string | null = null;
     let explicitTierNonApplicability = false;
-    if (input.requireKycTierPolicy) {
+    if (tierEnforcement === 'ENFORCED') {
       if (principalType !== 'CUSTOMER' || !input.institutionId) {
-        throw this.configurationException('Institution and customer are required for tier-bound admission');
+        throw this.configurationException(
+          'Institution and customer are required for tier-bound admission',
+        );
       }
-      if (!this.customerEligibility || !this.tierLimitPolicies) {
-        throw this.configurationException('Trusted customer eligibility or tier policy is unavailable');
-      }
-      customerKycTier = await this.customerEligibility.require(manager, principalId, {
+      customerKycTier = await this.customerEligibility!.require(manager, principalId, {
         lockMode: 'SHARE',
       });
-      const tierResolution = await this.tierLimitPolicies.resolveWithManager(manager, {
+      const tierResolution = await this.tierLimitPolicies!.resolveWithManager(manager, {
         institutionId: input.institutionId,
         product,
         currency,
@@ -150,11 +212,17 @@ export class LimitEnforcementService {
       segmentCodes: input.segmentCodes ?? [],
       now,
     });
-    const profileCodes = [...new Set([
-      ...(resolved ? [resolved.limitProfileCode] : []),
-      ...(tierProfileCode ? [tierProfileCode] : []),
-    ])];
-    const configurationRequired = Boolean(input.requireConfiguration || input.requireKycTierPolicy);
+    const profileCodes = [
+      ...new Set([
+        ...(resolved ? [resolved.limitProfileCode] : []),
+        ...(tierProfileCode ? [tierProfileCode] : []),
+      ]),
+    ];
+    // Fail-closed configuration only when the authoritative tier path is in force. In
+    // `LEGACY_UNENFORCED` mode the historical advisory contract is preserved exactly, so
+    // already-committed financial obligations are not stranded by a rollout that has not been
+    // activated.
+    const configurationRequired = tierEnforcement === 'ENFORCED';
     if (profileCodes.length === 0 && configurationRequired) {
       throw this.configurationException(
         explicitTierNonApplicability
@@ -210,12 +278,19 @@ export class LimitEnforcementService {
       return true;
     });
 
-    if (tierProfileCode && !applicable.some((rule) => rule.limit_profile_code === tierProfileCode)) {
-      throw this.configurationException('The approved tier profile has no rule for this transaction direction or class of service');
+    if (
+      tierProfileCode &&
+      !applicable.some((rule) => rule.limit_profile_code === tierProfileCode)
+    ) {
+      throw this.configurationException(
+        'The approved tier profile has no rule for this transaction direction or class of service',
+      );
     }
     if (applicable.length === 0) {
       if (configurationRequired) {
-        throw this.configurationException('No applicable financial limit rules are configured for this operation');
+        throw this.configurationException(
+          'No applicable financial limit rules are configured for this operation',
+        );
       }
       return {
         allowed: true,

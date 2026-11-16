@@ -393,8 +393,18 @@ export class AgentFinancialExecutionService {
               })),
             });
           } catch (error) {
+            // The failure may itself have aborted the transaction (any PostgreSQL error does,
+            // until the enclosing block rolls back). Running the release statement in that state
+            // raises `25P02 current transaction is aborted`, which would REPLACE the original
+            // cause with a misleading one and hide the real refusal. The reservation rows belong
+            // to this transaction, so a rollback releases them anyway; a release failure must
+            // never mask the error that triggered it.
             for (const key of limitIdempotencyKeys) {
-              await this.limitEnforcementService!.releaseReservationsWithManager(manager, key);
+              try {
+                await this.limitEnforcementService!.releaseReservationsWithManager(manager, key);
+              } catch {
+                // Preserve the original error; the transaction rollback owns cleanup.
+              }
             }
             throw error;
           }

@@ -67,6 +67,54 @@ import {
   destroyIntegrationDataSource,
   seedTransferParticipant,
 } from './support/pg-harness';
+import { createKycAuthorityConnectionsOverTcp } from './support/kyc-authority-tcp';
+import { ProtectedAuthorityService } from '../src/authorization/protected-authority.service';
+import { KycTierPolicyService } from '../src/kyc-verification/kyc-tier-policy.service';
+import type { AuthorizationService } from '../src/authorization/authorization.service';
+
+/**
+ * Approve a KYC tier policy through the real protected service pair so the protected-authority
+ * triggers see a legitimate REQUESTED → APPROVED transition. Test-only principals; the maker/checker
+ * separation, MFA-bound evidence and payload binding are still enforced by the production services
+ * and PostgreSQL triggers.
+ */
+async function approveTestKycTierPolicy(db: DataSource, definition: unknown): Promise<void> {
+  const maker = {
+    type: 'PRIVILEGED' as const,
+    principalId: 'commitment-fixture-maker',
+    sessionId: randomUUID(),
+    roles: ['SUPER_ADMIN'],
+    scopes: ['kyc.policy.propose'],
+    customerAccess: 'NONE' as const,
+    assuranceLevel: 'MFA' as const,
+  };
+  const checker = {
+    type: 'OPERATOR' as const,
+    principalId: 'commitment-fixture-checker',
+    sessionId: randomUUID(),
+    roles: ['COMPLIANCE'],
+    scopes: ['kyc.policy.approve'],
+    customerAccess: 'NONE' as const,
+    assuranceLevel: 'MFA' as const,
+  };
+  const connections = await createKycAuthorityConnectionsOverTcp(db);
+  try {
+    const authority = new ProtectedAuthorityService(connections.runtime, connections.authority);
+    const governance = new KycTierPolicyService(
+      connections.runtime,
+      { authorize: () => Promise.resolve({ allowed: true }) } as unknown as AuthorizationService,
+      authority,
+    );
+    const proposal = await governance.propose(maker, {
+      requestId: randomUUID(),
+      expectedVersion: 0,
+      definition,
+    });
+    await governance.decide(checker, proposal.id, true);
+  } finally {
+    await connections.cleanup();
+  }
+}
 
 describe('financial commitment initiation (real PostgreSQL)', () => {
   let db: DataSource;
@@ -172,32 +220,18 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
       { authorize: () => Promise.resolve('AUTHORIZED') },
     );
     service = app.get(FinancialCommitmentService);
-    const proposal = randomUUID();
+    // Approve the tier policy through the REAL protected maker/checker services. A direct
+    // `INSERT ... state='APPROVED'` is correctly refused by the protected-authority transition
+    // trigger, which is the guarantee this suite must not weaken.
     const requirements = { all: [], any: [] };
     const definition = {
       regulatoryRequirementsConfirmed: true,
       effectiveFrom: '2020-01-01T00:00:00.000Z',
       effectiveUntil: null,
-      regulatory: { LEVEL_1: requirements, LEVEL_2: requirements },
-      operator: { LEVEL_1: requirements, LEVEL_2: requirements },
+      regulatory: { LEVEL_1: requirements, LEVEL_2: requirements, LEVEL_3: requirements },
+      operator: { LEVEL_1: requirements, LEVEL_2: requirements, LEVEL_3: requirements },
     };
-    await db.query(
-      `INSERT INTO kyc_tier_policy_proposals(id,request_id,expected_version,definition,fingerprint,maker_id,maker_session_id,checker_id,checker_session_id,state)
-      VALUES($1,$2,0,$3,$4,'maker',$5,'checker',$6,'APPROVED')`,
-      [
-        proposal,
-        randomUUID(),
-        JSON.stringify(definition),
-        'a'.repeat(64),
-        randomUUID(),
-        randomUUID(),
-      ],
-    );
-    await db.query(
-      `INSERT INTO kyc_tier_policy_versions(version,proposal_id,definition,maker_id,checker_id) VALUES(1,$1,$2,'maker','checker')`,
-      [proposal, JSON.stringify(definition)],
-    );
-    await db.query('UPDATE kyc_tier_policy_head SET version=1');
+    await approveTestKycTierPolicy(db, definition);
     await db.query(
       `INSERT INTO banks(id,bank_code,bank_name,short_name,nip_supported,status)
       VALUES($1,'FCBANK','Financial Commitment Test Bank','FC Bank',true,'ACTIVE')`,
