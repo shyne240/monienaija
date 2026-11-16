@@ -60,6 +60,7 @@ export class MonnifyProvider implements BankingProvider {
     this.descriptor = {
       key: PROVIDER_KEY,
       displayName: 'Monnify',
+      environment: this.options.environment,
       capabilities: capabilitiesOf({
         BANK_DIRECTORY: true,
         ACCOUNT_NAME_ENQUIRY: true,

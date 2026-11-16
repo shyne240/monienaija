@@ -85,6 +85,29 @@ export class BankingProviderRegistry {
   }
 
   /**
+   * Read-only projection of a registered provider's advertised capabilities.
+   *
+   * Governance validates a proposed configuration against this, so a configuration can never claim a
+   * capability the adapter does not implement. Returns null for an unregistered key — callers must
+   * treat that as a refusal, never as "assume it is fine".
+   */
+  descriptorFor(
+    key: string,
+  ): {
+    key: string;
+    environments: readonly string[];
+    capabilities: Record<string, boolean>;
+  } | null {
+    const provider = this.providers.get(key);
+    if (!provider) return null;
+    return {
+      key: provider.descriptor.key,
+      environments: [provider.descriptor.environment],
+      capabilities: { ...provider.descriptor.capabilities } as unknown as Record<string, boolean>,
+    };
+  }
+
+  /**
    * True only when the capability is both advertised by configuration *and* actually implemented.
    * This is the single predicate every caller should use before attempting a capability.
    */

@@ -212,16 +212,42 @@ running every migration), then exercised structurally by
 | 13–15 | admin, customer and agent surfaces                                                                          |
 | 16–17 | KYC residual machine code and consolidated acceptance                                                       |
 
-Groups 2 and 6 are complete; group 1's contracts and registry are complete and stable. Groups 4 and
+Groups 2, 3 and 6 are complete; group 1's contracts and registry are complete and stable. Groups 4 and
 5 are complete **only** on the provider side: the adapter is written and unit-tested, but no
-application code calls it yet, so nothing in this repository can move money today.
+application code calls it yet, so nothing in this repository can move money today. Group 3 governs
+_who may be engaged_; it does not yet gate a live call, because no live call exists.
+
+## 7.1 Group 3 — the three defects the service tests caught
+
+The governance schema passed its structural assertions on the first run, which was misleading: the
+schema was correct but **unusable**, and only driving it from a service exposed that.
+
+1. **The migration granted the protected role nothing to write to.** `monienaija_authority_core` owned
+   the decision table but had no privilege on the four `public` tables the decision procedure must
+   touch, so every approval failed with `permission denied for table
+banking_provider_configuration_proposals`. The institutional KYC migration already granted these
+   (`1785753600504`, §"privileges"); the banking migration simply omitted them. It now mirrors that
+   model exactly — authority writes, runtime reads, `PUBLIC` revoked.
+2. **The decision guard compared a payload digest that could never match.** The trigger required
+   `p.fingerprint = NEW.payload_digest`, where `fingerprint` is a sha256 of the _command_ computed in
+   TypeScript and `payload_digest` is the database recomputing the _stored row_. Those are different
+   values by construction, so no legitimate approval could ever be recorded — the control was
+   unsatisfiable, not strict. It now compares `NEW.payload_digest` against
+   `protected_authority.banking_provider_payload_digest(NEW.proposal_id)`, exactly as the KYC guard
+   does, and additionally pins `assurance_level`, `expires_at` and expiry-to-clock.
+3. **Idempotent replay ignored the reason.** A request id replayed with identical payload but a
+   different justification returned `replay: true` and silently discarded the new reason. Reason is
+   part of the decision evidence, so it is now part of the replay comparison.
+
+None of these were caught by the structural suite, which is precisely why it is not sufficient alone:
+a schema can refuse every wrong thing and still refuse the right thing too.
 
 ## 8. Exact next action
 
-**Group 3 service layer** — proposal, approval and version publication over the governance schema,
-using the same `ProtectedAuthorityService` boundary and maker/checker shape already accepted for
-institutional KYC limits (`src/limit-catalog/institution-kyc-limit-policy.service.ts`). Then
-migrations `1785753600601`+ for virtual accounts, inbound and outbound operation records.
+**Group 5 persistence** — migration `1785753600601`+: reserved virtual accounts, inbound payment
+records and outbound operation records with their durable dispatch state. Group 4 (bank directory and
+account-name enquiry) is provider-side complete; its application service ships with the same
+migration budget, since a directory call with no persistence need is a thin pass-through.
 
 ### 8.1 What is landed and safe
 

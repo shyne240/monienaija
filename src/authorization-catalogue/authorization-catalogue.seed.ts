@@ -869,6 +869,43 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
     makerCheckerRequired: true,
     approvalRequired: true,
   },
+  // Banking provider routing: the same separation as the KYC provider trio above, and for a stronger
+  // reason. A banking provider decision sets who moves customer money, so the authority to propose a
+  // provider must not be the authority to approve it, and neither must collapse into a generic
+  // "finance modification" grant.
+  {
+    functionCode: 'banking.provider.view',
+    domain: 'FINANCE',
+    name: 'View banking provider configuration',
+    description: 'View non-secret banking provider configuration, versions and history.',
+    sensitivity: READ,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+  },
+  {
+    functionCode: 'banking.provider.propose',
+    domain: 'FINANCE',
+    name: 'Propose banking provider configuration',
+    description:
+      'Propose banking provider engagement, capabilities and routing under independent approval.',
+    sensitivity: PRIVILEGED,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    makerCheckerRequired: true,
+    approvalRequired: true,
+  },
+  {
+    functionCode: 'banking.provider.approve',
+    domain: 'FINANCE',
+    name: 'Approve banking provider configuration',
+    description: 'Independently approve banking provider engagement, capabilities and routing.',
+    sensitivity: PRIVILEGED,
+    v1Status: IMPLEMENTED,
+    assignable: true,
+    makerCheckerRequired: true,
+    approvalRequired: true,
+  },
+
   // Dedicated governance permissions for KYC tier requirements.
   {
     functionCode: 'kyc.policy.view',
@@ -1501,6 +1538,9 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('SUPER_ADMIN', 'kyc.policy.propose', INITIATE),
   nowAssign('SUPER_ADMIN', 'kyc.provider.view', VIEW),
   nowAssign('SUPER_ADMIN', 'kyc.provider.propose', INITIATE),
+  // SUPER_ADMIN proposes provider engagement and deliberately does not approve it.
+  nowAssign('SUPER_ADMIN', 'banking.provider.view', VIEW),
+  nowAssign('SUPER_ADMIN', 'banking.provider.propose', INITIATE),
   nowAssign('SUPER_ADMIN', 'kyc.view', VIEW),
   nowAssign('SUPER_ADMIN', 'kyc.review', EXECUTE),
   nowAssign('SUPER_ADMIN', 'kyc.approve', EXECUTE),
@@ -1585,6 +1625,14 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('FINANCE_CONTROLLER', 'agent.defund', APPROVE),
   nowAssign('FINANCE_CONTROLLER', 'notification.provider.view', VIEW),
   nowAssign('FINANCE_CONTROLLER', 'notification.provider.configure', APPROVE),
+  // FINANCE_CONTROLLER is the sole independent approver of banking provider configuration. It holds
+  // view (to review a proposal's content before deciding) and approve, but NOT propose: a controller
+  // that could both propose and approve would make the maker/checker boundary decorative.
+  nowAssign('FINANCE_CONTROLLER', 'banking.provider.view', VIEW),
+  nowAssign('FINANCE_CONTROLLER', 'banking.provider.approve', APPROVE),
+  // FINANCE_PREPARER proposes provider configuration but cannot approve its own proposal.
+  nowAssign('FINANCE_PREPARER', 'banking.provider.view', VIEW),
+  nowAssign('FINANCE_PREPARER', 'banking.provider.propose', INITIATE),
   // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01
   nowAssign('FINANCE_CONTROLLER', 'reporting.transaction_summary.view', VIEW),
   // NOTE: FINANCE_CONTROLLER deliberately does NOT hold ledger.post/reverse (maker-only

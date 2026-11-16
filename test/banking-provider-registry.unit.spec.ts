@@ -26,6 +26,7 @@ function descriptorWith(
   return {
     key,
     displayName: key,
+    environment: 'sandbox',
     capabilities: capabilitiesOf(capabilities),
     descriptors: [],
   };

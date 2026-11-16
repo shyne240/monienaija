@@ -171,7 +171,15 @@ export class BankingProviderGovernance1785753600600 implements MigrationInterfac
           OR p.expected_version IS DISTINCT FROM v
           OR p.maker_id IS DISTINCT FROM NEW.maker_principal_id
           OR p.maker_session_id IS DISTINCT FROM NEW.maker_session_id
-          OR p.fingerprint IS DISTINCT FROM NEW.payload_digest
+          -- The decision must bind the payload as the database recomputes it from the stored
+          -- proposal, not a digest the application supplied. Comparing against an application-
+          -- computed value would let a caller bind a decision to something other than the row that
+          -- will be published.
+          OR NEW.payload_digest IS DISTINCT FROM
+             protected_authority.banking_provider_payload_digest(NEW.proposal_id)
+          OR NEW.assurance_level <> 'MFA'
+          OR NEW.expires_at IS DISTINCT FROM p.expires_at
+          OR NEW.expires_at <= clock_timestamp()
           OR NEW.maker_principal_id = NEW.checker_principal_id
         THEN
           RAISE EXCEPTION 'Banking provider decision does not match its proposal'
@@ -240,6 +248,56 @@ export class BankingProviderGovernance1785753600600 implements MigrationInterfac
     await q.query(`CREATE UNIQUE INDEX uq_banking_provider_open_disengagement
       ON banking_provider_disengagements(institution_id,provider_key,environment)
       WHERE reengaged_at IS NULL`);
+
+    // ---------------------------------------------------------------- privileges
+    // Mirrors the accepted institutional KYC governance model exactly: the runtime role may READ
+    // this configuration so it can honour it, and may never write it. Writes happen on a connection
+    // holding `monienaija_authority_core`, which is why an approval cannot be forged by application
+    // code holding only the ordinary runtime credential.
+    await q.query(`GRANT USAGE ON SCHEMA public TO monienaija_authority_core`);
+    await q.query(
+      `GRANT SELECT,INSERT,UPDATE ON public.banking_provider_configuration_heads TO monienaija_authority_core`,
+    );
+    await q.query(
+      `GRANT SELECT,INSERT,UPDATE ON public.banking_provider_configuration_proposals TO monienaija_authority_core`,
+    );
+    await q.query(
+      `GRANT SELECT,INSERT ON public.banking_provider_configuration_versions TO monienaija_authority_core`,
+    );
+    await q.query(
+      `GRANT SELECT,INSERT,UPDATE ON public.banking_provider_disengagements TO monienaija_authority_core`,
+    );
+    await q.query(`GRANT SELECT ON public.financial_institutions TO monienaija_authority_core`);
+    await q.query(`REVOKE ALL ON public.banking_provider_configuration_heads FROM PUBLIC`);
+    await q.query(`REVOKE ALL ON public.banking_provider_configuration_proposals FROM PUBLIC`);
+    await q.query(`REVOKE ALL ON public.banking_provider_configuration_versions FROM PUBLIC`);
+    await q.query(`REVOKE ALL ON public.banking_provider_disengagements FROM PUBLIC`);
+    await q.query(
+      `GRANT SELECT ON protected_authority.banking_provider_decisions TO monienaija_authority_core`,
+    );
+    // The runtime reads configuration in order to honour it. Read-only, deliberately.
+    await q.query(
+      `GRANT SELECT ON public.banking_provider_configuration_heads TO monienaija_runtime`,
+    );
+    await q.query(
+      `GRANT SELECT ON public.banking_provider_configuration_proposals TO monienaija_runtime`,
+    );
+    await q.query(
+      `GRANT SELECT ON public.banking_provider_configuration_versions TO monienaija_runtime`,
+    );
+    await q.query(`GRANT SELECT ON public.banking_provider_disengagements TO monienaija_runtime`);
+    await q.query(
+      `REVOKE INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER ON public.banking_provider_configuration_heads FROM monienaija_runtime`,
+    );
+    await q.query(
+      `REVOKE INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER ON public.banking_provider_configuration_proposals FROM monienaija_runtime`,
+    );
+    await q.query(
+      `REVOKE INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER ON public.banking_provider_configuration_versions FROM monienaija_runtime`,
+    );
+    await q.query(
+      `REVOKE INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER ON public.banking_provider_disengagements FROM monienaija_runtime`,
+    );
   }
 
   async down(q: QueryRunner): Promise<void> {

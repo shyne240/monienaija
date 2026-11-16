@@ -59,6 +59,14 @@ export interface BankingProviderDescriptor {
   /** Stable provider key used in configuration, e.g. `MONNIFY`. */
   readonly key: string;
   readonly displayName: string;
+  /**
+   * The environment this adapter instance is bound to.
+   *
+   * It belongs in the descriptor rather than only in adapter options because governance has to
+   * verify that an approved configuration names the environment the code is actually wired to. A
+   * production credential approved against a sandbox adapter would pass a key-only check.
+   */
+  readonly environment: BankingEnvironment;
   readonly capabilities: BankingProviderCapabilities;
   readonly descriptors: readonly BankingCapabilityDescriptor[];
 }
