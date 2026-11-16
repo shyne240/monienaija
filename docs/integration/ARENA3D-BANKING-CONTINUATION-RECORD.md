@@ -167,7 +167,14 @@ The registry tests are not decoration — two of them encode rules that are othe
 
 ## 6. Migration inventory
 
-_(appended as each migration lands; allocation `1785753600600`–`1785753600699`)_
+| Migration                                 | Purpose                                                                                                                                                                                  |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `1785753600600-BankingProviderGovernance` | protected banking-provider configuration: heads, proposals, append-only versions, protected decision evidence, immutable-approved-record triggers, and emergency operational disablement |
+
+Within the reserved allocation `1785753600600`–`1785753600699`; no published identifier was reused.
+Verified to apply by running the full real migration chain (the PG template database is built by
+running every migration), then exercised structurally by
+`banking-provider-governance-schema.integration.spec.ts`.
 
 ## 7. Remaining implementation
 
