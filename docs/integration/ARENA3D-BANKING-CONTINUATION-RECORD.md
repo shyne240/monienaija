@@ -218,6 +218,24 @@ Groups 2, 3 and 6 are complete; group 1's contracts and registry are complete an
 application code calls it yet, so nothing in this repository can move money today. Group 3 governs
 _who may be engaged_; it does not yet gate a live call, because no live call exists.
 
+## 7.0c Group 5 — virtual accounts, where a retry creates a second NUBAN
+
+`src/banking/banking-virtual-account.service.ts`. The dangerous case is a provisioning timeout: the
+account may exist. Reacting by provisioning again gives the customer two NUBANs, and one of them will
+keep collecting money nobody reconciles. So:
+
+- an `UNKNOWN` reservation **blocks further provisioning for that wallet** — the service returns the
+  existing reservation without calling the provider, and a partial unique index makes the same refusal
+  hold against a future code path;
+- an unreliable provider yields `UNKNOWN`, never `REJECTED`. Only `PROVIDER_REJECTED`/`VALIDATION`
+  becomes `REJECTED`, because only then can the customer safely correct details and retry;
+- no account number is ever stored or returned unless the provider issued one. `PENDING` returns an
+  empty account list, so the customer is never shown a NUBAN that cannot receive funds;
+- resolution is `enquire()` by the same account reference — it never submits;
+- the `PENDING` path initially failed against PostgreSQL with `inconsistent types deduced for
+parameter $2`, because the same parameter was used both as a bare `varchar` and inside a `CASE`.
+  An explicit cast fixes it; worth recording because the failure only appears against a real server.
+
 ## 7.0b Group 7 core — inbound deposits, where the input is untrusted
 
 `src/banking/banking-inbound.service.ts`. A webhook is unauthenticated input from the internet, so a
