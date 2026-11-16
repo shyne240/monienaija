@@ -22,6 +22,28 @@ export const MAX_SERIALIZABLE_ATTEMPTS = 3;
  */
 const RETRYABLE_TRANSACTION_CODES = new Set(['40001', '40P01']);
 
+/**
+ * Delay before attempt `attempt + 1`.
+ *
+ * Immediate retries are close to useless for SERIALIZABLE contention: the competing transaction is
+ * still holding its locks, so the next attempt collides again and a bounded budget of three burns out
+ * in microseconds. Measured symptom: concurrent cash-to-cash initiation exhausted all three attempts
+ * and returned a conflict although the same work succeeds when the competing load clears.
+ *
+ * Exponential with full jitter (the "binary exponential backoff" recommended for serialization
+ * failures): base 5ms, doubling per attempt, capped at 100ms. Jitter is essential — without it every
+ * retrying transaction wakes at the same instant and re-creates the collision it is trying to escape.
+ * The total added latency is bounded by the cap times the attempt count, so this cannot hide a
+ * persistent problem behind a hang.
+ */
+export function serializationRetryDelayMs(
+  attempt: number,
+  random: () => number = Math.random,
+): number {
+  const exponential = Math.min(100, 5 * 2 ** Math.max(0, attempt - 1));
+  return Math.floor(random() * exponential);
+}
+
 export function isRetryableTransactionError(error: unknown): boolean {
   if (!(error instanceof QueryFailedError)) {
     return false;
@@ -55,6 +77,8 @@ export async function runSerializableWithRetry<T>(
           `${operation} exhausted ${MAX_SERIALIZABLE_ATTEMPTS} bounded transaction attempts`,
         );
       }
+      const delay = serializationRetryDelayMs(attempt);
+      if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
   /* istanbul ignore next -- the loop either returns or throws above */

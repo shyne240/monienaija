@@ -42,6 +42,7 @@ import { parsePositiveMinorUnits, normalizeCurrency } from '../common/money';
 import {
   isRetryableTransactionError,
   MAX_SERIALIZABLE_ATTEMPTS,
+  serializationRetryDelayMs,
 } from '../common/serializable-transaction';
 import { AgentTransactionAuthorizationService } from './agent-transaction-authorization.service';
 import { AgentReceivingNumberService } from './agent-receiving-number.service';
@@ -936,6 +937,11 @@ export class AgentCashToCashService {
       } catch (error) {
         if (isRetryableTransactionError(error)) {
           if (attempt < MAX_SERIALIZABLE_ATTEMPTS - 1) {
+            // Back off before retrying. Retrying immediately re-enters the same collision: the
+            // competing transaction still holds its locks, so all three bounded attempts can be
+            // consumed before the contention clears.
+            const delay = serializationRetryDelayMs(attempt);
+            if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
             continue;
           }
           // V1-TEST-01: on the final bounded attempt a genuine PostgreSQL serialization

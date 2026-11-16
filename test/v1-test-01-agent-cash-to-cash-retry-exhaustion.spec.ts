@@ -8,6 +8,7 @@ import { AgentCashToCashService } from '../src/agent/agent-cash-to-cash.service'
 import { MAX_SERIALIZABLE_ATTEMPTS } from '../src/common/serializable-transaction';
 
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
+import { serializationRetryDelayMs } from '../src/common/serializable-transaction';
 
 /**
  * V1-TEST-01 — deterministic regression test for the production defect found and fixed in
@@ -136,5 +137,39 @@ describe('AgentCashToCashService — bounded SERIALIZABLE retry exhaustion (V1-T
 
     expect(result.status).toBe('COMPLETED');
     expect(transactionMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('serialization retry backoff', () => {
+  it('grows exponentially and is capped, so a bounded budget can outlast contention', () => {
+    // random() === 1 yields the undiminished ceiling for each attempt.
+    const ceiling = (attempt: number) => serializationRetryDelayMs(attempt, () => 1);
+    expect(ceiling(1)).toBe(5);
+    expect(ceiling(2)).toBe(10);
+    expect(ceiling(3)).toBe(20);
+    expect(ceiling(4)).toBe(40);
+    expect(ceiling(5)).toBe(80);
+    expect(ceiling(6)).toBe(100);
+    expect(ceiling(50)).toBe(100);
+  });
+
+  it('jitters so retrying transactions do not wake together and re-collide', () => {
+    // Full jitter: the delay is drawn uniformly from [0, ceiling), never the bare ceiling.
+    expect(serializationRetryDelayMs(3, () => 0)).toBe(0);
+    expect(serializationRetryDelayMs(3, () => 0.5)).toBe(10);
+    expect(serializationRetryDelayMs(3, () => 0.999)).toBeLessThan(20);
+    const samples = new Set(Array.from({ length: 64 }, () => serializationRetryDelayMs(4)));
+    // A fixed delay would produce a single value and reintroduce the collision.
+    expect(samples.size).toBeGreaterThan(1);
+    for (const sample of samples) {
+      expect(sample).toBeGreaterThanOrEqual(0);
+      expect(sample).toBeLessThan(40);
+    }
+  });
+
+  it('never exceeds the documented cap even at the attempt bound', () => {
+    for (let attempt = 1; attempt <= 10; attempt += 1) {
+      expect(serializationRetryDelayMs(attempt, () => 0.999999)).toBeLessThanOrEqual(100);
+    }
   });
 });
