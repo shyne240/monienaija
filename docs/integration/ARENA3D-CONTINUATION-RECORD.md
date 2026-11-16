@@ -630,10 +630,22 @@ none went unreported. This is the tree the acceptance record cites.
 | Root unit suite                           | **257/257 suites, 2981/2981 tests**    |
 | Isolated KYC sweep (11 suites, run alone) | **11/11 suites, 149/149 tests**        |
 
-The three runs are on different commits (`e9609925`, `740883df`, `e0ef1d22`) because each fix moved
-the tree. That is stated rather than glossed: `e9609925` is HEAD, and its matrix is the authoritative
-one. The unit and isolated runs pre-date it only by `a12`'s test-only change, which touches no source
-and no unit or isolated suite.
+**All three re-run on `e9609925` itself after the matrix completed**, so the record is not stitched
+together from different trees:
+
+```text
+npx jest --config jest.config.js --silent
+  Test Suites: 257 passed, 257 total
+  Tests:       2981 passed, 2981 total
+  Time:        80.982 s
+
+KYC_ISOLATED_CONFIRM_DISPOSABLE=yes node scripts/run-isolated-kyc-tests.js --runInBand
+  Test Suites: 11 passed, 11 total
+  Tests:       149 passed, 149 total
+  exit:        0
+```
+
+Three gates, one commit, all green.
 
 ## 9.5 Next action
 
