@@ -148,6 +148,16 @@ export class GovernedFinancialFixture {
   private readonly label: string;
 
   private workforceCache?: GovernedWorkforce;
+  /**
+   * The in-flight seeding promise, cached separately from its result.
+   *
+   * Caching only the resolved value is not enough: two callers arriving before the first seeds
+   * have finished both observe `workforceCache === undefined`, both seed their own six principals,
+   * and both issue supertest requests through the same server. That is how a genuinely concurrent
+   * test — two `initiateTransfer()` calls in one `Promise.all` — produces `connect ECONNRESET`
+   * from a fixture that has nothing to do with the behaviour under test.
+   */
+  private workforcePromise?: Promise<GovernedWorkforce>;
   private readonly institutions = new Map<string, GovernedInstitution>();
   private readonly defaultInstitutionKeys = new Map<string, string>();
   private sequence = 0;
@@ -222,15 +232,25 @@ export class GovernedFinancialFixture {
    * principals, which is what the maker-checker contract requires.
    */
   async workforce(): Promise<GovernedWorkforce> {
-    if (!this.workforceCache) {
+    if (this.workforceCache) return this.workforceCache;
+    // Concurrent callers must share ONE seeding pass. Assign the promise before awaiting so a
+    // second caller joins the in-flight work instead of starting a duplicate.
+    this.workforcePromise ??= (async () => {
       const entries = await Promise.all(
         (Object.keys(ROLE_KEYS) as WorkforceRoleKey[]).map(
           async (key) => [key, await this.seedPrincipal(key)] as const,
         ),
       );
-      this.workforceCache = Object.fromEntries(entries) as GovernedWorkforce;
-    }
-    return this.workforceCache;
+      const workforce = Object.fromEntries(entries) as GovernedWorkforce;
+      this.workforceCache = workforce;
+      return workforce;
+    })().catch((error: unknown) => {
+      // A rejected promise must not stay cached: caching it would poison every later caller in the
+      // suite, turning one transient seeding failure into "the whole fixture is unusable".
+      this.workforcePromise = undefined;
+      throw error;
+    });
+    return this.workforcePromise;
   }
 
   /** Independent MFA checker: never the principal that prepared the request. */

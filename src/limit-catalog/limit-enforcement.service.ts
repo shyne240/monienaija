@@ -58,7 +58,7 @@ export interface EnforceInput {
    *    assignment/permissive contract applies, so already-committed settlement, reversal,
    *    compensation, claim and recovery flows keep working.
    *  - flag unset/false, production profile        → fail closed. Production never downgrades to
-   *    the legacy permissive contract (see `resolveTierEnforcementMode`).
+   *    the legacy permissive contract (see `resolveTierEnforcement`).
    */
   requireKycTierPolicy?: boolean;
   institutionId?: string | null;
