@@ -677,8 +677,17 @@ export class LimitEnforcementService {
         );
       }
 
-      // Insert reservation row
+      // Insert reservation row.
+      //
+      // A unique violation here is an expected, handled race (a concurrent reserve for the same
+      // window under this idempotency key; replayed as "already reserved"). It MUST be wrapped in a
+      // savepoint: PostgreSQL aborts the entire transaction on any statement error, so catching a
+      // 23505 in JavaScript and continuing is not sufficient — every later statement in this
+      // transaction would fail with `25P02 current transaction is aborted`, masking the real
+      // outcome and failing an otherwise-valid admission. Rolling back to the savepoint discards
+      // only the duplicate insert and keeps the surrounding financial transaction usable.
       const windowType = window.windowType;
+      await manager.query('SAVEPOINT limit_reservation_insert');
       try {
         const insertedReservation: Array<{ id: string }> = await manager.query(
           `INSERT INTO limit_reservations (id, idempotency_key, request_hash, correlation_id, principal_type, principal_id, limit_profile_code, limit_rule_id, product, direction, channel, dimension, currency, window_type, window_key, window_start, window_end, amount_minor, count, status, limit_usage_id, created_at, updated_at)
@@ -707,10 +716,13 @@ export class LimitEnforcementService {
           ],
         );
         if (insertedReservation[0]?.id) newReservationIds.push(insertedReservation[0].id);
+        await manager.query('RELEASE SAVEPOINT limit_reservation_insert');
       } catch (e: unknown) {
         if ((e as { code?: string } | null | undefined)?.code === '23505') {
-          // Unique violation — concurrent reserve for same window/idempotencyKey, treat as already reserved (should be replay)
-          // Continue
+          // Unique violation — concurrent reserve for the same window/idempotencyKey, treated as an
+          // already-reserved replay. Undo only the failed insert so the outer transaction survives.
+          await manager.query('ROLLBACK TO SAVEPOINT limit_reservation_insert');
+          await manager.query('RELEASE SAVEPOINT limit_reservation_insert');
         } else throw e;
       }
 
