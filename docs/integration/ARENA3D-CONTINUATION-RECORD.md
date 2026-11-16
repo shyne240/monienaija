@@ -525,3 +525,86 @@ inside the full matrix after it. That is the evidence that matters.
 
 Authoritative full matrix on `740883df`, run alone. Totals to be appended to §7 and to §10 of the
 handoff, replacing the earlier run only if the earlier run's numbers are no longer reproducible.
+
+---
+
+# Checkpoint 9 — the matrix's last failure was a substring, not a secret
+
+**HEAD: `e9609925` (pushed).**
+
+## 9.1 The definitive run at `740883df`
+
+Run alone, exclusive tuning, nothing else on the machine:
+
+```text
+PG_TEST_SUMMARY {"filesDiscovered":153,"batches":26,"suitesReported":153,
+  "suitesPassed":152,"suitesFailed":1,"passingBatches":25,"failingBatches":1,
+  "memoryFailures":0,"timeouts":0,"unexplainedCrashes":0,"filesWithoutResult":[]}
+PG_EXIT=1
+```
+
+One failure:
+
+```text
+● A12 Agent financial execution foundation (real PostgreSQL)
+  › Q. PIN/secrets do not appear in result/audit
+
+  expect(received).not.toContain(expected)
+  Expected substring: not "4321"
+```
+
+**This was not a secret leak.** The test read the five most recent
+`AGENT_FINANCIAL_EXECUTION` audit rows — which include evidence written by _other_ tests — and
+searched the serialised JSON for the PIN. Test M had run immediately before and written:
+
+```json
+"idempotencykey": "m2-074321e6-6d74-41e3-8696-9b5aefe18ef9"
+```
+
+That random UUID contains the substring `4321`. The PIN `4321` appears nowhere in the audit row.
+
+So the assertion was a coin flip over unrelated random identifiers. It would fail whenever any recent
+UUID, journal id or hash happened to contain the PIN — and it inspected rows that have nothing to do
+with the PIN under test.
+
+## 9.2 The fix, and why it is stricter rather than weaker
+
+The obvious "fix" — deleting the assertion, or scanning fewer rows — would have removed a real
+security check to make a run go green. Instead the query now selects the audit row belonging to the
+execution **this test just created**:
+
+```sql
+SELECT new_values, previous_values FROM audit_events
+ WHERE entity_type='AGENT_FINANCIAL_EXECUTION'
+   AND new_values->>'journalId' = $1     -- res.journalId
+```
+
+plus `expect(audits).toHaveLength(1)`. The evidence under test is now exactly the evidence this
+execution produced.
+
+Verified in **both** directions, because a passing test proves nothing on its own:
+
+| Direction                                          | Result                                         |
+| -------------------------------------------------- | ---------------------------------------------- |
+| Real tree                                          | 19/19 PASS                                     |
+| PIN injected into the audited row (`"pin":"4321"`) | **FAILS** — the assertion still catches a leak |
+
+## 9.3 Where this leaves the mission
+
+Across three definitive runs the same pattern held: **every** matrix failure was a test that could not
+distinguish its own evidence from everyone else's.
+
+| Failure                             | Real cause                                                 | Produced by |
+| ----------------------------------- | ---------------------------------------------------------- | ----------- |
+| `v1-limit-05` concurrent `C2C_INIT` | SERIALIZABLE retries with no delay                         | `a34574c5`  |
+| `a16` concurrent initiation         | `workforce()` seeding race (6 callers seeded instead of 1) | `740883df`  |
+| `a12` PIN-leak assertion            | `"4321"` inside an unrelated random UUID                   | `e9609925`  |
+
+None was an application defect in the control under test; all three were defects in the _evidence_,
+and all three were repaired so the evidence became sharper.
+
+The acceptance suites themselves were already correct. What was wrong was what they measured.
+
+## 9.4 Next action
+
+Authoritative full matrix at `e9609925`, alone. Totals to replace those in §7 and in handoff §10.
