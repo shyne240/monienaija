@@ -72,6 +72,36 @@ profile, rule or mapping exists.
 It also pins the **savepoint fix**: a duplicate reservation no longer poisons the surrounding
 transaction with `25P02`.
 
+### 3.1 The full isolated KYC sweep
+
+```sh
+KYC_ISOLATED_CONFIRM_DISPOSABLE=yes node scripts/run-isolated-kyc-tests.js --runInBand
+```
+
+```text
+PASS test/batch2c-eligibility.isolated-pg.test.ts
+PASS test/batch2-legacy-registration.isolated-pg.test.ts
+PASS test/kyc-registration-api.isolated-pg.test.ts
+PASS test/batch2c-session-remediation.isolated-pg.test.ts
+PASS test/governed-ledger-reversal.isolated-pg.test.ts
+PASS test/kyc-registration-session.isolated-pg.test.ts
+PASS test/kyc-tier-limit-enforcement.isolated-pg.test.ts
+PASS test/kyc-foundation.isolated-pg.test.ts
+PASS test/kyc-tier-transition.isolated-pg.test.ts
+PASS test/kyc-tier-policy.isolated-pg.test.ts
+PASS test/kyc-provider-governance.isolated-pg.test.ts
+
+Test Suites: 11 passed, 11 total
+Tests:       149 passed, 149 total
+```
+
+This sweep must run **alone**. A concurrent full-matrix run starves it of connections and produces
+`Exceeded timeout of 180000 ms for a hook` in suites that normally take seconds.
+
+The single failure this sweep ever produced is described in §5.1: `batch2c-eligibility`'s claim
+test, whose fixture seeded a transfer that could no longer exist. It failed closed for three
+individually correct reasons before the fixture was rebuilt along the governed path.
+
 ---
 
 ## 4. Financial admission regression suites (real PostgreSQL)
