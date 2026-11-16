@@ -144,7 +144,18 @@ boundary; **no speculative alternative-provider contract is implemented.**
 
 ## 5. Tests executed
 
-_(appended as each group lands)_
+| Suite                                    | Result | Command                                                                                         |
+| ---------------------------------------- | ------ | ----------------------------------------------------------------------------------------------- |
+| `banking-provider-registry.unit.spec.ts` | 6/6    | `npx jest --config jest.config.js --runTestsByPath test/banking-provider-registry.unit.spec.ts` |
+
+The registry tests are not decoration — two of them encode rules that are otherwise easy to erode:
+
+- a provider that **advertises** `OUTBOUND_TRANSFER_SUBMIT` without implementing
+  `submitOutboundTransfer` is refused at registration, so the failure cannot surface at 3am during a
+  real transfer;
+- `require('unknown')` throws and `supports()` returns false. There is deliberately **no** `getAny()`
+  or fallback, because silently rerouting to a different provider is the one thing this architecture
+  must never do.
 
 ## 6. Migration inventory
 
@@ -156,7 +167,7 @@ All groups 1–17.
 
 ## 8. Exact next action
 
-Group 1 — provider capability contracts and registry.
+Group 2 — Monnify transport, authentication, token refresh coordination, normalized error mapping.
 
 ## 9. Genuine external blockers
 
