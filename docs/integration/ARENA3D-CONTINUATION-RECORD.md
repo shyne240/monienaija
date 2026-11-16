@@ -269,3 +269,45 @@ Every `postJournal`/`postJournalInTransaction` call site was audited:
 Authoritative full matrix at `PG_TEST_CONCURRENCY=1 PG_TEST_BATCH_SIZE=6
 PG_TEST_MAX_OLD_SPACE_MB=2560` on `6bda9489`; append exact totals to both this record and §10 of the
 handoff. Then re-run the root unit suite (a new unit file was added).
+
+---
+
+# Checkpoint 6 — the boundary inspector was lying, and a real privilege leak
+
+**HEAD: `b4f733b2`** (pushed).
+
+## 6.1 Three defects in the code that proves the boundary
+
+`test/protected-authority-boundary.integration.spec.ts` failed. Each cause was a real defect in the
+control itself, which is the worst possible place for one:
+
+| #   | Defect                                                                                                                                                                                                                                                                                                                                                   | Consequence                                                                                                                                                                                                 |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | The **runtime** inspection cast `'protected_authority.fn()'::regprocedure`. That cast resolves the name through the schema and needs `USAGE` on it — which the runtime role deliberately lacks.                                                                                                                                                          | The runtime role was denied by the very control it was trying to demonstrate. The error was swallowed into `unavailable`, so production readiness could **never** verify an actually-correct configuration. |
+| 2   | `kyc_governance_write` wrapped a **multi-row** query in a scalar subquery (no aggregate, `relname IN` two tables).                                                                                                                                                                                                                                       | Any deployment with both governance tables present raised `more than one row returned by a subquery used as an expression`, again surfacing as a boundary failure.                                          |
+| 3   | **Real privilege leak.** `scripts/sql/provision-database-roles-after-migrations.sql` grants runtime `INSERT/UPDATE/DELETE ON ALL TABLES`, then re-revokes only the original six KYC tables. Migration `1785753600504` revokes runtime write on the three `institution_kyc_limit_*` tables, but this script runs **afterwards** and silently restored it. | The ordinary application credential could forge the very tier→limit policy it is then checked against.                                                                                                      |
+
+Fixes: catalog lookup instead of the schema-dependent cast; aggregate added to the subquery; the three
+tables re-revoked explicitly, and `authority_inspection` now verifies it.
+
+**`protected-authority-boundary` 7/7 PASS.**
+
+## 6.2 Scheduler trap — recorded so it is not repeated
+
+Two full runs were invalidated by **sharing the machine**:
+
+- the matrix and the isolated KYC sweep were run concurrently;
+- suites that normally take seconds hit `Exceeded timeout of 180000 ms for a hook`
+  (`v1-w2w-recovery-audit-01`, `batch2c-eligibility`);
+- one sweep died with no jest summary at all, only application logs.
+
+**Rule:** exactly one heavy suite process at a time. Both contaminated runs were discarded, not
+reported. A `beforeAll` timeout in this workspace is evidence of contention, not of an application
+defect — re-run it alone before believing it.
+
+## 6.3 Outstanding
+
+1. Authoritative full matrix, alone, on `b4f733b2`.
+2. Isolated KYC sweep (11 suites), alone, after the matrix — count the suites individually if the
+   runner produces no summary.
+3. Append exact totals to this record and to §10 of the handoff.
