@@ -8,6 +8,19 @@ uncommitted working tree.
 **Current active branch:** `arena/defdd0fd-monienaija`.
 **Base commit branched from:** `004dd80008edbadc41cebf3c67222d6abbcd2cff`.
 
+> **Current position — read this first.** Everything below is a chronological log; earlier
+> checkpoints describe states that have since been superseded and are kept only as history. The
+> authoritative current state is **Checkpoint 7** at the end of this document.
+>
+> | Gate                                      | Current result                     |
+> | ----------------------------------------- | ---------------------------------- |
+> | Root unit suite                           | 256/256 suites, 2978/2978 tests    |
+> | Full PostgreSQL matrix                    | 153/153 suites, 2751 tests, exit 0 |
+> | Isolated KYC sweep (11 suites, run alone) | 11/11 suites, 149/149 tests        |
+>
+> Sections §5 "Outstanding implementation" and §6 "Exact next action" at lines ~93 are from the
+> **first** checkpoint and are fully discharged; do not action them.
+
 ---
 
 ## 1. Recovery source
