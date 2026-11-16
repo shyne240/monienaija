@@ -8,6 +8,10 @@ export interface KycAuthorityConnections {
   cleanup(): Promise<void>;
 }
 
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
+
 /**
  * Create disposable LOGIN roles against the isolated socket-only KYC cluster. The migrations under
  * test have already created the two NOLOGIN groups and granted their table privileges. This uses
@@ -54,6 +58,18 @@ export async function createKycAuthorityConnections(
   );
   await admin.query(`GRANT monienaija_runtime TO "${runtimeRole}"`);
   await admin.query(`GRANT monienaija_authority_core TO "${authorityRole}"`);
+  // The production post-migration provisioner grants ordinary DML to the protected authority
+  // login. Isolated suites only inherit migration-time minimal grants, so add the one UPDATE
+  // privilege PostgreSQL requires for SELECT ... FOR SHARE when their schema includes institutions.
+  const [institutionTable] = await admin.query<Array<{ table_exists: boolean }>>(
+    `SELECT to_regclass(format('%I.financial_institutions', $1::text)) IS NOT NULL AS table_exists`,
+    [schema],
+  );
+  if (institutionTable?.table_exists) {
+    await admin.query(
+      `GRANT UPDATE ON TABLE ${quoteIdentifier(schema)}.financial_institutions TO ${quoteIdentifier(authorityRole)}`,
+    );
+  }
 
   const cleanup = async () => {
     if (runtime.isInitialized) await runtime.destroy().catch(() => undefined);

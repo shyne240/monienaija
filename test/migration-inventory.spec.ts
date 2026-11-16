@@ -33,6 +33,8 @@ describe('migration inventory', () => {
       '1785753600501',
       '1785753600502',
       '1785753600503',
+      '1785753600504',
+      '1785753600505',
     ];
     const timestamps = migrations.map((migration) => migration.timestamp);
     for (const timestamp of institutional) expect(timestamps).toContain(timestamp);
@@ -63,16 +65,22 @@ describe('migration inventory', () => {
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at the Cash-Out institutional scope correction', () => {
+  it('ends at the KYC identity revision and trusted-evidence read migration', () => {
     expect(migrations.at(-1)).toMatchObject({
-      timestamp: '1785753600503',
-      name: 'CashOutInstitutionalScope1785753600503',
+      timestamp: '1785753600505',
+      name: 'KycIdentityRevisionAndEvidenceRead1785753600505',
     });
   });
 
   it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {
     const timestamps = migrations.map((migration) => migration.timestamp);
-    const arena2 = ['1785753600205', '1785753600400', '1785753600503'];
+    const arena2 = [
+      '1785753600205',
+      '1785753600400',
+      '1785753600503',
+      '1785753600504',
+      '1785753600505',
+    ];
     const positions = arena2.map((timestamp) => timestamps.indexOf(timestamp));
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
     // A newly adopted lower-numbered migration must never be inserted after a higher published

@@ -1,4 +1,11 @@
 export type IdentityKind = 'BVN' | 'NIN';
+/** Governed extension points for provider-backed assurance beyond identity-number checks. */
+export const KYC_ASSURANCE_CAPABILITIES = [
+  'ADDRESS_VERIFICATION',
+  'ENHANCED_DUE_DILIGENCE',
+] as const;
+export type KycAssuranceCapability = (typeof KYC_ASSURANCE_CAPABILITIES)[number];
+export type KycProviderCapability = IdentityKind | KycAssuranceCapability;
 export type AttemptOutcome =
   | 'DISPATCHING'
   | 'MATCH'

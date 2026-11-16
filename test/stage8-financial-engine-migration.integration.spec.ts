@@ -82,7 +82,20 @@ describe('Stage 8 consolidated financial-engine migration acceptance (real Postg
     const position = new Map(rows.map((row, index) => [row.timestamp, index] as const));
     const ordered = ['1785753600116', '1785753600117', '1785753600118', '1785753600140']
       .concat(['1785753600141', '1785753600142', '1785753600143'])
-      .concat(['1785753600144', '1785753600145', '1785753600146', '1785753600400']);
+      .concat([
+        '1785753600144',
+        '1785753600145',
+        '1785753600146',
+        '1785753600400',
+        '1785753600401',
+        '1785753600402',
+        '1785753600500',
+        '1785753600501',
+        '1785753600502',
+        '1785753600503',
+        '1785753600504',
+        '1785753600505',
+      ]);
     for (const id of ordered) expect(position.has(id)).toBe(true);
     const positions = ordered.map((id) => position.get(id)!);
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
@@ -94,8 +107,8 @@ describe('Stage 8 consolidated financial-engine migration acceptance (real Postg
         ORDER BY timestamp DESC LIMIT 1`,
     );
     expect(rows[0]).toEqual({
-      timestamp: '1785753600503',
-      name: 'CashOutInstitutionalScope1785753600503',
+      timestamp: '1785753600505',
+      name: 'KycIdentityRevisionAndEvidenceRead1785753600505',
     });
   });
 
@@ -202,7 +215,7 @@ describe('Stage 8 consolidated financial-engine migration acceptance (real Postg
       expect(appliedNames).toContain('CreateGovernedLedgerReversalExecutions1785753600117');
       expect(appliedNames).toContain('CreateFinancialCommitments1785753600140');
       expect(appliedNames).toContain('LinkA7InboundExecution1785753600146');
-      expect(appliedNames.at(-1)).toBe('CashOutInstitutionalScope1785753600503');
+      expect(appliedNames.at(-1)).toBe('KycIdentityRevisionAndEvidenceRead1785753600505');
       expect(await upgrade.showMigrations()).toBe(false);
     } finally {
       await destroyIntegrationDataSource(upgrade);
@@ -349,7 +362,7 @@ describe('Stage 8 readiness detection of a missing earlier migration (real Postg
     expect(result.migrations.compatible).toBe(true);
     expect(result.migrations.missing).toEqual([]);
     expect(result.migrations.unexpected).toEqual([]);
-    expect(result.migrations.latestTimestamp).toBe('1785753600503');
+    expect(result.migrations.latestTimestamp).toBe('1785753600505');
     // Financial dependency gates are unverified by design, so overall readiness still refuses.
     expect(result.status).toBe('error');
     expect(result.reason).toBe('financial_dependencies_not_ready');

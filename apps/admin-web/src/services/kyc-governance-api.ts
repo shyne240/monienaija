@@ -1,11 +1,19 @@
 import { ApiClient } from './api-client';
 
 export type KycIdentityKind = 'BVN' | 'NIN';
+export type KycAssuranceCapability = 'ADDRESS_VERIFICATION' | 'ENHANCED_DUE_DILIGENCE';
+export type KycProviderCapability = KycIdentityKind | KycAssuranceCapability;
+export const KYC_PROVIDER_CAPABILITIES: readonly KycProviderCapability[] = [
+  'BVN',
+  'NIN',
+  'ADDRESS_VERIFICATION',
+  'ENHANCED_DUE_DILIGENCE',
+];
 export type KycProviderCode = 'MONNIFY' | 'DOJAH' | 'SYNTHETIC';
 
 export interface KycProviderSetting {
   enabled: boolean;
-  capabilities: KycIdentityKind[];
+  capabilities: KycProviderCapability[];
 }
 export interface KycProviderRoute {
   primary: KycProviderCode | null;
@@ -13,14 +21,21 @@ export interface KycProviderRoute {
 }
 export interface KycProviderConfiguration {
   providers: Record<KycProviderCode, KycProviderSetting>;
-  routes: Record<KycIdentityKind, KycProviderRoute>;
+  routes: Record<KycProviderCapability, KycProviderRoute>;
+}
+export interface KycProviderCatalogueCapability {
+  code: KycProviderCapability;
+  candidate: boolean;
+  confirmed: boolean;
+  ready: boolean;
 }
 export interface KycProviderCatalogueItem {
   code: KycProviderCode;
-  candidateCapabilities: KycIdentityKind[];
-  confirmedCapabilities: KycIdentityKind[];
+  candidateCapabilities: KycProviderCapability[];
+  confirmedCapabilities: KycProviderCapability[];
   testOnly: boolean;
   ready: boolean;
+  capabilities: KycProviderCatalogueCapability[];
 }
 export interface KycProviderWorkspace {
   version: number;

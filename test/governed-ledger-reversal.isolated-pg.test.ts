@@ -8,6 +8,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { DataSource } from 'typeorm';
 import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
+import { approveIsolatedKycTierPolicy } from './support/kyc-governance-fixtures';
 import { assertIsolatedKycCluster, isolatedKycCluster } from './support/kyc-isolated-cluster';
 
 // Portable provenance: see test/support/kyc-isolated-cluster.ts. No absolute path from any one
@@ -81,7 +82,6 @@ afterAll(async () => {
 });
 
 async function setPolicy() {
-  const proposal = randomUUID();
   const req = { all: [], any: [] };
   const definition = {
     regulatoryRequirementsConfirmed: true,
@@ -90,22 +90,7 @@ async function setPolicy() {
     regulatory: { LEVEL_1: req, LEVEL_2: req },
     operator: { LEVEL_1: req, LEVEL_2: req },
   };
-  await db.query(
-    `INSERT INTO kyc_tier_policy_proposals(id,request_id,expected_version,definition,fingerprint,maker_id,maker_session_id,checker_id,checker_session_id,state) VALUES($1,$2,0,$3,$4,'maker',$5,'checker',$6,'APPROVED')`,
-    [
-      proposal,
-      randomUUID(),
-      JSON.stringify(definition),
-      'a'.repeat(64),
-      randomUUID(),
-      randomUUID(),
-    ],
-  );
-  await db.query(
-    `INSERT INTO kyc_tier_policy_versions(version,proposal_id,definition,maker_id,checker_id) VALUES(1,$1,$2,'maker','checker')`,
-    [proposal, JSON.stringify(definition)],
-  );
-  await db.query('UPDATE kyc_tier_policy_head SET version=1');
+  await approveIsolatedKycTierPolicy(db, cluster, definition);
 }
 async function subject(
   level: 'LEVEL_1' | 'LEVEL_2',

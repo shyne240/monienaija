@@ -5,15 +5,21 @@ import type { AuthorizationPrincipal } from '../authorization/authorization.type
 import { canonical } from '../authorization/workforce-crypto';
 import type { ProtectedAuthorityService } from '../authorization/protected-authority.service';
 import { appendKycGovernanceDecision } from './kyc-governance-authority';
-import { KycFoundationError, type IdentityKind } from './kyc.types';
+import {
+  KYC_ASSURANCE_CAPABILITIES,
+  KycFoundationError,
+  type IdentityKind,
+  type KycAssuranceCapability,
+  type KycProviderCapability,
+} from './kyc.types';
 import { UUID } from './kyc-orchestrator';
 
 export type ProviderCode = 'MONNIFY' | 'DOJAH' | 'SYNTHETIC';
-type ProviderSetting = { enabled: boolean; capabilities: IdentityKind[] };
+type ProviderSetting = { enabled: boolean; capabilities: KycProviderCapability[] };
 type Route = { primary: ProviderCode | null; fallback: ProviderCode | null };
 export type ProviderConfiguration = {
   providers: Record<ProviderCode, ProviderSetting>;
-  routes: Record<IdentityKind, Route>;
+  routes: Record<KycProviderCapability, Route>;
 };
 type Snapshot = { version: number; configuration: ProviderConfiguration };
 type Reason = 'INITIAL_SETUP' | 'ROUTING_CHANGE' | 'PROVIDER_DISABLE';
@@ -21,6 +27,15 @@ export interface KycProviderRuntimeReadiness {
   MONNIFY: boolean;
   DOJAH: boolean;
   SYNTHETIC: boolean;
+  /** Capability-specific release gates; absent entries are not dispatch-ready. */
+  capabilities?: Partial<Record<ProviderCode, Partial<Record<KycProviderCapability, boolean>>>>;
+}
+interface KycProviderCatalogueDefinition {
+  code: ProviderCode;
+  candidateCapabilities: readonly KycProviderCapability[];
+  confirmedCapabilities: readonly KycProviderCapability[];
+  testOnly: boolean;
+  ready: boolean;
 }
 const defaultRuntimeReadiness = (): KycProviderRuntimeReadiness => ({
   MONNIFY: false,
@@ -42,6 +57,18 @@ const keys = (o: unknown, names: string[]): o is Record<string, unknown> =>
   typeof o === 'object' &&
   !Array.isArray(o) &&
   Object.keys(o).sort().join(',') === [...names].sort().join(',');
+const IDENTITY_CAPABILITIES: readonly IdentityKind[] = ['BVN', 'NIN'];
+const CAPABILITY_CODES: readonly KycProviderCapability[] = [
+  ...IDENTITY_CAPABILITIES,
+  ...KYC_ASSURANCE_CAPABILITIES,
+];
+const PROVIDER_CANDIDATE_CAPABILITIES: Record<ProviderCode, readonly KycProviderCapability[]> = {
+  MONNIFY: IDENTITY_CAPABILITIES,
+  DOJAH: CAPABILITY_CODES,
+  SYNTHETIC: IDENTITY_CAPABILITIES,
+};
+const ROUTE_CODES: readonly KycProviderCapability[] = CAPABILITY_CODES;
+
 /** Validate both proposed and persisted data: DB contents are never trusted as runtime policy. */
 export function validateProviderConfiguration(value: unknown): ProviderConfiguration {
   if (
@@ -50,30 +77,32 @@ export function validateProviderConfiguration(value: unknown): ProviderConfigura
       keys(value.providers, ['MONNIFY', 'SYNTHETIC']) ||
       keys(value.providers, ['DOJAH', 'MONNIFY', 'SYNTHETIC'])
     ) ||
-    !keys(value.routes, ['BVN', 'NIN'])
+    !(keys(value.routes, ['BVN', 'NIN']) || keys(value.routes, [...ROUTE_CODES]))
   )
     throw new KycFoundationError('INVALID');
   const providers = {} as Record<ProviderCode, ProviderSetting>;
   for (const code of ['MONNIFY', 'DOJAH', 'SYNTHETIC'] as const) {
-    // The two-provider shape is the immutable migration-seeded and historical format. Accept it
-    // as a read-compatible legacy snapshot and normalize the absent alternative to disabled.
+    // Historical rows are read-compatible. New assurance routes default to explicitly unrouted;
+    // they are never inferred from identity-provider capabilities.
     const p = value.providers[code] ?? { enabled: false, capabilities: [] };
     if (
       !keys(p, ['enabled', 'capabilities']) ||
       typeof p.enabled !== 'boolean' ||
       !Array.isArray(p.capabilities) ||
-      p.capabilities.some((x) => x !== 'BVN' && x !== 'NIN') ||
+      p.capabilities.some(
+        (x) => !PROVIDER_CANDIDATE_CAPABILITIES[code].includes(x as KycProviderCapability),
+      ) ||
       new Set(p.capabilities).size !== p.capabilities.length
     )
       throw new KycFoundationError('INVALID');
     providers[code] = {
       enabled: p.enabled,
-      capabilities: (p.capabilities as IdentityKind[]).slice(),
+      capabilities: (p.capabilities as KycProviderCapability[]).slice(),
     };
   }
-  const routes = {} as Record<IdentityKind, Route>;
-  for (const kind of ['BVN', 'NIN'] as const) {
-    const r = value.routes[kind];
+  const routes = {} as Record<KycProviderCapability, Route>;
+  for (const kind of ROUTE_CODES) {
+    const r = value.routes[kind] ?? { primary: null, fallback: null };
     if (
       !keys(r, ['primary', 'fallback']) ||
       ![null, 'MONNIFY', 'DOJAH', 'SYNTHETIC'].includes(r.primary as ProviderCode | null) ||
@@ -99,26 +128,28 @@ export function validateProviderConfiguration(value: unknown): ProviderConfigura
     throw new KycFoundationError('INVALID');
   return { providers, routes };
 }
-/** Publicly documented operations are candidates only; account entitlement/contracts/credentials are not established. */
-export const KYC_PROVIDER_CATALOGUE = [
+/** Candidate operation families only; provider contracts/account entitlement/credentials are not established. */
+export const KYC_PROVIDER_CATALOGUE: readonly KycProviderCatalogueDefinition[] = [
   {
     code: 'MONNIFY',
-    candidateCapabilities: ['BVN', 'NIN'],
+    candidateCapabilities: PROVIDER_CANDIDATE_CAPABILITIES.MONNIFY,
     confirmedCapabilities: [],
     testOnly: false,
     ready: false,
   },
   {
     code: 'DOJAH',
-    candidateCapabilities: ['BVN', 'NIN'],
+    // Candidate operation families requested for this architecture. Exact Dojah address/enhanced
+    // contracts, account entitlement and wire-level mappings remain unverified; none is confirmed.
+    candidateCapabilities: PROVIDER_CANDIDATE_CAPABILITIES.DOJAH,
     confirmedCapabilities: [],
     testOnly: false,
     ready: false,
   },
   {
     code: 'SYNTHETIC',
-    candidateCapabilities: ['BVN', 'NIN'],
-    confirmedCapabilities: ['BVN', 'NIN'],
+    candidateCapabilities: PROVIDER_CANDIDATE_CAPABILITIES.SYNTHETIC,
+    confirmedCapabilities: IDENTITY_CAPABILITIES,
     testOnly: true,
     ready: true,
   },
@@ -188,6 +219,16 @@ export class KycProviderGovernanceService {
       catalogue: KYC_PROVIDER_CATALOGUE.map((item) => ({
         ...item,
         ready: this.runtimeReadiness[item.code],
+        capabilities: item.candidateCapabilities.map((capability) => ({
+          code: capability,
+          candidate: true,
+          confirmed: item.confirmedCapabilities.includes(capability),
+          ready:
+            this.runtimeReadiness[item.code] &&
+            (['BVN', 'NIN'].includes(capability)
+              ? true
+              : (this.runtimeReadiness.capabilities?.[item.code]?.[capability] ?? false)),
+        })),
       })),
     }));
   }
@@ -374,31 +415,43 @@ export class KycProviderGovernanceService {
   async resolve(kind: IdentityKind): Promise<{ provider: ProviderCode; version: number }> {
     return this.db.transaction((m) => this.resolveIn(m, kind));
   }
+  async resolveCapabilityIn(
+    m: EntityManager,
+    capability: KycProviderCapability,
+    expectedVersion?: number,
+    expectedProvider?: ProviderCode,
+  ): Promise<{ provider: ProviderCode; version: number }> {
+    if (!CAPABILITY_CODES.includes(capability)) throw new KycFoundationError('INVALID');
+    await this.lockRoutes(m, 'SHARE');
+    const snap = await this.snapshot(m, 'SHARE');
+    if (expectedVersion !== undefined && expectedVersion !== snap.version)
+      throw new KycFoundationError('BLOCKED');
+    const route = snap.configuration.routes[capability];
+    for (const code of [route.primary, route.fallback]) {
+      if (!code) continue;
+      const item = snap.configuration.providers[code];
+      if (!item.enabled || !item.capabilities.includes(capability)) continue;
+      // A maker-checker-approved route is necessary but not sufficient. Contract review, provider
+      // launch approval, capability-specific adapter wiring, credentials and explicit live-call
+      // release are independent gates. Capability entries default false.
+      if (!this.runtimeReadiness[code]) continue;
+      if (
+        !['BVN', 'NIN'].includes(capability) &&
+        !(this.runtimeReadiness.capabilities?.[code]?.[capability] ?? false)
+      )
+        continue;
+      if (code === 'SYNTHETIC' && process.env.NODE_ENV !== 'test') continue;
+      if (expectedProvider && code !== expectedProvider) throw new KycFoundationError('BLOCKED');
+      return { provider: code, version: snap.version };
+    }
+    throw new KycFoundationError('DISABLED');
+  }
   async resolveIn(
     m: EntityManager,
     kind: IdentityKind,
     expectedVersion?: number,
     expectedProvider?: ProviderCode,
   ): Promise<{ provider: ProviderCode; version: number }> {
-    if (!['BVN', 'NIN'].includes(kind)) throw new KycFoundationError('INVALID');
-    await this.lockRoutes(m, 'SHARE');
-    const snap = await this.snapshot(m, 'SHARE');
-    if (expectedVersion !== undefined && expectedVersion !== snap.version)
-      throw new KycFoundationError('BLOCKED');
-    const route = snap.configuration.routes[kind];
-    for (const code of [route.primary, route.fallback]) {
-      if (!code) continue;
-      const item = snap.configuration.providers[code];
-      if (!item.enabled || !item.capabilities.includes(kind)) continue;
-      // A maker-checker-approved route is necessary but not sufficient. Runtime readiness is a
-      // separate launch gate that requires explicitly approved provider contracts, enabled adapter
-      // configuration, credentials, and the independent live-call release flag. Defaults are all
-      // false; candidate routing never activates a billable adapter by itself.
-      if (!this.runtimeReadiness[code]) continue;
-      if (code === 'SYNTHETIC' && process.env.NODE_ENV !== 'test') continue;
-      if (expectedProvider && code !== expectedProvider) throw new KycFoundationError('BLOCKED');
-      return { provider: code, version: snap.version };
-    }
-    throw new KycFoundationError('DISABLED');
+    return this.resolveCapabilityIn(m, kind, expectedVersion, expectedProvider);
   }
 }

@@ -4,7 +4,8 @@ import { useAuthStore, type WorkforcePrincipal } from '../../store/auth-store';
 import {
   createKycRequestId,
   KycProviderGovernanceApi,
-  type KycIdentityKind,
+  KYC_PROVIDER_CAPABILITIES,
+  type KycProviderCapability,
   type KycProviderCode,
   type KycProviderConfiguration,
   type KycProviderHistory,
@@ -33,12 +34,22 @@ function copyConfiguration(value: KycProviderConfiguration): KycProviderConfigur
         capabilities: [...value.providers.SYNTHETIC.capabilities],
       },
     },
-    routes: {
-      BVN: { ...value.routes.BVN },
-      NIN: { ...value.routes.NIN },
-    },
+    routes: Object.fromEntries(
+      KYC_PROVIDER_CAPABILITIES.map((capability) => [capability, { ...value.routes[capability] }]),
+    ) as KycProviderConfiguration['routes'],
   };
 }
+
+const CANDIDATE_CAPABILITIES: Record<'MONNIFY' | 'DOJAH', readonly KycProviderCapability[]> = {
+  MONNIFY: ['BVN', 'NIN'],
+  DOJAH: ['BVN', 'NIN', 'ADDRESS_VERIFICATION', 'ENHANCED_DUE_DILIGENCE'],
+};
+const CAPABILITY_LABELS: Record<KycProviderCapability, string> = {
+  BVN: 'BVN identity-number check',
+  NIN: 'NIN identity-number check',
+  ADDRESS_VERIFICATION: 'Address verification (candidate; review workflow disabled)',
+  ENHANCED_DUE_DILIGENCE: 'Enhanced due diligence (candidate; not tier evidence)',
+};
 
 const ROUTE_OPTIONS: readonly { value: KycProviderCode | ''; label: string }[] = [
   { value: '', label: 'Not routed' },
@@ -57,7 +68,7 @@ const CANDIDATE_PROVIDERS = [
     code: 'DOJAH',
     name: 'Dojah',
     readiness:
-      'Documented BVN Validate and Advanced NIN are candidates only; endpoint entitlement, account access, terms and production controls are not confirmed.',
+      'Documented BVN Validate and Advanced NIN are candidates only. Address verification and enhanced due diligence are requested operation families, not confirmed Dojah products or contracts; account entitlement and production controls remain unverified.',
   },
 ] as const;
 
@@ -186,7 +197,11 @@ const KycProviderManagementWorkspace: React.FC<
         : current,
     );
   };
-  const updateRoute = (kind: KycIdentityKind, field: 'primary' | 'fallback', value: string) => {
+  const updateRoute = (
+    kind: KycProviderCapability,
+    field: 'primary' | 'fallback',
+    value: string,
+  ) => {
     const selected = value ? (value as KycProviderCode) : null;
     setDraft((current) => {
       if (!current) return current;
@@ -319,10 +334,11 @@ const KycProviderManagementWorkspace: React.FC<
           </Alert>
         )}
         <Alert tone="warning" title="No credentials or live checks here">
-          This workspace never accepts, displays, stores, or submits provider secrets. Monnify and
-          Dojah account access, endpoint entitlements, commercial terms and production controls
-          remain unconfirmed; the backend currently skips both providers even if a proposal enables
-          them. Synthetic verification is test-only and is never customer evidence.
+          This workspace never accepts, displays, stores, or submits provider secrets. A proposal
+          cannot satisfy the separate contract-review, credential, adapter, capability and live-call
+          release gates. Address verification and enhanced due diligence also have no active
+          evidence or tier-transition workflow here. Synthetic verification is test-only and is
+          never customer evidence.
         </Alert>
       </div>
       {!workspace || !draft ? (
@@ -377,14 +393,20 @@ const KycProviderManagementWorkspace: React.FC<
                           : 'Not dispatch-ready'}
                     </StatusBadge>
                   </div>
-                  <p>
-                    Documented candidate capabilities:{' '}
-                    {item.candidateCapabilities.join(', ') || 'none'}.
-                  </p>
+                  <p>Candidate capabilities: {item.candidateCapabilities.join(', ') || 'none'}.</p>
                   <p>
                     Confirmed capabilities for this account:{' '}
                     {item.confirmedCapabilities.join(', ') || 'none'}.
                   </p>
+                  <ul aria-label={`${item.code} capability readiness`}>
+                    {item.capabilities.map((capability) => (
+                      <li key={capability.code}>
+                        {CAPABILITY_LABELS[capability.code]}:{' '}
+                        {capability.ready ? 'ready' : 'not ready'}
+                        {capability.confirmed ? ' · contract confirmed' : ' · unconfirmed'}
+                      </li>
+                    ))}
+                  </ul>
                   <p>
                     {item.code === 'MONNIFY'
                       ? 'Public documentation is not entitlement evidence. Account access, endpoint selection, and negotiated terms still require confirmation.'
@@ -426,34 +448,35 @@ const KycProviderManagementWorkspace: React.FC<
                     Allow in governed routing configuration (does not activate dispatch)
                   </label>
                   <div className="kyc-governance-checks">
-                    {(['BVN', 'NIN'] as const).map((kind) => (
-                      <label className="kyc-governance-check" key={kind}>
+                    {CANDIDATE_CAPABILITIES[code].map((capability) => (
+                      <label className="kyc-governance-check" key={capability}>
                         <input
                           type="checkbox"
-                          checked={draft.providers[code].capabilities.includes(kind)}
+                          checked={draft.providers[code].capabilities.includes(capability)}
                           disabled={
                             !canPropose ||
                             busy ||
                             retryPending ||
-                            draft.routes[kind].primary === code ||
-                            draft.routes[kind].fallback === code
+                            draft.routes[capability].primary === code ||
+                            draft.routes[capability].fallback === code
                           }
                           onChange={(event) =>
                             updateProvider(code, (value) => ({
                               ...value,
                               capabilities: event.target.checked
-                                ? [...value.capabilities, kind]
-                                : value.capabilities.filter((item) => item !== kind),
+                                ? [...value.capabilities, capability]
+                                : value.capabilities.filter((item) => item !== capability),
                             }))
                           }
                         />
-                        Candidate {kind} operation
+                        {CAPABILITY_LABELS[capability]}
                       </label>
                     ))}
                   </div>
                   <p className="kyc-governance-muted">
-                    {readiness} Remove any BVN or NIN route before removing its corresponding
-                    candidate capability. Provider approval alone never permits dispatch.
+                    {readiness} Remove every route referencing a capability before removing it.
+                    These candidate operations do not establish provider entitlement or activate
+                    customer evidence and tier transitions.
                   </p>
                 </fieldset>
               ))}
@@ -467,9 +490,9 @@ const KycProviderManagementWorkspace: React.FC<
                   Read-only here. Test-only; never select it as customer verification evidence.
                 </p>
               </fieldset>
-              {(['BVN', 'NIN'] as const).map((kind) => (
+              {KYC_PROVIDER_CAPABILITIES.map((kind) => (
                 <fieldset className="kyc-provider-fieldset" key={kind}>
-                  <legend>{kind} route</legend>
+                  <legend>{CAPABILITY_LABELS[kind]} route</legend>
                   {(['primary', 'fallback'] as const).map((field) => (
                     <Field
                       key={field}
@@ -597,14 +620,16 @@ const KycProviderManagementWorkspace: React.FC<
                       <dd>{new Date(proposal.expires_at).toLocaleString()}</dd>
                       <dt>Proposed routing</dt>
                       <dd>
-                        BVN: {proposal.configuration.routes.BVN.primary ?? 'none'}
-                        {proposal.configuration.routes.BVN.fallback
-                          ? ` → ${proposal.configuration.routes.BVN.fallback}`
-                          : ''}{' '}
-                        · NIN: {proposal.configuration.routes.NIN.primary ?? 'none'}
-                        {proposal.configuration.routes.NIN.fallback
-                          ? ` → ${proposal.configuration.routes.NIN.fallback}`
-                          : ''}
+                        {KYC_PROVIDER_CAPABILITIES.map((capability, index) => {
+                          const route = proposal.configuration.routes[capability];
+                          return (
+                            <React.Fragment key={capability}>
+                              {index > 0 ? ' · ' : ''}
+                              {capability}: {route.primary ?? 'none'}
+                              {route.fallback ? ` → ${route.fallback}` : ''}
+                            </React.Fragment>
+                          );
+                        })}
                       </dd>
                     </dl>
                     {proposal.state === 'REQUESTED' && canReview && (
@@ -674,14 +699,16 @@ const KycProviderManagementWorkspace: React.FC<
                       {new Date(entry.applied_at).toLocaleString()}
                     </p>
                     <p>
-                      BVN: {entry.configuration.routes.BVN.primary ?? 'none'}
-                      {entry.configuration.routes.BVN.fallback
-                        ? ` → ${entry.configuration.routes.BVN.fallback}`
-                        : ''}{' '}
-                      · NIN: {entry.configuration.routes.NIN.primary ?? 'none'}
-                      {entry.configuration.routes.NIN.fallback
-                        ? ` → ${entry.configuration.routes.NIN.fallback}`
-                        : ''}
+                      {KYC_PROVIDER_CAPABILITIES.map((capability, index) => {
+                        const route = entry.configuration.routes[capability];
+                        return (
+                          <React.Fragment key={capability}>
+                            {index > 0 ? ' · ' : ''}
+                            {capability}: {route.primary ?? 'none'}
+                            {route.fallback ? ` → ${route.fallback}` : ''}
+                          </React.Fragment>
+                        );
+                      })}
                     </p>
                   </article>
                 ))}

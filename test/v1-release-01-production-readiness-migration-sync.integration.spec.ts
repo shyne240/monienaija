@@ -74,7 +74,7 @@ describe('V1-RELEASE-01 production readiness vs. real migration chain', () => {
     expect(readiness.migrations.compatible).toBe(true);
     expect(readiness.reason).not.toBe('schema_incompatible');
     expect(readiness.financialDependencies.blockers).toContain(
-      'trusted_kyc_evidence_reader_unavailable',
+      'trusted_kyc_provider_activation_unverified',
     );
   });
 

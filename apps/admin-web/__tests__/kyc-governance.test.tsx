@@ -24,6 +24,8 @@ const providerConfiguration: KycProviderConfiguration = {
   routes: {
     BVN: { primary: 'MONNIFY', fallback: null },
     NIN: { primary: null, fallback: null },
+    ADDRESS_VERIFICATION: { primary: null, fallback: null },
+    ENHANCED_DUE_DILIGENCE: { primary: null, fallback: null },
   },
 };
 
@@ -37,13 +39,23 @@ const providerWorkspace = {
       confirmedCapabilities: [],
       testOnly: false,
       ready: false,
+      capabilities: [
+        { code: 'BVN', candidate: true, confirmed: false, ready: false },
+        { code: 'NIN', candidate: true, confirmed: false, ready: false },
+      ],
     },
     {
       code: 'DOJAH',
-      candidateCapabilities: ['BVN', 'NIN'],
+      candidateCapabilities: ['BVN', 'NIN', 'ADDRESS_VERIFICATION', 'ENHANCED_DUE_DILIGENCE'],
       confirmedCapabilities: [],
       testOnly: false,
       ready: false,
+      capabilities: [
+        { code: 'BVN', candidate: true, confirmed: false, ready: false },
+        { code: 'NIN', candidate: true, confirmed: false, ready: false },
+        { code: 'ADDRESS_VERIFICATION', candidate: true, confirmed: false, ready: false },
+        { code: 'ENHANCED_DUE_DILIGENCE', candidate: true, confirmed: false, ready: false },
+      ],
     },
     {
       code: 'SYNTHETIC',
@@ -51,6 +63,10 @@ const providerWorkspace = {
       confirmedCapabilities: ['BVN', 'NIN'],
       testOnly: true,
       ready: false,
+      capabilities: [
+        { code: 'BVN', candidate: true, confirmed: true, ready: false },
+        { code: 'NIN', candidate: true, confirmed: true, ready: false },
+      ],
     },
   ],
 };
@@ -107,8 +123,16 @@ test('provider workspace uses the backend governance endpoints and presents read
   expect(screen.getAllByText('Not dispatch-ready')).toHaveLength(2);
   expect(screen.getByRole('heading', { name: 'Dojah' })).toBeTruthy();
   expect(screen.getByText('Test only')).toBeTruthy();
-  expect(screen.getByText(/Monnify and Dojah account access/)).toBeTruthy();
+  expect(
+    screen.getByText(/A proposal cannot satisfy the separate contract-review, credential, adapter/),
+  ).toBeTruthy();
   expect(screen.getByText(/BVN full-record Basic\/Advance access is not assumed/)).toBeTruthy();
+  expect(
+    screen.getByLabelText(/Address verification \(candidate; review workflow disabled\)/),
+  ).toBeTruthy();
+  expect(screen.getByRole('list', { name: 'DOJAH capability readiness' }).textContent).toContain(
+    'Address verification (candidate; review workflow disabled): not ready · unconfirmed',
+  );
   expect(screen.getByRole('button', { name: 'Submit proposal' })).toHaveProperty('disabled', true);
   expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
 

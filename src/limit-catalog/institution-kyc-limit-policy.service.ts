@@ -404,8 +404,12 @@ export class InstitutionKycLimitPolicyService {
         ],
       );
       const changed = await manager.query<Array<{ version: number }>>(
-        `UPDATE institution_kyc_limit_policy_heads SET version=$1,last_proposal_id=$2,updated_at=$3
-          WHERE institution_id=$4 AND version=$5 RETURNING version`,
+        `WITH changed AS (
+           UPDATE institution_kyc_limit_policy_heads
+              SET version=$1,last_proposal_id=$2,updated_at=$3
+            WHERE institution_id=$4 AND version=$5
+            RETURNING version
+         ) SELECT version FROM changed`,
         [nextVersion, proposalId, decidedAt, institutionId, headVersion],
       );
       if (changed.length !== 1)

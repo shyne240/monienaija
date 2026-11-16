@@ -1,5 +1,8 @@
-/** Contracts only; no biometric, address, utility or GPS integration is provided or enabled. */
+/** Capability contracts only; no biometric, utility or GPS integration is provided or enabled. */
+import type { KycAssuranceCapability } from './kyc.types';
+
 export type FutureAssuranceCapability =
+  | KycAssuranceCapability
   | 'SELFIE_LIVENESS'
   | 'FACIAL_MATCH'
   | 'ADDITIONAL_BIOMETRIC'

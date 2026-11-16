@@ -111,11 +111,13 @@ describe('M8 production readiness', () => {
       financialDependencies: {
         status: 'error',
         blockers: [
-          'trusted_kyc_evidence_reader_unavailable',
+          'trusted_kyc_provider_activation_unverified',
+          'customer_kyc_consent_notice_and_policy_unverified',
           'identity_key_versions_unverified',
           'effective_kyc_policy_unverified',
           'provider_governance_and_routing_unverified',
           'wallet_ownership_governance_unverified',
+          'institution_kyc_tier_limit_governance_unverified',
           'financial_authorization_dependencies_unverified',
         ],
       },
@@ -222,6 +224,8 @@ describe('M8 production readiness', () => {
         { name: 'ProtectedAuthorityBoundary1785753600501' },
         { name: 'ProtectedAuthorityInstitutionalOwnership1785753600502' },
         { name: 'CashOutInstitutionalScope1785753600503' },
+        { name: 'InstitutionKycTierLimitGovernance1785753600504' },
+        { name: 'KycIdentityRevisionAndEvidenceRead1785753600505' },
       ];
       override query(sql: string): Promise<unknown[]> {
         if (sql.includes('ORDER BY timestamp ASC')) {

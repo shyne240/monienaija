@@ -27,6 +27,16 @@ jest.mock('@react-navigation/native', () => ({
 }));
 const post = ApiClient.post as jest.Mock;
 const future = new Date(Date.now() + 600000).toISOString();
+const onboardingKycStatus = {
+  customer: { status: 'ACTIVE', kycLevel: 'LEVEL_1', kycStatus: 'PENDING' },
+  policy: { configured: false, version: null },
+  requirements: null,
+  candidateAssessment: { status: 'NOT_CONFIGURED', level: null, reason: 'POLICY_UNAVAILABLE' },
+  consentNotice: null,
+  verificationEnabled: false,
+  consents: [],
+  history: [],
+};
 beforeEach(() => {
   jest.clearAllMocks();
   (SecureStorage.get as jest.Mock).mockResolvedValue(null);
@@ -187,6 +197,7 @@ test('signs into an isolated onboarding session and signs out without storing a 
     if (path.endsWith('/onboarding-route')) return { next: 'LOGIN' };
     if (path.endsWith('/onboarding-login'))
       return { accessToken: 'onboarding-token', audience: 'customer-onboarding' };
+    if (path.endsWith('/customer-kyc/status')) return onboardingKycStatus;
     return { status: 'VERIFIED', expiresAt: future };
   });
   const v = render(<RegistrationScreen />);
@@ -218,6 +229,7 @@ test.each(['BVN', 'NIN'])(
     post.mockImplementation(async (path: string) => {
       if (path.endsWith('/simulation-availability')) return { available: false };
       if (path.endsWith('/start')) return { id: 'session-id', token: 'pending-token' };
+      if (path.endsWith('/customer-kyc/status')) return onboardingKycStatus;
       if (path.endsWith('/status')) return { status: 'PENDING', expiresAt: future };
       if (path.endsWith('/otp/verify')) return { authorization: 'verified-token' };
       if (path.endsWith('/onboarding-route')) return { next: 'CLAIM' };

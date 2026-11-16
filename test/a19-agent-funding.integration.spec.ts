@@ -827,6 +827,8 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
       '1785753600501',
       '1785753600502',
       '1785753600503',
+      '1785753600504',
+      '1785753600505',
     ]).toContain(latest[0]!.timestamp);
     expect([
       'SecureAgentApplicationAccess1785753600095',
@@ -840,6 +842,8 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
       'ConfigureTransactionNotificationEvents1785753600103',
       'WalletOwnerClassification1785753600116',
       'CashOutInstitutionalScope1785753600503',
+      'InstitutionKycTierLimitGovernance1785753600504',
+      'KycIdentityRevisionAndEvidenceRead1785753600505',
       'CreateGovernedLedgerReversalExecutions1785753600117',
       'CreateInstitutionFoundation1785753600400',
       'CreateInstitutionalFinancialOwnership1785753600401',
@@ -878,6 +882,8 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
       '1785753600501',
       '1785753600502',
       '1785753600503',
+      '1785753600504',
+      '1785753600505',
     ]).toContain(latest[0]!.timestamp);
     expect([
       'SecureAgentApplicationAccess1785753600095',
@@ -891,6 +897,8 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
       'ConfigureTransactionNotificationEvents1785753600103',
       'WalletOwnerClassification1785753600116',
       'CashOutInstitutionalScope1785753600503',
+      'InstitutionKycTierLimitGovernance1785753600504',
+      'KycIdentityRevisionAndEvidenceRead1785753600505',
       'CreateGovernedLedgerReversalExecutions1785753600117',
       'CreateInstitutionFoundation1785753600400',
       'CreateInstitutionalFinancialOwnership1785753600401',

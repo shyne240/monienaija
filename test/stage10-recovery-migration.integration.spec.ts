@@ -70,7 +70,7 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
       expect(Number(rows[0]!.count)).toBe(files.length);
     });
 
-    it('4. places 0402 in timestamp order and keeps 0503 as the published head', async () => {
+    it('4. places 0402 in timestamp order and keeps 0505 as the published head', async () => {
       const rows: Array<{ timestamp: string; name: string }> = await db.query(
         `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp ASC`,
       );
@@ -79,13 +79,15 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
         '1785753600501',
         '1785753600502',
         '1785753600503',
+        '1785753600504',
+        '1785753600505',
       ]);
       const positions = ordered.map((id) => position.get(id)!);
       expect(positions.every((value) => value !== undefined)).toBe(true);
       expect(positions).toEqual([...positions].sort((left, right) => left - right));
       expect(rows.at(-1)).toEqual({
-        timestamp: '1785753600503',
-        name: 'CashOutInstitutionalScope1785753600503',
+        timestamp: '1785753600505',
+        name: 'KycIdentityRevisionAndEvidenceRead1785753600505',
       });
     });
 
@@ -203,7 +205,7 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
         const executed = await db.runMigrations({ transaction: 'all' });
         const applied = executed.map((migration) => String(migration.name));
         expect(applied).toContain('CreateCustomerCredentialRecoveryChallenges1785753600402');
-        expect(applied.at(-1)).toBe('CashOutInstitutionalScope1785753600503');
+        expect(applied.at(-1)).toBe('KycIdentityRevisionAndEvidenceRead1785753600505');
         expect(
           applied.indexOf('CreateCustomerCredentialRecoveryChallenges1785753600402'),
         ).toBeLessThan(applied.indexOf('InstitutionGovernanceExecutionIntegrity1785753600500'));
@@ -384,7 +386,7 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
       expect(result.migrations.compatible).toBe(true);
       expect(result.migrations.missing).toEqual([]);
       expect(result.migrations.unexpected).toEqual([]);
-      expect(result.migrations.latestTimestamp).toBe('1785753600503');
+      expect(result.migrations.latestTimestamp).toBe('1785753600505');
       expect(result.status).toBe('error');
       expect(result.reason).toBe('financial_dependencies_not_ready');
     }, 120_000);

@@ -89,6 +89,18 @@ function createHarness(
         },
       ),
   };
+  // The production service now fails closed if the authoritative financial limit boundary is not
+  // wired. This isolated unit harness models a configured test policy; admission itself is still
+  // asserted through the exact strict-enforcement request below.
+  const limitEnforcementService = {
+    enforceWithManager: jest.fn().mockResolvedValue({
+      allowed: true,
+      limitProfileCode: 'TEST_CASH_TO_CASH',
+      evaluatedDimensions: ['MAX_AMOUNT_PER_TX'],
+    }),
+    releaseReservationsWithManager: jest.fn().mockResolvedValue(undefined),
+    commitReservationsWithManager: jest.fn().mockResolvedValue(undefined),
+  };
   const fundingAuthority = productionAuthority
     ? new CashToCashFundingAuthority()
     : {
@@ -112,7 +124,7 @@ function createHarness(
           get: (key: string) => (key === 'CASH_TO_CASH_LOCATOR_URL' ? locatorUrl : undefined),
         } as never)
       : undefined,
-    undefined,
+    limitEnforcementService as never,
     undefined,
     undefined,
     undefined,
@@ -131,6 +143,7 @@ function createHarness(
     ledgerService,
     idempotencyService,
     outboxService,
+    limitEnforcementService,
     outboxCalls,
     manager,
     fundingAuthority,
@@ -191,6 +204,19 @@ describe('Cash-to-Cash initiation notification outbox', () => {
         currency: 'NGN',
       }),
     );
+    expect(harness.limitEnforcementService.enforceWithManager).toHaveBeenCalledTimes(1);
+    expect(harness.limitEnforcementService.enforceWithManager).toHaveBeenCalledWith(
+      harness.manager,
+      expect.objectContaining({
+        principalType: 'AGENT',
+        product: 'CASH_TO_CASH',
+        direction: 'OUTGOING',
+        amountMinor: '250000',
+        requireConfiguration: true,
+        institutionId: AGENT_ID,
+      }),
+    );
+    expect(harness.limitEnforcementService.commitReservationsWithManager).toHaveBeenCalledTimes(1);
     expect(harness.outboxService.enqueueOnce).toHaveBeenCalledTimes(1);
     expect(harness.ledgerService.postJournalInTransaction).toHaveBeenCalledTimes(1);
     const transferInserts = harness.manager.query.mock.calls.filter(

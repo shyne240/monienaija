@@ -21,6 +21,7 @@ import { KycTierTransitionService } from '../src/kyc-verification/kyc-tier-trans
 import { PostgresKycStore } from '../src/kyc-verification/postgres-kyc.store';
 import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
+import { approveIsolatedKycTierPolicy } from './support/kyc-governance-fixtures';
 import { assertIsolatedKycCluster, isolatedKycCluster } from './support/kyc-isolated-cluster';
 
 // Portable provenance: see test/support/kyc-isolated-cluster.ts. The cluster's identity is
@@ -112,8 +113,7 @@ beforeAll(async () => {
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
 
-  // Seed governed KYC tier policy v1 once for the test database.
-  const proposal = randomUUID();
+  // Seed governed KYC tier policy v1 through the protected maker/checker service path.
   const req = { all: [], any: [] };
   const definition = {
     regulatoryRequirementsConfirmed: true,
@@ -122,24 +122,7 @@ beforeAll(async () => {
     regulatory: { LEVEL_1: req, LEVEL_2: req },
     operator: { LEVEL_1: req, LEVEL_2: req },
   };
-  await db.query(
-    `INSERT INTO kyc_tier_policy_proposals(id,request_id,expected_version,definition,fingerprint,maker_id,maker_session_id,checker_id,checker_session_id,state)
-     VALUES($1,$2,0,$3,$4,'maker',$5,'checker',$6,'APPROVED')`,
-    [
-      proposal,
-      randomUUID(),
-      JSON.stringify(definition),
-      'b'.repeat(64),
-      randomUUID(),
-      randomUUID(),
-    ],
-  );
-  await db.query(
-    `INSERT INTO kyc_tier_policy_versions(version,proposal_id,definition,maker_id,checker_id)
-     VALUES(1,$1,$2,'maker','checker')`,
-    [proposal, JSON.stringify(definition)],
-  );
-  await db.query('UPDATE kyc_tier_policy_head SET version=1');
+  await approveIsolatedKycTierPolicy(db, cluster, definition);
 }, 180_000);
 
 afterAll(async () => {

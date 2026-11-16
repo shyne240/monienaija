@@ -1,3 +1,4 @@
+/// <reference path="./support/mobile-native-module-shims.d.ts" />
 import type * as MobilePending from '../apps/agent-mobile/src/services/pending-operation';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import { workforceConfiguration } from '../src/authorization/workforce-configuration';
@@ -34,6 +35,10 @@ import {
   overrideCashToCashFundingPolicy,
 } from './support/controlled-funding-policy';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
+import {
+  approveIsolatedInstitutionKycTierLimitPolicy,
+  approveIsolatedKycTierPolicy,
+} from './support/kyc-governance-fixtures';
 
 // Portable provenance: see test/support/kyc-isolated-cluster.ts. No absolute path from any one
 // developer's machine is embedded here; the runner (scripts/run-isolated-kyc-tests.js) creates
@@ -61,6 +66,10 @@ const snapshots = new Map<string, TierEvidenceSnapshot>();
 // Only explicitly provisioned synthetic subjects are authorized. Client inputs are lookup
 // values; these server-side fixtures represent independently verified policy and identity.
 const workforceInstitutions = new Map<string, string>();
+// The isolated module's Cash-Out resolver double returns the real governed institution provisioned
+// by each financial fixture. Its initial value only supports tests that exercise OTP preflight
+// without creating the full institutional context.
+let cashOutInstitutionId = '11111111-1111-4111-8111-111111111111';
 // ARENA 3B: Cash-to-Cash now resolves the *funding institution's* own suspense obligation. The
 // controlled funding-authority double below answers with the institution the governed fixture
 // actually provisioned (registered, activated, agent affiliated, wallet attributed).
@@ -94,6 +103,33 @@ beforeAll(async () => {
   // The production binding stays fail-closed (`UnavailableCashToCashFundingPolicyAuthority`); this
   // declares the exact policy the run relies on without weakening any institutional check.
   const fundingPolicy = createControlledFundingPolicy();
+  const appWorkforceConfiguration = workforceConfiguration(process.env);
+  const testOnlyWorkforceConfiguration = {
+    ...appWorkforceConfiguration,
+    enabled: true,
+    roles: [
+      ...appWorkforceConfiguration.roles.filter((role) => role.roleKey !== 'FINANCE_CONTROLLER'),
+      {
+        roleKey: 'FINANCE_CONTROLLER',
+        displayName: 'Synthetic finance controller',
+        description: 'Disposable acceptance-only checker role.',
+        enabled: true,
+        scopes: ['privileged:approve', 'privileged:execute'],
+        applicableActions: [],
+        mfaRequired: true,
+        approvalCapability: true,
+        makerEligible: false,
+        checkerEligible: true,
+        administrativeCapability: false,
+      },
+    ],
+    rateLimits: [
+      ...appWorkforceConfiguration.rateLimits.filter(
+        (rule) => rule.category !== 'privileged-approval',
+      ),
+      { category: 'privileged-approval', capacity: 100, refillRatePerSecond: 100, enabled: true },
+    ],
+  };
   const moduleRef = await overrideCashToCashFundingPolicy(
     Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
@@ -101,19 +137,16 @@ beforeAll(async () => {
     fundingPolicy,
   )
     .overrideProvider(A2_WORKFORCE_CONFIG)
-    // The application's own workforce configuration, built from the same environment the app
-    // reads (`.env`, loaded by ConfigModule when AppModule is imported). The governed
-    // institutional workflow needs the real role catalogue, maker-checker rules and
-    // privileged-approval rate policy; inventing a parallel catalogue here would be a second
-    // authorization mechanism.
-    .useValue({ ...workforceConfiguration(process.env), enabled: true })
+    // The explicit FINANCE_CONTROLLER legacy execution scope and high-capacity rate budget are
+    // disposable acceptance-only policies. Neither changes the production catalogue or thresholds.
+    .useValue(testOnlyWorkforceConfiguration)
     .overrideProvider(CashOutInstitutionResolver)
     .useValue({
       resolve: (_manager: unknown, agentId: string) =>
         Promise.resolve({
           outcome: 'RESOLVED',
           agentId,
-          institutionId: '11111111-1111-4111-8111-111111111111',
+          institutionId: cashOutInstitutionId,
           affiliationId: 'test-affiliation',
           institutionStatus: FinancialInstitutionStatus.APPROVED,
           resolvedAt: new Date().toISOString(),
@@ -189,7 +222,6 @@ afterAll(async () => {
 });
 
 async function setPolicy() {
-  const proposal = randomUUID();
   const req = { all: [], any: [] };
   const definition = {
     regulatoryRequirementsConfirmed: true,
@@ -198,22 +230,7 @@ async function setPolicy() {
     regulatory: { LEVEL_1: req, LEVEL_2: req },
     operator: { LEVEL_1: req, LEVEL_2: req },
   };
-  await db.query(
-    `INSERT INTO kyc_tier_policy_proposals(id,request_id,expected_version,definition,fingerprint,maker_id,maker_session_id,checker_id,checker_session_id,state) VALUES($1,$2,0,$3,$4,'maker',$5,'checker',$6,'APPROVED')`,
-    [
-      proposal,
-      randomUUID(),
-      JSON.stringify(definition),
-      'a'.repeat(64),
-      randomUUID(),
-      randomUUID(),
-    ],
-  );
-  await db.query(
-    `INSERT INTO kyc_tier_policy_versions(version,proposal_id,definition,maker_id,checker_id) VALUES(1,$1,$2,'maker','checker')`,
-    [proposal, JSON.stringify(definition)],
-  );
-  await db.query('UPDATE kyc_tier_policy_head SET version=1');
+  await approveIsolatedKycTierPolicy(db, cluster, definition);
 }
 async function subject(
   level: 'LEVEL_1' | 'LEVEL_2',
@@ -291,7 +308,7 @@ test('controlled evidence gates activation and customer wallet creation, without
     await db.query('SELECT count(*)::int AS n FROM wallet_accounts WHERE customer_id=$1', [one]),
   ).toEqual([{ n: 1 }]);
   const gate = app.get(CustomerFinancialEligibilityService);
-  await expect(db.transaction((m) => gate.require(m, two))).resolves.toBeUndefined();
+  await expect(db.transaction((m) => gate.require(m, two))).resolves.toBe('LEVEL_2');
   snapshots.get(two)!.evidence[0]!.status = 'REVOKED';
   await expect(db.transaction((m) => gate.require(m, two))).rejects.toThrow();
   await expect(
@@ -306,7 +323,7 @@ test('unavailable, synthetic, conflicting and expired evidence or holds fail clo
   const id = await subject('LEVEL_1', ['NIN']);
   await db.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [id]);
   const check = () => db.transaction((m) => gate.require(m, id));
-  await expect(check()).resolves.toBeUndefined();
+  await expect(check()).resolves.toBe('LEVEL_1');
   const snapshot = snapshots.get(id)!;
   snapshots.delete(id);
   await expect(check()).rejects.toMatchObject({ status: 503 });
@@ -432,19 +449,33 @@ test.each([
       `INSERT INTO kyc_registration_sessions(id,phone,authorization_hash,status,verified_at,expires_at) VALUES($1,$2,$3,'VERIFIED',clock_timestamp(),clock_timestamp()+interval '10 minutes')`,
       [thirdRegistration, phone, createHash('sha256').update(thirdToken).digest('hex')],
     );
-    const head = await db.query<Array<{ version: number }>>(
-      'WITH deleted AS (DELETE FROM kyc_tier_policy_head WHERE singleton=true RETURNING version) SELECT version FROM deleted',
+    const [head] = await db.query<Array<{ version: number; last_proposal_id: string }>>(
+      'SELECT version,last_proposal_id FROM kyc_tier_policy_head WHERE singleton=true',
+    );
+    // Inject a missing-head corruption case only inside this disposable superuser test database;
+    // normal runtime and protected-authority credentials cannot delete or forge the policy head.
+    await db.query(
+      'ALTER TABLE kyc_tier_policy_head DISABLE TRIGGER kyc_tier_head_authority_guard',
     );
     try {
+      await db.query('DELETE FROM kyc_tier_policy_head WHERE singleton=true');
       const noPolicy = await app
         .get(MobileOnboardingAuthService)
         .login(thirdRegistration, thirdToken, '112233');
       expect(noPolicy.audience).toBe('customer-onboarding');
       expect((await sessionService.validate({ token: noPolicy.accessToken })).valid).toBe(false);
     } finally {
-      await db.query('INSERT INTO kyc_tier_policy_head(singleton,version) VALUES(true,$1)', [
-        head[0]!.version,
-      ]);
+      try {
+        await db.query(
+          `INSERT INTO kyc_tier_policy_head(singleton,version,last_proposal_id) VALUES(true,$1,$2)
+           ON CONFLICT(singleton) DO UPDATE SET version=excluded.version,last_proposal_id=excluded.last_proposal_id`,
+          [head!.version, head!.last_proposal_id],
+        );
+      } finally {
+        await db.query(
+          'ALTER TABLE kyc_tier_policy_head ENABLE TRIGGER kyc_tier_head_authority_guard',
+        );
+      }
     }
   },
 );
@@ -1136,9 +1167,7 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     '../src/agent-authentication/agent-authentication.enums'
   );
   const { LedgerService } = await import('../src/ledger/ledger.service');
-  const { LedgerAccountType, LedgerEntryDirection, LedgerNormalBalance } = await import(
-    '../src/ledger/ledger.enums'
-  );
+  const { LedgerEntryDirection } = await import('../src/ledger/ledger.enums');
   const hash = (pin: string) => {
     const salt = randomBytes(16);
     return `PBKDF2$sha256$10000$${salt.toString('base64url')}$${pbkdf2Sync(pin, salt, 10000, 32, 'sha256').toString('base64url')}`;
@@ -1186,17 +1215,33 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     pinVersion: 1,
     actor: agent.id,
   });
+  // Bind the customer wallet, cash-out intent and approved tier-limit policy to one real,
+  // governed institution. The generous rule is isolated synthetic acceptance data; production
+  // enforcement and profile-digest checks remain active.
+  const { GovernedFinancialFixture } = await import('./support/governed-financial-fixture');
+  const governed = new GovernedFinancialFixture({ app, dataSource: db, label: 'b2c-cashout' });
+  cashOutInstitutionId = await governed.institution();
+  await governed.enrolCustomer(customerId, cashOutInstitutionId);
+  await approveIsolatedInstitutionKycTierLimitPolicy(
+    db,
+    cluster,
+    cashOutInstitutionId,
+    'WALLET_TO_CASH',
+  );
+  await governed.affiliateAgent(agent.id, cashOutInstitutionId);
   const wallets = app.get(WalletService);
   const customerWallet = await wallets.createWallet({
     customerId,
     currency: 'NGN',
     idempotencyKey: randomUUID(),
   });
+  await governed.attributeWallet(customerWallet.id, cashOutInstitutionId);
   const agentWallet = await wallets.createWallet({
     customerId: agent.id,
     currency: 'NGN',
     idempotencyKey: randomUUID(),
   });
+  await governed.attributeWallet(agentWallet.id, cashOutInstitutionId);
   const deskSession = randomUUID();
   const agentCredential = randomUUID();
   await db.query(
@@ -1262,7 +1307,7 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
       currency: 'NGN',
       agent_id: agent.id,
       agent_session_id: deskSession,
-      institution_scope: '11111111-1111-4111-8111-111111111111',
+      institution_scope: cashOutInstitutionId,
       operation_key: operationKey,
     },
   ]);
@@ -1366,30 +1411,21 @@ test('cash-out rolls back OTP on ledger failure and retries through the real fin
     await db.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challenge.challengeId]),
   ).toEqual([{ status: 'ACTIVE' }]);
   const ledger = app.get(LedgerService);
-  const source = await ledger.createAccount({
-    code: `SYS-${randomUUID()}`,
-    name: 'Synthetic source',
-    accountType: LedgerAccountType.ASSET,
-    normalBalance: LedgerNormalBalance.DEBIT,
-    currency: 'NGN',
-    accountingUnit: 'CUSTOMER_FUNDS',
-    allowNegativeBalance: true,
-  });
-  await ledger.postJournal({
-    idempotencyKey: randomUUID(),
-    currency: 'NGN',
-    accountingUnit: 'CUSTOMER_FUNDS',
-    lines: [
-      { accountId: source.id, direction: LedgerEntryDirection.DEBIT, amountMinor: '1000' },
-      {
-        accountId: customerWallet.ledgerAccountId,
-        direction: LedgerEntryDirection.CREDIT,
-        amountMinor: '1000',
-      },
-    ],
+  // Use an institution-owned settlement asset as the funding counterparty for both wallets.
+  const source = { id: await governed.openInstitutionSettlementAccount(cashOutInstitutionId) };
+  await governed.fundLedgerAccount(customerWallet.ledgerAccountId, '1000', {
+    institutionId: cashOutInstitutionId,
   });
   const attempts = await Promise.allSettled([service.execute(input), service.execute(input)]);
   const completed = attempts.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+  if (!completed.some((result) => result.status === 'COMPLETED')) {
+    console.error(
+      'Cash-out acceptance outcomes:',
+      attempts.map((attempt) =>
+        attempt.status === 'rejected' ? String(attempt.reason) : attempt.value,
+      ),
+    );
+  }
   expect(completed.some((result) => result.status === 'COMPLETED')).toBe(true);
   const result = completed.find((r) => r.status === 'COMPLETED')!;
   expect(new Set(completed.map((r) => r.journalId))).toEqual(new Set([result.journalId]));
@@ -2425,6 +2461,10 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
   const governed = new GovernedFinancialFixture({ app, dataSource: db, label: 'b2c-c2c' });
   c2cInstitutionId = await governed.institution();
   await governed.enrolCustomer(customerId, c2cInstitutionId);
+  // Cash-to-Cash funding and claim use the configured product limit profile. This synthetic rule
+  // is test-only; the institution tier mapping itself still receives a protected maker/checker
+  // approval and binds the profile digest used by strict admission.
+  await approveIsolatedInstitutionKycTierLimitPolicy(db, cluster, c2cInstitutionId, 'CASH_TO_CASH');
   await governed.openInstitutionCashToCashSuspenseAccount(c2cInstitutionId);
   const [customerWalletRow] = await db.query<Array<{ id: string }>>(
     `SELECT id FROM wallet_accounts WHERE customer_id=$1 AND currency='NGN'`,
@@ -2537,6 +2577,9 @@ test('bound agent-cash claim keeps authorization atomic and recovers the origina
     headers: { authorization: `Bearer ${token}` },
     payload: fundingPayload,
   });
+  if (initiated.statusCode !== 201) {
+    console.error('Cash-to-Cash fixture initiation response:', initiated.body);
+  }
   expect({ status: initiated.statusCode, body: initiated.body }).toMatchObject({ status: 201 });
   const funding = initiated.json<{ transferId: string; journalId: string; transferCode: string }>();
   const transferId = funding.transferId;
@@ -4101,7 +4144,7 @@ test('fully migrated AppModule does not claim financial readiness without produc
   expect(readiness.migrations.compatible).toBe(true);
   expect(readiness.status).toBe('error');
   expect(readiness.financialDependencies.blockers).toContain(
-    'trusted_kyc_evidence_reader_unavailable',
+    'trusted_kyc_provider_activation_unverified',
   );
   await expect(app.get(ProductionReadinessService).verifyStartup()).rejects.toThrow();
 });

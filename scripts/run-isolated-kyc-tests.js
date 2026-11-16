@@ -172,7 +172,37 @@ async function main() {
       stdio: 'inherit',
       env: {
         ...process.env,
+        // AppModule-based acceptance suites also open their default TypeORM connection before
+        // overriding it with their per-suite test database. Force those defaults onto this exact
+        // disposable socket cluster so an inherited DB_* value can never route a test at a
+        // developer, staging, or production database.
         NODE_ENV: 'test',
+        // The isolated financial fixtures provision an approved synthetic tier policy/rule set
+        // and exercise the production fail-closed resolver. This does not change deployment config.
+        KYC_TIER_LIMIT_ENFORCEMENT_ENABLED: 'true',
+        DB_HOST: socketDirectory,
+        DB_PORT: String(port),
+        DB_NAME: 'postgres',
+        DB_USER: ROLE,
+        DB_PASSWORD: 'unused-socket-only',
+        DB_SSL: 'false',
+        DB_SSL_REJECT_UNAUTHORIZED: 'false',
+        // Isolated acceptance never makes external provider calls. Explicitly disable live release
+        // gates and blank credentials so even a caller's shell or .env file cannot activate one.
+        KYC_CUSTOMER_VERIFICATION_ENABLED: 'false',
+        KYC_PROVIDER_CONTRACTS_REVIEWED: 'false',
+        KYC_PROVIDER_LIVE_CALLS_ENABLED: 'false',
+        MONNIFY_VERIFICATION_ENABLED: 'false',
+        MONNIFY_API_KEY: '',
+        MONNIFY_SECRET_KEY: '',
+        DOJAH_VERIFICATION_ENABLED: 'false',
+        DOJAH_SECRET_KEY: '',
+        DOJAH_APP_ID: '',
+        PROTECTED_AUTHORITY_DB_USER: '',
+        PROTECTED_AUTHORITY_DB_PASSWORD: '',
+        PROTECTED_AUTHORITY_DB_HOST: '',
+        PROTECTED_AUTHORITY_DB_PORT: String(port),
+        PROTECTED_AUTHORITY_DB_NAME: '',
         KYC_ISOLATED_TEST_SOCKET: socketDirectory,
         KYC_ISOLATED_TEST_PORT: String(port),
         KYC_ISOLATED_RUN_DIRECTORY: runDirectory,

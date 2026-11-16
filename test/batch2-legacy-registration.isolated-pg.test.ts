@@ -9,6 +9,10 @@ import { DataSource } from 'typeorm';
 import { assertIsolatedKycCluster, isolatedKycCluster } from './support/kyc-isolated-cluster';
 import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
+import {
+  approveIsolatedKycProviderConfiguration,
+  ISOLATED_SYNTHETIC_KYC_CONFIGURATION,
+} from './support/kyc-governance-fixtures';
 
 // Portable provenance: see test/support/kyc-isolated-cluster.ts. No absolute path from any one
 // developer's machine is embedded here; the runner (scripts/run-isolated-kyc-tests.js) creates
@@ -125,8 +129,10 @@ test('legacy HTTP completion cannot consume phone proof, create a customer, cred
 test.each(['BVN', 'NIN'] as const)(
   'full AppModule creates one isolated %s synthetic draft with idempotent completion',
   async (kind) => {
-    await db.query(
-      `UPDATE kyc_provider_configuration SET version=1, configuration='{"providers":{"MONNIFY":{"enabled":false,"capabilities":[]},"SYNTHETIC":{"enabled":true,"capabilities":["BVN","NIN"]}},"routes":{"BVN":{"primary":"SYNTHETIC","fallback":null},"NIN":{"primary":"SYNTHETIC","fallback":null}}}'::jsonb WHERE singleton=true`,
+    await approveIsolatedKycProviderConfiguration(
+      db,
+      cluster,
+      ISOLATED_SYNTHETIC_KYC_CONFIGURATION,
     );
     const send = (path: string, payload: object, token?: string) =>
       app.inject({
@@ -783,12 +789,16 @@ test.each(['BVN', 'NIN'] as const)(
         [oldSession, id, cred, 'f'.repeat(63) + (kind === 'BVN' ? '1' : '2')],
       );
       await db.query(
-        `INSERT INTO kyc_consents(id,customer_id,kind,notice_version,actor_id,session_id,expires_at) VALUES($1,$2,$3,'test',$2,$4,clock_timestamp()+interval '1 day')`,
+        `INSERT INTO kyc_consents(id,customer_id,kind,notice_version,actor_id,session_id,expires_at,provider,route_version,identity_revision)
+         VALUES($1,$2,$3,'test',$2,$4,clock_timestamp()+interval '1 day','MONNIFY',1,
+           (SELECT revision FROM kyc_customer_identity_revisions WHERE customer_id=$2))`,
         [consent, id, kind, oldSession],
       );
       await db.query(
-        `INSERT INTO kyc_verification_attempts(id,customer_id,consent_id,request_id,kind,provider,policy_version,request_mac,identity_mac,mac_key_version,identity_revision,outcome,completed_at,expires_at)
-         VALUES($1,$2,$3,$4,$5,'MONNIFY','test',$6,$6,'test',(SELECT revision FROM kyc_customer_identity_revisions WHERE customer_id=$2),'MATCH',clock_timestamp(),clock_timestamp()+interval '1 day')`,
+        `INSERT INTO kyc_verification_attempts(id,customer_id,consent_id,request_id,kind,provider,policy_version,request_mac,identity_mac,mac_key_version,identity_revision,provider_route_version,outcome,completed_at,expires_at)
+         VALUES($1,$2,$3,$4,$5,'MONNIFY','test',$6,$6,'test',
+           (SELECT revision FROM kyc_customer_identity_revisions WHERE customer_id=$2),1,
+           'MATCH',clock_timestamp(),clock_timestamp()+interval '1 day')`,
         [attempt, id, consent, randomUUID(), kind, 'a'.repeat(64)],
       );
       await db.query(

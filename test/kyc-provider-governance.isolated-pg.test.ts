@@ -463,3 +463,68 @@ test('Dojah routes stay fail-closed until account entitlement and production con
   await expect(svc.resolve('BVN')).rejects.toMatchObject({ code: 'DISABLED' });
   await expect(svc.resolve('NIN')).rejects.toMatchObject({ code: 'DISABLED' });
 });
+
+test('Dojah address and enhanced-due-diligence routing require capability-specific release gates', async () => {
+  const current = await svc.view(maker);
+  const candidate = {
+    providers: {
+      MONNIFY: { enabled: false, capabilities: [] },
+      DOJAH: {
+        enabled: true,
+        capabilities: ['ADDRESS_VERIFICATION', 'ENHANCED_DUE_DILIGENCE'],
+      },
+      SYNTHETIC: { enabled: false, capabilities: [] },
+    },
+    routes: {
+      BVN: { primary: null, fallback: null },
+      NIN: { primary: null, fallback: null },
+      ADDRESS_VERIFICATION: { primary: 'DOJAH', fallback: null },
+      ENHANCED_DUE_DILIGENCE: { primary: 'DOJAH', fallback: null },
+    },
+  };
+  const proposal = await svc.propose(maker, {
+    requestId: randomUUID(),
+    expectedVersion: current.version,
+    configuration: candidate,
+    reason: 'ROUTING_CHANGE',
+  });
+  await svc.decide(checker, proposal.id, true);
+
+  await expect(
+    db.transaction((manager) => svc.resolveCapabilityIn(manager, 'ADDRESS_VERIFICATION')),
+  ).rejects.toMatchObject({ code: 'DISABLED' });
+  const readiness = new KycProviderGovernanceService(
+    db,
+    new AuthorizationService(db, { record: jest.fn().mockResolvedValue(undefined) } as never),
+    undefined,
+    {
+      MONNIFY: false,
+      DOJAH: true,
+      SYNTHETIC: false,
+      capabilities: {
+        DOJAH: {
+          ADDRESS_VERIFICATION: true,
+          ENHANCED_DUE_DILIGENCE: false,
+        },
+      },
+    },
+  );
+  await expect(
+    db.transaction((manager) => readiness.resolveCapabilityIn(manager, 'ADDRESS_VERIFICATION')),
+  ).resolves.toEqual({ provider: 'DOJAH', version: current.version + 1 });
+  await expect(
+    db.transaction((manager) => readiness.resolveCapabilityIn(manager, 'ENHANCED_DUE_DILIGENCE')),
+  ).rejects.toMatchObject({ code: 'DISABLED' });
+
+  const dojah = (await readiness.view(maker)).catalogue.find((item) => item.code === 'DOJAH');
+  expect(dojah?.capabilities).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: 'ADDRESS_VERIFICATION', candidate: true, confirmed: false }),
+      expect.objectContaining({
+        code: 'ENHANCED_DUE_DILIGENCE',
+        candidate: true,
+        confirmed: false,
+      }),
+    ]),
+  );
+});
