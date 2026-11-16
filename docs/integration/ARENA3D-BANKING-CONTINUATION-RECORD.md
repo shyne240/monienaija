@@ -218,6 +218,20 @@ Groups 2, 3 and 6 are complete; group 1's contracts and registry are complete an
 application code calls it yet, so nothing in this repository can move money today. Group 3 governs
 _who may be engaged_; it does not yet gate a live call, because no live call exists.
 
+## 7.0e Group 6 (ingestion half) — the webhook endpoint
+
+`src/banking/banking-webhook.service.ts` connects the signature verification from §8.2 to the inbound
+record. The ordering is the control: verify over the **raw bytes**, acknowledge quickly and dedupe on
+the provider's own reference, then require server-to-server verification before anything is money.
+
+Asserted: a valid signature records the payment `UNVERIFIED` (a webhook is not verification); a forged
+signature, a body tampered with after signing, and the _documented-but-wrong_ `SHA512(secret + body)`
+prose formula are all rejected; a missing signature is rejected in production and in sandbox unless the
+fixture transport explicitly vouched for it; oversized bodies are refused; unknown event types and
+payloads with no reference or no amount are acknowledged and ignored rather than guessed at; a replay
+returns `alreadyRecorded`; and the failure reason returned to the caller is deliberately coarse
+(`Signature verification failed`) so a forgery attempt learns nothing about how close it was.
+
 ## 7.0d Group 12 — reconciliation that cannot move money
 
 `1785753600602` + `src/banking/banking-reconciliation.service.ts`. The design constraint is that
