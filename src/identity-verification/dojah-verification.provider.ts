@@ -1,5 +1,8 @@
 import {
+  dojahAddressHttpsTransport,
   dojahHttpsTransport,
+  type DojahAddressSubmission,
+  type DojahAddressTransport,
   type DojahEnvironment,
   type DojahPath,
   type DojahTransport,
@@ -33,6 +36,36 @@ export interface DojahNinRecord {
   dateOfBirth: string;
 }
 
+export interface DojahAddressInput {
+  firstName: string;
+  lastName: string;
+  middleName?: string;
+  dateOfBirth?: string;
+  gender?: string;
+  mobile: string;
+  street: string;
+  landmark?: string;
+  lga: string;
+  state: string;
+}
+
+/**
+ * Async address verification. `referenceId` is an opaque provider handle; `collected` is present
+ * only once the provider has finished a visit, and `null` fields are never invented. Photographs,
+ * coordinates and neighbour references the provider may return are intentionally NOT surfaced:
+ * this service does not persist address imagery.
+ */
+export interface DojahAddressStatus {
+  referenceId: string;
+  status: 'PENDING' | 'COMPLETED' | 'FAILED';
+  verified: boolean;
+  collected: {
+    address?: string;
+    lga?: string;
+    state?: string;
+  } | null;
+}
+
 export interface DojahOptions {
   enabled?: boolean;
   environment?: DojahEnvironment;
@@ -40,6 +73,7 @@ export interface DojahOptions {
   appId?: string;
   timeoutMs?: number;
   transport?: DojahTransport;
+  addressTransport?: DojahAddressTransport;
 }
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
@@ -75,8 +109,11 @@ export class DojahVerificationProvider {
   private readonly transport: DojahTransport;
   private readonly timeoutMs: number;
 
+  private readonly addressTransport: DojahAddressTransport;
+
   constructor(private readonly options: DojahOptions = {}) {
     this.transport = options.transport ?? dojahHttpsTransport;
+    this.addressTransport = options.addressTransport ?? dojahAddressHttpsTransport;
     this.timeoutMs = options.timeoutMs ?? 5000;
   }
 
@@ -149,6 +186,159 @@ export class DojahVerificationProvider {
       lastName: entity.last_name,
       dateOfBirth: entity.date_of_birth,
     };
+  }
+
+  /**
+   * Submits a documented address-verification request. Dojah resolves these asynchronously, so a
+   * successful submit yields a reference to poll — it is never a verification result by itself.
+   */
+  async submitAddressVerification(
+    input: DojahAddressInput,
+    signal: AbortSignal = new AbortController().signal,
+  ): Promise<{ referenceId: string }> {
+    if (
+      !input ||
+      !bounded(input.firstName, 100) ||
+      !bounded(input.lastName, 100) ||
+      !/^[0-9+][0-9]{6,19}$/.test(input.mobile) ||
+      !bounded(input.street, 200) ||
+      !bounded(input.lga, 200) ||
+      !bounded(input.state, 200) ||
+      (input.middleName !== undefined && !bounded(input.middleName, 100)) ||
+      (input.gender !== undefined && !bounded(input.gender, 20)) ||
+      (input.landmark !== undefined && !bounded(input.landmark, 200)) ||
+      (input.dateOfBirth !== undefined && !validDate(input.dateOfBirth))
+    )
+      throw new DojahVerificationError('INVALID_INPUT');
+
+    const submission: DojahAddressSubmission = {
+      firstName: input.firstName,
+      lastName: input.lastName,
+      mobile: input.mobile,
+      street: input.street,
+      lga: input.lga,
+      state: input.state,
+      ...(input.middleName === undefined ? {} : { middleName: input.middleName }),
+      ...(input.dateOfBirth === undefined ? {} : { dob: input.dateOfBirth }),
+      ...(input.gender === undefined ? {} : { gender: input.gender }),
+      ...(input.landmark === undefined ? {} : { landmark: input.landmark }),
+    };
+
+    const response = await this.callAddress('POST', submission, null, signal);
+    if (response.status === 401 || response.status === 403)
+      throw new DojahVerificationError('AUTH_FAILED');
+    if (response.status < 200 || response.status >= 300)
+      throw new DojahVerificationError('OUTCOME_UNKNOWN');
+    const entity = record(record(response.body)?.entity);
+    const referenceId = entity?.reference_id;
+    // An accepted submission MUST carry a pollable reference; anything else is an unknown outcome.
+    if (typeof referenceId !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(referenceId))
+      throw new DojahVerificationError('OUTCOME_UNKNOWN');
+    return { referenceId };
+  }
+
+  /**
+   * Polls a submitted address verification. Only `COMPLETED` with an explicit provider success
+   * indication is reported as verified; every other shape (including a missing status) stays
+   * non-verified so the caller cannot treat an unknown provider response as evidence.
+   */
+  async getAddressVerificationStatus(
+    referenceId: string,
+    signal: AbortSignal = new AbortController().signal,
+  ): Promise<DojahAddressStatus> {
+    if (typeof referenceId !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(referenceId))
+      throw new DojahVerificationError('INVALID_INPUT');
+
+    const response = await this.callAddress('GET', null, referenceId, signal);
+    if (response.status === 401 || response.status === 403)
+      throw new DojahVerificationError('AUTH_FAILED');
+    if (response.status === 404) throw new DojahVerificationError('INVALID_INPUT');
+    if (response.status < 200 || response.status >= 300)
+      throw new DojahVerificationError('OUTCOME_UNKNOWN');
+
+    const entity = record(record(response.body)?.entity);
+    if (!entity) throw new DojahVerificationError('OUTCOME_UNKNOWN');
+    const status = typeof entity.status === 'string' ? entity.status.toLowerCase() : '';
+    if (status !== 'pending' && status !== 'completed' && status !== 'failed')
+      throw new DojahVerificationError('OUTCOME_UNKNOWN');
+
+    if (status !== 'completed') {
+      return {
+        referenceId,
+        status: status === 'pending' ? 'PENDING' : 'FAILED',
+        verified: false,
+        collected: null,
+      };
+    }
+    // `completed` alone is not authority: the provider must positively indicate success and return
+    // the address it actually collected, otherwise the visit result is indeterminate.
+    const succeeded =
+      entity.verified === true ||
+      entity.verification_status === 'verified' ||
+      entity.status_of_verification === 'verified';
+    const collectedRaw = record(entity.address) ?? record(entity.collected_address) ?? entity;
+    const address = bounded(collectedRaw?.address, 300) ? collectedRaw.address : undefined;
+    const lga = bounded(collectedRaw?.lga, 200) ? collectedRaw.lga : undefined;
+    const state = bounded(collectedRaw?.state, 200) ? collectedRaw.state : undefined;
+    if (!succeeded || !address) {
+      return { referenceId, status: 'COMPLETED', verified: false, collected: null };
+    }
+    return {
+      referenceId,
+      status: 'COMPLETED',
+      verified: true,
+      collected: { address, ...(lga ? { lga } : {}), ...(state ? { state } : {}) },
+    };
+  }
+
+  private async callAddress(
+    method: 'POST' | 'GET',
+    submission: DojahAddressSubmission | null,
+    referenceId: string | null,
+    signal: AbortSignal,
+  ): Promise<{ status: number; body: unknown }> {
+    if (this.options.enabled !== true) throw new DojahVerificationError('DISABLED');
+    const { environment, secretKey, appId } = this.options;
+    if (
+      !['production', 'sandbox'].includes(environment ?? '') ||
+      !bounded(secretKey, 512) ||
+      !bounded(appId, 256) ||
+      !Number.isInteger(this.timeoutMs) ||
+      this.timeoutMs < 100 ||
+      this.timeoutMs > 30000
+    )
+      throw new DojahVerificationError('CONFIGURATION');
+
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal.addEventListener('abort', abort, { once: true });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const context = {
+      environment: environment!,
+      authorization: secretKey,
+      appId,
+      signal: controller.signal,
+    };
+    try {
+      return await Promise.race([
+        method === 'POST'
+          ? this.addressTransport.submit(submission!, context)
+          : this.addressTransport.poll(referenceId!, context),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            controller.abort();
+            reject(new Error('deadline'));
+          }, this.timeoutMs);
+        }),
+      ]);
+    } catch (error) {
+      if (signal.aborted) throw new DojahVerificationError('OUTCOME_UNKNOWN');
+      if (error instanceof DojahVerificationError) throw error;
+      throw new DojahVerificationError('OUTCOME_UNKNOWN');
+    } finally {
+      if (timer) clearTimeout(timer);
+      signal.removeEventListener('abort', abort);
+    }
   }
 
   private async request(
