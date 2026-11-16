@@ -4,6 +4,11 @@ import {
   type DojahAddressTransport,
 } from '../src/identity-verification/dojah-transport';
 import { DojahVerificationProvider } from '../src/identity-verification/dojah-verification.provider';
+import {
+  DojahAssuranceKycProvider,
+  DojahDocumentedAddressContract,
+  type DojahAddressAssuranceSource,
+} from '../src/kyc-verification/dojah-assurance-kyc.provider';
 
 /**
  * Dojah address verification (`POST`/`GET /api/v1/kyc/address`) is asynchronous by contract: a
@@ -283,5 +288,114 @@ describe('Dojah address transport hardening', () => {
       transport.poll('ref_1234567890', { ...context(), signal: controller.signal }),
     ).rejects.toThrow('Blocked');
     expect(lookedUp).toBe(false);
+  });
+});
+
+describe('Reviewed Dojah address assurance contract', () => {
+  const source = (status: {
+    referenceId: string;
+    status: 'PENDING' | 'COMPLETED' | 'FAILED';
+    verified: boolean;
+    collected: { address?: string } | null;
+  }): DojahAddressAssuranceSource => ({
+    submitAddressVerification: () => Promise.resolve({ referenceId: status.referenceId }),
+    getAddressVerificationStatus: () => Promise.resolve(status),
+  });
+
+  it('maps an outstanding visit to REVIEW, never to evidence', async () => {
+    for (const pending of [
+      source({
+        referenceId: 'ref_1234567890',
+        status: 'PENDING',
+        verified: false,
+        collected: null,
+      }),
+      source({ referenceId: 'ref_1234567890', status: 'FAILED', verified: false, collected: null }),
+    ]) {
+      const provider = new DojahAssuranceKycProvider(new DojahDocumentedAddressContract(pending));
+      await expect(
+        provider.verify(
+          'ADDRESS_VERIFICATION',
+          '0f8fad5b-d9cb-469f-a165-70867728950e',
+          new AbortController().signal,
+        ),
+      ).resolves.toEqual({ outcome: 'REVIEW' });
+    }
+  });
+
+  it('maps completed-without-a-collected-address to UNKNOWN', async () => {
+    const provider = new DojahAssuranceKycProvider(
+      new DojahDocumentedAddressContract(
+        source({
+          referenceId: 'ref_1234567890',
+          status: 'COMPLETED',
+          verified: true,
+          collected: null,
+        }),
+      ),
+    );
+    await expect(
+      provider.verify(
+        'ADDRESS_VERIFICATION',
+        '0f8fad5b-d9cb-469f-a165-70867728950e',
+        new AbortController().signal,
+      ),
+    ).resolves.toEqual({ outcome: 'UNKNOWN' });
+  });
+
+  it('maps a positively verified visit to VERIFIED', async () => {
+    const provider = new DojahAssuranceKycProvider(
+      new DojahDocumentedAddressContract(
+        source({
+          referenceId: 'ref_1234567890',
+          status: 'COMPLETED',
+          verified: true,
+          collected: { address: '1 Example Close' },
+        }),
+      ),
+    );
+    await expect(
+      provider.verify(
+        'ADDRESS_VERIFICATION',
+        '0f8fad5b-d9cb-469f-a165-70867728950e',
+        new AbortController().signal,
+      ),
+    ).resolves.toEqual({ outcome: 'VERIFIED' });
+  });
+
+  it('maps an adapter failure to UNKNOWN rather than a negative finding', async () => {
+    const provider = new DojahAssuranceKycProvider(
+      new DojahDocumentedAddressContract({
+        submitAddressVerification: () => Promise.reject(new Error('unused')),
+        getAddressVerificationStatus: () => Promise.reject(new Error('provider down')),
+      }),
+    );
+    await expect(
+      provider.verify(
+        'ADDRESS_VERIFICATION',
+        '0f8fad5b-d9cb-469f-a165-70867728950e',
+        new AbortController().signal,
+      ),
+    ).resolves.toEqual({ outcome: 'UNKNOWN' });
+  });
+
+  it('refuses enhanced due diligence instead of approximating it', async () => {
+    const provider = new DojahAssuranceKycProvider(
+      new DojahDocumentedAddressContract(
+        source({
+          referenceId: 'ref_1234567890',
+          status: 'PENDING',
+          verified: false,
+          collected: null,
+        }),
+      ),
+    );
+    await expect(
+      provider.verify(
+        'ENHANCED_DUE_DILIGENCE',
+        '0f8fad5b-d9cb-469f-a165-70867728950e',
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow('Dojah enhanced KYC is not a documented operation');
   });
 });

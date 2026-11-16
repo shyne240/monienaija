@@ -753,6 +753,13 @@ export class AgentCashToCashClaimService {
                 now: new Date(),
                 walletLedgerAccountId: settlementWallet.ledgerAccountId,
                 principalWalletCustomerId: settlementWalletOwnerId,
+                // A CUSTOMER destination is admitted under the same tier-bound contract as every
+                // other customer financial boundary. Without this the redemption path would be a
+                // way to move value to a customer whose tier policy is disabled or unmapped.
+                // The AGENT destination keeps the class/profile contract only.
+                requireConfiguration: true,
+                requireKycTierPolicy: limitPrincipalType === 'CUSTOMER',
+                institutionId: settlementWallet.institutionId ?? null,
               });
             } catch (error) {
               if (error instanceof HttpException) {

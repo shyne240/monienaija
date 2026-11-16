@@ -69,3 +69,72 @@ export class DojahAssuranceKycProvider implements FutureAssuranceProvider {
     return { outcome: result.outcome };
   }
 }
+
+/**
+ * Reviewed `DojahAssuranceContract` implementation for the documented address-verification surface.
+ *
+ * An earlier revision assumed no Dojah address endpoint was documented. That was wrong:
+ * `POST /api/v1/kyc/address` submits and `GET /api/v1/kyc/address?reference_id=…` polls, with an
+ * asynchronous result. This connector therefore maps only that documented surface.
+ *
+ * It is registered explicitly (never as a default), and it still degrades closed:
+ *
+ *   * a reference that has not completed maps to `REVIEW` — a visit that is merely outstanding can
+ *     never become trusted evidence;
+ *   * a completed visit without a positive provider indication or without a collected address maps
+ *     to `UNKNOWN`, never `VERIFIED`;
+ *   * any adapter error maps to `UNKNOWN` (a missing answer is not a negative finding either).
+ *
+ * ENHANCED_DUE_DILIGENCE is intentionally NOT implemented here: no documented Dojah operation backs
+ * it, so it stays unavailable rather than being approximated from an unrelated endpoint.
+ */
+export interface DojahAddressAssuranceSource {
+  submitAddressVerification(input: {
+    firstName: string;
+    lastName: string;
+    mobile: string;
+    street: string;
+    lga: string;
+    state: string;
+  }): Promise<{ referenceId: string }>;
+  getAddressVerificationStatus(referenceId: string): Promise<{
+    referenceId: string;
+    status: 'PENDING' | 'COMPLETED' | 'FAILED';
+    verified: boolean;
+    collected: { address?: string; lga?: string; state?: string } | null;
+  }>;
+}
+
+export class DojahDocumentedAddressContract implements DojahAssuranceContract {
+  constructor(private readonly source: DojahAddressAssuranceSource) {}
+
+  async verifyAddress(
+    submissionReference: string,
+    signal: AbortSignal,
+  ): Promise<DojahAssuranceResult> {
+    if (signal.aborted) throw new Error('Dojah address verification was aborted');
+    let status: Awaited<ReturnType<DojahAddressAssuranceSource['getAddressVerificationStatus']>>;
+    try {
+      status = await this.source.getAddressVerificationStatus(submissionReference);
+    } catch {
+      return { outcome: 'UNKNOWN' };
+    }
+    if (signal.aborted) throw new Error('Dojah address verification was aborted');
+    if (status.status === 'PENDING') return { outcome: 'REVIEW' };
+    if (status.status === 'FAILED') return { outcome: 'REVIEW' };
+    return status.verified && status.collected?.address
+      ? { outcome: 'VERIFIED' }
+      : { outcome: 'UNKNOWN' };
+  }
+
+  verifyEnhancedKyc(
+    submissionReference: string,
+    signal: AbortSignal,
+  ): Promise<DojahAssuranceResult> {
+    // Both arguments are part of the contract signature; refusing does not read them.
+    void submissionReference;
+    void signal;
+    // No documented operation exists for this capability; refuse rather than invent one.
+    return Promise.reject(new Error('Dojah enhanced KYC is not a documented operation'));
+  }
+}
