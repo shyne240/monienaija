@@ -508,7 +508,20 @@ Also corrected a stale identifier in a doc comment: `resolveTierEnforcementMode`
 `resolveTierEnforcement`. It was prose only, so it invalidated no compiled artifact — but it is the
 kind of thing that sends the next reader looking for a function that does not exist.
 
-## 8.5 Next action
+## 8.5 Decisive confirmation, observed inside the matrix
+
+The point of fixing a race is that it stops happening **under load**, not that it reproduces green in
+isolation. In the definitive run, `a16` executed at batch 3 position 4 — i.e. six parallel-capable
+suites deep into a 26-batch matrix — and reported:
+
+```text
+PASS test/a16-agent-cash-to-cash-claim.integration.spec.ts (60.035 s)
+```
+
+Same suite, same concurrent `Promise.all`, same machine: FAIL with `ECONNRESET` before the fix, PASS
+inside the full matrix after it. That is the evidence that matters.
+
+## 8.6 Next action
 
 Authoritative full matrix on `740883df`, run alone. Totals to be appended to §7 and to §10 of the
 handoff, replacing the earlier run only if the earlier run's numbers are no longer reproducible.
