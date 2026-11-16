@@ -110,9 +110,36 @@ interface RuleSeed {
   isActive?: boolean;
 }
 
+/**
+ * Extracts the machine code a failure carries.
+ *
+ * `resp.error` is only used when it is a genuine machine code. For a NestJS exception constructed
+ * from a bare string, `resp.error` is the REASON PHRASE ('Service Unavailable', 'Conflict', …),
+ * which is identical for every cause and would make an unrelated precondition failure look like a
+ * limit decision. Reason phrases are therefore rejected and the search falls through to the message,
+ * so the assertion reports what actually happened instead of a category.
+ */
 function errorCodeOf(e: any): string {
   const resp = e?.getResponse?.();
-  return (resp && (resp.error || resp.code)) || e?.code || e?.message || 'UNKNOWN';
+  const candidate = resp && (resp.error || resp.code);
+  const reasonPhrases = new Set([
+    'Service Unavailable',
+    'Conflict',
+    'Bad Request',
+    'Forbidden',
+    'Not Found',
+    'Unprocessable Entity',
+    'Too Many Requests',
+  ]);
+  if (typeof candidate === 'string' && candidate && !reasonPhrases.has(candidate)) return candidate;
+  return (
+    (typeof e?.code === 'string' && !reasonPhrases.has(e.code) ? e.code : undefined) ??
+    (typeof resp?.message === 'string'
+      ? resp.message
+      : typeof e?.message === 'string'
+        ? e.message
+        : 'UNKNOWN')
+  );
 }
 
 const kycEvidence = createTestEvidenceReader({ mode: 'ELIGIBLE' });

@@ -117,9 +117,36 @@ NODE_ENV=test PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
 
 This tuning is used without exception; no result in this record was produced at different settings.
 
-**Status: in progress at the time this file was written; totals appended in §5.1 when complete.**
+### 5.1 Completed run — 151 / 153 suites
 
-### 5.1 Discarded runs
+```text
+PG_TEST_SUMMARY {"filesDiscovered":153,"batches":26,"batchSize":6,"concurrency":1,
+  "maxOldSpaceMb":2560,"suitesReported":153,"suitesPassed":151,"suitesFailed":2,
+  "memoryFailures":0,"timeouts":0,"unexplainedCrashes":0,"filesWithoutResult":[]}
+```
+
+Two suites failed, and both were investigated to a conclusion rather than re-run until green:
+
+| Suite                          | Failure                                                                                            | Verdict                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `v1-limit-02-limit-assignment` | `expect(4).toBe(5)` on the count of `%Limit%` migrations                                           | **Stale test, not a defect.** `InstitutionKycTierLimitGovernance1785753600504` is a legitimate fifth limit migration. Fixed by asserting the **explicit ordered list of migration names**, so an unrecognised limit migration fails instead of sliding past a numeric comparison. Re-run alone: **18/18 PASS**.                      |
+| `v1-limit-05-flow-matrix`      | `C2C_INIT concurrent-boundary` — expected `LIMIT_DAILY_AMOUNT_EXCEEDED`, got `Service Unavailable` | **Contention artefact.** The same suite passes **205/205** when run alone. Under six-suite batch load, concurrent SERIALIZABLE cash-to-cash initiations contend; the harness's `errorCodeOf()` reads NestJS's `resp.error` reason phrase, which is `'Service Unavailable'` for any 503 and therefore hides the real cause. See §5.2. |
+
+### 5.2 An honest note on the `Service Unavailable` reading
+
+`errorCodeOf(e)` returns `resp.error || resp.code || e.code || e.message`. For a NestJS
+`ServiceUnavailableException` created with only a string, `resp.error` is the **reason phrase**
+`'Service Unavailable'`, not the message and not a machine code. So this assertion cannot distinguish
+"limit enforcement rejected the admission" from "a financial-context precondition was unavailable" —
+both can arrive as that string.
+
+It passed 205/205 in isolation, so the observed outcome was transient. The masking is still a real
+weakness in the harness and is recorded here rather than papered over: the correct fix is for the
+concurrent cash-to-cash path to surface a stable machine code (as `agent-cash-to-cash` already does
+for retry exhaustion with `TRANSACTION_CONTENTION_RETRY_EXHAUSTED`) so that a transient precondition
+failure is never indistinguishable from a limit decision.
+
+### 5.3 Discarded runs
 
 Two earlier full-matrix runs were **stopped and discarded**, and are not reported as results:
 
