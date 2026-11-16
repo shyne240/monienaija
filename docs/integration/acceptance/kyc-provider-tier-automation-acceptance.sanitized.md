@@ -2,7 +2,8 @@
 
 - Date: 2026-11-16 UTC
 - Branch: `arena/defdd0fd-monienaija`
-- HEAD at time of these checks: `96d96416` (working tree clean)
+- HEAD at time of these checks: `e0ef1d22` (matrix §5.1 ran on `a34574c5`; see the status note there)
+- Latest commit at time of writing: `1f6ab426` (docs only)
 - Recovered baseline: `004dd80008edbadc41cebf3c67222d6abbcd2cff`
 
 All commands below were executed in this workspace. Every result is copied from the command that
@@ -40,14 +41,19 @@ npx jest --config jest.config.js --silent
 
 ```text
 Test Suites: 256 passed, 256 total
-Tests:       2975 passed, 2975 total
+Tests:       2978 passed, 2978 total
 Snapshots:   0 total
-Time:        115.677 s
+Time:        81.2 s
 ```
 
-The accepted pre-existing baseline was **255 suites / 2957 tests**. The delta is exactly the new
-`test/dojah-address-verification.unit.spec.ts` (1 suite, 18 tests), i.e.
-`255 + 1 = 256` and `2957 + 18 = 2975`. No pre-existing unit test changed status.
+The accepted pre-existing baseline was **255 suites / 2957 tests**. The delta decomposes exactly:
+the new `test/dojah-address-verification.unit.spec.ts` (1 suite, 18 tests), plus 3 tests appended to
+`test/v1-test-01-agent-cash-to-cash-retry-exhaustion.spec.ts` covering the serialization backoff
+(growth, cap, jitter). i.e. `255 + 1 = 256` suites and `2957 + 18 + 3 = 2978` tests. No pre-existing
+unit test changed status.
+
+An earlier revision of this document recorded **2975** tests at 115.677 s. That was accurate then;
+the three backoff tests were added afterwards, when the matrix showed the retry loop had no delay.
 
 ---
 
