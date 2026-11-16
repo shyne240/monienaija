@@ -1,6 +1,7 @@
 import { createHash, pbkdf2Sync, randomBytes, randomUUID } from 'node:crypto';
 import type { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
+import { seedGovernedTierPolicy } from './support/kyc-test-fixtures';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
 import { AuthenticationExecutionService } from '../src/customer-authentication/authentication-execution.service';
@@ -219,34 +220,21 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
     verificationHashOverride = null;
     await truncateAllTables(dataSource);
     snapshots.clear();
-    const proposal = randomUUID();
+    // Approve the KYC tier policy through the governed maker/checker path. A direct
+    // `INSERT ... state='APPROVED'` is refused by the protected-authority transition trigger, and
+    // this suite must exercise that guarantee rather than bypass it.
     const requirements = { all: [], any: [] };
-    const definition = {
-      regulatoryRequirementsConfirmed: true,
-      effectiveFrom: '2020-01-01T00:00:00.000Z',
-      effectiveUntil: null,
-      regulatory: { LEVEL_1: requirements, LEVEL_2: requirements },
-      operator: { LEVEL_1: requirements, LEVEL_2: requirements },
-    };
-    await dataSource.query(
-      `INSERT INTO kyc_tier_policy_proposals(id,request_id,expected_version,definition,fingerprint,maker_id,maker_session_id,checker_id,checker_session_id,state)
-      VALUES($1,$2,0,$3,$4,'maker',$5,'checker',$6,'APPROVED')`,
-      [
-        proposal,
-        randomUUID(),
-        JSON.stringify(definition),
-        'a'.repeat(64),
-        randomUUID(),
-        randomUUID(),
-      ],
-    );
-    await dataSource.query(
-      `INSERT INTO kyc_tier_policy_versions(version,proposal_id,definition,maker_id,checker_id) VALUES(1,$1,$2,'maker','checker')`,
-      [proposal, JSON.stringify(definition)],
-    );
-    await dataSource.query(
-      'INSERT INTO kyc_tier_policy_head (singleton, version) VALUES (true, 1) ON CONFLICT (singleton) DO UPDATE SET version=EXCLUDED.version',
-    );
+    await seedGovernedTierPolicy(dataSource, {
+      definition: {
+        regulatoryRequirementsConfirmed: true,
+        effectiveFrom: '2020-01-01T00:00:00.000Z',
+        effectiveUntil: null,
+        regulatory: { LEVEL_1: requirements, LEVEL_2: requirements, LEVEL_3: requirements },
+        operator: { LEVEL_1: requirements, LEVEL_2: requirements, LEVEL_3: requirements },
+      },
+      makerId: 'a6-fixture-maker',
+      checkerId: 'a6-fixture-checker',
+    });
     await dataSource.query(
       `INSERT INTO banks(id,bank_code,bank_name,short_name,nip_supported,status) VALUES($1,'FCBANK','Test Bank','Test',true,'ACTIVE')`,
       [randomUUID()],
