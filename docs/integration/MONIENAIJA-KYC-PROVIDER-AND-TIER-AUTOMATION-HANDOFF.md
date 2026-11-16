@@ -270,13 +270,14 @@ failures.
 
 ## 9. Open items
 
-| Item                                        | Why it is open                                                      |
-| ------------------------------------------- | ------------------------------------------------------------------- |
-| Full PG matrix on the quiescent tree        | running; totals to be appended in §10                               |
-| `a16` concurrency test re-verification      | one `ECONNRESET` observed while sharing the sandbox with the matrix |
-| Enhanced due diligence                      | no documented Dojah operation; refuse rather than fabricate         |
-| Live provider acceptance                    | requires credentials this environment is not authorized to hold     |
-| Browser visual / physical-device acceptance | environment cannot launch the browser harness                       |
+| Item                                        | State                                                                                                                                                           |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Full PG matrix on the quiescent tree        | **CLOSED** — 153/153 suites, 2751 tests, exit 0. See §10.2.                                                                                                     |
+| `a16` concurrency test re-verification      | **CLOSED** — the `ECONNRESET` was sandbox contention, not a defect. Re-run alone: **88/88 PASS**.                                                               |
+| cash-to-cash precondition machine code      | **OPEN (residual).** Retry exhaustion now has a stable `409 TRANSACTION_CONTENTION_RETRY_EXHAUSTED`; the precondition path still lacks a faithful machine code. |
+| Enhanced due diligence                      | **DELIBERATELY ABSENT.** No documented Dojah operation exists; the adapter refuses rather than fabricate a request shape.                                       |
+| Live provider acceptance                    | **NOT AUTHORIZED.** Requires production credentials this environment may not hold. Capabilities 1–4 are marked `E` for exactly this reason.                     |
+| Browser visual / physical-device acceptance | **NOT POSSIBLE HERE.** The browser harness cannot launch (missing `libnspr4`/`libnss3`/`libnssutil3`); no handset was used. Neither is claimed.                 |
 
 ---
 
