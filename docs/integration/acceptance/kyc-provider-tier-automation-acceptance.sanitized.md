@@ -2,8 +2,8 @@
 
 - Date: 2026-11-16 UTC
 - Branch: `arena/defdd0fd-monienaija`
-- HEAD at time of these checks: `e0ef1d22` (matrix §5.1 ran on `a34574c5`; see the status note there)
-- Latest commit at time of writing: `1f6ab426` (docs only)
+- HEAD at time of these checks: `e9609925`
+- Authoritative matrix (§5.1) ran on `e9609925`
 - Recovered baseline: `004dd80008edbadc41cebf3c67222d6abbcd2cff`
 
 All commands below were executed in this workspace. Every result is copied from the command that
@@ -156,56 +156,72 @@ This tuning is used without exception; no result in this record was produced at 
 
 ### 5.1 Authoritative completed run — 153 / 153 suites, exit 0
 
+Run alone on commit **`e9609925`**, exclusive tuning, nothing else on the machine:
+
 ```text
 PG_TEST_SUMMARY {"filesDiscovered":153,"batches":26,"batchSize":6,"concurrency":1,
-  "maxOldSpaceMb":2560,"suitesReported":153,"suitesPassed":153,"suitesFailed":0,
-  "memoryFailures":0,"timeouts":0,"unexplainedCrashes":0,"filesWithoutResult":[]}
-```
-
-```text
+  "maxOldSpaceMb":2560,"durationMs":4287367,"passingBatches":26,"failingBatches":0,
+  "memoryFailures":0,"timeouts":0,"unexplainedCrashes":0,
+  "suitesReported":153,"suitesPassed":153,"suitesFailed":0,
+  "failingFiles":[],"filesWithoutResult":[]}
+PG_EXIT=0
 tests: 2751 passed, 0 failed
-batches: 26 / 26
-wall clock: 4,586,984 ms
-exit code: 0
 ```
 
-This supersedes an earlier **151 / 153** run. That run's two failures were not flaky and were not
-re-run until green; each was diagnosed and fixed in the code or the test that was actually wrong:
+`failingFiles: []` and `filesWithoutResult: []` are the fields that matter: nothing failed and
+nothing went unreported.
 
-| Suite                          | Failure                                                                                                        | Resolution                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `v1-limit-02-limit-assignment` | `expect(4).toBe(5)` on the count of `%Limit%` migrations                                                       | **Stale test.** `InstitutionKycTierLimitGovernance1785753600504` is a legitimate fifth limit migration. The test now asserts the **explicit ordered list of migration names**, so an unrecognised limit migration fails the assertion instead of sliding past a numeric comparison.                                                                                                                                                                                          |
-| `v1-limit-05-flow-matrix`      | `C2C_INIT concurrent-boundary` — expected `LIMIT_DAILY_AMOUNT_EXCEEDED`, got a 503 for a serialization failure | **A real defect, not merely contention.** The Cash→Cash initiation loop retried SERIALIZABLE conflicts with no delay, so every retrier woke together and re-created the collision it was retrying. Fixed with `serializationRetryDelayMs` (5 ms base, doubling, 100 ms cap, **full jitter**), plus three unit tests covering growth, cap and jitter. The path now ends in a stable machine code, `409 TRANSACTION_CONTENTION_RETRY_EXHAUSTED`, rather than an ambiguous 503. |
+Four lines in the raw log read as failures and are **not** test failures — they are console output
+the suites assert on deliberately: two `notification.console_simulated`, one
+`M19A_LIVE_HTTP auditor read=200 self-revoke=200 replay=401`, and the expected
+`uq_wallet_accounts_customer_currency` migration-rollback message.
 
-Four lines in the raw log read as failures and are not: they are console output the suites assert on
-deliberately — two `notification.console_simulated`, one `M19A_LIVE_HTTP auditor read=200`, and the
-expected `uq_wallet_accounts_customer_currency` migration-rollback message.
+### 5.2 Four failures, all of them in the evidence rather than the controls
 
-### 5.2 The `Service Unavailable` masking, and how it was closed
+Earlier runs failed. None of those failures was waved through by re-running until green; each was
+diagnosed to a cause and repaired, and the repair made the evidence **stricter**:
+
+| Failure                                        | Real cause                                                                                                                                                                                                                                                                                   | Fixed in   |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| `v1-limit-02` — `expect(4).toBe(5)`            | Stale test asserting a migration **count**; a legitimate fifth limit migration broke it. Now asserts the explicit ordered list of names.                                                                                                                                                     | `b8796fe5` |
+| `v1-limit-05` — expected a limit code, got 503 | SERIALIZABLE retries had **no delay**, so retriers woke together and re-created the collision. Fixed with jittered exponential backoff + a stable `409 TRANSACTION_CONTENTION_RETRY_EXHAUSTED`.                                                                                              | `a34574c5` |
+| `a16` — `connect ECONNRESET`                   | **Not** the contention artefact it was first assumed to be. `workforce()` cached only the resolved value, so two concurrent callers both seeded six principals; supertest binds an ephemeral listener per request, so the interleaving surfaced as ECONNRESET. Caches the in-flight promise. | `740883df` |
+| `a12` — `Expected substring: not "4321"`       | The PIN `4321` occurs inside an unrelated random UUID (`m2-0743`**`21`**`e6-…`) written by test M. The test scanned five arbitrary recent audit rows. Now scoped to its own execution's audit row.                                                                                           | `e9609925` |
+
+Each fix is pinned by evidence that fails without it:
+
+- `v1-test-01-agent-cash-to-cash-retry-exhaustion` → 5/5, covering backoff growth, cap **and jitter**
+  (a fixed delay fails the jitter test);
+- `test/governed-financial-fixture-workforce.spec.ts` → 3/3, verified to **fail against the old
+  implementation** (12 seeding calls instead of 6);
+- the `a12` assertion was verified to still **fail when a PIN is injected** into the audited row, so
+  it continues to catch the leak it exists to catch.
+
+The pattern is worth stating plainly: every failure was a defect in the **evidence**, never in the
+control being tested. That is the more dangerous class, because a green run built on bad evidence
+means nothing.
+
+### 5.2.1 The `Service Unavailable` masking, and how it was closed
 
 `errorCodeOf(e)` returns `resp.error || resp.code || e.code || e.message`. For a NestJS
-`ServiceUnavailableException` constructed from a string alone, `resp.error` is the **reason phrase**
-`'Service Unavailable'` — not the message and not a machine code. An assertion reading that value
-therefore could not distinguish "limit enforcement rejected this admission" from "a financial-context
-precondition was unavailable".
+`ServiceUnavailableException` built from a string alone, `resp.error` is the **reason phrase**
+`'Service Unavailable'` — not the message and not a machine code. An assertion reading it could not
+distinguish "limit enforcement rejected this admission" from "a financial-context precondition was
+unavailable".
 
-This was fixed rather than documented away:
+Closed in two steps: `55a72a41` corrected the fallback so the real message is no longer masked, and
+the Cash→Cash contention path now terminates in a stable machine code:
 
-- `55a72a41` corrected the `errorCodeOf` fallback so the real message is not masked;
-- the Cash→Cash contention path now terminates in `409`
+```json
+{
+  "message": "Cash→Cash could not complete after concurrent retries",
+  "error": "TRANSACTION_CONTENTION_RETRY_EXHAUSTED",
+  "code": "TRANSACTION_CONTENTION_RETRY_EXHAUSTED"
+}
+```
 
-  ```json
-  {
-    "message": "Cash→Cash could not complete after concurrent retries",
-    "error": "TRANSACTION_CONTENTION_RETRY_EXHAUSTED",
-    "code": "TRANSACTION_CONTENTION_RETRY_EXHAUSTED"
-  }
-  ```
-
-so a retry-exhaustion outcome can never again be mistaken for a limit decision.
-
-Residual, recorded honestly: the cash-to-cash _precondition_ path still has no faithful machine code
-— it is directionally fixed but not fully uniform with the contention path.
+Residual, recorded honestly: the cash-to-cash **precondition** path still lacks a faithful machine
+code. It is directionally fixed but not fully uniform with the contention path.
 
 ### 5.3 Discarded runs
 
