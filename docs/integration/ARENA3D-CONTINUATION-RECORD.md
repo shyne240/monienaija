@@ -367,6 +367,11 @@ migration-rollback message.
 
 `npx jest --config jest.config.js --silent` → **256/256 suites, 2978/2978 tests**, 81.2 s.
 
+> **Superseded — this was the correct count at `a34574c5` only.** The authoritative current figure is
+> **257/257 suites, 2981/2981 tests**. The extra suite and three tests are the fixture-race
+> regression test added in `740883df`; nothing here was wrong when written, but a reader who stops at
+> this line will quote a stale number.
+
 Re-run at `740883df`, after the fixture race was fixed and pinned by
 `test/governed-financial-fixture-workforce.spec.ts`:
 **257/257 suites, 2981/2981 tests**, 97.066 s.
@@ -415,7 +420,7 @@ still exactly what the test verifies.
 
 | Gate                                      | Result                             |
 | ----------------------------------------- | ---------------------------------- |
-| Root unit suite                           | 256/256 suites, 2978/2978 tests    |
+| Root unit suite                           | 257/257 suites, 2981/2981 tests    |
 | Full PostgreSQL matrix                    | 153/153 suites, 2751 tests, exit 0 |
 | Isolated KYC sweep (11 suites, run alone) | 11/11 suites, 149/149 tests        |
 | `protected-authority-boundary`            | 7/7                                |
