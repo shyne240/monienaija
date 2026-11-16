@@ -218,6 +218,24 @@ Groups 2, 3 and 6 are complete; group 1's contracts and registry are complete an
 application code calls it yet, so nothing in this repository can move money today. Group 3 governs
 _who may be engaged_; it does not yet gate a live call, because no live call exists.
 
+## 7.0b Group 7 core — inbound deposits, where the input is untrusted
+
+`src/banking/banking-inbound.service.ts`. A webhook is unauthenticated input from the internet, so a
+claim is recorded `UNVERIFIED` and only becomes `VERIFIED` after the provider confirms it
+server-to-server. Specific behaviours asserted:
+
+- deduplication is on the provider's transaction reference (unique constraint), so a replayed webhook
+  returns the existing record. A replay carrying **different amounts does not restate the record** —
+  that is evidence of a problem, not permission to edit history;
+- a provider outage, a provider failure result, or a `PENDING` provider status all leave the payment
+  `UNKNOWN`. None of them is treated as received;
+- where the provider reports an amount that disagrees with the webhook, the record is `REJECTED`
+  rather than adjusted — two conflicting accounts of what a customer paid are a human's problem;
+- `CONFLICT` is a dispute, not a payment;
+- `verifiedUnposted()` returns only `VERIFIED` rows with no ledger entry, so the posting path cannot
+  consume an unproven webhook. This service does **not** post to the ledger; posting belongs to the
+  governed financial path.
+
 ## 7.0a Groups 8–9 core — the outbound path, where uncertainty costs money
 
 `src/banking/banking-outbound.service.ts` is the money-moving core. It is split into `prepare()` and
