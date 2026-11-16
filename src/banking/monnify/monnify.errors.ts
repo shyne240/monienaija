@@ -26,6 +26,7 @@ export type MonnifyErrorCode =
   | 'MONNIFY_TRANSPORT_FAILED'
   | 'MONNIFY_TIMEOUT'
   | 'MONNIFY_MALFORMED_RESPONSE'
+  | 'MONNIFY_NOT_FOUND'
   | 'MONNIFY_REJECTED';
 
 const CATEGORY_BY_CODE: Readonly<Record<MonnifyErrorCode, BankingProviderErrorCategory>> = {
@@ -38,6 +39,9 @@ const CATEGORY_BY_CODE: Readonly<Record<MonnifyErrorCode, BankingProviderErrorCa
   MONNIFY_TRANSPORT_FAILED: 'TRANSPORT',
   MONNIFY_TIMEOUT: 'TIMEOUT',
   MONNIFY_MALFORMED_RESPONSE: 'CONTRACT',
+  // A documented "no such record" is a business answer, deliberately distinct from a rejection so
+  // callers do not conflate "does not exist" with "was refused".
+  MONNIFY_NOT_FOUND: 'PROVIDER_REJECTED',
   MONNIFY_REJECTED: 'PROVIDER_REJECTED',
 };
 

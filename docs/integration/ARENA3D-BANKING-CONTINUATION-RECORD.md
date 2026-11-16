@@ -120,34 +120,57 @@ boundary; **no speculative alternative-provider contract is implemented.**
 
 ## 4. Implementation groups
 
-| #   | Group                                                      | State       |
-| --- | ---------------------------------------------------------- | ----------- |
-| 1   | Provider capability contracts + registry                   | in progress |
-| 2   | Monnify transport, auth, token coordination, error mapping | pending     |
-| 3   | Banking provider governance (protected, maker/checker)     | pending     |
-| 4   | Bank directory + account-name enquiry                      | pending     |
-| 5   | Virtual account provisioning lifecycle                     | pending     |
-| 6   | Webhook ingestion + signature verification                 | pending     |
-| 7   | Inbound deposits (A7 integration)                          | pending     |
-| 8   | Outbound transfers (A6) + durable dispatch                 | pending     |
-| 9   | Transfer status + financial recovery                       | pending     |
-| 10  | Fees and charges                                           | pending     |
-| 11  | Settlement verification                                    | pending     |
-| 12  | Reconciliation engine + exception management               | pending     |
-| 13  | Admin banking workspace                                    | pending     |
-| 14  | Customer mobile banking                                    | pending     |
-| 15  | Agent mobile banking                                       | pending     |
-| 16  | KYC residual machine code                                  | pending     |
-| 17  | Consolidated acceptance                                    | pending     |
+| #   | Group                                                      | State        |
+| --- | ---------------------------------------------------------- | ------------ |
+| 1   | Provider capability contracts + registry                   | done         |
+| 2   | Monnify transport, auth, token coordination, error mapping | done         |
+| 3   | Banking provider governance (protected, maker/checker)     | schema done  |
+| 4   | Bank directory + account-name enquiry                      | adapter done |
+| 5   | Virtual account provisioning lifecycle                     | pending      |
+| 6   | Webhook ingestion + signature verification                 | done         |
+| 7   | Inbound deposits (A7 integration)                          | pending      |
+| 8   | Outbound transfers (A6) + durable dispatch                 | pending      |
+| 9   | Transfer status + financial recovery                       | pending      |
+| 10  | Fees and charges                                           | pending      |
+| 11  | Settlement verification                                    | unsupported  |
+| 12  | Reconciliation engine + exception management               | pending      |
+| 13  | Admin banking workspace                                    | pending      |
+| 14  | Customer mobile banking                                    | pending      |
+| 15  | Agent mobile banking                                       | pending      |
+| 16  | KYC residual machine code                                  | pending      |
+| 17  | Consolidated acceptance                                    | pending      |
+
+Legend: **done** = implemented, tested and pushed; **schema done** = migration and structural
+assertions landed, service layer outstanding; **adapter done** = provider-side call implemented and
+unit-tested against documented response shapes, caller wiring outstanding; **unsupported** = the
+adapter deliberately refuses because no documented response schema exists for this capability, so
+guessing one would be an invented contract.
 
 ---
 
 ## 5. Tests executed
 
-| Suite                                    | Result | Command                                                                                         |
-| ---------------------------------------- | ------ | ----------------------------------------------------------------------------------------------- |
-| `banking-provider-registry.unit.spec.ts` | 6/6    | `npx jest --config jest.config.js --runTestsByPath test/banking-provider-registry.unit.spec.ts` |
-| `monnify-token-manager.unit.spec.ts`     | 14/14  | `npx jest --config jest.config.js --runTestsByPath test/monnify-token-manager.unit.spec.ts`     |
+| Suite                                                    | Result | Command                                                                                         |
+| -------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------- |
+| `banking-provider-registry.unit.spec.ts`                 | 6/6    | `npx jest --config jest.config.js --runTestsByPath test/banking-provider-registry.unit.spec.ts` |
+| `monnify-token-manager.unit.spec.ts`                     | 14/14  | `npx jest --config jest.config.js --runTestsByPath test/monnify-token-manager.unit.spec.ts`     |
+| `monnify-http-allowlist.unit.spec.ts`                    | 9/9    | `npx jest --config jest.config.js --runTestsByPath test/monnify-http-allowlist.unit.spec.ts`    |
+| `monnify-webhook-signature.unit.spec.ts`                 | 12/12  | `npx jest --config jest.config.js --runTestsByPath test/monnify-webhook-signature.unit.spec.ts` |
+| `monnify-provider.unit.spec.ts`                          | 24/24  | `npx jest --config jest.config.js --runTestsByPath test/monnify-provider.unit.spec.ts`          |
+| `banking-provider-governance-schema.integration.spec.ts` | 9/9    | full PostgreSQL chain, see command below                                                        |
+
+Banking unit total: **65/65** (registry 6 + token 14 + allowlist 9 + webhook 12 + adapter 24).
+Governance schema assertions: **9/9** against a real PostgreSQL database built by the real migration
+chain, configured exactly as the KYC matrix was:
+
+```
+NODE_ENV=test PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes PG_TEST_RUN_ID=<id> \
+  DB_HOST=127.0.0.1 DB_PORT=44679 DB_USER=arena_pg_test \
+  DB_PASSWORD=arena-disposable-test-only DB_NAME=postgres \
+  node -r ./test/support/mission-25c-network-guard.cjs ./node_modules/jest/bin/jest.js \
+  --config jest.integration.config.js --runInBand \
+  --runTestsByPath test/banking-provider-governance-schema.integration.spec.ts
+```
 
 **A real defect the error-mapping tests caught.** The credential scrubber used `\S+`, which stops at
 the first space. `authorization: Bearer abc.def` was therefore rewritten to
@@ -178,14 +201,27 @@ running every migration), then exercised structurally by
 
 ## 7. Remaining implementation
 
-All groups 1–17.
+| Group | Outstanding work                                                                                            |
+| ----- | ----------------------------------------------------------------------------------------------------------- |
+| 3     | service layer over migration `1785753600600`: propose / approve / version publication, reusing              |
+|       | `ProtectedAuthorityService`; the schema, its triggers and its protected-decision table are already in place |
+| 4     | wire the adapter's directory and enquiry calls into an application service; nothing provider-side remains   |
+| 5     | reserved-account persistence and lifecycle; adapter calls exist, storage does not                           |
+| 7–9   | inbound deposits, outbound dispatch, transfer status and recovery — the money-moving core                   |
+| 10–12 | fees, settlement verification (blocked, see below) and the reconciliation engine                            |
+| 13–15 | admin, customer and agent surfaces                                                                          |
+| 16–17 | KYC residual machine code and consolidated acceptance                                                       |
+
+Groups 2 and 6 are complete; group 1's contracts and registry are complete and stable. Groups 4 and
+5 are complete **only** on the provider side: the adapter is written and unit-tested, but no
+application code calls it yet, so nothing in this repository can move money today.
 
 ## 8. Exact next action
 
-Next: **Group 6 — webhook signature verification**, then the Monnify capability methods
-(bank directory, account-name enquiry, reserved accounts, disbursement, status, settlement) on top
-of the transport now in place, followed by **Group 3 — protected banking governance** (migrations
-`1785753600600`+), virtual accounts, inbound/outbound lifecycles and reconciliation.
+**Group 3 service layer** — proposal, approval and version publication over the governance schema,
+using the same `ProtectedAuthorityService` boundary and maker/checker shape already accepted for
+institutional KYC limits (`src/limit-catalog/institution-kyc-limit-policy.service.ts`). Then
+migrations `1785753600601`+ for virtual accounts, inbound and outbound operation records.
 
 ### 8.1 What is landed and safe
 
@@ -195,8 +231,12 @@ of the transport now in place, followed by **Group 3 — protected banking gover
 | `afa50a11` | Provider capability contracts + registry (6 tests)                                                                                                         |
 | `0f418084` | Normalized Monnify errors + coordinate token refresh (14 tests)                                                                                            |
 | `d5869436` | Hardened transport + exact-segment path allowlist (9 tests)                                                                                                |
+| `6b01141b` | Continuation record checkpoint                                                                                                                             |
+| `ff663319` | Webhook signature verification, HMAC-SHA512 (12 tests)                                                                                                     |
+| `26c7feba` | Banking governance migration `1785753600600` + 9 PostgreSQL structural assertions                                                                          |
+| _pending_  | Monnify banking adapter, all capabilities (24 tests)                                                                                                       |
 
-All pushed; local == remote verified after each. 29/29 banking unit tests pass; eslint, prettier and
+All pushed; local == remote verified after each. 65/65 banking unit tests pass; eslint, prettier and
 tsc clean on every banking file.
 
 ### 8.2 Two real defects already caught by those tests
@@ -206,7 +246,35 @@ Worth carrying forward because they show the test strategy is working:
 1. the credential scrubber's `\S+` left `Bearer abc.def` intact after `[REDACTED]`, so a leaked token
    would have looked sanitised;
 2. the path allowlist accepted `/validateX` by prefix, and then refused the legitimate reserved-account
-   reference path — one bypass and one false negative in the same matcher.
+   reference path — one bypass and one false negative in the same matcher;
+3. **the adapter classified HTTP 5xx as a business rejection** (§8.3). This one matters most.
+
+### 8.3 The 5xx defect, and why it was worth chasing
+
+The adapter originally judged every non-401/403 response by the Monnify envelope alone. That is
+correct for the documented `200 + requestSuccessful:false` pattern, but it silently swept server
+faults into the same bucket: a `503` carrying `requestSuccessful:false` became
+`PROVIDER_REJECTED`, and `PROVIDER_REJECTED` is what `enquireAccountName` and `getTransferStatus`
+translate into `NOT_FOUND`.
+
+The consequence would have been ugly and quiet. An account-name check during a provider outage would
+have answered "this account does not exist" — a business fact, cached and acted on — when the truth
+was "nobody knows right now". For a disbursement the same path would have read as a refused transfer
+while the money may in fact have moved.
+
+The fix has three parts, each pinned by its own test:
+
+- `5xx` ⇒ `MONNIFY_TRANSPORT_FAILED` / category `TRANSPORT`, never `PROVIDER_REJECTED`;
+- `404` ⇒ a dedicated `MONNIFY_NOT_FOUND` code, so "no such record" is a _distinct_ verdict rather
+  than an alias for "was refused";
+- an outbound submission that hits a `5xx` resolves to `UNKNOWN`, because a gateway that accepted the
+  request and then failed has not told us anything about whether the money moved.
+
+Two smaller defects fell out of the same pass. `login()` returned `String(body.accessToken ?? '')`,
+so a malformed login yielded an empty bearer that the token manager would happily cache, turning one
+bad response into a run of confusing 401s; it now throws `MONNIFY_MALFORMED_RESPONSE`. And the
+`monnify-signature` absence rule from group 6 is unchanged: absent is only tolerated for a trusted
+fixture transport, never in production.
 
 ## 9. Genuine external blockers
 
