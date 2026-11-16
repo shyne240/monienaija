@@ -175,8 +175,31 @@ All groups 1–17.
 
 ## 8. Exact next action
 
-Group 4/6 groundwork — the Monnify HTTP adapter surface (bank directory, account-name enquiry,
-reserved accounts, disbursement, status, settlement), then webhook signature verification.
+Next: **Group 6 — webhook signature verification**, then the Monnify capability methods
+(bank directory, account-name enquiry, reserved accounts, disbursement, status, settlement) on top
+of the transport now in place, followed by **Group 3 — protected banking governance** (migrations
+`1785753600600`+), virtual accounts, inbound/outbound lifecycles and reconciliation.
+
+### 8.1 What is landed and safe
+
+| Commit     | Content                                                                                                                                                    |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `6dd25a1d` | Banking continuation record, migration allocation `1785753600600-0699` verified free, provider contracts recorded, 256/2981 documentation figure corrected |
+| `afa50a11` | Provider capability contracts + registry (6 tests)                                                                                                         |
+| `0f418084` | Normalized Monnify errors + coordinate token refresh (14 tests)                                                                                            |
+| `d5869436` | Hardened transport + exact-segment path allowlist (9 tests)                                                                                                |
+
+All pushed; local == remote verified after each. 29/29 banking unit tests pass; eslint, prettier and
+tsc clean on every banking file.
+
+### 8.2 Two real defects already caught by those tests
+
+Worth carrying forward because they show the test strategy is working:
+
+1. the credential scrubber's `\S+` left `Bearer abc.def` intact after `[REDACTED]`, so a leaked token
+   would have looked sanitised;
+2. the path allowlist accepted `/validateX` by prefix, and then refused the legitimate reserved-account
+   reference path — one bypass and one false negative in the same matcher.
 
 ## 9. Genuine external blockers
 
