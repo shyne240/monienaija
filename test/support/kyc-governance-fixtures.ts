@@ -14,6 +14,7 @@ import {
 import { KycTierPolicyService } from '../../src/kyc-verification/kyc-tier-policy.service';
 import type { IsolatedKycCluster } from './kyc-isolated-cluster';
 import { createKycAuthorityConnections } from './kyc-isolated-authority';
+import { createKycAuthorityConnectionsOverTcp } from './kyc-authority-tcp';
 
 // These principals are test-only fixture actors. Authorization is mocked at this helper boundary;
 // maker/checker separation, MFA-bound decision evidence and state transitions still pass through
@@ -37,7 +38,7 @@ const checker: AuthorizationPrincipal = {
   assuranceLevel: 'MFA',
 };
 const fixtureAuthorization = {
-  authorize: async () => ({ allowed: true }),
+  authorize: () => Promise.resolve({ allowed: true }),
 } as unknown as AuthorizationService;
 
 /** Seed an approved policy via the real maker/checker path, never by inserting APPROVED rows. */
@@ -174,6 +175,107 @@ export async function approveIsolatedInstitutionKycTierLimitPolicy(
     });
     const result = await governance.decide(checker, institutionId, proposal.id, true);
     return result.version;
+  } finally {
+    await connections.cleanup();
+  }
+}
+
+/**
+ * TCP variant for the shared `test:pg` cluster.
+ *
+ * `approveIsolatedInstitutionKycTierLimitPolicy` is bound to the socket-only isolated cluster. The
+ * main integration matrix runs on loopback TCP, so suites that need a real institution-scoped
+ * tier-to-limit mapping (for example the Wallet->Wallet PIN suite, whose admission is tier-bound)
+ * use this instead. The policy still goes through the same protected maker/checker services.
+ *
+ * `profileCode` / rule value are caller-supplied acceptance data. They are NOT operational
+ * thresholds: the deliberately large default exists only so an unrelated financial test is not
+ * constrained by an invented monetary policy.
+ */
+export async function approveTcpInstitutionKycTierLimitPolicy(
+  admin: DataSource,
+  institutionId: string,
+  options: {
+    product: string;
+    profileCode: string;
+    currency?: string;
+    perTransactionMinor?: string;
+    tiers?: ReadonlyArray<'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3'>;
+  },
+): Promise<number> {
+  const effectiveFrom = '2000-01-01T00:00:00.000Z';
+  const currency = options.currency ?? 'NGN';
+  const tiers = options.tiers ?? (['LEVEL_1', 'LEVEL_2', 'LEVEL_3'] as const);
+  await admin.query(
+    `INSERT INTO limit_profiles(code,name,description,kind,status,enabled,configuration_status,created_by)
+     VALUES($1,$2,'Synthetic acceptance-only profile','UNIVERSAL','ACTIVE',true,'CONFIGURED','integration-harness')
+     ON CONFLICT(code) DO NOTHING`,
+    [options.profileCode, `Synthetic acceptance profile ${options.profileCode}`],
+  );
+  const existingRules = await admin.query<Array<{ n: number }>>(
+    `SELECT count(*)::int AS n FROM limit_rules WHERE limit_profile_code=$1`,
+    [options.profileCode],
+  );
+  if ((existingRules[0]?.n ?? 0) === 0) {
+    await admin.query(
+      `INSERT INTO limit_rules(id,limit_profile_code,product,direction,channel,currency,dimension,limit_value_minor,limit_value_count,effective_from,effective_to,is_active,priority,created_by)
+       VALUES($1,$2,$3,'BOTH',NULL,$4,'MAX_AMOUNT_PER_TX',$5,NULL,$6,NULL,true,0,'integration-harness')`,
+      [
+        randomUUID(),
+        options.profileCode,
+        options.product,
+        currency,
+        options.perTransactionMinor ?? '9000000000000000',
+        effectiveFrom,
+      ],
+    );
+  }
+  const existingAssignments = await admin.query<Array<{ n: number }>>(
+    `SELECT count(*)::int AS n FROM limit_assignments WHERE limit_profile_code=$1`,
+    [options.profileCode],
+  );
+  if ((existingAssignments[0]?.n ?? 0) === 0) {
+    await admin.query(
+      `INSERT INTO limit_assignments(id,limit_profile_code,subject_type,subject_id,segment_code,precedence,effective_from,effective_to,is_active,created_by)
+       VALUES($1,$2,'GLOBAL',NULL,NULL,0,$3,NULL,true,'integration-harness')`,
+      [randomUUID(), options.profileCode, effectiveFrom],
+    );
+  }
+
+  const connections = await createKycAuthorityConnectionsOverTcp(admin);
+  try {
+    const authority = new ProtectedAuthorityService(connections.runtime, connections.authority);
+    const testConfig = { get: () => true } as unknown as ConfigService<Environment, true>;
+    const governance = new InstitutionKycLimitPolicyService(
+      connections.runtime,
+      fixtureAuthorization,
+      authority,
+      testConfig,
+    );
+    const current = await governance.view(maker, institutionId);
+    const definition = {
+      schemaVersion: 1,
+      enabled: true,
+      effectiveFrom,
+      effectiveUntil: null,
+      mappings: tiers.map((tier) => ({
+        product: options.product,
+        currency,
+        serviceClass: null,
+        tier,
+        disposition: 'PROFILE' as const,
+        profileCode: options.profileCode,
+      })),
+    };
+    const proposal = await governance.propose(maker, {
+      institutionId,
+      requestId: randomUUID(),
+      expectedVersion: current.currentVersion,
+      definition,
+      reason: 'Synthetic integration policy for tier-bound transaction admission',
+    });
+    const decided = await governance.decide(checker, institutionId, proposal.id, true);
+    return decided.version;
   } finally {
     await connections.cleanup();
   }

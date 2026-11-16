@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { seedGovernedTierPolicy } from './support/kyc-test-fixtures';
 import { ConflictException, ValidationPipe } from '@nestjs/common';
 import { AuditService } from '../src/operations/audit.service';
 import { OutboxService } from '../src/operations/outbox.service';
@@ -267,24 +268,21 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
     await app.getHttpAdapter().getInstance().ready();
     await app.listen(0, '127.0.0.1');
     service = app.get(A7ProductPersistenceService);
-    const proposal = randomUUID();
+    // Approve the KYC tier policy through the governed maker/checker path. A direct
+    // `INSERT ... state='APPROVED'` is refused by the protected-authority transition trigger; this
+    // suite must exercise that guarantee rather than bypass it.
     const r = { all: [], any: [] };
-    const d = {
-      regulatoryRequirementsConfirmed: true,
-      effectiveFrom: '2020-01-01T00:00:00.000Z',
-      effectiveUntil: null,
-      regulatory: { LEVEL_1: r, LEVEL_2: r },
-      operator: { LEVEL_1: r, LEVEL_2: r },
-    };
-    await db.query(
-      `INSERT INTO kyc_tier_policy_proposals(id,request_id,expected_version,definition,fingerprint,maker_id,maker_session_id,checker_id,checker_session_id,state) VALUES($1,$2,0,$3,$4,'maker',$5,'checker',$6,'APPROVED')`,
-      [proposal, randomUUID(), JSON.stringify(d), 'a'.repeat(64), randomUUID(), randomUUID()],
-    );
-    await db.query(
-      `INSERT INTO kyc_tier_policy_versions(version,proposal_id,definition,maker_id,checker_id) VALUES(1,$1,$2,'maker','checker')`,
-      [proposal, JSON.stringify(d)],
-    );
-    await db.query('UPDATE kyc_tier_policy_head SET version=1');
+    await seedGovernedTierPolicy(db, {
+      definition: {
+        regulatoryRequirementsConfirmed: true,
+        effectiveFrom: '2020-01-01T00:00:00.000Z',
+        effectiveUntil: null,
+        regulatory: { LEVEL_1: r, LEVEL_2: r, LEVEL_3: r },
+        operator: { LEVEL_1: r, LEVEL_2: r, LEVEL_3: r },
+      },
+      makerId: 'a7-fixture-maker',
+      checkerId: 'a7-fixture-checker',
+    });
     const profile = A7_INBOUND_ADMISSION_PROFILE;
     await app.get(TypeOrmPolicyProfileVersionRepository).insertImmutable({
       ...profile,

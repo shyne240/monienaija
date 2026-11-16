@@ -14,6 +14,7 @@ import {
   truncateAllTables,
 } from './support/pg-harness';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
+import { TrustedTierFixture } from './support/trusted-tier-fixture';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 import { makeCustomerFinanciallyEligible } from './support/kyc-test-fixtures';
 
@@ -39,8 +40,13 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
   let dataSource: DataSource;
   let app: NestFastifyApplication;
 
+  const evidence = new TrustedTierFixture();
+
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a24pin');
+    // Wallet->Wallet admission is tier-bound, so a governed tier policy must exist for the
+    // trusted-eligibility gate to evaluate. Seeded through the real maker/checker services.
+    await evidence.seedPolicy(dataSource);
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
@@ -66,6 +72,9 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
+    // The wholesale truncate also empties the KYC policy tables, and tier-bound admission requires
+    // an approved policy; restore it for every test.
+    await evidence.seedPolicy(dataSource);
   });
 
   async function captureFinancialState() {

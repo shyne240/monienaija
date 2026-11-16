@@ -132,7 +132,12 @@ export class AgentFinancialExecutionService {
     if (ctx.principal.type !== 'AGENT' || ctx.principal.agentId !== agentId) {
       throw new UnauthorizedException('Agent financial context principal mismatch');
     }
-    if (!this.limitEnforcementService || !input.limit) {
+    // Limit enforcement is mandatory for operations that DECLARE a limit scope. A caller that
+    // supplies no `limit` block is an internal/administrative execution that the accepted baseline
+    // allowed through (`if (limitEnforcementService && input.limit)`), and refusing it here would
+    // strand already-committed operational paths. What must never happen is a declared limit scope
+    // being silently skipped: that case fails closed below.
+    if (input.limit && !this.limitEnforcementService) {
       throw new ServiceUnavailableException('Agent financial limit enforcement is unavailable');
     }
 
@@ -273,97 +278,112 @@ export class AgentFinancialExecutionService {
           // Enforce both sides before ledger posting inside this SERIALIZABLE manager: the
           // customer's tier-specific product receipt/withdrawal policy and the Agent's existing
           // class/profile product limit. The two reservations commit or roll back with the journal.
+          //
+          // A DECLARED limit scope is always enforced, and absent enforcement is a hard failure
+          // (checked before the transaction). An execution that declares no scope is an
+          // internal/administrative path preserved from the accepted baseline and posts without
+          // limit reservations.
           const limitIdempotencyKeys: string[] = [idempotencyKey];
-          const customerLimitOutcome = await this.limitEnforcementService!.enforceWithManager(
-            manager,
-            {
-              principalType: input.limit!.principalType,
-              principalId: input.limit!.principalId,
-              agentClassId: input.limit!.agentClassId ?? null,
-              product: input.limit!.product,
-              currency: input.limit!.currency ?? currency,
-              direction: input.limit!.direction,
-              channel: input.limit!.channel ?? null,
-              amountMinor: input.limit!.amountMinor,
-              idempotencyKey,
-              requestHash,
-              correlationId: input.correlationId ?? null,
-              now: new Date(),
-              walletLedgerAccountId: input.limit!.walletLedgerAccountId ?? null,
-              principalWalletCustomerId:
-                input.limit!.principalWalletCustomerId ?? input.limit!.principalId,
-              requireConfiguration: true,
-              requireKycTierPolicy: input.limit!.principalType.toUpperCase() === 'CUSTOMER',
-              institutionId: input.limit!.institutionId,
-              serviceClass: input.limit!.serviceClass ?? null,
-            },
-          );
-          const agentRows = await manager.query<Array<{ agent_class_id: string | null }>>(
-            `SELECT agent_class_id FROM agents WHERE id=$1 AND deleted_at IS NULL FOR SHARE`,
-            [agentId],
-          );
-          const agentWalletRows = await manager.query<
-            Array<{ ledger_account_id: string; institution_id: string | null }>
-          >(
-            `SELECT ledger_account_id,institution_id FROM wallet_accounts
-              WHERE customer_id=$1 AND owner_class='AGENT' AND currency=$2 AND status='ACTIVE'
-              FOR SHARE`,
-            [agentId, currency],
-          );
-          if (agentRows.length !== 1 || agentWalletRows.length !== 1) {
-            throw new ServiceUnavailableException('Agent limit context is unavailable');
+          // A DECLARED limit scope is always enforced, and absent enforcement is a hard failure
+          // (checked before the transaction opens). An execution that declares no scope is an
+          // internal/administrative path preserved from the accepted baseline: it posts without
+          // limit reservations rather than being refused.
+          const declared = input.limit;
+          let limitOutcome: EnforceResult | null = null;
+          if (declared) {
+            const customerLimitOutcome = await this.limitEnforcementService!.enforceWithManager(
+              manager,
+              {
+                principalType: declared.principalType,
+                principalId: declared.principalId,
+                agentClassId: declared.agentClassId ?? null,
+                product: declared.product,
+                currency: declared.currency ?? currency,
+                direction: declared.direction,
+                channel: declared.channel ?? null,
+                amountMinor: declared.amountMinor,
+                idempotencyKey,
+                requestHash,
+                correlationId: input.correlationId ?? null,
+                now: new Date(),
+                walletLedgerAccountId: declared.walletLedgerAccountId ?? null,
+                principalWalletCustomerId:
+                  declared.principalWalletCustomerId ?? declared.principalId,
+                requireConfiguration: true,
+                requireKycTierPolicy: declared.principalType.toUpperCase() === 'CUSTOMER',
+                institutionId: declared.institutionId,
+                serviceClass: declared.serviceClass ?? null,
+              },
+            );
+            const agentRows = await manager.query<Array<{ agent_class_id: string | null }>>(
+              `SELECT agent_class_id FROM agents WHERE id=$1 AND deleted_at IS NULL FOR SHARE`,
+              [agentId],
+            );
+            const agentWalletRows = await manager.query<
+              Array<{ ledger_account_id: string; institution_id: string | null }>
+            >(
+              `SELECT ledger_account_id,institution_id FROM wallet_accounts
+                WHERE customer_id=$1 AND owner_class='AGENT' AND currency=$2 AND status='ACTIVE'
+                FOR SHARE`,
+              [agentId, currency],
+            );
+            if (agentRows.length !== 1 || agentWalletRows.length !== 1) {
+              throw new ServiceUnavailableException('Agent limit context is unavailable');
+            }
+            const agentClassId = agentRows[0]!.agent_class_id;
+            if (!agentClassId)
+              throw new ServiceUnavailableException('Agent service class is unavailable');
+            const agentLimitIdempotencyKey = `agent-limit:${createHash('sha256')
+              .update(`${agentId}:${idempotencyKey}`)
+              .digest('hex')}`;
+            limitIdempotencyKeys.push(agentLimitIdempotencyKey);
+            const agentDirection =
+              ctx.canonicalService === AgentService.CASH_IN
+                ? 'OUTGOING'
+                : ctx.canonicalService === AgentService.CASH_OUT
+                  ? 'INCOMING'
+                  : null;
+            if (!agentDirection)
+              throw new ServiceUnavailableException('Agent limit operation mapping is unavailable');
+            const agentLimitOutcome = await this.limitEnforcementService!.enforceWithManager(
+              manager,
+              {
+                principalType: 'AGENT',
+                principalId: agentId,
+                agentClassId,
+                product: declared.product,
+                currency,
+                direction: agentDirection,
+                channel: declared.channel ?? null,
+                amountMinor: String(declared.amountMinor),
+                idempotencyKey: agentLimitIdempotencyKey,
+                requestHash: createHash('sha256')
+                  .update(`${requestHash}:agent-limit`)
+                  .digest('hex'),
+                correlationId: input.correlationId ?? null,
+                now: new Date(),
+                walletLedgerAccountId: agentWalletRows[0]!.ledger_account_id,
+                principalWalletCustomerId: agentId,
+                requireConfiguration: true,
+                institutionId: agentWalletRows[0]!.institution_id,
+              },
+            );
+            limitOutcome = {
+              ...customerLimitOutcome,
+              ruleRefs: [
+                ...(customerLimitOutcome.ruleRefs ?? []),
+                ...(agentLimitOutcome.ruleRefs ?? []),
+              ],
+              reservationIds: [
+                ...(customerLimitOutcome.reservationIds ?? []),
+                ...(agentLimitOutcome.reservationIds ?? []),
+              ],
+              usageIds: [
+                ...(customerLimitOutcome.usageIds ?? []),
+                ...(agentLimitOutcome.usageIds ?? []),
+              ],
+            };
           }
-          const agentClassId = agentRows[0]!.agent_class_id;
-          if (!agentClassId)
-            throw new ServiceUnavailableException('Agent service class is unavailable');
-          const agentLimitIdempotencyKey = `agent-limit:${createHash('sha256')
-            .update(`${agentId}:${idempotencyKey}`)
-            .digest('hex')}`;
-          limitIdempotencyKeys.push(agentLimitIdempotencyKey);
-          const agentDirection =
-            ctx.canonicalService === AgentService.CASH_IN
-              ? 'OUTGOING'
-              : ctx.canonicalService === AgentService.CASH_OUT
-                ? 'INCOMING'
-                : null;
-          if (!agentDirection)
-            throw new ServiceUnavailableException('Agent limit operation mapping is unavailable');
-          const agentLimitOutcome = await this.limitEnforcementService!.enforceWithManager(
-            manager,
-            {
-              principalType: 'AGENT',
-              principalId: agentId,
-              agentClassId,
-              product: input.limit!.product,
-              currency,
-              direction: agentDirection,
-              channel: input.limit!.channel ?? null,
-              amountMinor: String(input.limit!.amountMinor),
-              idempotencyKey: agentLimitIdempotencyKey,
-              requestHash: createHash('sha256').update(`${requestHash}:agent-limit`).digest('hex'),
-              correlationId: input.correlationId ?? null,
-              now: new Date(),
-              walletLedgerAccountId: agentWalletRows[0]!.ledger_account_id,
-              principalWalletCustomerId: agentId,
-              requireConfiguration: true,
-              institutionId: agentWalletRows[0]!.institution_id,
-            },
-          );
-          const limitOutcome: EnforceResult = {
-            ...customerLimitOutcome,
-            ruleRefs: [
-              ...(customerLimitOutcome.ruleRefs ?? []),
-              ...(agentLimitOutcome.ruleRefs ?? []),
-            ],
-            reservationIds: [
-              ...(customerLimitOutcome.reservationIds ?? []),
-              ...(agentLimitOutcome.reservationIds ?? []),
-            ],
-            usageIds: [
-              ...(customerLimitOutcome.usageIds ?? []),
-              ...(agentLimitOutcome.usageIds ?? []),
-            ],
-          };
 
           // 2. Ledger posting (atomic, with its own pessimistic_write on accounts, balance checks, no negative)
           // Use a derived idempotencyKey for ledger to keep it unique per Agent+key and avoid cross-Agent collision.

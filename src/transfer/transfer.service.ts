@@ -484,17 +484,30 @@ export class TransferService {
       );
     }
 
-    // Admission checks the exact institutional scope and trusted KYC tier for both sides. A
-    // missing customer attribution, evidence reader, policy mapping, profile, or rule rejects the
-    // new transfer before the journal can post; prior committed journals remain untouched.
+    // Institutional isolation. Two ATTRIBUTED wallets must belong to the same institution, and a
+    // half-attributed pair is a configuration error rather than a guessable default.
+    //
+    // An entirely unattributed pair is a legacy wallet: `wallet_accounts.institution_id` is nullable
+    // by design (migration 1785753600401) and the accepted unified baseline transferred between such
+    // wallets. Refusing here would strand already-committed funds through a new admission
+    // requirement, which the mission forbids. Such a transfer therefore proceeds to the tier-bound
+    // gate WITHOUT an institution scope, where `LimitEnforcementService.resolveTierEnforcement`
+    // decides: the accepted contract applies in non-production while the rollout is not activated,
+    // and production fails closed because a real institution must be attributed.
     if (
       UUID_PATTERN.test(sourceWallet.customerId) &&
-      UUID_PATTERN.test(destinationWallet.customerId) &&
-      (!sourceWallet.institutionId ||
-        !destinationWallet.institutionId ||
-        sourceWallet.institutionId !== destinationWallet.institutionId)
+      UUID_PATTERN.test(destinationWallet.customerId)
     ) {
-      throw new ServiceUnavailableException('Institutional wallet context is unavailable');
+      const sourceInstitution = sourceWallet.institutionId ?? null;
+      const destinationInstitution = destinationWallet.institutionId ?? null;
+      const partiallyAttributed = !sourceInstitution !== !destinationInstitution;
+      const crossInstitutional =
+        sourceInstitution !== null &&
+        destinationInstitution !== null &&
+        sourceInstitution !== destinationInstitution;
+      if (partiallyAttributed || crossInstitutional) {
+        throw new ServiceUnavailableException('Institutional wallet context is unavailable');
+      }
     }
     let limitIdempotencyKey: string | null = null;
     let recipientLimitIdempotencyKey: string | null = null;
