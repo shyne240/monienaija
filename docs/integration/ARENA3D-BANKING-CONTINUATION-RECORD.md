@@ -147,6 +147,14 @@ boundary; **no speculative alternative-provider contract is implemented.**
 | Suite                                    | Result | Command                                                                                         |
 | ---------------------------------------- | ------ | ----------------------------------------------------------------------------------------------- |
 | `banking-provider-registry.unit.spec.ts` | 6/6    | `npx jest --config jest.config.js --runTestsByPath test/banking-provider-registry.unit.spec.ts` |
+| `monnify-token-manager.unit.spec.ts`     | 14/14  | `npx jest --config jest.config.js --runTestsByPath test/monnify-token-manager.unit.spec.ts`     |
+
+**A real defect the error-mapping tests caught.** The credential scrubber used `\S+`, which stops at
+the first space. `authorization: Bearer abc.def` was therefore rewritten to
+`[REDACTED] abc.def` — the credential **survived**, and the output looked sanitised, which is worse
+than not scrubbing because it stops anyone looking. The pattern now consumes an optional scheme word
+plus the whole token run. This is exactly the class of bug that a test written against the intended
+behaviour catches and a code review does not.
 
 The registry tests are not decoration — two of them encode rules that are otherwise easy to erode:
 
@@ -167,7 +175,8 @@ All groups 1–17.
 
 ## 8. Exact next action
 
-Group 2 — Monnify transport, authentication, token refresh coordination, normalized error mapping.
+Group 4/6 groundwork — the Monnify HTTP adapter surface (bank directory, account-name enquiry,
+reserved accounts, disbursement, status, settlement), then webhook signature verification.
 
 ## 9. Genuine external blockers
 
