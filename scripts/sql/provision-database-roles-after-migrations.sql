@@ -44,6 +44,14 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.kyc_provi
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.kyc_tier_policy_head FROM monienaija_runtime;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.kyc_tier_policy_proposals FROM monienaija_runtime;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.kyc_tier_policy_versions FROM monienaija_runtime;
+-- Institution tier->limit governance is the mapping that decides how much money a customer tier may
+-- move, so its publication state must be authority-only for exactly the same reason. Migration
+-- 1785753600504 revokes these three, but the blanket `GRANT ... ON ALL TABLES` above runs afterwards
+-- and would silently restore runtime write, letting the ordinary application credential forge the
+-- limit policy it is then checked against. Re-revoke explicitly; `authority_inspection` verifies it.
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.institution_kyc_limit_policy_heads FROM monienaija_runtime;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.institution_kyc_limit_policy_proposals FROM monienaija_runtime;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.institution_kyc_limit_policy_versions FROM monienaija_runtime;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.governed_institution_lifecycle_executions
   FROM monienaija_runtime;
 REVOKE INSERT, UPDATE, DELETE ON public.institution_affiliation_transition_evidence

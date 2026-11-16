@@ -328,51 +328,74 @@ const runtimePrivilegesSql = `
         OR has_table_privilege(session_user,format('%I.%I',current_schema(),kyc_tables.table_name),'TRUNCATE')
         OR has_table_privilege(session_user,format('%I.%I',current_schema(),kyc_tables.table_name),'REFERENCES')
         OR has_table_privilege(session_user,format('%I.%I',current_schema(),kyc_tables.table_name),'TRIGGER')
-    ) OR COALESCE((SELECT has_table_privilege(session_user,c.oid,'INSERT')
-        OR has_table_privilege(session_user,c.oid,'UPDATE')
-        OR has_table_privilege(session_user,c.oid,'DELETE')
-        OR has_table_privilege(session_user,c.oid,'TRUNCATE')
-        OR has_table_privilege(session_user,c.oid,'REFERENCES')
-        OR has_table_privilege(session_user,c.oid,'TRIGGER')
-        FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-        WHERE n.nspname='protected_authority' AND c.relname IN ('kyc_governance_decisions','institution_kyc_limit_decisions')),false)) AS kyc_governance_write,
+    ) OR COALESCE((SELECT count(*)>0 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname='protected_authority'
+          AND c.relname IN ('kyc_governance_decisions','institution_kyc_limit_decisions')
+          AND (has_table_privilege(session_user,c.oid,'INSERT')
+            OR has_table_privilege(session_user,c.oid,'UPDATE')
+            OR has_table_privilege(session_user,c.oid,'DELETE')
+            OR has_table_privilege(session_user,c.oid,'TRUNCATE')
+            OR has_table_privilege(session_user,c.oid,'REFERENCES')
+            OR has_table_privilege(session_user,c.oid,'TRIGGER'))),false)) AS kyc_governance_write,
     (SELECT count(*)=11 FROM pg_trigger t
       JOIN pg_class c ON c.oid=t.tgrelid
       JOIN pg_namespace n ON n.oid=c.relnamespace
       WHERE NOT t.tgisinternal AND (
         (n.nspname=current_schema() AND c.relname='kyc_provider_change_proposals'
           AND t.tgname='kyc_provider_proposal_authority_guard'
-          AND t.tgfoid='protected_authority.kyc_proposal_transition_guard()'::regprocedure)
+          AND (SELECT ns.nspname || '.' || p.proname FROM pg_proc p
+            JOIN pg_namespace ns ON ns.oid=p.pronamespace
+            WHERE p.oid=t.tgfoid)='protected_authority.kyc_proposal_transition_guard')
         OR (n.nspname=current_schema() AND c.relname='kyc_tier_policy_proposals'
           AND t.tgname='kyc_tier_proposal_authority_guard'
-          AND t.tgfoid='protected_authority.kyc_proposal_transition_guard()'::regprocedure)
+          AND (SELECT ns.nspname || '.' || p.proname FROM pg_proc p
+            JOIN pg_namespace ns ON ns.oid=p.pronamespace
+            WHERE p.oid=t.tgfoid)='protected_authority.kyc_proposal_transition_guard')
         OR (n.nspname=current_schema() AND c.relname='kyc_provider_configuration'
           AND t.tgname='kyc_provider_configuration_authority_guard'
-          AND t.tgfoid='protected_authority.kyc_provider_configuration_guard()'::regprocedure)
+          AND (SELECT ns.nspname || '.' || p.proname FROM pg_proc p
+            JOIN pg_namespace ns ON ns.oid=p.pronamespace
+            WHERE p.oid=t.tgfoid)='protected_authority.kyc_provider_configuration_guard')
         OR (n.nspname=current_schema() AND c.relname='kyc_provider_configuration_history'
           AND t.tgname='kyc_provider_history_authority_guard'
-          AND t.tgfoid='protected_authority.kyc_provider_history_guard()'::regprocedure)
+          AND (SELECT ns.nspname || '.' || p.proname FROM pg_proc p
+            JOIN pg_namespace ns ON ns.oid=p.pronamespace
+            WHERE p.oid=t.tgfoid)='protected_authority.kyc_provider_history_guard')
         OR (n.nspname=current_schema() AND c.relname='kyc_tier_policy_versions'
           AND t.tgname='kyc_tier_version_authority_guard'
-          AND t.tgfoid='protected_authority.kyc_tier_version_guard()'::regprocedure)
+          AND (SELECT ns.nspname || '.' || p.proname FROM pg_proc p
+            JOIN pg_namespace ns ON ns.oid=p.pronamespace
+            WHERE p.oid=t.tgfoid)='protected_authority.kyc_tier_version_guard')
         OR (n.nspname=current_schema() AND c.relname='kyc_tier_policy_head'
           AND t.tgname='kyc_tier_head_authority_guard'
-          AND t.tgfoid='protected_authority.kyc_tier_head_guard()'::regprocedure)
+          AND (SELECT ns.nspname || '.' || p.proname FROM pg_proc p
+            JOIN pg_namespace ns ON ns.oid=p.pronamespace
+            WHERE p.oid=t.tgfoid)='protected_authority.kyc_tier_head_guard')
         OR (n.nspname='protected_authority' AND c.relname='kyc_governance_decisions'
           AND t.tgname='kyc_governance_decisions_immutable'
-          AND t.tgfoid='protected_authority.kyc_governance_decision_guard()'::regprocedure)
+          AND (SELECT ns.nspname || '.' || p.proname FROM pg_proc p
+            JOIN pg_namespace ns ON ns.oid=p.pronamespace
+            WHERE p.oid=t.tgfoid)='protected_authority.kyc_governance_decision_guard')
         OR (n.nspname='protected_authority' AND c.relname='institution_kyc_limit_decisions'
           AND t.tgname='institution_kyc_limit_decision_immutable'
-          AND t.tgfoid='protected_authority.institution_kyc_limit_decision_guard()'::regprocedure)
+          AND (SELECT ns.nspname || '.' || p.proname FROM pg_proc p
+            JOIN pg_namespace ns ON ns.oid=p.pronamespace
+            WHERE p.oid=t.tgfoid)='protected_authority.institution_kyc_limit_decision_guard')
         OR (n.nspname=current_schema() AND c.relname='institution_kyc_limit_policy_proposals'
           AND t.tgname='institution_kyc_limit_proposal_authority_guard'
-          AND t.tgfoid='protected_authority.institution_kyc_limit_proposal_guard()'::regprocedure)
+          AND (SELECT ns.nspname || '.' || p.proname FROM pg_proc p
+            JOIN pg_namespace ns ON ns.oid=p.pronamespace
+            WHERE p.oid=t.tgfoid)='protected_authority.institution_kyc_limit_proposal_guard')
         OR (n.nspname=current_schema() AND c.relname='institution_kyc_limit_policy_versions'
           AND t.tgname='institution_kyc_limit_version_authority_guard'
-          AND t.tgfoid='protected_authority.institution_kyc_limit_version_guard()'::regprocedure)
+          AND (SELECT ns.nspname || '.' || p.proname FROM pg_proc p
+            JOIN pg_namespace ns ON ns.oid=p.pronamespace
+            WHERE p.oid=t.tgfoid)='protected_authority.institution_kyc_limit_version_guard')
         OR (n.nspname=current_schema() AND c.relname='institution_kyc_limit_policy_heads'
           AND t.tgname='institution_kyc_limit_head_authority_guard'
-          AND t.tgfoid='protected_authority.institution_kyc_limit_head_guard()'::regprocedure)
+          AND (SELECT ns.nspname || '.' || p.proname FROM pg_proc p
+            JOIN pg_namespace ns ON ns.oid=p.pronamespace
+            WHERE p.oid=t.tgfoid)='protected_authority.institution_kyc_limit_head_guard')
       )) AS kyc_governance_guard`;
 
 const authorityPrivilegesSql = `
