@@ -1,0 +1,293 @@
+# MonieNaija — KYC provider integration, three-tier automation and financial-limit enforcement
+
+**Handoff status: implementation complete; full-matrix re-verification in progress (see §10).**
+
+Branch `arena/defdd0fd-monienaija`, branched from `004dd80008edbadc41cebf3c67222d6abbcd2cff`
+(`arena/5b239ff5-monienaija`). Checkpoints pushed, in order:
+
+| Commit     | Content                                                               |
+| ---------- | --------------------------------------------------------------------- |
+| `5f414863` | Continuation record opened                                            |
+| `e3947e52` | Authorization-context repairs for the isolated tier-policy suites     |
+| `a3072b27` | Tier→limit acceptance suite + savepoint fix for a real `25P02` defect |
+| `7e5a0408` | Three admitted paths the tier rollout was stranding                   |
+| `8fe022d2` | Documented Dojah address-verification transport and adapter           |
+| `6f2f603c` | Continuation record through `8fe022d2`                                |
+| `b4ffa7d0` | Address assurance contract + claim redemption enforcement gap         |
+
+Nothing in this document is inferred from reading code alone where an execution could be run
+instead; every "PASS" below is a recorded test result, and §10 states plainly what has **not** been
+executed.
+
+---
+
+## 1. What this mission actually had to fix
+
+The recovered tree contained a genuine, well-built governance layer that could not be reached. The
+recovery itself is the story of three distinct classes of defect, and they matter more than the
+feature list because each one is a way this kind of control silently fails open.
+
+### 1.1 The rollout was un-admitted, not un-implemented
+
+`requireConfiguration: true` and `requireKycTierPolicy: true` had been added to entry points that the
+accepted unified baseline ran without. With `KYC_TIER_LIMIT_ENFORCEMENT_ENABLED` unset, every such
+admission refused — **139** `No active limit profile is assigned…`, **25** `Institutional KYC
+tier-limit enforcement is operationally disabled`, **1** `No applicable financial limit rules…`.
+
+The naive repair (drop the flags) would have deleted the control. The naive repair in the other
+direction (flip the flag on) would have made production depend on a tier policy that operators had
+never approved. Neither is acceptable, so enforcement is now an explicit **three-state** decision:
+
+| Mode                | Condition                       | Admission behaviour                               |
+| ------------------- | ------------------------------- | ------------------------------------------------- |
+| `ENFORCED`          | rollout flag on                 | full tier-bound admission; missing policy rejects |
+| _(throws)_          | flag off **and** production     | fail closed — production never runs unenforced    |
+| `LEGACY_UNENFORCED` | flag off **and** not production | accepted baseline contract applies                |
+
+The flag still defaults to `false`. Enabling tier-bound admission is a deliberate, reviewable
+production decision, and the absence of that decision cannot be mistaken for permission.
+
+### 1.2 A swallowed SQL error was rejecting legitimate admissions
+
+The tier-limit suite caught `23505` on the `limit_reservations` insert **in JavaScript**. PostgreSQL
+had already aborted the transaction, so every later statement failed `25P02` and a perfectly valid
+admission was refused. Fixed with `SAVEPOINT limit_reservation_insert` / `ROLLBACK TO` / `RELEASE`
+and pinned by a dedicated race-survival test.
+
+**Rule for future work:** a caught statement error aborts the whole PostgreSQL transaction. A JS
+`catch` that continues is not error handling; it is a delayed failure.
+
+### 1.3 Three paths were stranded, one of them dangerously
+
+Fixing the semantics exposed three real regressions, each recorded in its commit:
+
+- `agent-financial-execution` refused **any** call without a `limit` block (baseline guarded on
+  `service && limit`). Restored: a _declared_ scope is always enforced and absent enforcement still
+  fails closed; only the internal no-scope path resumed.
+- `transfer.service` refused every wallet pair lacking an institution — but
+  `wallet_accounts.institution_id` is nullable **by design** (migration `1785753600401`) and the
+  accepted baseline moved money between unattributed wallets. Now cross-institution and
+  half-attributed pairs are refused, while an entirely unattributed legacy pair proceeds to the
+  tier-bound gate, which fails closed in production.
+- Two fixtures forged governed state (`state='APPROVED'` inserted directly, which the
+  protected-authority trigger correctly refuses) or omitted it entirely. Both now go through the
+  real maker/checker services.
+
+The **one genuine admission gap** found by auditing every financial boundary: the agent-cash-to-cash
+**claim** path enforced limits for a `CUSTOMER` destination with _neither_ flag. That is the single
+boundary where value actually leaves the unclaimed pool, and it would have admitted a customer whose
+tier policy was disabled or unmapped. Closed in `b4ffa7d0`.
+
+`agent-cash-to-cash.service.ts` and `agent-funding.service.ts` were **already** correctly enforced;
+an earlier note claiming otherwise was stale and is withdrawn here.
+
+---
+
+## 2. Implementation matrix
+
+Legend: **C** = complete and executed; **C\*** = complete, executed in unit/isolated scope only;
+**E** = complete but requires a production credential to exercise live; **X** = intentionally absent.
+
+| #   | Capability                                                              | Status | Evidence / location                                                                                                                                            |
+| --- | ----------------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Monnify BVN match (details + account)                                   | E      | `src/identity-verification/monnify-verification.provider.ts`                                                                                                   |
+| 2   | Monnify NIN details                                                     | E      | same; `POST /api/v1/vas/nin-verification` `{nin}`                                                                                                              |
+| 3   | Dojah BVN validation                                                    | E      | `src/identity-verification/dojah-verification.provider.ts` — requires status for **every** supplied field                                                      |
+| 4   | Dojah NIN advanced                                                      | E      | same                                                                                                                                                           |
+| 5   | **Dojah address verification (submit + poll)**                          | C\*    | `dojah-transport.ts` (`DojahAddressTransport`), `DojahVerificationProvider.submitAddressVerification` / `.getAddressVerificationStatus`; 18 unit tests         |
+| 6   | **Dojah address → assurance contract**                                  | C\*    | `DojahDocumentedAddressContract` in `src/kyc-verification/dojah-assurance-kyc.provider.ts`                                                                     |
+| 7   | Dojah enhanced due diligence                                            | X      | `verifyEnhancedKyc` refuses: no documented operation exists. Deliberately not approximated                                                                     |
+| 8   | Transport hardening (all provider calls)                                | C\*    | fixed origins, pinned DNS, `isForbiddenOutboundIp` refusal, bounded body, redirects refused, no retries                                                        |
+| 9   | Evidence ingestion + binding to live identity revision                  | C      | `kyc-tier-evidence.reader.ts`, migration `1785753600505`                                                                                                       |
+| 10  | Evidence provenance (VERIFIED_PROVIDER / AUTHORIZED_REVIEW / SYNTHETIC) | C      | `kyc-tier-decision.ts`                                                                                                                                         |
+| 11  | Evidence expiry, revocation, conflict, dedupe                           | C      | `kyc-identity-conflicts`, `kyc_tier_manual_holds`, `customer_kyc_assessments`                                                                                  |
+| 12  | Tier 1 automation                                                       | C      | requirement evaluation in `kyc-tier-decision.ts`                                                                                                               |
+| 13  | Tier 2 automation                                                       | C      | same                                                                                                                                                           |
+| 14  | **Tier 3 = BVN + NIN + trusted additional evidence**                    | C      | `tier3HasAdditionalRequirement()` rejects a path satisfiable by BVN/NIN alone; legacy two-tier policies leave Level 3 **unavailable** rather than auto-granted |
+| 15  | Customer cannot self-assign tier                                        | C      | tier is derived from evidence + approved policy only                                                                                                           |
+| 16  | BVN/NIN knowledge does not establish ownership                          | C      | account ownership is separate from identity knowledge                                                                                                          |
+| 17  | **Authoritative tier→limit mapping**                                    | C      | `institution-kyc-limit-policy.service.ts` — requires `APPROVED` institution + `ACTIVE`/`CONFIGURED` profile with ≥1 rule and ≥1 mapping                        |
+| 18  | Missing config never means unlimited                                    | C      | `normalizeDefinition` rejects `mappings.length < 1`; refusal, never a default                                                                                  |
+| 19  | No invented monetary thresholds                                         | C      | no threshold value is published anywhere; fixtures are explicitly synthetic                                                                                    |
+| 20  | Maker/checker governance, separate PG roles                             | C      | migration `1785753600501`/`1785753600502`, `kyc-governance-authority.ts`                                                                                       |
+| 21  | Transaction-bound enforcement at admission boundaries                   | C      | reservations commit/roll back with the journal                                                                                                                 |
+| 22  | Fail-closed production safeguard                                        | C      | mode table in §1.1; production cannot run unenforced                                                                                                           |
+| 23  | Customer workflow (real submission + status)                            | C\*    | `apps/customer-mobile/.../KycStatusScreen.tsx`, `CustomerKycVerificationPanel`                                                                                 |
+| 24  | Admin workflow (real review + governance)                               | C\*    | `kyc-tier-review.controller.ts`, `kyc-provider-governance.controller.ts`                                                                                       |
+| 25  | Migration inventory                                                     | C      | §3                                                                                                                                                             |
+
+### 2.1 Why capabilities 1–4 are marked **E**, not **C**
+
+The adapters, their documented-contract validation and their failure mapping are complete and
+unit-tested. They are marked **E** because executing them against the live provider requires
+credentials this environment is not authorized to hold. No live or billable provider call was made,
+and none is claimed.
+
+---
+
+## 3. Migration inventory
+
+Original allocation for this mission was `1785753600300`–`1785753600399`.
+
+| Migration                                       | Purpose                                     |
+| ----------------------------------------------- | ------------------------------------------- |
+| `1785753600300-KycGovernanceProtectedAuthority` | protected-authority KYC governance boundary |
+
+Collision check, executed:
+
+```
+$ ls src/migrations/ | grep -oE "^[0-9]+" | sort | uniq -d
+(no output)
+
+$ ls src/migrations/ | grep -cE "^17857536003[0-9][0-9]"
+1
+```
+
+The dependent governance work was placed in the separately user-authorized
+`1785753600500`–`1785753600599` exception because it depends on `1785753600400`:
+`0500` execution integrity, `0501` protected authority, `0502` institutional ownership,
+`0503` cash-out scope, `0504` institution KYC tier→limit governance, `0505` identity revision and
+evidence read. No published identifier was renumbered.
+
+**Note for the next mission:** `1785753600504` hard-codes the `public.` schema, so per-suite schema
+isolation is not available for the tier-governance tables. The acceptance suite therefore runs in
+`public` on a disposable isolated cluster instead.
+
+---
+
+## 4. The tier→limit contract
+
+The single most important property: **the mapping is only usable when it was approved.**
+
+Admission requires _all_ of:
+
+1. the `financial_institutions` row is `APPROVED`;
+2. the resolved `limit_profiles` row is `ACTIVE`, `CONFIGURED`, enabled, not deleted;
+3. it has **at least one** rule usable for the requested product/currency;
+4. it has **at least one** assignment mapping;
+5. for a customer principal, a current unexpired `APPROVED` `customer_kyc_assessments` at the
+   customer's recognised `kyc_level`.
+
+Step 3 and step 4 are refusals, not warnings. A profile with no rule does **not** mean "no cap"; it
+means the operator has not published a decision, and the operation is rejected.
+
+No monetary threshold is published by this deliverable. The values used in tests are labelled
+`synthetic acceptance-only` and exist so unrelated financial suites are not constrained by a policy
+nobody approved.
+
+---
+
+## 5. Dojah address verification — correcting a stale assumption
+
+`kyc-future-capabilities.ts` asserted that no Dojah address endpoint is documented, and exposed
+address verification only as an interface. **That assumption was wrong.** Dojah documents:
+
+```
+POST https://api.dojah.io/api/v1/kyc/address
+     body: first_name, last_name, mobile, street, lga, state (required)
+           middle_name, dob, gender, landmark (optional)
+     → { entity: { status: "pending", reference_id } }
+
+GET  https://api.dojah.io/api/v1/kyc/address?reference_id=…
+     → status + collected data
+```
+
+It is **asynchronous**, which is precisely where this kind of integration usually leaks trust. A
+submission is not a verification, and an outstanding visit is not evidence. The adapter is therefore
+built so the dangerous readings are impossible:
+
+- **submit** returns only an opaque reference; an accepted-but-unreferenced response is
+  `OUTCOME_UNKNOWN`;
+- **poll** yields `verified=true` only for `completed` **with** a positive provider indication and a
+  collected address; `completed` alone, an unrecognised status or a non-2xx is unverified or throws;
+- in the assurance contract, pending/failed → `REVIEW`, ambiguous completed → `UNKNOWN`, adapter
+  error → `UNKNOWN` (a missing answer is not a negative finding).
+
+Photos, coordinates and neighbour references are parsed past and never surfaced, matching this
+repository's decision not to persist address imagery.
+
+The transport is a **separate type** from the read-only identity transport, so no existing adapter
+can begin issuing a billable `POST` as a side effect of this change.
+
+**Enhanced due diligence remains unimplemented** (capability 7). No documented Dojah operation backs
+it, and approximating it from the address endpoint would fabricate a capability. It refuses.
+
+---
+
+## 6. Test evidence
+
+| Suite                                    | Result                              | Nature                         |
+| ---------------------------------------- | ----------------------------------- | ------------------------------ |
+| `kyc-tier-limit-enforcement`             | **21/21**                           | isolated disposable PostgreSQL |
+| `financial-commitment-initiation`        | **41/41**                           | real PostgreSQL                |
+| `a14-agent-cash-out`                     | **33/33**                           | real PostgreSQL                |
+| `a13-agent-cash-in`                      | **37/37**                           | real PostgreSQL                |
+| `a7-authoritative-persistence`           | **33/33**                           | real PostgreSQL                |
+| `a24-customer-transaction-pin-hardening` | **19/19**                           | real PostgreSQL                |
+| `dojah-address-verification`             | **18/18**                           | unit, mock transport only      |
+| Root unit baseline                       | **255/255 suites, 2957/2957 tests** | baseline preserved             |
+
+`tsc --noEmit`, ESLint and Prettier are clean on every changed file.
+
+### 6.1 A run that was discarded rather than reported
+
+A full-matrix run was started while files were still being edited. Batches compiled half-written
+modules and produced spurious `TS2724 … has no exported member` errors for symbols that existed by
+the time the run finished. It was **stopped and discarded**. The matrix must only be run against a
+committed, quiescent tree. This is recorded because those numbers would have looked like real
+failures.
+
+---
+
+## 7. What is explicitly NOT claimed
+
+- **No live provider call** was made to Monnify or Dojah. Capabilities 1–4 are **E**.
+- **No production credential** was used, requested, or stored.
+- **No real financial transaction** was executed. All fixtures are synthetic.
+- **No browser visual acceptance.** The browser harness cannot start in this environment
+  (`libnspr4`/`libnss3`/`libnssutil3` missing). Admin and customer workflows are marked **C\***, not
+  visually accepted.
+- **No physical-device acceptance.**
+- **No regulatory threshold is asserted.** CBN circular `PSM/DIR/PUB/CIR/001/053` (2023-12-01) was
+  inspected as the policy basis; no threshold, EDD rule or institutional approval was invented.
+- **No production deployment.** Nothing was merged to `main`.
+
+---
+
+## 8. Operating this safely
+
+1. **Enabling tier-bound admission** requires `KYC_TIER_LIMIT_ENFORCEMENT_ENABLED=true`. Before
+   that, operators must publish an institution tier→limit policy through maker/checker — an
+   unapproved institution, profile or mapping refuses admission rather than defaulting.
+2. **Production fails closed** while the flag is off. Do not "temporarily" bypass this to clear an
+   incident; that is exactly the condition the control exists for.
+3. **Enabling a provider** requires `DOJAH_VERIFICATION_ENABLED=true` plus an explicit
+   `DOJAH_VERIFICATION_ENV`. Configuration errors throw rather than silently disabling.
+4. **Address evidence** is asynchronous. Treat `PENDING` as "unknown", never as progress toward
+   Tier 3.
+
+---
+
+## 9. Open items
+
+| Item                                        | Why it is open                                                      |
+| ------------------------------------------- | ------------------------------------------------------------------- |
+| Full PG matrix on the quiescent tree        | running; totals to be appended in §10                               |
+| `a16` concurrency test re-verification      | one `ECONNRESET` observed while sharing the sandbox with the matrix |
+| Enhanced due diligence                      | no documented Dojah operation; refuse rather than fabricate         |
+| Live provider acceptance                    | requires credentials this environment is not authorized to hold     |
+| Browser visual / physical-device acceptance | environment cannot launch the browser harness                       |
+
+---
+
+## 10. Final matrix totals
+
+The full matrix is executed exclusively at:
+
+```
+PG_TEST_CONCURRENCY=1 PG_TEST_BATCH_SIZE=6 PG_TEST_MAX_OLD_SPACE_MB=2560
+```
+
+This tuning is used **without exception**; no result in this document was produced at different
+settings. Exact totals and the sanitized transcript are appended here when the run completes, and
+any failure is reported as a failure — this document is not updated to make a run look clean.
