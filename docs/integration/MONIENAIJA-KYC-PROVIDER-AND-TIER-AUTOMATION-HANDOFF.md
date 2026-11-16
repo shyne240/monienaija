@@ -1,19 +1,39 @@
 # MonieNaija — KYC provider integration, three-tier automation and financial-limit enforcement
 
-**Handoff status: implementation complete; full-matrix re-verification in progress (see §10).**
+**Handoff status: implementation complete; final full-matrix re-verification running (see §10).**
 
 Branch `arena/defdd0fd-monienaija`, branched from `004dd80008edbadc41cebf3c67222d6abbcd2cff`
 (`arena/5b239ff5-monienaija`). Checkpoints pushed, in order:
 
-| Commit     | Content                                                               |
-| ---------- | --------------------------------------------------------------------- |
-| `5f414863` | Continuation record opened                                            |
-| `e3947e52` | Authorization-context repairs for the isolated tier-policy suites     |
-| `a3072b27` | Tier→limit acceptance suite + savepoint fix for a real `25P02` defect |
-| `7e5a0408` | Three admitted paths the tier rollout was stranding                   |
-| `8fe022d2` | Documented Dojah address-verification transport and adapter           |
-| `6f2f603c` | Continuation record through `8fe022d2`                                |
-| `b4ffa7d0` | Address assurance contract + claim redemption enforcement gap         |
+| Commit         | Content                                                                  |
+| -------------- | ------------------------------------------------------------------------ |
+| `5f414863`     | Continuation record opened                                               |
+| `e3947e52`     | Separate tier-bound admission from the legacy permissive contract        |
+| `a3072b27`     | Tier→limit acceptance suite + savepoint fix for a real `25P02` defect    |
+| `7e5a0408`     | Three admitted paths the tier rollout was stranding                      |
+| `8fe022d2`     | Documented Dojah address-verification transport and adapter              |
+| `6f2f603c`     | Continuation record through `8fe022d2`                                   |
+| `b4ffa7d0`     | Address assurance contract + claim redemption enforcement gap            |
+| `85f15c9f`     | This handoff, first version                                              |
+| `e51d216d`     | `a6` approves its settlement tier policy through governed governance     |
+| `6bda9489`     | Every seeded tier policy publishes through maker/checker                 |
+| `96d96416`     | Continuation record through `6bda9489`                                   |
+| `41db05eb`     | Acceptance transcript for provider, tier and limit work                  |
+| `b4f733b2`     | Protected-authority inspection repaired; runtime privilege leak closed   |
+| `c637a831`     | Checkpoint 6 — boundary defects and the scheduler trap                   |
+| `b8796fe5`     | Limit migration inventory asserted by name, not by a fragile count       |
+| `ebea45a0`     | Stop a transient 503 masquerading as a limit decision                    |
+| `55a72a41`     | Type the error-code helper so the harness lints clean                    |
+| **`a34574c5`** | **SERIALIZABLE retries back off with full jitter**                       |
+| **`e0ef1d22`** | **Claim fixture provisioned through the governed institution workflows** |
+| `ba3f638f`     | Acceptance record updated to the authoritative 153/153 matrix            |
+| `28a4ac25`     | Handoff open items closed or restated accurately                         |
+| `1f6ab426`     | Continuation record points at the current state, not the history         |
+| `a4f09aec`     | Acceptance unit figures corrected                                        |
+| `14ad3549`     | Handoff §6 given the real evidence and the three mechanism traps         |
+| **`740883df`** | **Workforce seeding race fixed — the "ECONNRESET contention artefact"**  |
+| `ba8349bc`     | Continuation record: checkpoint 8                                        |
+| `8f00f596`     | Unit totals updated to 257 / 2981                                        |
 
 Nothing in this document is inferred from reading code alone where an execution could be run
 instead; every "PASS" below is a recorded test result, and §10 states plainly what has **not** been
