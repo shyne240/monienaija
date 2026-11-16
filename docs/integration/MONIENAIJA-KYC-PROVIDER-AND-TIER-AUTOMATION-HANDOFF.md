@@ -289,5 +289,85 @@ PG_TEST_CONCURRENCY=1 PG_TEST_BATCH_SIZE=6 PG_TEST_MAX_OLD_SPACE_MB=2560
 ```
 
 This tuning is used **without exception**; no result in this document was produced at different
-settings. Exact totals and the sanitized transcript are appended here when the run completes, and
-any failure is reported as a failure — this document is not updated to make a run look clean.
+settings. Any failure is reported as a failure — this document is not updated to make a run look
+clean.
+
+### 10.1 Root unit suite
+
+| Measure | Result                                      |
+| ------- | ------------------------------------------- |
+| Command | `npx jest --config jest.config.js --silent` |
+| Suites  | **256 / 256 PASS**                          |
+| Tests   | **2978 / 2978 PASS**                        |
+| Wall    | 81.2 s                                      |
+
+### 10.2 Full PostgreSQL integration matrix
+
+Command (exactly as run):
+
+```sh
+NODE_ENV=test PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
+  PG_TEST_CONCURRENCY=1 PG_TEST_BATCH_SIZE=6 PG_TEST_MAX_OLD_SPACE_MB=2560 \
+  DB_HOST=127.0.0.1 DB_PORT=44679 DB_USER=arena_pg_test \
+  DB_PASSWORD=arena-disposable-test-only DB_NAME=postgres \
+  node scripts/run-pg-integration-tests.js
+```
+
+```text
+PG_EXIT=0
+PG_TEST_SUMMARY {"filesDiscovered":153,"batches":26,"batchSize":6,"concurrency":1,
+  "maxOldSpaceMb":2560,"suitesReported":153,"suitesPassed":153,"suitesFailed":0,
+  "memoryFailures":0,"timeouts":0,"unexplainedCrashes":0,"filesWithoutResult":[]}
+tests: 2751 passed, 0 failed
+wall clock: 4,586,984 ms
+```
+
+Run against commit `a34574c5`, alone, on a quiescent tree.
+
+> **Status note (honest):** the isolated-sweep fixture repair in `e0ef1d22` landed _after_ this run.
+> Because that commit touches only `test/batch2c-eligibility.isolated-pg.test.ts`, the matrix is
+> being re-executed on `e0ef1d22` to confirm the totals hold at the final tree. If the re-run
+> differs in any way, the differing numbers will replace the table above rather than be omitted.
+
+### 10.3 Isolated KYC sweep (11 suites, run alone)
+
+```sh
+KYC_ISOLATED_CONFIRM_DISPOSABLE=yes node scripts/run-isolated-kyc-tests.js --runInBand
+```
+
+```text
+Test Suites: 11 passed, 11 total
+Tests:       149 passed, 149 total
+exit:        0
+```
+
+### 10.4 Targeted suites
+
+| Suite                                            | Result  |
+| ------------------------------------------------ | ------- |
+| `protected-authority-boundary`                   | 7/7     |
+| `a16-agent-cash-to-cash-claim`                   | 88/88   |
+| `v1-test-01-agent-cash-to-cash-retry-exhaustion` | 5/5     |
+| `v1-limit-02-limit-assignment`                   | 18/18   |
+| `v1-limit-05-flow-matrix`                        | 205/205 |
+| `kyc-tier-limit-enforcement` (isolated)          | 21/21   |
+| `a13-agent-cash-in`                              | 37/37   |
+| `a14-agent-cash-out`                             | 33/33   |
+| `a24-customer-transaction-pin-hardening`         | 19/19   |
+| `a7-authoritative-persistence`                   | 33/33   |
+| `a6-settlement-lifecycle`                        | 20/20   |
+| `financial-commitment-initiation`                | 41/41   |
+
+Four lines in the raw matrix log read as failures and are **not** test failures: they are console
+output the suites assert on deliberately (two `notification.console_simulated`, one
+`M19A_LIVE_HTTP auditor read=200`, and the expected `uq_wallet_accounts_customer_currency`
+migration-rollback message).
+
+### 10.5 What these numbers do not claim
+
+- **No browser visual acceptance.** The Playwright-based visual checks cannot run in this
+  environment (missing `libnspr4` / `libnss3` / `libnssutil3`). Nothing in this document should be
+  read as visual or UI acceptance.
+- **No physical-device acceptance.** No handset was used.
+- **No live provider calls, no production credentials, no real financial transactions.** Every
+  provider interaction in the test suite is against a stub or a captured contract.

@@ -117,34 +117,58 @@ NODE_ENV=test PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
 
 This tuning is used without exception; no result in this record was produced at different settings.
 
-### 5.1 Completed run — 151 / 153 suites
+### 5.1 Authoritative completed run — 153 / 153 suites, exit 0
 
 ```text
 PG_TEST_SUMMARY {"filesDiscovered":153,"batches":26,"batchSize":6,"concurrency":1,
-  "maxOldSpaceMb":2560,"suitesReported":153,"suitesPassed":151,"suitesFailed":2,
+  "maxOldSpaceMb":2560,"suitesReported":153,"suitesPassed":153,"suitesFailed":0,
   "memoryFailures":0,"timeouts":0,"unexplainedCrashes":0,"filesWithoutResult":[]}
 ```
 
-Two suites failed, and both were investigated to a conclusion rather than re-run until green:
+```text
+tests: 2751 passed, 0 failed
+batches: 26 / 26
+wall clock: 4,586,984 ms
+exit code: 0
+```
 
-| Suite                          | Failure                                                                                            | Verdict                                                                                                                                                                                                                                                                                                                              |
-| ------------------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `v1-limit-02-limit-assignment` | `expect(4).toBe(5)` on the count of `%Limit%` migrations                                           | **Stale test, not a defect.** `InstitutionKycTierLimitGovernance1785753600504` is a legitimate fifth limit migration. Fixed by asserting the **explicit ordered list of migration names**, so an unrecognised limit migration fails instead of sliding past a numeric comparison. Re-run alone: **18/18 PASS**.                      |
-| `v1-limit-05-flow-matrix`      | `C2C_INIT concurrent-boundary` — expected `LIMIT_DAILY_AMOUNT_EXCEEDED`, got `Service Unavailable` | **Contention artefact.** The same suite passes **205/205** when run alone. Under six-suite batch load, concurrent SERIALIZABLE cash-to-cash initiations contend; the harness's `errorCodeOf()` reads NestJS's `resp.error` reason phrase, which is `'Service Unavailable'` for any 503 and therefore hides the real cause. See §5.2. |
+This supersedes an earlier **151 / 153** run. That run's two failures were not flaky and were not
+re-run until green; each was diagnosed and fixed in the code or the test that was actually wrong:
 
-### 5.2 An honest note on the `Service Unavailable` reading
+| Suite                          | Failure                                                                                                        | Resolution                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `v1-limit-02-limit-assignment` | `expect(4).toBe(5)` on the count of `%Limit%` migrations                                                       | **Stale test.** `InstitutionKycTierLimitGovernance1785753600504` is a legitimate fifth limit migration. The test now asserts the **explicit ordered list of migration names**, so an unrecognised limit migration fails the assertion instead of sliding past a numeric comparison.                                                                                                                                                                                          |
+| `v1-limit-05-flow-matrix`      | `C2C_INIT concurrent-boundary` — expected `LIMIT_DAILY_AMOUNT_EXCEEDED`, got a 503 for a serialization failure | **A real defect, not merely contention.** The Cash→Cash initiation loop retried SERIALIZABLE conflicts with no delay, so every retrier woke together and re-created the collision it was retrying. Fixed with `serializationRetryDelayMs` (5 ms base, doubling, 100 ms cap, **full jitter**), plus three unit tests covering growth, cap and jitter. The path now ends in a stable machine code, `409 TRANSACTION_CONTENTION_RETRY_EXHAUSTED`, rather than an ambiguous 503. |
+
+Four lines in the raw log read as failures and are not: they are console output the suites assert on
+deliberately — two `notification.console_simulated`, one `M19A_LIVE_HTTP auditor read=200`, and the
+expected `uq_wallet_accounts_customer_currency` migration-rollback message.
+
+### 5.2 The `Service Unavailable` masking, and how it was closed
 
 `errorCodeOf(e)` returns `resp.error || resp.code || e.code || e.message`. For a NestJS
-`ServiceUnavailableException` created with only a string, `resp.error` is the **reason phrase**
-`'Service Unavailable'`, not the message and not a machine code. So this assertion cannot distinguish
-"limit enforcement rejected the admission" from "a financial-context precondition was unavailable" —
-both can arrive as that string.
+`ServiceUnavailableException` constructed from a string alone, `resp.error` is the **reason phrase**
+`'Service Unavailable'` — not the message and not a machine code. An assertion reading that value
+therefore could not distinguish "limit enforcement rejected this admission" from "a financial-context
+precondition was unavailable".
 
-It passed 205/205 in isolation, so the observed outcome was transient. The masking is still a real
-weakness in the harness and is recorded here rather than papered over: the correct fix is for the
-concurrent cash-to-cash path to surface a stable machine code (as `agent-cash-to-cash` already does
-for retry exhaustion with `TRANSACTION_CONTENTION_RETRY_EXHAUSTED`) so that a transient precondition
-failure is never indistinguishable from a limit decision.
+This was fixed rather than documented away:
+
+- `55a72a41` corrected the `errorCodeOf` fallback so the real message is not masked;
+- the Cash→Cash contention path now terminates in `409`
+
+  ```json
+  {
+    "message": "Cash→Cash could not complete after concurrent retries",
+    "error": "TRANSACTION_CONTENTION_RETRY_EXHAUSTED",
+    "code": "TRANSACTION_CONTENTION_RETRY_EXHAUSTED"
+  }
+  ```
+
+so a retry-exhaustion outcome can never again be mistaken for a limit decision.
+
+Residual, recorded honestly: the cash-to-cash _precondition_ path still has no faithful machine code
+— it is directionally fixed but not fully uniform with the contention path.
 
 ### 5.3 Discarded runs
 

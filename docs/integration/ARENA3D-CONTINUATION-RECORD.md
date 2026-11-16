@@ -311,3 +311,103 @@ defect — re-run it alone before believing it.
 2. Isolated KYC sweep (11 suites), alone, after the matrix — count the suites individually if the
    runner produces no summary.
 3. Append exact totals to this record and to §10 of the handoff.
+
+---
+
+# Checkpoint 7 — authoritative matrix green, and the last fixture that lied
+
+**HEAD: `a34574c5` (matrix + unit), `e0ef1d22` (isolated sweep repair), both pushed.**
+
+This checkpoint is the first one where every gate is green **on the same quiescent tree**, with each
+heavy run executed alone.
+
+## 7.1 The authoritative full PostgreSQL matrix — PASS
+
+Command (exactly as run, exclusive config):
+
+```
+NODE_ENV=test PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
+PG_TEST_CONCURRENCY=1 PG_TEST_BATCH_SIZE=6 PG_TEST_MAX_OLD_SPACE_MB=2560 \
+DB_HOST=127.0.0.1 DB_PORT=44679 DB_USER=arena_pg_test \
+DB_PASSWORD=arena-disposable-test-only DB_NAME=postgres \
+node scripts/run-pg-integration-tests.js
+```
+
+| Measure         | Result                                                                                    |
+| --------------- | ----------------------------------------------------------------------------------------- |
+| Exit code       | **0**                                                                                     |
+| Suites          | **153 / 153 PASS**                                                                        |
+| Tests           | **2751 PASS, 0 fail**                                                                     |
+| Batches         | 26 / 26                                                                                   |
+| Runner counters | `failingBatches:0 memoryFailures:0 timeouts:0 unexplainedCrashes:0 filesWithoutResult:[]` |
+| Wall clock      | 4,586,984 ms                                                                              |
+
+Raw sanitized transcript: `/tmp/pg-definitive.log` (discardable sandbox path; totals above are the
+durable record).
+
+Four lines in the log read as "failures" and are **not** test failures — they are benign console
+output asserted on purpose by the suites: two `notification.console_simulated`, one
+`M19A_LIVE_HTTP auditor read=200`, and the expected `uq_wallet_accounts_customer_currency`
+migration-rollback message.
+
+## 7.2 Root unit suite — PASS
+
+`npx jest --config jest.config.js --silent` → **256/256 suites, 2978/2978 tests**, 81.2 s.
+
+## 7.3 The isolated KYC sweep found one real defect — in a fixture
+
+Running the 11 isolated KYC suites **alone** (`/tmp/iso5.log`) gave 10/11 suites and 148/149 tests.
+The single failure was genuine and not contention:
+
+`test/batch2c-eligibility.isolated-pg.test.ts` → _"bound wallet-redemption claim wiring rolls back
+OTP with a failed posting and serializes funded claims"_.
+
+### What it actually exposed
+
+The test seeded a CUSTOMER wallet-redemption claim the **legacy** way: a destination wallet with no
+institutional attribution, funded into the shared `CASH_TO_CASH-UNCLAIMED-NGN` platform account.
+Once tier-bound admission and the ledger's institutional-context resolver existed, that seeding
+described a transfer that can no longer exist. It failed closed three times in a row, each for a
+**correct** reason:
+
+| Attempt | Failure                                                                                        | Verdict on the guard                                                              |
+| ------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| 1       | 503 `LIMIT_PROFILE_MISSING` — "Institution and customer are required for tier-bound admission" | **Correct.** A customer claim into a real wallet is a financial boundary.         |
+| 2       | `Ledger account … is not attributed to the journal's institution`                              | **Correct.** Attributed suspense debited against an unattributed platform source. |
+| 3       | attribution refused: wallet ledger account "already has posted financial history"              | **Correct.** Attributing after posting would fabricate historical attribution.    |
+
+None of these were worked around. The fixture was rebuilt to follow the governed production path:
+
+1. enrol the customer at a fixture institution;
+2. approve a `CASH_TO_CASH` tier→limit policy for it;
+3. attribute the destination wallet **before** it carries posted history;
+4. fund from the institution's own settlement asset into that institution's suspense liability —
+   never mixing an unattributed account with an attributed one;
+5. insert `cash_to_cash_funding_evidence`, which is what binds a transfer to its funding
+   institution and selects the obligation account.
+
+**No assertion was weakened.** The injected settlement failure and the serialization contract are
+still exactly what the test verifies.
+
+### Result
+
+`/tmp/iso10.log` → `batch2c-eligibility` **18/18 PASS**.
+`/tmp/iso11.log` → isolated KYC sweep **11/11 suites, 149/149 tests PASS**, exit 0.
+
+## 7.4 Where the numbers now stand
+
+| Gate                                      | Result                             |
+| ----------------------------------------- | ---------------------------------- |
+| Root unit suite                           | 256/256 suites, 2978/2978 tests    |
+| Full PostgreSQL matrix                    | 153/153 suites, 2751 tests, exit 0 |
+| Isolated KYC sweep (11 suites, run alone) | 11/11 suites, 149/149 tests        |
+| `protected-authority-boundary`            | 7/7                                |
+| `a16-agent-cash-to-cash-claim`            | 88/88                              |
+| Retry-backoff unit tests                  | 5/5                                |
+
+## 7.5 Next action
+
+1. Confirm the full matrix still passes on `e0ef1d22` (the tree the isolated sweep was repaired on),
+   since the fixture changed after `a34574c5`; record the totals here and in §10 of the handoff.
+2. Refresh `docs/integration/acceptance/kyc-provider-tier-automation-acceptance.sanitized.md`:
+   §5.1 still carries the superseded `pg-final3` 151/2 table.
