@@ -1,6 +1,6 @@
 # MonieNaija — KYC provider integration, three-tier automation and financial-limit enforcement
 
-**Handoff status: implementation complete; final full-matrix re-verification running (see §10).**
+**Handoff status: implementation complete; authoritative full matrix PASSING at 153/153 (see §10).**
 
 Branch `arena/defdd0fd-monienaija`, branched from `004dd80008edbadc41cebf3c67222d6abbcd2cff`
 (`arena/5b239ff5-monienaija`). Checkpoints pushed, in order:
@@ -358,14 +358,14 @@ institution's own settlement asset into its suspense liability, and record
 
 ## 9. Open items
 
-| Item                                        | State                                                                                                                                                           |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Full PG matrix on the quiescent tree        | **CLOSED** — 153/153 suites, 2751 tests, exit 0. See §10.2.                                                                                                     |
-| `a16` concurrency test re-verification      | **CLOSED** — the `ECONNRESET` was sandbox contention, not a defect. Re-run alone: **88/88 PASS**.                                                               |
-| cash-to-cash precondition machine code      | **OPEN (residual).** Retry exhaustion now has a stable `409 TRANSACTION_CONTENTION_RETRY_EXHAUSTED`; the precondition path still lacks a faithful machine code. |
-| Enhanced due diligence                      | **DELIBERATELY ABSENT.** No documented Dojah operation exists; the adapter refuses rather than fabricate a request shape.                                       |
-| Live provider acceptance                    | **NOT AUTHORIZED.** Requires production credentials this environment may not hold. Capabilities 1–4 are marked `E` for exactly this reason.                     |
-| Browser visual / physical-device acceptance | **NOT POSSIBLE HERE.** The browser harness cannot launch (missing `libnspr4`/`libnss3`/`libnssutil3`); no handset was used. Neither is claimed.                 |
+| Item                                        | State                                                                                                                                                                                                                     |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Full PG matrix on the quiescent tree        | **CLOSED** — 153/153 suites, 2751 tests, exit 0. See §10.2.                                                                                                                                                               |
+| `a16` concurrency test re-verification      | **CLOSED — and the earlier explanation was wrong.** `ECONNRESET` was _not_ sandbox contention; it was a real seeding race in the fixture, fixed in `740883df`. Now 88/88 alone and PASS inside the full matrix. See §6.3. |
+| cash-to-cash precondition machine code      | **OPEN (residual).** Retry exhaustion now has a stable `409 TRANSACTION_CONTENTION_RETRY_EXHAUSTED`; the precondition path still lacks a faithful machine code.                                                           |
+| Enhanced due diligence                      | **DELIBERATELY ABSENT.** No documented Dojah operation exists; the adapter refuses rather than fabricate a request shape.                                                                                                 |
+| Live provider acceptance                    | **NOT AUTHORIZED.** Requires production credentials this environment may not hold. Capabilities 1–4 are marked `E` for exactly this reason.                                                                               |
+| Browser visual / physical-device acceptance | **NOT POSSIBLE HERE.** The browser harness cannot launch (missing `libnspr4`/`libnss3`/`libnssutil3`); no handset was used. Neither is claimed.                                                                           |
 
 ---
 
@@ -390,7 +390,7 @@ clean.
 | Tests   | **2981 / 2981 PASS**                        |
 | Wall    | 81.2 s                                      |
 
-### 10.2 Full PostgreSQL integration matrix
+### 10.2 Full PostgreSQL integration matrix — PASS
 
 Command (exactly as run):
 
@@ -403,20 +403,26 @@ NODE_ENV=test PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes \
 ```
 
 ```text
-PG_EXIT=0
 PG_TEST_SUMMARY {"filesDiscovered":153,"batches":26,"batchSize":6,"concurrency":1,
-  "maxOldSpaceMb":2560,"suitesReported":153,"suitesPassed":153,"suitesFailed":0,
-  "memoryFailures":0,"timeouts":0,"unexplainedCrashes":0,"filesWithoutResult":[]}
+  "maxOldSpaceMb":2560,"durationMs":4287367,"passingBatches":26,"failingBatches":0,
+  "memoryFailures":0,"timeouts":0,"unexplainedCrashes":0,
+  "suitesReported":153,"suitesPassed":153,"suitesFailed":0,
+  "failingFiles":[],"filesWithoutResult":[]}
+PG_EXIT=0
 tests: 2751 passed, 0 failed
-wall clock: 4,586,984 ms
 ```
 
-Run against commit `a34574c5`, alone, on a quiescent tree.
+Run on commit **`e9609925`**, alone, on a quiescent tree. `failingFiles: []` and
+`filesWithoutResult: []` mean no suite failed and none went unreported.
 
-> **Status note (honest):** the isolated-sweep fixture repair in `e0ef1d22` landed _after_ this run.
-> Because that commit touches only `test/batch2c-eligibility.isolated-pg.test.ts`, the matrix is
-> being re-executed on `e0ef1d22` to confirm the totals hold at the final tree. If the re-run
-> differs in any way, the differing numbers will replace the table above rather than be omitted.
+Four earlier runs were **not** accepted and their numbers appear nowhere above:
+
+| Run             | Outcome                                                               | Disposition                    |
+| --------------- | --------------------------------------------------------------------- | ------------------------------ |
+| `pg-final3`     | 151/153 — stale migration-count test + undelayed SERIALIZABLE retries | Fixed (`b8796fe5`, `a34574c5`) |
+| `pg-final4`     | Invalidated — source edited mid-run, producing spurious `TS2724`      | Discarded                      |
+| `pg-final-e0ef` | 152/153 — `a16` `ECONNRESET`, traced to a fixture seeding race        | Fixed (`740883df`)             |
+| `pg-final-def`  | 152/153 — `a12` PIN assertion collided with an unrelated UUID         | Fixed (`e9609925`)             |
 
 ### 10.3 Isolated KYC sweep (11 suites, run alone)
 
