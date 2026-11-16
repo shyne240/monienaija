@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any */
 
 /**
  * V1-LIMIT-05 — PART 1: per-flow limit regression matrix over ALL 8 wired V1 financial flows.
@@ -120,8 +120,8 @@ interface RuleSeed {
  * so the assertion reports what actually happened instead of a category.
  */
 function errorCodeOf(e: any): string {
-  const resp = e?.getResponse?.();
-  const candidate = resp && (resp.error || resp.code);
+  const resp: Record<string, any> | undefined = e?.getResponse?.();
+  const candidate: unknown = resp && (resp.error || resp.code);
   const reasonPhrases = new Set([
     'Service Unavailable',
     'Conflict',
@@ -133,11 +133,13 @@ function errorCodeOf(e: any): string {
   ]);
   if (typeof candidate === 'string' && candidate && !reasonPhrases.has(candidate)) return candidate;
   return (
-    (typeof e?.code === 'string' && !reasonPhrases.has(e.code) ? e.code : undefined) ??
+    (typeof e?.code === 'string' && !reasonPhrases.has(String(e.code))
+      ? String(e.code)
+      : undefined) ??
     (typeof resp?.message === 'string'
-      ? resp.message
+      ? String(resp.message)
       : typeof e?.message === 'string'
-        ? e.message
+        ? String(e.message)
         : 'UNKNOWN')
   );
 }
