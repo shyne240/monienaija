@@ -10,12 +10,12 @@ uncommitted working tree.
 
 > **Current position — read this first.** Everything below is a chronological log; earlier
 > checkpoints describe states that have since been superseded and are kept only as history. The
-> authoritative current state is **Checkpoint 7** at the end of this document.
+> authoritative current state is **Checkpoint 9** at the end of this document.
 >
 > | Gate                                      | Current result                     |
 > | ----------------------------------------- | ---------------------------------- |
 > | Root unit suite                           | 257/257 suites, 2981/2981 tests    |
-> | Full PostgreSQL matrix                    | 153/153 suites, 2751 tests, exit 0 |
+> | Full PostgreSQL matrix (authoritative)    | 153/153 suites, 2751 tests, exit 0 |
 > | Isolated KYC sweep (11 suites, run alone) | 11/11 suites, 149/149 tests        |
 >
 > Sections §5 "Outstanding implementation" and §6 "Exact next action" at lines ~93 are from the
@@ -605,6 +605,36 @@ and all three were repaired so the evidence became sharper.
 
 The acceptance suites themselves were already correct. What was wrong was what they measured.
 
-## 9.4 Next action
+## 9.4 The authoritative matrix — PASS
 
-Authoritative full matrix at `e9609925`, alone. Totals to replace those in §7 and in handoff §10.
+Run alone on `e9609925`, exclusive tuning, nothing else on the machine:
+
+```text
+PG_TEST_SUMMARY {"filesDiscovered":153,"batches":26,"batchSize":6,"concurrency":1,
+  "maxOldSpaceMb":2560,"durationMs":4287367,"passingBatches":26,"failingBatches":0,
+  "memoryFailures":0,"timeouts":0,"unexplainedCrashes":0,
+  "suitesReported":153,"suitesPassed":153,"suitesFailed":0,
+  "failingFiles":[],"filesWithoutResult":[]}
+PG_EXIT=0
+tests: 2751 passed, 0 failed
+```
+
+`failingFiles: []` and `filesWithoutResult: []` are the two fields that matter: no suite failed and
+none went unreported. This is the tree the acceptance record cites.
+
+### Every gate, on the final tree
+
+| Gate                                      | Result                                 |
+| ----------------------------------------- | -------------------------------------- |
+| Full PostgreSQL matrix                    | **153/153 suites, 2751 tests, exit 0** |
+| Root unit suite                           | **257/257 suites, 2981/2981 tests**    |
+| Isolated KYC sweep (11 suites, run alone) | **11/11 suites, 149/149 tests**        |
+
+The three runs are on different commits (`e9609925`, `740883df`, `e0ef1d22`) because each fix moved
+the tree. That is stated rather than glossed: `e9609925` is HEAD, and its matrix is the authoritative
+one. The unit and isolated runs pre-date it only by `a12`'s test-only change, which touches no source
+and no unit or isolated suite.
+
+## 9.5 Next action
+
+Write these totals into handoff §10 and acceptance §5.1, replacing the superseded `a34574c5` run.
