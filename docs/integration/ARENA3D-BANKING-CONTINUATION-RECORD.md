@@ -371,10 +371,15 @@ a schema can refuse every wrong thing and still refuse the right thing too.
 
 ## 8. Exact next action
 
-**Inbound deposits (group 7)** and the **virtual-account provisioning service (group 5)** over the
-tables now in place, then **reconciliation (group 12)**. Outbound execution (8) and enquiry-based
-recovery (9) are complete at the core; what remains for them is wiring to the wallet/ledger commitment
-flow, which is group 7's work.
+**Wire the completed services to the wallet/ledger commitment flow** (groups 13–17). Groups 5, 6, 7,
+8, 9 and 12 are complete at the core: adapter, persistence, services and 104 PostgreSQL assertions.
+What is missing is the HTTP surface and the governed ledger posting call — no application code invokes
+these services yet, which is why nothing in this repository can move money today.
+
+That wiring is also where the remaining risk concentrates: the services prove that a _given_ operation
+is handled safely, not that a customer-facing flow creates exactly one operation per commitment. The
+first thing to build and test there is the boundary that calls `prepare()` once per commitment and
+then `dispatch()`, since that pairing is what the concurrency guarantee depends on.
 
 ### 8.1 What is landed and safe
 
@@ -387,7 +392,15 @@ flow, which is group 7's work.
 | `6b01141b` | Continuation record checkpoint                                                                                                                             |
 | `ff663319` | Webhook signature verification, HMAC-SHA512 (12 tests)                                                                                                     |
 | `26c7feba` | Banking governance migration `1785753600600` + 9 PostgreSQL structural assertions                                                                          |
-| _pending_  | Monnify banking adapter, all capabilities (24 tests)                                                                                                       |
+| `935513f6` | Monnify banking adapter, all capabilities (24 tests)                                                                                                       |
+| `b5ad1d32` | Protected banking-provider governance service (15 PostgreSQL tests)                                                                                        |
+| `009f6983` | Durable operation records, migration `1785753600601` (16 PostgreSQL tests)                                                                                 |
+| `f33c7d8a` | Outbound execution core with durable dispatch (14 PostgreSQL tests)                                                                                        |
+| `6213298d` | Inbound deposits with provider-confirmed verification (14 PostgreSQL tests)                                                                                |
+| `685ea253` | Virtual account provisioning that refuses to double-provision (8 PostgreSQL tests)                                                                         |
+| `5dc54806` | Reconciliation that cannot move money, migration `1785753600602` (15 PostgreSQL tests)                                                                     |
+| `d312f304` | Webhook ingestion tied to signature verification (13 PostgreSQL tests)                                                                                     |
+| `8be5e699` | Final handoff document                                                                                                                                     |
 
 All pushed; local == remote verified after each. 65/65 banking unit tests pass; eslint, prettier and
 tsc clean on every banking file.
