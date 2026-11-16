@@ -218,6 +218,32 @@ Groups 2, 3 and 6 are complete; group 1's contracts and registry are complete an
 application code calls it yet, so nothing in this repository can move money today. Group 3 governs
 _who may be engaged_; it does not yet gate a live call, because no live call exists.
 
+## 7.0a Groups 8–9 core — the outbound path, where uncertainty costs money
+
+`src/banking/banking-outbound.service.ts` is the money-moving core. It is split into `prepare()` and
+`dispatch()` precisely so a crash between the two leaves an inspectable record rather than an
+invisible attempt:
+
+- the operation reference is **derived** from `(institution, wallet, idempotencyKey)` rather than
+  random, so two concurrent callers derive the _same_ reference and the unique constraint turns the
+  second into a no-op instead of a second transfer. A random reference would make that collision
+  undetectable — this is the difference between uniqueness and safety;
+- `prepare()` commits the record first; `dispatch()` refuses to run for anything not in `CREATED`,
+  which is the actual mechanism behind "never retry an uncertain submission" — it is not a comment;
+- timeout, transport fault, an adapter that throws, or an unclassifiable outcome all resolve to
+  `UNKNOWN`. Only an explicit `PROVIDER_REJECTED`/`VALIDATION` becomes `FAILED`;
+- `NOT_SENT` returns the record to `CREATED`, and is the _only_ state from which a second dispatch is
+  possible — because the adapter is certain nothing reached the provider;
+- there is no `resubmit()` and no `markSuccessful()`. Recovery is `enquire()`, which asks the provider
+  using the same reference, and `escalateToReview()`, which accepts no target state at all.
+
+`NOT_FOUND` from an enquiry leaves the operation `UNKNOWN` on purpose: the provider having no record
+is not proof that no transfer happened.
+
+Asserted by 14 PostgreSQL tests, including the concurrency case (three simultaneous `prepare()` calls
+⇒ one record, one provider call) and a timeout followed by a second `dispatch()` that must not reach
+the provider.
+
 ## 7.0 Group 5 — persistence, and a defect that would have leaked evidence
 
 Migration `1785753600601` adds three record families. The design rule throughout is that the database
@@ -273,10 +299,10 @@ a schema can refuse every wrong thing and still refuse the right thing too.
 
 ## 8. Exact next action
 
-**Group 5 persistence** — migration `1785753600601`+: reserved virtual accounts, inbound payment
-records and outbound operation records with their durable dispatch state. Group 4 (bank directory and
-account-name enquiry) is provider-side complete; its application service ships with the same
-migration budget, since a directory call with no persistence need is a thin pass-through.
+**Inbound deposits (group 7)** and the **virtual-account provisioning service (group 5)** over the
+tables now in place, then **reconciliation (group 12)**. Outbound execution (8) and enquiry-based
+recovery (9) are complete at the core; what remains for them is wiring to the wallet/ledger commitment
+flow, which is group 7's work.
 
 ### 8.1 What is landed and safe
 
