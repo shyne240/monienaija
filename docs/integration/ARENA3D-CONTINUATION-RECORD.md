@@ -424,3 +424,87 @@ still exactly what the test verifies.
    since the fixture changed after `a34574c5`; record the totals here and in §10 of the handoff.
 2. Refresh `docs/integration/acceptance/kyc-provider-tier-automation-acceptance.sanitized.md`:
    §5.1 still carries the superseded `pg-final3` 151/2 table.
+
+---
+
+# Checkpoint 8 — the "contention artefact" was a fixture race
+
+**HEAD: `740883df` (pushed).**
+
+## 8.1 Why this checkpoint exists
+
+A full matrix on the `e0ef1d22` tree failed one suite:
+
+```
+FAIL test/a16-agent-cash-to-cash-claim.integration.spec.ts (67.82 s)
+  ● A16 Agent Cash→Cash CLAIM (real PostgreSQL)
+    › concurrent initiation collisions reserve distinct immutable locator pairs
+
+    connect ECONNRESET 127.0.0.1:46801
+```
+
+This had already been seen once and recorded as a sandbox-contention artefact, because the suite
+passes 88/88 alone. That explanation was not good enough: this time **nothing else shared the
+machine**, and the runner reported `concurrency: 1`. Rather than re-run until green, the mechanism
+was traced.
+
+## 8.2 The actual defect
+
+`GovernedFinancialFixture.workforce()` cached only the **resolved** value:
+
+```ts
+if (!this.workforceCache) {
+  const entries = await Promise.all(...);   // both callers read undefined here
+  this.workforceCache = Object.fromEntries(entries);
+}
+return this.workforceCache;
+```
+
+Two callers arriving before the first seeding finishes both observe `undefined` and both seed.
+
+The failing test calls `initiateTransfer()` twice inside one `Promise.all`, and each call reaches
+`fixture.affiliateAgent` / `fixture.attributeWallet`, hence `workforce()`. Both seeded a duplicate
+set of six principals and both issued supertest requests. The suite never calls `listen()` — it uses
+`app.init()` — so **supertest binds an ephemeral listener per request**; interleaved requests from
+concurrent supertest instances produced `ECONNRESET` on the ephemeral port.
+
+So the error was a transport symptom of a fixture initialisation race, entirely unrelated to the
+claim behaviour the test exists to verify.
+
+## 8.3 The fix, and the bug the fix introduced
+
+Cache the **in-flight promise**, assigned before the first `await`, so a second caller joins the work:
+
+```ts
+this.workforcePromise ??= (async () => { ...seed...; this.workforceCache = workforce; ... })();
+return this.workforcePromise;
+```
+
+The regression test then failed against the first version of this fix, because a **rejected** promise
+stayed cached and poisoned every later caller — turning one transient seeding failure into "the whole
+fixture is unusable". The `.catch` now clears the cache before rethrowing.
+
+`test/governed-financial-fixture-workforce.spec.ts` pins all three properties with no database:
+
+| Test                                            | Property                                          |
+| ----------------------------------------------- | ------------------------------------------------- |
+| exactly one seeding pass for concurrent callers | 6 seeding calls, not 12; both get the same object |
+| later calls reuse the cache                     | still 6 calls                                     |
+| a failed pass is not cached                     | retry succeeds; 12 calls total                    |
+
+**The test was verified to fail against the old implementation** (12 instead of 6 seeding calls) and
+pass against the new one. That is the difference between a regression test and decoration.
+
+## 8.4 Verification
+
+- `governed-financial-fixture-workforce` → **3/3 PASS**
+- `a16-agent-cash-to-cash-claim` alone → **88/88 PASS**, twice (before and after the rejection fix)
+
+Also corrected a stale identifier in a doc comment: `resolveTierEnforcementMode` →
+`resolveTierEnforcement`. It was prose only, so it invalidated no compiled artifact — but it is the
+kind of thing that sends the next reader looking for a function that does not exist.
+
+## 8.5 Next action
+
+Authoritative full matrix on `740883df`, run alone. Totals to be appended to §7 and to §10 of the
+handoff, replacing the earlier run only if the earlier run's numbers are no longer reproducible.

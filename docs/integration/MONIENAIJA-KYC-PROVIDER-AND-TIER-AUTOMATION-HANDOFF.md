@@ -244,11 +244,12 @@ Authoritative results at the final tree. Full totals and commands are in §10.
 Three full-matrix runs were **stopped and discarded**, and none of their numbers appear anywhere in
 this document as results:
 
-| Run                  | Why discarded                                                                                                                                                                            |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/tmp/pg-full2.log`  | Files were still being edited. Batches compiled half-written modules and emitted `TS2724 … has no exported member` for symbols that exist in the final tree.                             |
-| `/tmp/pg-full3.log`  | Same cause, and it predated the governed-fixture sweep, so it reported `a6` and `a7-product-financial-effect` failures that were fixed in `6bda9489`.                                    |
-| `/tmp/pg-final4.log` | **The tree was edited mid-run.** This is the trap: even a documentation-only edit is safe, but a source edit invalidates every batch compiled afterwards. Never edit source under a run. |
+| Run                      | Why discarded                                                                                                                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/tmp/pg-full2.log`      | Files were still being edited. Batches compiled half-written modules and emitted `TS2724 … has no exported member` for symbols that exist in the final tree.                             |
+| `/tmp/pg-full3.log`      | Same cause, and it predated the governed-fixture sweep, so it reported `a6` and `a7-product-financial-effect` failures that were fixed in `6bda9489`.                                    |
+| `/tmp/pg-final4.log`     | **The tree was edited mid-run.** This is the trap: even a documentation-only edit is safe, but a source edit invalidates every batch compiled afterwards. Never edit source under a run. |
+| `/tmp/pg-final-e0ef.log` | Failed `a16` with `ECONNRESET`. **Not contention** — it was a genuine fixture race, diagnosed and fixed in `740883df`. See §6.4.                                                         |
 
 Two further runs were contaminated by **sharing the machine**: a matrix and the isolated sweep ran
 concurrently, and suites that normally take seconds hit `Exceeded timeout of 180000 ms for a hook`.
@@ -268,7 +269,29 @@ Fixed in `a34574c5` with `serializationRetryDelayMs` — exponential from 5 ms, 
 fails on a fixed delay). Three unit tests pin growth, cap and jitter. Retry exhaustion now returns
 a stable `409 TRANSACTION_CONTENTION_RETRY_EXHAUSTED` instead of an ambiguous 503.
 
-### 6.3 The last fixture that lied
+### 6.3 A "contention artefact" that was actually a fixture race
+
+`a16-agent-cash-to-cash-claim` failed its concurrent-initiation case with `connect ECONNRESET`. It
+passes 88/88 alone, and this had already been written off once as sandbox contention. That was wrong.
+
+`GovernedFinancialFixture.workforce()` cached only the **resolved** value, so two callers arriving
+before the first seeding finished both saw `undefined` and both seeded six principals. The failing
+test calls `initiateTransfer()` twice in one `Promise.all`, and both reach `workforce()`. The suite
+never calls `listen()` — it uses `app.init()` — so supertest binds an **ephemeral listener per
+request**, and interleaved concurrent supertest requests surface as `ECONNRESET`.
+
+The fix caches the in-flight **promise** (assigned before the first `await`), and clears it when the
+promise rejects so one transient seeding failure cannot poison the rest of the suite.
+
+`test/governed-financial-fixture-workforce.spec.ts` pins this without a database and was verified to
+**fail against the old implementation** (12 seeding calls instead of 6) before being accepted. `a16`
+is 88/88.
+
+The lesson worth carrying: in this workspace, "passes alone" is not evidence of contention. It is
+equally consistent with an initialisation race that only manifests when two code paths run at once —
+which is exactly what a concurrency test does on purpose.
+
+### 6.4 The last fixture that lied
 
 The isolated sweep's only failure was in `batch2c-eligibility`: the claim test seeded a CUSTOMER
 wallet-redemption claim the **legacy** way — destination wallet unattributed, funded into the shared
