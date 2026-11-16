@@ -105,3 +105,109 @@ The full classification table with evidence links is maintained in the final han
 Implement the tier-limit enforcement flag semantics fix in
 `src/limit-catalog/limit-enforcement.service.ts` and `src/limit-catalog/institution-kyc-limit-policy.service.ts`,
 then re-run the 8 failing integration suites and the root unit suite.
+
+---
+
+# Checkpoint 4 — post-activation semantics repair and address verification
+
+**HEAD at this checkpoint: `8fe022d2`** (preceding: `7e5a0408`, `a3072b27`, `e3947e52`, `5f414863`,
+recovered from `004dd80008edbadc41cebf3c67222d6abbcd2cff`).
+
+## 4.1 Activation semantics (the 165-error class is closed)
+
+`LimitEnforcementService.resolveTierEnforcement()` now resolves one of three modes instead of
+conflating "the rollout is not activated" with "there is no policy":
+
+| Mode                | Condition                                    | Admission behaviour                                     |
+| ------------------- | -------------------------------------------- | ------------------------------------------------------- |
+| `ENFORCED`          | tier-limit rollout flag is on                | Full tier-bound admission; missing policy rejects        |
+| (throws)            | flag off **and** production                  | Fail closed — production never runs unenforced           |
+| `LEGACY_UNENFORCED` | flag off **and** not production              | Accepted baseline contract applies                       |
+
+The flag remains `KYC_TIER_LIMIT_ENFORCEMENT_ENABLED=false` by default, so enabling tier-bound
+admission is an explicit, reviewable production decision rather than an accident of deployment.
+
+## 4.2 Three further genuine regressions found and repaired
+
+Fixing activation semantics exposed three suites that were failing for real reasons, all of them
+rollout regressions rather than bad expectations:
+
+| Suite                          | Symptom                                              | Root cause                                                                                                                             | Repair                                                                                                                     |
+| ------------------------------ | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `a13-agent-cash-in`            | `503` on A12 regression smoke                        | `agent-financial-execution` refused **any** call without a `limit` block; baseline guarded on `service && limit`                          | A declared scope is still always enforced and absent enforcement still fails closed; only the no-scope internal path passes |
+| `a24-customer-transaction-pin` | `503 Institutional wallet context is unavailable`     | `transfer.service` refused every wallet pair without an institution, but `wallet_accounts.institution_id` is nullable **by design** (migration `1785753600401`) and the accepted baseline moved money between unattributed wallets | Cross-institution and half-attributed pairs are refused; an entirely unattributed legacy pair proceeds to the tier-bound gate, which fails closed in production |
+| `a7-authoritative-persistence` | `PermissionDenied` on policy insert                  | Fixture wrote `state='APPROVED'` directly, which the protected-authority trigger correctly refuses                                       | Fixture uses the governed maker/checker path (`seedGovernedTierPolicy`)                                                     |
+
+`a24` additionally had **no** tier policy at all although Wallet→Wallet admission is tier-bound. New
+helper `approveTcpInstitutionKycTierLimitPolicy()` builds a real institution-scoped mapping through
+the protected services for loopback-TCP suites (the pre-existing helper is socket-cluster bound).
+
+## 4.3 Tier-limit acceptance suite — committed
+
+`test/kyc-tier-limit-enforcement.isolated-pg.test.ts`, **21/21 PASS**, run in `public` on an isolated
+disposable socket cluster. It covers the authoritative tier→limit mapping, per-tier resolution,
+windowed and non-windowed dimensions, currency scoping, and refusal when no profile/rule/mapping
+exists.
+
+It also captured a **real production defect**: the reservation insert caught `23505` in JavaScript,
+but PostgreSQL had *already aborted the transaction*, so every later statement failed with `25P02`
+and a legitimate admission was refused. Fixed with `SAVEPOINT limit_reservation_insert` /
+`ROLLBACK TO` / `RELEASE`, and pinned by a dedicated race-survival test.
+
+**General rule recorded for future work:** a caught statement error aborts the whole PostgreSQL
+transaction. A JavaScript `catch` that continues is insufficient — always `SAVEPOINT`/`ROLLBACK TO`.
+
+## 4.4 Dojah address verification — now implementable, and implemented
+
+The repository's `kyc-future-capabilities` commentary claimed no address endpoint is documented. That
+assumption is **stale**: Dojah documents `POST /api/v1/kyc/address` (submission) and
+`GET /api/v1/kyc/address?reference_id=…` (polling), with an asynchronous result.
+
+Because the endpoint is asynchronous, the adapter is built so the two dangerous readings are
+impossible:
+
+- a **submission** returns only an opaque reference — it can never be read as a verification, and an
+  accepted-but-unreferenced response is `OUTCOME_UNKNOWN`;
+- a **poll** reports `verified=true` only for `completed` **with** a positive provider indication and
+  a collected address. `completed` alone, an unrecognised status, or a non-2xx is unverified or throws.
+
+Photos, coordinates and neighbour references are parsed past and never surfaced, matching the
+repository's decision not to persist address imagery. The transport is a **separate type** from the
+read-only identity transport, so no existing adapter can begin issuing a billable POST; it keeps fixed
+origins, pinned DNS, forbidden-IP refusal, bounded bodies, no redirect following and no retries.
+
+13 unit tests: `test/dojah-address-verification.unit.spec.ts`.
+
+## 4.5 Verification status at this checkpoint
+
+| Suite                                       | Result          |
+| ------------------------------------------- | --------------- |
+| `kyc-tier-limit-enforcement` (isolated)     | 21/21 PASS      |
+| `a13-agent-cash-in`                         | 37/37 PASS      |
+| `a7-authoritative-persistence`              | 33/33 PASS      |
+| `a24-customer-transaction-pin-hardening`    | 19/19 PASS      |
+| `dojah-address-verification` (unit)         | 13/13 PASS      |
+| `financial-commitment-initiation`           | 41/41 PASS      |
+| `a14-agent-cash-out`                        | 33/33 PASS      |
+| Root unit baseline                          | 255/255 suites, 2957/2957 tests |
+
+`tsc --noEmit`, ESLint and Prettier are clean on every changed file.
+
+**A full-matrix run was invalidated mid-flight by concurrent edits** — batches compiled
+half-written modules and reported spurious `TS2724` import errors. It was discarded rather than
+reported. The matrix must only be run against a committed, quiescent tree; that run is in progress.
+
+## 4.6 Remaining work
+
+1. Complete the full PG matrix on the quiescent tree and record the exact totals here.
+2. Close the enforcement call-site gaps below.
+3. Write the final handoff `docs/integration/MONIENAIJA-KYC-PROVIDER-AND-TIER-AUTOMATION-HANDOFF.md`.
+
+### Known enforcement gaps (must be closed before this mission can be called complete)
+
+| Call site                                   | Gap                                                                                                 |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `agent-cash-to-cash.service.ts:668-676`     | AGENT side admitted with no limit check at all                                                      |
+| `agent-cash-to-cash-claim.service.ts:721-745` | CUSTOMER branch calls `enforce` with neither `requireConfiguration` nor `requireKycTierPolicy`      |
+| `agent-funding.service.ts:1036+`            | AGENT-only funding path with no limit check                                                         |
+
