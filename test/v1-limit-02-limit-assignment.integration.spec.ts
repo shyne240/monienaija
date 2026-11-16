@@ -1021,12 +1021,21 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     );
     expect(resCnt[0]!.cnt).toBe('0');
     // also no commercial decision tables mutated via assignment — the limit-related migration
-    // inventory is exactly: profile catalogue + assignments + usages (V1-LIMIT-03) + the desk MFA
-    // attempt limit introduced with the governed OTP surface.
-    const hasDecisions: Array<{ cnt: string }> = await dataSource.query(
-      `SELECT count(*)::text as cnt FROM typeorm_migrations WHERE name LIKE '%Limit%'`,
+    // inventory is exactly: profile catalogue + assignments + usages (V1-LIMIT-03), the desk MFA
+    // attempt limit introduced with the governed OTP surface, and the institution KYC tier->limit
+    // governance (1785753600504). The assertion is deliberately an explicit list rather than a
+    // bare count, so an unrecognised migration named `%Limit%` fails here instead of silently
+    // sliding past a number comparison.
+    const limitMigrations: Array<{ name: string }> = await dataSource.query(
+      `SELECT name FROM typeorm_migrations WHERE name LIKE '%Limit%' ORDER BY name`,
     );
-    expect(Number(hasDecisions[0]!.cnt)).toBe(4);
+    expect(limitMigrations.map((row) => row.name)).toEqual([
+      'CreateLimitAssignments1785753600068',
+      'CreateLimitProfileCatalogue1785753600067',
+      'CreateLimitUsages1785753600069',
+      'DeskMfaAttemptLimit1785753600120',
+      'InstitutionKycTierLimitGovernance1785753600504',
+    ]);
   });
 
   it('12. legacy preservation — customer_limit_profiles & AgentClass.applicableLimits untouched', async () => {
