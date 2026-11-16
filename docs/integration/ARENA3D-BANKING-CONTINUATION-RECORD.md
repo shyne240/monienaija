@@ -190,9 +190,10 @@ The registry tests are not decoration — two of them encode rules that are othe
 
 ## 6. Migration inventory
 
-| Migration                                 | Purpose                                                                                                                                                                                  |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `1785753600600-BankingProviderGovernance` | protected banking-provider configuration: heads, proposals, append-only versions, protected decision evidence, immutable-approved-record triggers, and emergency operational disablement |
+| Migration                                 | Purpose                                                                                                                                                                                                                      |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `1785753600600-BankingProviderGovernance` | protected banking-provider configuration: heads, proposals, append-only versions, protected decision evidence, immutable-approved-record triggers, and emergency operational disablement                                     |
+| `1785753600601-BankingOperationRecords`   | durable provider-facing records: virtual-account reservations (with `UNKNOWN` as a first-class outcome), inbound payments (gross/fee/credited kept separate), outbound operations (operation reference immutable, no DELETE) |
 
 Within the reserved allocation `1785753600600`–`1785753600699`; no published identifier was reused.
 Verified to apply by running the full real migration chain (the PG template database is built by
@@ -216,6 +217,34 @@ Groups 2, 3 and 6 are complete; group 1's contracts and registry are complete an
 5 are complete **only** on the provider side: the adapter is written and unit-tested, but no
 application code calls it yet, so nothing in this repository can move money today. Group 3 governs
 _who may be engaged_; it does not yet gate a live call, because no live call exists.
+
+## 7.0 Group 5 — persistence, and a defect that would have leaked evidence
+
+Migration `1785753600601` adds three record families. The design rule throughout is that the database
+must be able to answer "what did we ask the provider, and what do we actually know" without
+consulting application memory:
+
+- `banking_virtual_account_reservations` records the provider conversation, including attempts that
+  produced nothing. `outcome='UNKNOWN'` is a normal state, and a **partial unique index permits at
+  most one UNKNOWN reservation per wallet** — two unknowns would mean two possible accounts at the
+  provider, which must be resolved by enquiry, never by resubmitting.
+- `banking_inbound_payments` keys on the provider's transaction reference, so a replayed webhook
+  collides instead of crediting twice. Gross, fee and credited are three columns with
+  `credited = gross - fee` as a CHECK, because collapsing them is how fee reconciliation quietly
+  loses money.
+- `banking_outbound_operations` is what makes "never generate a fresh reference to retry an uncertain
+  submission" enforceable: a trigger refuses any change to `operation_reference`, refuses to rewrite a
+  recorded provider transaction reference, and refuses DELETE outright.
+
+**The defect the tests caught.** The outbound trigger was written `BEFORE UPDATE OR DELETE` but
+checked `TG_OP='DELETE'` _after_ two `OLD`/`NEW` comparisons. On DELETE, `NEW` is NULL, so those
+comparisons evaluate to NULL rather than true and the delete fell through — a trigger whose entire
+purpose was "financial records are never deleted" silently permitted deletion. The test failed with
+"expected delete to reject"; the fix moves the DELETE branch first. The same latent hazard was checked
+in the inbound trigger, which already had it first.
+
+This is the second time in this mission that the ordering of a guard, rather than its presence,
+was the bug. Both were caught by asserting the _effect_ rather than the existence of the control.
 
 ## 7.1 Group 3 — the three defects the service tests caught
 
