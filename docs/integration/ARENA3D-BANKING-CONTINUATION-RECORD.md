@@ -120,25 +120,27 @@ boundary; **no speculative alternative-provider contract is implemented.**
 
 ## 4. Implementation groups
 
-| #   | Group                                                      | State        |
-| --- | ---------------------------------------------------------- | ------------ |
-| 1   | Provider capability contracts + registry                   | done         |
-| 2   | Monnify transport, auth, token coordination, error mapping | done         |
-| 3   | Banking provider governance (protected, maker/checker)     | schema done  |
-| 4   | Bank directory + account-name enquiry                      | adapter done |
-| 5   | Virtual account provisioning lifecycle                     | pending      |
-| 6   | Webhook ingestion + signature verification                 | done         |
-| 7   | Inbound deposits (A7 integration)                          | pending      |
-| 8   | Outbound transfers (A6) + durable dispatch                 | pending      |
-| 9   | Transfer status + financial recovery                       | pending      |
-| 10  | Fees and charges                                           | pending      |
-| 11  | Settlement verification                                    | unsupported  |
-| 12  | Reconciliation engine + exception management               | pending      |
-| 13  | Admin banking workspace                                    | pending      |
-| 14  | Customer mobile banking                                    | pending      |
-| 15  | Agent mobile banking                                       | pending      |
-| 16  | KYC residual machine code                                  | pending      |
-| 17  | Consolidated acceptance                                    | pending      |
+| #   | Group                                                      | State                    |
+| --- | ---------------------------------------------------------- | ------------------------ |
+| 1   | Provider capability contracts + registry                   | done                     |
+| 2   | Monnify transport, auth, token coordination, error mapping | done                     |
+| 3   | Banking provider governance (protected, maker/checker)     | done                     |
+| 4   | Bank directory + account-name enquiry                      | adapter done             |
+| 5   | Virtual account provisioning lifecycle                     | done + HTTP              |
+| 6   | Webhook ingestion + signature verification                 | done + HTTP              |
+| 7   | Inbound deposits (A7 integration)                          | wired (institution +     |
+|     |                                                            | verifier bound;          |
+|     |                                                            | suspense unavailable)    |
+| 8   | Outbound transfers (A6) + durable dispatch                 | wired + worker tested    |
+| 9   | Transfer status + financial recovery                       | done + HTTP              |
+| 10  | Fees and charges                                           | pending                  |
+| 11  | Settlement verification                                    | deliberately unsupported |
+| 12  | Reconciliation engine + exception management               | done + admin HTTP        |
+| 13  | Admin banking workspace                                    | API done, UI pending     |
+| 14  | Customer mobile banking                                    | API done, UI pending     |
+| 15  | Agent mobile banking                                       | pending                  |
+| 16  | KYC residual machine code                                  | pending                  |
+| 17  | Consolidated acceptance                                    | pending                  |
 
 Legend: **done** = implemented, tested and pushed; **schema done** = migration and structural
 assertions landed, service layer outstanding; **adapter done** = provider-side call implemented and
@@ -371,15 +373,40 @@ a schema can refuse every wrong thing and still refuse the right thing too.
 
 ## 8. Exact next action
 
-**Wire the completed services to the wallet/ledger commitment flow** (groups 13–17). Groups 5, 6, 7,
-8, 9 and 12 are complete at the core: adapter, persistence, services and 104 PostgreSQL assertions.
-What is missing is the HTTP surface and the governed ledger posting call — no application code invokes
-these services yet, which is why nothing in this repository can move money today.
+**Groups 10, 15, 16, 17 and the two mobile/admin UIs.** The application integration is now complete
+enough that the real app boots with banking registered, refuses every capability while disabled, and
+reaches a provider only through a governed, approved configuration. The dispatch chain has been
+proven end to end at the service boundary: an authorized A6 commitment creates exactly one dispatch
+record inside its own transaction, and the worker submits it exactly once under the provider that was
+authorized.
 
-That wiring is also where the remaining risk concentrates: the services prove that a _given_ operation
-is handled safely, not that a customer-facing flow creates exactly one operation per commitment. The
-first thing to build and test there is the boundary that calls `prepare()` once per commitment and
-then `dispatch()`, since that pairing is what the concurrency guarantee depends on.
+What remains, in order:
+
+1. **Group 10 — fees and authorization binding.** Fee amounts must be bound before authorization and
+   must never be re-read at dispatch. No production fee values exist, so this needs a controlled test
+   policy, not invented numbers.
+2. **Group 15 — agent banking.** Agent funding accounts bound to agent + institution + provider +
+   currency + purpose, verified funds only, exactly-once float increase.
+3. **Group 16 — the KYC cash-to-cash machine code.** The precondition gap is real and still open.
+4. **Groups 13–14 UIs — admin workspace and customer mobile.** The APIs these screens need exist;
+   the screens must call them, not mock them.
+5. **Group 17 — consolidated acceptance.** The full matrix, sequentially, with sanitised transcripts.
+
+### 8.0 Where the banking money path now stands
+
+| Stage                                              | Enforced by                                                 | Tested by                       |
+| -------------------------------------------------- | ----------------------------------------------------------- | ------------------------------- |
+| Eligibility, KYC, limits, PIN, destination binding | A6 `FinancialCommitmentService` (unchanged)                 | existing A6 suites              |
+| Institutional entitlement + provider approval      | `BankingWithdrawalExecutionAuthority`                       | readiness unit tests            |
+| Durable dispatch intent                            | `BankingCommitmentBridgeService`, inside the A6 transaction | dispatch-worker suite (3 cases) |
+| Single submission under concurrency                | `banking_dispatch_leases` fence                             | dispatch-worker suite           |
+| Provider outcome proven                            | `BankingExternalOperationStatusVerifier`                    | verifier + A6 settlement suites |
+| Ledger effect                                      | `ExternalSettlementService` (unchanged)                     | A6 settlement suite (20 cases)  |
+| Customer-safe presentation                         | `BankingCustomerController`                                 | banking HTTP suite (13 cases)   |
+
+No controller submits a transfer. No worker dispatches without a persisted commitment row: the
+worker's query only selects existing `banking_outbound_operations`, and that table can only gain a
+banking-provider row from the bridge, which runs inside A6's transaction.
 
 ### 8.1 What is landed and safe
 
@@ -401,9 +428,12 @@ then `dispatch()`, since that pairing is what the concurrency guarantee depends 
 | `5dc54806` | Reconciliation that cannot move money, migration `1785753600602` (15 PostgreSQL tests)                                                                     |
 | `d312f304` | Webhook ingestion tied to signature verification (13 PostgreSQL tests)                                                                                     |
 | `8be5e699` | Final handoff document                                                                                                                                     |
+| `d667995a` | Application wiring: module, DI, controllers, policy registry, verifiers                                                                                    |
+| `f3821386` | Authoritative wallet ownership, raw-body ingress, honest webhook status (5 defects fixed)                                                                  |
+| `1b26e72a` | A6 dispatch-intent wiring, A7 inbound seams, dispatch worker acceptance (10 tests)                                                                         |
 
-All pushed; local == remote verified after each. 65/65 banking unit tests pass; eslint, prettier and
-tsc clean on every banking file.
+All pushed; local == remote verified after each. Unit suite 3048/3048 across 262 suites; banking HTTP
+acceptance 13/13; dispatch worker 10/10; A6 settlement lifecycle 20/20; eslint, prettier and tsc clean.
 
 ### 8.2 Two real defects already caught by those tests
 
