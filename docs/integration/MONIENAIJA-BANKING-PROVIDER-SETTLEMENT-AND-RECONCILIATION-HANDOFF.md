@@ -222,6 +222,85 @@ for.
 Items 3, 6, 8 and 9 share a shape: the control existed, was reviewed, and did not do what it claimed.
 They were caught by asserting _effects_, not existence.
 
+### 6.1 Defects found during consolidated acceptance
+
+These were found by the repository-wide matrix and the journey work, not by the banking suites. They
+matter because each one was invisible to the tests that "owned" the area.
+
+10. **TREASURY was widened to make banking reconciliation reachable.** The banking work granted the
+    treasury role three banking functions on the plausible reasoning that treasury owns reconciliation.
+    Decision 6 states TREASURY holds _exactly_ `reconciliation.view`, and two suites assert the exact
+    grant set. This is the mission's stated failure mode — weakening a protected authority boundary to
+    make new wiring work. The functions stayed with SUPER_ADMIN and FINANCE_CONTROLLER, which already
+    hold financial-execution authority; nothing was added to compensate.
+11. **Three banking functions were defined twice** and **`SUPER_ADMIN` was granted two of them twice.**
+    The catalogue seeds by `function_code`, so the duplicate definitions were silently absorbed and
+    `authorization_functions` ended up three rows short of the array declaring it. Every individual
+    lookup still resolved, so only a count assertion could see it. Worse, the two `SUPER_ADMIN` blocks
+    _contradicted_ each other: one assigns `banking.provider.approve`; the other's comment said
+    SUPER_ADMIN "deliberately does not approve". The database would have held whichever row won.
+12. **A suite that passed zero of six cases looked green in aggregate.** `financial-commitment-initiation`
+    overrode `WITHDRAWAL_EXECUTION_AUTHORITY` with a stub returning the bare string `'AUTHORIZED'`, but
+    the contract returns `{outcome, providerKey, environment}`. The service read `undefined`, took the
+    "not authorized" branch every time, and the suite had been asserting the failure path throughout.
+    Reproduced identically at `1b26e72a`, so it predates this work. Fixed rather than deleted: a suite
+    that cannot pass a single case proves nothing about the boundary it guards.
+13. **Five suites pinned a stale migration head.** `migration-chain`, `a8-agent-lifecycle`,
+    `stage8-financial-engine-migration` (three sites), `stage10-recovery-migration` (three),
+    `a20-outlets-terminals` (four) and `a19-agent-funding` (two) all asserted the pre-banking head
+    `0505`. The banking chain is the head; an expectation describing a tree that no longer exists is
+    not a passing test.
+
+12 and 13 share a shape with items 3/6/8/9: the test existed and did not test what its name claimed.
+That is why the acceptance was run as a matrix rather than by trusting the per-area suites.
+
+---
+
+## 5.1 The consolidated matrix, and the four files that needed individual re-runs
+
+The repository-wide matrix ran sequentially through the documented harness:
+
+```
+NODE_ENV=test PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes PG_TEST_RUN_ID=g17qt \
+  PG_TEST_CONCURRENCY=1 PG_TEST_BATCH_SIZE=6 PG_TEST_MAX_OLD_SPACE_MB=2560 \
+  DB_HOST=127.0.0.1 DB_PORT=44679 DB_USER=arena_pg_test \
+  DB_PASSWORD=arena-disposable-test-only DB_NAME=postgres \
+  node scripts/run-pg-integration-tests.js
+```
+
+| Measure                     | Value                                                   |
+| --------------------------- | ------------------------------------------------------- |
+| Files discovered            | 166                                                     |
+| Batches                     | 28 (6 files each, `--runInBand`, one process per batch) |
+| Suites passed               | **162**                                                 |
+| Suites failed in the matrix | 4                                                       |
+| Total duration              | ~108 minutes                                            |
+
+The four failures were re-run individually on an otherwise idle machine and **all four passed**:
+
+| Suite                                                   | Matrix result             | Individual result |
+| ------------------------------------------------------- | ------------------------- | ----------------- |
+| `v1-commercial-accounting-01`                           | TIMEOUT (hook)            | **33/33 pass**    |
+| `a17-agent-cash-to-cash-expiry`                         | TIMEOUT (test)            | **30/30 pass**    |
+| `local-dev-11-roles`                                    | `null` CLI exit status ×5 | **5/5 pass**      |
+| `v1-admin-customer-pii-authorization-implementation-01` | no result                 | **48/48 pass**    |
+
+**What these four actually were.** Every one is a resource failure, not an assertion failure: three are
+120-second Jest timeouts on hooks or tests, and one is a child CLI process returning `null` status
+(killed by the OS) rather than a non-zero exit. None of them produced a failed expectation, a wrong
+value, or a permission error. The matrix ran for 108 minutes under a 2.5 GB per-process cap while other
+work was in flight in the same sandbox, and these are the four longest suites in the repository.
+
+**What is and is not claimed.** The matrix result stands as recorded — 162 suites passed in the
+sequential run, and 4 did not complete. Those 4 were then run separately and passed. This is reported as
+it happened rather than by re-running the whole matrix and quietly presenting a single green number,
+because "the suite passed when given its own machine" is a different fact from "the suite passed inside
+the matrix", and a reader deciding whether to trust this system needs the distinction.
+
+No assertion was weakened, no timeout was raised, and no retry budget was increased to produce these
+results. If a future run shows one of these four failing deterministically, that is a real defect and
+this note should not be used to excuse it.
+
 ---
 
 ## 7. What is genuinely not done
