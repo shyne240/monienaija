@@ -24,6 +24,8 @@ import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { assertWalletOwnership } from '../wallet/wallet-ownership';
 import { WalletOwnerClass, WalletStatus } from '../wallet/wallet.enums';
+import { resolveTransferParticipants } from './transfer-participant';
+import { transferParticipantLimitInput } from './transfer-participant-limit';
 import {
   LimitEnforcementService,
   type EnforceResult,
@@ -378,6 +380,11 @@ export class TransferService {
       };
     }
 
+    const participants = await resolveTransferParticipants(manager, [
+      sourceWallet,
+      destinationWallet,
+    ]);
+
     // The v1 commercial, limit and notification paths below are CUSTOMER-specific. Never
     // process an agent (or unresolved/system owner) using those policies. This temporary gate
     // is inside the wallet-locked transaction and precedes even a failed-transfer/outbox record;
@@ -386,6 +393,7 @@ export class TransferService {
     // direct unit constructions; an authenticated agent binding is never allowed through it.
     if (
       command.ownership.kind === 'AGENT_SELF' ||
+      participants?.some((participant) => participant.type === 'AGENT') ||
       [sourceWallet, destinationWallet].some(
         (wallet) => wallet.ownerClass != null && wallet.ownerClass !== WalletOwnerClass.CUSTOMER,
       )
@@ -534,65 +542,61 @@ export class TransferService {
         throw new ServiceUnavailableException('Institutional wallet context is unavailable');
       }
     }
+    const sourceParticipant = participants?.[0] ?? {
+      wallet: sourceWallet,
+      type: 'CUSTOMER' as const,
+      id: sourceWallet.customerId,
+      agentClassId: null,
+    };
+    const destinationParticipant = participants?.[1] ?? {
+      wallet: destinationWallet,
+      type: 'CUSTOMER' as const,
+      id: destinationWallet.customerId,
+      agentClassId: null,
+    };
     let limitIdempotencyKey: string | null = null;
     let recipientLimitIdempotencyKey: string | null = null;
     let limitOutcome: EnforceResult | null = null;
-    if (this.limitEnforcementService && UUID_PATTERN.test(sourceWallet.customerId)) {
+    if (this.limitEnforcementService) {
       const amountMinorStr = command.amountMinor.toString();
-      limitIdempotencyKey = command.idempotencyKey;
-      recipientLimitIdempotencyKey = `transfer:${transfer.id}:incoming`;
       try {
-        limitOutcome = await this.limitEnforcementService.enforceWithManager(manager, {
-          principalType: 'CUSTOMER',
-          principalId: sourceWallet.customerId,
-          product: 'WALLET_TRANSFER',
-          currency: command.currency,
-          direction: 'OUTGOING',
-          channel: null,
-          amountMinor: amountMinorStr,
-          idempotencyKey: limitIdempotencyKey,
-          requestHash: command.requestHash,
-          correlationId: `transfer:${transfer.id}`,
-          now: new Date(),
-          walletLedgerAccountId: sourceWallet.ledgerAccountId,
-          principalWalletCustomerId: sourceWallet.customerId,
-          requireConfiguration: true,
-          requireKycTierPolicy: true,
-          institutionId: sourceWallet.institutionId,
-          serviceClass: null,
-        });
+        // The two legs are independent: an unclassified/legacy source must not suppress
+        // admission for an identifiable recipient. Each reservation is in this transaction.
+        if (UUID_PATTERN.test(sourceWallet.customerId)) {
+          limitIdempotencyKey = command.idempotencyKey;
+          limitOutcome = await this.limitEnforcementService.enforceWithManager(
+            manager,
+            transferParticipantLimitInput(sourceParticipant, {
+              direction: 'OUTGOING',
+              currency: command.currency,
+              amountMinor: amountMinorStr,
+              idempotencyKey: limitIdempotencyKey,
+              requestHash: command.requestHash,
+              correlationId: `transfer:${transfer.id}`,
+              now: new Date(),
+            }),
+          );
+        }
         if (UUID_PATTERN.test(destinationWallet.customerId)) {
-          await this.limitEnforcementService.enforceWithManager(manager, {
-            principalType: 'CUSTOMER',
-            principalId: destinationWallet.customerId,
-            product: 'WALLET_TRANSFER',
-            currency: command.currency,
-            direction: 'INCOMING',
-            channel: null,
-            amountMinor: amountMinorStr,
-            idempotencyKey: recipientLimitIdempotencyKey,
-            requestHash: createHash('sha256')
-              .update(`${command.requestHash}:incoming:${destinationWallet.customerId}`)
-              .digest('hex'),
-            correlationId: `transfer:${transfer.id}`,
-            now: new Date(),
-            walletLedgerAccountId: destinationWallet.ledgerAccountId,
-            principalWalletCustomerId: destinationWallet.customerId,
-            requireConfiguration: true,
-            requireKycTierPolicy: true,
-            institutionId: destinationWallet.institutionId,
-            serviceClass: null,
-          });
+          recipientLimitIdempotencyKey = `transfer:${transfer.id}:incoming`;
+          await this.limitEnforcementService.enforceWithManager(
+            manager,
+            transferParticipantLimitInput(destinationParticipant, {
+              direction: 'INCOMING',
+              currency: command.currency,
+              amountMinor: amountMinorStr,
+              idempotencyKey: recipientLimitIdempotencyKey,
+              requestHash: createHash('sha256')
+                .update(`${command.requestHash}:incoming:${destinationWallet.customerId}`)
+                .digest('hex'),
+              correlationId: `transfer:${transfer.id}`,
+              now: new Date(),
+            }),
+          );
         }
       } catch (error) {
         for (const key of [limitIdempotencyKey, recipientLimitIdempotencyKey]) {
-          if (key) {
-            try {
-              await this.limitEnforcementService.releaseReservationsWithManager(manager, key);
-            } catch {
-              // Keep denial fail-closed; the enclosing transaction still owns rollback.
-            }
-          }
+          if (key) await this.limitEnforcementService.releaseReservationsWithManager(manager, key);
         }
         if (error instanceof HttpException) {
           const resp = error.getResponse() as { error?: string; code?: string; message?: string };
@@ -650,11 +654,9 @@ export class TransferService {
       if (this.limitEnforcementService) {
         for (const key of [limitIdempotencyKey, recipientLimitIdempotencyKey]) {
           if (!key) continue;
-          try {
-            await this.limitEnforcementService.releaseReservationsWithManager(manager, key);
-          } catch {
-            // best-effort release; if no reservations exist this is a no-op
-          }
+          // A release failure must roll back the enclosing transaction, not persist a
+          // failed transfer alongside stranded reservations.
+          await this.limitEnforcementService.releaseReservationsWithManager(manager, key);
         }
       }
       return this.markFailed(
@@ -668,11 +670,9 @@ export class TransferService {
     if (this.limitEnforcementService) {
       for (const key of [limitIdempotencyKey, recipientLimitIdempotencyKey]) {
         if (!key) continue;
-        try {
-          await this.limitEnforcementService.commitReservationsWithManager(manager, key);
-        } catch {
-          // best-effort commit; if no reservations exist this is a no-op
-        }
+        // Admission is part of the financial transaction. Swallowing this error would
+        // commit the journal without committing limit usage.
+        await this.limitEnforcementService.commitReservationsWithManager(manager, key);
       }
     }
 

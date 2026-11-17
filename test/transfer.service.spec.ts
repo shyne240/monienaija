@@ -22,6 +22,7 @@ import type { LedgerService } from '../src/ledger/ledger.service';
 import { TransferService } from '../src/transfer/transfer.service';
 import type { CreateTransferCommand } from '../src/transfer/transfer.types';
 import type { WalletOwnershipBinding } from '../src/wallet/wallet-ownership';
+import type { LimitEnforcementService } from '../src/limit-catalog/limit-enforcement.service';
 
 const SOURCE_WALLET_ID = '00000000-0000-4000-8000-000000000001';
 const DESTINATION_WALLET_ID = '00000000-0000-4000-8000-000000000002';
@@ -163,6 +164,10 @@ class InMemoryManager {
     private readonly walletRepository: InMemoryWalletRepository,
     private readonly journalRepository: InMemoryJournalRepository,
   ) {}
+
+  query(): Promise<never[]> {
+    return Promise.resolve([]);
+  }
 
   getRepository<T extends ObjectLiteral>(target: EntityTarget<T>): Repository<T> {
     if (target === Transfer) {
@@ -311,7 +316,11 @@ function makeWallet(
   });
 }
 
-function makeFixture(sourceBalance = 125000n, destinationCurrency = 'NGN'): Fixture {
+function makeFixture(
+  sourceBalance = 125000n,
+  destinationCurrency = 'NGN',
+  limitService?: LimitEnforcementService,
+): Fixture {
   const transfers = new InMemoryTransferRepository();
   const wallets = new InMemoryWalletRepository();
   const journals = new InMemoryJournalRepository();
@@ -366,6 +375,11 @@ function makeFixture(sourceBalance = 125000n, destinationCurrency = 'NGN'): Fixt
     journals as unknown as Repository<LedgerJournal>,
     dataSource as unknown as DataSource,
     ledger as unknown as LedgerService,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    limitService,
   );
 
   return { service, transfers, wallets, journals, ledger, dataSource };
@@ -521,6 +535,48 @@ describe('TransferService', () => {
     await expect(reuse).rejects.toThrow('another transfer');
     expect(fixture.transfers.records.size).toBe(1);
     expect(fixture.ledger.calls).toHaveLength(1);
+  });
+
+  it('applies incoming limits independently of a legacy non-UUID source', async () => {
+    const limits = {
+      enforceWithManager: jest.fn().mockResolvedValue({ allowed: true }),
+      commitReservationsWithManager: jest.fn().mockResolvedValue(undefined),
+      releaseReservationsWithManager: jest.fn().mockResolvedValue(undefined),
+    };
+    const fixture = makeFixture(125000n, 'NGN', limits as unknown as LimitEnforcementService);
+    fixture.wallets.wallets.get(DESTINATION_WALLET_ID)!.customerId =
+      '22222222-2222-4222-8222-222222222222';
+    await fixture.service.createTransfer(transferCommand());
+    expect(limits.enforceWithManager).toHaveBeenCalledTimes(1);
+    expect(limits.enforceWithManager).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        principalType: 'CUSTOMER',
+        principalId: '22222222-2222-4222-8222-222222222222',
+        direction: 'INCOMING',
+      }),
+    );
+    expect(limits.commitReservationsWithManager).toHaveBeenCalledTimes(1);
+  });
+
+  it('rolls back the journal when committing limit reservations fails', async () => {
+    const limits = {
+      enforceWithManager: jest.fn().mockResolvedValue({ allowed: true }),
+      commitReservationsWithManager: jest
+        .fn()
+        .mockRejectedValue(new Error('reservation commit failed')),
+      releaseReservationsWithManager: jest.fn().mockResolvedValue(undefined),
+    };
+    const fixture = makeFixture(125000n, 'NGN', limits as unknown as LimitEnforcementService);
+    fixture.wallets.wallets.get(DESTINATION_WALLET_ID)!.customerId =
+      '22222222-2222-4222-8222-222222222222';
+    await expect(fixture.service.createTransfer(transferCommand())).rejects.toThrow(
+      'reservation commit failed',
+    );
+    expect(fixture.transfers.records.size).toBe(0);
+    expect(fixture.journals.records.size).toBe(0);
+    expect(fixture.ledger.balances.get(SOURCE_LEDGER_ACCOUNT_ID)).toBe(125000n);
+    expect(fixture.ledger.balances.get(DESTINATION_LEDGER_ACCOUNT_ID)).toBe(0n);
   });
 
   it.each(['source', 'destination'] as const)(

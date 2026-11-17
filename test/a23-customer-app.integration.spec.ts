@@ -482,6 +482,27 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       [destination.id],
     );
     expect(owner[0]!.owner_class).toBe('AGENT');
+    const { WalletAccount } = await import('../src/wallet/wallet-account.entity');
+    const { resolveTransferParticipants } = await import('../src/transfer/transfer-participant');
+    const classify = () =>
+      dataSource.transaction('SERIALIZABLE', async (manager) => {
+        const locked = await manager
+          .getRepository(WalletAccount)
+          .createQueryBuilder('wallet')
+          .where('wallet.id IN (:...ids)', { ids: [source.id, destination.id] })
+          .orderBy('wallet.id', 'ASC')
+          .setLock('pessimistic_write')
+          .getMany();
+        const byId = new Map(locked.map((wallet) => [wallet.id, wallet]));
+        return resolveTransferParticipants(manager, [
+          byId.get(source.id)!,
+          byId.get(destination.id)!,
+        ]);
+      });
+    expect(await classify()).toMatchObject([
+      { type: 'CUSTOMER', id: customerId, agentClassId: null },
+      { type: 'AGENT', id: rows[0]!.id, agentClassId: classRows[0]!.id },
+    ]);
     await request(app.getHttpServer())
       .post('/api/v1/customers/me/transaction-pin')
       .set('Authorization', `Bearer ${token}`)
@@ -525,6 +546,14 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     ).toEqual(before);
     expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('50000');
     expect((await wallets.getWalletBalance(destination.id)).balanceMinor).toBe('0');
+    // A later namespace collision invalidates the previously stored class; never rely on the
+    // stale wallet label or silently address this AGENT identity as a CUSTOMER.
+    await dataSource.query(
+      `INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status)
+      VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`,
+      [rows[0]!.id, `collision-${randomUUID()}`],
+    );
+    await expect(classify()).rejects.toMatchObject({ status: 503 });
   });
 
   it('7. Transaction history — read-only, direction/amount/status/reference/type/date/fee/identity where permitted', async () => {

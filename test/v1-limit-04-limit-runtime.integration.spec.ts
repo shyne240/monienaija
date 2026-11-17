@@ -20,6 +20,10 @@ import { TransferService } from '../src/transfer/transfer.service';
 import { LedgerService } from '../src/ledger/ledger.service';
 import { LedgerEntryDirection } from '../src/ledger/ledger.enums';
 import { LimitUsageService } from '../src/limit-catalog/limit-usage.service';
+import { LimitEnforcementService } from '../src/limit-catalog/limit-enforcement.service';
+import { WalletAccount } from '../src/wallet/wallet-account.entity';
+import { resolveTransferParticipants } from '../src/transfer/transfer-participant';
+import { transferParticipantLimitInput } from '../src/transfer/transfer-participant-limit';
 import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence.reader';
 import { createTestEvidenceReader } from './support/kyc-test-evidence-reader';
 import { createEligibleCustomer } from './support/kyc-test-fixtures';
@@ -313,6 +317,130 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
     expect(dailyAmt).toBeDefined();
     expect(dailyAmt.used_amount_minor.toString()).toBe('50000');
     expect(dailyAmt.reserved_amount_minor.toString()).toBe('0');
+  });
+
+  it('rolls back ledger and both limit usages if the second reservation commit fails', async () => {
+    const customerA = await eligibleCustomerId();
+    const customerB = await eligibleCustomerId();
+    const profile = 'TEST_PROFILE_ATOMIC';
+    await seedProfile(profile);
+    await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerA });
+    await seedAssignment({ profileCode: profile, subjectType: 'CUSTOMER', subjectId: customerB });
+    await seedRule({
+      profileCode: profile,
+      product: 'WALLET_TRANSFER',
+      dimension: 'DAILY_AMOUNT',
+      limitMinor: '1000000',
+    });
+    const wA = await createWallet(customerA);
+    const wB = await createWallet(customerB);
+    await fundWallet(wA.ledgerAccountId, '200000');
+    const countBefore = await dataSource.query(
+      `SELECT (SELECT count(*) FROM transfers)::int AS transfers, (SELECT count(*) FROM ledger_journals)::int AS journals`,
+    );
+    const limits = app.get(LimitEnforcementService);
+    const commit = limits.commitReservationsWithManager.bind(limits);
+    const spy = jest
+      .spyOn(limits, 'commitReservationsWithManager')
+      .mockImplementationOnce(commit)
+      .mockRejectedValueOnce(new Error('simulated second reservation commit failure'));
+    try {
+      const result = await tryTransfer(wA.id, wB.id, '50000', `idem-atomic-${randomUUID()}`);
+      expect(result).toMatchObject({
+        success: false,
+        errorCode: 'simulated second reservation commit failure',
+      });
+      expect(spy).toHaveBeenCalledTimes(2);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(
+      await dataSource.query(
+        `SELECT (SELECT count(*) FROM transfers)::int AS transfers, (SELECT count(*) FROM ledger_journals)::int AS journals`,
+      ),
+    ).toEqual(countBefore);
+    expect(await dataSource.query(`SELECT id FROM limit_reservations`)).toEqual([]);
+    expect(await dataSource.query(`SELECT id FROM limit_usages`)).toEqual([]);
+    expect((await walletService.getWalletBalance(wA.id)).balanceMinor).toBe('200000');
+    expect((await walletService.getWalletBalance(wB.id)).balanceMinor).toBe('0');
+  });
+
+  it('resolves configured agent-class limits separately for outgoing and incoming', async () => {
+    const agentClass = randomUUID();
+    const agent = randomUUID();
+    await dataSource.query(
+      `INSERT INTO agent_classes (id,reference,code,name,is_active,applicable_services)
+      VALUES ($1,$2,$3,'class',true,$4)`,
+      [
+        agentClass,
+        `cls-${agentClass}`,
+        `C-${agentClass.slice(0, 8)}`,
+        JSON.stringify(['WALLET_TRANSFER']),
+      ],
+    );
+    await dataSource.query(
+      `INSERT INTO agents (id,reference,status,agent_class_id) VALUES ($1,$2,'ACTIVE',$3)`,
+      [agent, `agent-${agent}`, agentClass],
+    );
+    const customer = await eligibleCustomerId();
+    const customerWallet = await createWallet(customer);
+    const agentWallet = await createWallet(agent);
+    const limits = app.get(LimitEnforcementService);
+    const enforce = (direction: 'INCOMING' | 'OUTGOING', amountMinor: string) =>
+      dataSource.transaction('SERIALIZABLE', async (manager) => {
+        const wallets = await manager
+          .getRepository(WalletAccount)
+          .createQueryBuilder('w')
+          .where('w.id IN (:...ids)', { ids: [customerWallet.id, agentWallet.id] })
+          .orderBy('w.id', 'ASC')
+          .setLock('pessimistic_write')
+          .getMany();
+        const byId = new Map(wallets.map((w) => [w.id, w]));
+        const participants = await resolveTransferParticipants(manager, [
+          byId.get(customerWallet.id)!,
+          byId.get(agentWallet.id)!,
+        ]);
+        return limits.enforceWithManager(
+          manager,
+          transferParticipantLimitInput(participants![1], {
+            direction,
+            amountMinor,
+            currency: 'NGN',
+            idempotencyKey: randomUUID(),
+            requestHash: randomUUID(),
+            correlationId: 'agent-limit-test',
+            now: new Date(),
+          }),
+        );
+      });
+    // Missing agent assignment must not silently inherit the advisory customer path.
+    await expect(enforce('OUTGOING', '500')).rejects.toMatchObject({ status: 503 });
+    await seedProfile('AGENT_P2P_CLASS', 'AGENT');
+    await seedAssignment({
+      profileCode: 'AGENT_P2P_CLASS',
+      subjectType: 'AGENT_CLASS',
+      subjectId: agentClass,
+    });
+    await seedRule({
+      profileCode: 'AGENT_P2P_CLASS',
+      product: 'WALLET_TRANSFER',
+      dimension: 'MAX_AMOUNT_PER_TX',
+      direction: 'OUTGOING',
+      limitMinor: '1000',
+    });
+    await seedRule({
+      profileCode: 'AGENT_P2P_CLASS',
+      product: 'WALLET_TRANSFER',
+      dimension: 'MAX_AMOUNT_PER_TX',
+      direction: 'INCOMING',
+      limitMinor: '2000',
+    });
+    await expect(enforce('OUTGOING', '1500')).rejects.toMatchObject({ status: 422 });
+    await expect(enforce('INCOMING', '1500')).resolves.toMatchObject({
+      allowed: true,
+      limitProfileCode: 'AGENT_P2P_CLASS',
+    });
+    await expect(enforce('INCOMING', '2500')).rejects.toMatchObject({ status: 422 });
   });
 
   it('02 WALLET_TRANSFER MIN_AMOUNT_NOT_MET', async () => {
