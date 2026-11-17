@@ -18,6 +18,14 @@ jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({ navigate: jest.fn() }),
 }));
 
+interface RouteOptions {
+  dashboard: Record<string, unknown>;
+  requests?: { items: unknown[] };
+  limits?: { products: unknown[] };
+  account?: Record<string, unknown> | 'none';
+  deposits?: unknown[];
+}
+
 const dashboard = (overrides: Record<string, unknown> = {}) => ({
   identity: { id: 'customer-1' },
   profile: null,
@@ -30,29 +38,115 @@ const dashboard = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const route = (options: { dashboard?: unknown; requests?: unknown; limits?: unknown }) =>
+const route = (options: Record<string, any>) =>
   (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
     if (url === '/customers/me/dashboard') return Promise.resolve(options.dashboard);
     if (url.startsWith('/customers/me/funding-requests')) {
       return Promise.resolve(options.requests ?? { items: [] });
     }
     if (url === '/customers/me/limits') return Promise.resolve(options.limits ?? { products: [] });
+    // ARENA 3D: the bank-transfer receiving account and its verified deposits.
+    if (url.startsWith('/customers/me/banking/virtual-account')) {
+      return options.account === 'none'
+        ? Promise.reject(new Error('banking unavailable'))
+        : Promise.resolve(options.account ?? { state: 'NOT_PROVISIONED', accountNumber: null });
+    }
+    if (url.startsWith('/customers/me/banking/deposits')) {
+      return Promise.resolve(options.deposits ?? []);
+    }
     return Promise.reject(new Error(`unexpected ${url}`));
   });
 
 describe('AddMoneyScreen — honest funding entry point', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  test('states that in-app funding does not exist rather than showing a fake deposit form', async () => {
+  test('offers a real bank-transfer account instead of a fabricated deposit form', async () => {
     route({ dashboard: dashboard() });
     const { getByText, queryByText } = render(<AddMoneyScreen />);
 
     await waitFor(() => expect(getByText('Fund your wallet')).toBeTruthy());
 
-    expect(getByText(/In-app funding is not available in this release/)).toBeTruthy();
+    // The old placeholder text is gone because the capability now exists.
+    expect(queryByText(/In-app funding is not available in this release/)).toBeNull();
+    expect(getByText('Transfer from your bank')).toBeTruthy();
+    // Still no client-side amount entry: a transfer is initiated at the customer's own bank.
     expect(queryByText(/Enter amount/i)).toBeNull();
-    // No client-side money movement is attempted from this screen.
     expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+
+  test('shows the real account number once the bank has issued one', async () => {
+    route({
+      dashboard: dashboard(),
+      account: {
+        state: 'PROVISIONED',
+        accountNumber: '9012345678',
+        bankName: 'Wema Bank',
+        accountName: 'MONIENAija / customer-1',
+      },
+    });
+    const { getAllByText, getByText } = render(<AddMoneyScreen />);
+    await waitFor(() => expect(getAllByText('9012345678').length).toBeGreaterThan(0));
+    expect(getByText(/Wema Bank/)).toBeTruthy();
+  });
+
+  test('never renders a NUBAN when the provider has not issued one', async () => {
+    route({ dashboard: dashboard() });
+    const { getByText, queryByText } = render(<AddMoneyScreen />);
+    await waitFor(() => expect(getByText('Fund your wallet')).toBeTruthy());
+
+    expect(getByText('Get my account number')).toBeTruthy();
+    // The only number on screen is the internal receiving number, which is not a bank account, and it
+    // is labelled as such.
+    expect(getByText('Receiving number')).toBeTruthy();
+  });
+
+  test('warns against retrying while a request is still unconfirmed', async () => {
+    route({
+      dashboard: dashboard(),
+      account: { state: 'UNKNOWN', accountNumber: null, unknownPending: true },
+    });
+    const { getByText, queryByText } = render(<AddMoneyScreen />);
+    await waitFor(() =>
+      expect(getByText(/A bank account request is still being confirmed/)).toBeTruthy(),
+    );
+    expect(getByText(/Do not request another account/)).toBeTruthy();
+    // No control that would resubmit an uncertain provision.
+    expect(queryByText('Get my account number')).toBeNull();
+  });
+
+  test('distinguishes a received-but-uncredited transfer from a credited one', async () => {
+    route({
+      dashboard: dashboard(),
+      account: {
+        state: 'PROVISIONED',
+        accountNumber: '9012345678',
+        bankName: 'Wema Bank',
+        accountName: 'MONIENAija',
+      },
+      deposits: [
+        {
+          id: 'd1',
+          reference: 'prov-1',
+          amountMinor: '50000',
+          currency: 'NGN',
+          receivedAt: new Date().toISOString(),
+          state: 'VERIFIED_AWAITING_FLOAT_CREDIT',
+        },
+      ],
+    });
+    const { getByText } = render(<AddMoneyScreen />);
+    // The words matter: a customer told 'credited' when only arrival was proven would think their
+    // balance is wrong.
+    await waitFor(() => expect(getByText('Received — credit pending')).toBeTruthy());
+  });
+
+  test('keeps the cash-agent channel usable when banking is unavailable', async () => {
+    route({ dashboard: dashboard(), account: 'none' });
+    const { getByText } = render(<AddMoneyScreen />);
+    await waitFor(() => expect(getByText('Fund your wallet')).toBeTruthy());
+    // One unavailable channel must not present as broken funding, and must not show an error banner.
+    expect(getByText('Cash through a MonieNaija agent')).toBeTruthy();
+    expect(getByText(/Bank transfer details are unavailable right now/)).toBeTruthy();
   });
 
   test('shows the real receiving number so an agent can credit the wallet', async () => {

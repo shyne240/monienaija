@@ -49,6 +49,14 @@ export type RootStackParamList = {
   KycStatus: undefined;
   /** ARENA 4: honest funding entry point (no in-app funding product exists yet). */
   AddMoney: undefined;
+  /**
+   * ARENA 3D: bank transfer status and recovery, backed by
+   * GET /customers/me/banking/transfers/:operationReference.
+   *
+   * Reachable by reference rather than by a transfer id because the reference is what a customer can
+   * read to support, and it is the identity the durable operation is keyed on.
+   */
+  TransferStatus: { operationReference: string };
   Profile: undefined;
   TransactionPin: undefined;
   Support: undefined;

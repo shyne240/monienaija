@@ -23,6 +23,7 @@ import {
   type CustomerLimits,
   type FundingRequestRow,
 } from '../../services/customer-account';
+import { BankingApi, type Deposit, type ReceivingAccount } from '../../services/banking';
 import {
   formatDateTime,
   formatMinor,
@@ -50,6 +51,10 @@ export const AddMoneyScreen: React.FC = () => {
   const [dashboard, setDashboard] = useState<CustomerDashboard | null>(null);
   const [requests, setRequests] = useState<FundingRequestRow[]>([]);
   const [limits, setLimits] = useState<CustomerLimits | null>(null);
+  const [account, setAccount] = useState<ReceivingAccount | null>(null);
+  const [deposits, setDeposits] = useState<Deposit[]>([]);
+  const [requesting, setRequesting] = useState(false);
+  const [accountNotice, setAccountNotice] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -80,9 +85,66 @@ export const AddMoneyScreen: React.FC = () => {
     }
   }, []);
 
+  const walletId = dashboard?.balance.primary?.id ?? null;
+
+  /**
+   * The bank-transfer receiving account.
+   *
+   * Loaded separately from the dashboard because the two can fail independently: a customer can have a
+   * perfectly good wallet and no issued account, and the screen must still be useful in that case.
+   */
+  const loadAccount = useCallback(async (targetWalletId: string) => {
+    try {
+      const [accountView, depositList] = await Promise.all([
+        BankingApi.receivingAccount(targetWalletId),
+        BankingApi.deposits(targetWalletId),
+      ]);
+      setAccount(accountView);
+      setDeposits(depositList);
+    } catch {
+      // Deliberately silent: the cash-agent channel above is still valid, and an error banner here
+      // would suggest funding is broken when only one channel is unavailable.
+      setAccount(null);
+      setDeposits([]);
+    }
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (walletId) void loadAccount(walletId);
+  }, [walletId, loadAccount]);
+
+  const requestAccount = useCallback(async () => {
+    if (!walletId) return;
+    setRequesting(true);
+    setAccountNotice('');
+    try {
+      const next = await BankingApi.requestReceivingAccount(walletId);
+      setAccount(next);
+      if (next.state === 'PROVISIONED' && next.accountNumber) {
+        setAccountNotice('Your account is ready. Transfers will appear below once confirmed.');
+      } else if (next.state === 'UNKNOWN') {
+        // The critical message: submitting again could open a second real account.
+        setAccountNotice(
+          'We are still confirming your account with the bank. Do not request another one — it may create a duplicate account.',
+        );
+      } else if (next.state === 'PENDING') {
+        setAccountNotice('The bank is still setting up your account. Check back shortly.');
+      } else {
+        setAccountNotice(
+          next.providerMessage ??
+            'An account could not be created right now. Nothing has changed on your account.',
+        );
+      }
+    } catch {
+      setAccountNotice('We could not request an account. Nothing has changed on your account.');
+    } finally {
+      setRequesting(false);
+    }
+  }, [walletId]);
 
   const onRefresh = useCallback(() => {
     setIsRefreshing(true);
@@ -181,15 +243,112 @@ export const AddMoneyScreen: React.FC = () => {
             </View>
 
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Card or bank transfer inside the app</Text>
-              <Text style={styles.cardBody}>
-                In-app funding is not available in this release. MonieNaija has no
-                customer-initiated funding product, so this screen will not take an amount or show a
-                payment form that cannot actually move money.
-              </Text>
+              <Text style={styles.cardTitle}>Transfer from your bank</Text>
+              {account?.state === 'PROVISIONED' && account.accountNumber ? (
+                <>
+                  <Text style={styles.cardBody}>
+                    Send a bank transfer to this account. It is yours alone and is tied to your
+                    MonieNaija wallet.
+                  </Text>
+                  <View style={styles.receivingRow}>
+                    <View style={styles.receivingCopy}>
+                      <Text style={styles.rowLabel}>
+                        {account.bankName ?? 'Bank'} · {account.accountName ?? ''}
+                      </Text>
+                      <Text style={styles.receivingValue} selectable>
+                        {account.accountNumber}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Copy account number"
+                      onPress={() => {
+                        void Clipboard.setStringAsync(account.accountNumber ?? '').then(
+                          () => {
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 2000);
+                          },
+                          () => setCopied(false),
+                        );
+                      }}
+                      style={styles.copyButton}
+                    >
+                      <Text style={styles.copyText}>{copied ? 'Copied' : 'Copy'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {deposits.length > 0 ? (
+                    <View style={styles.depositList}>
+                      {deposits.slice(0, 5).map((deposit) => (
+                        <View key={deposit.id} style={styles.depositRow}>
+                          <Text style={styles.depositAmount}>
+                            {formatMinor(deposit.amountMinor)}
+                          </Text>
+                          {/*
+                            'Verified' and 'credited' are deliberately different words: a transfer can
+                            be proven to have arrived before the float is posted to the wallet, and a
+                            customer told otherwise would think their balance was wrong.
+                          */}
+                          <Text style={styles.depositState}>
+                            {deposit.state === 'FLOAT_CREDITED'
+                              ? 'Credited'
+                              : deposit.state === 'VERIFIED_AWAITING_FLOAT_CREDIT'
+                                ? 'Received — credit pending'
+                                : deposit.state === 'CONFIRMING'
+                                  ? 'Confirming with bank'
+                                  : 'Rejected'}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </>
+              ) : account?.state === 'UNKNOWN' ? (
+                <>
+                  <Text style={styles.cardBody}>
+                    A bank account request is still being confirmed. We will show the account number
+                    here as soon as the bank confirms it.
+                  </Text>
+                  <Text style={styles.hint}>
+                    Do not request another account: a second request could open a duplicate real
+                    account that we cannot safely close.
+                  </Text>
+                </>
+              ) : account?.state === 'PENDING' ? (
+                <Text style={styles.cardBody}>
+                  The bank is still setting up your account. Check back shortly.
+                </Text>
+              ) : account?.state === 'NOT_PROVISIONED' ? (
+                <>
+                  <Text style={styles.cardBody}>
+                    You do not have a bank account for transfers yet. Requesting one is free and
+                    takes a moment.
+                  </Text>
+                  <Button
+                    label={requesting ? 'Requesting…' : 'Get my account number'}
+                    onPress={() => void requestAccount()}
+                    disabled={requesting}
+                  />
+                </>
+              ) : account?.state === 'PROVIDER_UNAVAILABLE' ||
+                account?.state === 'INSTITUTION_UNAVAILABLE' ? (
+                <Text style={styles.cardBody}>
+                  Bank transfers are unavailable right now. This is not something you need to fix —
+                  your wallet and existing funds are unaffected.
+                </Text>
+              ) : (
+                <Text style={styles.cardBody}>
+                  Bank transfer details are unavailable right now. Your wallet and existing funds
+                  are unaffected.
+                </Text>
+              )}
+              {!!accountNotice && (
+                <Text style={styles.hint} accessibilityLiveRegion="polite">
+                  {accountNotice}
+                </Text>
+              )}
               <Text style={styles.hint}>
-                Existing funding requests below are generated by MonieNaija channels and are visible
-                here for transparency. They are read-only.
+                MonieNaija cannot see your bank balance and will never ask you to send money to a
+                different account.
               </Text>
             </View>
           </>
@@ -275,6 +434,10 @@ export const AddMoneyScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  depositList: { marginTop: 12, gap: 8 },
+  depositRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  depositAmount: { fontSize: 15, fontWeight: '600', color: theme.colors.primary.dark },
+  depositState: { fontSize: 13, color: theme.colors.neutral.slate },
   container: { flex: 1, backgroundColor: theme.colors.surface.cream },
   content: { padding: theme.spacing.lg, paddingBottom: theme.spacing.huge },
   loading: {
