@@ -19,3 +19,8 @@
 - `1785753600401-CreateInstitutionalFinancialOwnership` (source pins `1cf6ac75b18a2af68dfbd33389d1f2e5fb7f32f2`, `684271e9d972edc629d629b73e66cd719d759117`) is integrated inside its published range. It is additive: institution ownership columns, enrolment/attribution tables and guards.
 - `1785753600502-ProtectedAuthorityInstitutionalOwnership` extends the 0501 boundary to the two Phase 2 governed actions. It is a corrective migration under the same user-authorized `0500`–`0599` exception and does not renumber anything.
 - Migration `1785753600117` remains intentionally absent. The Phase 2 source branch's allow-lists referenced it; this branch excludes it (and its 0120–0132 siblings) because they belong to unfinished Arena 1 work.
+
+## Arena 2 customer/agent wallet-transfer parity
+
+- Reserve the user-proposed `1785753600800`–`1785753600899` range for this branch's P2P parity changes. On 2026-11-17, the current checkout had no migration in that range and the recursive trees of all 39 distinct published branch-head commits (41 branch names) had no matching migration path; the set of branch heads was unchanged on immediate recheck. Active unpublished work is not observable, so coordinate with other active owners and recheck both this register and live published trees immediately before introducing a migration or integrating branches.
+- Arena 3D's `1785753600600`–`1785753600699` range and its published `0605` head are untouched. A later 0800-series migration would become the overall readiness head; reconcile the head with concurrent Arena 3D changes rather than overwriting its migrations or ignoring its updated inventory.
