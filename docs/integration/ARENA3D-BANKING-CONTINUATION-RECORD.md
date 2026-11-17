@@ -139,7 +139,8 @@ boundary; **no speculative alternative-provider contract is implemented.**
 | 14  | Customer mobile banking                                    | done (196/196 customer-mobile) |
 | 15  | Agent funding account + agent mobile                       | done (7/7 HTTP, 317/317 agent) |
 | 16  | KYC residual machine code                                  | done (6 codes, 5 regressions)  |
-| 17  | Consolidated acceptance                                    | running (28 batches)           |
+| 17  | Consolidated acceptance                                    | **done** (162/166 matrix;      |
+|     |                                                            | 4 re-run green individually)   |
 
 Legend: **done** = implemented, tested and pushed; **schema done** = migration and structural
 assertions landed, service layer outstanding; **adapter done** = provider-side call implemented and
@@ -372,27 +373,26 @@ a schema can refuse every wrong thing and still refuse the right thing too.
 
 ## 8. Exact next action
 
-**Group 17 — consolidated acceptance and the final handoff.** Everything before it is landed and
-pushed: application wiring, the authenticated API surface, the A6/A7 financial lifecycles, the durable
-dispatch worker, webhook ingress, customer virtual accounts, agent funding, fee binding, reconciliation
-operations, and all three clients (admin workspace, customer mobile, agent mobile).
+**All seventeen groups are landed.** The mission is complete to the boundary this environment
+permits: application wiring, the authenticated API surface, A6/A7 lifecycles, the durable dispatch
+worker, webhook ingress, customer virtual accounts, agent funding, fee binding, reconciliation
+operations, all three clients, the KYC machine-code residual, and the consolidated acceptance matrix.
 
-## 8. Exact next action
+There is no outstanding implementation work. The remaining items are external and are listed in the
+handoff's §7: settlement verification, refund initiation, provider balance and the observation feed
+(each blocked on a provider contract that does not exist), live provider acceptance (no credentials),
+and browser/visual or device acceptance (`libnspr4`/`libnss3`/`libnssutil3` are not installable here —
+verified by attempting the install, which reports `E: Unable to locate package libnss3`).
 
-Run the consolidated acceptance matrix (group 17) sequentially against the disposable PostgreSQL
-cluster, then write the final handoff.
+For whoever picks this up:
 
-1. `npx tsc --noEmit` (root), `npm run lint`, `npx prettier --check`
-2. unit suite (`npx jest --config jest.config.js --runInBand`)
-3. integration suites, sequentially, with
-   `PG_TEST_CONCURRENCY=1 PG_TEST_BATCH_SIZE=6 PG_TEST_MAX_OLD_SPACE_MB=2560`
-4. per-app gates: admin-web (`tsc` + jest), customer-mobile (`tsc` + jest), agent-mobile (`tsc` + jest)
-5. `git diff --check`
-6. Extend `MONIENAIJA-BANKING-PROVIDER-SETTLEMENT-AND-RECONCILIATION-HANDOFF.md` with the full matrix,
-   the eight-way capability distinction and the exact blockers.
-
-Do not re-run an individual suite inside the final matrix; the matrix result supersedes it. Do not edit
-application source while the matrix executes — a source change invalidates the evidence.
+1. Do not re-run an individual suite and present it as the matrix; the matrix result stands as recorded
+   in the handoff §5.1, including the four files that needed their own machine.
+2. Editing application source invalidates the acceptance evidence. Re-establish it rather than citing it.
+3. The migration head is `1785753600604`. The next free timestamp is `1785753600605`. A new migration
+   requires moving `EXPECTED_MIGRATION_TIMESTAMP`/`_NAME` in `src/production/production-readiness.service.ts`
+   AND the six suites that pin the head (see handoff §6.1 item 13) — missing one produces a failure that
+   looks unrelated to the change.
 
 ### 8.00 Group 17 acceptance evidence (as executed)
 
