@@ -47,14 +47,11 @@ import { AuthorizationModule } from '../authorization/authorization.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { PaymentModule } from '../payment/payment.module';
 import { InboundFundingService } from '../virtual-account/inbound-funding.service';
-import {
-  INBOUND_FUNDING_VERIFIER,
-  UnavailableInboundFundingVerifier,
-} from '../virtual-account/inbound-funding-verifier';
-import {
-  INBOUND_INSTITUTION_AUTHORITY,
-  UnavailableInboundInstitutionAuthority,
-} from '../virtual-account/inbound-institution-authority';
+import { INBOUND_FUNDING_VERIFIER } from '../virtual-account/inbound-funding-verifier';
+import { INBOUND_INSTITUTION_AUTHORITY } from '../virtual-account/inbound-institution-authority';
+import { BankingModule } from '../banking/banking.module';
+import { BankingInboundFundingVerifier } from '../banking/banking-inbound-funding-verifier';
+import { BankingInboundInstitutionAuthority } from '../banking/banking-inbound-institution-authority';
 import {
   INBOUND_SUSPENSE_POLICY,
   UnavailableInboundSuspensePolicy,
@@ -95,8 +92,16 @@ export const A7_PRODUCT_COMMAND_PROVIDERS: readonly Provider[] = Object.freeze([
   A7ProductCommandService,
   A7ProductPersistenceService,
   InboundFundingService,
-  { provide: INBOUND_FUNDING_VERIFIER, useClass: UnavailableInboundFundingVerifier },
-  { provide: INBOUND_INSTITUTION_AUTHORITY, useClass: UnavailableInboundInstitutionAuthority },
+  // ARENA 3D — inbound verification and institution resolution are now answered by governed banking.
+  // Both are strictly refusals unless a provider is registered, credentialed, approved and
+  // operationally ready, and unless the receiving account resolves to exactly one active,
+  // institution-attributed customer wallet. With banking disabled (the default) every inbound payment
+  // is refused exactly as before.
+  { provide: INBOUND_FUNDING_VERIFIER, useExisting: BankingInboundFundingVerifier },
+  { provide: INBOUND_INSTITUTION_AUTHORITY, useExisting: BankingInboundInstitutionAuthority },
+  // The suspense policy stays deliberately unavailable: there is no approved policy authorizing the
+  // accounting of uncreditable received funds, and inventing one would fabricate accounting treatment.
+  // Verified obligations are preserved without being credited (see the handoff).
   { provide: INBOUND_SUSPENSE_POLICY, useClass: UnavailableInboundSuspensePolicy },
   { provide: A7_INBOUND_EXECUTION_AUTHORITY, useClass: UnavailableA7InboundExecutionAuthority },
   { provide: A7_INBOUND_ADMISSION_AUTHORITY, useClass: UnavailableA7InboundAdmissionAuthority },
@@ -112,6 +117,7 @@ export const A7_PRODUCT_COMMAND_PROVIDERS: readonly Provider[] = Object.freeze([
 @Module({
   imports: [
     AuthorizationModule,
+    BankingModule,
     CustomerAuthenticationModule,
     KycTierModule,
     LedgerModule,

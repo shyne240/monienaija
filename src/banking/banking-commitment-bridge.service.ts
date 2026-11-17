@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 
+import { BankingProviderRegistry } from './banking-provider.registry';
+
 /**
  * The seam between an authorized A6 commitment and a provider dispatch.
  *
@@ -23,6 +25,8 @@ import type { EntityManager } from 'typeorm';
 export class BankingCommitmentBridgeService {
   private readonly logger = new Logger(BankingCommitmentBridgeService.name);
 
+  constructor(private readonly registry: BankingProviderRegistry) {}
+
   /**
    * Creates the durable dispatch intent. Idempotent by construction: the derived reference plus the
    * unique constraint mean calling it twice is a no-op, and the second call returns the existing row.
@@ -30,7 +34,7 @@ export class BankingCommitmentBridgeService {
   async createDispatchIntentInTransaction(
     manager: EntityManager,
     input: {
-      institutionId: string;
+      institutionId: string | null;
       providerKey: string;
       environment: 'sandbox' | 'production';
       externalOperationId: string;
@@ -42,7 +46,21 @@ export class BankingCommitmentBridgeService {
       destinationAccountNumber: string;
       destinationAccountName: string | null;
     },
-  ): Promise<{ id: string; operationReference: string; created: boolean }> {
+  ): Promise<{ id: string; operationReference: string; created: boolean } | null> {
+    // A6 is a general financial-commitment engine and is not only used for bank settlement. If the
+    // authorized provider is not a registered banking provider, this commitment is not a banking
+    // dispatch and must not get a banking record: creating one would put a row in the dispatch
+    // worklist for an operation no banking worker can submit.
+    if (!this.registry.find(input.providerKey)) {
+      this.logger.debug(`No banking dispatch record for non-banking provider ${input.providerKey}`);
+      return null;
+    }
+    if (!input.institutionId) {
+      // A banking provider was authorized for a wallet with no institution. The execution authority
+      // refuses that combination, so reaching here means the two disagree — fail loudly rather than
+      // write a record that could never be dispatched or attributed.
+      throw new Error('Banking dispatch intent requires an institution-attributed wallet');
+    }
     const operationReference = this.deriveReference(input.externalOperationId);
     const inserted = await manager.query<Array<{ id: string }>>(
       `INSERT INTO banking_outbound_operations

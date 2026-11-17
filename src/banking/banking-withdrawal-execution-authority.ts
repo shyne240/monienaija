@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 
-import type { WithdrawalExecutionAuthority } from '../financial-commitment/withdrawal-execution-authority';
+import type {
+  WithdrawalExecutionAuthority,
+  WithdrawalExecutionAuthorization,
+} from '../financial-commitment/withdrawal-execution-authority';
 import type { BankingReadinessService } from './banking-readiness.service';
 
 /**
@@ -48,11 +51,16 @@ export class BankingWithdrawalExecutionAuthority implements WithdrawalExecutionA
       amountMinor: string;
       currency: string;
     },
-  ): Promise<'AUTHORIZED' | 'DENIED' | 'UNAVAILABLE'> {
+  ): Promise<WithdrawalExecutionAuthorization> {
+    const refused = (outcome: 'DENIED' | 'UNAVAILABLE'): WithdrawalExecutionAuthorization => ({
+      outcome,
+      providerKey: null,
+      environment: null,
+    });
     if (this.providers.length === 0) {
       // No banking provider configured at all. This is the pre-existing behaviour and must stay
       // a refusal, never an implicit authorization.
-      return 'UNAVAILABLE';
+      return refused('UNAVAILABLE');
     }
 
     // The institution comes from the wallet as locked by the caller's own transaction, so a caller
@@ -66,10 +74,10 @@ export class BankingWithdrawalExecutionAuthority implements WithdrawalExecutionA
       [input.walletAccountId, input.customerId],
     );
     const wallet = wallets[0];
-    if (!wallet || wallet.status !== 'ACTIVE') return 'DENIED';
+    if (!wallet || wallet.status !== 'ACTIVE') return refused('DENIED');
     if (!wallet.institution_id) {
       // A wallet with no institution cannot be tied to an approved provider configuration.
-      return 'DENIED';
+      return refused('DENIED');
     }
 
     let unusable = 0;
@@ -84,7 +92,9 @@ export class BankingWithdrawalExecutionAuthority implements WithdrawalExecutionA
         this.logger.log(
           `Outbound execution authorized via ${providerKey} for institution ${wallet.institution_id}`,
         );
-        return 'AUTHORIZED';
+        // The provider is reported back so the dispatch record is bound to the exact provider and
+        // environment that were authorized here. Dispatch must never re-resolve this.
+        return { outcome: 'AUTHORIZED', providerKey, environment: this.environment };
       }
       unusable += 1;
     }
@@ -94,6 +104,6 @@ export class BankingWithdrawalExecutionAuthority implements WithdrawalExecutionA
     this.logger.warn(
       `Outbound execution unavailable: ${unusable} provider(s) not usable for institution ${wallet.institution_id}`,
     );
-    return 'UNAVAILABLE';
+    return refused('UNAVAILABLE');
   }
 }

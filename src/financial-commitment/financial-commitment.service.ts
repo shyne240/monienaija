@@ -23,6 +23,7 @@ import { ExternalOperationResourceType } from '../partner/external-operation.enu
 import { ExternalOperationService } from '../partner/external-operation.service';
 import { WithdrawalService } from '../withdrawal/withdrawal.service';
 import { WalletFinancialBoundaryService } from '../wallet/wallet-financial-boundary.service';
+import { BankingCommitmentBridgeService } from '../banking/banking-commitment-bridge.service';
 import {
   WITHDRAWAL_EXECUTION_AUTHORITY,
   type WithdrawalExecutionAuthority,
@@ -61,6 +62,7 @@ export class FinancialCommitmentService {
     private readonly commitments: FinancialCommitmentRepository,
     @Inject(WITHDRAWAL_EXECUTION_AUTHORITY)
     private readonly authority: WithdrawalExecutionAuthority,
+    private readonly bankingBridge: BankingCommitmentBridgeService,
   ) {}
 
   async initiate(
@@ -167,10 +169,15 @@ export class FinancialCommitmentService {
     } catch {
       throw new ServiceUnavailableException('Withdrawal execution authority is unavailable');
     }
-    if (authorized === 'UNAVAILABLE')
+    if (authorized.outcome === 'UNAVAILABLE')
       throw new ServiceUnavailableException('Withdrawal execution authority is unavailable');
-    if (authorized !== 'AUTHORIZED')
+    if (authorized.outcome !== 'AUTHORIZED')
       throw new ConflictException('Withdrawal execution is not authorized');
+    if (!authorized.providerKey || !authorized.environment) {
+      // An authority that claims AUTHORIZED without naming the provider it authorized cannot be
+      // trusted to bind dispatch: the operation would be unresolvable at submission time.
+      throw new ServiceUnavailableException('Withdrawal execution authority is unavailable');
+    }
     await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [input.scopedKey]);
     const existing = await manager.query<FinancialCommitmentRecord[]>(
       'SELECT * FROM financial_commitments WHERE idempotency_key=$1 FOR UPDATE',
@@ -210,7 +217,9 @@ export class FinancialCommitmentService {
     );
     if (pin.length !== 1)
       throw new UnauthorizedException('Customer PIN authorization is no longer active');
-    const wallets = await manager.query<Array<{ ledger_account_id: string; institution_id: string | null }>>(
+    const wallets = await manager.query<
+      Array<{ ledger_account_id: string; institution_id: string | null }>
+    >(
       `SELECT ledger_account_id,institution_id FROM wallet_accounts WHERE id=$1 AND customer_id=$2
        AND status='ACTIVE' AND currency=$3 FOR UPDATE`,
       [input.walletId, input.customerId, input.currency],
@@ -338,6 +347,29 @@ export class FinancialCommitmentService {
         input.target,
       ],
     );
+    // The durable dispatch intent is created HERE, inside the authorization transaction, so there is
+    // no interval in which a commitment is authorized but has no dispatch record, and none in which a
+    // dispatch record exists for a commitment that rolled back. An event-based bridge would open
+    // exactly that window, which is where duplicate submission comes from.
+    await this.bankingBridge.createDispatchIntentInTransaction(manager, {
+      // Nullable by design: A6 also serves commitments whose provider is not a bank. The bridge
+      // refuses to create a banking record without an institution, so a null here can only reach a
+      // non-banking provider, which the bridge declines.
+      institutionId: wallet.institution_id,
+      providerKey: authorized.providerKey,
+      environment: authorized.environment,
+      externalOperationId: operation.externalOperationId,
+      externalOperationReference: operation.externalOperationReference,
+      walletId: input.walletId,
+      currency: input.currency,
+      amountMinor: input.amountMinor,
+      destinationBankCode: destination.bankCode,
+      destinationAccountNumber: destination.accountNumber,
+      // The commitment binds the destination by reference, not by a stored display name. Passing null
+      // is honest; copying a name from anywhere else would create a second source of truth for a
+      // destination the customer already authorized.
+      destinationAccountName: null,
+    });
     const commitment = await this.commitments.lockByOperation(
       manager,
       operation.externalOperationId,

@@ -14,6 +14,7 @@ import {
   CustomerBeneficiaryType,
 } from '../src/customer-beneficiary/customer-beneficiary.enums';
 import { FinancialCommitmentService } from '../src/financial-commitment/financial-commitment.service';
+import { BankingCommitmentBridgeService } from '../src/banking/banking-commitment-bridge.service';
 import { FinancialCommitmentRepository } from '../src/financial-commitment/financial-commitment.repository';
 import {
   KycTierEvidenceReader,
@@ -164,7 +165,19 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
       operations,
       ledger,
       new FinancialCommitmentRepository(),
-      { authorize: () => Promise.resolve('AUTHORIZED') },
+      // This suite is about the A6 settlement lifecycle, not about provider entitlement. The fixture
+      // authorizes and names a provider that is deliberately NOT a registered banking provider, so
+      // the commitment is a general A6 settlement and no banking dispatch record is created for it.
+      // Banking dispatch has its own suites.
+      {
+        authorize: () =>
+          Promise.resolve({
+            outcome: 'AUTHORIZED' as const,
+            providerKey: 'NIBSS_NIP',
+            environment: 'sandbox' as const,
+          }),
+      },
+      app.get(BankingCommitmentBridgeService),
     );
     const connection = new PartnerConnectionService(
       configService,

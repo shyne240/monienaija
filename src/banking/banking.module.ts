@@ -22,6 +22,7 @@ import { BankingCommitmentBridgeService } from './banking-commitment-bridge.serv
 import { BankingWithdrawalExecutionAuthority } from './banking-withdrawal-execution-authority';
 import { BankingExternalOperationStatusVerifier } from './banking-external-operation-status-verifier';
 import { BankingInboundFundingVerifier } from './banking-inbound-funding-verifier';
+import { BankingInboundInstitutionAuthority } from './banking-inbound-institution-authority';
 import { BankingAdminController } from './banking-admin.controller';
 import { BankingCustomerController } from './banking-customer.controller';
 import { BankingWebhookController } from './banking-webhook.controller';
@@ -115,6 +116,7 @@ export interface BankingRuntime {
     BankingVirtualAccountService,
     BankingReconciliationService,
     BankingCommitmentBridgeService,
+    BankingInboundInstitutionAuthority,
     PostgresWebhookAttribution,
     {
       provide: BankingWebhookService,
@@ -198,6 +200,7 @@ export interface BankingRuntime {
     BankingWithdrawalExecutionAuthority,
     BankingExternalOperationStatusVerifier,
     BankingInboundFundingVerifier,
+    BankingInboundInstitutionAuthority,
     BankingDispatchWorker,
   ],
 })

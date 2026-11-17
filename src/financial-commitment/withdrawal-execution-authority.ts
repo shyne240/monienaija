@@ -1,6 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 
+/**
+ * The executed provider binding, reported by the authority that authorized it.
+ *
+ * `providerKey` and `environment` are recorded because dispatch must submit to the provider the
+ * commitment was authorized under — not to whichever provider is configured at dispatch time. Those
+ * can differ: an approval can be withdrawn, or a new provider engaged, between authorization and
+ * dispatch. Dispatching under a different provider would send the money somewhere the customer never
+ * authorized.
+ */
+export interface WithdrawalExecutionAuthorization {
+  readonly outcome: 'AUTHORIZED' | 'DENIED' | 'UNAVAILABLE';
+  readonly providerKey: string | null;
+  readonly environment: 'sandbox' | 'production' | null;
+}
+
 /** Integration point for authoritative institutional entitlement and independent destination
  * ownership evidence. The implementation must bind the exact customer, wallet, destination,
  * amount and currency under the caller's transaction; a beneficiary flag or provider identity
@@ -20,13 +35,17 @@ export interface WithdrawalExecutionAuthority {
       amountMinor: string;
       currency: string;
     },
-  ): Promise<'AUTHORIZED' | 'DENIED' | 'UNAVAILABLE'>;
+  ): Promise<WithdrawalExecutionAuthorization>;
 }
 export const WITHDRAWAL_EXECUTION_AUTHORITY = Symbol('WITHDRAWAL_EXECUTION_AUTHORITY');
 
 @Injectable()
 export class UnavailableWithdrawalExecutionAuthority implements WithdrawalExecutionAuthority {
-  authorize(): Promise<'UNAVAILABLE'> {
-    return Promise.resolve('UNAVAILABLE');
+  authorize(): Promise<WithdrawalExecutionAuthorization> {
+    return Promise.resolve({
+      outcome: 'UNAVAILABLE',
+      providerKey: null,
+      environment: null,
+    });
   }
 }
