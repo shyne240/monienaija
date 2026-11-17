@@ -17,6 +17,11 @@ export type RootStackParamList = {
   // Authenticated screens (foundation placeholders per spec §8)
   Home: undefined;
   Account: undefined;
+  /**
+   * ARENA 3D: the bank account an agent's float arrives in, backed by
+   * GET/POST /agents/me/banking/funding-account.
+   */
+  FundingAccount: undefined;
   Transactions: undefined;
   History: undefined;
 
