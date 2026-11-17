@@ -377,6 +377,13 @@ describe('institution 0400 historical upgrade (real PostgreSQL)', () => {
         'CashOutInstitutionalScope1785753600503',
         'InstitutionKycTierLimitGovernance1785753600504',
         'KycIdentityRevisionAndEvidenceRead1785753600505',
+        // ARENA 3D banking chain. Contiguous and inside the reserved 0600-0699 range; the historical
+        // upgrade must apply them after the KYC governance chain, which is what timestamp order does.
+        'BankingProviderGovernance1785753600600',
+        'BankingOperationRecords1785753600601',
+        'BankingReconciliation1785753600602',
+        'BankingDispatchLeases1785753600603',
+        'BankingFeeBinding1785753600604',
       ]);
       const boundary = await db.query<
         Array<{ decisions: string | null; consumptions: string | null; guarded: boolean }>
