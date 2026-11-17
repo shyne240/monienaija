@@ -11,6 +11,7 @@ export type AdminView =
   | 'cashToCashOps'
   | 'ledgerExplorer'
   | 'reconciliation'
+  | 'bankingOperations'
   | 'feeRules'
   | 'commissionRules'
   | 'rewardRules'
@@ -112,6 +113,10 @@ export function canAccessAdminView(
     case 'ledgerExplorer':
       return has('ledger.view');
     case 'reconciliation':
+      return has('reconciliation.view');
+    case 'bankingOperations':
+      // Banking governance and reconciliation triage reuse the reconciliation capability: the
+      // banking workspace cannot move money, so it must not demand a money-moving function.
       return has('reconciliation.view');
     case 'feeRules':
       return has('fee_rule.view');

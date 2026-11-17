@@ -12,6 +12,7 @@ import { CustomerDirectoryScreen } from './CustomerDirectoryScreen';
 import { LedgerOperationsScreen } from './LedgerOperationsScreen';
 import { TransactionObservabilityScreen } from './TransactionObservabilityScreen';
 import { ReconciliationObservabilityScreen } from './ReconciliationObservabilityScreen';
+import { BankingOperationsScreen } from './BankingOperationsScreen';
 import { AgentNetworkScreen } from './AgentNetworkScreen';
 import { AgentClassesScreen } from './AgentClassesScreen';
 import { CashToCashOperationsScreen } from './CashToCashOperationsScreen';
@@ -371,6 +372,11 @@ export const Layout: React.FC = () => {
           label: 'Reconciliation',
           visible: isVisible('reconciliation'),
         },
+        {
+          key: 'bankingOperations' as View,
+          label: 'Banking operations',
+          visible: isVisible('bankingOperations'),
+        },
       ],
     },
     {
@@ -660,6 +666,8 @@ export const Layout: React.FC = () => {
         return <LedgerOperationsScreen onLedgerGuardChange={reportLedgerGuard} />;
       case 'reconciliation':
         return <ReconciliationObservabilityScreen />;
+      case 'bankingOperations':
+        return <BankingOperationsScreen />;
       case 'feeRules':
         return <CommercialRulesScreen initialTab="fees" />;
       case 'commissionRules':
