@@ -531,7 +531,17 @@ export class TransferService {
       amountMinor: command.amountMinor.toString(),
       currency: command.currency,
       ...(confirmedPricing
-        ? { feeMinor: confirmedPricing.feeMinor, vatMinor: confirmedPricing.vatMinor }
+        ? {
+            feeMinor: confirmedPricing.feeMinor,
+            vatMinor: confirmedPricing.vatMinor,
+            sourceLedgerAccountId: sourceWallet.ledgerAccountId,
+            destinationLedgerAccountId: destinationWallet.ledgerAccountId,
+            sourceCustomerId: participants?.[0].type === 'CUSTOMER' ? participants[0].id : null,
+            destinationCustomerId:
+              participants?.[1].type === 'CUSTOMER' ? participants[1].id : null,
+            accountingUnit: 'CUSTOMER_FUNDS',
+            correlationId: `transfer:${transferId}`,
+          }
         : {}),
       status: TransferStatus.FAILED,
       idempotencyKey: command.idempotencyKey,
@@ -818,6 +828,16 @@ export class TransferService {
       payerLedgerAccountId: sourceWallet.ledgerAccountId,
     });
 
+    if (confirmedQuote) {
+      await this.auditService?.record(manager, {
+        entityType: 'TRANSFER',
+        entityId: transfer.id,
+        action: 'LEDGER_POSTED',
+        actor: 'internal',
+        correlationId: `transfer:${transfer.id}`,
+        newValues: { journalId, requestHash: transfer.requestHash },
+      });
+    }
     transfer.status = TransferStatus.COMPLETED;
     transfer.journalId = journalId;
     transfer.completedAt = new Date();

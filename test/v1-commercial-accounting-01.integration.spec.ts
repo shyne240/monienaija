@@ -1028,12 +1028,18 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
         idempotencyKey: `fee-quote-${randomUUID()}`,
       });
       expect(quote).toMatchObject({ feeMinor: fee, vatMinor: vat, totalDebitMinor: total });
+      const { OutboxEvent } = await import('../src/operations/outbox-event.entity');
+      const realOutbox = new OutboxService(dataSource.getRepository(OutboxEvent));
+      const outboxSpy = jest
+        .spyOn(throwingOutbox, 'enqueueOnce')
+        .mockImplementation((manager, event) => realOutbox.enqueueOnce(manager, event));
       const keys = [`fee-confirm-${randomUUID()}`, `fee-confirm-${randomUUID()}`];
       const attempts = await Promise.allSettled(
         keys.map((key) =>
           transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234'),
         ),
       );
+      outboxSpy.mockRestore();
       const winners = attempts
         .map((result, index) => ({ result, key: keys[index] }))
         .filter((item) => item.result.status === 'fulfilled');
@@ -1061,6 +1067,12 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
         (await transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234')).id,
       ).toBe(transfer.id);
       expect(await accountingJournals()).toHaveLength(1);
+      const { TransferReconciliationService } = await import(
+        '../src/reconciliation/transfer-reconciliation.service'
+      );
+      expect(
+        await app.get(TransferReconciliationService).reconcileTransfer(transfer.id),
+      ).toMatchObject({ status: 'PASS', discrepancies: [] });
     },
   );
 

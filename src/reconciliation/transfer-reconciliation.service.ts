@@ -43,8 +43,8 @@ export class TransferReconciliationService {
         manager,
         `
           SELECT id::text AS transfer_id
-            FROM transfers
-           WHERE command_id IS NOT NULL
+            FROM transfers t
+           WHERE t.command_id IS NOT NULL OR EXISTS (SELECT 1 FROM wallet_transfer_quote_bindings b WHERE b.transfer_id=t.id)
            ORDER BY id
         `,
       );
@@ -72,24 +72,16 @@ export class TransferReconciliationService {
     const transferRows = await this.queryRows<SqlRow>(
       manager,
       `
-        SELECT id::text AS id,
-               command_id::text AS command_id,
-               status,
-               source_customer_id::text AS source_customer_id,
-               destination_customer_id::text AS destination_customer_id,
-               source_wallet_id::text AS source_wallet_account_id,
-               destination_wallet_id::text AS destination_wallet_account_id,
-               source_ledger_account_id::text AS source_ledger_account_id,
-               destination_ledger_account_id::text AS destination_ledger_account_id,
-               amount_minor::text AS amount_minor,
-               currency,
-               accounting_unit,
-               journal_id::text AS journal_id,
-               request_hash,
-               correlation_id,
-               causation_id
-          FROM transfers
-         WHERE id = $1::uuid
+        SELECT t.id::text AS id, t.command_id::text AS command_id, t.status,
+               t.source_customer_id::text AS source_customer_id, t.destination_customer_id::text AS destination_customer_id,
+               t.source_wallet_id::text AS source_wallet_account_id, t.destination_wallet_id::text AS destination_wallet_account_id,
+               t.source_ledger_account_id::text AS source_ledger_account_id, t.destination_ledger_account_id::text AS destination_ledger_account_id,
+               t.amount_minor::text AS amount_minor, t.currency, t.accounting_unit, t.journal_id::text AS journal_id,
+               t.request_hash, t.correlation_id, t.causation_id,
+               b.principal_type AS quote_source_type, b.principal_id::text AS quote_source_id,
+               b.recipient_type AS quote_destination_type, b.recipient_id::text AS quote_destination_id
+          FROM transfers t LEFT JOIN wallet_transfer_quote_bindings b ON b.transfer_id=t.id
+         WHERE t.id = $1::uuid
       `,
       [transferId],
     );
@@ -106,9 +98,8 @@ export class TransferReconciliationService {
                j.correlation_id,
                j.metadata->>'transferId' AS transfer_id
           FROM ledger_journals j
-         WHERE j.id = $3::uuid
-            OR j.metadata->>'transferId' = $1
-            OR j.correlation_id = $2
+         WHERE (j.id = $3::uuid OR j.metadata->>'transferId' = $1 OR j.correlation_id = $2)
+           AND (j.id = $3::uuid OR COALESCE(j.metadata->>'accountingPurpose', '') <> 'FEE_REVENUE_AND_COMMISSION')
          ORDER BY j.id
       `,
       [transferId, expectedCorrelation, transfer?.journalId ?? transferId],
@@ -198,6 +189,10 @@ export class TransferReconciliationService {
       requestHash: this.textValue(row.request_hash),
       correlationId: this.nullableText(row.correlation_id),
       causationId: this.nullableText(row.causation_id),
+      quoteSourceType: this.nullableText(row.quote_source_type),
+      quoteSourceId: this.nullableText(row.quote_source_id),
+      quoteDestinationType: this.nullableText(row.quote_destination_type),
+      quoteDestinationId: this.nullableText(row.quote_destination_id),
     };
   }
 
@@ -475,9 +470,12 @@ export function evaluateTransferReconciliation(
     }
   }
 
-  const expectedEventKey = `transfer.completed:${transfer.id}:v1`;
+  const typed = transfer.quoteSourceType === 'AGENT' || transfer.quoteDestinationType === 'AGENT';
+  const expectedEventType = typed ? 'wallet_transfer.completed' : 'transfer.completed';
+  const expectedEventKey = `${expectedEventType}:${transfer.id}:v1`;
   const completedEvents = facts.outboxEvents.filter(
-    (event) => event.eventType === 'transfer.completed',
+    (event) =>
+      event.eventType === 'transfer.completed' || event.eventType === 'wallet_transfer.completed',
   );
   if (completedEvents.length === 0) {
     addDiscrepancy(
@@ -505,7 +503,8 @@ export function evaluateTransferReconciliation(
       event.aggregateType === 'TRANSFER' &&
       event.aggregateId === transfer.id &&
       payload.eventKey === expectedEventKey &&
-      payload.eventType === 'transfer.completed' &&
+      event.eventType === expectedEventType &&
+      payload.eventType === expectedEventType &&
       payload.schemaVersion === 1 &&
       payload.transferId === transfer.id &&
       payload.commandId === transfer.commandId &&
@@ -513,7 +512,22 @@ export function evaluateTransferReconciliation(
       payload.amountMinor === transfer.amountMinor &&
       payload.currency === transfer.currency &&
       payload.accountingUnit === transfer.accountingUnit &&
-      payload.requestHash === transfer.requestHash;
+      payload.requestHash === transfer.requestHash &&
+      (!typed ||
+        (matchesParticipant(
+          payload.sourceParticipant,
+          transfer.quoteSourceType,
+          transfer.quoteSourceId,
+        ) &&
+          matchesParticipant(
+            payload.destinationParticipant,
+            transfer.quoteDestinationType,
+            transfer.quoteDestinationId,
+          ) &&
+          payload.sourceWalletAccountId === transfer.sourceWalletAccountId &&
+          payload.destinationWalletAccountId === transfer.destinationWalletAccountId &&
+          payload.sourceLedgerAccountId === transfer.sourceLedgerAccountId &&
+          payload.destinationLedgerAccountId === transfer.destinationLedgerAccountId));
     if (!payloadMatches)
       addDiscrepancy(
         discrepancies,
@@ -548,6 +562,21 @@ export function evaluateTransferReconciliation(
     );
   }
   return makeReport(facts, generatedAt, discrepancies);
+}
+
+function matchesParticipant(
+  value: unknown,
+  type: string | null | undefined,
+  id: string | null | undefined,
+): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const participant = value as Record<string, unknown>;
+  return (
+    (type === 'CUSTOMER' || type === 'AGENT') &&
+    !!id &&
+    participant.type === type &&
+    participant.id === id
+  );
 }
 
 function makeReport(

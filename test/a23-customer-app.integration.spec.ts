@@ -918,6 +918,17 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('3800');
     expect((await wallets.getWalletBalance(destination.id)).balanceMinor).toBe('1200');
     expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(1);
+    const { TransferReconciliationService } = await import(
+      '../src/reconciliation/transfer-reconciliation.service'
+    );
+    const reconciliation = app.get(TransferReconciliationService);
+    expect(await reconciliation.reconcileTransfer(completed.id)).toMatchObject({
+      status: 'PASS',
+      discrepancies: [],
+    });
+    expect(
+      (await reconciliation.reconcileAll()).reports.map((report) => report.transfer?.id),
+    ).toContain(completed.id);
     const anotherQuote = await quoteService.create(principal, {
       sourceWalletId: source.id,
       destinationWalletId: destination.id,

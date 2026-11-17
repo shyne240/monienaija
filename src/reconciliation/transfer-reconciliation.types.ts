@@ -52,6 +52,11 @@ export interface TransferReconciliationTransferFact {
   requestHash: string;
   correlationId: string | null;
   causationId: string | null;
+  /** Immutable quote binding, when this was a confirmed self transfer. */
+  quoteSourceType?: string | null;
+  quoteSourceId?: string | null;
+  quoteDestinationType?: string | null;
+  quoteDestinationId?: string | null;
 }
 
 export interface TransferReconciliationJournalFact {

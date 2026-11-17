@@ -174,6 +174,50 @@ describe('internal transfer reconciliation evaluation', () => {
     });
   });
 
+  it('checks typed outbox identities against immutable quote participants', () => {
+    const eventKey = `wallet_transfer.completed:${TRANSFER_ID}:v1`;
+    const transfer = makeTransfer({
+      quoteSourceType: 'AGENT',
+      quoteSourceId: SOURCE_CUSTOMER_ID,
+      quoteDestinationType: 'CUSTOMER',
+      quoteDestinationId: DESTINATION_CUSTOMER_ID,
+    });
+    const base = makeOutbox();
+    const event = makeOutbox({
+      eventKey,
+      eventType: 'wallet_transfer.completed',
+      payload: {
+        ...base.payload,
+        eventKey,
+        eventType: 'wallet_transfer.completed',
+        sourceParticipant: { id: SOURCE_CUSTOMER_ID, type: 'AGENT' },
+        destinationParticipant: { id: DESTINATION_CUSTOMER_ID, type: 'CUSTOMER' },
+      },
+    });
+    expect(
+      evaluateTransferReconciliation(makeFacts({ transfer, outboxEvents: [event] })).status,
+    ).toBe('PASS');
+    expectCode(
+      makeFacts({
+        transfer,
+        outboxEvents: [
+          {
+            ...event,
+            payload: {
+              ...event.payload,
+              sourceParticipant: { type: 'CUSTOMER', id: SOURCE_CUSTOMER_ID },
+            },
+          },
+        ],
+      }),
+      TransferReconciliationDiscrepancyCode.OUTBOX_PAYLOAD_MISMATCH,
+    );
+    expectCode(
+      makeFacts({ transfer, outboxEvents: [base] }),
+      TransferReconciliationDiscrepancyCode.OUTBOX_PAYLOAD_MISMATCH,
+    );
+  });
+
   it('classifies a completed transfer without a journal', () => {
     expectCode(
       makeFacts({
