@@ -1504,7 +1504,18 @@ export class AgentCashToCashClaimService {
     );
     const agent = agentRows[0];
     if (!agent || agent.deleted_at !== null || agent.status !== 'ACTIVE' || !agent.agent_class_id) {
-      throw new ForbiddenException('Agent is not eligible for Cash-to-Cash cash redemption');
+      // Three distinct facts, three distinct codes: a missing/deleted agent, a suspended one, and an
+      // agent with no class configured need different operator action.
+      const code =
+        !agent || agent.deleted_at !== null
+          ? 'AGENT_NOT_ACTIVE'
+          : agent.status !== 'ACTIVE'
+            ? 'AGENT_SUSPENDED'
+            : 'AGENT_CLASS_NOT_CONFIGURED';
+      throw this.preconditionFailure(
+        code,
+        'Agent is not eligible for Cash-to-Cash cash redemption',
+      );
     }
 
     const classRows: Array<{
@@ -1519,7 +1530,10 @@ export class AgentCashToCashClaimService {
     );
     const agentClass = classRows[0];
     if (!agentClass || agentClass.deleted_at !== null || !agentClass.is_active) {
-      throw new ForbiddenException('Agent class is not active for Cash-to-Cash cash redemption');
+      throw this.preconditionFailure(
+        'AGENT_CLASS_INACTIVE',
+        'Agent class is not active for Cash-to-Cash cash redemption',
+      );
     }
     if (
       !Array.isArray(agentClass.applicable_services) ||
@@ -1531,12 +1545,37 @@ export class AgentCashToCashClaimService {
       typeof entry === 'string' ? normalizeAgentService(entry) : null,
     );
     if (services.some((service) => service === null)) {
-      throw new ForbiddenException('Agent class has invalid service configuration');
+      throw this.preconditionFailure(
+        'AGENT_CLASS_CONFIGURATION_INVALID',
+        'Agent class has invalid service configuration',
+      );
     }
     if (!services.includes(AgentService.CASH_TO_CASH)) {
-      throw new ForbiddenException('Agent class does not permit Cash-to-Cash cash redemption');
+      throw this.preconditionFailure(
+        'AGENT_CLASS_SERVICE_NOT_PERMITTED',
+        'Agent class does not permit Cash-to-Cash cash redemption',
+      );
     }
     return agentClass.id;
+  }
+
+  /**
+   * A precondition failure carrying a stable, faithful machine code.
+   *
+   * These paths previously threw a bare `ForbiddenException` whose message was the only signal. A
+   * mobile client cannot make a correct decision from prose: "agent is suspended", "this agent class
+   * may not perform Cash-to-Cash" and "the customer's KYC has expired" are three different situations
+   * with three different remedies, and all three looked identical over the wire. The convention here
+   * matches the one already used for retry exhaustion: the code appears as both `error` and `code` in
+   * the body and directly on the exception, so either client style finds it.
+   *
+   * The codes are deliberately distinct rather than one generic `PRECONDITION_FAILED`, because a
+   * generic code would recreate the same ambiguity one level lower.
+   */
+  private preconditionFailure(code: string, message: string): ForbiddenException {
+    const exception = new ForbiddenException({ message, error: code, code });
+    (exception as unknown as { code?: string }).code = code;
+    return exception;
   }
 
   /** Existing approval is required; honour any explicit current-assessment expiry.
@@ -1553,7 +1592,8 @@ export class AgentCashToCashClaimService {
       [customerId],
     );
     if (rows.some((row) => row.eligible !== true)) {
-      throw new ForbiddenException(
+      throw this.preconditionFailure(
+        'CUSTOMER_KYC_ASSESSMENT_NOT_VALID',
         'Wallet redemption KYC assessment is not approved or has expired',
       );
     }
