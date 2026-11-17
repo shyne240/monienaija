@@ -21,6 +21,8 @@ import { BankingWebhookService } from './banking-webhook.service';
 import { BankingDispatchWorker } from './banking-dispatch-worker.service';
 import { BankingCommitmentBridgeService } from './banking-commitment-bridge.service';
 import { BankingFeeBindingService } from './banking-fee-binding.service';
+import { BankingAgentFundingService } from './banking-agent-funding.service';
+import { BankingAgentController } from './banking-agent.controller';
 import { BankingWithdrawalExecutionAuthority } from './banking-withdrawal-execution-authority';
 import { BankingExternalOperationStatusVerifier } from './banking-external-operation-status-verifier';
 import { BankingInboundFundingVerifier } from './banking-inbound-funding-verifier';
@@ -119,6 +121,23 @@ export interface BankingRuntime {
     BankingReconciliationService,
     BankingCommitmentBridgeService,
     BankingFeeBindingService,
+    {
+      provide: BankingAgentFundingService,
+      inject: [
+        DataSource,
+        BankingProviderRegistry,
+        BankingReadinessService,
+        BankingVirtualAccountService,
+        BANKING_RUNTIME,
+      ],
+      useFactory: (
+        db: DataSource,
+        registry: BankingProviderRegistry,
+        readiness: BankingReadinessService,
+        accounts: BankingVirtualAccountService,
+        runtime: BankingRuntime,
+      ) => new BankingAgentFundingService(db, registry, readiness, accounts, runtime.environment),
+    },
     BankingInboundInstitutionAuthority,
     PostgresWebhookAttribution,
     {
@@ -187,7 +206,12 @@ export interface BankingRuntime {
         }),
     },
   ],
-  controllers: [BankingAdminController, BankingCustomerController, BankingWebhookController],
+  controllers: [
+    BankingAdminController,
+    BankingAgentController,
+    BankingCustomerController,
+    BankingWebhookController,
+  ],
   exports: [
     BankingProviderRegistry,
     BANKING_RUNTIME,
@@ -201,6 +225,7 @@ export interface BankingRuntime {
     BankingWebhookService,
     BankingCommitmentBridgeService,
     BankingFeeBindingService,
+    BankingAgentFundingService,
     BankingWithdrawalExecutionAuthority,
     BankingExternalOperationStatusVerifier,
     BankingInboundFundingVerifier,
