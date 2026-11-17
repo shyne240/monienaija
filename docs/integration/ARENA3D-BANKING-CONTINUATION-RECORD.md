@@ -120,27 +120,26 @@ boundary; **no speculative alternative-provider contract is implemented.**
 
 ## 4. Implementation groups
 
-| #   | Group                                                      | State                    |
-| --- | ---------------------------------------------------------- | ------------------------ |
-| 1   | Provider capability contracts + registry                   | done                     |
-| 2   | Monnify transport, auth, token coordination, error mapping | done                     |
-| 3   | Banking provider governance (protected, maker/checker)     | done                     |
-| 4   | Bank directory + account-name enquiry                      | adapter done             |
-| 5   | Virtual account provisioning lifecycle                     | done + HTTP              |
-| 6   | Webhook ingestion + signature verification                 | done + HTTP              |
-| 7   | Inbound deposits (A7 integration)                          | wired (institution +     |
-|     |                                                            | verifier bound;          |
-|     |                                                            | suspense unavailable)    |
-| 8   | Outbound transfers (A6) + durable dispatch                 | wired + worker tested    |
-| 9   | Transfer status + financial recovery                       | done + HTTP              |
-| 10  | Fees and charges                                           | pending                  |
-| 11  | Settlement verification                                    | deliberately unsupported |
-| 12  | Reconciliation engine + exception management               | done + admin HTTP        |
-| 13  | Admin banking workspace                                    | API done, UI pending     |
-| 14  | Customer mobile banking                                    | API done, UI pending     |
-| 15  | Agent mobile banking                                       | pending                  |
-| 16  | KYC residual machine code                                  | pending                  |
-| 17  | Consolidated acceptance                                    | pending                  |
+| #   | Group                                                      | State                          |
+| --- | ---------------------------------------------------------- | ------------------------------ |
+| 1   | Provider capability contracts + registry                   | done                           |
+| 2   | Monnify transport, auth, token coordination, error mapping | done                           |
+| 3   | Banking provider governance (protected, maker/checker)     | done                           |
+| 4   | Bank directory + account-name enquiry                      | done (adapter + HTTP)          |
+| 5   | Virtual account provisioning lifecycle                     | done + HTTP + customer mobile  |
+| 6   | Webhook ingestion + signature verification                 | done + real-HTTP tests         |
+| 7   | Inbound deposits (A7 integration)                          | wired (institution + verifier  |
+|     |                                                            | bound; suspense unavailable)   |
+| 8   | Outbound transfers (A6) + durable dispatch                 | wired + worker tested          |
+| 9   | Transfer status + financial recovery                       | done + HTTP + mobile recovery  |
+| 10  | Fees and authorization binding                             | done (9/9, migration …604)     |
+| 11  | Settlement verification                                    | deliberately unsupported       |
+| 12  | Reconciliation engine + exception management               | done + admin HTTP + admin UI   |
+| 13  | Admin banking workspace                                    | done (879/879 admin-web)       |
+| 14  | Customer mobile banking                                    | done (196/196 customer-mobile) |
+| 15  | Agent funding account + agent mobile                       | done (7/7 HTTP, 317/317 agent) |
+| 16  | KYC residual machine code                                  | done (6 codes, 5 regressions)  |
+| 17  | Consolidated acceptance                                    | **in progress**                |
 
 Legend: **done** = implemented, tested and pushed; **schema done** = migration and structural
 assertions landed, service layer outstanding; **adapter done** = provider-side call implemented and
@@ -373,24 +372,42 @@ a schema can refuse every wrong thing and still refuse the right thing too.
 
 ## 8. Exact next action
 
-**Groups 10, 15, 16, 17 and the two mobile/admin UIs.** The application integration is now complete
-enough that the real app boots with banking registered, refuses every capability while disabled, and
-reaches a provider only through a governed, approved configuration. The dispatch chain has been
-proven end to end at the service boundary: an authorized A6 commitment creates exactly one dispatch
-record inside its own transaction, and the worker submits it exactly once under the provider that was
-authorized.
+**Group 17 — consolidated acceptance and the final handoff.** Everything before it is landed and
+pushed: application wiring, the authenticated API surface, the A6/A7 financial lifecycles, the durable
+dispatch worker, webhook ingress, customer virtual accounts, agent funding, fee binding, reconciliation
+operations, and all three clients (admin workspace, customer mobile, agent mobile).
 
-What remains, in order:
+## 8. Exact next action
 
-1. **Group 10 — fees and authorization binding.** Fee amounts must be bound before authorization and
-   must never be re-read at dispatch. No production fee values exist, so this needs a controlled test
-   policy, not invented numbers.
-2. **Group 15 — agent banking.** Agent funding accounts bound to agent + institution + provider +
-   currency + purpose, verified funds only, exactly-once float increase.
-3. **Group 16 — the KYC cash-to-cash machine code.** The precondition gap is real and still open.
-4. **Groups 13–14 UIs — admin workspace and customer mobile.** The APIs these screens need exist;
-   the screens must call them, not mock them.
-5. **Group 17 — consolidated acceptance.** The full matrix, sequentially, with sanitised transcripts.
+Run the consolidated acceptance matrix (group 17) sequentially against the disposable PostgreSQL
+cluster, then write the final handoff.
+
+1. `npx tsc --noEmit` (root), `npm run lint`, `npx prettier --check`
+2. unit suite (`npx jest --config jest.config.js --runInBand`)
+3. integration suites, sequentially, with
+   `PG_TEST_CONCURRENCY=1 PG_TEST_BATCH_SIZE=6 PG_TEST_MAX_OLD_SPACE_MB=2560`
+4. per-app gates: admin-web (`tsc` + jest), customer-mobile (`tsc` + jest), agent-mobile (`tsc` + jest)
+5. `git diff --check`
+6. Extend `MONIENAIJA-BANKING-PROVIDER-SETTLEMENT-AND-RECONCILIATION-HANDOFF.md` with the full matrix,
+   the eight-way capability distinction and the exact blockers.
+
+Do not re-run an individual suite inside the final matrix; the matrix result supersedes it. Do not edit
+application source while the matrix executes — a source change invalidates the evidence.
+
+### 8.00 Group 17 acceptance evidence (as executed)
+
+| Gate                          | Command                                               | Result                |
+| ----------------------------- | ----------------------------------------------------- | --------------------- |
+| Root typecheck                | `npx tsc --noEmit`                                    | see §8.4              |
+| Root lint                     | `npm run lint`                                        | see §8.4              |
+| Root unit suite               | `npx jest --config jest.config.js --runInBand`        | 3053/3053, 263 suites |
+| Agent banking HTTP            | `test/arena3d-agent-banking-http.integration.spec.ts` | 7/7                   |
+| Fee binding (group 10)        | `test/banking-fee-binding.integration.spec.ts`        | 9/9                   |
+| Dispatch worker               | `test/banking-dispatch-worker.integration.spec.ts`    | 10/10                 |
+| Cash-to-cash codes (group 16) | `test/agent-cash-to-cash-precondition-codes.spec.ts`  | 5/5                   |
+| Admin web                     | `npx tsc --noEmit` + `npx jest --watchAll=false`      | 879/879, 87 suites    |
+| Customer mobile               | `npx tsc --noEmit` + `npx jest --watchAll=false`      | 196/196, 23 suites    |
+| Agent mobile                  | `npx tsc --noEmit` + `npx jest --watchAll=false`      | 317/317, 21 suites    |
 
 ### 8.0 Where the banking money path now stands
 
