@@ -119,6 +119,53 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
     };
   }
 
+  it('records financial-bound PIN evidence only after successful agent PIN verification', async () => {
+    const { agent } = await createActiveAgentWithServicesAndPin(
+      [AgentService.WALLET_TRANSFER],
+      '1234',
+    );
+    const { AgentPasswordHashVerificationService } = await import(
+      '../src/agent-authentication/agent-password-hash-verification.service'
+    );
+    const verifier = app.get(AgentPasswordHashVerificationService);
+    const binding = { requestHash: 'a'.repeat(64), sessionId: randomUUID() };
+    await expect(
+      pinService.verifyTransactionPin(
+        agent.id,
+        { pin: '1234', actor: randomUUID(), financialBinding: binding },
+        verifier,
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    const failed = await pinService.verifyTransactionPin(
+      agent.id,
+      { pin: '9999', actor: agent.id, financialBinding: binding },
+      verifier,
+    );
+    expect(failed).toMatchObject({ verified: false, failureReason: 'MISMATCH' });
+    expect(failed.auditId).toBeUndefined();
+    const result = await pinService.verifyTransactionPin(
+      agent.id,
+      { pin: '1234', actor: agent.id, financialBinding: binding },
+      verifier,
+    );
+    expect(result.verified).toBe(true);
+    expect(result.auditId).toBeDefined();
+    const rows: Array<{ action: string; actor: string; new_values: Record<string, unknown> }> =
+      await dataSource.query(`SELECT action,actor,new_values FROM audit_events WHERE id=$1`, [
+        result.auditId,
+      ]);
+    expect(rows[0]).toMatchObject({
+      action: 'PIN_VERIFIED',
+      actor: agent.id,
+      new_values: {
+        financialRequestHash: binding.requestHash,
+        sessionId: binding.sessionId,
+        pinVersion: 1,
+      },
+    });
+    expect(JSON.stringify(rows[0])).not.toContain('1234');
+  });
+
   // A. valid authenticated Agent + permitted service + valid PIN → AUTHORIZED
   it('A. valid authenticated Agent + permitted service + valid PIN → AUTHORIZED', async () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
