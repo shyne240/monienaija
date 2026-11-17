@@ -139,7 +139,7 @@ boundary; **no speculative alternative-provider contract is implemented.**
 | 14  | Customer mobile banking                                    | done (196/196 customer-mobile) |
 | 15  | Agent funding account + agent mobile                       | done (7/7 HTTP, 317/317 agent) |
 | 16  | KYC residual machine code                                  | done (6 codes, 5 regressions)  |
-| 17  | Consolidated acceptance                                    | **in progress**                |
+| 17  | Consolidated acceptance                                    | running (28 batches)           |
 
 Legend: **done** = implemented, tested and pushed; **schema done** = migration and structural
 assertions landed, service layer outstanding; **adapter done** = provider-side call implemented and
