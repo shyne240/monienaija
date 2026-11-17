@@ -1,8 +1,31 @@
 # Monnify banking provider, settlement and reconciliation — handoff
 
-**Status:** implemented at provider, persistence and service level. Not deployed, not configured with
-real credentials, and not exercised against a live provider. Nothing in this repository can currently
-move money, because no caller is wired to these services yet.
+**Status:** implemented, wired into the application, reachable over authenticated HTTP, and exercised
+through real journeys against real PostgreSQL. Not deployed, not configured with real credentials,
+and not exercised against a live provider.
+
+> **Correction to the earlier opening statement.** This document previously said "nothing in this
+> repository can currently move money, because no caller is wired to these services yet." That was
+> true when it was written and is no longer true. The services are wired into `AppModule`, mounted on
+> controllers behind authentication, driven by a dispatch worker, and covered by journey tests that
+> go through the real application. The stale sentence is quarantined here rather than deleted, because
+> "the code exists" and "the code is reachable" are different claims and the record of the transition
+> matters. §3.1 replaces it with the distinction that is actually needed.
+
+**What is true now, precisely.**
+
+- The eight-way distinction in §3.1 is the authoritative statement of what is wired, invoked,
+  approved, credentialed, operational and authorized. Read that before trusting any status word.
+- **No provider is approved and no credential is configured in this repository.** Every
+  money-moving path therefore refuses with a _state_ rather than succeeding, and the journey tests
+  assert the refusal is the correct one.
+- **No production money can move.** Production execution requires an approved provider
+  configuration, a licensed institution, a settlement liability the institution has accepted, and
+  protected authority — none of which this repository can supply by configuration.
+- **One financial effect is now genuinely implemented end to end**: institution-attributed agent
+  operating float funded from a verified inbound payment. It is proven against real PostgreSQL in
+  `test/a3d-agent-float-funding.integration.spec.ts` and is **withheld in production by design**
+  (`PRODUCTION_EXECUTION_WITHHELD`). See the production-readiness handoff.
 
 **Branch:** `arena/defdd0fd-monienaija`
 **Migrations:** `1785753600600`, `1785753600601`, `1785753600602`
@@ -28,6 +51,43 @@ migration chain.
 | `src/banking/banking-virtual-account.service.ts`     | Reserved accounts that refuse to double-provision.                                               |
 | `src/banking/banking-webhook.service.ts`             | Ingestion endpoint logic; verification-first, ledger-never.                                      |
 | `src/banking/banking-reconciliation.service.ts`      | Observe, compare, raise. No ability to move money.                                               |
+
+---
+
+### 1.1 What each journey actually reached
+
+Seven journeys run through the real application and authenticated HTTP against real PostgreSQL. Their
+value is not that they pass; it is that each one establishes the _terminal state_ of a real request.
+This table states what that state is, in terms that cannot be mistaken for money moving.
+
+| Journey                                     | What it exercises                                                                      | Terminal financial state                                                                | What this is NOT                                                                         |
+| ------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| **A** — capability discovery                | Customer asks whether bank transfers exist for their wallet                            | `200` with an availability state. No account, no money, no obligation.                  | Not a balance, not a transfer, not a provisioning.                                       |
+| **B** — provisioning refused                | Agent asks to provision a funding account for an institution with no approved provider | `503` with the blocking state; the virtual-account count is **unchanged** before/after. | Not a pending account. Nothing durable was created.                                      |
+| **C** — webhook not acknowledged early      | An inbound payment event is delivered and the answer is checked                        | Non-`200`; `banking_inbound_payments` row count **unchanged**.                          | Not a recorded payment. Not a verified payment. No customer funds were credited or held. |
+| **D** — outbound needs a commitment         | An outbound transfer is initiated without an authorized commitment                     | Refused; `banking_outbound_operations` count **unchanged**.                             | Not a queued transfer. The provider was never called.                                    |
+| **E** — readiness is institution-scoped     | Readiness read as an anonymous caller, then as a scoped one                            | `401` anonymous; scoped read returns a state that never asserts an entitlement.         | Not a claim that the institution is entitled to the capability.                          |
+| **F** — unknown reference reported honestly | Status enquiry for a reference the provider never issued                               | `404`.                                                                                  | Not a pending transfer, not a failed one — genuinely unknown, and reported as such.      |
+| **G** — reconciliation needs a provider     | A reconciliation run is requested with no operational provider                         | Refused; the run count stays `'0'`.                                                     | Not a completed reconciliation and not a clean one.                                      |
+
+**Three distinctions this table exists to prevent.**
+
+1. **Provider acknowledgement is not settlement.** Nothing here has settled. A `200` from Monnify
+   would mean the provider accepted a request; it would not mean funds moved, and it would not mean
+   the institution's settlement account changed.
+2. **`VERIFIED_AWAITING_FLOAT_CREDIT` is not credited float.** It means the provider confirmed the
+   money arrived in an account this platform issued. The float is credited only when an authorized
+   funding route posts a balanced journal — which is now implemented and tested separately, and is
+   a _different_ state with a ledger journal behind it.
+3. **A verified incoming payment is not credited customer funds.** Verification proves the payment
+   exists. Credit requires the A7 execution authority, institution authority, wallet boundary and
+   limits to all authorize it, and a journal to post. A verified payment can legitimately sit
+   uncredited, and where that happens it is preserved as a durable obligation rather than dropped.
+
+The two journeys that _do_ produce a terminal financial state — a real ledger journal — are
+`test/a3d-agent-float-funding.integration.spec.ts` (agent float) and the A7 inbound suites
+(customer credit). Everything in the seven journeys above deliberately produces none, and that is
+the point: a refusal that leaves no trace is the correct outcome for an unapproved deployment.
 
 ---
 
