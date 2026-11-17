@@ -76,10 +76,18 @@ export class BankingWebhookService {
    * status, and a 500 to a webhook is a retry request in disguise.
    */
   async handleMonnify(request: WebhookRequest): Promise<WebhookOutcome> {
+    const clientSecret = request.clientSecret ?? this.config.clientSecret;
+    if (!clientSecret) {
+      // No configured secret means nothing can authenticate this deployment's webhook. Reporting a
+      // verification failure (401) rather than an internal error (503) is the honest distinction:
+      // the request was not authenticated, and no amount of retrying by the provider will change it.
+      this.logger.error('Monnify webhook received but no client secret is configured');
+      return { status: 'REJECTED', reason: 'Webhook authentication is not configured' };
+    }
     const verification = verifyWebhook({
       rawBody: request.rawBody,
       signature: request.signature,
-      clientSecret: request.clientSecret ?? this.config.clientSecret,
+      clientSecret,
       environment: request.environment ?? this.config.environment,
       trustedFixtureTransport: request.trustedFixtureTransport,
     });

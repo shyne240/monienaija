@@ -58,7 +58,11 @@ export class BankingWithdrawalExecutionAuthority implements WithdrawalExecutionA
     // The institution comes from the wallet as locked by the caller's own transaction, so a caller
     // cannot point the check at a different institution than the wallet it is debiting.
     const wallets = await manager.query<Array<{ institution_id: string | null; status: string }>>(
-      `SELECT institution_id,status FROM wallet_accounts WHERE id=$1 AND customer_id=$2 FOR SHARE`,
+      // Same authoritative-ownership predicate as the wallet layer: a CUSTOMER-classified wallet
+      // whose owner reference resolves to exactly this customer. A mismatch denies, and denial here
+      // means the commitment cannot proceed.
+      `SELECT institution_id,status FROM wallet_accounts
+        WHERE id=$1 AND customer_id=$2::text AND owner_class='CUSTOMER' FOR SHARE`,
       [input.walletAccountId, input.customerId],
     );
     const wallet = wallets[0];

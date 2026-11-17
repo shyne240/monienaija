@@ -4,7 +4,7 @@ import {
   Post,
   Req,
   Res,
-  ServiceUnavailableException,
+  UnauthorizedException,
   type RawBodyRequest,
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -43,9 +43,11 @@ export class BankingWebhookController {
     // rather than verifying a re-serialized approximation.
     const raw = request.rawBody;
     if (!raw) {
-      throw new ServiceUnavailableException(
-        'Webhook ingress is not configured to preserve raw bodies',
-      );
+      // `rawBody` is enabled in `main.ts`; if that option is ever dropped, or an embedded boot forgets
+      // it, this must fail closed rather than verify a re-serialized approximation of the payload.
+      // Answering 503 would tell the provider to retry a request that cannot succeed until we
+      // redeploy; 401 is the accurate answer for "this request is not authenticated".
+      throw new UnauthorizedException('Webhook authentication is not available');
     }
     const signatureHeader = request.headers['monnify-signature'];
     const signature = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;

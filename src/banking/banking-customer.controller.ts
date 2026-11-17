@@ -69,15 +69,10 @@ export class BankingCustomerController {
     const customerId = this.customerOf(req);
     if (!walletId || !UUID.test(walletId)) throw new BadRequestException('walletId must be a UUID');
     const account = await this.accounts.findForWallet(customerId, walletId.toLowerCase());
-    if (!account) {
-      return {
-        state: 'NOT_PROVISIONED' as const,
-        accountNumber: null,
-        bankName: null,
-        accountName: null,
-        providerSupportsProvisioning: this.supportsProvisioning(),
-      };
-    }
+    // `null` means "not this customer's wallet", not "no account yet". Returning a NOT_PROVISIONED
+    // body here would confirm the wallet exists and is active, which is an existence oracle over
+    // other customers' wallets. A 404 is indistinguishable from a wallet that never existed.
+    if (!account) throw new NotFoundException('Wallet not found');
     return account;
   }
 

@@ -20,6 +20,11 @@ async function bootstrap(): Promise<void> {
     new FastifyAdapter(fastifyAdapterOptions(environment)),
     {
       bufferLogs: true,
+      // Provider webhooks are authenticated by an HMAC over the exact received bytes. Fastify's JSON
+      // parser keeps only the parsed object, and re-serializing it changes key order, whitespace and
+      // unicode escaping — so a valid signature would fail verification and a "fix" would tempt
+      // someone to stop checking it. Preserving the raw buffer keeps the signature check possible.
+      rawBody: true,
     },
   );
   const logger = app.get(Logger);

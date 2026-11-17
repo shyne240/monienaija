@@ -288,7 +288,13 @@ export class BankingVirtualAccountService {
     providerSupportsProvisioning: boolean;
   } | null> {
     const wallets = await this.db.query<Array<{ id: string }>>(
-      `SELECT id FROM wallet_accounts WHERE id=$1 AND customer_id=$2 AND status='ACTIVE'`,
+      // `wallet_accounts.customer_id` is a VARCHAR owner reference, not a UUID foreign key: the
+      // platform's own reconciliation treats it as non-authoritative on its own. Comparing it to a
+      // uuid raises `uuid = character varying`, and trusting it alone would let a legacy or
+      // mis-typed reference grant ownership. Ownership therefore requires the classified owner to be
+      // CUSTOMER *and* the reference to resolve to this customer's id.
+      `SELECT id FROM wallet_accounts
+        WHERE id=$1 AND customer_id=$2::text AND owner_class='CUSTOMER' AND status='ACTIVE'`,
       [walletId, customerId],
     );
     if (!wallets[0]) return null;
@@ -371,21 +377,24 @@ export class BankingVirtualAccountService {
         currency: string;
         customer_reference: string;
         customer_status: string;
-        first_name: string | null;
-        last_name: string | null;
-        email: string | null;
+        display_name: string | null;
       }>
     >(
+      // The customer's display name lives on `customer_profiles`, not on `customers`; there is no
+      // email column on either. Addressability falls back to the platform's reserved domain, so no
+      // real contact address is ever invented for a provider.
       `SELECT w.institution_id,w.currency,c.reference AS customer_reference,c.status AS customer_status,
-              c.first_name,c.last_name,c.email
+              p.display_name
          FROM wallet_accounts w
-         JOIN customers c ON c.id = w.customer_id
-        WHERE w.id=$1 AND w.customer_id=$2 AND w.status='ACTIVE' AND c.deleted_at IS NULL`,
-      [walletId, customerId],
+         JOIN customers c ON c.id::text = lower(w.customer_id)
+         LEFT JOIN customer_profiles p ON p.customer_id = c.id AND p.deleted_at IS NULL
+        WHERE w.id=$1 AND w.customer_id=$2::text AND w.owner_class='CUSTOMER'
+          AND w.status='ACTIVE' AND c.deleted_at IS NULL AND c.id::text=$3`,
+      [walletId, customerId, customerId],
     );
     const row = rows[0];
     if (!row) return null;
-    const customerName = [row.first_name, row.last_name].filter(Boolean).join(' ').trim();
+    const customerName = (row.display_name ?? '').trim();
     return {
       institutionId: row.institution_id,
       currency: row.currency,
@@ -396,7 +405,9 @@ export class BankingVirtualAccountService {
       accountReference: `MN${createHash('sha256').update(walletId).digest('hex').slice(0, 24).toUpperCase()}`,
       accountName: customerName.length > 0 ? customerName : `Customer ${row.customer_reference}`,
       customerName: customerName.length > 0 ? customerName : `Customer ${row.customer_reference}`,
-      customerEmail: row.email ?? `${row.customer_reference}@monienaija.invalid`,
+      // There is no customer email on this platform. The `.invalid` TLD is reserved by RFC 2606 and
+      // can never be delivered to, which is the honest representation of "no address available".
+      customerEmail: `${row.customer_reference}@monienaija.invalid`,
       // Only an ACTIVE customer may be given a receiving account.
       elegible: row.customer_status === 'ACTIVE',
     };
@@ -422,7 +433,7 @@ export class BankingVirtualAccountService {
          FROM banking_inbound_payments p
          JOIN virtual_accounts va ON va.account_number = p.receiving_account_number
          JOIN wallet_accounts w ON w.id = va.wallet_id
-        WHERE w.customer_id=$1
+        WHERE w.customer_id=$1::text AND w.owner_class='CUSTOMER'
         ORDER BY p.recorded_at DESC
         LIMIT $2`,
       [customerId, limit],
@@ -470,7 +481,7 @@ export class BankingVirtualAccountService {
               o.submitted_at
          FROM banking_outbound_operations o
          JOIN wallet_accounts w ON w.id = o.wallet_id
-        WHERE w.customer_id=$1 AND o.operation_reference=$2`,
+        WHERE w.customer_id=$1::text AND w.owner_class='CUSTOMER' AND o.operation_reference=$2`,
       [customerId, operationReference],
     );
     const row = rows[0];
