@@ -869,42 +869,10 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
     makerCheckerRequired: true,
     approvalRequired: true,
   },
-  // Banking provider routing: the same separation as the KYC provider trio above, and for a stronger
-  // reason. A banking provider decision sets who moves customer money, so the authority to propose a
-  // provider must not be the authority to approve it, and neither must collapse into a generic
-  // "finance modification" grant.
-  {
-    functionCode: 'banking.provider.view',
-    domain: 'FINANCE',
-    name: 'View banking provider configuration',
-    description: 'View non-secret banking provider configuration, versions and history.',
-    sensitivity: READ,
-    v1Status: IMPLEMENTED,
-    assignable: true,
-  },
-  {
-    functionCode: 'banking.provider.propose',
-    domain: 'FINANCE',
-    name: 'Propose banking provider configuration',
-    description:
-      'Propose banking provider engagement, capabilities and routing under independent approval.',
-    sensitivity: PRIVILEGED,
-    v1Status: IMPLEMENTED,
-    assignable: true,
-    makerCheckerRequired: true,
-    approvalRequired: true,
-  },
-  {
-    functionCode: 'banking.provider.approve',
-    domain: 'FINANCE',
-    name: 'Approve banking provider configuration',
-    description: 'Independently approve banking provider engagement, capabilities and routing.',
-    sensitivity: PRIVILEGED,
-    v1Status: IMPLEMENTED,
-    assignable: true,
-    makerCheckerRequired: true,
-    approvalRequired: true,
-  },
+  // Banking provider routing lives in the dedicated BANKING block below, not here. It was briefly
+  // defined in both places; the catalogue seeds by function_code, so a second definition was silently
+  // absorbed and the table ended up with 3 fewer functions than the array declared - the count
+  // assertion in the foundation suite is what caught it. One definition, one domain.
 
   // Dedicated governance permissions for KYC tier requirements.
   {
@@ -1610,9 +1578,11 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('SUPER_ADMIN', 'kyc.policy.propose', INITIATE),
   nowAssign('SUPER_ADMIN', 'kyc.provider.view', VIEW),
   nowAssign('SUPER_ADMIN', 'kyc.provider.propose', INITIATE),
-  // SUPER_ADMIN proposes provider engagement and deliberately does not approve it.
-  nowAssign('SUPER_ADMIN', 'banking.provider.view', VIEW),
-  nowAssign('SUPER_ADMIN', 'banking.provider.propose', INITIATE),
+  // Banking provider grants are declared once, in the ARENA 3D block above. A second copy here was a
+  // genuine contradiction, not just a duplicate: this one said SUPER_ADMIN "deliberately does not
+  // approve" while the block above assigns banking.provider.approve. The governance service enforces
+  // proposer != approver per proposal, so holding both capabilities is intentional and the block above
+  // is the accurate description.
   nowAssign('SUPER_ADMIN', 'kyc.view', VIEW),
   nowAssign('SUPER_ADMIN', 'kyc.review', EXECUTE),
   nowAssign('SUPER_ADMIN', 'kyc.approve', EXECUTE),
