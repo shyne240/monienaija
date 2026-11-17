@@ -23,7 +23,7 @@ import { LedgerJournal } from '../ledger/ledger-journal.entity';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { assertWalletOwnership } from '../wallet/wallet-ownership';
-import { WalletStatus } from '../wallet/wallet.enums';
+import { WalletOwnerClass, WalletStatus } from '../wallet/wallet.enums';
 import {
   LimitEnforcementService,
   type EnforceResult,
@@ -376,6 +376,23 @@ export class TransferService {
           message: 'Source and destination wallets must be different',
         },
       };
+    }
+
+    // The v1 commercial, limit and notification paths below are CUSTOMER-specific. Never
+    // process an agent (or unresolved/system owner) using those policies. This temporary gate
+    // is inside the wallet-locked transaction and precedes even a failed-transfer/outbox record;
+    // replay of an already committed result remains available above for safe recovery.
+    // ownerClass is NOT NULL in PostgreSQL. Missing class is tolerated only for historical
+    // direct unit constructions; an authenticated agent binding is never allowed through it.
+    if (
+      command.ownership.kind === 'AGENT_SELF' ||
+      [sourceWallet, destinationWallet].some(
+        (wallet) => wallet.ownerClass != null && wallet.ownerClass !== WalletOwnerClass.CUSTOMER,
+      )
+    ) {
+      throw new ServiceUnavailableException(
+        'Wallet transfer participant policy is not available for this wallet',
+      );
     }
 
     const transferId = randomUUID();

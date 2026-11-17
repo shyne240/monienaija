@@ -15,7 +15,7 @@ import { LedgerEntryDirection } from '../src/ledger/ledger.enums';
 import { LedgerJournal } from '../src/ledger/ledger-journal.entity';
 import type { PostJournalCommand } from '../src/ledger/ledger.types';
 import { WalletAccount } from '../src/wallet/wallet-account.entity';
-import { WalletStatus } from '../src/wallet/wallet.enums';
+import { WalletOwnerClass, WalletStatus } from '../src/wallet/wallet.enums';
 import { Transfer } from '../src/transfer/transfer.entity';
 import { TransferDirection, TransferStatus } from '../src/transfer/transfer.enums';
 import type { LedgerService } from '../src/ledger/ledger.service';
@@ -522,6 +522,22 @@ describe('TransferService', () => {
     expect(fixture.transfers.records.size).toBe(1);
     expect(fixture.ledger.calls).toHaveLength(1);
   });
+
+  it.each(['source', 'destination'] as const)(
+    'fails closed before posting or recording an agent %s wallet under customer policy',
+    async (side) => {
+      const fixture = makeFixture();
+      fixture.wallets.wallets.get(
+        side === 'source' ? SOURCE_WALLET_ID : DESTINATION_WALLET_ID,
+      )!.ownerClass = WalletOwnerClass.AGENT;
+      await expect(fixture.service.createTransfer(transferCommand())).rejects.toMatchObject({
+        status: 503,
+      });
+      expect(fixture.transfers.records.size).toBe(0);
+      expect(fixture.ledger.calls).toHaveLength(0);
+      expect(fixture.journals.records.size).toBe(0);
+    },
+  );
 
   it('rejects self-transfers', async () => {
     const fixture = makeFixture();

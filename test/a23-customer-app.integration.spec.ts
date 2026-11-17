@@ -447,6 +447,86 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       .expect((r) => expect([200, 401, 403].includes(r.status)).toBe(true));
   });
 
+  it('fails closed for customer-to-agent before any transfer, journal or notification is recorded', async () => {
+    const { token, customerId } = await createCustomerWithCredential();
+    const classRows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agent_classes (reference, code, name, is_active, applicable_services, applicable_limits)
+       VALUES ($1,$2,'transfer class',true,$3,$4) RETURNING id`,
+      [
+        `cls-${randomUUID()}`,
+        `C-${randomUUID().slice(0, 8)}`,
+        JSON.stringify(['WALLET_TRANSFER']),
+        JSON.stringify({}),
+      ],
+    );
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agents (reference, status, agent_class_id) VALUES ($1,'ACTIVE',$2) RETURNING id`,
+      [`agent-${randomUUID()}`, classRows[0]!.id],
+    );
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const { LedgerService } = await import('../src/ledger/ledger.service');
+    const wallets = app.get(WalletService);
+    const ledger = app.get(LedgerService);
+    const source = await wallets.createWallet({
+      customerId,
+      currency: 'NGN',
+      idempotencyKey: `src-${randomUUID()}`,
+    });
+    const destination = await wallets.createWallet({
+      customerId: rows[0]!.id,
+      currency: 'NGN',
+      idempotencyKey: `dst-${randomUUID()}`,
+    });
+    const owner: Array<{ owner_class: string }> = await dataSource.query(
+      'SELECT owner_class FROM wallet_accounts WHERE id=$1',
+      [destination.id],
+    );
+    expect(owner[0]!.owner_class).toBe('AGENT');
+    await request(app.getHttpServer())
+      .post('/api/v1/customers/me/transaction-pin')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ pin: '1234' })
+      .expect(200);
+    const funding = await ledger.createAccount({
+      code: `fund-${randomUUID()}`,
+      name: 'test funding',
+      accountType: 'ASSET' as any,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+    });
+    await ledger.postJournal({
+      idempotencyKey: `fund-${randomUUID()}`,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+      lines: [
+        { accountId: funding.id, direction: 'DEBIT' as any, amountMinor: '50000' },
+        { accountId: source.ledgerAccountId, direction: 'CREDIT' as any, amountMinor: '50000' },
+      ],
+    });
+    const before = await dataSource.query(
+      `SELECT (SELECT count(*) FROM transfers)::int AS transfers, (SELECT count(*) FROM ledger_journals)::int AS journals, (SELECT count(*) FROM outbox_events WHERE event_type LIKE 'transfer.%')::int AS events`,
+    );
+    await request(app.getHttpServer())
+      .post('/api/v1/customers/me/transfers')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', `transfer-${randomUUID()}`)
+      .send({
+        sourceWalletId: source.id,
+        destinationWalletId: destination.id,
+        amountMinor: '10000',
+        currency: 'NGN',
+        pin: '1234',
+      })
+      .expect(503);
+    expect(
+      await dataSource.query(
+        `SELECT (SELECT count(*) FROM transfers)::int AS transfers, (SELECT count(*) FROM ledger_journals)::int AS journals, (SELECT count(*) FROM outbox_events WHERE event_type LIKE 'transfer.%')::int AS events`,
+      ),
+    ).toEqual(before);
+    expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('50000');
+    expect((await wallets.getWalletBalance(destination.id)).balanceMinor).toBe('0');
+  });
+
   it('7. Transaction history — read-only, direction/amount/status/reference/type/date/fee/identity where permitted', async () => {
     const { token, customerId: custA } = await createCustomerWithCredential();
     const { customerId: custB } = await createCustomerWithCredential();
