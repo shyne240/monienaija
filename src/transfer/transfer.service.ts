@@ -24,7 +24,7 @@ import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { assertWalletOwnership } from '../wallet/wallet-ownership';
 import { WalletOwnerClass, WalletStatus } from '../wallet/wallet.enums';
-import { resolveTransferParticipants } from './transfer-participant';
+import { resolveTransferParticipants, type TransferParticipant } from './transfer-participant';
 import { transferParticipantLimitInput } from './transfer-participant-limit';
 import {
   LimitEnforcementService,
@@ -685,7 +685,7 @@ export class TransferService {
     await this.recordCommercialDecisionSnapshot(manager, {
       transfer,
       command,
-      sourceCustomerId: sourceWallet.customerId,
+      sourceParticipant,
       journalId,
       limitOutcome,
       payerLedgerAccountId: sourceWallet.ledgerAccountId,
@@ -739,26 +739,17 @@ export class TransferService {
   }
 
   /**
-   * V1-COMMERCIAL-DECISION-02 — pilot commercial snapshot capture for WALLET_TRANSFER.
-   *
-   * Runs inside the existing SERIALIZABLE transfer transaction via
-   * `recordDecisionWithManager` (never `recordDecision`, which would open a second
-   * transaction). Read-only fee resolution via `FeeRuleResolverService.resolveWithManager`
-   * participates in the same transaction; its result is EVIDENCE ONLY — no fee is calculated
-   * or charged and the ledger is untouched by this method.
-   *
-   * Fee decision semantics (DECISION-01 precedent): status stays NOT_CONFIGURED while V1 is
-   * fee-free; when a fee rule exists its ruleId/version/effective parameters are captured in
-   * fee_decision.ruleRefs for future APPLIED decisions; an AMBIGUOUS resolution is recorded
-   * honestly without selecting a rule. Limit evidence comes from the authoritative
-   * EnforceResult captured during this same transfer — never re-evaluated.
+   * Capture the resolved fee, acting-participant commission and limit evidence in the existing
+   * SERIALIZABLE transaction. When commercial accounting is enabled, its linked journal is
+   * posted here as part of the same transaction; otherwise fee and commission remain evidence.
+   * The sender's participant class and agent class come from locked authoritative records.
    */
   private async recordCommercialDecisionSnapshot(
     manager: EntityManager,
     ctx: {
       transfer: Transfer;
       command: NormalizedTransfer;
-      sourceCustomerId: string;
+      sourceParticipant: TransferParticipant;
       journalId: string;
       limitOutcome: EnforceResult | null;
       /** Payer-side ledger account for the commercial accounting legs (source wallet in WT). */
@@ -766,7 +757,7 @@ export class TransferService {
     },
   ): Promise<void> {
     if (!this.feeRuleResolverService || !this.commercialDecisionSnapshotService) return;
-    if (!UUID_PATTERN.test(ctx.sourceCustomerId)) return;
+    if (!UUID_PATTERN.test(ctx.sourceParticipant.id)) return;
 
     const productCode = 'WALLET_TRANSFER';
     const decisionAt = new Date();
@@ -821,8 +812,8 @@ export class TransferService {
     // yields the identical byte-shape NONE as before, so an unwired/empty configuration cannot
     // change behavior by accident. Fail-closed: AMBIGUOUS rules or an unavailable FEE base throw
     // (409/400) and abort BEFORE money commits — no silent rule pick, no partial snapshot.
-    // WALLET_TRANSFER has no acting agent, so no agentId/agentClassId context is supplied;
-    // aggregator commission is disabled (aggregatorId never supplied).
+    // An agent-self sender is the acting agent; customer senders supply no agent context.
+    // Aggregator commission remains disabled (aggregatorId never supplied).
     let commissionDecision: Record<string, unknown> = commissionNone();
     if (this.commissionEngine) {
       const engineDecision = await this.commissionEngine.decideWithManager(
@@ -830,8 +821,8 @@ export class TransferService {
         {
           productCode,
           currency: ctx.command.currency,
-          agentId: null,
-          agentClassId: null,
+          agentId: ctx.sourceParticipant.type === 'AGENT' ? ctx.sourceParticipant.id : null,
+          agentClassId: ctx.sourceParticipant.agentClassId,
           aggregatorId: null,
           at: decisionAt,
         },
@@ -842,10 +833,22 @@ export class TransferService {
       );
       if (engineDecision.status === 'ALLOCATED') {
         commissionDecision = {
-          ...commissionAllocatedAtAccountingBoundary(engineDecision, {
-            feeCollectionState: commissionFeeCollectionStateOf(feeDecision),
-            commissionEvent: 'TRANSACTION_COMPLETION',
-          }),
+          ...commissionAllocatedAtAccountingBoundary(
+            {
+              ...engineDecision,
+              allocations: (engineDecision.allocations ?? []).map((allocation) =>
+                allocation.beneficiaryType === 'AGENT' &&
+                !allocation.beneficiaryId &&
+                ctx.sourceParticipant.type === 'AGENT'
+                  ? { ...allocation, beneficiaryId: ctx.sourceParticipant.id }
+                  : allocation,
+              ),
+            },
+            {
+              feeCollectionState: commissionFeeCollectionStateOf(feeDecision),
+              commissionEvent: 'TRANSACTION_COMPLETION',
+            },
+          ),
         };
       }
     }
@@ -865,10 +868,14 @@ export class TransferService {
         metadata: {
           flow: 'WALLET_TRANSFER',
           transferId: ctx.transfer.id,
-          sourceCustomerId: ctx.sourceCustomerId,
+          ...(ctx.sourceParticipant.type === 'CUSTOMER'
+            ? { sourceCustomerId: ctx.sourceParticipant.id }
+            : { sourceAgentId: ctx.sourceParticipant.id }),
         },
         feePayerLedgerAccountId: ctx.payerLedgerAccountId,
-        feePayerCustomerId: ctx.sourceCustomerId,
+        // The accounting service accepts the historical wallet owner reference under this name;
+        // the exact locked payer ledger account above is authoritative for either owner class.
+        feePayerCustomerId: ctx.sourceParticipant.id,
         feeDecision,
         commissionDecision,
       });
@@ -902,8 +909,8 @@ export class TransferService {
       product: productCode,
       direction: 'OUTGOING',
       channel: null,
-      principalType: 'CUSTOMER',
-      principalId: ctx.sourceCustomerId,
+      principalType: ctx.sourceParticipant.type,
+      principalId: ctx.sourceParticipant.id,
       currency: ctx.command.currency,
       principalAmountMinor: amountMinor,
       transactionReference: ctx.transfer.id,
