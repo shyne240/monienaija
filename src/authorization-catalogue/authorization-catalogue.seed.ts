@@ -1829,11 +1829,16 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
 
   // ----------------------------------------------------------------------- TREASURY
   nowAssign('TREASURY', 'reconciliation.view', VIEW),
-  // ARENA 3D: treasury is the natural owner of provider reconciliation operations. Running and
-  // resolving are reading/recording over observations; neither can move money.
-  nowAssign('TREASURY', 'banking.provider.view', VIEW),
-  nowAssign('TREASURY', 'banking.reconciliation.run', EXECUTE),
-  nowAssign('TREASURY', 'banking.reconciliation.resolve', EXECUTE),
+  // ARENA 3D deliberately does NOT extend TREASURY.
+  //
+  // Banking reconciliation was a tempting fit for this role, but Decision 6 states that TREASURY
+  // holds exactly `reconciliation.view` and nothing else, and that invariant is asserted by two
+  // existing suites. The banking functions belong to roles that already carry financial-execution
+  // authority — SUPER_ADMIN and FINANCE_CONTROLLER — which is where they are granted.
+  //
+  // Widening a role's authority to make new functionality reachable is precisely the "weaken
+  // protected authority to make the wiring work" failure this mission forbids; the correct move was
+  // to grant the narrowest existing role that already holds the authority, not to broaden this one.
 
   // ---------------------------------------------------------------- ADMINISTRATOR
   // GOVERNANCE-01 §2.2/§3: every function below already exists in the catalogue (except the two

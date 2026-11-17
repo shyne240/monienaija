@@ -100,6 +100,45 @@ missing Monnify settlement schema stays honest in the worklist instead of silent
 Refusing a capability is a deliberate outcome, not a gap. An adapter that guesses a response schema
 produces a system that looks complete and behaves unpredictably.
 
+### 3.1 The eight-way distinction
+
+"Implemented" says only that code exists. These are the eight states a capability can actually be in,
+and they are not interchangeable — conflating any two of them is how a system comes to look finished
+while nothing can move:
+
+| #   | State                                                    | Meaning                                                                            | Example here                                                                       |
+| --- | -------------------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| 1   | **Implemented and invoked**                              | Code exists, a caller reaches it, and it is exercised end to end                   | `VIRTUAL_ACCOUNT_PROVISION` via `POST /customers/me/banking/virtual-account`       |
+| 2   | **Implemented but never invoked**                        | Code exists and is tested, but no production path calls it yet                     | `BankingAgentFundingService.accountForWalletInTransaction` (inbound float binding) |
+| 3   | **Implemented, invoked, unapproved**                     | Reachable, but refuses until an institution approves a provider configuration      | Every outbound transfer on a fresh installation                                    |
+| 4   | **Implemented, approved, uncredentialed**                | Configured but cannot authenticate to the provider                                 | `APPROVED_NOT_CREDENTIALED` readiness state                                        |
+| 5   | **Implemented and operational, entitlement unconfirmed** | Works mechanically; the commercial right to transact is not established            | `OPERATIONAL_BUT_ENTITLEMENT_UNCONFIRMED`; `entitled` is always `'UNKNOWN'`        |
+| 6   | **Deliberately unsupported**                             | The provider documents the endpoint but not a response schema, so none is invented | `SETTLEMENT_VERIFICATION`, `RECONCILIATION_OBSERVATIONS`, `REFUND_INITIATION`      |
+| 7   | **Deliberately refused as deprecated**                   | The provider marks it deprecated; nothing financial may depend on it               | `PROVIDER_BALANCE_ENQUIRY`                                                         |
+| 8   | **Deliberately policy-unavailable**                      | Refused by an explicit product decision, not by a technical gap                    | `INBOUND_SUSPENSE_POLICY` (`UnavailableInboundSuspensePolicy`)                     |
+
+Rows 6–8 are outcomes, not backlog. A system that invents a schema for row 6, a balance parser for row
+7, or a suspense policy for row 8 would be less trustworthy than one that refuses.
+
+### 3.2 What is wired, and what that means
+
+| Surface                    | Route(s)                                                                    | Reaches                                    |
+| -------------------------- | --------------------------------------------------------------------------- | ------------------------------------------ |
+| Customer receiving account | `GET/POST /customers/me/banking/virtual-account`                            | `BankingVirtualAccountService`             |
+| Customer deposits          | `GET /customers/me/banking/deposits`                                        | `banking_inbound_payments` (verified only) |
+| Customer transfer status   | `GET /customers/me/banking/transfers/:operationReference`                   | `banking_outbound_operations`              |
+| Agent funding account      | `GET/POST /agents/me/banking/funding-account`                               | `BankingAgentFundingService`               |
+| Agent deposits             | `GET /agents/me/banking/funding-account/:walletId/deposits`                 | verified inbound payments                  |
+| Provider readiness         | `GET /internal/banking/providers`, `/capabilities`                          | `BankingReadinessService`                  |
+| Provider governance        | `GET/POST /internal/banking/governance/:institutionId[/proposals…]`         | protected-authority proposal/decision      |
+| Reconciliation             | `POST /internal/banking/reconciliation/:institutionId/runs`, `…/exceptions` | `BankingReconciliationService`             |
+| Webhook ingress            | `POST /webhooks/monnify`                                                    | `BankingWebhookService` (raw-body HMAC)    |
+| Outbound transfer          | **no direct route** — `POST /customers/me/withdrawal-commitments` only      | A6 commitment → bridge → dispatch worker   |
+
+The absence of a direct transfer route is the design. A controller that could submit to Monnify would
+bypass eligibility, limits, fee binding, authorization and reservation; there is no such controller, and
+the A6 commitment is the only door.
+
 ---
 
 ## 4. Governance
@@ -187,16 +226,22 @@ They were caught by asserting _effects_, not existence.
 
 ## 7. What is genuinely not done
 
-| Outstanding                                 | Why, and what unblocks it                                                                                                 |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Wiring to the wallet/ledger commitment flow | Groups 13–17. Services exist; no HTTP surface and no ledger posting call yet                                              |
-| Admin / customer / agent banking UI         | Groups 13–15. Cannot be accepted without browser execution, and this environment lacks `libnspr4`/`libnss3`/`libnssutil3` |
-| Settlement verification                     | Blocked on a documented response schema. Not fabricated                                                                   |
-| Refund initiation                           | Endpoints documented; contract not confirmed here                                                                         |
-| Provider balance                            | Documented as deprecated by Monnify                                                                                       |
-| Real provider calls                         | No credentials, no entitlement, and out of scope by standing instruction                                                  |
-| Cash-to-cash precondition machine code      | Residual KYC item, unchanged by this work                                                                                 |
-| Full regression matrix                      | The banking suites are verified; a complete repository-wide matrix run has not been performed on this final tree          |
+Everything in this table is outstanding for a stated reason. None of it is presented as accepted.
+
+| Outstanding                              | Why, and what unblocks it                                                                                                                                                                       |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Settlement verification                  | Blocked on a documented response schema. Inventing a parser would produce a system that looks complete and behaves unpredictably. Not fabricated.                                               |
+| Refund initiation                        | Endpoints documented; request/response contract not confirmed here. Not implemented.                                                                                                            |
+| Provider balance                         | Documented as deprecated by Monnify. Nothing financial depends on it, deliberately.                                                                                                             |
+| Provider reconciliation observation feed | No documented paged observation source, so reconciliation runs against records the platform already holds. Observations from the provider are not invented.                                     |
+| Inbound suspense policy                  | `INBOUND_SUSPENSE_POLICY` remains `UnavailableInboundSuspensePolicy`. A verified obligation that cannot be credited is preserved, not discarded and not parked in an invented suspense account. |
+| Live provider acceptance                 | No credentials and no entitlement. Out of scope by standing instruction. Capability 5 (`OPERATIONAL_BUT_ENTITLEMENT_UNCONFIRMED`) is the honest ceiling here.                                   |
+| Browser / visual acceptance              | The browser harness cannot launch here: `libnspr4`, `libnss3` and `libnssutil3` are not installable. The three clients are covered by their real test suites, not by screenshots.               |
+| Physical-device acceptance               | No handset was used. Not claimed.                                                                                                                                                               |
+| Exactly-once _external_ submission       | Not claimed. The Monnify contract does not guarantee it. Exactly-once _internal_ effects are enforced and proven.                                                                               |
+
+Invalidation note for whoever continues: editing application source invalidates the acceptance matrix in
+§5. Re-establish it rather than citing it.
 
 Nothing above is presented as accepted. Where acceptance required execution this environment cannot
 provide — a real provider, a browser, a physical device — it is listed as outstanding rather than
