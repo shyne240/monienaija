@@ -556,6 +556,145 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     await expect(classify()).rejects.toMatchObject({ status: 503 });
   });
 
+  it('creates session-bound server-priced quotes for customer and agent operating wallets without posting money', async () => {
+    const customer = await createCustomerWithCredential();
+    const classRows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agent_classes (reference,code,name,is_active,applicable_services)
+      VALUES ($1,$2,'quote class',true,$3) RETURNING id`,
+      [`qc-${randomUUID()}`, `QC-${randomUUID().slice(0, 8)}`, JSON.stringify(['WALLET_TRANSFER'])],
+    );
+    const agentRows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agents (reference,status,agent_class_id) VALUES ($1,'ACTIVE',$2) RETURNING id`,
+      [`qa-${randomUUID()}`, classRows[0]!.id],
+    );
+    const agentId = agentRows[0]!.id;
+    await dataSource.query(
+      `INSERT INTO agent_authentication_credentials (agent_id,password_hash,hash_algorithm,password_version,password_changed_at,status)
+      VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE')`,
+      [agentId, encodePbkdf2('quote-agent-password')],
+    );
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId, password: 'quote-agent-password' })
+      .expect(200);
+    expect(login.body.accessToken).toBeTruthy();
+    const customerSessions: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM authentication_sessions WHERE customer_id=$1 AND status='ACTIVE'`,
+      [customer.customerId],
+    );
+    const agentSessions: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM agent_authentication_sessions WHERE agent_id=$1 AND status='ACTIVE'`,
+      [agentId],
+    );
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const wallets = app.get(WalletService);
+    const quotes = app.get(TransferQuoteService);
+    const source = await wallets.createWallet({
+      customerId: customer.customerId,
+      currency: 'NGN',
+      idempotencyKey: `q-src-${randomUUID()}`,
+    });
+    const operating = await wallets.createWallet({
+      customerId: agentId,
+      currency: 'NGN',
+      idempotencyKey: `q-agent-${randomUUID()}`,
+    });
+    const cp = {
+      type: 'CUSTOMER' as const,
+      principalId: customer.customerId,
+      customerId: customer.customerId,
+      sessionId: customerSessions[0]!.id,
+      roles: [],
+      scopes: [],
+      customerAccess: 'SELF' as const,
+    };
+    const ap = {
+      type: 'AGENT' as const,
+      principalId: agentId,
+      agentId,
+      sessionId: agentSessions[0]!.id,
+      roles: [],
+      scopes: [],
+      customerAccess: 'NONE' as const,
+      agentAccess: 'SELF' as const,
+    };
+    const input = {
+      sourceWalletId: source.id,
+      destinationWalletId: operating.id,
+      amountMinor: '1234',
+      currency: 'NGN',
+      idempotencyKey: `q-${randomUUID()}`,
+    };
+    const first = await quotes.create(cp, input);
+    expect(first).toMatchObject({
+      sourceWalletId: source.id,
+      destinationWalletId: operating.id,
+      recipientType: 'AGENT',
+      recipientId: agentId,
+      amountMinor: '1234',
+      feeMinor: '0',
+      vatMinor: '0',
+      totalDebitMinor: '1234',
+      status: 'ACTIVE',
+    });
+    expect((await quotes.create(cp, input)).quoteId).toBe(first.quoteId);
+    await expect(quotes.create(cp, { ...input, amountMinor: '1235' })).rejects.toMatchObject({
+      status: 409,
+    });
+    const agentQuote = await quotes.create(ap, {
+      destinationWalletId: source.id,
+      amountMinor: '100',
+      currency: 'NGN',
+      idempotencyKey: `qa-${randomUUID()}`,
+    });
+    expect(agentQuote).toMatchObject({
+      sourceWalletId: operating.id,
+      destinationWalletId: source.id,
+      recipientType: 'CUSTOMER',
+      recipientId: customer.customerId,
+    });
+    await expect(
+      quotes.create(ap, {
+        destinationWalletId: source.id,
+        sourceWalletId: operating.id,
+        amountMinor: '100',
+        currency: 'NGN',
+        idempotencyKey: `bad-${randomUUID()}`,
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    await dataSource.query(`UPDATE agent_classes SET applicable_services=$1 WHERE id=$2`, [
+      JSON.stringify(['CASH_IN']),
+      classRows[0]!.id,
+    ]);
+    await expect(
+      quotes.create(ap, {
+        destinationWalletId: source.id,
+        amountMinor: '100',
+        currency: 'NGN',
+        idempotencyKey: `no-capability-${randomUUID()}`,
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    await dataSource.query(`UPDATE agent_classes SET applicable_services=$1 WHERE id=$2`, [
+      JSON.stringify(['WALLET_TRANSFER']),
+      classRows[0]!.id,
+    ]);
+    await dataSource.query(
+      `UPDATE agent_authentication_sessions SET status='REVOKED',revoked_at=now() WHERE id=$1`,
+      [agentSessions[0]!.id],
+    );
+    await expect(
+      quotes.create(ap, {
+        destinationWalletId: source.id,
+        amountMinor: '100',
+        currency: 'NGN',
+        idempotencyKey: `revoked-${randomUUID()}`,
+      }),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toEqual([]);
+    expect(await dataSource.query(`SELECT id FROM ledger_journals`)).toEqual([]);
+  });
+
   it('database protects bound transfer quote facts and refuses premature generic use', async () => {
     const sender = await createCustomerWithCredential();
     const recipient = await createCustomerWithCredential();

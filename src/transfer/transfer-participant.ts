@@ -8,6 +8,7 @@ export interface TransferParticipant {
   type: 'CUSTOMER' | 'AGENT';
   id: string;
   agentClassId: string | null;
+  agentServices?: unknown;
 }
 
 /**
@@ -62,10 +63,11 @@ export async function resolveTransferParticipants(
           class_id: string | null;
           class_active: boolean | null;
           class_deleted_at: Date | null;
+          applicable_services: unknown;
         }>
       >(
         `SELECT a.id, a.status, a.deleted_at, a.agent_class_id, c.id AS class_id,
-            c.is_active AS class_active, c.deleted_at AS class_deleted_at
+            c.is_active AS class_active, c.deleted_at AS class_deleted_at, c.applicable_services
        FROM agents a JOIN agent_classes c ON c.id = a.agent_class_id
       WHERE a.id = ANY($1::uuid[]) ORDER BY a.id FOR SHARE OF a, c`,
         [agentIds],
@@ -88,7 +90,13 @@ export async function resolveTransferParticipants(
     ) {
       throw new ServiceUnavailableException('Agent wallet eligibility is unavailable');
     }
-    return { wallet, type: 'AGENT', id: agent.id, agentClassId: agent.agent_class_id };
+    return {
+      wallet,
+      type: 'AGENT',
+      id: agent.id,
+      agentClassId: agent.agent_class_id,
+      agentServices: agent.applicable_services,
+    };
   };
   return [participant(wallets[0]), participant(wallets[1])];
 }

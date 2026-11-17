@@ -31,6 +31,8 @@ import {
 } from './internal-transfer-gate.types';
 import { TransferService } from './transfer.service';
 import { TransferPricingService } from './transfer-pricing.service';
+import { TransferQuoteService } from './transfer-quote.service';
+import { PaymentQuote } from '../quote/payment-quote.entity';
 import { WalletTransactionController } from './wallet-transaction.controller';
 
 @Module({
@@ -50,12 +52,13 @@ import { WalletTransactionController } from './wallet-transaction.controller';
     FeeRulesModule,
     CommissionModule, // V1-COMMERCIAL-IMPLEMENTATION-02 — CommissionEngine for flow snapshot sites
     CommercialAccountingModule, // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (inert unless enabled)
-    TypeOrmModule.forFeature([Transfer, WalletAccount, LedgerJournal]),
+    TypeOrmModule.forFeature([Transfer, WalletAccount, LedgerJournal, PaymentQuote]),
   ],
   controllers: [TransferController, WalletTransactionController],
   providers: [
     TransferService,
     TransferPricingService,
+    TransferQuoteService,
     A3InternalTransferBindingAdapter,
     TypeOrmInternalTransferGateAuditAdapter,
     TypeOrmInternalTransferGateIdempotencyAdapter,
@@ -77,6 +80,7 @@ import { WalletTransactionController } from './wallet-transaction.controller';
   exports: [
     TransferService,
     TransferPricingService,
+    TransferQuoteService,
     InternalTransferGateService,
     TransferLifecycleService,
   ],
