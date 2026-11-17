@@ -91,9 +91,7 @@ export class BankingProviderRegistry {
    * capability the adapter does not implement. Returns null for an unregistered key — callers must
    * treat that as a refusal, never as "assume it is fine".
    */
-  descriptorFor(
-    key: string,
-  ): {
+  descriptorFor(key: string): {
     key: string;
     environments: readonly string[];
     capabilities: Record<string, boolean>;

@@ -63,7 +63,15 @@ describe('banking webhook ingestion (real PostgreSQL)', () => {
       },
     } as BankingProvider);
     const inbound = new BankingInboundService(db, registry);
-    webhooks = new BankingWebhookService(inbound, institutionId, 'MONNIFY');
+    // Attribution now resolves from the receiving account, as it does in the application. The test
+    // supplies a fixed institution because this suite is about signature handling, not attribution —
+    // attribution has its own dedicated cases below.
+    webhooks = new BankingWebhookService(inbound, {
+      providerKey: 'MONNIFY',
+      clientSecret: CLIENT_SECRET,
+      environment: 'sandbox',
+      resolveAttribution: async () => ({ institutionId }),
+    });
   }, 120000);
 
   afterAll(async () => {

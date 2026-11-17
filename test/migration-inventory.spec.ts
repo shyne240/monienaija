@@ -65,11 +65,28 @@ describe('migration inventory', () => {
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at the KYC identity revision and trusted-evidence read migration', () => {
+  it('ends at the banking dispatch-lease migration', () => {
+    // ARENA 3D superseded the KYC identity revision as the newest migration. The earlier identifier
+    // remains present and unchanged (asserted below); only the "latest" pin moves.
     expect(migrations.at(-1)).toMatchObject({
-      timestamp: '1785753600505',
+      timestamp: '1785753600603',
+      name: 'BankingDispatchLeases1785753600603',
+    });
+  });
+
+  it('preserves the KYC identity revision migration after the banking chain moved the tail', () => {
+    expect(migrations.find((migration) => migration.timestamp === '1785753600505')).toMatchObject({
       name: 'KycIdentityRevisionAndEvidenceRead1785753600505',
     });
+  });
+
+  it('contains the banking chain in order within the allocated range', () => {
+    const banking = migrations
+      .filter((migration) => migration.timestamp.startsWith('17857536006'))
+      .map((migration) => migration.timestamp);
+    // Contiguous and ordered: 600..603, the allocation reserved for banking. A gap would mean an
+    // identifier was skipped or renumbered, which the production readiness check treats as failure.
+    expect(banking).toEqual(['1785753600600', '1785753600601', '1785753600602', '1785753600603']);
   });
 
   it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {

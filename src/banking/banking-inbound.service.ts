@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
-import type { DataSource } from 'typeorm';
+import { DataSource } from 'typeorm';
 
-import type { BankingProviderRegistry } from './banking-provider.registry';
+import { BankingProviderRegistry } from './banking-provider.registry';
 import type { InboundPaymentVerificationResult } from './banking-provider.types';
 
 /**

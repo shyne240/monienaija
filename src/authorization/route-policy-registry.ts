@@ -168,6 +168,97 @@ const INTERNAL_OPERATIONAL_ROUTE_POLICIES: Record<
 };
 
 /**
+ * ARENA 3D — administrative banking routes.
+ *
+ * Each route maps to the narrowest capability that does its job. `banking.provider.view` is a read;
+ * proposing, approving, running reconciliation and resolving an exception are four distinct
+ * capabilities because they are four different risks. In particular, approval is not implied by
+ * proposal: the whole point of a two-person governance control is that the proposer cannot approve
+ * their own change, and giving one function both would silently defeat it.
+ */
+const BANKING_ADMIN_ROUTE_POLICIES: ReadonlyArray<{
+  method: 'GET' | 'POST';
+  /**
+   * Anchored pattern. These routes carry path parameters, so an exact-string key would silently fail
+   * to match and let the request fall through to the generic `/internal/` branch, which authenticates
+   * a workforce caller without constraining the capability. Each pattern is anchored and the
+   * parameter segment is deliberately narrow: `[0-9a-f-]{36}` cannot match a path traversal, a
+   * wildcard or a nested route.
+   */
+  pattern: RegExp;
+  resourceType: string;
+  allowedPrincipalTypes: readonly ('OPERATOR' | 'SERVICE' | 'PRIVILEGED')[];
+  requiredFunctions: readonly string[];
+}> = [
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/banking\/providers$/,
+    resourceType: 'banking-provider-readiness',
+    allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    requiredFunctions: ['banking.provider.view'],
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/banking\/capabilities$/,
+    resourceType: 'banking-provider-capabilities',
+    allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    requiredFunctions: ['banking.provider.view'],
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/banking\/governance\/[0-9a-f-]{36}$/i,
+    resourceType: 'banking-provider-governance',
+    allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    requiredFunctions: ['banking.provider.view'],
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/v1\/internal\/banking\/governance\/[0-9a-f-]{36}\/proposals$/i,
+    resourceType: 'banking-provider-proposal',
+    allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    requiredFunctions: ['banking.provider.propose'],
+  },
+  {
+    // Approval is PRIVILEGED only. This is the two-person control: the proposer cannot approve, and a
+    // separate function code means holding `propose` does not confer `approve`.
+    method: 'POST',
+    pattern:
+      /^\/api\/v1\/internal\/banking\/governance\/[0-9a-f-]{36}\/proposals\/[0-9a-f-]{36}\/decide$/i,
+    resourceType: 'banking-provider-approval',
+    allowedPrincipalTypes: ['PRIVILEGED'],
+    requiredFunctions: ['banking.provider.approve'],
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/banking\/reconciliation\/[0-9a-f-]{36}\/runs$/i,
+    resourceType: 'banking-reconciliation-runs',
+    allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    requiredFunctions: ['reconciliation.view'],
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/v1\/internal\/banking\/reconciliation\/[0-9a-f-]{36}\/runs$/i,
+    resourceType: 'banking-reconciliation-run',
+    allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    requiredFunctions: ['banking.reconciliation.run'],
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/banking\/reconciliation\/[0-9a-f-]{36}\/exceptions$/i,
+    resourceType: 'banking-reconciliation-exceptions',
+    allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    requiredFunctions: ['reconciliation.view'],
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/v1\/internal\/banking\/reconciliation\/exceptions\/[^/]+\/resolve$/i,
+    resourceType: 'banking-reconciliation-resolution',
+    allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+    requiredFunctions: ['banking.reconciliation.resolve'],
+  },
+];
+
+/**
  * REPORT-32 H-01 — the one internal read that keeps SUPPORT reach by explicit product decision.
  *
  * `GET /api/v1/internal/audit` is the generic audit listing. `OperationsController` intentionally
@@ -306,6 +397,53 @@ export class RoutePolicyRegistry {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
         resourceType: 'a2-workforce-administration',
+      };
+    }
+
+    // ------------------------------------------------------------------ ARENA 3D banking
+    // Provider webhook ingress. Authentication is the provider's HMAC over the exact received
+    // bytes, verified before anything is persisted; there is no bearer session to check and no
+    // workforce principal involved. Nothing here may be acknowledged before its record is durable,
+    // which is why this is registered as a provider callback rather than as a public route: public
+    // routes bypass the guard entirely, and this one must still reach a controlled handler that can
+    // refuse and answer 401.
+    if (lookedUpMethod === 'POST' && path === '/api/v1/webhooks/monnify') {
+      return {
+        public: false,
+        authenticationMode: 'PROVIDER_CALLBACK',
+        resourceType: 'banking-provider-webhook',
+        policy: {
+          resourceType: 'banking-provider-webhook',
+          action: 'banking:webhook:receive',
+          allowedPrincipalTypes: ['SERVICE'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Administrative banking surface. Every route is listed explicitly and none is left to the
+    // generic `/internal/` fall-through: that branch authenticates a caller without constraining
+    // what they may do, so an unregistered banking route would be reachable by any workforce
+    // principal. Each entry names its own resource type so an audit record identifies the concern.
+    const bankingAdmin = BANKING_ADMIN_ROUTE_POLICIES.find(
+      (route) => route.method === lookedUpMethod && route.pattern.test(path),
+    );
+    if (bankingAdmin) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: bankingAdmin.resourceType,
+        policy: {
+          resourceType: bankingAdmin.resourceType,
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: [...bankingAdmin.allowedPrincipalTypes],
+          requiredFunctions: [...bankingAdmin.requiredFunctions],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
       };
     }
 

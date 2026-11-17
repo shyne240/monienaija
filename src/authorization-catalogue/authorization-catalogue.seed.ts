@@ -1057,6 +1057,70 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
     assignable: false,
   },
 
+  // ---------------------------------------------------------------- BANKING (ARENA 3D)
+  // Payment-provider operations. None of these can move money: proposing and approving change provider
+  // *configuration* (which provider, which credentials fingerprint, which contract), and running
+  // reconciliation only *observes*. A provider change takes effect for a NEW operation only; the
+  // services refuse to re-price or re-route an already-authorized commitment. That separation is why
+  // these are not `ledger.*` or `finance.*` functions: holding one of these must not imply any
+  // authority over a customer's balance.
+  {
+    functionCode: 'banking.provider.view',
+    domain: 'BANKING',
+    name: 'View banking provider readiness',
+    description:
+      'Read provider registration, readiness state and governance history. Never returns credentials.',
+    sensitivity: READ,
+    v1Status: BACKEND_ONLY,
+    assignable: true,
+    notes:
+      'ARENA 3D. Read-only. Readiness distinguishes implemented / approved / credentialed / operational / disabled / unsupported; it does not assert an entitlement.',
+  },
+  {
+    functionCode: 'banking.provider.propose',
+    domain: 'BANKING',
+    name: 'Propose banking provider configuration',
+    description: 'Create a provider configuration proposal for independent approval.',
+    sensitivity: SENSITIVE,
+    v1Status: BACKEND_ONLY,
+    assignable: true,
+    notes: 'ARENA 3D. Initiator side of the two-person control; cannot approve its own proposal.',
+  },
+  {
+    functionCode: 'banking.provider.approve',
+    domain: 'BANKING',
+    name: 'Approve banking provider configuration',
+    description: 'Independently approve or reject a provider configuration proposal.',
+    sensitivity: PRIVILEGED,
+    v1Status: BACKEND_ONLY,
+    assignable: true,
+    notes:
+      'ARENA 3D. Approver side. Deliberately separate from banking.provider.propose so one principal cannot complete the pair.',
+  },
+  {
+    functionCode: 'banking.reconciliation.run',
+    domain: 'BANKING',
+    name: 'Run banking reconciliation',
+    description: 'Start a scoped reconciliation run against a registered banking provider.',
+    sensitivity: OPERATIONAL,
+    v1Status: BACKEND_ONLY,
+    assignable: true,
+    notes:
+      'ARENA 3D. Produces observations and exceptions only. Reconciliation has no capability to move, correct or settle money.',
+  },
+  {
+    functionCode: 'banking.reconciliation.resolve',
+    domain: 'BANKING',
+    name: 'Resolve banking reconciliation exception',
+    description:
+      'Record a resolution decision and supporting note against a reconciliation exception.',
+    sensitivity: SENSITIVE,
+    v1Status: BACKEND_ONLY,
+    assignable: true,
+    notes:
+      'ARENA 3D. Records evidence and a decision. Any actual financial correction must use the separate authorized financial lifecycle, never this function.',
+  },
+
   // ----------------------------------------------------------- RECONCILIATION
   {
     functionCode: 'reconciliation.view',
@@ -1483,6 +1547,14 @@ const { VIEW, EXECUTE, INITIATE, APPROVE } = RoleFunctionAccessType;
 export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] = [
   // ------------------------------------------------------------- SUPER_ADMIN
   nowAssign('SUPER_ADMIN', 'workforce.role.assign', INITIATE),
+  // ARENA 3D provider governance. SUPER_ADMIN holds both sides of the pair, as it does for
+  // workforce.role.create/.modify above; the two-person control is enforced by the governance service
+  // (a proposal's approver must not be its proposer) rather than by withholding the capability.
+  nowAssign('SUPER_ADMIN', 'banking.provider.view', VIEW),
+  nowAssign('SUPER_ADMIN', 'banking.provider.propose', INITIATE),
+  nowAssign('SUPER_ADMIN', 'banking.provider.approve', APPROVE),
+  nowAssign('SUPER_ADMIN', 'banking.reconciliation.run', EXECUTE),
+  nowAssign('SUPER_ADMIN', 'banking.reconciliation.resolve', EXECUTE),
   nowAssign('SUPER_ADMIN', 'workforce.role.revoke', INITIATE),
   nowAssign('SUPER_ADMIN', 'workforce.role.view', VIEW),
   // V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01: SUPER_ADMIN may INITIATE a role
@@ -1757,6 +1829,11 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
 
   // ----------------------------------------------------------------------- TREASURY
   nowAssign('TREASURY', 'reconciliation.view', VIEW),
+  // ARENA 3D: treasury is the natural owner of provider reconciliation operations. Running and
+  // resolving are reading/recording over observations; neither can move money.
+  nowAssign('TREASURY', 'banking.provider.view', VIEW),
+  nowAssign('TREASURY', 'banking.reconciliation.run', EXECUTE),
+  nowAssign('TREASURY', 'banking.reconciliation.resolve', EXECUTE),
 
   // ---------------------------------------------------------------- ADMINISTRATOR
   // GOVERNANCE-01 §2.2/§3: every function below already exists in the catalogue (except the two

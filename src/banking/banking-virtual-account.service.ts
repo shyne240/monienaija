@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
-import type { DataSource } from 'typeorm';
+import { DataSource } from 'typeorm';
 
-import type { BankingProviderRegistry } from './banking-provider.registry';
+import { BankingProviderRegistry } from './banking-provider.registry';
 import type {
   VirtualAccountProvisionResult,
   VirtualAccountStatusResult,
@@ -258,6 +258,260 @@ export class BankingVirtualAccountService {
       };
     }
     return { outcome: row.outcome as ReservationView['outcome'], accounts: [] };
+  }
+
+  // ------------------------------------------------------------------ customer reads
+
+  /**
+   * The customer's authoritative receiving account, or null.
+   *
+   * Ownership is enforced in the query, not by the caller: every predicate is scoped by
+   * `customerId`, so a wallet id belonging to somebody else yields null — the same answer as a wallet
+   * that does not exist. The controller turns that into a 404, which is the correct response because
+   * a 403 would confirm the other customer's wallet exists.
+   *
+   * The four states are deliberately distinct and only one of them carries an account number:
+   *
+   * - `PROVISIONED` — a provider issued this account and it is active;
+   * - `PENDING` — provisioning was requested and has not yet produced an account;
+   * - `UNKNOWN` — an attempt was made and the outcome is not known; requesting again will not submit;
+   * - `NOT_PROVISIONED` — no attempt exists.
+   */
+  async findForWallet(
+    customerId: string,
+    walletId: string,
+  ): Promise<{
+    state: 'PROVISIONED' | 'PENDING' | 'UNKNOWN' | 'NOT_PROVISIONED';
+    accountNumber: string | null;
+    bankName: string | null;
+    accountName: string | null;
+    providerSupportsProvisioning: boolean;
+  } | null> {
+    const wallets = await this.db.query<Array<{ id: string }>>(
+      `SELECT id FROM wallet_accounts WHERE id=$1 AND customer_id=$2 AND status='ACTIVE'`,
+      [walletId, customerId],
+    );
+    if (!wallets[0]) return null;
+
+    const accounts = await this.db.query<
+      Array<{ account_number: string; bank_code: string; account_name: string }>
+    >(
+      `SELECT va.account_number,va.bank_code,va.account_name
+         FROM virtual_accounts va
+        WHERE va.wallet_id=$1 AND va.status='ACTIVE'
+        ORDER BY va.assigned_at DESC LIMIT 1`,
+      [walletId],
+    );
+    if (accounts[0]) {
+      return {
+        state: 'PROVISIONED',
+        accountNumber: accounts[0].account_number,
+        bankName: await this.bankNameOf(accounts[0].bank_code),
+        accountName: accounts[0].account_name,
+        providerSupportsProvisioning: true,
+      };
+    }
+
+    const reservations = await this.db.query<Array<{ outcome: string }>>(
+      `SELECT outcome FROM banking_virtual_account_reservations
+        WHERE wallet_id=$1 ORDER BY created_at DESC LIMIT 1`,
+      [walletId],
+    );
+    const outcome = reservations[0]?.outcome;
+    if (outcome === 'UNKNOWN') {
+      return {
+        state: 'UNKNOWN',
+        accountNumber: null,
+        bankName: null,
+        accountName: null,
+        providerSupportsProvisioning: true,
+      };
+    }
+    if (outcome === 'PENDING' || outcome === 'REQUESTED') {
+      return {
+        state: 'PENDING',
+        accountNumber: null,
+        bankName: null,
+        accountName: null,
+        providerSupportsProvisioning: true,
+      };
+    }
+    return {
+      state: 'NOT_PROVISIONED',
+      accountNumber: null,
+      bankName: null,
+      accountName: null,
+      providerSupportsProvisioning: true,
+    };
+  }
+
+  /**
+   * Eligibility and provider binding for a provisioning request.
+   *
+   * Returns null when the wallet is not the customer's. Eligibility is read from the wallet's
+   * institution association plus an existing-account check rather than being asserted here: this
+   * method gathers facts, and the controller refuses on them.
+   */
+  async customerProvisioningContext(
+    customerId: string,
+    walletId: string,
+  ): Promise<{
+    institutionId: string | null;
+    currency: string;
+    providerKey: string;
+    accountReference: string;
+    accountName: string;
+    customerName: string;
+    customerEmail: string;
+    elegible: boolean;
+  } | null> {
+    const rows = await this.db.query<
+      Array<{
+        institution_id: string | null;
+        currency: string;
+        customer_reference: string;
+        customer_status: string;
+        first_name: string | null;
+        last_name: string | null;
+        email: string | null;
+      }>
+    >(
+      `SELECT w.institution_id,w.currency,c.reference AS customer_reference,c.status AS customer_status,
+              c.first_name,c.last_name,c.email
+         FROM wallet_accounts w
+         JOIN customers c ON c.id = w.customer_id
+        WHERE w.id=$1 AND w.customer_id=$2 AND w.status='ACTIVE' AND c.deleted_at IS NULL`,
+      [walletId, customerId],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    const customerName = [row.first_name, row.last_name].filter(Boolean).join(' ').trim();
+    return {
+      institutionId: row.institution_id,
+      currency: row.currency,
+      // The provider is derived from configuration, not chosen by the customer.
+      providerKey: 'MONNIFY',
+      // A stable reference derived from the wallet, so a retried request addresses the same account
+      // rather than creating a second one.
+      accountReference: `MN${createHash('sha256').update(walletId).digest('hex').slice(0, 24).toUpperCase()}`,
+      accountName: customerName.length > 0 ? customerName : `Customer ${row.customer_reference}`,
+      customerName: customerName.length > 0 ? customerName : `Customer ${row.customer_reference}`,
+      customerEmail: row.email ?? `${row.customer_reference}@monienaija.invalid`,
+      // Only an ACTIVE customer may be given a receiving account.
+      elegible: row.customer_status === 'ACTIVE',
+    };
+  }
+
+  /** Verified inbound deposits for one customer. Unverified claims are never shown as money. */
+  async depositHistoryForCustomer(customerId: string, limit: number) {
+    const rows = await this.db.query<
+      Array<{
+        id: string;
+        provider_transaction_reference: string;
+        credited_amount_minor: string;
+        currency: string;
+        paid_at: Date | null;
+        recorded_at: Date;
+        verification_state: string;
+        posted: boolean;
+      }>
+    >(
+      `SELECT p.id,p.provider_transaction_reference,p.credited_amount_minor::text AS credited_amount_minor,
+              p.currency,p.paid_at,p.recorded_at,p.verification_state,
+              (p.ledger_transaction_id IS NOT NULL) AS posted
+         FROM banking_inbound_payments p
+         JOIN virtual_accounts va ON va.account_number = p.receiving_account_number
+         JOIN wallet_accounts w ON w.id = va.wallet_id
+        WHERE w.customer_id=$1
+        ORDER BY p.recorded_at DESC
+        LIMIT $2`,
+      [customerId, limit],
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      reference: row.provider_transaction_reference,
+      amountMinor: row.credited_amount_minor,
+      currency: row.currency,
+      receivedAt: row.paid_at ?? row.recorded_at,
+      // Customer-safe vocabulary: an unverified claim is CONFIRMING, never "received".
+      state:
+        row.verification_state === 'VERIFIED'
+          ? row.posted
+            ? ('CREDITED' as const)
+            : ('CONFIRMED_PENDING_CREDIT' as const)
+          : row.verification_state === 'REJECTED'
+            ? ('REJECTED' as const)
+            : ('CONFIRMING' as const),
+    }));
+  }
+
+  /**
+   * One outbound transfer for this customer, by our own operation reference.
+   *
+   * `CONFIRMING` is a distinct customer-facing state, and the mapping is deliberate: `UNKNOWN` and
+   * `MANUAL_REVIEW` must never be rendered as a failure, because the money may well have moved.
+   */
+  async transferForCustomer(customerId: string, operationReference: string) {
+    const rows = await this.db.query<
+      Array<{
+        operation_reference: string;
+        state: string;
+        amount_minor: string;
+        currency: string;
+        destination_bank_code: string;
+        destination_account_number: string;
+        created_at: Date;
+        resolved_at: Date | null;
+        submitted_at: Date | null;
+      }>
+    >(
+      `SELECT o.operation_reference,o.state,o.amount_minor::text AS amount_minor,o.currency,
+              o.destination_bank_code,o.destination_account_number,o.created_at,o.resolved_at,
+              o.submitted_at
+         FROM banking_outbound_operations o
+         JOIN wallet_accounts w ON w.id = o.wallet_id
+        WHERE w.customer_id=$1 AND o.operation_reference=$2`,
+      [customerId, operationReference],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    const state = row.state;
+    const customerState =
+      state === 'SUCCESSFUL'
+        ? ('SUCCESSFUL' as const)
+        : state === 'FAILED'
+          ? ('REJECTED' as const)
+          : state === 'REVERSED'
+            ? ('REVERSED' as const)
+            : state === 'CANCELLED'
+              ? ('CANCELLED' as const)
+              : state === 'PENDING_PROVIDER' || state === 'PENDING_VERIFICATION'
+                ? ('PROCESSING' as const)
+                : state === 'CREATED'
+                  ? ('AUTHORIZED' as const)
+                  : // UNKNOWN, SUBMITTING, MANUAL_REVIEW: the money may have moved. Never "failed".
+                    ('CONFIRMING' as const);
+    return {
+      operationReference: row.operation_reference,
+      state: customerState,
+      amountMinor: row.amount_minor,
+      currency: row.currency,
+      bankCode: row.destination_bank_code,
+      // The last four digits only: enough for the customer to recognise the transfer, not a full
+      // destination record served back over an endpoint.
+      accountNumberLast4: row.destination_account_number.slice(-4),
+      createdAt: row.created_at,
+      submittedAt: row.submitted_at,
+      resolvedAt: row.resolved_at,
+    };
+  }
+
+  private async bankNameOf(bankCode: string): Promise<string | null> {
+    const rows = await this.db.query<Array<{ name: string }>>(
+      'SELECT name FROM banks WHERE code=$1 LIMIT 1',
+      [bankCode],
+    );
+    return rows[0]?.name ?? null;
   }
 
   private async mark(

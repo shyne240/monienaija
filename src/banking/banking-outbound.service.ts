@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
-import type { DataSource, EntityManager } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 
-import type { BankingProviderRegistry } from './banking-provider.registry';
+import { BankingProviderRegistry } from './banking-provider.registry';
 import type {
   BankingProvider,
   BankingProviderResult,
@@ -81,6 +81,15 @@ export class BankingOutboundService {
     private readonly db: DataSource,
     private readonly registry: BankingProviderRegistry,
   ) {}
+
+  /**
+   * The application DataSource, exposed so the dispatch worker drives this service on the same
+   * connection pool and the same transaction discipline. It is deliberately the only thing the worker
+   * reads from here: the worker must not hold a second handle it could query around this service.
+   */
+  get dataSource(): DataSource {
+    return this.db;
+  }
 
   /**
    * Deterministic operation reference.

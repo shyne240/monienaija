@@ -25,15 +25,37 @@ import type { BankingInboundService } from './banking-inbound.service';
 export interface WebhookRequest {
   rawBody: Buffer | string;
   signature?: string;
-  clientSecret: string;
-  environment: 'sandbox' | 'production';
+  /** Optional override; defaults to the configured client secret for this provider. */
+  clientSecret?: string;
+  environment?: 'sandbox' | 'production';
   trustedFixtureTransport?: boolean;
 }
 
 export type WebhookOutcome =
   | { status: 'ACCEPTED'; providerTransactionReference: string; alreadyRecorded: boolean }
+  | { status: 'UNRESOLVED'; reason: string }
   | { status: 'IGNORED'; reason: string }
   | { status: 'REJECTED'; reason: string };
+
+export interface BankingWebhookAttribution {
+  readonly institutionId: string;
+}
+
+export interface BankingWebhookConfiguration {
+  readonly providerKey: string;
+  readonly clientSecret: string;
+  readonly environment: 'sandbox' | 'production';
+  /**
+   * Resolves which institution a payment belongs to, from the receiving account only. Returning null
+   * means the payment cannot be attributed; the handler then reports UNRESOLVED and records nothing.
+   */
+  readonly resolveAttribution: (input: {
+    providerKey: string;
+    receivingAccountNumber: string | null;
+    receivingBankCode: string | null;
+    providerTransactionReference: string;
+  }) => Promise<BankingWebhookAttribution | null>;
+}
 
 /** Event types Monnify documents. Anything else is acknowledged and ignored, never guessed at. */
 const INBOUND_EVENTS = new Set(['SUCCESSFUL_TRANSACTION', 'SETTLEMENT']);
@@ -44,8 +66,7 @@ export class BankingWebhookService {
 
   constructor(
     private readonly inbound: BankingInboundService,
-    private readonly institutionId: string,
-    private readonly providerKey: string,
+    private readonly config: BankingWebhookConfiguration,
   ) {}
 
   /**
@@ -58,8 +79,8 @@ export class BankingWebhookService {
     const verification = verifyWebhook({
       rawBody: request.rawBody,
       signature: request.signature,
-      clientSecret: request.clientSecret,
-      environment: request.environment,
+      clientSecret: request.clientSecret ?? this.config.clientSecret,
+      environment: request.environment ?? this.config.environment,
       trustedFixtureTransport: request.trustedFixtureTransport,
     });
 
@@ -109,10 +130,29 @@ export class BankingWebhookService {
     // amountPaid and settlementAmount would be reading a settlement field as a fee.
     const feeMinor = '0';
 
+    // The institution is resolved from the receiving account, because one webhook endpoint serves
+    // every institution on the platform. An unattributable payment is recorded against nothing and
+    // reported as unresolved rather than being guessed into an institution.
+    const attribution = await this.config.resolveAttribution({
+      providerKey: this.config.providerKey,
+      receivingAccountNumber:
+        typeof eventData.destinationAccountNumber === 'string'
+          ? eventData.destinationAccountNumber
+          : null,
+      receivingBankCode:
+        typeof eventData.destinationBankCode === 'string' ? eventData.destinationBankCode : null,
+      providerTransactionReference,
+    });
+    if (!attribution) {
+      // Acknowledged (so the provider stops retrying) but not recorded, and surfaced: this is the
+      // "unknown receiving account" case, which must be visible to an operator, not silently dropped.
+      return { status: 'UNRESOLVED', reason: 'Receiving account could not be attributed' };
+    }
+
     const recorded = await this.inbound.record({
-      institutionId: this.institutionId,
-      providerKey: this.providerKey,
-      environment: request.environment,
+      institutionId: attribution.institutionId,
+      providerKey: this.config.providerKey,
+      environment: this.config.environment,
       providerTransactionReference,
       providerPaymentReference:
         typeof eventData.paymentReference === 'string' ? eventData.paymentReference : null,

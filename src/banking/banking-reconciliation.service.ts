@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { DataSource } from 'typeorm';
+import { DataSource } from 'typeorm';
 
 /**
  * Reconciliation.
@@ -242,6 +242,36 @@ export class BankingReconciliationService {
               resolution_note=$4
         WHERE id=$1 AND state IN ('OPEN','INVESTIGATING')`,
       [exceptionId, resolution, resolvedBy, note.slice(0, 500)],
+    );
+  }
+
+  /**
+   * Run history for one institution.
+   *
+   * Deliberately has no cross-institution variant: a reconciliation listing that spans institutions
+   * would disclose other customers' financial activity to whoever opened the page.
+   */
+  async listRuns(institutionId: string, limit = 50) {
+    return this.db.query<
+      Array<{
+        id: string;
+        provider_key: string;
+        environment: string;
+        state: string;
+        observations: number;
+        exceptions_raised: number;
+        started_at: Date;
+        completed_at: Date | null;
+        failure_code: string | null;
+      }>
+    >(
+      `SELECT id,provider_key,environment,state,observations,exceptions_raised,started_at,
+              completed_at,failure_code
+         FROM banking_reconciliation_runs
+        WHERE institution_id=$1
+        ORDER BY started_at DESC
+        LIMIT $2`,
+      [institutionId, Math.min(Math.max(limit, 1), 200)],
     );
   }
 

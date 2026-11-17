@@ -3,14 +3,15 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import type { DataSource, EntityManager } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
-import type { AuthorizationService } from '../authorization/authorization.service';
-import type { ProtectedAuthorityService } from '../authorization/protected-authority.service';
+import { AuthorizationService } from '../authorization/authorization.service';
+import { ProtectedAuthorityService } from '../authorization/protected-authority.service';
 import { canonical } from '../authorization/workforce-crypto';
 
 /**
@@ -106,6 +107,11 @@ export interface BankingProviderVersionView {
 }
 
 /** The registry contract this service is allowed to believe. */
+/** Injection token for the capability source. The registry is the only implementation, but binding it
+ * by token (rather than by class) keeps the governance service from depending on a concrete registry
+ * and lets a test substitute a fixed descriptor set. */
+export const BANKING_PROVIDER_CAPABILITY_SOURCE = Symbol('BANKING_PROVIDER_CAPABILITY_SOURCE');
+
 export interface BankingProviderCapabilitySource {
   descriptorFor(providerKey: string): {
     key: string;
@@ -126,6 +132,7 @@ export class BankingProviderGovernanceService {
     private readonly db: DataSource,
     private readonly auth: AuthorizationService,
     private readonly protectedAuthority: ProtectedAuthorityService,
+    @Inject(BANKING_PROVIDER_CAPABILITY_SOURCE)
     private readonly registry: BankingProviderCapabilitySource,
   ) {}
 

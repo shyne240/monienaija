@@ -199,6 +199,26 @@ export const environmentSchema = z
     MONNIFY_VERIFICATION_ENABLED: booleanFromEnvironment.default(false),
     MONNIFY_API_KEY: optionalEnvironmentSecret,
     MONNIFY_SECRET_KEY: optionalEnvironmentSecret,
+    // ---------------------------------------------------------------- banking (ARENA 3D)
+    // Banking is its own enablement decision, separate from identity verification: enabling KYC
+    // verification must never turn on money movement, and vice versa. Defaults to off so that
+    // deploying this code cannot start a payment provider by itself.
+    BANKING_ENABLED: booleanFromEnvironment.default(false),
+    BANKING_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),
+    // Monnify contract code is not a secret, but it is provider-issued configuration.
+    BANKING_MONNIFY_CONTRACT_CODE: optionalEnvironmentString,
+    // Banking secrets are separate variables from the identity-verification ones on purpose: the two
+    // integrations are different Monnify products with different commercial entitlements, and sharing
+    // a credential would make one entitlement silently imply the other.
+    BANKING_MONNIFY_API_KEY: optionalEnvironmentSecret,
+    BANKING_MONNIFY_SECRET_KEY: optionalEnvironmentSecret,
+    BANKING_MONNIFY_CLIENT_SECRET: optionalEnvironmentSecret,
+    // Disables NEW banking intake. Committed obligations and their recovery continue.
+    BANKING_INTAKE_DISABLED: booleanFromEnvironment.default(false),
+    BANKING_DISPATCH_WORKER_ENABLED: booleanFromEnvironment.optional(),
+    BANKING_DISPATCH_POLL_INTERVAL_MS: z.coerce.number().int().min(250).max(600_000).default(5_000),
+    BANKING_DISPATCH_LEASE_MS: z.coerce.number().int().min(1_000).max(600_000).default(30_000),
+    BANKING_DISPATCH_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(3),
     DOJAH_VERIFICATION_ENABLED: booleanFromEnvironment.default(false),
     DOJAH_VERIFICATION_ENV: z.preprocess(
       (value) => (value === '' ? undefined : value),
