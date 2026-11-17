@@ -615,6 +615,14 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
       '1785753600503',
       '1785753600504',
       '1785753600505',
+      // ARENA 3D banking chain (reserved 0600-0699). The banking migrations are the current head, so
+      // this acceptance list must include them; the alternative would be to assert an older head,
+      // which would pass by describing a tree that is not the one under test.
+      '1785753600600',
+      '1785753600601',
+      '1785753600602',
+      '1785753600603',
+      '1785753600604',
     ]).toContain(latest[0]!.timestamp);
     expect([
       'SecureAgentApplicationAccess1785753600095',
@@ -637,6 +645,12 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
       'InstitutionGovernanceExecutionIntegrity1785753600500',
       'ProtectedAuthorityBoundary1785753600501',
       'ProtectedAuthorityInstitutionalOwnership1785753600502',
+      // ARENA 3D banking chain, the current migration head.
+      'BankingProviderGovernance1785753600600',
+      'BankingOperationRecords1785753600601',
+      'BankingReconciliation1785753600602',
+      'BankingDispatchLeases1785753600603',
+      'BankingFeeBinding1785753600604',
     ]).toContain(latest[0]!.name);
   });
 });
