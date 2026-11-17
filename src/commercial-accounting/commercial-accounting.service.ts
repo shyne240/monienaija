@@ -201,41 +201,8 @@ export class CommercialAccountingService {
         input.feePayerLedgerAccountId ??
         (await this.resolveWalletLedgerAccountId(manager, input.feePayerCustomerId, 'FEE_PAYER'));
 
-      let revenueMinor: bigint;
-      let vatLegMinor: bigint;
-      let payerDebitMinor: bigint;
-      const vatMinorRawDecision = (input.feeDecision as { vatMinor?: unknown }).vatMinor;
-      const decisionVatMinor =
-        typeof vatMinorRawDecision === 'string' && /^\d+$/.test(vatMinorRawDecision)
-          ? BigInt(vatMinorRawDecision)
-          : 0n;
-
-      if (config.vatTreatment === CommercialVatTreatment.EXCLUSIVE_ADD_ON) {
-        // Use the calculator's authoritative VAT amount (fee * vat_bps / 10000, floored).
-        vatLegMinor = decisionVatMinor;
-        // Cross-check the decision math deterministically — fail closed on any drift.
-        const expected = vatRateBps === 0 ? 0n : (feeMinor * BigInt(vatRateBps)) / 10_000n;
-        if (expected !== vatLegMinor) {
-          throw new CommercialAccountingBlockedError(
-            'COMMERCIAL_VAT_DECISION_MISMATCH',
-            `authoritative fee decision vatMinor ${vatLegMinor} != deterministic recomputation ${expected} — refusing to post`,
-          );
-        }
-        revenueMinor = feeMinor;
-        payerDebitMinor = feeMinor + vatLegMinor;
-      } else {
-        // INCLUSIVE_IN_FEE — VAT carved out of the fee: vat = fee * bps / (10000+bps), floored.
-        vatLegMinor =
-          vatRateBps === 0 ? 0n : (feeMinor * BigInt(vatRateBps)) / (10_000n + BigInt(vatRateBps));
-        revenueMinor = feeMinor - vatLegMinor;
-        payerDebitMinor = feeMinor;
-        if (revenueMinor <= 0n) {
-          throw new CommercialAccountingBlockedError(
-            'COMMERCIAL_VAT_MISCALIBRATED',
-            `INCLUSIVE_IN_FEE would zero-out fee revenue at vat_bps ${vatRateBps} on fee ${feeMinor} — refusing to post degenerate accounting`,
-          );
-        }
-      }
+      const { revenueMinor, vatLegMinor, payerDebitMinor, decisionVatMinor } =
+        this.calculateFeePosting(input.feeDecision, config.vatTreatment, vatRateBps, feeMinor);
 
       const payerAccount = await manager
         .getRepository(LedgerAccount)
@@ -497,6 +464,111 @@ export class CommercialAccountingService {
       feeCollected,
       legs: legsEvidence,
     };
+  }
+
+  /**
+   * Quote the fee that the same accounting boundary would actually debit. This does not reserve
+   * funds, guarantee registry availability, or authorize a transfer. Callers must resolve the fee
+   * rule on the server and re-evaluate this value in their posting transaction.
+   */
+  quoteFeeDebit(feeDecision: Record<string, unknown>): {
+    feeMinor: string;
+    vatMinor: string;
+    debitMinor: string;
+  } {
+    if (feeDecision.resolutionStatus === 'AMBIGUOUS') {
+      throw new CommercialAccountingBlockedError(
+        'COMMERCIAL_FEE_AMBIGUOUS',
+        'Fee rule resolution is ambiguous',
+      );
+    }
+    const status = feeDecision.status;
+    if (status === 'NOT_CONFIGURED' || status === 'ZERO') {
+      return { feeMinor: '0', vatMinor: '0', debitMinor: '0' };
+    }
+    const raw = feeDecision.feeMinor;
+    if (
+      status !== 'APPLIED' ||
+      typeof raw !== 'string' ||
+      !/^\d+$/.test(raw) ||
+      BigInt(raw) <= 0n
+    ) {
+      throw new CommercialAccountingBlockedError(
+        'COMMERCIAL_FEE_DECISION_INVALID',
+        'Fee decision is not quotable',
+      );
+    }
+    const config = this.configService.read();
+    if (!config.enabled) {
+      throw new CommercialAccountingBlockedError(
+        'COMMERCIAL_ACCOUNTING_NOT_ENABLED',
+        'A configured fee cannot be quoted without enabled accounting',
+      );
+    }
+    if (config.vatTreatment === null) {
+      throw new CommercialAccountingBlockedError(
+        'COMMERCIAL_VAT_TREATMENT_NOT_CONFIGURED',
+        'A configured fee requires a VAT treatment',
+      );
+    }
+    const vatRateBps = this.extractVatRateBps(feeDecision);
+    if (vatRateBps === null) {
+      throw new CommercialAccountingBlockedError(
+        'COMMERCIAL_VAT_RATE_NOT_CONFIGURED',
+        'A configured fee requires a VAT rate',
+      );
+    }
+    const split = this.calculateFeePosting(
+      feeDecision,
+      config.vatTreatment,
+      vatRateBps,
+      BigInt(raw),
+    );
+    return {
+      feeMinor: split.revenueMinor.toString(),
+      vatMinor: split.vatLegMinor.toString(),
+      debitMinor: split.payerDebitMinor.toString(),
+    };
+  }
+
+  private calculateFeePosting(
+    feeDecision: Record<string, unknown>,
+    vatTreatment: CommercialVatTreatment,
+    vatRateBps: number,
+    feeMinor: bigint,
+  ): {
+    revenueMinor: bigint;
+    vatLegMinor: bigint;
+    payerDebitMinor: bigint;
+    decisionVatMinor: bigint;
+  } {
+    const raw = feeDecision.vatMinor;
+    const decisionVatMinor = typeof raw === 'string' && /^\d+$/.test(raw) ? BigInt(raw) : 0n;
+    if (vatTreatment === CommercialVatTreatment.EXCLUSIVE_ADD_ON) {
+      const expected = vatRateBps === 0 ? 0n : (feeMinor * BigInt(vatRateBps)) / 10_000n;
+      if (expected !== decisionVatMinor) {
+        throw new CommercialAccountingBlockedError(
+          'COMMERCIAL_VAT_DECISION_MISMATCH',
+          `authoritative fee decision vatMinor ${decisionVatMinor} != deterministic recomputation ${expected} — refusing to post`,
+        );
+      }
+      return {
+        revenueMinor: feeMinor,
+        vatLegMinor: decisionVatMinor,
+        payerDebitMinor: feeMinor + decisionVatMinor,
+        decisionVatMinor,
+      };
+    }
+    const vatLegMinor =
+      vatRateBps === 0 ? 0n : (feeMinor * BigInt(vatRateBps)) / (10_000n + BigInt(vatRateBps));
+    const revenueMinor = feeMinor - vatLegMinor;
+    if (revenueMinor <= 0n) {
+      throw new CommercialAccountingBlockedError(
+        'COMMERCIAL_VAT_MISCALIBRATED',
+        `INCLUSIVE_IN_FEE would zero-out fee revenue at vat_bps ${vatRateBps} on fee ${feeMinor} — refusing to post degenerate accounting`,
+      );
+    }
+    return { revenueMinor, vatLegMinor, payerDebitMinor: feeMinor, decisionVatMinor };
   }
 
   isEnabled(): boolean {

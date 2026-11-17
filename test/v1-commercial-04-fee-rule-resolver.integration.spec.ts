@@ -32,6 +32,9 @@ import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { FeeRuleRegistryService } from '../src/fee-rules/fee-rule-registry.service';
 import { FeeRuleResolverService } from '../src/fee-rules/fee-rule-resolver.service';
+import { TransferPricingService } from '../src/transfer/transfer-pricing.service';
+import { CommercialAccountingConfigService } from '../src/commercial-accounting/commercial-accounting-config.service';
+import { CommercialVatTreatment } from '../src/commercial-accounting/commercial-accounting.enums';
 import { ProductCatalogSeedService } from '../src/product-catalog/product-catalog-seed.service';
 import {
   createIntegrationDataSource,
@@ -180,6 +183,45 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
     expect(r.productCode).toBe('WALLET_TRANSFER');
     expect(r.currency).toBe('NGN');
     expect(r.rule).toBeUndefined();
+  });
+
+  it('prices transfer debit using server fee rules and existing accounting treatment', async () => {
+    const pricing = app.get(TransferPricingService);
+    const config = app.get(CommercialAccountingConfigService);
+    const spy = jest
+      .spyOn(config, 'read')
+      .mockReturnValue({
+        enabled: true,
+        vatTreatment: CommercialVatTreatment.EXCLUSIVE_ADD_ON,
+        commissionTreatment: null,
+        commissionTiming: null,
+      });
+    try {
+      await registry.createRule(baseRule({ flatFeeMinor: '100', vatBps: 750 }), 'test');
+      const price = () =>
+        dataSource.transaction('SERIALIZABLE', (manager) =>
+          pricing.priceWithManager(manager, { amountMinor: '10000', currency: 'NGN' }),
+        );
+      const first = await price();
+      expect(first).toMatchObject({
+        amountMinor: '10000',
+        feeMinor: '100',
+        vatMinor: '7',
+        totalDebitMinor: '10107',
+      });
+      expect((await price()).pricingHash).toBe(first.pricingHash);
+      spy.mockReturnValue({
+        enabled: true,
+        vatTreatment: CommercialVatTreatment.INCLUSIVE_IN_FEE,
+        commissionTreatment: null,
+        commissionTiming: null,
+      });
+      const inclusive = await price();
+      expect(inclusive).toMatchObject({ feeMinor: '94', vatMinor: '6', totalDebitMinor: '10100' });
+      expect(inclusive.pricingHash).not.toBe(first.pricingHash);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('02. product mismatch → NOT_CONFIGURED', async () => {

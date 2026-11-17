@@ -30,6 +30,7 @@ import {
   INTERNAL_TRANSFER_IDEMPOTENCY_PORT,
 } from './internal-transfer-gate.types';
 import { TransferService } from './transfer.service';
+import { TransferPricingService } from './transfer-pricing.service';
 import { WalletTransactionController } from './wallet-transaction.controller';
 
 @Module({
@@ -54,6 +55,7 @@ import { WalletTransactionController } from './wallet-transaction.controller';
   controllers: [TransferController, WalletTransactionController],
   providers: [
     TransferService,
+    TransferPricingService,
     A3InternalTransferBindingAdapter,
     TypeOrmInternalTransferGateAuditAdapter,
     TypeOrmInternalTransferGateIdempotencyAdapter,
@@ -72,6 +74,11 @@ import { WalletTransactionController } from './wallet-transaction.controller';
     InternalTransferGateService,
     TransferLifecycleService,
   ],
-  exports: [TransferService, InternalTransferGateService, TransferLifecycleService],
+  exports: [
+    TransferService,
+    TransferPricingService,
+    InternalTransferGateService,
+    TransferLifecycleService,
+  ],
 })
 export class TransferModule {}
