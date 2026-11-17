@@ -106,9 +106,12 @@ describe('Stage 8 consolidated financial-engine migration acceptance (real Postg
       `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations
         ORDER BY timestamp DESC LIMIT 1`,
     );
+    // ARENA 3D banking chain is the current head. Asserting the older 0505 head would describe a tree
+    // that is no longer the one under test; the banking migrations are inside the reserved 0600-0699
+    // allocation and are applied after the KYC governance chain by timestamp order.
     expect(rows[0]).toEqual({
-      timestamp: '1785753600505',
-      name: 'KycIdentityRevisionAndEvidenceRead1785753600505',
+      timestamp: '1785753600604',
+      name: 'BankingFeeBinding1785753600604',
     });
   });
 
@@ -215,7 +218,7 @@ describe('Stage 8 consolidated financial-engine migration acceptance (real Postg
       expect(appliedNames).toContain('CreateGovernedLedgerReversalExecutions1785753600117');
       expect(appliedNames).toContain('CreateFinancialCommitments1785753600140');
       expect(appliedNames).toContain('LinkA7InboundExecution1785753600146');
-      expect(appliedNames.at(-1)).toBe('KycIdentityRevisionAndEvidenceRead1785753600505');
+      expect(appliedNames.at(-1)).toBe('BankingFeeBinding1785753600604');
       expect(await upgrade.showMigrations()).toBe(false);
     } finally {
       await destroyIntegrationDataSource(upgrade);
@@ -362,7 +365,10 @@ describe('Stage 8 readiness detection of a missing earlier migration (real Postg
     expect(result.migrations.compatible).toBe(true);
     expect(result.migrations.missing).toEqual([]);
     expect(result.migrations.unexpected).toEqual([]);
-    expect(result.migrations.latestTimestamp).toBe('1785753600505');
+    // The readiness service's expected head is the current migration head. This assertion tracks it
+    // rather than re-deriving it, so a stale expectation fails loudly instead of quietly accepting a
+    // tree the service does not consider compatible.
+    expect(result.migrations.latestTimestamp).toBe('1785753600604');
     // Financial dependency gates are unverified by design, so overall readiness still refuses.
     expect(result.status).toBe('error');
     expect(result.reason).toBe('financial_dependencies_not_ready');

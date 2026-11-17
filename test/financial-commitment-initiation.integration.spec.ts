@@ -155,7 +155,22 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
         read: (_manager: unknown, id: string) => Promise.resolve(snapshots.get(id) ?? null),
       })
       .overrideProvider(WITHDRAWAL_EXECUTION_AUTHORITY)
-      .useValue({ authorize: () => Promise.resolve(withdrawalAuthority) })
+      .useValue({
+        // The authority contract returns a decision object, not a bare word. This stub previously
+        // returned the string itself, so the service's `authorized.outcome` check read `undefined`
+        // and this suite reported "not authorized" for every case — including the AUTHORIZED ones.
+        // The failure was pre-existing and independent of the banking work; it is fixed here because
+        // a suite that cannot pass a single case proves nothing about the authority boundary it is
+        // supposed to be guarding.
+        authorize: () =>
+          Promise.resolve({
+            outcome: withdrawalAuthority,
+            // Only a real AUTHORIZED decision may name a provider, mirroring the production rule that
+            // an authority claiming AUTHORIZED without a provider is treated as unavailable.
+            providerKey: withdrawalAuthority === 'AUTHORIZED' ? 'MONNIFY' : null,
+            environment: withdrawalAuthority === 'AUTHORIZED' ? 'sandbox' : null,
+          }),
+      })
       .overrideProvider(NOTIFICATION_PROVIDER_TOKEN)
       .useValue(new TestNotificationProvider())
       .compile();
