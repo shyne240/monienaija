@@ -680,6 +680,34 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       classRows[0]!.id,
     ]);
     await dataSource.query(
+      `UPDATE agent_authentication_credentials SET account_locked=true WHERE agent_id=$1`,
+      [agentId],
+    );
+    await expect(
+      quotes.create(ap, {
+        destinationWalletId: source.id,
+        amountMinor: '100',
+        currency: 'NGN',
+        idempotencyKey: `locked-${randomUUID()}`,
+      }),
+    ).rejects.toMatchObject({ status: 401 });
+    await dataSource.query(
+      `UPDATE agent_authentication_credentials SET account_locked=false WHERE agent_id=$1`,
+      [agentId],
+    );
+    await dataSource.query(
+      `UPDATE agent_authentication_credentials SET password_changed_at=clock_timestamp()+interval '1 second' WHERE agent_id=$1`,
+      [agentId],
+    );
+    await expect(
+      quotes.create(ap, {
+        destinationWalletId: source.id,
+        amountMinor: '100',
+        currency: 'NGN',
+        idempotencyKey: `rotated-${randomUUID()}`,
+      }),
+    ).rejects.toMatchObject({ status: 401 });
+    await dataSource.query(
       `UPDATE agent_authentication_sessions SET status='REVOKED',revoked_at=now() WHERE id=$1`,
       [agentSessions[0]!.id],
     );
@@ -847,6 +875,24 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     expect(
       await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [stale.quoteId]),
     ).toEqual([{ status: 'ACTIVE' }]);
+    await dataSource.query(
+      `UPDATE customer_authentication_credentials SET account_locked=true WHERE customer_id=$1`,
+      [sender.customerId],
+    );
+    await expect(
+      transferService.createConfirmedTransfer(principal, quote.quoteId, key),
+    ).rejects.toMatchObject({ status: 401 });
+    await dataSource.query(
+      `UPDATE customer_authentication_credentials SET account_locked=false WHERE customer_id=$1`,
+      [sender.customerId],
+    );
+    await dataSource.query(
+      `UPDATE customer_authentication_credentials SET password_version=password_version+1 WHERE customer_id=$1`,
+      [sender.customerId],
+    );
+    await expect(
+      transferService.createConfirmedTransfer(principal, quote.quoteId, key),
+    ).rejects.toMatchObject({ status: 401 });
     await dataSource.query(
       `UPDATE authentication_sessions SET status='REVOKED', revoked_at=clock_timestamp() WHERE id=$1`,
       [principal.sessionId],

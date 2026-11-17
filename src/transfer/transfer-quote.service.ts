@@ -430,6 +430,28 @@ export class TransferQuoteService {
             [sessionId, ownerId],
           );
     if (rows.length !== 1) throw new UnauthorizedException('Session is no longer active');
+    // Lock and revalidate the credential, not just the session row. A session can remain
+    // ACTIVE after an out-of-band credential lock, expiry, rotation or soft deletion.
+    const credential =
+      type === 'CUSTOMER'
+        ? await manager.query<Array<{ id: string }>>(
+            `SELECT c.id FROM customer_authentication_credentials c JOIN authentication_sessions s
+             ON s.credential_id=c.id AND s.customer_id=c.customer_id
+            WHERE s.id=$1 AND c.deleted_at IS NULL AND c.status='ACTIVE' AND NOT c.account_locked
+              AND NOT c.rotation_required AND c.password_version=s.onboarding_password_version
+              AND (c.password_expires_at IS NULL OR c.password_expires_at>clock_timestamp()) FOR SHARE OF c`,
+            [sessionId],
+          )
+        : await manager.query<Array<{ id: string }>>(
+            `SELECT c.id FROM agent_authentication_credentials c JOIN agent_authentication_sessions s
+             ON s.credential_id=c.id AND s.agent_id=c.agent_id
+            WHERE s.id=$1 AND c.deleted_at IS NULL AND c.status='ACTIVE' AND NOT c.account_locked
+              AND NOT c.rotation_required AND date_trunc('milliseconds',s.issued_at)>=date_trunc('milliseconds',c.password_changed_at)
+              AND (c.password_expires_at IS NULL OR c.password_expires_at>clock_timestamp()) FOR SHARE OF c`,
+            [sessionId],
+          );
+    if (credential.length !== 1)
+      throw new UnauthorizedException('Session credential is no longer active');
     return rows[0]!.expires_at;
   }
 }

@@ -1001,7 +1001,7 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
         [credentialId, customerId],
       );
       await dataSource.query(
-        `INSERT INTO authentication_sessions (id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW()+interval '1 hour',NOW())`,
+        `INSERT INTO authentication_sessions (id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at,onboarding_password_version) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW()+interval '1 hour',NOW(),1)`,
         [sessionId, customerId, credentialId, randomBytes(32).toString('hex')],
       );
       const principal = {
@@ -1069,7 +1069,7 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       [credentialId, customerId],
     );
     await dataSource.query(
-      `INSERT INTO authentication_sessions (id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW()+interval '1 hour',NOW())`,
+      `INSERT INTO authentication_sessions (id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at,onboarding_password_version) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW()+interval '1 hour',NOW(),1)`,
       [sessionId, customerId, credentialId, randomBytes(32).toString('hex')],
     );
     const principal = {
