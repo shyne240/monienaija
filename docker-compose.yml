@@ -1,22 +1,218 @@
+# MonieNaija — local operational acceptance stack.
+#
+# This is the topology a controlled deployment actually needs, expressed so it can be run and
+# inspected rather than described. It is deliberately small: PostgreSQL, one backend (API + in-process
+# workers), one admin web, one reverse proxy terminating TLS. No Kubernetes, no service mesh, no
+# message broker. The application's own outbox table is its queue, and its workers are in-process and
+# lease-guarded, so adding a broker here would introduce a second durability story to reconcile
+# against the first.
+#
+# ── What each service is for ────────────────────────────────────────────────────────────────────────
+#
+#   postgres     The only durable store. Backups and restores are exercised against it.
+#   migrate      A one-shot job that applies migrations and exits. The backend does NOT auto-migrate:
+#                schema change and process start are separate decisions, and a rolling restart must
+#                never race a migration.
+#   backend      Nest API plus the dispatch/expiry/KYC/notification workers, non-root, read-only
+#                root filesystem with an explicit writable volume.
+#   admin-web    Static build served by nginx. Talks to the backend same-origin through the proxy, so
+#                there is no CORS allowlist to get wrong and no API base URL baked into the bundle.
+#   proxy        TLS termination and the single public entry point.
+#
+# ── Running it ─────────────────────────────────────────────────────────────────────────────────────
+#
+#   docker compose up -d postgres
+#   docker compose run --rm migrate
+#   docker compose up -d backend admin-web proxy
+#
+# Secrets come from a `.env` file that is never committed (see .env.example for the inventory). No
+# credential is written into this file; the values below are placeholders that the backend's own
+# startup validation will refuse in production mode.
+
+name: monienaija
+
 services:
   postgres:
-    image: postgres:16-alpine
-    container_name: monienaija-postgres
+    image: postgres:16.4-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-monienaija}
-      POSTGRES_USER: ${DB_USER:-monienaija}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-change-me-local-only}
-    ports:
-      - '${DB_PORT:-5432}:5432'
+      # The superuser. Used only by the migrate job and by backup/restore. The backend never uses it.
+      POSTGRES_USER: ${DB_ADMIN_NAME:-monienaija_admin}
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:?DB_ADMIN_PASSWORD must be set}
+      # Consistency and durability. A financial database that loses the last second of committed
+      # transactions on power loss is not a financial database.
+      POSTGRES_INITDB_ARGS: '--data-checksums'
+    command:
+      - postgres
+      - -c
+      - synchronous_commit=on
+      - -c
+      - full_page_writes=on
+      - -c
+      - wal_level=replica
+      - -c
+      - max_connections=100
+      - -c
+      - statement_timeout=60000
+      - -c
+      - lock_timeout=10000
+      - -c
+      - idle_in_transaction_session_timeout=60000
+      - -c
+      - log_min_duration_statement=500
+      - -c
+      - log_lock_waits=on
+      - -c
+      - deadlock_timeout=1000
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 5s
       timeout: 5s
-      retries: 12
-      start_period: 5s
+      retries: 20
+      start_period: 10s
+    networks: [data]
+
+  # One-shot schema job. Idempotent and safe to re-run. Exits non-zero if the schema does not reach
+  # the expected head, which is what makes it usable as a release gate.
+  migrate:
+    build: { context: ., target: runtime }
+    image: monienaija-backend:local
+    profiles: ['ops']
+    command:
+      [
+        'node',
+        '-r',
+        'ts-node/register',
+        'node_modules/typeorm/cli.js',
+        'migration:run',
+        '-d',
+        'dist/config/data-source.js',
+      ]
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      DB_NAME: ${DB_NAME:-monienaija}
+      # Migrations run as the OWNING role, never the runtime role: the runtime role has no DDL rights
+      # and must never acquire them.
+      DB_USER: ${DB_ADMIN_NAME:-monienaija_admin}
+      DB_PASSWORD: ${DB_ADMIN_PASSWORD:?DB_ADMIN_PASSWORD must be set}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      LOG_LEVEL: info
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [data]
+    restart: 'no'
+
+  backend:
+    build: { context: ., target: runtime }
+    image: monienaija-backend:local
+    restart: unless-stopped
+    read_only: true
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: '3000'
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      BUILD_TIMESTAMP: ${BUILD_TIMESTAMP:-unknown}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # The RUNTIME role: no DDL, no superuser, no CREATEDB/CREATEROLE. The application's own
+      # startup readiness check refuses to run on a privileged role in production.
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      DB_NAME: ${DB_NAME:-monienaija}
+      DB_USER: ${DB_RUNTIME_USER:-monienaija_runtime}
+      DB_PASSWORD: ${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD must be set}
+      DB_SSL: 'false'
+      DB_POOL_MAX: '20'
+      # In-process workers. Disabled individually, never globally: turning off banking dispatch must
+      # not also stop cash-to-cash expiry.
+      BANKING_ENABLED: ${BANKING_ENABLED:-false}
+      BANKING_ENVIRONMENT: ${BANKING_ENVIRONMENT:-sandbox}
+      NOTIFICATION_WORKER_ENABLED: ${NOTIFICATION_WORKER_ENABLED:-false}
+      CASH_TO_CASH_EXPIRY_WORKER_ENABLED: ${CASH_TO_CASH_EXPIRY_WORKER_ENABLED:-true}
+      KYC_TIER_WORKER_ENABLED: ${KYC_TIER_WORKER_ENABLED:-true}
+      NOTIFICATION_SMS_PROVIDER: ${NOTIFICATION_SMS_PROVIDER:-managed}
+      NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON: ${NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON:?notification keyring required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      # Callback origins the webhook and CORS layers accept. An empty value refuses rather than
+      # allows: a permissive default would be the vulnerability, not the misconfiguration.
+      WEBHOOK_ALLOWED_ORIGINS: ${WEBHOOK_ALLOWED_ORIGINS:-}
+    volumes:
+      # The only writable path. Everything else is the read-only image.
+      - app-var:/app/var
+    depends_on:
+      postgres: { condition: service_healthy }
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    networks: [data, edge]
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    stop_grace_period: 45s
+
+  admin-web:
+    build:
+      context: ./apps/admin-web
+      args:
+        # Relative URL: the browser calls the same origin it was served from and the proxy routes it.
+        # This is why no environment-specific API hostname is baked into the image. The application
+        # rejects a loopback value in a static build regardless, so this cannot silently regress.
+        ADMIN_WEB_API_BASE_URL: ${ADMIN_WEB_API_BASE_URL:-/api/v1}
+    image: monienaija-admin-web:local
+    restart: unless-stopped
+    read_only: true
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
+    networks: [edge]
+    tmpfs:
+      - /var/cache/nginx:size=32m
+      - /var/run:size=4m
+      - /tmp:size=8m
+
+  proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    read_only: true
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
+    cap_add: ['NET_BIND_SERVICE', 'CHOWN', 'SETGID', 'SETUID']
+    ports:
+      - '${HTTP_PORT:-8080}:80'
+      - '${HTTPS_PORT:-8443}:443'
+    volumes:
+      - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # The shared header block is included by path, so it must be mounted where the config says.
+      - ./infra/nginx/proxy-headers.inc:/etc/nginx/conf.d/proxy-headers.inc:ro
+      - ./infra/nginx/certs:/etc/nginx/certs:ro
+    networks: [edge]
+    tmpfs:
+      - /var/cache/nginx:size=32m
+      - /var/run:size=4m
+    depends_on:
+      backend: { condition: service_healthy }
+      admin-web: { condition: service_started }
 
 volumes:
   postgres-data:
+  app-var:
+
+networks:
+  # Data network: postgres and backend only. The admin web and the proxy cannot reach the database.
+  data:
+    internal: true
+  edge:
