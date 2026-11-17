@@ -428,6 +428,9 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
       direction: 'OUTGOING',
       limitMinor: '1000',
     });
+    // An outgoing-only profile must not silently authorize the opposite direction.
+    await expect(enforce('OUTGOING', '500')).resolves.toMatchObject({ allowed: true });
+    await expect(enforce('INCOMING', '500')).rejects.toMatchObject({ status: 503 });
     await seedRule({
       profileCode: 'AGENT_P2P_CLASS',
       product: 'WALLET_TRANSFER',
