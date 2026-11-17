@@ -256,6 +256,16 @@ const BANKING_ADMIN_ROUTE_POLICIES: ReadonlyArray<{
     allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
     requiredFunctions: ['banking.reconciliation.resolve'],
   },
+  // Money that arrived and was never credited, plus the sources this deployment cannot answer.
+  // Read-only and deliberately on `reconciliation.view`: adding a new catalogue function to serve a
+  // screen would widen protected authority for operational convenience, which the mission forbids.
+  {
+    method: 'GET',
+    pattern: /^\/api\/v1\/internal\/banking\/institution\/[0-9a-f-]{36}\/unresolved-funds$/,
+    resourceType: 'banking-unresolved-funds',
+    allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+    requiredFunctions: ['reconciliation.view'],
+  },
 ];
 
 /**

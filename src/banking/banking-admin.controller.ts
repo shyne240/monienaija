@@ -22,6 +22,7 @@ import { BankingProviderGovernanceService } from './banking-provider-governance.
 import { BankingReadinessService } from './banking-readiness.service';
 import { BankingReconciliationService } from './banking-reconciliation.service';
 import { BankingProviderRegistry } from './banking-provider.registry';
+import { OperationalFundsVisibilityService } from './operational-funds-visibility.service';
 
 interface AuthenticatedRequest {
   headers: Record<string, string | string[] | undefined>;
@@ -51,6 +52,7 @@ export class BankingAdminController {
     private readonly governance: BankingProviderGovernanceService,
     private readonly reconciliation: BankingReconciliationService,
     private readonly registry: BankingProviderRegistry,
+    private readonly unresolvedFunds: OperationalFundsVisibilityService,
   ) {}
 
   // ------------------------------------------------------------------ readiness
@@ -162,6 +164,32 @@ export class BankingAdminController {
       environment: this.registry.find(providerKey)!.descriptor.environment,
     });
     return { runId, state: 'RUNNING' as const };
+  }
+
+  /**
+   * Money that arrived and has not been credited, plus the sources that cannot be answered.
+   *
+   * Placed under reconciliation.view because that is the function that already means "may look at
+   * institutional money movement". It deliberately does not get a new function: adding one would
+   * require touching the authorization catalogue to serve a screen, and the mission forbids
+   * widening the catalogue to make operations convenient.
+   *
+   * Read-only. There is no companion route that resolves or credits anything; resolution belongs to
+   * the owning domain and runs through its own governance.
+   */
+  @Get('institution/:institutionId/unresolved-funds')
+  async unresolvedFundsFor(
+    @Req() req: AuthenticatedRequest,
+    @Param('institutionId') institutionId: string,
+    @Query('limit') limit?: string,
+  ) {
+    await this.require(req, 'reconciliation.view');
+    if (!UUID.test(institutionId)) throw new BadRequestException('institutionId must be a UUID');
+    const parsed = limit === undefined ? 50 : Number(limit);
+    if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 200) {
+      throw new BadRequestException('limit must be between 1 and 200');
+    }
+    return this.unresolvedFunds.unresolved(institutionId.toLowerCase(), parsed);
   }
 
   @Get('reconciliation/:institutionId/exceptions')

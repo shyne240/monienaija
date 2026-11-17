@@ -25,6 +25,7 @@ import { BankingCommitmentBridgeService } from './banking-commitment-bridge.serv
 import { BankingFeeBindingService } from './banking-fee-binding.service';
 import { BankingAgentFundingService } from './banking-agent-funding.service';
 import { AgentFloatFundingService } from './agent-float-funding.service';
+import { OperationalFundsVisibilityService } from './operational-funds-visibility.service';
 import {
   AGENT_FLOAT_FUNDING_AUTHORITY,
   PolicyAgentFloatFundingAuthority,
@@ -65,7 +66,13 @@ export interface BankingRuntime {
  *    keeps the approval, credential, operational and entitlement distinctions in exactly one place.
  */
 @Module({
-  imports: [AuthorizationModule, FeeModule, ProtectedAuthorityModule, LedgerModule, OperationsModule],
+  imports: [
+    AuthorizationModule,
+    FeeModule,
+    ProtectedAuthorityModule,
+    LedgerModule,
+    OperationsModule,
+  ],
   providers: [
     {
       provide: BANKING_RUNTIME,
@@ -155,6 +162,7 @@ export interface BankingRuntime {
       useClass: UnavailableAgentFloatFundingAuthority,
     },
     PolicyAgentFloatFundingAuthority,
+    OperationalFundsVisibilityService,
     AgentFloatFundingService,
     BankingInboundInstitutionAuthority,
     PostgresWebhookAttribution,
@@ -246,6 +254,7 @@ export interface BankingRuntime {
     BankingAgentFundingService,
     AgentFloatFundingService,
     PolicyAgentFloatFundingAuthority,
+    OperationalFundsVisibilityService,
     BankingWithdrawalExecutionAuthority,
     BankingExternalOperationStatusVerifier,
     BankingInboundFundingVerifier,
