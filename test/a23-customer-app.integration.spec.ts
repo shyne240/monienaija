@@ -984,6 +984,207 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
+  it('authenticates quote and PIN confirmation over HTTP while agent posting stays closed', async () => {
+    const sender = await createCustomerWithCredential();
+    const receiver = await createCustomerWithCredential();
+    const agentToken = await createAgentToken();
+    const agentRows: Array<{ id: string; agent_class_id: string }> = await dataSource.query(
+      `SELECT id,agent_class_id FROM agents`,
+    );
+    const agent = agentRows[0]!;
+    await dataSource.query(`UPDATE agent_classes SET applicable_services=$1 WHERE id=$2`, [
+      JSON.stringify(['WALLET_TRANSFER']),
+      agent.agent_class_id,
+    ]);
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const { LedgerService } = await import('../src/ledger/ledger.service');
+    const { CustomerTransactionPinService } = await import(
+      '../src/customer/customer-transaction-pin.service'
+    );
+    const { AgentAuthenticationService } = await import(
+      '../src/agent-authentication/agent-authentication.service'
+    );
+    const { AgentPasswordHashAlgorithm } = await import(
+      '../src/agent-authentication/agent-authentication.enums'
+    );
+    const wallets = app.get(WalletService);
+    const ledger = app.get(LedgerService);
+    const source = await wallets.createWallet({
+      customerId: sender.customerId,
+      currency: 'NGN',
+      idempotencyKey: `http-src-${randomUUID()}`,
+    });
+    const destination = await wallets.createWallet({
+      customerId: receiver.customerId,
+      currency: 'NGN',
+      idempotencyKey: `http-dst-${randomUUID()}`,
+    });
+    const operating = await wallets.createWallet({
+      customerId: agent.id,
+      currency: 'NGN',
+      idempotencyKey: `http-agent-${randomUUID()}`,
+    });
+    const funding = await ledger.createAccount({
+      code: `http-fund-${randomUUID()}`,
+      name: 'test',
+      accountType: 'ASSET' as any,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+    });
+    await ledger.postJournal({
+      idempotencyKey: `http-fund-${randomUUID()}`,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+      lines: [
+        { accountId: funding.id, direction: 'DEBIT' as any, amountMinor: '5000' },
+        { accountId: source.ledgerAccountId, direction: 'CREDIT' as any, amountMinor: '5000' },
+      ],
+    });
+    await app.get(CustomerTransactionPinService).setTransactionPin(sender.customerId, {
+      pinHash: encodePbkdf2('1234'),
+      hashAlgorithm: 'PBKDF2',
+      pinVersion: 1,
+      actor: sender.customerId,
+    });
+    await app.get(AgentAuthenticationService).setTransactionPin(agent.id, {
+      pinHash: encodePbkdf2('1234'),
+      hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2,
+      pinVersion: 1,
+      actor: agent.id,
+    });
+    const customerPath = '/api/v1/customers/me/transfer-quotes';
+    const agentPath = '/api/v1/agents/me/transfer-quotes';
+    const payload = {
+      sourceWalletId: source.id,
+      destinationWalletId: destination.id,
+      amountMinor: '1200',
+      currency: 'NGN',
+    };
+    await request(app.getHttpServer())
+      .post(customerPath)
+      .set('Idempotency-Key', randomUUID())
+      .send(payload)
+      .expect(401);
+    await request(app.getHttpServer())
+      .post(customerPath)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ ...payload, feeMinor: '0' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .set('Idempotency-Key', randomUUID())
+      .send(payload)
+      .expect(400);
+    const quote = await request(app.getHttpServer())
+      .post(customerPath)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', randomUUID())
+      .send(payload)
+      .expect(201);
+    expect(quote.body).toMatchObject({
+      sourceWalletId: source.id,
+      destinationWalletId: destination.id,
+      amountMinor: '1200',
+      totalDebitMinor: '1200',
+    });
+    const path = `${customerPath}/${quote.body.quoteId as string}/confirm`;
+    const key = randomUUID();
+    const secondSession = await request(app.getHttpServer())
+      .post('/api/v1/customers/sessions')
+      .send({ customerId: sender.customerId, password: 'correct-password-a23' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${secondSession.body.accessToken as string}`)
+      .set('Idempotency-Key', key)
+      .send({ pin: '1234' })
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${receiver.token}`)
+      .set('Idempotency-Key', key)
+      .send({ pin: '1234' })
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', key)
+      .send({ pin: '1234', amountMinor: '1' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', key)
+      .send({ pin: '9999' })
+      .expect(401);
+    const completed = await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', key)
+      .send({ pin: '1234' })
+      .expect(201);
+    expect(completed.body).toMatchObject({ status: 'COMPLETED', amountMinor: '1200' });
+    const replay = await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', key)
+      .send({ pin: '1234' })
+      .expect(201);
+    expect(replay.body.id).toBe(completed.body.id);
+    expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('3800');
+    expect((await wallets.getWalletBalance(destination.id)).balanceMinor).toBe('1200');
+    const customerAgentQuote = await request(app.getHttpServer())
+      .post(customerPath)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ ...payload, destinationWalletId: operating.id })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`${customerPath}/${customerAgentQuote.body.quoteId as string}/confirm`)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ pin: '1234' })
+      .expect(503);
+    const agentQuote = await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ destinationWalletId: destination.id, amountMinor: '100', currency: 'NGN' })
+      .expect(201);
+    expect(agentQuote.body.sourceWalletId).toBe(operating.id);
+    await request(app.getHttpServer())
+      .post(`${agentPath}/${agentQuote.body.quoteId as string}/confirm`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ pin: '1234' })
+      .expect(503);
+    expect((await wallets.getWalletBalance(operating.id)).balanceMinor).toBe('0');
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(1);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', `Bearer ${sender.token}`)
+        .set('Idempotency-Key', key)
+        .send({ pin: '9999' })
+        .expect(401);
+    }
+    await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', key)
+      .send({ pin: '1234' })
+      .expect(401);
+    expect(
+      await dataSource.query(
+        `SELECT account_locked FROM customer_transaction_pins WHERE customer_id=$1`,
+        [sender.customerId],
+      ),
+    ).toEqual([{ account_locked: true }]);
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(1);
+  });
+
   it('database protects bound transfer quote facts and refuses premature generic use', async () => {
     const sender = await createCustomerWithCredential();
     const recipient = await createCustomerWithCredential();

@@ -5,6 +5,10 @@ import { CustomerModule } from '../customer/customer.module';
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { AgentAuthenticationModule } from '../agent-authentication/agent-authentication.module';
 import { TransferPinAuthorizationService } from './transfer-pin-authorization.service';
+import {
+  CustomerSelfTransferQuoteController,
+  AgentSelfTransferQuoteController,
+} from './self-transfer-quote.controller';
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { CapabilityPolicyModule } from '../policy/capability-policy.module';
 import { OperationsModule } from '../operations/operations.module';
@@ -61,7 +65,12 @@ import { WalletTransactionController } from './wallet-transaction.controller';
     CommercialAccountingModule, // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (inert unless enabled)
     TypeOrmModule.forFeature([Transfer, WalletAccount, LedgerJournal, PaymentQuote]),
   ],
-  controllers: [TransferController, WalletTransactionController],
+  controllers: [
+    TransferController,
+    WalletTransactionController,
+    CustomerSelfTransferQuoteController,
+    AgentSelfTransferQuoteController,
+  ],
   providers: [
     TransferService,
     TransferPinAuthorizationService,
