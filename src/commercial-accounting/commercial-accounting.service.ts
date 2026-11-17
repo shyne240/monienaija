@@ -598,6 +598,25 @@ export class CommercialAccountingService {
     customerId: string,
     role: 'FEE_PAYER' | 'COMMISSION_BENEFICIARY',
   ): Promise<string> {
+    if (role === 'COMMISSION_BENEFICIARY') {
+      // An AGENT allocation must not be paid to an arbitrary customer wallet sharing an
+      // opaque identifier. Resolve the existing operating wallet against current ownership
+      // and active agent authority, and reject ambiguity rather than selecting a first row.
+      const rows = await manager.query<Array<{ ledger_account_id: string }>>(
+        `SELECT w.ledger_account_id FROM wallet_accounts w JOIN agents a ON a.id::text=lower(w.customer_id)
+          WHERE w.customer_id=$1 AND w.currency=$2 AND w.status='ACTIVE' AND w.owner_class='AGENT'
+            AND wallet_owner_class(w.customer_id)='AGENT' AND a.status='ACTIVE' AND a.deleted_at IS NULL
+          ORDER BY w.id FOR SHARE OF w,a`,
+        [customerId, ACCOUNTING_CURRENCY],
+      );
+      if (rows.length !== 1) {
+        throw new CommercialAccountingBlockedError(
+          'COMMERCIAL_BENEFICIARY_WALLET_NOT_RESOLVABLE',
+          'An active unambiguous agent operating wallet is required for commission settlement',
+        );
+      }
+      return rows[0]!.ledger_account_id;
+    }
     const wallet = await manager
       .getRepository(WalletAccount)
       .findOne({ where: { customerId, currency: ACCOUNTING_CURRENCY } });

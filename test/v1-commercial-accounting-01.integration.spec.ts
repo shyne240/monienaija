@@ -1374,6 +1374,46 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     expect(await walletBalance(run.agentWallet.ledgerAccountId)).toBe(470100n);
   });
 
+  it('agent commission netting refuses a customer wallet even when its ID is supplied as beneficiary', async () => {
+    configureAccounting({
+      COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT: 'AGENT_WALLET_NETTING',
+      COMMERCIAL_COMMISSION_RECOGNITION_TIMING: 'AT_COMPLETION',
+    });
+    const customerId = await eligibleCustomerId();
+    const wallet = await createWallet(customerId);
+    await fundWallet(wallet.ledgerAccountId, '1000');
+    const input = {
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      baseIdempotencyKey: `invalid-beneficiary-${randomUUID()}`,
+      correlationId: null,
+      reference: null,
+      snapshotIdempotencyKey: `snapshot-${randomUUID()}`,
+      metadata: {},
+      feePayerCustomerId: customerId,
+      feeDecision: { status: 'ZERO' },
+      commissionDecision: {
+        status: 'ALLOCATED',
+        allocations: [
+          {
+            beneficiaryType: 'AGENT',
+            beneficiaryId: customerId,
+            amountMinor: '100',
+            currency: 'NGN',
+          },
+        ],
+      },
+    };
+    await expect(
+      dataSource.transaction((manager) => accountingService.postForCompletion(manager, input)),
+    ).rejects.toMatchObject({
+      status: 422,
+      blockerCode: 'COMMERCIAL_BENEFICIARY_WALLET_NOT_RESOLVABLE',
+    });
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(1000n);
+    expect(await accountingJournals()).toHaveLength(0);
+  });
+
   it('20b. WT (no acting agent) + netting → fails closed (beneficiary wallet unresolvable)', async () => {
     configureAccounting({
       COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT: 'AGENT_WALLET_NETTING',
