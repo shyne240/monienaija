@@ -408,6 +408,96 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
 
   // ═══════════════════ CASES ═══════════════════
 
+  it('projects wallet transfers for the owning agents with correct direction and no failed incoming leak', async () => {
+    const a = await agentBundle({ floatMinor: '3000' });
+    const b = await agentBundle({ floatMinor: '3000' });
+    const outsider = await agentBundle();
+    const customer = await createCustomerWithPhoneAndPin(newPhone(), '1234');
+    await fundWalletDirect(customer.walletLedgerAccountId, '3000');
+
+    // The transfer records are synthetic fixtures backed by real, balanced ledger postings. This
+    // verifies the read projection only; it is not an authenticated transfer initiation journey.
+    async function insertPostedTransfer(source: any, destination: any, amount: string) {
+      const transferId = randomUUID();
+      const journalId = await dataSource.transaction(async (manager) =>
+        ledgerService.postJournalInTransaction(manager, {
+          idempotencyKey: `history-journal-${transferId}`,
+          currency: 'NGN',
+          accountingUnit: 'CUSTOMER_FUNDS',
+          lines: [
+            { accountId: source.walletLedgerAccountId, direction: 'DEBIT', amountMinor: amount },
+            {
+              accountId: destination.walletLedgerAccountId,
+              direction: 'CREDIT',
+              amountMinor: amount,
+            },
+          ],
+        }),
+      );
+      await dataSource.query(
+        `INSERT INTO transfers (id,source_wallet_id,destination_wallet_id,journal_id,amount_minor,
+          currency,status,idempotency_key,request_hash,reference,completed_at)
+         VALUES ($1,$2,$3,$4,$5,'NGN','COMPLETED',$6,$7,$8,now())`,
+        [
+          transferId,
+          source.wallet.id,
+          destination.wallet.id,
+          journalId,
+          amount,
+          `history-transfer-${transferId}`,
+          'a'.repeat(64),
+          `REF-${transferId}`,
+        ],
+      );
+      return transferId;
+    }
+    const sent = await insertPostedTransfer(a, b, '100');
+    const received = await insertPostedTransfer(customer, a, '200');
+    const failed = randomUUID();
+    await dataSource.query(
+      `INSERT INTO transfers (id,source_wallet_id,destination_wallet_id,amount_minor,currency,status,
+        idempotency_key,request_hash,failure_code,failure_message)
+       VALUES ($1,$2,$3,300,'NGN','FAILED',$4,$5,'INSUFFICIENT_FUNDS','Insufficient funds')`,
+      [failed, a.wallet.id, b.wallet.id, `history-failed-${failed}`, 'b'.repeat(64)],
+    );
+
+    const getHistory = (token: string) =>
+      request(app.getHttpServer())
+        .get('/api/v1/agents/me/transactions?type=WALLET_TRANSFER')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+    const aHistory = await getHistory(a.token);
+    expect(aHistory.body.pagination.total).toBe(3);
+    expect(aHistory.body.items.find((x: any) => x.id === sent)).toMatchObject({
+      status: 'COMPLETED',
+      direction: 'DEBIT',
+      amountMinor: '100',
+      counterparty: { type: 'AGENT' },
+      feeMinor: '0',
+      vatMinor: '0',
+    });
+    expect(aHistory.body.items.find((x: any) => x.id === received)).toMatchObject({
+      status: 'COMPLETED',
+      direction: 'CREDIT',
+      amountMinor: '200',
+      counterparty: { type: 'CUSTOMER' },
+    });
+    expect(aHistory.body.items.find((x: any) => x.id === failed)).toMatchObject({
+      status: 'FAILED',
+      direction: 'DEBIT',
+      failureCode: 'INSUFFICIENT_FUNDS',
+    });
+    const bHistory = await getHistory(b.token);
+    expect(bHistory.body.pagination.total).toBe(1);
+    expect(bHistory.body.items[0]).toMatchObject({ id: sent, direction: 'CREDIT' });
+    expect((await getHistory(outsider.token)).body.items).toEqual([]);
+    expect(JSON.stringify(aHistory.body)).not.toContain(a.walletLedgerAccountId);
+    expect(JSON.stringify(aHistory.body)).not.toContain('request_hash');
+    await request(app.getHttpServer())
+      .get('/api/v1/agents/me/transactions?type=WALLET_TRANSFER')
+      .expect(401);
+  });
+
   it('1. agent with no history returns an empty, well-formed page', async () => {
     const { agent, token } = await agentBundle({ floatMinor: '0' });
     const res = await request(app.getHttpServer())
@@ -1051,7 +1141,7 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
   it('16. input validation: invalid type is 400; page/limit clamped to conventions', async () => {
     const { token } = await agentBundle({ floatMinor: '1000' });
     await request(app.getHttpServer())
-      .get('/api/v1/agents/me/transactions?type=WALLET_TRANSFER')
+      .get('/api/v1/agents/me/transactions?type=NOT_A_TRANSFER')
       .set('Authorization', `Bearer ${token}`)
       .expect(400);
     const res = await request(app.getHttpServer())

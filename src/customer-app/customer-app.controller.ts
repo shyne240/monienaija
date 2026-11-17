@@ -26,6 +26,7 @@ import { CustomerService } from '../customer/customer.service';
 import { CustomerTransactionPinService } from '../customer/customer-transaction-pin.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletService } from '../wallet/wallet.service';
+import { WalletStatus } from '../wallet/wallet.enums';
 import { Transfer } from '../transfer/transfer.entity';
 import { TransferService } from '../transfer/transfer.service';
 import {
@@ -809,14 +810,20 @@ export class CustomerAppController {
       if (!wallets || wallets.length === 0) {
         throw new NotFoundException('Destination wallet not found for beneficiary');
       }
-      // Prefer wallet matching requested currency, else first
+      // Never fall back to a different currency or silently select among multiple matches.
+      // The transfer engine rechecks wallet and owner eligibility under its financial locks.
       const currency = String(dto.currency ?? 'NGN')
         .trim()
         .toUpperCase();
-      const matched = wallets.find((w) => String(w.currency).toUpperCase() === currency);
-      const chosen = matched ?? wallets[0];
-      if (!chosen) throw new NotFoundException('Destination wallet not found for beneficiary');
-      resolvedDestinationWalletId = chosen.id;
+      const eligible = wallets.filter(
+        (wallet) =>
+          wallet.currency.toUpperCase() === currency && wallet.status === WalletStatus.ACTIVE,
+      );
+      if (eligible.length === 0)
+        throw new NotFoundException('Eligible destination wallet not found for beneficiary');
+      if (eligible.length !== 1)
+        throw new ConflictException('Destination wallet selection is ambiguous');
+      resolvedDestinationWalletId = eligible[0]!.id;
     } else {
       const rawDest = String(dto.destinationWalletId).trim();
       if (!rawDest) throw new BadRequestException('destinationWalletId is required');

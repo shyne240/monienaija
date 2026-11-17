@@ -181,6 +181,14 @@ export class TransferService {
               'The idempotency key was already used for another transfer',
             );
           }
+          const ownedWallet = await this.walletRepository.findOne({
+            where: { id: existing.sourceWalletId },
+          });
+          assertWalletOwnership(
+            normalized.ownership,
+            ownedWallet?.customerId,
+            ownedWallet?.ownerClass,
+          );
           result = { transferId: existing.id };
         } else {
           throw error;
@@ -326,7 +334,7 @@ export class TransferService {
       const ownedWallet = await manager
         .getRepository(WalletAccount)
         .findOne({ where: { id: existing.sourceWalletId } });
-      assertWalletOwnership(command.ownership, ownedWallet?.customerId);
+      assertWalletOwnership(command.ownership, ownedWallet?.customerId, ownedWallet?.ownerClass);
       await this.metricsService?.increment(manager, 'idempotency.hits');
       return { transferId: existing.id };
     }
@@ -347,7 +355,7 @@ export class TransferService {
       };
     }
 
-    assertWalletOwnership(command.ownership, sourceWallet.customerId);
+    assertWalletOwnership(command.ownership, sourceWallet.customerId, sourceWallet.ownerClass);
 
     const destinationWallet = walletsById.get(command.destinationWalletId);
     if (!destinationWallet) {
@@ -1153,6 +1161,14 @@ export class TransferService {
         if (existing.requestHash !== normalized.requestHash) {
           throw new ConflictException('The idempotency key was already used for another transfer');
         }
+        const ownedWallet = await this.walletRepository.findOne({
+          where: { id: existing.sourceWalletId },
+        });
+        assertWalletOwnership(
+          normalized.ownership,
+          ownedWallet?.customerId,
+          ownedWallet?.ownerClass,
+        );
         return { transferId: existing.id };
       }
       if (attempt >= delaysMs.length) {

@@ -284,6 +284,7 @@ export function receiptFromCashToCashClaimResult(
 export function receiptFromHistoryItem(item: AgentHistoryItem): AgentReceiptViewModel {
   const typeLabel =
     {
+      WALLET_TRANSFER: 'Wallet Transfer',
       CASH_IN: 'Cash→Wallet',
       CASH_OUT: 'Wallet→Cash',
       CASH_TO_CASH: 'Cash→Cash send',
@@ -327,6 +328,9 @@ export function receiptFromHistoryItem(item: AgentHistoryItem): AgentReceiptView
   }
   if (item.feeMinor && item.feeMinor !== '0') {
     lines.push({ label: 'Fee', value: `${formatNairaFromMinor(item.feeMinor)} ${item.currency}` });
+  }
+  if (item.vatMinor && item.vatMinor !== '0') {
+    lines.push({ label: 'VAT', value: `${formatNairaFromMinor(item.vatMinor)} ${item.currency}` });
   }
   if (item.commission) {
     lines.push({

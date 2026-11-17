@@ -87,6 +87,34 @@ function expectSecretFree(text: string) {
 }
 
 describe('Shared Agent receipt renderer', () => {
+  test('wallet transfer history receipt shows status, direction, fees and VAT without internal ids', () => {
+    const item: AgentHistoryItem = {
+      id: 'internal-transfer-id',
+      type: 'WALLET_TRANSFER',
+      status: 'COMPLETED',
+      amountMinor: '100000',
+      currency: 'NGN',
+      direction: 'DEBIT',
+      createdAt: '2026-06-02T10:15:00.000Z',
+      completedAt: '2026-06-02T10:15:01.000Z',
+      reference: 'MN-REF-22',
+      narration: null,
+      feeMinor: '500',
+      vatMinor: '50',
+      counterparty: { type: 'AGENT' },
+      commission: null,
+      failureCode: null,
+      failureMessage: null,
+    };
+    const receipt = receiptFromHistoryItem(item);
+    expect(receipt.heading).toBe('Wallet Transfer Receipt');
+    expect(receipt.shareText).toContain('MN-REF-22');
+    expect(receipt.shareText).toContain('MonieNaija Agent');
+    expect(receipt.shareText).toContain('Fee:');
+    expect(receipt.shareText).toContain('VAT:');
+    expect(receipt.shareText).not.toContain('internal-transfer-id');
+  });
+
   test('C1: completed C2W result renders heading/status/amount/reference/time safely', () => {
     const receipt = receiptFromCashInResult(completedResult, 'Ada Nnaji');
     const { getByTestId, getByText, queryByText } = render(<AgentReceipt receipt={receipt} />);

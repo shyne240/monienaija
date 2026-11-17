@@ -485,6 +485,20 @@ describe('TransferService', () => {
     expect(fixture.dataSource.isolationLevels).toHaveLength(3);
   });
 
+  it('does not disclose a committed result to a different owner after retry exhaustion', async () => {
+    const fixture = makeFixture();
+    await fixture.service.createTransfer(transferCommand());
+    fixture.dataSource.serializationFailuresRemaining = 3;
+    await expect(
+      fixture.service.createTransfer(
+        transferCommand({
+          ownership: { kind: 'CUSTOMER_SELF', customerId: 'unrelated-customer' },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(fixture.ledger.calls).toHaveLength(1);
+  });
+
   it('stays a retryable contention conflict when nothing committed', async () => {
     const fixture = makeFixture();
     fixture.dataSource.serializationFailuresRemaining = 3;

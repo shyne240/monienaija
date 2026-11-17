@@ -647,6 +647,31 @@ describe('V1-HARDENING-01 Customer Beneficiary Exposure + Wallet→Wallet Transf
     expect(Number(dstBalRows[0]!.bal)).toBe(15000);
   });
 
+  it('refuses a beneficiary wallet in a different currency without posting', async () => {
+    const src = await createCustomer();
+    const dst = await createCustomer();
+    const srcWallet = await getWalletId(src.customerId);
+    const ben = await request(app.getHttpServer())
+      .post('/api/v1/customers/me/beneficiaries')
+      .set('Authorization', `Bearer ${src.token}`)
+      .send({ nickname: 'toDst', beneficiaryIdentifier: dst.phone })
+      .expect(201);
+    const before = await countJournals();
+    await request(app.getHttpServer())
+      .post('/api/v1/customers/me/transfers')
+      .set('Authorization', `Bearer ${src.token}`)
+      .set('Idempotency-Key', `idem-${randomUUID()}`)
+      .send({
+        sourceWalletId: srcWallet,
+        beneficiaryId: ben.body.id,
+        amountMinor: '1000',
+        currency: 'USD',
+        pin: '1234',
+      })
+      .expect(404);
+    expect(await countJournals()).toBe(before);
+  });
+
   it('17. POST via beneficiaryId requires exactly one of destinationWalletId/beneficiaryId', async () => {
     const src = await createCustomer();
     const dst = await createCustomer();

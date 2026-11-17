@@ -30,6 +30,7 @@ const MAX_BACKEND_LIMIT = 100;
 
 const FILTERS: ReadonlyArray<{ label: string; type: AgentHistoryType | undefined }> = [
   { label: 'All', type: undefined },
+  { label: 'Send Money', type: 'WALLET_TRANSFER' },
   { label: 'Cash→Wallet', type: 'CASH_IN' },
   { label: 'Wallet→Cash', type: 'CASH_OUT' },
   { label: 'Cash→Cash sent', type: 'CASH_TO_CASH' },

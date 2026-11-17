@@ -34,3 +34,28 @@ The user proposed `1785753600800–1785753600899`. The available register at `do
 ## Continuation instructions
 
 Start from the current branch and inspect `git log` and working-tree status. Preserve this checkpoint and baseline. Continue from item 1 above, keeping finance and security controls fail-closed. Before any migration confirm its allocation against current remote branch trees and active work, update the register and preserve Arena 3D migration-head changes. Record each checkpoint hash and actual test results here. Produce the requested final handoff and full four-direction acceptance matrix only after implementation and acceptance; explicitly identify any remaining failures or unexecuted tests.
+
+## Second implementation checkpoint — wallet history and ownership groundwork
+
+Status remains **IN PROGRESS; four-direction P2P execution is not implemented or accepted**.
+
+- Agent unified history now projects existing wallet-transfer records from the `transfers` table, scoped to wallets whose owner reference and authoritative wallet classification are AGENT. Outgoing records include their actual status and failure code; incoming records appear only after completion. The projection uses the transfer's recorded fee and VAT for an outgoing transfer, shows only counterparty class, and looks up commission evidence using the actual journal ID. The mobile history filter, row and existing history-derived receipt recognize this type; this is not a send-money flow.
+- Customer beneficiary transfer no longer selects the first wallet of a different currency, and rejects multiple eligible matches. Wallet and owner eligibility are still rechecked by the shared transfer financial boundary.
+- Added an `AGENT_SELF` ownership binding derived from the authenticated principal, requiring both the agent owner reference and AGENT class. Transfer execution and both collision/retry recovery shortcuts check the binding. Customer bindings reject a wallet explicitly classified as AGENT. No agent-self transfer endpoint is exposed: adding the binding alone does not authorize an agent payment.
+- Real PostgreSQL tests added for authenticated agent history isolation and direction (synthetic transfer rows backed by real balanced journal postings; **not** end-to-end initiation) and the customer wrong-currency refusal. Existing invalid-history-filter test now uses a genuinely invalid filter because `WALLET_TRANSFER` is newly supported.
+
+### Verification of second checkpoint
+
+- Full backend unit suite: all **264 suites, 3,057 tests passed** in 33 sequential fresh Jest batches of eight, with the repository network guard, `--runInBand`, `--runTestsByPath`, and 2 GB per-process heap ceiling. No suites omitted.
+- PostgreSQL agent-history and workforce suites: **2 suites, 31 tests passed**, after correcting the obsolete invalid-filter assertion. The first run had one failure from that assertion (30 passed); the complete rerun passed.
+- PostgreSQL customer beneficiary suite: **31 passed**. Transfer limit, notification-producer and suspended-customer financial-boundary suites: **3 suites, 37 tests passed**.
+- Agent mobile: full suite **21 suites, 317 tests passed** before the new receipt assertion; Jest reported an open-handle warning. After adding that assertion, the affected receipt/history suites passed **26 tests** with `--forceExit`; agent `tsc` passed. This is simulated React Native test coverage, not a physical device.
+- Backend TypeScript check, build, targeted ESLint and `git diff --check` passed. A targeted lint run on the older agent history test produced one pre-existing-style unused eslint-disable warning, no errors.
+
+### Critical remaining work, in order
+
+1. Implement, test and expose transaction-bound authenticated agent-self initiation. The new ownership binding is groundwork only; there is no transaction preview/confirmation binding or new endpoint. Preserve session revocation, eligibility and PIN lockout.
+2. Fix the shared `TransferService` participant classification and limits before enabling agent financial transfers. Its current limit calls and commercial snapshot still identify UUID wallet owners as CUSTOMER; its notification producer also labels both participants as customers. Do not wire `AGENT_SELF` to money movement until those paths use authoritative classes and approved policies. `LimitEnforcementService`'s tier-bound path explicitly accepts only CUSTOMER, and its current `requireConfiguration` alone does not enforce configuration when tier enforcement is inactive. Agent class policy must be integrated without fabricating KYC tiers or weakening customer behavior.
+3. Add safe recipient/fee/total confirmation, actual agent registered-phone source, beneficiary support for agents, correct recipient wallet selection and institutional restrictions, plus both mobile send/recovery journeys.
+4. Prove four authenticated HTTP journeys, exact ledger and configured fee/commission effects, limits and concurrency across agency operations. Existing read-side tests above do not prove any of those financial paths.
+5. Complete the remaining full PostgreSQL, customer mobile, admin where affected, lint and migration regressions. No physical-device acceptance or external banking execution has been performed. Maintain the original Arena 3D boundaries.

@@ -31,6 +31,7 @@ import { DataSource } from 'typeorm';
  */
 
 const VALID_TYPES = new Set([
+  'WALLET_TRANSFER',
   'CASH_IN',
   'CASH_OUT',
   'CASH_TO_CASH',
@@ -64,6 +65,7 @@ export interface AgentUnifiedHistoryItem {
   reference: string | null;
   narration: string | null;
   feeMinor: string;
+  vatMinor?: string;
   counterparty: Record<string, unknown> | null;
   commission: AgentHistoryCommission | null;
   failureCode: string | null;
@@ -104,9 +106,11 @@ export class AgentTransactionHistoryService {
     // Agent wallet ledger accounts (wallet.customerId === agent.id — the established binding).
     const walletRows: Array<{ id: string; ledger_account_id: string }> =
       await this.dataSource.query(
-        `SELECT id, ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
+        `SELECT id, ledger_account_id FROM wallet_accounts
+         WHERE customer_id=$1 AND owner_class='AGENT' AND wallet_owner_class(customer_id)='AGENT'`,
         [agentId],
       );
+    const walletIds = walletRows.map((r) => r.id).filter(Boolean);
     const ledgerAccountIds = walletRows.map((r) => r.ledger_account_id).filter(Boolean);
 
     const includeCashLedger = shouldInclude('CASH_IN') || shouldInclude('CASH_OUT');
@@ -146,6 +150,15 @@ export class AgentTransactionHistoryService {
         );
         total += Number(rows[0]?.count ?? '0');
       }
+    }
+    if (shouldInclude('WALLET_TRANSFER') && walletIds.length > 0) {
+      const rows: Array<{ count: string }> = await this.dataSource.query(
+        `SELECT count(*)::text AS count FROM transfers
+         WHERE source_wallet_id = ANY($1::uuid[])
+            OR (destination_wallet_id = ANY($1::uuid[]) AND status = 'COMPLETED')`,
+        [walletIds],
+      );
+      total += Number(rows[0]?.count ?? '0');
     }
     if (shouldInclude('CASH_TO_CASH')) {
       const rows: Array<{ count: string }> = await this.dataSource.query(
@@ -229,6 +242,30 @@ export class AgentTransactionHistoryService {
       );
       allRows.push(...rows);
     }
+    if (shouldInclude('WALLET_TRANSFER') && walletIds.length > 0) {
+      const rows: Array<any> = await this.dataSource.query(
+        `SELECT t.id::text AS id, 'WALLET_TRANSFER'::text AS type,
+                t.status::text AS status, t.amount_minor::text AS amount_minor,
+                t.currency::text AS currency, t.created_at, t.completed_at,
+                COALESCE(t.payment_reference, t.reference)::text AS reference,
+                t.narration::text AS narration, t.fee_minor::text AS fee_minor,
+                t.vat_minor::text AS vat_minor, t.journal_id::text AS journal_id,
+                t.failure_code::text AS failure_code, t.failure_message::text AS failure_message,
+                t.source_wallet_id::text AS source_wallet_id,
+                t.destination_wallet_id::text AS destination_wallet_id,
+                CASE WHEN t.source_wallet_id = ANY($1::uuid[])
+                     THEN CASE WHEN dst.owner_class = wallet_owner_class(dst.customer_id) THEN dst.owner_class END
+                     ELSE CASE WHEN src.owner_class = wallet_owner_class(src.customer_id) THEN src.owner_class END END AS counterparty_class
+         FROM transfers t
+         JOIN wallet_accounts src ON src.id = t.source_wallet_id
+         JOIN wallet_accounts dst ON dst.id = t.destination_wallet_id
+         WHERE t.source_wallet_id = ANY($1::uuid[])
+            OR (t.destination_wallet_id = ANY($1::uuid[]) AND t.status = 'COMPLETED')
+         ORDER BY t.created_at DESC, t.id DESC`,
+        [walletIds],
+      );
+      allRows.push(...rows);
+    }
     if (shouldInclude('CASH_TO_CASH')) {
       const rows: Array<any> = await this.dataSource.query(
         `SELECT id::text AS id, 'CASH_TO_CASH'::text AS type, status::text AS status,
@@ -286,7 +323,9 @@ export class AgentTransactionHistoryService {
     const paginated = allRows.slice(offset, offset + normalizedLimit);
 
     // ————— batch commission evidence for the page (no N+1; query-boundary filtered by agent) —————
-    const journalIds = paginated.map((r) => r.id).filter(Boolean);
+    const journalIds = paginated
+      .map((r) => (r.type === 'WALLET_TRANSFER' ? r.journal_id : r.id))
+      .filter(Boolean);
     const snapshotByJournal = new Map<
       string,
       {
@@ -325,7 +364,19 @@ export class AgentTransactionHistoryService {
       let counterparty: Record<string, unknown> | null = null;
       let completedAt: Date | null = r.completed_at ? new Date(r.completed_at) : null;
 
-      if (r.type === 'CASH_IN') {
+      if (r.type === 'WALLET_TRANSFER') {
+        const sourceIsOwn = walletIds.includes(r.source_wallet_id);
+        const destinationIsOwn = walletIds.includes(r.destination_wallet_id);
+        direction =
+          sourceIsOwn && !destinationIsOwn
+            ? 'DEBIT'
+            : !sourceIsOwn && destinationIsOwn
+              ? 'CREDIT'
+              : 'UNKNOWN';
+        if (r.counterparty_class === 'CUSTOMER' || r.counterparty_class === 'AGENT') {
+          counterparty = { type: r.counterparty_class };
+        }
+      } else if (r.type === 'CASH_IN') {
         // Cash→Wallet: agent float debited in exchange for cash received from the customer.
         direction = 'DEBIT';
         counterparty = { type: 'CUSTOMER' };
@@ -360,7 +411,7 @@ export class AgentTransactionHistoryService {
 
       // Commercial evidence: this agent's OWN allocation only, read from the decision snapshot.
       let commission: AgentHistoryCommission | null = null;
-      const snap = snapshotByJournal.get(r.id);
+      const snap = snapshotByJournal.get(r.type === 'WALLET_TRANSFER' ? r.journal_id : r.id);
       if (snap && snap.commission_decision && snap.commission_decision.status === 'ALLOCATED') {
         const allocations: Array<{
           beneficiaryId?: string;
@@ -402,11 +453,17 @@ export class AgentTransactionHistoryService {
         completedAt,
         reference: r.reference ?? null,
         narration: r.narration ?? null,
-        feeMinor: (r.fee_minor as string | number | bigint | null | undefined)?.toString() ?? '0',
+        feeMinor:
+          r.type === 'WALLET_TRANSFER' && direction !== 'DEBIT'
+            ? '0'
+            : ((r.fee_minor as string | number | bigint | null | undefined)?.toString() ?? '0'),
+        ...(r.type === 'WALLET_TRANSFER'
+          ? { vatMinor: direction === 'DEBIT' ? String(r.vat_minor ?? '0') : '0' }
+          : {}),
         counterparty,
         commission,
-        failureCode: null,
-        failureMessage: null,
+        failureCode: r.type === 'WALLET_TRANSFER' ? (r.failure_code ?? null) : null,
+        failureMessage: r.type === 'WALLET_TRANSFER' ? (r.failure_message ?? null) : null,
       };
     });
 

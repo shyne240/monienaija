@@ -127,6 +127,7 @@ export type RootStackParamList = {
   TransactionReceipt: {
     itemId: string;
     filter?:
+      | 'WALLET_TRANSFER'
       | 'CASH_IN'
       | 'CASH_OUT'
       | 'CASH_TO_CASH'
