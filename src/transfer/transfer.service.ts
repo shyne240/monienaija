@@ -22,7 +22,14 @@ import { OutboxService } from '../operations/outbox.service';
 import { LedgerJournal } from '../ledger/ledger-journal.entity';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
-import { assertWalletOwnership } from '../wallet/wallet-ownership';
+import { assertWalletOwnership, walletOwnershipBinding } from '../wallet/wallet-ownership';
+import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import { PaymentQuoteStatus } from '../quote/quote.enums';
+import {
+  TransferQuoteService,
+  requireAgentWalletTransferCapability,
+} from './transfer-quote.service';
+import { TransferPricingService, type TransferPricing } from './transfer-pricing.service';
 import { WalletOwnerClass, WalletStatus } from '../wallet/wallet.enums';
 import { resolveTransferParticipants, type TransferParticipant } from './transfer-participant';
 import { transferParticipantLimitInput } from './transfer-participant-limit';
@@ -132,7 +139,32 @@ export class TransferService {
     // (manual new TransferService(...)) keep working; absent = legacy evidence-only behavior.
     @Optional()
     private readonly commercialAccountingService?: CommercialAccountingService,
+    @Optional() private readonly transferQuoteService?: TransferQuoteService,
+    @Optional() private readonly transferPricingService?: TransferPricingService,
   ) {}
+
+  /** The caller must first verify transaction PIN against this authenticated session. */
+  async createConfirmedTransfer(
+    principal: AuthorizationPrincipal,
+    quoteId: string,
+    idempotencyKey: string,
+  ): Promise<TransferView> {
+    if (!this.transferQuoteService || !this.transferPricingService)
+      throw new ServiceUnavailableException('Transfer confirmation is unavailable');
+    const key = idempotencyKey?.trim();
+    if (!key || key.length > 255) throw new BadRequestException('Idempotency key is required');
+    const quote = await this.transferQuoteService.readForSession(principal, quoteId);
+    const scopedKey = `self-transfer:${createHash('sha256').update(`${quote.principalType}:${quote.principalId}:${key}`).digest('hex')}`;
+    return this.createTransfer({
+      sourceWalletId: quote.sourceWalletId,
+      destinationWalletId: quote.destinationWalletId,
+      amountMinor: quote.amountMinor,
+      currency: quote.currency,
+      idempotencyKey: scopedKey,
+      ownership: walletOwnershipBinding(principal),
+      confirmation: { quoteId: quote.quoteId, principal },
+    });
+  }
 
   async createTransfer(command: CreateTransferCommand): Promise<TransferView> {
     const normalized = this.normalizeCommand(command);
@@ -191,6 +223,7 @@ export class TransferService {
             ownedWallet?.customerId,
             ownedWallet?.ownerClass,
           );
+          await this.verifyConfirmedReplay(normalized, existing);
           result = { transferId: existing.id };
         } else {
           throw error;
@@ -324,6 +357,16 @@ export class TransferService {
     command: NormalizedTransfer,
   ): Promise<TransferTransactionResult> {
     const transferRepository = manager.getRepository(Transfer);
+    let confirmedQuote: Awaited<ReturnType<TransferQuoteService['lockForSession']>> | null = null;
+    if (command.confirmation) {
+      if (!this.transferQuoteService || !this.transferPricingService)
+        throw new ServiceUnavailableException('Transfer confirmation is unavailable');
+      confirmedQuote = await this.transferQuoteService.lockForSession(
+        manager,
+        command.confirmation.principal,
+        command.confirmation.quoteId,
+      );
+    }
     const existing = await transferRepository.findOne({
       where: { idempotencyKey: command.idempotencyKey },
     });
@@ -337,8 +380,18 @@ export class TransferService {
         .getRepository(WalletAccount)
         .findOne({ where: { id: existing.sourceWalletId } });
       assertWalletOwnership(command.ownership, ownedWallet?.customerId, ownedWallet?.ownerClass);
+      if (confirmedQuote) this.assertQuoteMatchesReplay(confirmedQuote, existing);
       await this.metricsService?.increment(manager, 'idempotency.hits');
       return { transferId: existing.id };
+    }
+
+    if (
+      confirmedQuote &&
+      (confirmedQuote.status !== PaymentQuoteStatus.ACTIVE ||
+        confirmedQuote.transferId ||
+        confirmedQuote.expiresAt.getTime() <= Date.now())
+    ) {
+      throw new ConflictException('Transfer quote has expired or was already used');
     }
 
     const wallets = await this.lockWallets(manager, [
@@ -385,6 +438,40 @@ export class TransferService {
       destinationWallet,
     ]);
 
+    let confirmedPricing: TransferPricing | null = null;
+    if (confirmedQuote) {
+      if (
+        !participants ||
+        confirmedQuote.sourceWalletId !== sourceWallet.id ||
+        confirmedQuote.destinationWalletId !== destinationWallet.id ||
+        confirmedQuote.sourceLedgerId !== sourceWallet.ledgerAccountId ||
+        confirmedQuote.destinationLedgerId !== destinationWallet.ledgerAccountId ||
+        confirmedQuote.principalType !== participants[0].type ||
+        confirmedQuote.principalId !== participants[0].id ||
+        confirmedQuote.recipientType !== participants[1].type ||
+        confirmedQuote.recipientId !== participants[1].id ||
+        confirmedQuote.institutionId !== (sourceWallet.institutionId ?? null) ||
+        confirmedQuote.institutionId !== (destinationWallet.institutionId ?? null) ||
+        confirmedQuote.amountMinor !== command.amountMinor.toString() ||
+        confirmedQuote.currency !== command.currency
+      ) {
+        throw new ConflictException('Transfer no longer matches its confirmed participants');
+      }
+      requireAgentWalletTransferCapability(participants[0]);
+      confirmedPricing = await this.transferPricingService!.priceWithManager(manager, {
+        amountMinor: command.amountMinor,
+        currency: command.currency,
+      });
+      if (
+        confirmedPricing.pricingHash !== confirmedQuote.pricingHash ||
+        confirmedPricing.feeMinor !== confirmedQuote.feeMinor ||
+        confirmedPricing.vatMinor !== confirmedQuote.vatMinor ||
+        confirmedPricing.totalDebitMinor !== confirmedQuote.totalDebitMinor
+      ) {
+        throw new ConflictException('Transfer price has changed; request a new quote');
+      }
+    }
+
     // The v1 commercial, limit and notification paths below are CUSTOMER-specific. Never
     // process an agent (or unresolved/system owner) using those policies. This temporary gate
     // is inside the wallet-locked transaction and precedes even a failed-transfer/outbox record;
@@ -415,6 +502,9 @@ export class TransferService {
       paymentReference,
       amountMinor: command.amountMinor.toString(),
       currency: command.currency,
+      ...(confirmedPricing
+        ? { feeMinor: confirmedPricing.feeMinor, vatMinor: confirmedPricing.vatMinor }
+        : {}),
       status: TransferStatus.FAILED,
       idempotencyKey: command.idempotencyKey,
       requestHash: command.requestHash,
@@ -686,6 +776,7 @@ export class TransferService {
       transfer,
       command,
       sourceParticipant,
+      feeDecision: confirmedPricing?.feeDecision,
       journalId,
       limitOutcome,
       payerLedgerAccountId: sourceWallet.ledgerAccountId,
@@ -698,6 +789,12 @@ export class TransferService {
     transfer.failureMessage = null;
     transfer.failureStatusCode = null;
     await transferRepository.save(transfer);
+    if (confirmedQuote)
+      await this.transferQuoteService!.consumeWithManager(
+        manager,
+        confirmedQuote.quoteId,
+        transfer.id,
+      );
     await this.auditService?.record(manager, {
       entityType: 'TRANSFER',
       entityId: transfer.id,
@@ -750,6 +847,7 @@ export class TransferService {
       transfer: Transfer;
       command: NormalizedTransfer;
       sourceParticipant: TransferParticipant;
+      feeDecision?: TransferPricing['feeDecision'];
       journalId: string;
       limitOutcome: EnforceResult | null;
       /** Payer-side ledger account for the commercial accounting legs (source wallet in WT). */
@@ -763,46 +861,51 @@ export class TransferService {
     const decisionAt = new Date();
     const amountMinor = ctx.command.amountMinor.toString();
 
-    const resolution = await this.feeRuleResolverService.resolveWithManager(manager, {
-      productCode,
-      currency: ctx.command.currency,
-      at: decisionAt,
-    });
-
-    // V1-COMMERCIAL-IMPLEMENTATION-01 — authoritative fee computation (single calculator authority);
-    // legacy inline evidence retained only for calculator-absent (manual-construction) wiring.
     let feeDecision: Record<string, unknown>;
-    if (this.feeRuleCalculatorService) {
-      feeDecision = {
-        ...this.feeRuleCalculatorService.compute({
-          resolution,
-          principalAmountMinor: amountMinor,
-          currency: ctx.command.currency,
-        }),
-      };
+    if (ctx.feeDecision) {
+      feeDecision = { ...ctx.feeDecision };
     } else {
-      feeDecision = { ...feeNotConfigured(ctx.command.currency, amountMinor) };
-      if (resolution.status === 'RESOLVED' && resolution.rule) {
-        feeDecision.ruleRefs = [
-          {
-            ruleId: resolution.rule.ruleId,
-            ruleVersion: resolution.rule.ruleVersion,
-            flatFeeMinor: resolution.rule.flatFeeMinor,
-            percentageBps: resolution.rule.percentageBps,
-            minimumFeeMinor: resolution.rule.minimumFeeMinor,
-            maximumFeeMinor: resolution.rule.maximumFeeMinor,
-            vatBps: resolution.rule.vatBps,
-            effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
-            effectiveTo:
-              resolution.rule.effectiveTo === null
-                ? null
-                : resolution.rule.effectiveTo.toISOString(),
-            priority: resolution.rule.priority,
-          },
-        ];
-      } else if (resolution.status === 'AMBIGUOUS') {
-        feeDecision.resolutionStatus = 'AMBIGUOUS';
-        feeDecision.ambiguousRuleIds = resolution.ambiguousRuleIds ?? [];
+      const resolution = await this.feeRuleResolverService.resolveWithManager(manager, {
+        productCode,
+        currency: ctx.command.currency,
+        at: decisionAt,
+      });
+
+      // V1-COMMERCIAL-IMPLEMENTATION-01 — authoritative fee computation (single calculator authority);
+      // legacy inline evidence retained only for calculator-absent (manual-construction) wiring.
+      // The legacy, unconfirmed path retains its established fee resolution behavior.
+      if (this.feeRuleCalculatorService) {
+        feeDecision = {
+          ...this.feeRuleCalculatorService.compute({
+            resolution,
+            principalAmountMinor: amountMinor,
+            currency: ctx.command.currency,
+          }),
+        };
+      } else {
+        feeDecision = { ...feeNotConfigured(ctx.command.currency, amountMinor) };
+        if (resolution.status === 'RESOLVED' && resolution.rule) {
+          feeDecision.ruleRefs = [
+            {
+              ruleId: resolution.rule.ruleId,
+              ruleVersion: resolution.rule.ruleVersion,
+              flatFeeMinor: resolution.rule.flatFeeMinor,
+              percentageBps: resolution.rule.percentageBps,
+              minimumFeeMinor: resolution.rule.minimumFeeMinor,
+              maximumFeeMinor: resolution.rule.maximumFeeMinor,
+              vatBps: resolution.rule.vatBps,
+              effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
+              effectiveTo:
+                resolution.rule.effectiveTo === null
+                  ? null
+                  : resolution.rule.effectiveTo.toISOString(),
+              priority: resolution.rule.priority,
+            },
+          ];
+        } else if (resolution.status === 'AMBIGUOUS') {
+          feeDecision.resolutionStatus = 'AMBIGUOUS';
+          feeDecision.ambiguousRuleIds = resolution.ambiguousRuleIds ?? [];
+        }
       }
     }
 
@@ -1014,6 +1117,7 @@ export class TransferService {
           currency,
           reference: reference ?? null,
           narration: narration ?? null,
+          ...(command.confirmation ? { quoteId: command.confirmation.quoteId } : {}),
         }),
       )
       .digest('hex');
@@ -1021,6 +1125,7 @@ export class TransferService {
     return {
       sourceWalletId,
       ownership: command.ownership,
+      confirmation: command.confirmation,
       destinationWalletId,
       amountMinor,
       currency,
@@ -1193,6 +1298,7 @@ export class TransferService {
           ownedWallet?.customerId,
           ownedWallet?.ownerClass,
         );
+        await this.verifyConfirmedReplay(normalized, existing);
         return { transferId: existing.id };
       }
       if (attempt >= delaysMs.length) {
@@ -1200,6 +1306,34 @@ export class TransferService {
       }
       await new Promise((resolve) => setTimeout(resolve, delaysMs[attempt]));
     }
+  }
+
+  private assertQuoteMatchesReplay(
+    quote: Awaited<ReturnType<TransferQuoteService['lockForSession']>>,
+    transfer: Transfer,
+  ): void {
+    const completed = transfer.status === TransferStatus.COMPLETED;
+    if (
+      completed
+        ? quote.status !== PaymentQuoteStatus.USED || quote.transferId !== transfer.id
+        : quote.transferId !== null || quote.status === PaymentQuoteStatus.USED
+    ) {
+      throw new ConflictException('Transfer quote is not bound to this result');
+    }
+  }
+
+  private async verifyConfirmedReplay(
+    command: NormalizedTransfer,
+    transfer: Transfer,
+  ): Promise<void> {
+    if (!command.confirmation) return;
+    if (!this.transferQuoteService)
+      throw new ServiceUnavailableException('Transfer confirmation is unavailable');
+    const quote = await this.transferQuoteService.readForSession(
+      command.confirmation.principal,
+      command.confirmation.quoteId,
+    );
+    this.assertQuoteMatchesReplay(quote, transfer);
   }
 
   private transactionContentionExhaustedException(): ConflictException {

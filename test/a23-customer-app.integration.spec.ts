@@ -695,6 +695,167 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     expect(await dataSource.query(`SELECT id FROM ledger_journals`)).toEqual([]);
   });
 
+  it('atomically consumes a confirmed customer quote and recovers only the identical operation', async () => {
+    const sender = await createCustomerWithCredential();
+    const receiver = await createCustomerWithCredential();
+    const sessions: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM authentication_sessions WHERE customer_id=$1 AND status='ACTIVE'`,
+      [sender.customerId],
+    );
+    const principal = {
+      type: 'CUSTOMER' as const,
+      principalId: sender.customerId,
+      customerId: sender.customerId,
+      sessionId: sessions[0]!.id,
+      roles: [],
+      scopes: [],
+      customerAccess: 'SELF' as const,
+    };
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const { LedgerService } = await import('../src/ledger/ledger.service');
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const { TransferService } = await import('../src/transfer/transfer.service');
+    const wallets = app.get(WalletService);
+    const ledger = app.get(LedgerService);
+    const quoteService = app.get(TransferQuoteService);
+    const transferService = app.get(TransferService);
+    const source = await wallets.createWallet({
+      customerId: sender.customerId,
+      currency: 'NGN',
+      idempotencyKey: `confirm-src-${randomUUID()}`,
+    });
+    const destination = await wallets.createWallet({
+      customerId: receiver.customerId,
+      currency: 'NGN',
+      idempotencyKey: `confirm-dst-${randomUUID()}`,
+    });
+    const funding = await ledger.createAccount({
+      code: `confirm-fund-${randomUUID()}`,
+      name: 'test',
+      accountType: 'ASSET' as any,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+    });
+    await ledger.postJournal({
+      idempotencyKey: `confirm-fund-${randomUUID()}`,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+      lines: [
+        { accountId: funding.id, direction: 'DEBIT' as any, amountMinor: '5000' },
+        { accountId: source.ledgerAccountId, direction: 'CREDIT' as any, amountMinor: '5000' },
+      ],
+    });
+    const quote = await quoteService.create(principal, {
+      sourceWalletId: source.id,
+      destinationWalletId: destination.id,
+      amountMinor: '1200',
+      currency: 'NGN',
+      idempotencyKey: `quote-${randomUUID()}`,
+    });
+    // This tests the shared transaction directly; a PIN-authorized HTTP route is not wired yet.
+    const key = `confirm-${randomUUID()}`;
+    // A late failure after quote use must undo journal, transfer and quote changes together.
+    const journalCountBefore = (
+      await dataSource.query<Array<{ id: string }>>(`SELECT id FROM ledger_journals`)
+    ).length;
+    const consume = quoteService.consumeWithManager.bind(quoteService);
+    const injected = jest
+      .spyOn(quoteService, 'consumeWithManager')
+      .mockImplementation(async (...args) => {
+        await consume(...args);
+        throw new Error('injected post-consumption failure');
+      });
+    try {
+      await expect(
+        transferService.createConfirmedTransfer(principal, quote.quoteId, key),
+      ).rejects.toThrow('injected post-consumption failure');
+    } finally {
+      injected.mockRestore();
+    }
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    expect(await dataSource.query(`SELECT id FROM ledger_journals`)).toHaveLength(
+      journalCountBefore,
+    );
+    expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('5000');
+    expect((await wallets.getWalletBalance(destination.id)).balanceMinor).toBe('0');
+    expect(
+      await dataSource.query(
+        `SELECT q.status,b.transfer_id FROM payment_quotes q JOIN wallet_transfer_quote_bindings b ON b.quote_id=q.id WHERE q.id=$1`,
+        [quote.quoteId],
+      ),
+    ).toEqual([{ status: 'ACTIVE', transfer_id: null }]);
+    const completed = await transferService.createConfirmedTransfer(principal, quote.quoteId, key);
+    expect(completed).toMatchObject({
+      status: 'COMPLETED',
+      amountMinor: '1200',
+      sourceWalletId: source.id,
+      destinationWalletId: destination.id,
+    });
+    expect((await transferService.createConfirmedTransfer(principal, quote.quoteId, key)).id).toBe(
+      completed.id,
+    );
+    await expect(
+      transferService.createConfirmedTransfer(
+        principal,
+        quote.quoteId,
+        `different-${randomUUID()}`,
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(
+      await dataSource.query(
+        `SELECT q.status,b.transfer_id FROM payment_quotes q JOIN wallet_transfer_quote_bindings b ON b.quote_id=q.id WHERE q.id=$1`,
+        [quote.quoteId],
+      ),
+    ).toEqual([{ status: 'USED', transfer_id: completed.id }]);
+    expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('3800');
+    expect((await wallets.getWalletBalance(destination.id)).balanceMinor).toBe('1200');
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(1);
+    const anotherQuote = await quoteService.create(principal, {
+      sourceWalletId: source.id,
+      destinationWalletId: destination.id,
+      amountMinor: '1200',
+      currency: 'NGN',
+      idempotencyKey: `another-quote-${randomUUID()}`,
+    });
+    await expect(
+      transferService.createConfirmedTransfer(principal, anotherQuote.quoteId, key),
+    ).rejects.toMatchObject({ status: 409 });
+    const stale = await quoteService.create(principal, {
+      sourceWalletId: source.id,
+      destinationWalletId: destination.id,
+      amountMinor: '100',
+      currency: 'NGN',
+      idempotencyKey: `stale-quote-${randomUUID()}`,
+    });
+    const { ProductCatalogSeedService } = await import(
+      '../src/product-catalog/product-catalog-seed.service'
+    );
+    const { FeeRuleRegistryService } = await import('../src/fee-rules/fee-rule-registry.service');
+    await app.get(ProductCatalogSeedService).seedIfEmpty();
+    await app
+      .get(FeeRuleRegistryService)
+      .createRule(
+        { productCode: 'WALLET_TRANSFER', currency: 'NGN', flatFeeMinor: '0', vatBps: 0 },
+        'test',
+      );
+    await expect(
+      transferService.createConfirmedTransfer(principal, stale.quoteId, `stale-${randomUUID()}`),
+    ).rejects.toMatchObject({ status: 409 });
+    expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('3800');
+    expect((await wallets.getWalletBalance(destination.id)).balanceMinor).toBe('1200');
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(1);
+    expect(
+      await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [stale.quoteId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
+    await dataSource.query(
+      `UPDATE authentication_sessions SET status='REVOKED', revoked_at=clock_timestamp() WHERE id=$1`,
+      [principal.sessionId],
+    );
+    await expect(
+      transferService.createConfirmedTransfer(principal, quote.quoteId, key),
+    ).rejects.toMatchObject({ status: 401 });
+  });
+
   it('database protects bound transfer quote facts and refuses premature generic use', async () => {
     const sender = await createCustomerWithCredential();
     const recipient = await createCustomerWithCredential();

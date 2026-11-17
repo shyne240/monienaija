@@ -40,6 +40,17 @@ export interface TransferQuoteView {
   status: PaymentQuoteStatus;
 }
 
+export interface LockedTransferQuote extends TransferQuoteView {
+  principalType: 'CUSTOMER' | 'AGENT';
+  principalId: string;
+  sessionId: string;
+  sourceLedgerId: string;
+  destinationLedgerId: string;
+  institutionId: string | null;
+  pricingHash: string;
+  transferId: string | null;
+}
+
 /** Enforce the same explicit agent-class service vocabulary inside the locked transaction. */
 export function requireAgentWalletTransferCapability(participant: TransferParticipant): void {
   if (participant.type !== 'AGENT') return;
@@ -298,6 +309,108 @@ export class TransferQuoteService {
       }
     }
     throw new ConflictException('Could not create quote due to contention');
+  }
+
+  /** Locks the bound quote and its live session. Replay may inspect USED quotes but cannot reuse them. */
+  async lockForSession(
+    manager: EntityManager,
+    principal: AuthorizationPrincipal,
+    quoteId: string,
+  ): Promise<LockedTransferQuote> {
+    const type = principal?.type;
+    const ownerId =
+      type === 'CUSTOMER' ? principal.customerId : type === 'AGENT' ? principal.agentId : undefined;
+    if (
+      !ownerId ||
+      !principal.sessionId ||
+      !UUID_PATTERN.test(ownerId) ||
+      !UUID_PATTERN.test(principal.sessionId)
+    )
+      throw new UnauthorizedException('Self session required');
+    if (!UUID_PATTERN.test(quoteId)) throw new BadRequestException('Quote id is invalid');
+    await this.lockSession(manager, type as 'CUSTOMER' | 'AGENT', ownerId, principal.sessionId);
+    const rows = await manager.query<
+      Array<{
+        id: string;
+        status: PaymentQuoteStatus;
+        expires_at: Date;
+        amount_minor: string;
+        currency: string;
+        fee_minor: string;
+        vat_minor: string;
+        total_minor: string;
+        principal_type: 'CUSTOMER' | 'AGENT';
+        principal_id: string;
+        session_id: string;
+        source_wallet_id: string;
+        source_ledger_id: string;
+        destination_wallet_id: string;
+        destination_ledger_id: string;
+        recipient_type: 'CUSTOMER' | 'AGENT';
+        recipient_id: string;
+        institution_id: string | null;
+        pricing_hash: string;
+        transfer_id: string | null;
+      }>
+    >(
+      `SELECT q.id,q.status,q.expires_at,q.amount_minor::text,q.currency,q.fee_minor::text,q.vat_minor::text,q.total_minor::text,
+                b.principal_type,b.principal_id,b.session_id,b.source_wallet_id,b.source_ledger_id,b.destination_wallet_id,
+                b.destination_ledger_id,b.recipient_type,b.recipient_id,b.institution_id,b.pricing_hash,b.transfer_id
+           FROM payment_quotes q JOIN wallet_transfer_quote_bindings b ON b.quote_id=q.id
+          WHERE q.id=$1 AND b.principal_type=$2 AND b.principal_id=$3 AND b.session_id=$4 FOR UPDATE OF q,b`,
+      [quoteId, type, ownerId, principal.sessionId],
+    );
+    if (rows.length !== 1) throw new NotFoundException('Transfer quote not found');
+    const r = rows[0]!;
+    return {
+      quoteId: r.id,
+      status: r.status,
+      expiresAt: r.expires_at,
+      amountMinor: r.amount_minor,
+      currency: r.currency,
+      feeMinor: r.fee_minor,
+      vatMinor: r.vat_minor,
+      totalDebitMinor: r.total_minor,
+      principalType: r.principal_type,
+      principalId: r.principal_id,
+      sessionId: r.session_id,
+      sourceWalletId: r.source_wallet_id,
+      sourceLedgerId: r.source_ledger_id,
+      destinationWalletId: r.destination_wallet_id,
+      destinationLedgerId: r.destination_ledger_id,
+      recipientType: r.recipient_type,
+      recipientId: r.recipient_id,
+      institutionId: r.institution_id,
+      pricingHash: r.pricing_hash,
+      transferId: r.transfer_id,
+    };
+  }
+
+  async readForSession(
+    principal: AuthorizationPrincipal,
+    quoteId: string,
+  ): Promise<LockedTransferQuote> {
+    return this.dataSource.transaction('SERIALIZABLE', (manager) =>
+      this.lockForSession(manager, principal, quoteId),
+    );
+  }
+
+  /** Link and use a quote only after its matching completed transfer is persisted in this transaction. */
+  async consumeWithManager(
+    manager: EntityManager,
+    quoteId: string,
+    transferId: string,
+  ): Promise<void> {
+    const bound = await manager.query<Array<{ quote_id: string }>>(
+      `WITH updated AS (UPDATE wallet_transfer_quote_bindings SET transfer_id=$2 WHERE quote_id=$1 AND transfer_id IS NULL RETURNING quote_id) SELECT quote_id FROM updated`,
+      [quoteId, transferId],
+    );
+    if (bound.length !== 1) throw new ConflictException('Transfer quote is already consumed');
+    const used = await manager.query<Array<{ id: string }>>(
+      `WITH updated AS (UPDATE payment_quotes SET status='USED',used_at=clock_timestamp() WHERE id=$1 AND status='ACTIVE' RETURNING id) SELECT id FROM updated`,
+      [quoteId],
+    );
+    if (used.length !== 1) throw new ConflictException('Transfer quote is not active');
   }
 
   private async lockSession(
