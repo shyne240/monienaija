@@ -3,10 +3,7 @@ import type { DataSource } from 'typeorm';
 
 import { BankingDispatchWorker } from '../src/banking/banking-dispatch-worker.service';
 import { BankingOutboundService } from '../src/banking/banking-outbound.service';
-import {
-  BankingProviderRegistry,
-  capabilitiesOf,
-} from '../src/banking/banking-provider.registry';
+import { BankingProviderRegistry, capabilitiesOf } from '../src/banking/banking-provider.registry';
 import type { BankingProvider } from '../src/banking/banking-provider.types';
 import { BankingCommitmentBridgeService } from '../src/banking/banking-commitment-bridge.service';
 import { createIntegrationDataSource } from './support/pg-harness';

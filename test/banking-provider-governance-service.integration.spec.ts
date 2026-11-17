@@ -92,7 +92,12 @@ describe('banking provider governance service (real PostgreSQL)', () => {
     const auth = {
       // The stub mirrors only the allow/deny bit; role separation is asserted in the service and in
       // the catalogue, and is covered by the unit assertions below.
-      authorize: async () => ({ allowed: allowCalls }),
+      // `await` a resolved promise instead of dropping `async`: the interface is asynchronous and a
+      // synchronous stub would hide a missing await in the caller.
+      authorize: async () => {
+        await Promise.resolve();
+        return { allowed: allowCalls };
+      },
     };
     service = new BankingProviderGovernanceService(db, auth as never, { dataSource: db } as never, {
       descriptorFor: (key: string) =>

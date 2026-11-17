@@ -70,7 +70,10 @@ describe('banking webhook ingestion (real PostgreSQL)', () => {
       providerKey: 'MONNIFY',
       clientSecret: CLIENT_SECRET,
       environment: 'sandbox',
-      resolveAttribution: async () => ({ institutionId }),
+      resolveAttribution: async () => {
+        await Promise.resolve();
+        return { institutionId };
+      },
     });
   }, 120000);
 
