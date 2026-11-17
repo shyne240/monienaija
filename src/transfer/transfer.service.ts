@@ -876,6 +876,17 @@ export class TransferService {
       payerLedgerAccountId: string;
     },
   ): Promise<void> {
+    if (
+      ctx.feeDecision &&
+      (!this.feeRuleResolverService ||
+        !this.commercialDecisionSnapshotService ||
+        !this.commissionEngine ||
+        !this.commercialAccountingService)
+    ) {
+      throw new ServiceUnavailableException(
+        'Confirmed transfer commercial authority is unavailable',
+      );
+    }
     if (!this.feeRuleResolverService || !this.commercialDecisionSnapshotService) return;
     if (!UUID_PATTERN.test(ctx.sourceParticipant.id)) return;
 
@@ -957,6 +968,17 @@ export class TransferService {
         },
       );
       if (engineDecision.status === 'ALLOCATED') {
+        if (
+          ctx.feeDecision &&
+          !this.commercialAccountingService?.isEnabled() &&
+          (engineDecision.allocations ?? []).some(
+            (allocation) => BigInt(allocation.amountMinor) > 0n,
+          )
+        ) {
+          throw new ServiceUnavailableException(
+            'Confirmed transfer commission accounting is unavailable',
+          );
+        }
         commissionDecision = {
           ...commissionAllocatedAtAccountingBoundary(
             {

@@ -1123,6 +1123,71 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     ).toEqual([{ status: 'ACTIVE', transfer_id: null }]);
   });
 
+  it('confirmed transfer refuses a nonzero commission when accounting is disabled', async () => {
+    configureAccounting({ COMMERCIAL_ACCOUNTING_ENABLED: undefined });
+    await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '0', vatBps: 0 });
+    await seedCommissionRule({
+      productCode: 'WALLET_TRANSFER',
+      flatCommissionMinor: '100',
+      calculationBasis: 'PRINCIPAL',
+    });
+    const customerId = await eligibleCustomerId();
+    const a = await createWallet(customerId);
+    const b = await createWallet(await eligibleCustomerId());
+    await fundWallet(a.ledgerAccountId, '50000');
+    const credentialId = randomUUID();
+    const sessionId = randomUUID();
+    await dataSource.query(
+      `INSERT INTO customer_authentication_credentials (id,customer_id,credential_type,password_hash,hash_algorithm,password_version,password_changed_at,status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE')`,
+      [credentialId, customerId],
+    );
+    await dataSource.query(
+      `INSERT INTO authentication_sessions (id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at,onboarding_password_version) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW()+interval '1 hour',NOW(),1)`,
+      [sessionId, customerId, credentialId, randomBytes(32).toString('hex')],
+    );
+    const principal = {
+      type: 'CUSTOMER' as const,
+      customerId,
+      principalId: customerId,
+      sessionId,
+      roles: [],
+      scopes: [],
+      customerAccess: 'SELF' as const,
+    };
+    await customerPinService.setTransactionPin(customerId, {
+      pinHash: hashPin('1234'),
+      hashAlgorithm: 'PBKDF2',
+      pinVersion: 1,
+      actor: customerId,
+    });
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const quote = await app.get(TransferQuoteService).create(principal, {
+      sourceWalletId: a.id,
+      destinationWalletId: b.id,
+      amountMinor: '50000',
+      currency: 'NGN',
+      idempotencyKey: `fee-quote-${randomUUID()}`,
+    });
+    await expect(
+      transferService.createConfirmedTransfer(
+        principal,
+        quote.quoteId,
+        `fee-confirm-${randomUUID()}`,
+        '1234',
+      ),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(await walletBalance(a.ledgerAccountId)).toBe(50000n);
+    expect(await walletBalance(b.ledgerAccountId)).toBe(0n);
+    expect(await accountingJournals()).toHaveLength(0);
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    expect(
+      await dataSource.query(
+        `SELECT q.status,b.transfer_id FROM payment_quotes q JOIN wallet_transfer_quote_bindings b ON b.quote_id=q.id WHERE q.id=$1`,
+        [quote.quoteId],
+      ),
+    ).toEqual([{ status: 'ACTIVE', transfer_id: null }]);
+  });
+
   // ── 12-16: VAT (configurable, never hard-coded, fail closed) ──
 
   it('12. EXCLUSIVE_ADD_ON: VAT leg == authoritative decision vatMinor; payer debited fee+vat', async () => {
