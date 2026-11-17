@@ -18,6 +18,8 @@ export interface TemplateQuery {
 
 /** Internal aliases are normalized before config lookup; customer-facing text never contains them. */
 export function canonicalNotificationEvent(eventType: string): string {
+  if (eventType === 'wallet_transfer.completed') return 'transfer.completed';
+  if (eventType === 'wallet_transfer.failed') return 'transfer.failed';
   if (eventType === 'cash-to-cash.claimed') return 'cash_to_cash.claimed';
   if (eventType === 'cash-to-cash.expired') return 'cash_to_cash.expired';
   return eventType;

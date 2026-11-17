@@ -187,7 +187,16 @@ export class NotificationDispatcherService {
             : '');
     if (!eventKey || eventKey.length > 180)
       throw new Error('A stable eventKey or occurredAt is required');
-    const safePayload = this.templateService.redactPayload(payload, eventType);
+    const typedTransfer =
+      eventType === 'wallet_transfer.completed' || eventType === 'wallet_transfer.failed'
+        ? await this.typedTransferRecipients(manager, command, eventType)
+        : null;
+    if (
+      (eventType === 'wallet_transfer.completed' || eventType === 'wallet_transfer.failed') &&
+      !typedTransfer
+    )
+      return result;
+    const safePayload = this.templateService.redactPayload(typedTransfer ?? payload, eventType);
     // Report 26 (N-02): the caller/outbox-supplied correlation id is sanitized
     // ONCE here, before it reaches intent mapping and the delivery-row INSERT;
     // rows persisted by pre-remediation producers are covered by this same
@@ -205,7 +214,7 @@ export class NotificationDispatcherService {
     // An event marker alone is not authority to publish a support message. Verify the
     // committed message, its author and ticket binding, and derive recipients only from
     // the ticket. This also protects the legacy direct-dispatch entry point.
-    let mappingPayload = payment ? { customerId: payment.customerId } : payload;
+    let mappingPayload = typedTransfer ?? (payment ? { customerId: payment.customerId } : payload);
     if (eventType === 'support.ticket.message_added') {
       const recipients = await this.publicSupportMessageRecipients(manager, command);
       if (!recipients) return result;
@@ -361,6 +370,61 @@ export class NotificationDispatcherService {
       result.deliveries.push(delivery);
     }
     return result;
+  }
+
+  /** Resolve typed recipients and rendering facts from the committed transfer, never caller facts. */
+  private async typedTransferRecipients(
+    manager: EntityManager,
+    command: DispatchCommand,
+    eventType: string,
+  ): Promise<Record<string, unknown> | null> {
+    const id = command.aggregateId;
+    if (
+      command.aggregateType !== 'TRANSFER' ||
+      typeof id !== 'string' ||
+      !UUID_PATTERN.test(id) ||
+      command.payload.transferId !== id ||
+      command.eventKey !== `${eventType}:${id}:v1`
+    )
+      return null;
+    const rows = await manager.query<
+      Array<{
+        source_id: string;
+        destination_id: string;
+        source_type: string;
+        destination_type: string;
+        source_current: string;
+        destination_current: string;
+        amount_minor: string;
+        currency: string;
+      }>
+    >(
+      `SELECT s.customer_id AS source_id,d.customer_id AS destination_id,s.owner_class AS source_type,d.owner_class AS destination_type,
+              wallet_owner_class(s.customer_id) AS source_current,wallet_owner_class(d.customer_id) AS destination_current,
+              t.amount_minor::text,t.currency
+         FROM transfers t JOIN wallet_accounts s ON s.id=t.source_wallet_id JOIN wallet_accounts d ON d.id=t.destination_wallet_id
+        WHERE t.id=$1 AND t.status=$2 FOR SHARE OF t,s,d`,
+      [id, eventType.endsWith('.completed') ? 'COMPLETED' : 'FAILED'],
+    );
+    const row = rows[0];
+    if (
+      rows.length !== 1 ||
+      !row ||
+      !UUID_PATTERN.test(row.source_id) ||
+      !UUID_PATTERN.test(row.destination_id) ||
+      !['CUSTOMER', 'AGENT'].includes(row.source_type) ||
+      !['CUSTOMER', 'AGENT'].includes(row.destination_type) ||
+      row.source_type !== row.source_current ||
+      row.destination_type !== row.destination_current
+    )
+      return null;
+    return {
+      transferId: id,
+      amountMinor: row.amount_minor,
+      currency: row.currency,
+      sourceParticipant: { type: row.source_type, id: row.source_id },
+      destinationParticipant: { type: row.destination_type, id: row.destination_id },
+    };
   }
 
   private async paymentRecipient(

@@ -263,6 +263,129 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
     );
   }
 
+  it('typed mixed-participant notification resolves committed wallet owners, not supplied IDs', async () => {
+    const { source } = await seedWalletPair('typed');
+    const agentId = randomUUID();
+    const classId = randomUUID();
+    await ds.query(
+      `INSERT INTO agent_classes (id,reference,code,name,is_active,applicable_services,applicable_limits) VALUES ($1,$2,$3,'test',true,$4,$5)`,
+      [
+        classId,
+        `typed-${randomUUID()}`,
+        `T-${randomUUID().slice(0, 8)}`,
+        JSON.stringify(['WALLET_TRANSFER']),
+        JSON.stringify({}),
+      ],
+    );
+    await ds.query(
+      `INSERT INTO agents (id,reference,status,agent_class_id) VALUES ($1,$2,'ACTIVE',$3)`,
+      [agentId, `typed-${randomUUID()}`, classId],
+    );
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const agentWallet = await app.get(WalletService).createWallet({
+      customerId: agentId,
+      currency: 'NGN',
+      idempotencyKey: `typed-${randomUUID()}`,
+    });
+    // Synthetic ledger fixture only: the agent financial engine remains gated.
+    const journal = await ledger.postJournal({
+      idempotencyKey: `typed-${randomUUID()}`,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+      lines: [
+        {
+          accountId: source.ledgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: '1000',
+        },
+        {
+          accountId: agentWallet.ledgerAccountId,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: '1000',
+        },
+      ],
+    });
+    const transferId = randomUUID();
+    await ds.query(
+      `INSERT INTO transfers (id,source_wallet_id,destination_wallet_id,journal_id,amount_minor,currency,status,idempotency_key,request_hash,completed_at) VALUES ($1,$2,$3,$4,1000,'NGN','COMPLETED',$5,$6,clock_timestamp())`,
+      [
+        transferId,
+        source.walletAccountId,
+        agentWallet.id,
+        journal.id,
+        `typed-${randomUUID()}`,
+        'a'.repeat(64),
+      ],
+    );
+    const eventType = 'wallet_transfer.completed';
+    const command = {
+      eventType,
+      eventKey: `${eventType}:${transferId}:v1`,
+      aggregateType: 'TRANSFER',
+      aggregateId: transferId,
+      payload: {
+        transferId,
+        amountMinor: '999999',
+        sourceParticipant: { type: 'AGENT', id: randomUUID() },
+        destinationParticipant: { type: 'CUSTOMER', id: randomUUID() },
+      },
+    };
+    const result = await ds.transaction((manager) => dispatcher.dispatch(command, manager));
+    expect(result.deliveries).toHaveLength(2);
+    expect(result.deliveries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ recipientType: 'CUSTOMER', recipientId: source.customerId }),
+        expect.objectContaining({ recipientType: 'AGENT', recipientId: agentId }),
+      ]),
+    );
+    const rows = await deliveries();
+    expect(rows.find((row) => row.recipient_type === 'AGENT')!.destination).toContain(
+      'SKIPPED:AGENT_PHONE_DEPENDENCY_MISSING',
+    );
+    for (const row of rows) expect(row.payload.amountMinor).toBe('1000');
+    const bad = await ds.transaction((manager) =>
+      dispatcher.dispatch({ ...command, eventKey: `${eventType}:${randomUUID()}:v1` }, manager),
+    );
+    expect(bad.deliveries).toHaveLength(0);
+    await ds.query(
+      `INSERT INTO outbox_events (id,event_type,event_key,aggregate_type,aggregate_id,payload,status,schema_version,attempts,available_at) VALUES ($1,$2,$3,'TRANSFER',$4,$5::jsonb,'PENDING',1,0,now())`,
+      [randomUUID(), eventType, command.eventKey, transferId, JSON.stringify(command.payload)],
+    );
+    expect(await dispatcher.processPendingOutboxEvents(10)).toBe(1);
+    expect(await deliveries()).toHaveLength(2);
+    expect(await ds.query(`SELECT status FROM notification_outbox_receipts`)).toEqual([
+      { status: 'MATERIALIZED' },
+    ]);
+    const failedId = randomUUID();
+    await ds.query(
+      `INSERT INTO transfers (id,source_wallet_id,destination_wallet_id,amount_minor,currency,status,idempotency_key,request_hash) VALUES ($1,$2,$3,1000,'NGN','FAILED',$4,$5)`,
+      [
+        failedId,
+        agentWallet.id,
+        source.walletAccountId,
+        `typed-failed-${randomUUID()}`,
+        'a'.repeat(64),
+      ],
+    );
+    const failedType = 'wallet_transfer.failed';
+    const failed = await ds.transaction((manager) =>
+      dispatcher.dispatch(
+        {
+          eventType: failedType,
+          eventKey: `${failedType}:${failedId}:v1`,
+          aggregateType: 'TRANSFER',
+          aggregateId: failedId,
+          payload: { transferId: failedId },
+        },
+        manager,
+      ),
+    );
+    expect(failed.deliveries).toEqual([
+      expect.objectContaining({ recipientType: 'AGENT', recipientId: agentId }),
+    ]);
+    expect(provider.sent).toHaveLength(0);
+  });
+
   it('1. completed transfer: the audited producer emits the v1 contract from authoritative state, the consumer materializes exactly one SMS per audience atomically, replay never duplicates, accounting posts exactly one balanced journal, and no journal/payment/request/prose detail reaches payloads or messages', async () => {
     const { source, destination } = await seedWalletPair('tr-ok');
 
