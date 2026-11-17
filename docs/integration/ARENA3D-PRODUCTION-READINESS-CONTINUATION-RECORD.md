@@ -6,10 +6,13 @@ Continuation record. Updated as each group lands; the workspace is the source of
 
 ## 1. Checkpoints
 
-| Point                                       | Commit     | Notes                                                                                   |
-| ------------------------------------------- | ---------- | --------------------------------------------------------------------------------------- |
-| Mission start (accepted banking checkpoint) | `e0e0d550` | Conditional engineering acceptance of the banking mission. Local == remote, clean tree. |
-| Latest pushed                               | `e20b3116` | Groups 3, 2, 4/5 visibility complete.                                                   |
+| Point                                       | Commit        | Notes                                                                                   |
+| ------------------------------------------- | ------------- | --------------------------------------------------------------------------------------- |
+| Mission start (accepted banking checkpoint) | `e0e0d550`    | Conditional engineering acceptance of the banking mission. Local == remote, clean tree. |
+| Groups 3, 2, 4/5                            | `e20b3116`    | Financial completeness and unresolved-funds visibility.                                 |
+| Group 7                                     | `9b04c45c`    | Containers, admin-web loopback guard, mobile fail-closed endpoint.                      |
+| Group 8                                     | `5670bc97`    | 152/152 environment keys inventoried and classified; completeness test.                 |
+| Group 12                                    | _this commit_ | Backup and restore exercise, executed and verified.                                     |
 
 Branch: `arena/defdd0fd-monienaija`. There is no upstream; push with `git push origin <branch>`.
 
@@ -194,9 +197,109 @@ Delivered:
 
 agent-mobile 323/323 (was 317; +6 new endpoint cases).
 
+### Group 8 — environment inventory and startup validation
+
+**Deliverables.** `scripts/generate-env-inventory.js` derives the inventory from the Zod schema in
+`src/config/environment.ts` rather than from a hand-written list, so a key cannot be added to the schema
+without appearing in the table. `docs/integration/ENVIRONMENT-CONFIGURATION-INVENTORY.md` holds 152 rows.
+`test/environment-inventory.spec.ts` (7 cases) fails if the schema and the document diverge in either
+direction, and asks the real `validateEnvironment()` whether each value would be accepted in production.
+
+Classification counts: INTERNAL 39, OPERATIONAL 38, SECRET 18, ENVIRONMENT_SPECIFIC 33,
+PROVIDER_SPECIFIC 17, FINANCIAL_POLICY_DEPENDENT 7. `.env.example` went from 108 to 152 documented keys.
+
+**Two corrections worth keeping.** The first classification put `DB_HOST` and
+`A6_PARTNER_SIGNING_ALGORITHM` in SECRET because both _matched_ a secret-shaped pattern;
+`BANKING_MONNIFY_CONTRACT_CODE` was missed for the opposite reason. The rules were reordered by
+specificity and both directions are now asserted by name.
+
+The completeness test originally failed on `DB_PASSWORD=change-me-local-only`, which looks like a leaked
+credential in an example file. It is not: the value is on the schema's own `PLACEHOLDER_SECRETS` blocklist
+and production refuses it — verified against the compiled validator, not assumed. The test therefore
+asserts against `validateEnvironment()` instead of a second hand-maintained string list, which would have
+been a copy of the rule rather than the rule itself.
+
+### Group 12 — backup and executed restore exercise
+
+`scripts/backup-restore-drill.js` performs a full cycle: backup → fresh database → schema from the real
+migration chain → restore → verify. `pg_dump`, `pg_restore` and `psql` are **absent from this
+environment** (confirmed by searching the whole filesystem), so the drill implements the same operation
+over the wire. Durability, off-site storage, encryption at rest and retention remain infrastructure
+decisions and are listed as outstanding rather than simulated.
+
+**Executed, not merely written.** Two runs, both `BACKUP RESTORE VERIFIED`:
+
+| Source database                   | Rows | Tables | FKs checked | Ledger lines | Unbalanced | Orphans | Categories |
+| --------------------------------- | ---- | ------ | ----------- | ------------ | ---------- | ------- | ---------- |
+| `mn_it_fcinit_g19drill_1806328`   | 2030 | 50     | 86          | 190          | 0          | 0       | 10/11      |
+| `mn_it_a3dfloat_g19float_1807347` | 984  | 50     | 86          | 14           | 0          | 0       | 10/11      |
+
+No single available fixture populates all eleven categories, and the drill reports exactly that rather
+than implying coverage it did not exercise. Between the two runs every category the mission names is
+restored and verified; a fixture seeding all eleven in one database remains outstanding.
+
+**Seven defects found by executing it.** Each came from a restore attempt that actually failed:
+
+1. **JSON silently rounds money.** `json_agg` renders `numeric` as a bare JSON number and `JSON.parse`
+   makes it a double — `12345678901234567890` → `...567000`, observed. `numeric`/`bigint` are now
+   projected through `::text`, so exact decimal strings travel and PostgreSQL casts them back on insert.
+2. **Deferred ledger constraints need one transaction.** `ledger_journal_must_balance` and
+   `ledger_lines_must_balance_journal` are `DEFERRABLE INITIALLY DEFERRED` and fire at COMMIT. Under
+   autocommit a journal cannot precede its balancing lines, so every journal would be rejected and a
+   perfectly good backup would look un-restorable.
+3. **Governance evidence lives outside `public`.** Restoring approvals failed with _"Protected approval
+   must be requested through the protected authority"_: the guard demands matching rows in
+   `protected_authority.checker_decisions` / `approval_consumptions`. A `public`-only backup **cannot be
+   restored at all**. Both are now backed up and restored.
+4. **Some tables are derived and cannot be copied.** `governed_institution_lifecycle_executions` refuses
+   INSERT unless `pg_trigger_depth() >= 2`; `kyc_evaluation_refresh` is a work queue the KYC triggers
+   repopulate during the restore. Both are regenerated by the transition that produces them.
+5. **Four ledger accounts are provisioned non-deterministically.** `CASH_TO_CASH-UNCLAIMED-NGN`,
+   `AGENT_FUNDING_POOL-NGN`, `FINANCE-FEE_REVENUE-NGN` and `FINANCE-VAT_PAYABLE-NGN` are seeded with
+   `gen_random_uuid()`; verified to differ across two independently migrated databases. **This is a real
+   production recovery defect**: ledger lines in a backup reference the source's ids, so a restore either
+   fails the foreign key or silently re-attaches those lines to a different account object carrying the
+   same code — and no balance check would reveal it. The drill resolves every collision up front,
+   rewrites the references deliberately, and names each one in its output and `verification.json`.
+6. **jsonb `[]` was restoring as `{}`.** node-postgres serialises a JS array as a PostgreSQL array
+   literal, which the jsonb input function reads as an empty object — `scopes: []` on a role assignment
+   would have become `scopes: {}`. JSON columns are now explicitly stringified.
+7. **Three supporting tables were missing from the backup set.** The referential sweep found 75 dangling
+   references to `banks`, `customer_beneficiaries` and `authentication_sessions`. They are not one of the
+   eleven categories, but the categories cannot be restored without them.
+
+**How the guards are handled, and why that is not a shortcut.** The guards are written for operations,
+not restores: `approval_authority_guard` requires `expires_at > clock_timestamp()`, which a genuine
+historic approval can never satisfy (all 15 in the fixture had expired; their digests matched exactly);
+the execution-evidence guard requires trigger depth. PostgreSQL draws the same line itself —
+`pg_restore --disable-triggers` exists so a restore reproduces _state_ without re-running _policy_. The
+drill does the same (`session_replication_role = replica`) and pays for it by re-establishing integrity
+from the data rather than trusting the guards it just bypassed: every backed-up row compared against the
+**live source** by server-computed fingerprint, a full foreign-key sweep (86 FKs, 0 broken), every journal
+balanced, and the ledger's total debit and line count unchanged.
+
+Two consequences stated plainly rather than buried: a restore requires a role permitted to set
+`session_replication_role` (a superuser), which narrows who may perform one; and the first verification
+attempt compared rows against the serialized file, where a `timestamptz` is a JSON string and the driver
+returns a `Date` — hundreds of false failures that would have buried a real one. Comparison is now
+database-to-database.
+
+`test/backup-restore-drill.spec.ts` (11 cases) pins each of these properties. The guards were verified to
+fail when the corresponding code is broken, so they are tests rather than restatements.
+
+A `MN_IT_KEEP_DATABASE=1` switch was added to `test/support/pg-harness.ts` so a finished suite's real
+application-written rows can be harvested as a fixture. It is opt-in and only ever affects a database the
+run already owns.
+
+---
+
 ## 4. Outstanding
 
-Groups 1 (baseline — done implicitly, record in handoff), 6 (topology document), 8–40 remain.
+Groups 9–11 (secret rotation, DB operational readiness, migration workflow) and 13–40 remain.
+
+Known gaps carried forward from Group 12: no fixture seeds all eleven backup categories in one database;
+the restore requires superuser; and off-site storage, encryption at rest, retention and point-in-time
+recovery are infrastructure decisions that are not implemented.
 
 ## 5. External blockers (already known at mission start)
 

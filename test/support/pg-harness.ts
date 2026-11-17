@@ -233,11 +233,24 @@ export async function createIntegrationDataSourceFromScratch(label: string): Pro
   return dataSource;
 }
 
-/** Destroys the DataSource and drops its dedicated database. */
+/**
+ * Destroys the DataSource and drops its dedicated database.
+ *
+ * `MN_IT_KEEP_DATABASE=1` closes the connection but leaves the database in place. It exists so a
+ * finished suite's rows can be harvested as a realistic fixture — the backup/restore drill needs data
+ * written by the application's own services, and there is no other way to obtain that without
+ * impersonating the services in a seed script. It is opt-in, and it only ever affects a database whose
+ * name this run already owns, so a kept database can never be a pre-existing one.
+ */
 export async function destroyIntegrationDataSource(dataSource: DataSource): Promise<void> {
   const name = dataSource.options.database as string;
+  const keep = process.env.MN_IT_KEEP_DATABASE === '1';
   if (dataSource.isInitialized) {
     await dataSource.destroy();
+  }
+  if (keep) {
+    process.stdout.write(`[pg-harness] kept database ${name} (MN_IT_KEEP_DATABASE=1)\n`);
+    return;
   }
   await withAdmin(async (ds) => {
     await dropOwnDatabase(ds, name);
