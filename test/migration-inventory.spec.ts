@@ -69,8 +69,8 @@ describe('migration inventory', () => {
     // ARENA 3D superseded the KYC identity revision as the newest migration. The earlier identifier
     // remains present and unchanged (asserted below); only the "latest" pin moves.
     expect(migrations.at(-1)).toMatchObject({
-      timestamp: '1785753600604',
-      name: 'BankingFeeBinding1785753600604',
+      timestamp: '1785753600605',
+      name: 'CreateInstitutionAgentFloatFunding1785753600605',
     });
   });
 
@@ -92,6 +92,7 @@ describe('migration inventory', () => {
       '1785753600602',
       '1785753600603',
       '1785753600604',
+      '1785753600605',
     ]);
   });
 

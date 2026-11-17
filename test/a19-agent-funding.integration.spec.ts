@@ -835,6 +835,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
       '1785753600602',
       '1785753600603',
       '1785753600604',
+      '1785753600605',
     ]).toContain(latest[0]!.timestamp);
     expect([
       'SecureAgentApplicationAccess1785753600095',
@@ -854,7 +855,8 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
       'BankingOperationRecords1785753600601',
       'BankingReconciliation1785753600602',
       'BankingDispatchLeases1785753600603',
-      'BankingFeeBinding1785753600604',
+      'CreateInstitutionAgentFloatFunding1785753600605',
+      'CreateInstitutionAgentFloatFunding1785753600605',
       'CreateGovernedLedgerReversalExecutions1785753600117',
       'CreateInstitutionFoundation1785753600400',
       'CreateInstitutionalFinancialOwnership1785753600401',
@@ -901,6 +903,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
       '1785753600602',
       '1785753600603',
       '1785753600604',
+      '1785753600605',
     ]).toContain(latest[0]!.timestamp);
     expect([
       'SecureAgentApplicationAccess1785753600095',
@@ -920,7 +923,8 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
       'BankingOperationRecords1785753600601',
       'BankingReconciliation1785753600602',
       'BankingDispatchLeases1785753600603',
-      'BankingFeeBinding1785753600604',
+      'CreateInstitutionAgentFloatFunding1785753600605',
+      'CreateInstitutionAgentFloatFunding1785753600605',
       'CreateGovernedLedgerReversalExecutions1785753600117',
       'CreateInstitutionFoundation1785753600400',
       'CreateInstitutionalFinancialOwnership1785753600401',

@@ -89,7 +89,7 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
       // applied after the KYC governance chain by timestamp order.
       expect(rows.at(-1)).toEqual({
         timestamp: '1785753600604',
-        name: 'BankingFeeBinding1785753600604',
+        name: 'CreateInstitutionAgentFloatFunding1785753600605',
       });
     });
 
@@ -207,7 +207,7 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
         const executed = await db.runMigrations({ transaction: 'all' });
         const applied = executed.map((migration) => String(migration.name));
         expect(applied).toContain('CreateCustomerCredentialRecoveryChallenges1785753600402');
-        expect(applied.at(-1)).toBe('BankingFeeBinding1785753600604');
+        expect(applied.at(-1)).toBe('CreateInstitutionAgentFloatFunding1785753600605');
         expect(
           applied.indexOf('CreateCustomerCredentialRecoveryChallenges1785753600402'),
         ).toBeLessThan(applied.indexOf('InstitutionGovernanceExecutionIntegrity1785753600500'));
@@ -389,7 +389,7 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
       expect(result.migrations.missing).toEqual([]);
       expect(result.migrations.unexpected).toEqual([]);
       // Tracks the readiness service's expected head, which is the banking chain's latest migration.
-      expect(result.migrations.latestTimestamp).toBe('1785753600604');
+      expect(result.migrations.latestTimestamp).toBe('1785753600605');
       expect(result.status).toBe('error');
       expect(result.reason).toBe('financial_dependencies_not_ready');
     }, 120_000);
