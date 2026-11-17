@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 
 import type { Environment } from '../config/environment';
 import { AuthorizationModule } from '../authorization/authorization.module';
+import { FeeModule } from '../fee/fee.module';
 import { ProtectedAuthorityModule } from '../authorization/protected-authority.module';
 
 import { BankingProviderRegistry } from './banking-provider.registry';
@@ -19,6 +20,7 @@ import { BankingReconciliationService } from './banking-reconciliation.service';
 import { BankingWebhookService } from './banking-webhook.service';
 import { BankingDispatchWorker } from './banking-dispatch-worker.service';
 import { BankingCommitmentBridgeService } from './banking-commitment-bridge.service';
+import { BankingFeeBindingService } from './banking-fee-binding.service';
 import { BankingWithdrawalExecutionAuthority } from './banking-withdrawal-execution-authority';
 import { BankingExternalOperationStatusVerifier } from './banking-external-operation-status-verifier';
 import { BankingInboundFundingVerifier } from './banking-inbound-funding-verifier';
@@ -53,7 +55,7 @@ export interface BankingRuntime {
  *    keeps the approval, credential, operational and entitlement distinctions in exactly one place.
  */
 @Module({
-  imports: [AuthorizationModule, ProtectedAuthorityModule],
+  imports: [AuthorizationModule, FeeModule, ProtectedAuthorityModule],
   providers: [
     {
       provide: BANKING_RUNTIME,
@@ -116,6 +118,7 @@ export interface BankingRuntime {
     BankingVirtualAccountService,
     BankingReconciliationService,
     BankingCommitmentBridgeService,
+    BankingFeeBindingService,
     BankingInboundInstitutionAuthority,
     PostgresWebhookAttribution,
     {
@@ -197,6 +200,7 @@ export interface BankingRuntime {
     BankingReconciliationService,
     BankingWebhookService,
     BankingCommitmentBridgeService,
+    BankingFeeBindingService,
     BankingWithdrawalExecutionAuthority,
     BankingExternalOperationStatusVerifier,
     BankingInboundFundingVerifier,

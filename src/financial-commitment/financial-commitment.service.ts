@@ -24,6 +24,7 @@ import { ExternalOperationService } from '../partner/external-operation.service'
 import { WithdrawalService } from '../withdrawal/withdrawal.service';
 import { WalletFinancialBoundaryService } from '../wallet/wallet-financial-boundary.service';
 import { BankingCommitmentBridgeService } from '../banking/banking-commitment-bridge.service';
+import { BankingFeeBindingService } from '../banking/banking-fee-binding.service';
 import {
   WITHDRAWAL_EXECUTION_AUTHORITY,
   type WithdrawalExecutionAuthority,
@@ -63,6 +64,7 @@ export class FinancialCommitmentService {
     @Inject(WITHDRAWAL_EXECUTION_AUTHORITY)
     private readonly authority: WithdrawalExecutionAuthority,
     private readonly bankingBridge: BankingCommitmentBridgeService,
+    private readonly fees: BankingFeeBindingService,
   ) {}
 
   async initiate(
@@ -347,6 +349,24 @@ export class FinancialCommitmentService {
         input.target,
       ],
     );
+    // Pricing is bound alongside the commitment, before dispatch is ever possible. The committed
+    // amount is what the customer approved, so the bound pricing must agree with it exactly: if an
+    // approved fee rule would charge a different total, this refuses rather than debiting an amount
+    // the customer never authorized, and rather than silently absorbing the fee. No fee rule means no
+    // fee binding, which is the current production state.
+    const pricing = await this.fees.bindForCommittedOperationInTransaction(manager, {
+      externalOperationId: operation.externalOperationId,
+      institutionId: wallet.institution_id,
+      walletId: input.walletId,
+      currency: input.currency,
+      committedAmountMinor: input.amountMinor,
+    });
+    if (pricing && pricing.customerDebitMinor !== input.amountMinor) {
+      throw new ConflictException(
+        'Committed amount does not match the authorized customer debit for this operation',
+      );
+    }
+
     // The durable dispatch intent is created HERE, inside the authorization transaction, so there is
     // no interval in which a commitment is authorized but has no dispatch record, and none in which a
     // dispatch record exists for a commitment that rolled back. An event-based bridge would open

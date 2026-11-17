@@ -11,8 +11,8 @@ import {
 // See test/v1-release-01-production-readiness-migration-sync.integration.spec.ts, which runs the
 // full migration chain against real PostgreSQL and fails the build if this constant and the
 // actual latest migration file ever diverge.
-const EXPECTED_MIGRATION_TIMESTAMP = '1785753600603';
-const EXPECTED_MIGRATION_NAME = 'BankingDispatchLeases1785753600603';
+const EXPECTED_MIGRATION_TIMESTAMP = '1785753600604';
+const EXPECTED_MIGRATION_NAME = 'BankingFeeBinding1785753600604';
 
 type Row = Record<string, unknown>;
 

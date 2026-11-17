@@ -15,6 +15,7 @@ import {
 } from '../src/customer-beneficiary/customer-beneficiary.enums';
 import { FinancialCommitmentService } from '../src/financial-commitment/financial-commitment.service';
 import { BankingCommitmentBridgeService } from '../src/banking/banking-commitment-bridge.service';
+import { BankingFeeBindingService } from '../src/banking/banking-fee-binding.service';
 import { FinancialCommitmentRepository } from '../src/financial-commitment/financial-commitment.repository';
 import {
   KycTierEvidenceReader,
@@ -178,6 +179,7 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
           }),
       },
       app.get(BankingCommitmentBridgeService),
+      app.get(BankingFeeBindingService),
     );
     const connection = new PartnerConnectionService(
       configService,

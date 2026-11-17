@@ -65,12 +65,12 @@ describe('migration inventory', () => {
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at the banking dispatch-lease migration', () => {
+  it('ends at the banking fee-binding migration', () => {
     // ARENA 3D superseded the KYC identity revision as the newest migration. The earlier identifier
     // remains present and unchanged (asserted below); only the "latest" pin moves.
     expect(migrations.at(-1)).toMatchObject({
-      timestamp: '1785753600603',
-      name: 'BankingDispatchLeases1785753600603',
+      timestamp: '1785753600604',
+      name: 'BankingFeeBinding1785753600604',
     });
   });
 
@@ -86,7 +86,13 @@ describe('migration inventory', () => {
       .map((migration) => migration.timestamp);
     // Contiguous and ordered: 600..603, the allocation reserved for banking. A gap would mean an
     // identifier was skipped or renumbered, which the production readiness check treats as failure.
-    expect(banking).toEqual(['1785753600600', '1785753600601', '1785753600602', '1785753600603']);
+    expect(banking).toEqual([
+      '1785753600600',
+      '1785753600601',
+      '1785753600602',
+      '1785753600603',
+      '1785753600604',
+    ]);
   });
 
   it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {
