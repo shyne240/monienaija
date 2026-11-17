@@ -61,6 +61,8 @@ import { Transfer } from './transfer.entity';
 import {
   buildAuditedInternalTransferCompletedEvent,
   buildAuditedInternalTransferFailedEvent,
+  buildTypedWalletTransferEvent,
+  type TypedTransferRecipients,
   INTERNAL_TRANSFER_EVENT_CLASSIFICATION,
   INTERNAL_TRANSFER_EVENT_RETENTION_CLASS,
   INTERNAL_TRANSFER_EVENT_SCHEMA_VERSION,
@@ -89,6 +91,9 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const DEFAULT_HISTORY_PAGE = 1;
 const DEFAULT_HISTORY_LIMIT = 20;
 const MAX_HISTORY_LIMIT = 100;
+type TransferNotificationRecipients = AuditedTransferRecipientIdentity & {
+  typed?: TypedTransferRecipients;
+};
 
 type NormalizedTransfer = Omit<
   CreateTransferCommand,
@@ -541,9 +546,17 @@ export class TransferService {
 
     // Authoritative recipient identity for the versioned notification event contract,
     // derived from the pessimistically-locked wallet rows that back the ledger posting.
-    const notificationRecipients: AuditedTransferRecipientIdentity = {
+    const notificationRecipients: TransferNotificationRecipients = {
       sourceCustomerId: sourceWallet.customerId,
       destinationCustomerId: destinationWallet.customerId,
+      ...(participants?.some((participant) => participant.type === 'AGENT')
+        ? {
+            typed: {
+              source: { type: participants[0].type, id: participants[0].id },
+              destination: { type: participants[1].type, id: participants[1].id },
+            },
+          }
+        : {}),
     };
 
     if (
@@ -829,28 +842,23 @@ export class TransferService {
         amountMinor: transfer.amountMinor,
       },
     });
-    // Notification producer contract v1 (Arena 3 producer correction): the audited
-    // completion path emits the same versioned event identity as the lifecycle producer —
-    // stable eventKey, schemaVersion 1, RESTRICTED_FINANCIAL/A5 classification — and the
-    // authoritative recipient identity/safe facts the notification.v1 consumer requires
-    // (locked-wallet customer ids + committed amount/currency). Enqueued inside the same
-    // SERIALIZABLE transaction as the financial state (atomicity preserved); enqueueOnce
-    // makes replays converge without duplicates. Ledger/accounting logic is untouched.
+    // Keep v1 CUSTOMER events byte-compatible; agent-involved transfers use a distinct typed contract.
+    const completedAt = transfer.completedAt ?? new Date();
+    const typed = notificationRecipients.typed;
+    const eventType = typed ? 'wallet_transfer.completed' : INTERNAL_TRANSFER_COMPLETED_EVENT_TYPE;
     await this.outboxService?.enqueueOnce(manager, {
-      eventKey: transferCompletedEventKey(transfer.id),
-      eventType: INTERNAL_TRANSFER_COMPLETED_EVENT_TYPE,
+      eventKey: typed ? `${eventType}:${transfer.id}:v1` : transferCompletedEventKey(transfer.id),
+      eventType,
       aggregateType: 'TRANSFER',
       aggregateId: transfer.id,
       schemaVersion: INTERNAL_TRANSFER_EVENT_SCHEMA_VERSION,
       classification: INTERNAL_TRANSFER_EVENT_CLASSIFICATION,
       retentionClass: INTERNAL_TRANSFER_EVENT_RETENTION_CLASS,
-      occurredAt: transfer.completedAt ?? new Date(),
+      occurredAt: completedAt,
       correlationId: `transfer:${transfer.id}`,
-      payload: buildAuditedInternalTransferCompletedEvent(
-        transfer,
-        notificationRecipients,
-        transfer.completedAt ?? new Date(),
-      ),
+      payload: typed
+        ? buildTypedWalletTransferEvent(transfer, typed, 'completed', completedAt)
+        : buildAuditedInternalTransferCompletedEvent(transfer, notificationRecipients, completedAt),
     });
     await this.metricsService?.increment(manager, 'transfers.completed');
 
@@ -1091,7 +1099,7 @@ export class TransferService {
     manager: EntityManager,
     transfer: Transfer,
     failure: TransferFailure,
-    recipients: AuditedTransferRecipientIdentity,
+    recipients: TransferNotificationRecipients,
   ): Promise<TransferTransactionResult> {
     transfer.status = TransferStatus.FAILED;
     transfer.journalId = null;
@@ -1108,14 +1116,12 @@ export class TransferService {
       correlationId: `transfer:${transfer.id}`,
       newValues: { status: transfer.status, failureCode: transfer.failureCode },
     });
-    // Notification producer contract v1 (Arena 3 producer correction): authoritative
-    // recipient identity from the locked wallet rows so the notification.v1 consumer can
-    // address the failure notice to the source customer instead of quarantining the event.
-    // No journal exists for a failed transfer and no failure prose/PIN/secret is emitted.
     const failedAt = new Date();
+    const typed = recipients.typed;
+    const eventType = typed ? 'wallet_transfer.failed' : INTERNAL_TRANSFER_FAILED_EVENT_TYPE;
     await this.outboxService?.enqueueOnce(manager, {
-      eventKey: transferFailedEventKey(transfer.id),
-      eventType: INTERNAL_TRANSFER_FAILED_EVENT_TYPE,
+      eventKey: typed ? `${eventType}:${transfer.id}:v1` : transferFailedEventKey(transfer.id),
+      eventType,
       aggregateType: 'TRANSFER',
       aggregateId: transfer.id,
       schemaVersion: INTERNAL_TRANSFER_EVENT_SCHEMA_VERSION,
@@ -1123,12 +1129,14 @@ export class TransferService {
       retentionClass: INTERNAL_TRANSFER_EVENT_RETENTION_CLASS,
       occurredAt: failedAt,
       correlationId: `transfer:${transfer.id}`,
-      payload: buildAuditedInternalTransferFailedEvent(
-        transfer,
-        recipients,
-        transfer.failureCode,
-        failedAt,
-      ),
+      payload: typed
+        ? buildTypedWalletTransferEvent(transfer, typed, 'failed', failedAt)
+        : buildAuditedInternalTransferFailedEvent(
+            transfer,
+            recipients,
+            transfer.failureCode,
+            failedAt,
+          ),
     });
     await this.metricsService?.increment(manager, 'transfers.failed');
     return { transferId: transfer.id };
