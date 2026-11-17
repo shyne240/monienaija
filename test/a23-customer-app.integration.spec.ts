@@ -668,6 +668,9 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       classRows[0]!.id,
     ]);
     await expect(
+      quotes.create(cp, { ...input, idempotencyKey: `recipient-no-capability-${randomUUID()}` }),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
       quotes.create(ap, {
         destinationWalletId: source.id,
         amountMinor: '100',

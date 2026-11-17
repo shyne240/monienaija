@@ -485,6 +485,7 @@ export class TransferService {
         throw new ConflictException('Transfer no longer matches its confirmed participants');
       }
       requireAgentWalletTransferCapability(participants[0]);
+      requireAgentWalletTransferCapability(participants[1]);
       confirmedPricing = await this.transferPricingService!.priceWithManager(manager, {
         amountMinor: command.amountMinor,
         currency: command.currency,

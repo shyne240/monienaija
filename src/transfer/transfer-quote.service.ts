@@ -214,6 +214,7 @@ export class TransferQuoteService {
           const participants = await resolveTransferParticipants(manager, [source, destination]);
           if (!participants) throw new ConflictException('Wallet ownership is unavailable');
           requireAgentWalletTransferCapability(participants[0]);
+          requireAgentWalletTransferCapability(participants[1]);
           if (
             source.status !== WalletStatus.ACTIVE ||
             destination.status !== WalletStatus.ACTIVE ||
