@@ -3,7 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
-import { pbkdf2Sync, randomUUID } from 'node:crypto';
+import { createHash, pbkdf2Sync, randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 
 import type { HistoryResponseFixture } from './support/history-response-fixture';
@@ -780,8 +780,79 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `quote-${randomUUID()}`,
     });
-    // This tests the shared transaction directly; a PIN-authorized HTTP route is not wired yet.
+    const { CustomerTransactionPinService } = await import(
+      '../src/customer/customer-transaction-pin.service'
+    );
+    await app.get(CustomerTransactionPinService).setTransactionPin(sender.customerId, {
+      pinHash: encodePbkdf2('1234'),
+      hashAlgorithm: 'PBKDF2',
+      pinVersion: 1,
+      actor: sender.customerId,
+    });
+    // Internal service only; there is no HTTP confirmation route yet.
     const key = `confirm-${randomUUID()}`;
+    await expect(
+      transferService.createConfirmedTransfer(principal, quote.quoteId, key, '9999'),
+    ).rejects.toMatchObject({ status: 401 });
+    const pinRows: Array<{ failed_count: number }> = await dataSource.query(
+      `SELECT failed_count FROM customer_transaction_pins WHERE customer_id=$1`,
+      [sender.customerId],
+    );
+    expect(pinRows[0]!.failed_count).toBe(1);
+    const { TransferPinAuthorizationService } = await import(
+      '../src/transfer/transfer-pin-authorization.service'
+    );
+    const pinAuthorization = app.get(TransferPinAuthorizationService);
+    const scopedKey = `self-transfer:${createHash('sha256').update(`CUSTOMER:${sender.customerId}:${key}`).digest('hex')}`;
+    const proof = await pinAuthorization.authorize(principal, quote.quoteId, scopedKey, '1234');
+    await dataSource.transaction(async (manager) => {
+      await pinAuthorization.assertWithManager(manager, principal, quote.quoteId, scopedKey, proof);
+      await expect(
+        pinAuthorization.assertWithManager(manager, principal, randomUUID(), scopedKey, proof),
+      ).rejects.toMatchObject({ status: 401 });
+      await expect(
+        pinAuthorization.assertWithManager(
+          manager,
+          principal,
+          quote.quoteId,
+          `${scopedKey}-other`,
+          proof,
+        ),
+      ).rejects.toMatchObject({ status: 401 });
+      await expect(
+        pinAuthorization.assertWithManager(
+          manager,
+          { ...principal, sessionId: randomUUID() },
+          quote.quoteId,
+          scopedKey,
+          proof,
+        ),
+      ).rejects.toMatchObject({ status: 401 });
+    });
+    // Simulate PIN lock between verification and the transactional authorization check.
+    const authorize = pinAuthorization.authorize.bind(pinAuthorization);
+    const lockRace = jest
+      .spyOn(pinAuthorization, 'authorize')
+      .mockImplementation(async (...args) => {
+        const id = await authorize(...args);
+        await dataSource.query(
+          `UPDATE customer_transaction_pins SET account_locked=true WHERE customer_id=$1`,
+          [sender.customerId],
+        );
+        return id;
+      });
+    try {
+      await expect(
+        transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234'),
+      ).rejects.toMatchObject({ status: 401 });
+    } finally {
+      lockRace.mockRestore();
+      await dataSource.query(
+        `UPDATE customer_transaction_pins SET account_locked=false WHERE customer_id=$1`,
+        [sender.customerId],
+      );
+    }
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
     // A late failure after quote use must undo journal, transfer and quote changes together.
     const journalCountBefore = (
       await dataSource.query<Array<{ id: string }>>(`SELECT id FROM ledger_journals`)
@@ -795,7 +866,7 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       });
     try {
       await expect(
-        transferService.createConfirmedTransfer(principal, quote.quoteId, key),
+        transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234'),
       ).rejects.toThrow('injected post-consumption failure');
     } finally {
       injected.mockRestore();
@@ -812,21 +883,27 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
         [quote.quoteId],
       ),
     ).toEqual([{ status: 'ACTIVE', transfer_id: null }]);
-    const completed = await transferService.createConfirmedTransfer(principal, quote.quoteId, key);
+    const completed = await transferService.createConfirmedTransfer(
+      principal,
+      quote.quoteId,
+      key,
+      '1234',
+    );
     expect(completed).toMatchObject({
       status: 'COMPLETED',
       amountMinor: '1200',
       sourceWalletId: source.id,
       destinationWalletId: destination.id,
     });
-    expect((await transferService.createConfirmedTransfer(principal, quote.quoteId, key)).id).toBe(
-      completed.id,
-    );
+    expect(
+      (await transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234')).id,
+    ).toBe(completed.id);
     await expect(
       transferService.createConfirmedTransfer(
         principal,
         quote.quoteId,
         `different-${randomUUID()}`,
+        '1234',
       ),
     ).rejects.toMatchObject({ status: 409 });
     expect(
@@ -846,7 +923,7 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       idempotencyKey: `another-quote-${randomUUID()}`,
     });
     await expect(
-      transferService.createConfirmedTransfer(principal, anotherQuote.quoteId, key),
+      transferService.createConfirmedTransfer(principal, anotherQuote.quoteId, key, '1234'),
     ).rejects.toMatchObject({ status: 409 });
     const stale = await quoteService.create(principal, {
       sourceWalletId: source.id,
@@ -867,7 +944,12 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
         'test',
       );
     await expect(
-      transferService.createConfirmedTransfer(principal, stale.quoteId, `stale-${randomUUID()}`),
+      transferService.createConfirmedTransfer(
+        principal,
+        stale.quoteId,
+        `stale-${randomUUID()}`,
+        '1234',
+      ),
     ).rejects.toMatchObject({ status: 409 });
     expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('3800');
     expect((await wallets.getWalletBalance(destination.id)).balanceMinor).toBe('1200');
@@ -880,7 +962,7 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       [sender.customerId],
     );
     await expect(
-      transferService.createConfirmedTransfer(principal, quote.quoteId, key),
+      transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234'),
     ).rejects.toMatchObject({ status: 401 });
     await dataSource.query(
       `UPDATE customer_authentication_credentials SET account_locked=false WHERE customer_id=$1`,
@@ -891,14 +973,14 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       [sender.customerId],
     );
     await expect(
-      transferService.createConfirmedTransfer(principal, quote.quoteId, key),
+      transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234'),
     ).rejects.toMatchObject({ status: 401 });
     await dataSource.query(
       `UPDATE authentication_sessions SET status='REVOKED', revoked_at=clock_timestamp() WHERE id=$1`,
       [principal.sessionId],
     );
     await expect(
-      transferService.createConfirmedTransfer(principal, quote.quoteId, key),
+      transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234'),
     ).rejects.toMatchObject({ status: 401 });
   });
 

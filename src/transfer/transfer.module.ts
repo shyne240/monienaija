@@ -1,6 +1,10 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { CustomerModule } from '../customer/customer.module';
+import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
+import { AgentAuthenticationModule } from '../agent-authentication/agent-authentication.module';
+import { TransferPinAuthorizationService } from './transfer-pin-authorization.service';
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { CapabilityPolicyModule } from '../policy/capability-policy.module';
 import { OperationsModule } from '../operations/operations.module';
@@ -38,6 +42,9 @@ import { WalletTransactionController } from './wallet-transaction.controller';
 @Module({
   imports: [
     AuthorizationModule,
+    CustomerModule,
+    CustomerAuthenticationModule,
+    AgentAuthenticationModule,
     CapabilityPolicyModule,
     LedgerModule,
     OperationsModule,
@@ -57,6 +64,7 @@ import { WalletTransactionController } from './wallet-transaction.controller';
   controllers: [TransferController, WalletTransactionController],
   providers: [
     TransferService,
+    TransferPinAuthorizationService,
     TransferPricingService,
     TransferQuoteService,
     A3InternalTransferBindingAdapter,

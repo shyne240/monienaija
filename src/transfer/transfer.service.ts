@@ -30,6 +30,7 @@ import {
   requireAgentWalletTransferCapability,
 } from './transfer-quote.service';
 import { TransferPricingService, type TransferPricing } from './transfer-pricing.service';
+import { TransferPinAuthorizationService } from './transfer-pin-authorization.service';
 import { WalletOwnerClass, WalletStatus } from '../wallet/wallet.enums';
 import { resolveTransferParticipants, type TransferParticipant } from './transfer-participant';
 import { transferParticipantLimitInput } from './transfer-participant-limit';
@@ -141,20 +142,32 @@ export class TransferService {
     private readonly commercialAccountingService?: CommercialAccountingService,
     @Optional() private readonly transferQuoteService?: TransferQuoteService,
     @Optional() private readonly transferPricingService?: TransferPricingService,
+    @Optional() private readonly transferPinAuthorizationService?: TransferPinAuthorizationService,
   ) {}
 
-  /** The caller must first verify transaction PIN against this authenticated session. */
+  /** Verifies PIN for this quote before entering the shared financial transaction. */
   async createConfirmedTransfer(
     principal: AuthorizationPrincipal,
     quoteId: string,
     idempotencyKey: string,
+    pin: string,
   ): Promise<TransferView> {
-    if (!this.transferQuoteService || !this.transferPricingService)
+    if (
+      !this.transferQuoteService ||
+      !this.transferPricingService ||
+      !this.transferPinAuthorizationService
+    )
       throw new ServiceUnavailableException('Transfer confirmation is unavailable');
     const key = idempotencyKey?.trim();
     if (!key || key.length > 255) throw new BadRequestException('Idempotency key is required');
     const quote = await this.transferQuoteService.readForSession(principal, quoteId);
     const scopedKey = `self-transfer:${createHash('sha256').update(`${quote.principalType}:${quote.principalId}:${key}`).digest('hex')}`;
+    const pinAuditId = await this.transferPinAuthorizationService.authorize(
+      principal,
+      quote.quoteId,
+      scopedKey,
+      pin,
+    );
     return this.createTransfer({
       sourceWalletId: quote.sourceWalletId,
       destinationWalletId: quote.destinationWalletId,
@@ -162,7 +175,7 @@ export class TransferService {
       currency: quote.currency,
       idempotencyKey: scopedKey,
       ownership: walletOwnershipBinding(principal),
-      confirmation: { quoteId: quote.quoteId, principal },
+      confirmation: { quoteId: quote.quoteId, principal, pinAuditId },
     });
   }
 
@@ -365,6 +378,15 @@ export class TransferService {
         manager,
         command.confirmation.principal,
         command.confirmation.quoteId,
+      );
+      if (!this.transferPinAuthorizationService)
+        throw new ServiceUnavailableException('Transfer PIN authorization is unavailable');
+      await this.transferPinAuthorizationService.assertWithManager(
+        manager,
+        command.confirmation.principal,
+        command.confirmation.quoteId,
+        command.idempotencyKey,
+        command.confirmation.pinAuditId,
       );
     }
     const existing = await transferRepository.findOne({
@@ -1329,11 +1351,24 @@ export class TransferService {
     if (!command.confirmation) return;
     if (!this.transferQuoteService)
       throw new ServiceUnavailableException('Transfer confirmation is unavailable');
-    const quote = await this.transferQuoteService.readForSession(
-      command.confirmation.principal,
-      command.confirmation.quoteId,
-    );
-    this.assertQuoteMatchesReplay(quote, transfer);
+    if (!this.transferPinAuthorizationService)
+      throw new ServiceUnavailableException('Transfer PIN authorization is unavailable');
+    const confirmation = command.confirmation;
+    await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+      const quote = await this.transferQuoteService!.lockForSession(
+        manager,
+        confirmation.principal,
+        confirmation.quoteId,
+      );
+      await this.transferPinAuthorizationService!.assertWithManager(
+        manager,
+        confirmation.principal,
+        confirmation.quoteId,
+        command.idempotencyKey,
+        confirmation.pinAuditId,
+      );
+      this.assertQuoteMatchesReplay(quote, transfer);
+    });
   }
 
   private transactionContentionExhaustedException(): ConflictException {

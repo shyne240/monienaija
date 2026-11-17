@@ -1013,6 +1013,12 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
         scopes: [],
         customerAccess: 'SELF' as const,
       };
+      await customerPinService.setTransactionPin(customerId, {
+        pinHash: hashPin('1234'),
+        hashAlgorithm: 'PBKDF2',
+        pinVersion: 1,
+        actor: customerId,
+      });
       const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
       const quote = await app.get(TransferQuoteService).create(principal, {
         sourceWalletId: a.id,
@@ -1024,7 +1030,9 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       expect(quote).toMatchObject({ feeMinor: fee, vatMinor: vat, totalDebitMinor: total });
       const keys = [`fee-confirm-${randomUUID()}`, `fee-confirm-${randomUUID()}`];
       const attempts = await Promise.allSettled(
-        keys.map((key) => transferService.createConfirmedTransfer(principal, quote.quoteId, key)),
+        keys.map((key) =>
+          transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234'),
+        ),
       );
       const winners = attempts
         .map((result, index) => ({ result, key: keys[index] }))
@@ -1050,7 +1058,7 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
         ).amount_minor,
       ).toBe(vat);
       expect(
-        (await transferService.createConfirmedTransfer(principal, quote.quoteId, key)).id,
+        (await transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234')).id,
       ).toBe(transfer.id);
       expect(await accountingJournals()).toHaveLength(1);
     },
@@ -1081,6 +1089,12 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       scopes: [],
       customerAccess: 'SELF' as const,
     };
+    await customerPinService.setTransactionPin(customerId, {
+      pinHash: hashPin('1234'),
+      hashAlgorithm: 'PBKDF2',
+      pinVersion: 1,
+      actor: customerId,
+    });
     const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
     const quote = await app.get(TransferQuoteService).create(principal, {
       sourceWalletId: a.id,
@@ -1094,6 +1108,7 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
         principal,
         quote.quoteId,
         `fee-confirm-${randomUUID()}`,
+        '1234',
       ),
     ).rejects.toBeDefined();
     expect(await walletBalance(a.ledgerAccountId)).toBe(50000n);

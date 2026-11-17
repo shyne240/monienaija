@@ -164,6 +164,32 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
       },
     });
     expect(JSON.stringify(rows[0])).not.toContain('1234');
+    const { TransferPinAuthorizationService } = await import(
+      '../src/transfer/transfer-pin-authorization.service'
+    );
+    const transferPin = app.get(TransferPinAuthorizationService);
+    const principal = {
+      ...agentPrincipal(agent.id),
+      type: 'AGENT' as const,
+      sessionId: randomUUID(),
+    };
+    const quoteId = randomUUID();
+    const proof = await transferPin.authorize(principal, quoteId, 'scoped-key', '1234');
+    await dataSource.transaction(async (manager) => {
+      await transferPin.assertWithManager(manager, principal, quoteId, 'scoped-key', proof);
+      await expect(
+        transferPin.assertWithManager(manager, principal, randomUUID(), 'scoped-key', proof),
+      ).rejects.toMatchObject({ status: 401 });
+    });
+    await dataSource.query(
+      `UPDATE agent_transaction_pins SET pin_version=pin_version+1 WHERE agent_id=$1`,
+      [agent.id],
+    );
+    await expect(
+      dataSource.transaction((manager) =>
+        transferPin.assertWithManager(manager, principal, quoteId, 'scoped-key', proof),
+      ),
+    ).rejects.toMatchObject({ status: 401 });
   });
 
   // A. valid authenticated Agent + permitted service + valid PIN → AUTHORIZED

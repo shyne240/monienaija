@@ -13,7 +13,7 @@ export interface CreateTransferCommand {
   ownership: WalletOwnershipBinding;
   destinationWalletId: string;
   /** Internal-only: authenticated principal and immutable quote; never accepted directly from a client. */
-  confirmation?: { quoteId: string; principal: AuthorizationPrincipal };
+  confirmation?: { quoteId: string; principal: AuthorizationPrincipal; pinAuditId: string };
   amountMinor: string | number | bigint;
   currency: string;
   idempotencyKey: string;
