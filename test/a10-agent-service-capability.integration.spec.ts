@@ -94,6 +94,34 @@ describe('A10 Agent service capability & authorization (real PostgreSQL)', () =>
     expect(res.canonicalService).toBe(AgentService.CASH_IN);
   });
 
+  it('requires explicit wallet-transfer permission and the matching agent principal', async () => {
+    const permitted = await createActiveAgentWithServices([AgentService.WALLET_TRANSFER]);
+    const denied = await createActiveAgentWithServices([AgentService.CASH_IN]);
+    expect(
+      await capabilityService.evaluateWithPrincipal(
+        permitted.agent.id,
+        AgentService.WALLET_TRANSFER,
+        {
+          type: 'AGENT',
+          agentId: permitted.agent.id,
+        },
+      ),
+    ).toMatchObject({ allowed: true, canonicalService: AgentService.WALLET_TRANSFER });
+    expect(
+      await capabilityService.evaluate(denied.agent.id, AgentService.WALLET_TRANSFER),
+    ).toMatchObject({ allowed: false, reason: 'SERVICE_NOT_PERMITTED' });
+    expect(
+      await capabilityService.evaluateWithPrincipal(
+        permitted.agent.id,
+        AgentService.WALLET_TRANSFER,
+        {
+          type: 'AGENT',
+          agentId: denied.agent.id,
+        },
+      ),
+    ).toMatchObject({ allowed: false, reason: 'PRINCIPAL_MISMATCH' });
+  });
+
   it('B. active Agent + active class + unpermitted service → DENIED (SERVICE_NOT_PERMITTED)', async () => {
     const { agent } = await createActiveAgentWithServices([AgentService.CASH_IN]);
     const res = await capabilityService.evaluate(agent.id, AgentService.CASH_OUT);
