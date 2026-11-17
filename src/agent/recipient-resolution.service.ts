@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 
@@ -19,12 +24,10 @@ export class RecipientResolutionService {
   ) {}
 
   /**
-   * Resolve a Nigerian identifier (10-digit MonieNaija receiving number or phone) to
-   * exactly one {ownerType, ownerId, receivingNumber, display}.
-   * - Agent numbers are 10-digit ACTIVE in agent_receiving_numbers with agent status ACTIVE|SUSPENDED.
-   * - Customer numbers are primary PHONE contact methods (is_primary) normalized to canonical 10-digit.
-   * - No TERMINATED/PENDING/deleted/rejected agent is exposed.
-   * - Global uniqueness ensures never both CUSTOMER and AGENT for same canonical.
+   * Resolve the existing allocated agent receiving number or customer phone namespace.
+   * Allocation checks cannot guarantee global uniqueness after a later contact change, so
+   * a collision must fail closed rather than preferring an agent or an arbitrary customer.
+   * SUSPENDED identities remain visible for existing callers, which must enforce eligibility.
    */
   async resolve(identifier: string): Promise<RecipientResolution> {
     const canonical = AgentReceivingNumberService.canonicalizeTo10(identifier);
@@ -32,86 +35,56 @@ export class RecipientResolutionService {
       throw new BadRequestException('identifier must be a valid Nigerian 10-digit number');
     }
 
-    // 1) Try Agent first — must be ACTIVE receiving number and agent not deleted/terminated
     const arn = await this.agentReceivingRepo.findOne({
       where: { receivingNumber: canonical, status: AgentReceivingNumberStatus.ACTIVE },
     });
+    let agent: Agent | null = null;
     if (arn && arn.deletedAt === null) {
-      const agent = await this.agentRepo.findOne({ where: { id: arn.agentId } });
-      if (agent && agent.deletedAt === null) {
-        if (agent.status === AgentStatus.ACTIVE || agent.status === AgentStatus.SUSPENDED) {
-          // For SUSPENDED, we return identity but caller must block financial use via status
-          const display = await this.agentDisplay(agent);
-          return {
-            ownerType: 'AGENT',
-            ownerId: agent.id,
-            receivingNumber: canonical,
-            display,
-            status: agent.status,
-          };
-        }
-        // TERMINATED/PENDING -> not resolvable as active recipient
+      const candidate = await this.agentRepo.findOne({ where: { id: arn.agentId } });
+      if (
+        candidate &&
+        candidate.deletedAt === null &&
+        (candidate.status === AgentStatus.ACTIVE || candidate.status === AgentStatus.SUSPENDED)
+      ) {
+        agent = candidate;
       }
     }
 
-    // 2) Try Customer — resolve via customer_contact_methods PHONE
-    // Use raw query to canonicalize normalized_value and match
-    const customerId = await this.findCustomerIdByCanonical(canonical);
-    if (customerId) {
-      const custRows: Array<{
-        id: string;
-        status: string;
-        reference: string;
-        deleted_at: string | null;
-      }> = await this.dataSource.query(
-        `SELECT id, status, reference, deleted_at FROM customers WHERE id = $1 LIMIT 1`,
-        [customerId],
-      );
-      const customer = custRows[0];
-      if (customer && customer.deleted_at === null) {
-        const status = customer.status;
-        if (status === 'CLOSED') {
-          throw new NotFoundException(`Recipient ${canonical} not found`);
-        }
-        if (status !== 'ACTIVE' && status !== 'SUSPENDED') {
-          if (status !== 'ACTIVE') {
-            throw new NotFoundException(`Recipient ${canonical} not found`);
-          }
-        }
-        const display = await this.customerDisplay(customerId);
-        return {
-          ownerType: 'CUSTOMER',
-          ownerId: customer.id,
-          receivingNumber: canonical,
-          display,
-          status,
-        };
-      }
-    }
-
-    throw new NotFoundException(`Recipient ${canonical} not found`);
-  }
-
-  private async findCustomerIdByCanonical(canonical10: string): Promise<string | null> {
-    // Search customer_contact_methods where canonical of normalized_value equals canonical10
-    // Use same collision logic as allocation: stored normalized_value may be 10-digit, +234..., 234..., 0...
-    // Instead of scanning and canonicalizing, we do OR match.
-    const rows: Array<{ customer_id: string }> = await this.dataSource.query(
-      `SELECT customer_id FROM customer_contact_methods
-       WHERE type = 'PHONE' AND deleted_at IS NULL
-         AND (
-           normalized_value = $1
-           OR normalized_value = '+234' || $1
-           OR normalized_value = '234' || $1
-           OR normalized_value = '0' || $1
-         )
-       LIMIT 1`,
-      [canonical10],
+    // DISTINCT handles multiple matching contact rows for the same customer. Filtering by
+    // lifecycle before counting avoids a deleted/closed identity hiding a valid recipient.
+    const customers: Array<{ id: string; status: string }> = await this.dataSource.query(
+      `SELECT DISTINCT c.id, c.status FROM customer_contact_methods m
+       JOIN customers c ON c.id = m.customer_id
+       WHERE m.type = 'PHONE' AND m.deleted_at IS NULL
+         AND c.deleted_at IS NULL AND c.status IN ('ACTIVE', 'SUSPENDED')
+         AND (m.normalized_value = $1 OR m.normalized_value = '+234' || $1
+           OR m.normalized_value = '234' || $1 OR m.normalized_value = '0' || $1)
+       LIMIT 2`,
+      [canonical],
     );
-    const first = rows[0];
-    if (rows.length > 0 && first && first.customer_id) return first.customer_id;
-    // Also try is_primary first? But limit 1 already picks any; for global uniqueness there should be at most one
-    return null;
+    if (customers.length > 1 || (agent && customers.length > 0)) {
+      throw new ConflictException('Recipient identifier is ambiguous');
+    }
+    if (agent) {
+      return {
+        ownerType: 'AGENT',
+        ownerId: agent.id,
+        receivingNumber: canonical,
+        display: await this.agentDisplay(agent),
+        status: agent.status,
+      };
+    }
+    const customer = customers[0];
+    if (customer) {
+      return {
+        ownerType: 'CUSTOMER',
+        ownerId: customer.id,
+        receivingNumber: canonical,
+        display: await this.customerDisplay(customer.id),
+        status: customer.status,
+      };
+    }
+    throw new NotFoundException(`Recipient ${canonical} not found`);
   }
 
   private async agentDisplay(agent: Agent): Promise<string> {

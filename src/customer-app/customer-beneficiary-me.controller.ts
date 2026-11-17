@@ -112,19 +112,8 @@ export class CustomerBeneficiaryMeController {
             const res = await this.recipientService.resolve(String(dest));
             if (res.ownerType === 'CUSTOMER') beneficiaryCustomerId = res.ownerId;
           } catch {
-            // Try direct lookup via customer_contact_methods for internal mapping if resolve threw NotFound due to agent ACTIVE? fallback
-            try {
-              const canonical = String(dest).replace(/\D/g, '').slice(-10);
-              if (canonical.length === 10) {
-                const rows: Array<{ customer_id: string }> = await this.dataSource.query(
-                  `SELECT customer_id FROM customer_contact_methods WHERE type='PHONE' AND deleted_at IS NULL AND (normalized_value = $1 OR normalized_value = '+234' || $1 OR normalized_value = '234' || $1 OR normalized_value = '0' || $1) LIMIT 1`,
-                  [canonical],
-                );
-                if (rows[0]?.customer_id) beneficiaryCustomerId = rows[0].customer_id;
-              }
-            } catch {
-              // Keep an unresolved customer ID when the fallback lookup fails.
-            }
+            // A failed or ambiguous resolution must remain unresolved. A direct phone
+            // lookup here would bypass the resolver's identity and collision checks.
           }
         }
       } catch {
