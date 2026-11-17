@@ -556,6 +556,70 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     await expect(classify()).rejects.toMatchObject({ status: 503 });
   });
 
+  it('database protects bound transfer quote facts and refuses premature generic use', async () => {
+    const sender = await createCustomerWithCredential();
+    const recipient = await createCustomerWithCredential();
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const wallets = app.get(WalletService);
+    const source = await wallets.createWallet({
+      customerId: sender.customerId,
+      currency: 'NGN',
+      idempotencyKey: `qs-${randomUUID()}`,
+    });
+    const destination = await wallets.createWallet({
+      customerId: recipient.customerId,
+      currency: 'NGN',
+      idempotencyKey: `qd-${randomUUID()}`,
+    });
+    const quoteId = randomUUID();
+    await dataSource.query(
+      `INSERT INTO payment_quotes (id,quote_reference,payment_type,amount_minor,fee_minor,vat_minor,total_minor,currency,status,idempotency_key,request_hash,expires_at)
+      VALUES ($1,$2,'TRANSFER',1000,100,7,1107,'NGN','ACTIVE',$3,$4,now()+interval '5 minutes')`,
+      [quoteId, `quote-${randomUUID()}`, `quote-idem-${randomUUID()}`, 'a'.repeat(64)],
+    );
+    await dataSource.query(
+      `INSERT INTO wallet_transfer_quote_bindings
+      (quote_id,principal_type,principal_id,session_id,source_wallet_id,source_ledger_id,destination_wallet_id,destination_ledger_id,recipient_type,recipient_id,pricing_hash)
+      VALUES ($1,'CUSTOMER',$2,$3,$4,$5,$6,$7,'CUSTOMER',$8,$9)`,
+      [
+        quoteId,
+        sender.customerId,
+        randomUUID(),
+        source.id,
+        source.ledgerAccountId,
+        destination.id,
+        destination.ledgerAccountId,
+        recipient.customerId,
+        'b'.repeat(64),
+      ],
+    );
+    await expect(
+      dataSource.query(`UPDATE payment_quotes SET fee_minor=0,total_minor=1007 WHERE id=$1`, [
+        quoteId,
+      ]),
+    ).rejects.toThrow('economics are immutable');
+    await expect(
+      dataSource.query(`UPDATE payment_quotes SET status='USED',used_at=now() WHERE id=$1`, [
+        quoteId,
+      ]),
+    ).rejects.toThrow('Invalid bound transfer quote transition');
+    await expect(
+      dataSource.query(
+        `UPDATE wallet_transfer_quote_bindings SET recipient_id=$2 WHERE quote_id=$1`,
+        [quoteId, sender.customerId],
+      ),
+    ).rejects.toThrow('immutable');
+    await expect(
+      dataSource.query(`DELETE FROM wallet_transfer_quote_bindings WHERE quote_id=$1`, [quoteId]),
+    ).rejects.toThrow('cannot be deleted');
+    expect(
+      await dataSource.query(
+        `SELECT status,fee_minor::text,vat_minor::text,total_minor::text FROM payment_quotes WHERE id=$1`,
+        [quoteId],
+      ),
+    ).toEqual([{ status: 'ACTIVE', fee_minor: '100', vat_minor: '7', total_minor: '1107' }]);
+  });
+
   it('7. Transaction history — read-only, direction/amount/status/reference/type/date/fee/identity where permitted', async () => {
     const { token, customerId: custA } = await createCustomerWithCredential();
     const { customerId: custB } = await createCustomerWithCredential();
