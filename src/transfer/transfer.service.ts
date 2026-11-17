@@ -412,6 +412,16 @@ export class TransferService {
       return { transferId: existing.id };
     }
 
+    // Optional injection supports legacy direct-service constructions only. A new confirmed
+    // financial execution must never post without atomic admission, audit and delivery evidence.
+    // Replays above remain recoverable if an operational dependency is temporarily unavailable.
+    if (
+      confirmedQuote &&
+      (!this.limitEnforcementService || !this.outboxService || !this.auditService)
+    ) {
+      throw new ServiceUnavailableException('Confirmed transfer controls are unavailable');
+    }
+
     if (
       confirmedQuote &&
       (confirmedQuote.status !== PaymentQuoteStatus.ACTIVE ||

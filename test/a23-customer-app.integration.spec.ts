@@ -856,6 +856,24 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       );
     }
     expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    // Missing any mandatory financial control must fail before creating a transfer, while
+    // leaving the quote reusable. PIN authorization evidence is intentionally independent.
+    const controls = transferService as unknown as Record<string, unknown>;
+    for (const dependency of ['limitEnforcementService', 'outboxService', 'auditService']) {
+      const original = controls[dependency];
+      try {
+        controls[dependency] = undefined;
+        await expect(
+          transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234'),
+        ).rejects.toMatchObject({ status: 503 });
+      } finally {
+        controls[dependency] = original;
+      }
+      expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+      expect(
+        await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [quote.quoteId]),
+      ).toEqual([{ status: 'ACTIVE' }]);
+    }
     // A late failure after quote use must undo journal, transfer and quote changes together.
     const journalCountBefore = (
       await dataSource.query<Array<{ id: string }>>(`SELECT id FROM ledger_journals`)
