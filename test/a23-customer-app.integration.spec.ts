@@ -1169,6 +1169,16 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
         .send({ pin: '1234' })
         .expect(201);
       expect(replay.body.id).toBe(result.body.id);
+      const status = await request(app.getHttpServer())
+        .get(`${path}/${quote.body.quoteId as string}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(status.body).toMatchObject({
+        status: 'USED',
+        amountMinor,
+        totalDebitMinor: amountMinor,
+        receipt: { id: result.body.id, status: 'COMPLETED' },
+      });
       expect(result.body).toMatchObject({ status: 'COMPLETED', amountMinor });
       expect(
         await app.get(TransferReconciliationService).reconcileTransfer(result.body.id as string),
@@ -1187,6 +1197,65 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       await run('agents', tokenA, undefined, agentCustomer.body.walletId as string, '300'),
       await run('agents', tokenA, undefined, agentAgent.body.walletId as string, '200'),
     ];
+    const sentDetail = await request(app.getHttpServer())
+      .get(`/api/v1/customers/me/transactions/${ids[1]}`)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .expect(200);
+    expect(sentDetail.body).toMatchObject({
+      direction: 'SENT',
+      feeMinor: '0',
+      vatMinor: '0',
+      totalDebitMinor: '1000',
+      counterparty: {
+        ownerType: 'AGENT',
+        customerId: null,
+        agentId: agentA.id,
+        receivingNumber: numberA.receivingNumber,
+      },
+    });
+    const incomingDetail = await request(app.getHttpServer())
+      .get(`/api/v1/customers/me/transactions/${ids[2]}`)
+      .set('Authorization', `Bearer ${receiver.token}`)
+      .expect(200);
+    expect(incomingDetail.body).toMatchObject({
+      direction: 'RECEIVED',
+      feeMinor: '0',
+      vatMinor: '0',
+      totalDebitMinor: null,
+      counterparty: { ownerType: 'AGENT', customerId: null, agentId: agentA.id },
+    });
+    const history = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/transactions')
+      .set('Authorization', `Bearer ${sender.token}`)
+      .expect(200);
+    expect(history.body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: ids[1],
+          counterparty: expect.objectContaining({
+            ownerType: 'AGENT',
+            customerId: null,
+            agentId: agentA.id,
+          }),
+          totalDebitMinor: '1000',
+        }),
+      ]),
+    );
+    const agentHistory = await request(app.getHttpServer())
+      .get('/api/v1/agents/me/transactions?type=WALLET_TRANSFER')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .expect(200);
+    expect(agentHistory.body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: ids[1], direction: 'CREDIT' }),
+        expect.objectContaining({ id: ids[2], direction: 'DEBIT' }),
+        expect.objectContaining({ id: ids[3], direction: 'DEBIT' }),
+      ]),
+    );
+    await request(app.getHttpServer())
+      .get(`/api/v1/customers/me/transactions/${ids[1]}`)
+      .set('Authorization', `Bearer ${receiver.token}`)
+      .expect(404);
     expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('3900');
     expect((await wallets.getWalletBalance(dest.id)).balanceMinor).toBe('400');
     expect((await wallets.getWalletBalance(a.id)).balanceMinor).toBe('500');
@@ -1282,6 +1351,10 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       .send({ destinationWalletId: b.id, amountMinor: '100', currency: 'NGN' })
       .expect(201);
     await request(app.getHttpServer())
+      .get(`${agentPath}/${raceQuote.body.quoteId as string}`)
+      .set('Authorization', `Bearer ${tokenB}`)
+      .expect(404);
+    await request(app.getHttpServer())
       .post(`${agentPath}/${raceQuote.body.quoteId as string}/confirm`)
       .set('Authorization', `Bearer ${tokenB}`)
       .set('Idempotency-Key', randomUUID())
@@ -1305,6 +1378,50 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     expect(
       await dataSource.query(`SELECT id FROM transfers WHERE status='COMPLETED'`),
     ).toHaveLength(6);
+    const badQuote = await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ destinationWalletId: dest.id, amountMinor: '1000', currency: 'NGN' })
+      .expect(201);
+    const failed = await request(app.getHttpServer())
+      .post(`${agentPath}/${badQuote.body.quoteId as string}/confirm`)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ pin: '1234' });
+    expect(failed.status).toBeGreaterThanOrEqual(400);
+    expect(failed.status).toBeLessThan(500);
+    const failedRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM transfers WHERE status='FAILED'`,
+    );
+    expect(failedRows).toHaveLength(1);
+    await request(app.getHttpServer())
+      .get(`/api/v1/customers/me/transactions/${failedRows[0]!.id}`)
+      .set('Authorization', `Bearer ${receiver.token}`)
+      .expect(404);
+    const receiverHistory = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/transactions')
+      .set('Authorization', `Bearer ${receiver.token}`)
+      .expect(200);
+    expect(
+      (receiverHistory.body.items as Array<{ id: string }>).some(
+        (item) => item.id === failedRows[0]!.id,
+      ),
+    ).toBe(false);
+    const agentFailed = await request(app.getHttpServer())
+      .get('/api/v1/agents/me/transactions?type=WALLET_TRANSFER')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .expect(200);
+    expect(agentFailed.body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: failedRows[0]!.id,
+          status: 'FAILED',
+          feeMinor: '0',
+          vatMinor: '0',
+        }),
+      ]),
+    );
   });
 
   it('authenticates quote and PIN confirmation over HTTP and refuses unconfigured agent limits', async () => {
@@ -1419,6 +1536,13 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       .send({ customerId: sender.customerId, password: 'correct-password-a23' })
       .expect(200);
     await request(app.getHttpServer())
+      .get(`${customerPath}/${quote.body.quoteId as string}`)
+      .set('Authorization', `Bearer ${secondSession.body.accessToken as string}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({ sessionMatches: false, status: 'ACTIVE', receipt: null });
+      });
+    await request(app.getHttpServer())
       .post(path)
       .set('Authorization', `Bearer ${secondSession.body.accessToken as string}`)
       .set('Idempotency-Key', key)
@@ -1456,6 +1580,17 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       .send({ pin: '1234' })
       .expect(201);
     expect(replay.body.id).toBe(completed.body.id);
+    await request(app.getHttpServer())
+      .get(`${customerPath}/${quote.body.quoteId as string}`)
+      .set('Authorization', `Bearer ${secondSession.body.accessToken as string}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          sessionMatches: false,
+          status: 'USED',
+          receipt: { id: completed.body.id },
+        });
+      });
     expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('3800');
     expect((await wallets.getWalletBalance(destination.id)).balanceMinor).toBe('1200');
     const customerAgentQuote = await request(app.getHttpServer())

@@ -454,11 +454,16 @@ export class AgentTransactionHistoryService {
         reference: r.reference ?? null,
         narration: r.narration ?? null,
         feeMinor:
-          r.type === 'WALLET_TRANSFER' && direction !== 'DEBIT'
+          r.type === 'WALLET_TRANSFER' && (direction !== 'DEBIT' || r.status !== 'COMPLETED')
             ? '0'
             : ((r.fee_minor as string | number | bigint | null | undefined)?.toString() ?? '0'),
         ...(r.type === 'WALLET_TRANSFER'
-          ? { vatMinor: direction === 'DEBIT' ? String(r.vat_minor ?? '0') : '0' }
+          ? {
+              vatMinor:
+                direction === 'DEBIT' && r.status === 'COMPLETED'
+                  ? String(r.vat_minor ?? '0')
+                  : '0',
+            }
           : {}),
         counterparty,
         commission,

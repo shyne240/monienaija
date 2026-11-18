@@ -26,8 +26,9 @@ import { CustomerService } from '../customer/customer.service';
 import { CustomerTransactionPinService } from '../customer/customer-transaction-pin.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletService } from '../wallet/wallet.service';
-import { WalletStatus } from '../wallet/wallet.enums';
+import { WalletOwnerClass, WalletStatus } from '../wallet/wallet.enums';
 import { Transfer } from '../transfer/transfer.entity';
+import { TransferStatus } from '../transfer/transfer.enums';
 import { TransferService } from '../transfer/transfer.service';
 import {
   AuthenticationSessionService,
@@ -1090,9 +1091,10 @@ export class CustomerAppController {
     @Req() req: AuthenticatedRequest,
   ) {
     const principal = this.requireCustomerPrincipal(req);
-    const wallets = await this.walletRepository.find({
-      where: { customerId: principal.customerId },
-    });
+    const wallets: Array<{ id: string }> = await this.dataSource.query(
+      `SELECT id FROM wallet_accounts WHERE customer_id=$1 AND owner_class='CUSTOMER' AND wallet_owner_class(customer_id)='CUSTOMER'`,
+      [principal.customerId],
+    );
     const walletIds = new Set(wallets.map((w) => w.id));
     const transfer = await this.transferService.getTransfer(transferId);
     // SELF check: transfer must involve one of customer's wallets, otherwise 404 (no leakage, generic not-found)
@@ -1101,6 +1103,14 @@ export class CustomerAppController {
     }
     const isSource = walletIds.has(transfer.sourceWalletId);
     const isDest = walletIds.has(transfer.destinationWalletId);
+    if (!isSource && transfer.status !== TransferStatus.COMPLETED)
+      throw new NotFoundException('Transfer not found');
+    const persisted = await this.transferRepository.findOne({ where: { id: transfer.id } });
+    if (!persisted) throw new NotFoundException('Transfer not found');
+    const totals: Array<{ total_minor: string }> = await this.dataSource.query(
+      `SELECT q.total_minor::text AS total_minor FROM wallet_transfer_quote_bindings b JOIN payment_quotes q ON q.id=b.quote_id WHERE b.transfer_id=$1`,
+      [transfer.id],
+    );
     let direction: string = 'UNKNOWN';
     let counterpartyWalletId: string | null = null;
     if (isSource && !isDest) {
@@ -1117,12 +1127,42 @@ export class CustomerAppController {
     let counterparty: {
       walletId: string;
       customerId: string | null;
+      ownerType?: string | null;
+      agentId?: string | null;
       displayName: string | null;
       receivingNumber: string | null;
     } | null = null;
     if (counterpartyWalletId) {
       const cpWallet = await this.walletRepository.findOne({ where: { id: counterpartyWalletId } });
-      if (cpWallet) {
+      const classification: Array<{ current_class: string }> = cpWallet
+        ? await this.dataSource.query(
+            `SELECT wallet_owner_class(customer_id) AS current_class FROM wallet_accounts WHERE id=$1`,
+            [counterpartyWalletId],
+          )
+        : [];
+      if (
+        cpWallet &&
+        cpWallet.ownerClass === WalletOwnerClass.AGENT &&
+        classification[0]?.current_class === 'AGENT'
+      ) {
+        const agents: Array<{ id: string; reference: string; receiving_number: string | null }> =
+          await this.dataSource.query(
+            `SELECT a.id::text AS id,a.reference,r.receiving_number FROM agents a LEFT JOIN agent_receiving_numbers r ON r.agent_id=a.id AND r.deleted_at IS NULL AND r.status='ACTIVE' WHERE a.id=$1 AND a.deleted_at IS NULL`,
+            [cpWallet.customerId],
+          );
+        counterparty = {
+          walletId: counterpartyWalletId,
+          ownerType: 'AGENT',
+          customerId: null,
+          agentId: agents[0]?.id ?? null,
+          displayName: agents[0]?.reference ?? null,
+          receivingNumber: agents[0]?.receiving_number ?? null,
+        };
+      } else if (
+        cpWallet &&
+        cpWallet.ownerClass === WalletOwnerClass.CUSTOMER &&
+        classification[0]?.current_class === 'CUSTOMER'
+      ) {
         const cpCustomerId = cpWallet.customerId;
         const cpProfile = await this.profileRepository.findOne({
           where: { customerId: cpCustomerId, isActive: true },
@@ -1136,6 +1176,7 @@ export class CustomerAppController {
           null;
         counterparty = {
           walletId: counterpartyWalletId,
+          ownerType: 'CUSTOMER',
           customerId: cpCustomerId,
           displayName: cpProfile?.displayName ?? null,
           receivingNumber: primary?.normalizedValue ?? primary?.value ?? null,
@@ -1158,7 +1199,9 @@ export class CustomerAppController {
       direction,
       amountMinor: transfer.amountMinor,
       currency: transfer.currency,
-      feeMinor: '0',
+      feeMinor: isSource && transfer.status === TransferStatus.COMPLETED ? persisted.feeMinor : '0',
+      vatMinor: isSource && transfer.status === TransferStatus.COMPLETED ? persisted.vatMinor : '0',
+      totalDebitMinor: isSource ? (totals[0]?.total_minor ?? null) : null,
       status: transfer.status,
       reference: transfer.reference,
       narration: transfer.narration,

@@ -320,6 +320,16 @@ export class TransferQuoteService {
     principal: AuthorizationPrincipal,
     quoteId: string,
   ): Promise<LockedTransferQuote> {
+    return this.lockBoundQuote(manager, principal, quoteId, false);
+  }
+
+  /** Status-only owner lookup may cross sessions. Posting always calls lockForSession above. */
+  private async lockBoundQuote(
+    manager: EntityManager,
+    principal: AuthorizationPrincipal,
+    quoteId: string,
+    ownerStatusOnly: boolean,
+  ): Promise<LockedTransferQuote> {
     const type = principal?.type;
     const ownerId =
       type === 'CUSTOMER' ? principal.customerId : type === 'AGENT' ? principal.agentId : undefined;
@@ -360,8 +370,8 @@ export class TransferQuoteService {
                 b.principal_type,b.principal_id,b.session_id,b.source_wallet_id,b.source_ledger_id,b.destination_wallet_id,
                 b.destination_ledger_id,b.recipient_type,b.recipient_id,b.institution_id,b.pricing_hash,b.transfer_id
            FROM payment_quotes q JOIN wallet_transfer_quote_bindings b ON b.quote_id=q.id
-          WHERE q.id=$1 AND b.principal_type=$2 AND b.principal_id=$3 AND b.session_id=$4 FOR UPDATE OF q,b`,
-      [quoteId, type, ownerId, principal.sessionId],
+          WHERE q.id=$1 AND b.principal_type=$2 AND b.principal_id=$3 AND ($5::boolean OR b.session_id=$4) FOR UPDATE OF q,b`,
+      [quoteId, type, ownerId, principal.sessionId, ownerStatusOnly],
     );
     if (rows.length !== 1) throw new NotFoundException('Transfer quote not found');
     const r = rows[0]!;
@@ -393,11 +403,36 @@ export class TransferQuoteService {
     principal: AuthorizationPrincipal,
     quoteId: string,
   ): Promise<LockedTransferQuote> {
+    return this.readBoundQuote(principal, quoteId, false);
+  }
+
+  async readStatusForOwner(
+    principal: AuthorizationPrincipal,
+    quoteId: string,
+  ): Promise<LockedTransferQuote> {
+    return this.readBoundQuote(principal, quoteId, true);
+  }
+
+  private async readBoundQuote(
+    principal: AuthorizationPrincipal,
+    quoteId: string,
+    ownerStatusOnly: boolean,
+  ): Promise<LockedTransferQuote> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        return await this.dataSource.transaction('SERIALIZABLE', (manager) =>
-          this.lockForSession(manager, principal, quoteId),
-        );
+        return await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+          const quote = await this.lockBoundQuote(manager, principal, quoteId, ownerStatusOnly);
+          // Evaluate expiry with database time while holding the quote lock. A recovery client
+          // may safely treat EXPIRED without a transfer as definitive; no later consumption can
+          // satisfy the DB trigger after this point.
+          const clock = await manager.query<Array<{ expired: boolean }>>(
+            `SELECT $1::timestamptz <= clock_timestamp() AS expired`,
+            [quote.expiresAt],
+          );
+          return quote.status === PaymentQuoteStatus.ACTIVE && clock[0]?.expired
+            ? { ...quote, status: PaymentQuoteStatus.EXPIRED }
+            : quote;
+        });
       } catch (error) {
         const driver =
           error instanceof QueryFailedError ? (error.driverError as { code?: string }) : null;

@@ -14,7 +14,7 @@ import { CredentialRecoveryScreen } from '../screens/unauthenticated/CredentialR
 import { CredentialRotationScreen } from '../screens/unauthenticated/CredentialRotationScreen';
 
 import { HomeScreen } from '../screens/authenticated/HomeScreen';
-import { SendMoneyScreen } from '../screens/authenticated/SendMoneyScreen';
+import { QuotedSendMoneyScreen as SendMoneyScreen } from '../screens/authenticated/QuotedSendMoneyScreen';
 import { TransactionsScreen } from '../screens/authenticated/TransactionsScreen';
 import { ProfileScreen } from '../screens/authenticated/ProfileScreen';
 import { TransactionPinScreen } from '../screens/authenticated/TransactionPinScreen';

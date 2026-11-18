@@ -237,6 +237,14 @@ export const HomeScreen: React.FC = () => {
         onPress={() => navigation.navigate('Transactions')}
         testID="nav-transactions"
       />
+      {capabilitiesQuery.data?.evaluations.find((e) => e.canonicalService === 'WALLET_TRANSFER')
+        ?.allowed === true && (
+        <Button
+          label="Send Money"
+          onPress={() => navigation.navigate('SendMoney')}
+          testID="nav-send-money"
+        />
+      )}
       {/* Fail-closed: visible ONLY while the backend permits CASH_IN */}
       {capabilitiesQuery.data?.evaluations.find((e) => e.canonicalService === 'CASH_IN')
         ?.allowed === true && (

@@ -1056,6 +1056,16 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       ).toEqual([{ fee_minor: fee, vat_minor: vat }]);
       expect(await walletBalance(a.ledgerAccountId)).toBe(remaining);
       expect(await walletBalance(b.ledgerAccountId)).toBe(50000n);
+      const { CustomerAppController } = await import('../src/customer-app/customer-app.controller');
+      const receipt = await app
+        .get(CustomerAppController)
+        .getTransferDetail(transfer.id, { headers: {}, authorizationPrincipal: principal });
+      expect(receipt).toMatchObject({
+        feeMinor: fee,
+        vatMinor: vat,
+        totalDebitMinor: total,
+        direction: 'SENT',
+      });
       const journals = await accountingJournals();
       expect(journals).toHaveLength(1);
       expect(
@@ -1133,6 +1143,181 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
         [quote.quoteId],
       ),
     ).toEqual([{ status: 'ACTIVE', transfer_id: null }]);
+  });
+
+  it('confirmed agent transfer posts fee VAT and class commission to the actual operating wallet', async () => {
+    configureAccounting({
+      COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT: 'AGENT_WALLET_NETTING',
+      COMMERCIAL_COMMISSION_RECOGNITION_TIMING: 'AT_COMPLETION',
+    });
+    await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1000', vatBps: 750 });
+    const { agent, cls, wallet } = await createActiveAgentWithPin(
+      [AgentService.WALLET_TRANSFER],
+      '1234',
+    );
+    await seedLimitProfile(
+      `P2PA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'WALLET_TRANSFER',
+    );
+    await seedCommissionRule({
+      productCode: 'WALLET_TRANSFER',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+      agentClassId: cls.id,
+    });
+    const recipient = await createWallet(await eligibleCustomerId());
+    await fundWallet(wallet.ledgerAccountId, '200000');
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const quote = await app.get(TransferQuoteService).create(agentPrincipal(agent.id), {
+      destinationWalletId: recipient.id,
+      amountMinor: '50000',
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    expect(quote).toMatchObject({
+      sourceWalletId: wallet.id,
+      feeMinor: '1000',
+      vatMinor: '75',
+      totalDebitMinor: '51075',
+    });
+    const { OutboxEvent } = await import('../src/operations/outbox-event.entity');
+    const realOutbox = new OutboxService(dataSource.getRepository(OutboxEvent));
+    const spy = jest
+      .spyOn(throwingOutbox, 'enqueueOnce')
+      .mockImplementation((manager, event) => realOutbox.enqueueOnce(manager, event));
+    let transfer;
+    try {
+      transfer = await transferService.createConfirmedTransfer(
+        agentPrincipal(agent.id),
+        quote.quoteId,
+        randomUUID(),
+        '1234',
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    expect(transfer.status).toBe('COMPLETED');
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(149025n);
+    expect(await walletBalance(recipient.ledgerAccountId)).toBe(50000n);
+    const journals = await accountingJournals();
+    expect(journals).toHaveLength(1);
+    const lines = await linesForJournal(journals[0].id);
+    expect(lines).toContainEqual({
+      direction: 'CREDIT',
+      amount_minor: '75',
+      account_code: ACCOUNT_LEGEND.VAT_PAYABLE,
+    });
+    expect(lines).toContainEqual({
+      direction: 'DEBIT',
+      amount_minor: '100',
+      account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE,
+    });
+    expect(lines).toContainEqual(
+      expect.objectContaining({ direction: 'CREDIT', amount_minor: '100' }),
+    );
+    const snapshots = await snapshotsFor('journal_id=$1', [transfer.journalId]);
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0].commission_decision.allocations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          beneficiaryType: 'AGENT',
+          beneficiaryId: agent.id,
+          amountMinor: '100',
+        }),
+      ]),
+    );
+    const { TransferReconciliationService } = await import(
+      '../src/reconciliation/transfer-reconciliation.service'
+    );
+    expect(
+      await app.get(TransferReconciliationService).reconcileTransfer(transfer.id),
+    ).toMatchObject({ status: 'PASS', discrepancies: [] });
+  });
+
+  it('concurrent confirmed transfer and agency cash-in share one operating balance safely', async () => {
+    const { agent, wallet } = await createActiveAgentWithPin(
+      [AgentService.WALLET_TRANSFER, AgentService.CASH_IN],
+      '1234',
+    );
+    await seedLimitProfile(
+      `P2PC_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'WALLET_TRANSFER',
+    );
+    const destination = await createWallet(await eligibleCustomerId());
+    const phone = newPhone();
+    const cashRecipient = await createCustomerWithPhone(phone);
+    await seedLimitProfile(
+      `P2PR_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      cashRecipient.customerId,
+      'CASH_TO_WALLET',
+    );
+    await fundWallet(wallet.ledgerAccountId, '100000');
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const quote = await app.get(TransferQuoteService).create(agentPrincipal(agent.id), {
+      destinationWalletId: destination.id,
+      amountMinor: '30000',
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    const attempts = await Promise.allSettled([
+      transferService.createConfirmedTransfer(
+        agentPrincipal(agent.id),
+        quote.quoteId,
+        randomUUID(),
+        '1234',
+      ),
+      cashInService.execute({
+        agentId: agent.id,
+        principal: agentPrincipal(agent.id),
+        pin: '1234',
+        recipientIdentifier: phone,
+        amountMinor: '30000',
+        currency: 'NGN',
+        idempotencyKey: randomUUID(),
+      }),
+    ]);
+    expect(attempts.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled']);
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(40000n);
+    expect(await walletBalance(destination.ledgerAccountId)).toBe(30000n);
+    expect(await walletBalance(cashRecipient.walletLedgerAccountId)).toBe(30000n);
+    // Competing debits total more than the remaining float: at most one can post.
+    const second = await app
+      .get(TransferQuoteService)
+      .create(agentPrincipal(agent.id), {
+        destinationWalletId: destination.id,
+        amountMinor: '30000',
+        currency: 'NGN',
+        idempotencyKey: randomUUID(),
+      });
+    const competing = await Promise.allSettled([
+      transferService.createConfirmedTransfer(
+        agentPrincipal(agent.id),
+        second.quoteId,
+        randomUUID(),
+        '1234',
+      ),
+      cashInService.execute({
+        agentId: agent.id,
+        principal: agentPrincipal(agent.id),
+        pin: '1234',
+        recipientIdentifier: phone,
+        amountMinor: '30000',
+        currency: 'NGN',
+        idempotencyKey: randomUUID(),
+      }),
+    ]);
+    expect(competing.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(competing.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(10000n);
+    expect(
+      (await walletBalance(destination.ledgerAccountId)) +
+        (await walletBalance(cashRecipient.walletLedgerAccountId)),
+    ).toBe(90000n);
   });
 
   it('confirmed transfer refuses a nonzero commission when accounting is disabled', async () => {

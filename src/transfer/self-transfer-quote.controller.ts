@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   HttpCode,
+  Get,
   Param,
   Post,
   Req,
@@ -51,6 +52,39 @@ function stringField(body: Record<string, unknown>, name: string): string {
   return body[name];
 }
 
+async function quoteStatus(
+  quotes: TransferQuoteService,
+  transfers: TransferService,
+  principal: AuthorizationPrincipal,
+  quoteId: string,
+) {
+  const quote = await quotes.readStatusForOwner(principal, quoteId);
+  const transfer = quote.transferId ? await transfers.getTransfer(quote.transferId) : null;
+  return {
+    quoteId: quote.quoteId,
+    status: quote.status,
+    sessionMatches: quote.sessionId.toLowerCase() === principal.sessionId?.toLowerCase(),
+    sourceWalletId: quote.sourceWalletId,
+    destinationWalletId: quote.destinationWalletId,
+    recipientType: quote.recipientType,
+    recipientId: quote.recipientId,
+    amountMinor: quote.amountMinor,
+    currency: quote.currency,
+    feeMinor: quote.feeMinor,
+    vatMinor: quote.vatMinor,
+    totalDebitMinor: quote.totalDebitMinor,
+    expiresAt: quote.expiresAt,
+    receipt: transfer
+      ? {
+          id: transfer.id,
+          status: transfer.status,
+          paymentReference: transfer.paymentReference,
+          completedAt: transfer.completedAt,
+        }
+      : null,
+  };
+}
+
 /** Route identity is supplied solely by the authenticated self session, never the body. */
 @Controller('customers/me/transfer-quotes')
 export class CustomerSelfTransferQuoteController {
@@ -71,6 +105,11 @@ export class CustomerSelfTransferQuoteController {
       currency: stringField(body, 'currency'),
       idempotencyKey: key(req),
     });
+  }
+
+  @Get(':quoteId')
+  status(@Req() req: SelfRequest, @Param('quoteId') quoteId: string) {
+    return quoteStatus(this.quotes, this.transfers, requirePrincipal(req, 'CUSTOMER'), quoteId);
   }
 
   @Post(':quoteId/confirm')
@@ -105,6 +144,11 @@ export class AgentSelfTransferQuoteController {
       currency: stringField(body, 'currency'),
       idempotencyKey: key(req),
     });
+  }
+
+  @Get(':quoteId')
+  status(@Req() req: SelfRequest, @Param('quoteId') quoteId: string) {
+    return quoteStatus(this.quotes, this.transfers, requirePrincipal(req, 'AGENT'), quoteId);
   }
 
   @Post(':quoteId/confirm')

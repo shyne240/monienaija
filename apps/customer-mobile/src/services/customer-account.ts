@@ -139,6 +139,8 @@ export interface TransactionDetail {
   currency: string;
   feeMinor?: string;
   vatMinor?: string;
+  totalDebitMinor?: string | null;
+  paymentReference?: string | null;
   reference?: string | null;
   narration?: string | null;
   createdAt: string;
