@@ -392,3 +392,38 @@ test('customer can save an agent and saved identity mismatch blocks quoting', as
     }),
   );
 });
+
+test('selected bound beneficiary is included in the authenticated quote request', async () => {
+  (ApiClient.get as jest.Mock).mockImplementation(async (path: string) => {
+    if (path === '/customers/me/wallets')
+      return [{ id: 'source', currency: 'NGN', status: 'ACTIVE' }];
+    if (path === '/customers/me/beneficiaries')
+      return {
+        items: [
+          {
+            id: 'saved',
+            nickname: 'Friend',
+            receivingNumber: recipient.receivingNumber,
+            isActive: true,
+            recipientType: recipient.ownerType,
+            recipientId: recipient.ownerId,
+          },
+        ],
+      };
+    if (path.includes('transfer-recipient')) return recipient;
+    throw new Error('unexpected');
+  });
+  const screen = render(<QuotedSendMoneyScreen />);
+  await waitFor(() => expect(screen.getByText('Saved: Friend')).toBeTruthy());
+  fireEvent.press(screen.getByText('Saved: Friend'));
+  fireEvent.press(screen.getByText('Verify recipient'));
+  await waitFor(() => expect(screen.getByTestId('recipient-name')).toBeTruthy());
+  fireEvent.changeText(screen.getByTestId('send-amount'), '100.50');
+  fireEvent.press(screen.getByText('Review fees'));
+  await waitFor(() => expect(screen.getByTestId('quote-summary')).toBeTruthy());
+  expect(ApiClient.post).toHaveBeenCalledWith(
+    `${base}/transfer-quotes`,
+    expect.objectContaining({ beneficiaryId: 'saved', destinationWalletId: 'dest' }),
+    expect.anything(),
+  );
+});

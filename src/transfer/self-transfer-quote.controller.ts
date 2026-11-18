@@ -97,10 +97,19 @@ export class CustomerSelfTransferQuoteController {
   @HttpCode(201)
   quote(@Req() req: SelfRequest, @Body() raw: unknown) {
     const principal = requirePrincipal(req, 'CUSTOMER');
-    const body = object(raw, ['sourceWalletId', 'destinationWalletId', 'amountMinor', 'currency']);
+    const body = object(raw, [
+      'sourceWalletId',
+      'destinationWalletId',
+      'beneficiaryId',
+      'amountMinor',
+      'currency',
+    ]);
     return this.quotes.create(principal, {
       sourceWalletId: stringField(body, 'sourceWalletId'),
       destinationWalletId: stringField(body, 'destinationWalletId'),
+      ...(body.beneficiaryId === undefined
+        ? {}
+        : { beneficiaryId: stringField(body, 'beneficiaryId') }),
       amountMinor: stringField(body, 'amountMinor'),
       currency: stringField(body, 'currency'),
       idempotencyKey: key(req),
@@ -137,9 +146,12 @@ export class AgentSelfTransferQuoteController {
   @HttpCode(201)
   quote(@Req() req: SelfRequest, @Body() raw: unknown) {
     const principal = requirePrincipal(req, 'AGENT');
-    const body = object(raw, ['destinationWalletId', 'amountMinor', 'currency']);
+    const body = object(raw, ['destinationWalletId', 'beneficiaryId', 'amountMinor', 'currency']);
     return this.quotes.create(principal, {
       destinationWalletId: stringField(body, 'destinationWalletId'),
+      ...(body.beneficiaryId === undefined
+        ? {}
+        : { beneficiaryId: stringField(body, 'beneficiaryId') }),
       amountMinor: stringField(body, 'amountMinor'),
       currency: stringField(body, 'currency'),
       idempotencyKey: key(req),

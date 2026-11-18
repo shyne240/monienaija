@@ -13,6 +13,7 @@ import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { AgentService, normalizeAgentService } from '../agent/agent-service.enum';
+import { resolveRecipientIdentityWithManager } from '../agent/recipient-resolution.service';
 import { normalizeCurrency, parsePositiveMinorUnits } from '../common/money';
 import { PaymentReferenceService } from '../payment/payment-reference.service';
 import { PaymentType } from '../payment/payment.enums';
@@ -146,6 +147,7 @@ export class TransferQuoteService {
     input: {
       sourceWalletId?: string;
       destinationWalletId: string;
+      beneficiaryId?: string;
       amountMinor: string;
       currency: string;
       idempotencyKey: string;
@@ -166,6 +168,9 @@ export class TransferQuoteService {
     if (!destinationId || !UUID_PATTERN.test(destinationId))
       throw new BadRequestException('Destination wallet is invalid');
     const sourceId = input.sourceWalletId?.trim().toLowerCase();
+    const beneficiaryId = input.beneficiaryId?.trim().toLowerCase();
+    if (input.beneficiaryId !== undefined && (!beneficiaryId || !UUID_PATTERN.test(beneficiaryId)))
+      throw new BadRequestException('Beneficiary is invalid');
     if (principal.type === 'CUSTOMER' && (!sourceId || !UUID_PATTERN.test(sourceId)))
       throw new BadRequestException('Source wallet is invalid');
     if (principal.type === 'AGENT' && sourceId)
@@ -181,6 +186,7 @@ export class TransferQuoteService {
       sessionId: principal.sessionId.toLowerCase(),
       sourceId: sourceId ?? null,
       destinationId,
+      ...(beneficiaryId ? { beneficiaryId } : {}),
       currency,
       amountMinor,
     });
@@ -243,6 +249,31 @@ export class TransferQuoteService {
                   : quote.status,
             };
           }
+          let saved:
+            | {
+                destination_identifier: string;
+                wallet_recipient_type: string | null;
+                wallet_recipient_id: string | null;
+              }
+            | undefined;
+          if (beneficiaryId) {
+            const rows = await manager.query<
+              Array<{
+                destination_identifier: string;
+                wallet_recipient_type: string | null;
+                wallet_recipient_id: string | null;
+              }>
+            >(
+              `SELECT destination_identifier,wallet_recipient_type,wallet_recipient_id::text FROM customer_beneficiaries
+                WHERE id=$1::uuid AND (($2='CUSTOMER' AND customer_id=$3::uuid) OR ($2='AGENT' AND agent_id=$3::uuid))
+                  AND status='ACTIVE' AND verified=true AND deleted_at IS NULL FOR SHARE`,
+              [beneficiaryId, principal.type, ownerId],
+            );
+            saved = rows[0];
+            if (!saved) throw new NotFoundException('Beneficiary unavailable');
+            if (!saved.wallet_recipient_type || !saved.wallet_recipient_id)
+              throw new ConflictException('Beneficiary requires fresh verification before use');
+          }
           let actualSourceId = sourceId;
           if (principal.type === 'AGENT') {
             const candidates = await manager.getRepository(WalletAccount).find({
@@ -274,6 +305,27 @@ export class TransferQuoteService {
           );
           const participants = await resolveTransferParticipants(manager, [source, destination]);
           if (!participants) throw new ConflictException('Wallet ownership is unavailable');
+          if (saved) {
+            let current;
+            try {
+              current = await resolveRecipientIdentityWithManager(
+                manager,
+                saved.destination_identifier,
+              );
+            } catch (error) {
+              if (error instanceof NotFoundException || error instanceof BadRequestException)
+                throw new ConflictException('Beneficiary recipient is unavailable');
+              throw error;
+            }
+            if (
+              current.status !== 'ACTIVE' ||
+              current.ownerType !== saved.wallet_recipient_type ||
+              current.ownerId !== saved.wallet_recipient_id ||
+              current.ownerType !== participants[1].type ||
+              current.ownerId !== participants[1].id
+            )
+              throw new ConflictException('Beneficiary recipient identity has changed');
+          }
           requireAgentWalletTransferCapability(participants[0]);
           requireAgentWalletTransferCapability(participants[1]);
           if (

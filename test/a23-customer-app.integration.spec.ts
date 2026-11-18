@@ -1375,6 +1375,74 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     });
     expect(agentCustomer.body).toMatchObject({ walletId: dest.id, ownerType: 'CUSTOMER' });
     expect(agentAgent.body).toMatchObject({ walletId: b.id, ownerType: 'AGENT' });
+    const save = async (
+      kind: 'customers' | 'agents',
+      token: string,
+      identifier: string,
+      recipientType: 'CUSTOMER' | 'AGENT',
+      recipientId: string,
+    ) => {
+      const path = `/api/v1/${kind}/me/beneficiaries`;
+      const created = await request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ beneficiaryIdentifier: identifier, nickname: `saved-${recipientType}` })
+        .expect(201);
+      expect(created.body).toMatchObject({
+        recipientType,
+        recipientId,
+        isActive: true,
+        isVerified: true,
+      });
+      const listed = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(listed.body.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: created.body.id, recipientType, recipientId }),
+        ]),
+      );
+      const selected = await request(app.getHttpServer())
+        .get(`${path}/${created.body.id as string}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const revalidated = await resolve(
+        kind,
+        token,
+        selected.body.receivingNumber as string,
+      ).expect(200);
+      expect(revalidated.body).toMatchObject({ ownerType: recipientType, ownerId: recipientId });
+      return { id: created.body.id as string, walletId: revalidated.body.walletId as string };
+    };
+    const customerCustomerSaved = await save(
+      'customers',
+      sender.token,
+      receiver.phone,
+      'CUSTOMER',
+      receiver.customerId,
+    );
+    const customerAgentSaved = await save(
+      'customers',
+      sender.token,
+      numberA.receivingNumber,
+      'AGENT',
+      agentA.id,
+    );
+    const agentCustomerSaved = await save(
+      'agents',
+      tokenA,
+      receiver.phone,
+      'CUSTOMER',
+      receiver.customerId,
+    );
+    const agentAgentSaved = await save(
+      'agents',
+      tokenA,
+      numberB.receivingNumber,
+      'AGENT',
+      agentB.id,
+    );
     await governed.fundLedgerAccount(source.ledgerAccountId, '5000', { institutionId });
     await app.get(CustomerTransactionPinService).setTransactionPin(sender.customerId, {
       pinHash: encodePbkdf2('1234'),
@@ -1388,25 +1456,76 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       pinVersion: 1,
       actor: agentA.id,
     });
+    const customerQuotePath = '/api/v1/customers/me/transfer-quotes';
+    const rejectedQuote = (beneficiaryId: string, destinationWalletId: string) =>
+      request(app.getHttpServer())
+        .post(customerQuotePath)
+        .set('Authorization', `Bearer ${sender.token}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          sourceWalletId: source.id,
+          destinationWalletId,
+          beneficiaryId,
+          amountMinor: '100',
+          currency: 'NGN',
+        });
+    await rejectedQuote(agentCustomerSaved.id, dest.id).expect(404);
+    await rejectedQuote(customerAgentSaved.id, dest.id).expect(409);
+    await request(app.getHttpServer())
+      .patch(`/api/v1/customers/me/beneficiaries/${customerAgentSaved.id}`)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .send({ status: 'SUSPENDED' })
+      .expect(200);
+    await rejectedQuote(customerAgentSaved.id, a.id).expect(404);
+    await request(app.getHttpServer())
+      .patch(`/api/v1/customers/me/beneficiaries/${customerAgentSaved.id}`)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .send({ status: 'ACTIVE' })
+      .expect(200);
+    await dataSource.query(`UPDATE agent_receiving_numbers SET status='REVOKED' WHERE id=$1`, [
+      numberA.id,
+    ]);
+    await rejectedQuote(customerAgentSaved.id, a.id).expect(409);
+    await dataSource.query(`UPDATE agent_receiving_numbers SET status='ACTIVE' WHERE id=$1`, [
+      numberA.id,
+    ]);
+    expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('5000');
     const run = async (
       kind: 'customers' | 'agents',
       token: string,
       sourceId: string | undefined,
       destinationId: string,
+      beneficiaryId: string,
       amountMinor: string,
     ) => {
       const path = `/api/v1/${kind}/me/transfer-quotes`;
+      const quoteKey = randomUUID();
+      const quoteBody = {
+        ...(sourceId ? { sourceWalletId: sourceId } : {}),
+        destinationWalletId: destinationId,
+        beneficiaryId,
+        amountMinor,
+        currency: 'NGN',
+      };
       const quote = await request(app.getHttpServer())
         .post(path)
         .set('Authorization', `Bearer ${token}`)
-        .set('Idempotency-Key', randomUUID())
-        .send({
-          ...(sourceId ? { sourceWalletId: sourceId } : {}),
-          destinationWalletId: destinationId,
-          amountMinor,
-          currency: 'NGN',
-        })
+        .set('Idempotency-Key', quoteKey)
+        .send(quoteBody)
         .expect(201);
+      const quoteReplay = await request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', quoteKey)
+        .send(quoteBody)
+        .expect(201);
+      expect(quoteReplay.body.quoteId).toBe(quote.body.quoteId);
+      await request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', quoteKey)
+        .send({ ...quoteBody, beneficiaryId: randomUUID() })
+        .expect(409);
       const key = randomUUID();
       const result = await request(app.getHttpServer())
         .post(`${path}/${quote.body.quoteId as string}/confirm`)
@@ -1441,16 +1560,31 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       return result.body.id as string;
     };
     const ids = [
-      await run('customers', sender.token, source.id, customerDest.body.walletId as string, '100'),
       await run(
         'customers',
         sender.token,
         source.id,
-        customerAgent.body.walletId as string,
+        customerCustomerSaved.walletId,
+        customerCustomerSaved.id,
+        '100',
+      ),
+      await run(
+        'customers',
+        sender.token,
+        source.id,
+        customerAgentSaved.walletId,
+        customerAgentSaved.id,
         '1000',
       ),
-      await run('agents', tokenA, undefined, agentCustomer.body.walletId as string, '300'),
-      await run('agents', tokenA, undefined, agentAgent.body.walletId as string, '200'),
+      await run(
+        'agents',
+        tokenA,
+        undefined,
+        agentCustomerSaved.walletId,
+        agentCustomerSaved.id,
+        '300',
+      ),
+      await run('agents', tokenA, undefined, agentAgentSaved.walletId, agentAgentSaved.id, '200'),
     ];
     const sentDetail = await request(app.getHttpServer())
       .get(`/api/v1/customers/me/transactions/${ids[1]}`)

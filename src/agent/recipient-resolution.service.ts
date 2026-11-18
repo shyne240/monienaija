@@ -4,8 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 
 import { Agent } from './agent.entity';
 import { AgentStatus } from './agent.enums';
@@ -13,92 +12,91 @@ import { AgentReceivingNumber, AgentReceivingNumberStatus } from './agent-receiv
 import { AgentReceivingNumberService } from './agent-receiving-number.service';
 import type { RecipientResolution } from './agent-receiving-number.types';
 
+/** One authoritative namespace resolver, usable inside financial transactions. */
+export async function resolveRecipientIdentityWithManager(
+  manager: EntityManager,
+  identifier: string,
+): Promise<{
+  ownerType: 'CUSTOMER' | 'AGENT';
+  ownerId: string;
+  receivingNumber: string;
+  status: string;
+  agent: Agent | null;
+}> {
+  const canonical = AgentReceivingNumberService.canonicalizeTo10(identifier);
+  if (!canonical)
+    throw new BadRequestException('identifier must be a valid Nigerian 10-digit number');
+  const arn = await manager
+    .getRepository(AgentReceivingNumber)
+    .findOne({ where: { receivingNumber: canonical, status: AgentReceivingNumberStatus.ACTIVE } });
+  const agentRepo = manager.getRepository(Agent);
+  let agent: Agent | null = null;
+  if (arn && arn.deletedAt === null) {
+    const candidate = await agentRepo.findOne({ where: { id: arn.agentId } });
+    if (
+      candidate &&
+      candidate.deletedAt === null &&
+      (candidate.status === AgentStatus.ACTIVE || candidate.status === AgentStatus.SUSPENDED)
+    )
+      agent = candidate;
+  }
+  const phoneAgents: Array<{ id: string; status: string }> = await manager.query(
+    `SELECT a.id, a.status FROM agent_verified_phone_contacts p JOIN agents a ON a.id=p.agent_id
+     WHERE p.canonical_phone=$1 AND p.revoked_at IS NULL AND a.deleted_at IS NULL
+       AND a.status IN ('ACTIVE','SUSPENDED') LIMIT 2`,
+    [canonical],
+  );
+  if (phoneAgents.length > 1 || (agent && phoneAgents[0] && agent.id !== phoneAgents[0].id))
+    throw new ConflictException('Recipient identifier is ambiguous');
+  if (!agent && phoneAgents[0])
+    agent = await agentRepo.findOne({ where: { id: phoneAgents[0].id } });
+  const customers: Array<{ id: string; status: string }> = await manager.query(
+    `SELECT DISTINCT c.id, c.status FROM customer_contact_methods m
+     JOIN customers c ON c.id = m.customer_id
+     WHERE m.type = 'PHONE' AND m.deleted_at IS NULL
+       AND c.deleted_at IS NULL AND c.status IN ('ACTIVE', 'SUSPENDED')
+       AND (m.normalized_value = $1 OR m.normalized_value = '+234' || $1
+         OR m.normalized_value = '234' || $1 OR m.normalized_value = '0' || $1)
+     LIMIT 2`,
+    [canonical],
+  );
+  if (customers.length > 1 || (agent && customers.length > 0))
+    throw new ConflictException('Recipient identifier is ambiguous');
+  if (agent)
+    return {
+      ownerType: 'AGENT',
+      ownerId: agent.id,
+      receivingNumber: canonical,
+      status: agent.status,
+      agent,
+    };
+  if (customers[0])
+    return {
+      ownerType: 'CUSTOMER',
+      ownerId: customers[0].id,
+      receivingNumber: canonical,
+      status: customers[0].status,
+      agent: null,
+    };
+  throw new NotFoundException(`Recipient ${canonical} not found`);
+}
+
 @Injectable()
 export class RecipientResolutionService {
-  constructor(
-    @InjectRepository(AgentReceivingNumber)
-    private readonly agentReceivingRepo: Repository<AgentReceivingNumber>,
-    @InjectRepository(Agent)
-    private readonly agentRepo: Repository<Agent>,
-    private readonly dataSource: DataSource,
-  ) {}
+  constructor(private readonly dataSource: DataSource) {}
 
-  /**
-   * Resolve the existing allocated agent receiving number or customer phone namespace.
-   * Allocation checks cannot guarantee global uniqueness after a later contact change, so
-   * a collision must fail closed rather than preferring an agent or an arbitrary customer.
-   * SUSPENDED identities remain visible for existing callers, which must enforce eligibility.
-   */
+  /** Unambiguous identity resolution shared with the quote transaction. */
   async resolve(identifier: string): Promise<RecipientResolution> {
-    const canonical = AgentReceivingNumberService.canonicalizeTo10(identifier);
-    if (!canonical) {
-      throw new BadRequestException('identifier must be a valid Nigerian 10-digit number');
-    }
-
-    const arn = await this.agentReceivingRepo.findOne({
-      where: { receivingNumber: canonical, status: AgentReceivingNumberStatus.ACTIVE },
-    });
-    let agent: Agent | null = null;
-    if (arn && arn.deletedAt === null) {
-      const candidate = await this.agentRepo.findOne({ where: { id: arn.agentId } });
-      if (
-        candidate &&
-        candidate.deletedAt === null &&
-        (candidate.status === AgentStatus.ACTIVE || candidate.status === AgentStatus.SUSPENDED)
-      ) {
-        agent = candidate;
-      }
-    }
-
-    // A registered phone is separate evidence from an allocated receiving identifier.
-    // Resolve both namespaces, and reject distinct agent identities even if allocation or
-    // contact records were introduced concurrently through older workflows.
-    const phoneAgents: Array<{ id: string; status: string }> = await this.dataSource.query(
-      `SELECT a.id, a.status FROM agent_verified_phone_contacts p JOIN agents a ON a.id=p.agent_id
-       WHERE p.canonical_phone=$1 AND p.revoked_at IS NULL AND a.deleted_at IS NULL
-         AND a.status IN ('ACTIVE','SUSPENDED') LIMIT 2`,
-      [canonical],
-    );
-    if (phoneAgents.length > 1 || (agent && phoneAgents[0] && agent.id !== phoneAgents[0].id))
-      throw new ConflictException('Recipient identifier is ambiguous');
-    if (!agent && phoneAgents[0])
-      agent = await this.agentRepo.findOne({ where: { id: phoneAgents[0].id } });
-
-    // DISTINCT handles multiple matching contact rows for the same customer. Filtering by
-    // lifecycle before counting avoids a deleted/closed identity hiding a valid recipient.
-    const customers: Array<{ id: string; status: string }> = await this.dataSource.query(
-      `SELECT DISTINCT c.id, c.status FROM customer_contact_methods m
-       JOIN customers c ON c.id = m.customer_id
-       WHERE m.type = 'PHONE' AND m.deleted_at IS NULL
-         AND c.deleted_at IS NULL AND c.status IN ('ACTIVE', 'SUSPENDED')
-         AND (m.normalized_value = $1 OR m.normalized_value = '+234' || $1
-           OR m.normalized_value = '234' || $1 OR m.normalized_value = '0' || $1)
-       LIMIT 2`,
-      [canonical],
-    );
-    if (customers.length > 1 || (agent && customers.length > 0)) {
-      throw new ConflictException('Recipient identifier is ambiguous');
-    }
-    if (agent) {
-      return {
-        ownerType: 'AGENT',
-        ownerId: agent.id,
-        receivingNumber: canonical,
-        display: await this.agentDisplay(agent),
-        status: agent.status,
-      };
-    }
-    const customer = customers[0];
-    if (customer) {
-      return {
-        ownerType: 'CUSTOMER',
-        ownerId: customer.id,
-        receivingNumber: canonical,
-        display: await this.customerDisplay(customer.id),
-        status: customer.status,
-      };
-    }
-    throw new NotFoundException(`Recipient ${canonical} not found`);
+    const identity = await resolveRecipientIdentityWithManager(this.dataSource.manager, identifier);
+    return {
+      ownerType: identity.ownerType,
+      ownerId: identity.ownerId,
+      receivingNumber: identity.receivingNumber,
+      status: identity.status,
+      display: identity.agent
+        ? await this.agentDisplay(identity.agent)
+        : await this.customerDisplay(identity.ownerId),
+    };
   }
 
   /** Resolve a registered identifier to its unique active wallet, never by client owner claims.

@@ -206,6 +206,9 @@ const QuotedSendMoneyForOwner: React.FC<{ ownerId: string | null | undefined }> 
         `${base}/transfer-quotes`,
         {
           destinationWalletId: recipient.walletId,
+          ...(selectedSaved?.recipientType && selectedSaved.recipientId
+            ? { beneficiaryId: selectedSaved.id }
+            : {}),
           amountMinor,
           currency: 'NGN',
         },

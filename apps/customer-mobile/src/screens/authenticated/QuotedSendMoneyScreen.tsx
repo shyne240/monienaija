@@ -224,6 +224,9 @@ const QuotedSendMoneyForOwner: React.FC<{ ownerId: string | null | undefined }> 
         {
           sourceWalletId: walletId,
           destinationWalletId: recipient.walletId,
+          ...(selectedSaved?.recipientType && selectedSaved.recipientId
+            ? { beneficiaryId: selectedSaved.id }
+            : {}),
           amountMinor,
           currency: 'NGN',
         },
