@@ -741,17 +741,19 @@ export class TransferService {
           );
         }
       } catch (error) {
-        for (const key of [limitIdempotencyKey, recipientLimitIdempotencyKey]) {
-          if (key) await this.limitEnforcementService.releaseReservationsWithManager(manager, key);
-        }
-        // Configuration/service outages are retryable and must not create a durable FAILED
-        // transfer that poisons the same idempotency key or consumes a confirmation attempt.
-        if (error instanceof HttpException && error.getStatus() >= 500) throw error;
-        if (error instanceof HttpException) {
+        // Only a recognised business-limit denial is persisted as FAILED. All other errors
+        // must escape immediately so the transaction rolls back its reservations. In particular,
+        // issuing release SQL after a PostgreSQL serialization/deadlock failure masks the original
+        // retryable SQLSTATE with 25P02 (transaction aborted) and defeats the outer retry loop.
+        if (error instanceof HttpException && error.getStatus() < 500) {
           const resp = error.getResponse() as { error?: string; code?: string; message?: string };
           const rawCode = resp && (resp.error || resp.code);
           const limitCode = rawCode ? limitCodeToTransferFailureCode(String(rawCode)) : null;
           if (limitCode) {
+            for (const key of [limitIdempotencyKey, recipientLimitIdempotencyKey]) {
+              if (key)
+                await this.limitEnforcementService.releaseReservationsWithManager(manager, key);
+            }
             return this.markFailed(
               manager,
               transfer,

@@ -6,6 +6,7 @@ import {
   Injectable,
   Inject,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
@@ -96,9 +97,15 @@ export class TransferQuoteService {
     const institutionId = participants[0].wallet.institutionId ?? null;
     if (institutionId !== (participants[1].wallet.institutionId ?? null))
       throw new ConflictException('Institutional wallet context is unavailable');
-    // Preserve the existing legacy wholly-unattributed rollout policy; limits and ledger still
-    // enforce their own production restrictions. Never apply it to a partly attributed pair.
-    if (!institutionId) return;
+    // Preserve the legacy customer-only rollout path, but the previously gated agent lane has
+    // no established unattributed authority. Never infer affiliation for an agent from nulls.
+    if (!institutionId) {
+      if (participants.some((participant) => participant.type === 'AGENT'))
+        throw new ServiceUnavailableException(
+          'Agent institutional financial context is unavailable',
+        );
+      return;
+    }
     for (const participant of [...participants].sort((a, b) =>
       a.wallet.id.localeCompare(b.wallet.id),
     )) {

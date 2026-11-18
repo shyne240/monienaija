@@ -605,6 +605,12 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `q-agent-${randomUUID()}`,
     });
+    const governed = new GovernedFinancialFixture({ app, dataSource, label: 'p2p-quote' });
+    const institutionId = await governed.institution('quote-p2p');
+    await governed.enrolCustomer(customer.customerId, institutionId);
+    await governed.affiliateAgent(agentId, institutionId);
+    await governed.attributeWallet(source.id, institutionId);
+    await governed.attributeWallet(operating.id, institutionId);
     const cp = {
       type: 'CUSTOMER' as const,
       principalId: customer.customerId,
@@ -1023,6 +1029,56 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
+  it('does not grant unattributed wallets agent transfer authority', async () => {
+    const customer = await createCustomerWithCredential();
+    const otherCustomer = await createCustomerWithCredential();
+    const tokenA = await createAgentToken();
+    const agentA: Array<{ id: string; agent_class_id: string }> = await dataSource.query(
+      `SELECT id,agent_class_id FROM agents`,
+    );
+    const tokenB = await createAgentToken();
+    const agentB: Array<{ id: string; agent_class_id: string }> = await dataSource.query(
+      `SELECT id,agent_class_id FROM agents WHERE id<>$1`,
+      [agentA[0]!.id],
+    );
+    for (const agent of [agentA[0]!, agentB[0]!])
+      await dataSource.query(`UPDATE agent_classes SET applicable_services=$1 WHERE id=$2`, [
+        JSON.stringify(['WALLET_TRANSFER']),
+        agent.agent_class_id,
+      ]);
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const wallets = app.get(WalletService);
+    const create = (customerId: string) =>
+      wallets.createWallet({ customerId, currency: 'NGN', idempotencyKey: randomUUID() });
+    const source = await create(customer.customerId);
+    const destination = await create(otherCustomer.customerId);
+    const a = await create(agentA[0]!.id);
+    const b = await create(agentB[0]!.id);
+    const quote = (
+      kind: 'customers' | 'agents',
+      token: string,
+      destinationWalletId: string,
+      sourceWalletId?: string,
+    ) =>
+      request(app.getHttpServer())
+        .post(`/api/v1/${kind}/me/transfer-quotes`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          ...(sourceWalletId ? { sourceWalletId } : {}),
+          destinationWalletId,
+          amountMinor: '100',
+          currency: 'NGN',
+        });
+    await quote('customers', customer.token, a.id, source.id).expect(503);
+    await quote('agents', tokenA, destination.id).expect(503);
+    await quote('agents', tokenA, b.id).expect(503);
+    await quote('customers', customer.token, destination.id, source.id).expect(201);
+    expect(tokenB).toBeTruthy();
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    expect(await dataSource.query(`SELECT id FROM ledger_journals`)).toHaveLength(0);
+  });
+
   it('posts four authenticated governed wallet transfer directions with typed evidence and reconciliation', async () => {
     const sender = await createCustomerWithCredential();
     const receiver = await createCustomerWithCredential();
@@ -1360,7 +1416,31 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     expect(
       await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [q.body.quoteId]),
     ).toEqual([{ status: 'ACTIVE' }]);
-    await confirm().expect(201);
+    // A real SQLSTATE from limit admission aborts the transaction. It must escape unchanged
+    // (no cleanup SQL on the aborted connection) so the bounded SERIALIZABLE retry can succeed.
+    const { LimitEnforcementService } = await import(
+      '../src/limit-catalog/limit-enforcement.service'
+    );
+    const limits = app.get(LimitEnforcementService);
+    const enforce = limits.enforceWithManager.bind(limits);
+    let injected = false;
+    const conflict = jest
+      .spyOn(limits, 'enforceWithManager')
+      .mockImplementation(async (manager, input) => {
+        if (!injected) {
+          injected = true;
+          await manager.query(
+            `DO $$ BEGIN RAISE EXCEPTION 'injected serialization' USING ERRCODE = '40001'; END $$`,
+          );
+        }
+        return enforce(manager, input);
+      });
+    try {
+      await confirm().expect(201);
+    } finally {
+      conflict.mockRestore();
+    }
+    expect(injected).toBe(true);
     expect((await wallets.getWalletBalance(a.id)).balanceMinor).toBe('450');
     const raceQuote = await request(app.getHttpServer())
       .post(agentPath)
@@ -1493,7 +1573,6 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       agent.agent_class_id,
     ]);
     const { WalletService } = await import('../src/wallet/wallet.service');
-    const { LedgerService } = await import('../src/ledger/ledger.service');
     const { CustomerTransactionPinService } = await import(
       '../src/customer/customer-transaction-pin.service'
     );
@@ -1504,7 +1583,6 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       '../src/agent-authentication/agent-authentication.enums'
     );
     const wallets = app.get(WalletService);
-    const ledger = app.get(LedgerService);
     const source = await wallets.createWallet({
       customerId: sender.customerId,
       currency: 'NGN',
@@ -1520,22 +1598,14 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `http-agent-${randomUUID()}`,
     });
-    const funding = await ledger.createAccount({
-      code: `http-fund-${randomUUID()}`,
-      name: 'test',
-      accountType: 'ASSET' as any,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-    });
-    await ledger.postJournal({
-      idempotencyKey: `http-fund-${randomUUID()}`,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [
-        { accountId: funding.id, direction: 'DEBIT' as any, amountMinor: '5000' },
-        { accountId: source.ledgerAccountId, direction: 'CREDIT' as any, amountMinor: '5000' },
-      ],
-    });
+    const governed = new GovernedFinancialFixture({ app, dataSource, label: 'p2p-auth' });
+    const institutionId = await governed.institution('auth-p2p');
+    for (const customer of [sender, receiver])
+      await governed.enrolCustomer(customer.customerId, institutionId);
+    await governed.affiliateAgent(agent.id, institutionId);
+    for (const wallet of [source, destination, operating])
+      await governed.attributeWallet(wallet.id, institutionId);
+    await governed.fundLedgerAccount(source.ledgerAccountId, '5000', { institutionId });
     await app.get(CustomerTransactionPinService).setTransactionPin(sender.customerId, {
       pinHash: encodePbkdf2('1234'),
       hashAlgorithm: 'PBKDF2',

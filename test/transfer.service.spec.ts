@@ -559,6 +559,36 @@ describe('TransferService', () => {
     expect(limits.commitReservationsWithManager).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['40001', '40P01'])(
+    'retries %s from limit admission without SQL in an aborted transaction',
+    async (code) => {
+      const failure = new QueryFailedError(
+        'SELECT',
+        [],
+        Object.assign(new Error('concurrent transaction'), { code }),
+      );
+      const limits = {
+        enforceWithManager: jest
+          .fn()
+          .mockRejectedValueOnce(failure)
+          .mockResolvedValue({ allowed: true }),
+        commitReservationsWithManager: jest.fn().mockResolvedValue(undefined),
+        releaseReservationsWithManager: jest
+          .fn()
+          .mockRejectedValue(new Error('transaction aborted')),
+      };
+      const fixture = makeFixture(125000n, 'NGN', limits as unknown as LimitEnforcementService);
+      fixture.wallets.wallets.get(DESTINATION_WALLET_ID)!.customerId =
+        '22222222-2222-4222-8222-222222222222';
+      const result = await fixture.service.createTransfer(transferCommand());
+      expect(result.status).toBe(TransferStatus.COMPLETED);
+      expect(limits.enforceWithManager).toHaveBeenCalledTimes(2);
+      expect(limits.releaseReservationsWithManager).not.toHaveBeenCalled();
+      expect(fixture.ledger.calls).toHaveLength(1);
+      expect(fixture.transfers.records.size).toBe(1);
+    },
+  );
+
   it('rolls back the journal when committing limit reservations fails', async () => {
     const limits = {
       enforceWithManager: jest.fn().mockResolvedValue({ allowed: true }),
