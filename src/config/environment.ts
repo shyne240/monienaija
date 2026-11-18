@@ -284,6 +284,23 @@ export const environmentSchema = z
     PROTECTED_AUTHORITY_DB_HOST: optionalEnvironmentString,
     PROTECTED_AUTHORITY_DB_PORT: z.coerce.number().int().min(1).max(65535).optional(),
     PROTECTED_AUTHORITY_DB_NAME: optionalEnvironmentString,
+    // ARENA 3D Group 13 — disaster recovery and business continuity objectives.
+    //
+    // These are business decisions, and they are optional because no target has been agreed yet. The
+    // readiness report distinguishes "not configured" from "not ready" precisely so that an unset value
+    // is reported as a decision gap rather than silently defaulted to a plausible-looking number. A
+    // guessed RPO reads like a commitment nobody made.
+    //
+    // RPO is the maximum acceptable data loss; RTO is the maximum acceptable outage. Both in seconds.
+    RECOVERY_RPO_SECONDS: z.coerce.number().int().min(0).max(2_592_000).optional(),
+    RECOVERY_RTO_SECONDS: z.coerce.number().int().min(0).max(2_592_000).optional(),
+    RECOVERY_APPLICATION_RTO_SECONDS: z.coerce.number().int().min(0).max(2_592_000).optional(),
+    RECOVERY_PROVIDER_CONNECTIVITY_RTO_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(2_592_000)
+      .optional(),
     // SMS-V1-01 — provider-neutral SMS production configuration.
     // Provider selection: 'console' (default, keeps dev/test provider-neutral), 'robase'
     // (env-supplied key), or 'managed' (governed DB-encrypted runtime configuration).

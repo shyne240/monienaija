@@ -12,7 +12,9 @@ Continuation record. Updated as each group lands; the workspace is the source of
 | Groups 3, 2, 4/5                            | `e20b3116`    | Financial completeness and unresolved-funds visibility.                                 |
 | Group 7                                     | `9b04c45c`    | Containers, admin-web loopback guard, mobile fail-closed endpoint.                      |
 | Group 8                                     | `5670bc97`    | 152/152 environment keys inventoried and classified; completeness test.                 |
-| Group 12                                    | _this commit_ | Backup and restore exercise, executed and verified.                                     |
+| Group 12                                    | `3e0c9985`    | Backup and restore exercise, executed and verified.                                     |
+| Groups 9, 10, 11                            | `62368a3b`    | Secret resolution and rotation, runtime/authority separation proof, migration workflow. |
+| Groups 13, 14                               | _this commit_ | Recovery objectives and resume policy; outbox leases and dead letters.                  |
 
 Branch: `arena/defdd0fd-monienaija`. There is no upstream; push with `git push origin <branch>`.
 
@@ -351,6 +353,71 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 13 — disaster recovery objectives and resume policy
+
+`src/recovery/disaster-recovery.service.ts` and `test/disaster-recovery.spec.ts` (10 assertions).
+
+The two questions a recovery plan has to answer are "how much may we lose, and how long may we be down"
+and "when may we resume work that was in flight". This group answers both as **declared configuration**,
+not as defaults:
+
+- **RPO/RTO are never invented.** Four objectives (`RECOVERY_RPO_SECONDS`, `RECOVERY_RTO_SECONDS`,
+  `RECOVERY_APPLICATION_RTO_SECONDS`, `RECOVERY_PROVIDER_CONNECTIVITY_RTO_SECONDS`) are optional. Unset,
+  malformed or negative all yield `objectives-not-configured`, which is a **decision gap** — deliberately
+  distinct from `not-ready` (objectives set, some unmet) and `ready` (all four set and met). A service that
+  silently assumed `RPO = 0` would be claiming a guarantee it was never given.
+- **`readiness()` reports gaps by name**, so an operator is told which variable is missing rather than that
+  recovery "is not configured".
+- **Resume policy.** Each external-operation lifecycle state is classified exactly once:
+  `CREATED` / `FAILED` / `CANCELLED` are `SAFE_TO_RESUME`; `SUBMITTING` / `PENDING_PROVIDER` /
+  `PENDING_VERIFICATION` / `UNKNOWN` require verification with the provider first; `MANUAL_REVIEW` goes to
+  a human. `RECOVERY_RESUME_STATE_SETS` is exported so a test can assert the classification is total —
+  adding a lifecycle state without classifying it fails the suite.
+
+The governing principle: **recovery restores state; it does not replay intent.** An operation that may
+have reached the provider must be reconciled with the provider, never re-sent. This is the same reasoning as
+the banking dispatch inquiry path, applied at the recovery boundary.
+
+### Group 14 — worker ownership, leases, and dead letters
+
+`src/operations/worker-lease.service.ts`, `src/migrations/1785753600606-OutboxLeasesAndDeadLetters.ts`,
+`test/worker-leases.integration.spec.ts` (15 assertions against real PostgreSQL), and
+`docs/integration/WORKER-OWNERSHIP-AND-DEAD-LETTERS.md`.
+
+This group began by reading the four workers rather than assuming they all needed the same treatment:
+
+- **Banking dispatch was already correct** — real database lease, fencing counter, database-clock expiry,
+  bounded attempts, append-only history. Left alone.
+- **KYC reevaluation was already safe without a lease** — `ON CONFLICT DO NOTHING` on
+  `kyc_tier_expiry_events` with the insert result gating the effect, so racing instances produce one
+  effect. Left alone; a lease would have added a failure mode without removing one.
+- **The outbox had two real defects.** `claimPending` used `pessimistic_write` (plain `FOR UPDATE`), so a
+  second worker _waited_ for the first worker's rows and then processed them after commit — queueing for
+  work that no longer existed. And `markFailed` incremented `attempts` that nothing ever consulted, so a
+  permanently failing event retried forever with no terminal state and no way to surface it.
+
+Both are fixed: the claim is now `FOR UPDATE SKIP LOCKED` (verified in the generated SQL, not just in the
+lock-mode name), and `DEAD_LETTERED` is a distinct terminal status reached at a configurable ceiling.
+
+Evidence worth carrying forward:
+
+- **The `SKIP LOCKED` guard was proven to discriminate.** Holding a claim transaction open, a second worker
+  completes in ~30 ms with `SKIP LOCKED` and **blocks for 120 s and times out** with plain `FOR UPDATE`.
+  The first version of the concurrency test passed under both, because row disjointness comes from the
+  lease predicate rather than the locking clause — the defect is only observable while a claim is open. A
+  guard that cannot fail is not a guard.
+- **Dead-lettering fires exactly at the ceiling and stays terminal** (attempts 1, 2 → `PENDING`; 3 →
+  `DEAD_LETTERED`; a fourth cycle cannot claim the row).
+- **Graceful release does not consume an attempt** — a shutdown is not a failure.
+- **The database enforces the invariants**: a dead letter with no timestamp, a half-written lease, and an
+  unknown status are all refused by CHECK constraints rather than by convention.
+- **`down()` refuses to roll back while dead letters exist**, because rolling back would return them to
+  unbounded retry.
+
+`EXPECTED_MIGRATION_TIMESTAMP` / `EXPECTED_MIGRATION_NAME` in the production readiness service were
+advanced to the new schema head. That constant is a deliberate gate: a build whose database has not
+reached the required migration refuses to serve traffic.
+
 ### Group 11 — migration workflow, locking, and non-destructive recovery
 
 `scripts/migration-workflow.js` with `status` / `apply` / `verify`, and
@@ -384,11 +451,11 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 13–40 remain: DR/BC, worker consolidation, scheduling, logging, metrics/health, integrity
-monitoring, alerting, admin operations centre, operational security, break-glass, fraud/risk, compliance,
-complaints, disputes, mobile support, SMS/email, privacy/retention, performance harness, CI release gates,
-the PostgreSQL matrix, sandbox readiness, mobile release, browser acceptance, readiness gate, journeys
-A–J, consolidated acceptance, and the final handoff.
+Groups 15–40 remain: scheduling, logging, metrics/health, integrity monitoring, alerting, admin operations
+centre, operational security, break-glass, fraud/risk, compliance, complaints, disputes, mobile support,
+SMS/email, privacy/retention, performance harness, CI release gates, the PostgreSQL matrix, sandbox
+readiness, mobile release, browser acceptance, readiness gate, journeys A–J, consolidated acceptance, and
+the final handoff.
 
 Known gaps carried forward: no secret-manager backend is selected (the contract exists; the environment
 backend satisfies it); a restore requires a superuser; off-site backup storage, encryption at rest,
@@ -398,6 +465,12 @@ categories in one database.
 Known gaps carried forward from Group 12: no fixture seeds all eleven backup categories in one database;
 the restore requires superuser; and off-site storage, encryption at rest, retention and point-in-time
 recovery are infrastructure decisions that are not implemented.
+
+Known gaps from Groups 13–14: recovery objectives are configuration with no measurement behind them — the
+service classifies and reports, it does not measure actual RPO/RTO, so "ready" means "declared and
+structurally satisfied", not "observed". No scheduler runs the workers in this repository (Group 15); the
+dead-letter queue has no alerting thresholds (Group 19) and requeueing is a manual, audited operator action
+by design; and claim throughput under sustained load is unmeasured beyond the 8-worker contention test.
 
 ## 5. External blockers (already known at mission start)
 

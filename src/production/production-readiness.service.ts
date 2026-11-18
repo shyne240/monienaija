@@ -11,8 +11,11 @@ import {
 // See test/v1-release-01-production-readiness-migration-sync.integration.spec.ts, which runs the
 // full migration chain against real PostgreSQL and fails the build if this constant and the
 // actual latest migration file ever diverge.
-const EXPECTED_MIGRATION_TIMESTAMP = '1785753600605';
-const EXPECTED_MIGRATION_NAME = 'CreateInstitutionAgentFloatFunding1785753600605';
+// The schema head this build requires. A deployment whose database has not reached this migration
+// refuses to serve traffic, which is the intended behaviour — advancing this constant is part of shipping
+// a migration, not an afterthought.
+const EXPECTED_MIGRATION_TIMESTAMP = '1785753600606';
+const EXPECTED_MIGRATION_NAME = 'OutboxLeasesAndDeadLetters1785753600606';
 
 type Row = Record<string, unknown>;
 

@@ -115,7 +115,13 @@ export class OutboxService {
       })
       .orderBy('outbox.created_at', 'ASC')
       .take(Math.min(Math.max(limit, 1), 1000))
-      .setLock('pessimistic_write')
+      // `SKIP LOCKED`, not a plain `FOR UPDATE`. TypeORM's `pessimistic_write` emits `FOR UPDATE`, which
+      // makes a second worker *wait* for the first worker's rows and then process them after the first
+      // commits — queueing for work that no longer exists. Under more than one instance that serialises
+      // delivery while looking concurrent. `onLocked: 'skip_locked'` is the current spelling; the
+      // `pessimistic_partial_write` lock mode is the same SQL but deprecated in favour of this.
+      .setLock('pessimistic_write', undefined, ['outbox'])
+      .setOnLocked('skip_locked')
       .getMany();
     for (const event of events) {
       event.attempts += 1;
