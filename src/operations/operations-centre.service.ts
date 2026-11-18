@@ -32,6 +32,7 @@ import { Injectable, Optional } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import type { EmergencyAccessReviewService } from '../authorization/emergency-access-review.service';
+import type { ComplianceAuditExportService } from '../compliance/compliance-audit-export.service';
 import type { FraudDetectionService } from '../fraud/fraud-detection.service';
 import { AlertingService } from './alerting.service';
 import type { Alert, AlertUrgency } from './alerting.types';
@@ -44,7 +45,7 @@ export interface AttentionItem {
   /** Stable identifier for this item, so repeated polls do not look like new items. */
   id: string;
   /** Which subsystem produced it. Fixed set; dashboards and filters key on this. */
-  area: 'INTEGRITY' | 'QUEUE' | 'WORKER' | 'SUPERVISION' | 'SECURITY' | 'FRAUD';
+  area: 'INTEGRITY' | 'QUEUE' | 'WORKER' | 'SUPERVISION' | 'SECURITY' | 'FRAUD' | 'COMPLIANCE';
   urgency: AlertUrgency;
   severity: 'INFO' | 'WARNING' | 'CRITICAL';
   summary: string;
@@ -96,6 +97,9 @@ export class OperationsCentreService {
      * and fraud findings are an additional signal rather than a precondition for the centre working.
      */
     @Optional() private readonly fraud?: FraudDetectionService,
+    /* Group 23. Optional for the same reason: compliance posture is an additional signal, not a
+     * precondition for the centre working. */
+    @Optional() private readonly compliance?: ComplianceAuditExportService,
   ) {}
 
   async view(): Promise<OperationsCentreView> {
@@ -268,6 +272,55 @@ export class OperationsCentreService {
         unavailable.push({
           area: 'FRAUD',
           reason: 'fraud detection state could not be read',
+        });
+      }
+    }
+
+    // --- Compliance (Group 23): case age against a configured deadline ---
+    if (this.compliance) {
+      try {
+        const posture = await this.compliance.caseSlaPosture();
+        if (posture.breached > 0) {
+          items.push({
+            id: 'compliance:case-sla-breached',
+            area: 'COMPLIANCE',
+            urgency: 'IMMEDIATE',
+            severity: 'WARNING',
+            summary: `${posture.breached} compliance case(s) past their configured deadline`,
+            /*
+             * `context` is deliberately a flat scalar map, so the per-category detail is joined into a
+             * string rather than embedded as an object. The constraint is worth keeping: bounded scalar
+             * context cannot accidentally leak a row or a nested identifier into an operator view.
+             */
+            context: {
+              breached: posture.breached,
+              byCategory: posture.breachesByCategory
+                .map((entry) => `${entry.category}=${entry.breaches}/${entry.resolutionHours}h`)
+                .join(' '),
+            },
+          });
+        }
+        /*
+         * Categories with no configured deadline are reported as a gap, not folded into the breach count.
+         *
+         * A compliance view that shows zero breaches because no deadline was ever set is the same failure as
+         * a supervisor reporting healthy when it measured nothing. This is a configuration gap the operator
+         * can close, not an incident, so it is routine severity rather than immediate.
+         */
+        if (posture.categoriesWithoutSla.length > 0) {
+          items.push({
+            id: 'compliance:sla-not-configured',
+            area: 'COMPLIANCE',
+            urgency: 'ROUTINE',
+            severity: 'WARNING',
+            summary: `${posture.categoriesWithoutSla.length} compliance case category/ies have no configured deadline`,
+            context: { categoriesWithoutSla: posture.categoriesWithoutSla.join(',') },
+          });
+        }
+      } catch {
+        unavailable.push({
+          area: 'COMPLIANCE',
+          reason: 'compliance posture could not be read',
         });
       }
     }

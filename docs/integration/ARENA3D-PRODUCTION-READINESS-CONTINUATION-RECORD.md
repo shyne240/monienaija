@@ -22,7 +22,8 @@ Continuation record. Updated as each group lands; the workspace is the source of
 | Group 19                                    | `0fe477bc`    | Alert contract, deduplication, flap suppression, dark delivery default.                  |
 | Group 20                                    | `90b06a4f`    | Operations centre: one ranked read-only view of what needs attention.                    |
 | Group 21                                    | `7420586a`    | Break-glass post-incident review, enforced by constraint rather than convention.         |
-| Group 22                                    | _this commit_ | Fraud/risk signals: detection separated from financial authority; no invented threshold. |
+| Group 22                                    | `596b4a6b`    | Fraud/risk signals: detection separated from financial authority; no invented threshold. |
+| Group 23                                    | _this commit_ | Audit evidence export: keyset pages, recorded every page, no invented retention policy.  |
 
 Branch: `arena/defdd0fd-monienaija`. There is no upstream; push with `git push origin <branch>`.
 
@@ -360,6 +361,54 @@ about what the runtime can do. Verified:
 The mirror-image assertions matter: a boundary that denies everything is broken provisioning, not a
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
+
+### Group 23 — compliance readiness: evidence export and case age
+
+`src/migrations/1785753600610-ComplianceRegister.ts`, `src/compliance/compliance-audit-export.service.ts`,
+`src/compliance/compliance.module.ts`, `test/compliance-audit-export.integration.spec.ts` (29 integration
+assertions), 3 unit assertions in `test/operations-centre.spec.ts`, and
+`docs/integration/COMPLIANCE-READINESS.md`.
+
+**The trail was already trustworthy and the case workflow already real.** `audit_events` has had a
+`BEFORE UPDATE OR DELETE` trigger since `1785753600005`, and `CustomerComplianceService` handles category,
+severity, assignment, comments, evidence and history. Neither was rebuilt.
+
+**The gap was that the first question an auditor asks could not be answered.** `AuditService.list()` has no
+date bound at all — it filters by entity, entity id and correlation, and caps at 1,000 rows — so "show me
+everything between these two dates" was unanswerable through any interface and could not be assembled by
+widening a filter. There was also no index on `occurred_at` alone, so even a hand-written range query would
+seq-scan an append-only table.
+
+**Paging is keyset on `(occurred_at, id)`, not `OFFSET`.** The trail is being appended to continuously; an
+offset page shifts when a row lands before the cursor, silently repeating one row and skipping another, and
+for evidence a skipped event is the worst available failure. The composite cursor also makes a page
+reproducible, which is what makes it usable as evidence.
+
+**The `id` tiebreak was not load-bearing in my first test, and I found that by mutating it.** My initial
+data had unique timestamps, so removing the composite comparison left the suite green. Nine events on the
+same instant — which is what a batch write or a replay produces — made the mutation fail exactly that test.
+Recorded because a passing mutation is the only reliable signal that a test was measuring the thing I
+thought it was.
+
+**Every page is registered, and the register is append-only.** Taking a copy of the trail is itself
+security-relevant, so `compliance_audit_exports` records requester, principal type, range, applied filters,
+cursor, row count, observed bounds and a **required** stated purpose. Constraints require a whole cursor or
+none, keep reported bounds inside the requested range, and refuse a blank purpose. The page read and the
+register write share one transaction; a refused export writes nothing because it took no evidence. The
+register records **pages, not sessions**, because the system cannot know whether a caller meant to continue
+and claiming a completed session would be worse than reporting pages.
+
+**Deadlines are configured and missing ones are reported as missing.** `compliance_case_sla` is seeded with
+**no rows**: the right deadline for an AML case versus a document case is a regulatory decision, and a
+seeded number would present an invented policy as an implemented control. The operations centre therefore
+reports breaches as `IMMEDIATE` and categories with no deadline as a separate `ROUTINE` gap — explicitly not
+as zero breaches, because a compliance view showing zero breaches because nothing was configured is the same
+failure as a supervisor reporting healthy when it measured nothing.
+
+Known gaps from Group 23: no controller (who may export is an open access-policy decision); no scheduled
+export (the outstanding Group 15 invocation requirement again); no cryptographic commitment proving an export
+equals the trail at a point in time; no case-scoped export helper; `down()` refuses once any export exists,
+so the schema cannot be rolled back after evidence has been produced.
 
 ### Group 22 — fraud and risk signals
 
@@ -791,7 +840,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 23–40 remain: compliance, complaints, disputes, mobile support,
+Groups 24–40 remain: complaints, disputes, mobile support,
 SMS/email, privacy/retention, performance harness, CI release gates, the PostgreSQL matrix, sandbox
 readiness, mobile release, browser acceptance, readiness gate, journeys A–J, consolidated acceptance, and
 the final handoff.

@@ -366,6 +366,69 @@ describe('Group 20 — operations centre', () => {
     });
   });
 
+  describe('compliance case age and missing deadlines are both visible (Group 23)', () => {
+    function withCompliance(posture: unknown) {
+      const built = build();
+      return new OperationsCentreService(
+        { manager: {} } as DataSource,
+        built.leases,
+        built.supervisor,
+        built.integrity as never,
+        new AlertingService(
+          { manager: {} } as DataSource,
+          built.leases,
+          built.supervisor,
+          built.integrity as never,
+        ),
+        undefined,
+        undefined,
+        posture instanceof Error
+          ? ({ caseSlaPosture: () => Promise.reject(posture) } as never)
+          : ({ caseSlaPosture: () => Promise.resolve(posture) } as never),
+      );
+    }
+
+    it('reports cases past their configured deadline', async () => {
+      const service = withCompliance({
+        openCases: 8,
+        breached: 2,
+        oldestOpenAgeSeconds: 90_000,
+        categoriesWithoutSla: [],
+        breachesByCategory: [{ category: 'AML', breaches: 2, resolutionHours: 24 }],
+      });
+      const view = await service.view();
+      const item = view.items.find((entry) => entry.id === 'compliance:case-sla-breached');
+      expect(item?.area).toBe('COMPLIANCE');
+      expect(item?.urgency).toBe('IMMEDIATE');
+      expect(item?.context.byCategory).toBe('AML=2/24h');
+    });
+
+    it('reports a category with no deadline as a gap, not as zero breaches', async () => {
+      // A compliance view showing zero breaches because no deadline was ever set is the same failure as a
+      // supervisor reporting healthy when it measured nothing.
+      const service = withCompliance({
+        openCases: 3,
+        breached: 0,
+        oldestOpenAgeSeconds: 100,
+        categoriesWithoutSla: ['SANCTIONS', 'PEP'],
+        breachesByCategory: [],
+      });
+      const view = await service.view();
+      const item = view.items.find((entry) => entry.id === 'compliance:sla-not-configured');
+      expect(item?.urgency).toBe('ROUTINE');
+      expect(item?.context.categoriesWithoutSla).toBe('SANCTIONS,PEP');
+      // And it is not counted as a breach.
+      expect(view.items.some((entry) => entry.id === 'compliance:case-sla-breached')).toBe(false);
+    });
+
+    it('treats an unreadable compliance posture as unavailable', async () => {
+      const service = withCompliance(new Error('db down'));
+      const view = await service.view();
+      expect(view.unavailable.map((entry) => entry.area)).toContain('COMPLIANCE');
+      expect(view.clear).toBe(false);
+    });
+  });
+
   describe('it is read-only and says so', () => {
     it('states that no remediation is offered', async () => {
       const { service } = build();

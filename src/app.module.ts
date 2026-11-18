@@ -66,6 +66,7 @@ import { LimitModule } from './limit/limit.module';
 import { MaturityModule } from './maturity/maturity.module';
 import { OperationsModule } from './operations/operations.module';
 import { FraudModule } from './fraud/fraud.module';
+import { ComplianceModule } from './compliance/compliance.module';
 import { PaymentModule } from './payment/payment.module';
 import { PartnerModule } from './partner/partner.module';
 import { ProductionModule } from './production/production.module';
@@ -170,6 +171,8 @@ import { ProtectedAuthorityModule } from './authorization/protected-authority.mo
     OperationsModule,
     // ARENA 3D Group 22: fraud signal detection. Exported for the operations centre.
     FraudModule,
+    // ARENA 3D Group 23: compliance register and audit evidence export.
+    ComplianceModule,
     PartnerModule,
     PaymentModule,
     ProductionModule,
