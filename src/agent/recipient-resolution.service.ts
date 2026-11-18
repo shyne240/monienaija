@@ -50,6 +50,20 @@ export class RecipientResolutionService {
       }
     }
 
+    // A registered phone is separate evidence from an allocated receiving identifier.
+    // Resolve both namespaces, and reject distinct agent identities even if allocation or
+    // contact records were introduced concurrently through older workflows.
+    const phoneAgents: Array<{ id: string; status: string }> = await this.dataSource.query(
+      `SELECT a.id, a.status FROM agent_verified_phone_contacts p JOIN agents a ON a.id=p.agent_id
+       WHERE p.canonical_phone=$1 AND p.revoked_at IS NULL AND a.deleted_at IS NULL
+         AND a.status IN ('ACTIVE','SUSPENDED') LIMIT 2`,
+      [canonical],
+    );
+    if (phoneAgents.length > 1 || (agent && phoneAgents[0] && agent.id !== phoneAgents[0].id))
+      throw new ConflictException('Recipient identifier is ambiguous');
+    if (!agent && phoneAgents[0])
+      agent = await this.agentRepo.findOne({ where: { id: phoneAgents[0].id } });
+
     // DISTINCT handles multiple matching contact rows for the same customer. Filtering by
     // lifecycle before counting avoids a deleted/closed identity hiding a valid recipient.
     const customers: Array<{ id: string; status: string }> = await this.dataSource.query(

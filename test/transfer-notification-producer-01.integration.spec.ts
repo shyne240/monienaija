@@ -356,6 +356,25 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
     expect(await ds.query(`SELECT status FROM notification_outbox_receipts`)).toEqual([
       { status: 'MATERIALIZED' },
     ]);
+    // Synthetic proof fixture for the delivery pipeline. The separate onboarding integration
+    // exercises actual OTP verification and one-time consumption through the recording adapter.
+    const phone = '8099988877';
+    const challengeId = randomUUID();
+    await ds.query(
+      `INSERT INTO customer_registration_phone_challenges
+      (id,normalized_phone,destination_phone,code_salt,code_hash,status,issued_at,expires_at,verified_at,consumed_at)
+      VALUES ($1,$2,$3,'fixture','fixture','VERIFIED',now(),now()+interval '5 minutes',now(),now())`,
+      [challengeId, phone, `+234${phone}`],
+    );
+    await ds.query(
+      `INSERT INTO agent_verified_phone_contacts(agent_id,canonical_phone,verified_at,proof_challenge_id)
+      SELECT $1,normalized_phone,verified_at,id FROM customer_registration_phone_challenges WHERE id=$2`,
+      [agentId, challengeId],
+    );
+    await ds.query(
+      `INSERT INTO agent_notification_preferences(agent_id,sms_enabled) VALUES ($1,true)`,
+      [agentId],
+    );
     const failedId = randomUUID();
     await ds.query(
       `INSERT INTO transfers (id,source_wallet_id,destination_wallet_id,amount_minor,currency,status,idempotency_key,request_hash) VALUES ($1,$2,$3,1000,'NGN','FAILED',$4,$5)`,
@@ -384,6 +403,19 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
       expect.objectContaining({ recipientType: 'AGENT', recipientId: agentId }),
     ]);
     expect(provider.sent).toHaveLength(0);
+    const agentDelivery = (await deliveries()).find(
+      (row) => row.event_key === `${failedType}:${failedId}:v1`,
+    );
+    expect(agentDelivery).toMatchObject({
+      recipient_type: 'AGENT',
+      recipient_id: agentId,
+      status: 'PENDING',
+    });
+    await worker.tick();
+    const sentToAgent = provider.sent.filter((entry) => entry.recipientId === agentId);
+    expect(sentToAgent).toHaveLength(1);
+    expect(sentToAgent[0]!.destination).toBe(`+234${phone}`);
+    expect(sentToAgent[0]!.message).not.toContain(failedId);
   });
 
   it('1. completed transfer: the audited producer emits the v1 contract from authoritative state, the consumer materializes exactly one SMS per audience atomically, replay never duplicates, accounting posts exactly one balanced journal, and no journal/payment/request/prose detail reaches payloads or messages', async () => {

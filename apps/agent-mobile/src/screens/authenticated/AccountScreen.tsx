@@ -8,6 +8,7 @@ import { theme } from '../../theme';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { CapabilitiesList } from '../../components/CapabilitiesList';
+import { AgentContactCard } from './AgentContactCard';
 import {
   describeApiError,
   getAgentCapabilities,
@@ -140,6 +141,8 @@ export const AccountScreen: React.FC = () => {
           </>
         )}
       </Card>
+
+      <AgentContactCard key={agentId ?? 'no-agent'} />
 
       {/* Transaction PIN (V1-AGENT-MOBILE-10) */}
       <Card style={styles.card} testID="account-pin-card">

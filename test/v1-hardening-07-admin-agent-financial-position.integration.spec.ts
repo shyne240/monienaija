@@ -131,6 +131,47 @@ describe('V1-HARDENING-07 Admin Agent Financial Investigation (real PostgreSQL)'
     return rows[0]!.id;
   }
 
+  it('workforce phone-verification read is scoped, masked and does not invent legacy proof', async () => {
+    const agentId = await createAgentDirect();
+    const path = `/api/v1/internal/agents/${agentId}/phone-verification`;
+    await request(app.getHttpServer()).get(path).expect(401);
+    await request(app.getHttpServer())
+      .get(path)
+      .set('Authorization', `Bearer ${workforceToken('AGENT')}`)
+      .expect(401);
+    const legacy = await request(app.getHttpServer())
+      .get(path)
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
+    expect(legacy.body).toEqual({
+      agentId,
+      verified: false,
+      phoneSuffix: null,
+      verifiedAt: null,
+      smsEnabled: false,
+    });
+    const proofId = randomUUID();
+    await dataSource.query(
+      `INSERT INTO customer_registration_phone_challenges(id,normalized_phone,destination_phone,code_salt,code_hash,status,issued_at,expires_at,verified_at,consumed_at) VALUES ($1,'8012345678','+2348012345678','fixture','fixture','VERIFIED',now(),now()+interval '5 minutes',now(),now())`,
+      [proofId],
+    );
+    await dataSource.query(
+      `INSERT INTO agent_verified_phone_contacts(agent_id,canonical_phone,verified_at,proof_challenge_id) SELECT $1,normalized_phone,verified_at,id FROM customer_registration_phone_challenges WHERE id=$2`,
+      [agentId, proofId],
+    );
+    const verified = await request(app.getHttpServer())
+      .get(path)
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
+    expect(verified.body).toMatchObject({
+      agentId,
+      verified: true,
+      phoneSuffix: '5678',
+      smsEnabled: false,
+    });
+    expect(JSON.stringify(verified.body)).not.toContain('8012345678');
+  });
+
   // 1. workforce allowed
   it('1. financial-position: SUPPORT/OPERATOR/SERVICE/PRIVILEGED allowed', async () => {
     const agentId = await createAgentDirect();

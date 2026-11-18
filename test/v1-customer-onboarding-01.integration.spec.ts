@@ -2,7 +2,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, pbkdf2Sync, randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import request = require('supertest');
 
@@ -72,6 +72,139 @@ describe('V1-CUSTOMER-ONBOARDING-01 registration + phone verification (real Post
   beforeEach(async () => {
     await truncateAllTables(dataSource);
     provider.clear();
+  });
+
+  it('binds agent phone only to real one-time OTP proof and honors SMS opt-in and collisions', async () => {
+    const agentRows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agents(reference,status) VALUES ($1,'ACTIVE') RETURNING id`,
+      [`agent-phone-${randomUUID()}`],
+    );
+    const agentId = agentRows[0]!.id;
+    const salt = Buffer.from('agent-phone-test');
+    const digest = pbkdf2Sync('agent-phone-password', salt, 10000, 32, 'sha256');
+    const hash = `PBKDF2$sha256$10000$${salt.toString('base64url')}$${digest.toString('base64url')}`;
+    await dataSource.query(
+      `INSERT INTO agent_authentication_credentials(agent_id,password_hash,hash_algorithm,password_version,password_changed_at,status) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE')`,
+      [agentId, hash],
+    );
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId, password: 'agent-phone-password' })
+      .expect(200);
+    const auth = `Bearer ${login.body.accessToken as string}`;
+    const phone = nextPhone();
+    const canonical = phone.slice(1);
+    const path = '/api/v1/agents/me/contact';
+    await request(app.getHttpServer()).get(path).expect(401);
+    const initial = await request(app.getHttpServer())
+      .get(path)
+      .set('Authorization', auth)
+      .expect(200);
+    expect(initial.body).toEqual({ registeredPhone: null, verifiedAt: null, smsEnabled: false });
+    await requestOtp(phone);
+    const otp = extractCode(`+234${canonical}`);
+    const verified = await request(app.getHttpServer())
+      .post(VERIFY_PATH)
+      .send({ phone, code: otp })
+      .expect(200);
+    const token = verified.body.verificationToken as string;
+    await request(app.getHttpServer())
+      .post(`${path}/phone`)
+      .set('Authorization', auth)
+      .send({ phone, verificationToken: 'a'.repeat(43) })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(`${path}/phone`)
+      .set('Authorization', auth)
+      .send({ phone: '08012349876', verificationToken: token })
+      .expect(400);
+    const saved = await request(app.getHttpServer())
+      .post(`${path}/phone`)
+      .set('Authorization', auth)
+      .send({ phone, verificationToken: token })
+      .expect(201);
+    expect(saved.body).toMatchObject({ registeredPhone: canonical, smsEnabled: false });
+    expect(saved.body.verifiedAt).toBeTruthy();
+    await request(app.getHttpServer())
+      .post(`${path}/phone`)
+      .set('Authorization', auth)
+      .send({ phone, verificationToken: token })
+      .expect(400);
+    const { RecipientResolutionService } = await import(
+      '../src/agent/recipient-resolution.service'
+    );
+    const recipient = await app.get(RecipientResolutionService).resolve(phone);
+    expect(recipient).toMatchObject({
+      ownerType: 'AGENT',
+      ownerId: agentId,
+      receivingNumber: canonical,
+    });
+    const { NotificationChannelResolverService } = await import(
+      '../src/notification/notification-channel-resolver.service'
+    );
+    const resolver = app.get(NotificationChannelResolverService);
+    expect(await resolver.resolve('AGENT', agentId, 'SMS')).toMatchObject({
+      destination: null,
+      reason: 'SMS_PREFERENCE_UNAVAILABLE',
+    });
+    await request(app.getHttpServer())
+      .patch(`${path}/notification-preferences`)
+      .set('Authorization', auth)
+      .send({ smsEnabled: true })
+      .expect(200);
+    expect(await resolver.resolve('AGENT', agentId, 'SMS')).toMatchObject({
+      destination: canonical,
+    });
+    expect(
+      await resolver.resolve('PHONE', canonical, 'SMS', undefined, 'cash_to_cash.created'),
+    ).toMatchObject({ destination: canonical });
+    await request(app.getHttpServer())
+      .patch(`${path}/notification-preferences`)
+      .set('Authorization', auth)
+      .send({ smsEnabled: false })
+      .expect(200);
+    expect(await resolver.resolve('AGENT', agentId, 'SMS')).toMatchObject({
+      destination: null,
+      reason: 'SMS_OPT_OUT',
+    });
+    expect(
+      await resolver.resolve('PHONE', canonical, 'SMS', undefined, 'cash_to_cash.created'),
+    ).toMatchObject({ destination: null, reason: 'SMS_OPT_OUT' });
+    await request(app.getHttpServer())
+      .patch(`${path}/notification-preferences`)
+      .set('Authorization', auth)
+      .send({ smsEnabled: true })
+      .expect(200);
+
+    const customer = await dataSource.query<Array<{ id: string }>>(
+      `INSERT INTO customers(reference,customer_type,status,kyc_level,kyc_status) VALUES ($1,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED') RETURNING id`,
+      [`collision-${randomUUID()}`],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods(customer_id,type,value,normalized_value,is_primary,verified_at) VALUES ($1,'PHONE',$2,$2,true,now())`,
+      [customer[0]!.id, canonical],
+    );
+    await expect(app.get(RecipientResolutionService).resolve(phone)).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(await resolver.resolve('AGENT', agentId, 'SMS')).toMatchObject({
+      destination: null,
+      reason: 'AGENT_PHONE_AMBIGUOUS',
+    });
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM agent_verified_phone_contacts WHERE agent_id=$1`,
+      [agentId],
+    );
+    await expect(
+      dataSource.query(
+        `UPDATE agent_verified_phone_contacts SET canonical_phone='8123456789' WHERE id=$1`,
+        [rows[0]!.id],
+      ),
+    ).rejects.toThrow();
+    await expect(
+      dataSource.query(`DELETE FROM agent_verified_phone_contacts WHERE id=$1`, [rows[0]!.id]),
+    ).rejects.toThrow();
+    expect(provider.sent).toHaveLength(1); // the OTP went to the synthetic provider only
   });
 
   // ---------------------------------------------------------------- helpers

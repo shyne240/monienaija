@@ -1,3 +1,5 @@
+import { AgentVerifiedPhoneService } from './agent-verified-phone.service';
+import { AgentVerifiedPhoneController } from './agent-verified-phone.controller';
 import { KycTierModule } from '../kyc-verification/kyc-tier.module';
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -112,6 +114,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
   ],
   controllers: [
     AgentAppController,
+    AgentVerifiedPhoneController,
     AgentApplicationPublicController,
     AgentApplicationAdminController,
     AgentClassController,
@@ -139,6 +142,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     CashOutReconciliationService,
     CashToCashReconciliationService,
     CashToCashWorkforceScope,
+    AgentVerifiedPhoneService,
     AgentClassService,
     AgentApplicationService,
     AgentReceivingNumberService,

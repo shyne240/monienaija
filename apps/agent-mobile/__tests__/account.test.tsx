@@ -5,6 +5,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AccountScreen } from '../src/screens/authenticated/AccountScreen';
 import { useAuthStore } from '../src/store/auth-store';
 
+jest.mock('../src/screens/authenticated/AgentContactCard', () => ({
+  AgentContactCard: () => null,
+}));
+
 const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({ navigate: mockNavigate }),
