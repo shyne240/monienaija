@@ -20,6 +20,7 @@ import { A2SecurityRateLimitService } from './security-rate-limit.service';
 import { A2WorkforceOidcService, A2_WORKFORCE_CONFIG } from './workforce-oidc.service';
 import { A2WorkforceSessionService } from './workforce-session.service';
 import { workforceConfiguration } from './workforce-configuration';
+import { EmergencyAccessReviewService } from './emergency-access-review.service';
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
 import { CommercialRuleGovernanceService } from './commercial-rule-governance.service';
 import { AuthorizationGuard } from './authorization.guard';
@@ -130,6 +131,7 @@ import { RoleDefinitionProposal } from './role-definition-proposal.entity';
     AuthorizationGuard,
     AuthorizationService,
     PrivilegedActionApprovalService,
+    EmergencyAccessReviewService,
     CommercialRuleGovernanceService,
     RoutePolicyRegistry,
     RuntimeAccessGuard,
@@ -145,6 +147,7 @@ import { RoleDefinitionProposal } from './role-definition-proposal.entity';
     AuthorizationGuard,
     AuthorizationService,
     PrivilegedActionApprovalService,
+    EmergencyAccessReviewService,
     CommercialRuleGovernanceService,
     RoutePolicyRegistry,
     RuntimeAccessGuard,

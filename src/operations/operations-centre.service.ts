@@ -28,9 +28,10 @@
  * No mutation, no remediation, no acknowledge, no "resolve". Those require an audited write path with its own
  * authority decision (Groups 21–22), and offering a button that half-works would be worse than offering none.
  */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+import type { EmergencyAccessReviewService } from '../authorization/emergency-access-review.service';
 import { AlertingService } from './alerting.service';
 import type { Alert, AlertUrgency } from './alerting.types';
 import { IntegrityMonitoringService } from './integrity-monitoring.service';
@@ -42,7 +43,7 @@ export interface AttentionItem {
   /** Stable identifier for this item, so repeated polls do not look like new items. */
   id: string;
   /** Which subsystem produced it. Fixed set; dashboards and filters key on this. */
-  area: 'INTEGRITY' | 'QUEUE' | 'WORKER' | 'SUPERVISION';
+  area: 'INTEGRITY' | 'QUEUE' | 'WORKER' | 'SUPERVISION' | 'SECURITY';
   urgency: AlertUrgency;
   severity: 'INFO' | 'WARNING' | 'CRITICAL';
   summary: string;
@@ -83,6 +84,12 @@ export class OperationsCentreService {
     private readonly supervisor: WorkerSupervisorService,
     private readonly integrity: IntegrityMonitoringService,
     private readonly alerting: AlertingService,
+    /*
+     * Group 21. Optional because the operations centre must remain constructible without the authorization
+     * module (its unit tests and the read-surface wiring both do this), and because an unreviewed emergency
+     * access is an additional signal rather than a precondition for the centre working at all.
+     */
+    @Optional() private readonly emergencyReviews?: EmergencyAccessReviewService,
   ) {}
 
   async view(): Promise<OperationsCentreView> {
@@ -170,6 +177,36 @@ export class OperationsCentreService {
           neverObserved: report.neverObserved.length,
         },
       });
+    }
+
+    // --- Security: emergency access owing a post-incident review (Group 21) ---
+    if (this.emergencyReviews) {
+      try {
+        const posture = await this.emergencyReviews.posture();
+        if (posture.pending > 0) {
+          const oldest = posture.oldestAwaitingSeconds;
+          items.push({
+            id: 'security:emergency-review-owed',
+            area: 'SECURITY',
+            /*
+             * Urgency escalates with age, not with count.
+             *
+             * One unreviewed emergency access forgotten for a week is a worse signal than five reviewed
+             * promptly — an un-reviewed break-glass window is how a temporary emergency grant becomes a
+             * permanent one. After 24 hours it interrupts.
+             */
+            urgency: oldest !== null && oldest >= 86_400 ? 'IMMEDIATE' : 'ROUTINE',
+            severity: 'WARNING',
+            summary: `${posture.pending} emergency access window(s) owe a post-incident review`,
+            context: { pending: posture.pending, oldestAwaitingSeconds: oldest },
+          });
+        }
+      } catch {
+        unavailable.push({
+          area: 'SECURITY',
+          reason: 'emergency access review state could not be read',
+        });
+      }
     }
 
     // --- Alerts (Group 19): the ranked conditions, minus anything already represented above ---

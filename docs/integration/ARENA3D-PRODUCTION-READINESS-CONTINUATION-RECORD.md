@@ -20,7 +20,8 @@ Continuation record. Updated as each group lands; the workspace is the source of
 | Group 17                                    | `40766952`    | Operational metrics; DLQ and worker signals finally have a consumer.                    |
 | Group 18                                    | `f2a63c0d`    | Integrity snapshots and drift detection.                                                |
 | Group 19                                    | `0fe477bc`    | Alert contract, deduplication, flap suppression, dark delivery default.                 |
-| Group 20                                    | _this commit_ | Operations centre: one ranked read-only view of what needs attention.                   |
+| Group 20                                    | `90b06a4f`    | Operations centre: one ranked read-only view of what needs attention.                   |
+| Group 21                                    | _this commit_ | Break-glass post-incident review, enforced by constraint rather than convention.        |
 
 Branch: `arena/defdd0fd-monienaija`. There is no upstream; push with `git push origin <branch>`.
 
@@ -359,6 +360,53 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 21 — operational security: break-glass review
+
+`src/migrations/1785753600608-EmergencyAccessReviewRequirement.ts`,
+`src/authorization/emergency-access-review.service.ts`, `test/emergency-access-review.integration.spec.ts`
+(15 integration assertions, all passing), 4 unit assertions in `test/operations-centre.spec.ts`, and
+`docs/integration/OPERATIONAL-SECURITY.md`.
+
+**I reviewed break-glass before adding anything, and it was already sound.** `activateEmergencyAccess` requires
+the distinct `privileged:break-glass` permission plus MFA and goes through the same privileged-action approval
+machinery; the TTL is clamped between `MIN_EMERGENCY_TTL_SECONDS` and `MAX_EMERGENCY_TTL_SECONDS` by
+`normalizeEmergencyTtl`, so no caller can request an unbounded grant; `requiresExpiry`/`applyExpiry` enforce
+the end of the window lazily on access, so expiry does not depend on a scheduled job running; revocation
+exists; every transition writes both an audit row and a `SecurityEvent`. Adding a second gate there would have
+been redundant, and the standing instruction is to review before adding.
+
+**The gap was post-incident review.** The common path from temporary emergency grant to permanent one is not a
+failure to expire — it is that the window closes and no named person ever records what happened inside it. An
+expired, unreviewed record is indistinguishable from an expired, abused one.
+
+**The obligation is a database constraint, not a dashboard flag.** `chk_emergency_review_complete` requires a
+timestamp _and_ a named reviewer _and_ non-empty notes before `REVIEWED` is accepted; `chk_emergency_review_only_for_emergency`
+keeps the column meaningful; `chk_emergency_review_after_window` blocks backdating a review to look timely.
+A review that lives only in a service method is advisory — anything writing the row directly could leave a
+window closed and unreviewed with nothing objecting. **This was verified, not assumed:** removing
+`chk_emergency_review_complete` from the migration made exactly two tests fail — the two that attempt the
+bypass with direct SQL — and restoring it returned 15/15. The guard is load-bearing.
+
+The **backfill marks closed emergency windows as `PENDING_REVIEW`** and deliberately does not synthesise a
+review, reviewer or notes for them: those windows have no recorded review, and inventing one would falsify
+security evidence. **Reviews are not amendable** — a review is evidence of what a named person concluded at a
+moment, so a wrong review is corrected by a new record, not an overwritten one. `down()` **refuses** to run
+while any review record exists, because rolling back would erase security-audit evidence.
+
+The operations centre now surfaces unreviewed emergency access as a `SECURITY` item when the review service is
+present. **Urgency escalates with age, not count** — one window forgotten for a week is worse than five
+reviewed promptly; past 24 hours outstanding it is `IMMEDIATE`. An unreadable review state is `unavailable` and
+forces `partial`, never `clear`. The dependency is `@Optional()` so the centre stays constructible without the
+authorization graph; the DI wiring test proved this was required, not defensive.
+
+**No new permission, scope or approval path was invented**, and no reviewer assignment or deadline was
+fabricated — who must review, and by when, is a product-owner decision that the system records the obligation
+and its age against rather than guessing.
+
+Known gaps from Group 21: no reviewer assignment or SLA; no notification when a review becomes owed
+(`NoneAlertChannel` is still dark — the alert-creation/delivery distinction is unchanged); review is
+recording-only and triggers no disciplinary or escalation workflow; no review UI.
+
 ### Group 20 — operations centre
 
 `src/operations/operations-centre.service.ts`, `test/operations-centre.spec.ts` (15 assertions),
@@ -688,8 +736,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 21–40 remain: admin operations
-centre, operational security, break-glass, fraud/risk, compliance, complaints, disputes, mobile support,
+Groups 22–40 remain: fraud/risk, compliance, complaints, disputes, mobile support,
 SMS/email, privacy/retention, performance harness, CI release gates, the PostgreSQL matrix, sandbox
 readiness, mobile release, browser acceptance, readiness gate, journeys A–J, consolidated acceptance, and
 the final handoff.
@@ -731,6 +778,16 @@ Known gaps from Group 16: no log shipping, aggregation, retention policy or samp
 decisions, not implemented here. Redaction is name-based, so a secret in a generically named field is not
 caught; `redactionFailure` records are emitted but not counted, alerted on (Group 19) or exported as a metric
 (Group 17).
+
+**OUTSTANDING REQUIREMENT (must be resolved before final consolidated acceptance).** Worker _supervision_ does
+not establish automated worker _execution_. The four workers each own an `onModuleInit` interval driver, so
+they start when the application starts — but nothing in this repository documents, provisions or tests a
+deployable mechanism that guarantees essential background workers are actually invoked in a running
+deployment. Supervision observes; it does not start anything. This must be resolved with a documented,
+deployable and tested invocation mechanism — an internal scheduler, a dedicated worker process, or an
+external scheduler — **without** introducing competing job ownership or financial execution authority: the
+database leases (Group 14), fencing, idempotency and the existing financial authority remain authoritative.
+Do not treat Group 15 as satisfying automated execution readiness.
 
 Known gaps from Group 15: there is no fleet-wide scheduler, leader election or distributed cron, by design —
 each instance runs its own timers and correctness rests on the database mechanisms, so the supervisor

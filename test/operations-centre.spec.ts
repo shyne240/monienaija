@@ -238,6 +238,61 @@ describe('Group 20 — operations centre', () => {
     });
   });
 
+  describe('unreviewed break-glass is visible where operators look (Group 21)', () => {
+    function withReviews(posture: unknown) {
+      const built = build();
+      const service = new OperationsCentreService(
+        { manager: {} } as DataSource,
+        built.leases,
+        built.supervisor,
+        built.integrity as never,
+        new AlertingService(
+          { manager: {} } as DataSource,
+          built.leases,
+          built.supervisor,
+          built.integrity as never,
+        ),
+        posture instanceof Error
+          ? ({ posture: () => Promise.reject(posture) } as never)
+          : ({ posture: () => Promise.resolve(posture) } as never),
+      );
+      return service;
+    }
+
+    it('lists emergency access owing a review', async () => {
+      const service = withReviews({ pending: 2, reviewed: 5, oldestAwaitingSeconds: 600 });
+      const view = await service.view();
+      const item = view.items.find((entry) => entry.id === 'security:emergency-review-owed');
+      expect(item?.area).toBe('SECURITY');
+      expect(item?.urgency).toBe('ROUTINE');
+      expect(item?.context).toMatchObject({ pending: 2 });
+    });
+
+    it('escalates by how long the review has been owed, not by how many', async () => {
+      // One forgotten break-glass window is worse than five reviewed promptly: an unreviewed emergency grant
+      // is how a temporary one becomes permanent.
+      const service = withReviews({ pending: 1, reviewed: 0, oldestAwaitingSeconds: 90_000 });
+      const view = await service.view();
+      expect(
+        view.items.find((entry) => entry.id === 'security:emergency-review-owed')?.urgency,
+      ).toBe('IMMEDIATE');
+    });
+
+    it('reports nothing when no review is owed', async () => {
+      const service = withReviews({ pending: 0, reviewed: 3, oldestAwaitingSeconds: null });
+      const view = await service.view();
+      expect(view.items.some((entry) => entry.id === 'security:emergency-review-owed')).toBe(false);
+    });
+
+    it('treats an unreadable review state as unavailable, not as clear', async () => {
+      const service = withReviews(new Error('authority db down'));
+      const view = await service.view();
+      expect(view.partial).toBe(true);
+      expect(view.unavailable.map((entry) => entry.area)).toContain('SECURITY');
+      expect(view.clear).toBe(false);
+    });
+  });
+
   describe('it is read-only and says so', () => {
     it('states that no remediation is offered', async () => {
       const { service } = build();

@@ -88,6 +88,29 @@ export class PrivilegedActionApproval {
   @Column({ name: 'consumed_at', type: 'timestamptz', nullable: true })
   consumedAt!: Date | null;
 
+  /**
+   * Group 21 — post-incident review obligation for emergency access.
+   *
+   * Set to `PENDING_REVIEW` when the emergency window closes (by expiry or revocation). Null for
+   * non-emergency approvals and for emergency approvals whose window is still open — see the CHECK
+   * constraints in `1785753600608`, which also refuse a `REVIEWED` row with no reviewer, no timestamp or
+   * empty notes, and refuse a review timestamped before the window it reviews.
+   */
+  @Column({ name: 'emergency_review_status', type: 'varchar', length: 16, nullable: true })
+  emergencyReviewStatus!: 'PENDING_REVIEW' | 'REVIEWED' | null;
+
+  @Column({ name: 'emergency_reviewed_at', type: 'timestamptz', nullable: true })
+  emergencyReviewedAt!: Date | null;
+
+  @Column({ name: 'emergency_reviewed_by', type: 'varchar', length: 160, nullable: true })
+  emergencyReviewedBy!: string | null;
+
+  @Column({ name: 'emergency_review_notes', type: 'varchar', length: 1000, nullable: true })
+  emergencyReviewNotes!: string | null;
+
+  @Column({ name: 'emergency_window_closed_at', type: 'timestamptz', nullable: true })
+  emergencyWindowClosedAt!: Date | null;
+
   @VersionColumn({ type: 'integer', default: 1 })
   version!: number;
 

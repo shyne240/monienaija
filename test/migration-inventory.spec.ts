@@ -65,12 +65,12 @@ describe('migration inventory', () => {
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at the integrity snapshots migration', () => {
-    // ARENA 3D Group 18 superseded the outbox leases migration as the newest. Earlier identifiers remain
+  it('ends at the emergency access review migration', () => {
+    // ARENA 3D Group 21 superseded the integrity snapshots migration as the newest. Earlier identifiers remain
     // present and unchanged (asserted below); only the "latest" pin moves.
     expect(migrations.at(-1)).toMatchObject({
-      timestamp: '1785753600607',
-      name: 'IntegritySnapshots1785753600607',
+      timestamp: '1785753600608',
+      name: 'EmergencyAccessReviewRequirement1785753600608',
     });
   });
 
@@ -83,8 +83,14 @@ describe('migration inventory', () => {
   it('contains the banking chain in order within the allocated range', () => {
     const banking = migrations
       .filter((migration) => migration.timestamp.startsWith('17857536006'))
+      // `1785753600606` onward are ARENA 3D groups appended after the banking range, not part of the
+      // banking chain. The original assertion covered the whole `17857536006xx` prefix because nothing else
+      // was allocated there yet; scoping it to the reserved 600–605 window keeps the original guarantee
+      // (banking ids are contiguous and never renumbered) without asserting that no later migration may
+      // exist. A genuine gap or renumbering inside 600–605 still fails.
+      .filter((migration) => Number(migration.timestamp.slice(-3)) <= 605)
       .map((migration) => migration.timestamp);
-    // Contiguous and ordered: 600..603, the allocation reserved for banking. A gap would mean an
+    // Contiguous and ordered: 600..605, the allocation reserved for banking. A gap would mean an
     // identifier was skipped or renumbered, which the production readiness check treats as failure.
     expect(banking).toEqual([
       '1785753600600',
@@ -93,8 +99,6 @@ describe('migration inventory', () => {
       '1785753600603',
       '1785753600604',
       '1785753600605',
-      '1785753600606',
-      '1785753600607',
     ]);
   });
 
