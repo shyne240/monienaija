@@ -12,7 +12,7 @@ import { AuditService } from '../src/operations/audit.service';
 import { OutboxService } from '../src/operations/outbox.service';
 import { PolicyAgentFloatFundingAuthority } from '../src/banking/agent-float-funding-authority';
 import { GovernedFinancialFixture } from './support/governed-financial-fixture';
-import { createIntegrationDataSource } from './support/pg-harness';
+import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 
 /**
  * Agent operating float funded by a verified inbound payment.
@@ -61,7 +61,9 @@ describe('Agent float funding from verified inbound (real PostgreSQL)', () => {
 
   afterAll(async () => {
     await app?.close();
-    await db?.destroy();
+    // Nest may close the injected DataSource itself; the harness safely handles either state
+    // and also removes this run's isolated test database.
+    if (db) await destroyIntegrationDataSource(db);
   });
 
   /**
