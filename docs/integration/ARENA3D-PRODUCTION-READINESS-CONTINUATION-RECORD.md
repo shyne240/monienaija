@@ -362,6 +362,53 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 32 — mobile release readiness
+
+`src/mobile/mobile-release-readiness.service.ts`, `test/mobile-release-readiness.spec.ts` (21 assertions) and
+`docs/integration/MOBILE-RELEASE-READINESS.md`.
+
+**The finding that matters.** Both apps ship `version: "1.0.0"`, `ios.buildNumber: "1"`, `android.versionCode: 1`.
+Group 25's build register resolves on `(client, platform, version)`, so two separate products sharing one version
+string means "is 1.0.0 supported?" has two answers and a support agent reading a screenshot cannot tell which app
+was meant. The register is correct; the artefacts collide.
+
+**The second finding.** Neither app declares `runtimeVersion`. Over-the-air updates are scoped by it — a JS bundle
+may only reach a native binary whose native modules it matches — so OTA updates must stay disabled until the field
+is decided. Shipping one against an unscoped binary is the classic way to brick an installed base.
+
+Both are `WARNING`, not `ERROR`: neither is a broken manifest, and neither is a decision this mission may make by
+invention. Repository report: **`WARNING`** — 4 pass (version format ×2, identifier stability ×2), 4 warn
+(cross-app version collision ×2, missing runtime version ×2), 0 error.
+
+**What is checked, and why each matters.** `version-format` (the register accepts only `major.minor.patch`; anything
+else leaves the build permanently `UNKNOWN` — served, never governed); `version-consistency` (a manifest disagreeing
+with its own `package.json` makes "what is in production?" unanswerable); iOS build number and Android version code
+(a store rejects a re-upload of an existing number); `build-number-alignment` (the platforms may diverge, but then
+support needs to know the platform); `identifier-uniqueness` (two apps cannot share a bundle or package identifier —
+unrecoverable after the first publication); `identifier-stability` (`ESTABLISHED_IDENTIFIERS` pins
+`ng.monienaija.agent` and `ng.monienaija.customer`, because changing one orphans every installed app rather than
+renaming it); `cross-app-version-collision`; `runtime-version`.
+
+**Verification.** Every risky rule is exercised against **synthetic releases** — `evaluateManifests` is a pure
+function over already-read manifests — because the failure cases cannot be created by editing the real files: an
+unparseable version, two versions for one artefact, a changed bundle identifier, two apps sharing an identifier, a
+build number a store would refuse, and platform drift. A genuinely consistent release is asserted to come back
+`PASS`, so the suite cannot pass by warning about everything. Mutation-verified: pointing the agent's iOS bundle
+identifier at `ng.monienaija.customer` produced **2 failures, 19 passes**; restored and re-read from disk.
+
+A real parsing hazard was fixed while writing it: `String(value)` on an `unknown` yields `"[object Object]"`, which
+passes a non-empty check and then matches nothing. Fields go through a `text()` helper that returns the empty string
+for anything that is not a string or a finite number, so a malformed field reads as **missing**, never as present.
+`no-base-to-string` caught four instances.
+
+**Not certified:** no native build, no signing, no store submission, no installation on a device or emulator, no OTA
+published or delivered, no store review. A `PASS` on `version-format` means the version is *registerable*, not
+registered — Group 25 deliberately seeds nothing, because the support floor is a product decision. The two warnings
+are recorded, not resolved.
+
+**Decisions required:** the per-app version scheme; the `runtimeVersion` policy and whether OTA is enabled at all;
+and whether either app has already been submitted, since that fixes the next build number.
+
 ### Group 31 — sandbox integration readiness
 
 `test/sandbox-integration-readiness.integration.spec.ts` (11 integration assertions) and
@@ -1160,7 +1207,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 32–40 remain: mobile release readiness, browser acceptance, the readiness gate, journeys A–J,
+Groups 33–40 remain: browser acceptance, the readiness gate, journeys A–J,
 consolidated acceptance, and the final handoff.
 
 Known gaps carried forward: no secret-manager backend is selected (the contract exists; the environment
