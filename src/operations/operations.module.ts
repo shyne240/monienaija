@@ -10,6 +10,7 @@ import { IdempotencyRecord } from './idempotency-record.entity';
 import { IdempotencyService } from './idempotency.service';
 import { MetricsService } from './metrics.service';
 import { OperationalMetric } from './operational-metric.entity';
+import { OperationalMetricsService } from './operational-metrics.service';
 import { OutboxEvent } from './outbox-event.entity';
 import { OutboxService } from './outbox.service';
 import { OperationsController } from './operations.controller';
@@ -33,6 +34,7 @@ import { WorkerSupervisorService } from './worker-supervisor.service';
     IdempotencyService,
     MetricsService,
     OutboxService,
+    OperationalMetricsService,
     WorkerLeaseService,
     // Group 15 supervision. Exported from this @Global module so any worker can report into it without a
     // new module edge — all four worker modules already import OperationsModule.
@@ -44,6 +46,7 @@ import { WorkerSupervisorService } from './worker-supervisor.service';
     IdempotencyService,
     MetricsService,
     OutboxService,
+    OperationalMetricsService,
     WorkerLeaseService,
     WorkerSupervisorService,
   ],

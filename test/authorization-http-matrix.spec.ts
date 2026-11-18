@@ -39,6 +39,8 @@ import { MetricsService } from '../src/operations/metrics.service';
 import { OutboxService } from '../src/operations/outbox.service';
 import { ConfigService } from '@nestjs/config';
 
+import { OperationalMetricsService } from '../src/operations/operational-metrics.service';
+import { WorkerLeaseService } from '../src/operations/worker-lease.service';
 import { WorkerSupervisorService } from '../src/operations/worker-supervisor.service';
 import { CustomerAuthenticationRuntimeService } from '../src/customer-authentication/customer-authentication-runtime.service';
 import { DepositController } from '../src/deposit/deposit.controller';
@@ -359,6 +361,15 @@ describe('HTTP authorization matrix', () => {
           useValue: new WorkerSupervisorService({
             get: () => undefined,
           } as unknown as ConfigService),
+        },
+        {
+          // Group 17 added a metrics dependency to OperationsController.
+          provide: OperationalMetricsService,
+          useValue: new OperationalMetricsService(
+            dataSource as unknown as DataSource,
+            new WorkerLeaseService(),
+            new WorkerSupervisorService({ get: () => undefined } as unknown as ConfigService),
+          ),
         },
         { provide: DepositService, useValue: depositService },
         { provide: WithdrawalService, useValue: withdrawalService },

@@ -16,7 +16,8 @@ Continuation record. Updated as each group lands; the workspace is the source of
 | Groups 9, 10, 11                            | `62368a3b`    | Secret resolution and rotation, runtime/authority separation proof, migration workflow. |
 | Groups 13, 14                               | `cc6392a7`    | Recovery objectives and resume policy; outbox leases and dead letters.                  |
 | Group 15                                    | `f8bb5fdd`    | Worker supervision without a second scheduler.                                          |
-| Group 16                                    | _this commit_ | Sink-level log redaction; compound secret names.                                        |
+| Group 16                                    | `6451a5c2`    | Sink-level log redaction; compound secret names.                                        |
+| Group 17                                    | _this commit_ | Operational metrics; the DLQ and worker signals finally have a consumer.                |
 
 Branch: `arena/defdd0fd-monienaija`. There is no upstream; push with `git push origin <branch>`.
 
@@ -355,6 +356,36 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 17 — operational metrics, and the signals that had no consumer
+
+`src/operations/operational-metrics.service.ts`, `test/operational-metrics.spec.ts` (11 assertions),
+`GET /internal/operational-metrics`, `GET /internal/metrics/prometheus`, and
+`docs/integration/OPERATIONAL-METRICS.md`.
+
+**The gap was not "no metrics".** It was that Groups 14 and 15 built genuine observability primitives and
+nothing consumed them: `WorkerLeaseService.health()` (pending, dead-lettered, stalled, oldest age) and
+`deadLetters()` had **no callers at all**, and `WorkerScheduler.report()` existed only as a JSON endpoint a
+human had to pull. The dead-letter queue — the mechanism added so a poison event could never retry forever —
+was invisible unless an operator ran the query by hand.
+
+**What was added.** A collection point: queue gauges read from PostgreSQL, per-worker gauges and counters
+from the supervisor, a one-hot `worker_supervision_status`, and a hand-written Prometheus exposition
+(no client library — the surface has no histograms and a registry would add lifecycle with no caller).
+
+**Two rules make the output usable, and both are tested:**
+
+- **A missing metric is not a zero metric.** `unavailable[]` names every signal that could not be collected
+  and the affected series are **absent**. Verified against a real database with no `outbox_events` table:
+  `unavailable: [{signal: "outbox"}]`, 0 outbox samples, **27 worker samples still emitted**. An endpoint
+  that 500s because one source failed would remove the wrong information during an incident.
+- **Fleet-wide and process-local signals are different.** `outbox_*` is read from the database and is
+  fleet-wide; `worker_*` is one process's observation. Mixing them unlabelled would let a dashboard average
+  away a dead instance.
+
+Labels are restricted to a closed set (`worker`, `status`) — **no identifier ever appears in a label**, which
+is both a cardinality limit and a privacy boundary, asserted in the suite. Label escaping is exercised
+through the real formatter, because an unescaped quote produces an exposition a scraper rejects wholesale.
+
 ### Group 16 — structured logging and redaction at the sink
 
 `src/production/pino-config.ts`, `src/common/sensitive-data-redaction.ts`,
@@ -535,7 +566,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 17–40 remain: metrics/health, integrity monitoring, alerting, admin operations
+Groups 18–40 remain: integrity monitoring, alerting, admin operations
 centre, operational security, break-glass, fraud/risk, compliance, complaints, disputes, mobile support,
 SMS/email, privacy/retention, performance harness, CI release gates, the PostgreSQL matrix, sandbox
 readiness, mobile release, browser acceptance, readiness gate, journeys A–J, consolidated acceptance, and
@@ -549,6 +580,12 @@ categories in one database.
 Known gaps carried forward from Group 12: no fixture seeds all eleven backup categories in one database;
 the restore requires superuser; and off-site storage, encryption at rest, retention and point-in-time
 recovery are infrastructure decisions that are not implemented.
+
+Known gaps from Group 17: no scraper, dashboard, retention or histogram — `worker_last_duration_ms` is a
+latest observation, not a distribution, so percentiles are not available. Every threshold in the runbook is
+a human reading; wiring them to a channel is Group 19. The Prometheus route requires `metrics.view`
+authentication; whether an anonymous scrape path should exist is a deployment decision this group does not
+make.
 
 Known gaps from Group 16: no log shipping, aggregation, retention policy or sampling — those are deployment
 decisions, not implemented here. Redaction is name-based, so a secret in a generically named field is not

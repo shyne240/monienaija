@@ -8,6 +8,7 @@ import { DiagnosticsService } from './diagnostics.service';
 import { MetricsService } from './metrics.service';
 import { OutboxService } from './outbox.service';
 import { OutboxEventStatus } from './operations.enums';
+import { OperationalMetricsService } from './operational-metrics.service';
 import { WorkerSupervisorService } from './worker-supervisor.service';
 
 interface AuthenticatedRequest {
@@ -46,6 +47,7 @@ export class OperationsController {
     private readonly outboxService: OutboxService,
     private readonly auth: AuthorizationService,
     private readonly workerSupervisor: WorkerSupervisorService,
+    private readonly operationalMetrics: OperationalMetricsService,
   ) {}
 
   @Get('metrics')
@@ -70,6 +72,30 @@ export class OperationsController {
    * The payload states its own scope. It is **process-local**: it says what this instance has observed, and
    * does not claim that work is progressing fleet-wide.
    */
+  /**
+   * Group 17 — queue and worker metrics with `unavailable` named explicitly.
+   *
+   * A zero and an unreadable signal are different facts; the payload keeps them distinguishable.
+   */
+  @Get('operational-metrics')
+  async getOperationalMetrics(@Req() req: AuthenticatedRequest) {
+    await this.requireFunction(req, 'metrics.view');
+    return this.operationalMetrics.snapshot();
+  }
+
+  /**
+   * Group 17 — Prometheus text exposition.
+   *
+   * Same `metrics.view` permission as the JSON view rather than an unauthenticated scrape path. Adding an
+   * anonymous `/metrics` route would be a new public surface, and whether a scraper can reach it without a
+   * credential is a deployment decision that is not this group's to make.
+   */
+  @Get('metrics/prometheus')
+  async getPrometheusMetrics(@Req() req: AuthenticatedRequest) {
+    await this.requireFunction(req, 'metrics.view');
+    return this.operationalMetrics.prometheus();
+  }
+
   @Get('workers')
   async getWorkers(@Req() req: AuthenticatedRequest) {
     await this.requireFunction(req, 'diagnostics.view');
