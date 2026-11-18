@@ -366,44 +366,128 @@
       "finished": "2026-11-18T21:43:29.657Z"
     },
     "test/arena3d-banking-journeys.integration.spec.ts": {
-      "status": "RUNNING",
-      "started": "2026-11-18T21:43:29.658Z"
+      "status": "PASS",
+      "started": "2026-11-18T21:43:29.658Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:43:58.926Z"
     },
     "test/arena4-customer-journey.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:43:58.927Z",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:44:33.533Z"
     },
     "test/arena4-customer-kyc-view.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:44:33.535Z",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:44:59.849Z"
     },
     "test/b2f-finance-lifecycle.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:44:59.850Z",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:45:35.838Z"
     },
     "test/banking-dispatch-worker.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:45:35.838Z",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:45:48.937Z"
     },
     "test/banking-fee-binding.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:45:48.937Z",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:46:01.192Z"
     },
     "test/banking-inbound-service.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:46:01.192Z",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:46:13.346Z"
     },
     "test/banking-operation-records.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:46:13.346Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:46:25.461Z"
     },
     "test/banking-outbound-service.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:46:25.461Z",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:46:37.587Z"
     },
     "test/banking-provider-governance-schema.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:46:37.588Z",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:46:49.688Z"
     },
     "test/banking-provider-governance-service.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:46:49.688Z",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:47:01.989Z"
     },
     "test/banking-reconciliation.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:47:01.989Z",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:47:13.972Z"
     },
     "test/banking-virtual-account-service.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "RUNNING",
+      "started": "2026-11-18T21:47:13.973Z"
     },
     "test/banking-webhook-ingestion.integration.spec.ts": {
       "status": "PENDING"
