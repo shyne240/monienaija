@@ -476,7 +476,10 @@ export class AgentCashOutService {
           manager,
           agentId,
         );
-        await this.financialEligibility.require(manager, customerId, { lockMode: 'SHARE' });
+        // Ledger's wallet boundary takes UPDATE on this customer before posting. Take that
+        // same lock before the shared OTP-budget rows: two withdrawals must not both hold
+        // SHARE while one waits for the budget and the other tries to upgrade the customer.
+        await this.financialEligibility.require(manager, customerId, { lockMode: 'UPDATE' });
         const intents = await manager.query<Array<{ status: string; valid: boolean }>>(
           `SELECT i.status, (i.expires_at>clock_timestamp()) AS valid
              FROM cash_out_intents i

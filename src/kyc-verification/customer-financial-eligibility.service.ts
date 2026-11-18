@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
+import { isRetryableTransactionError } from '../common/serializable-transaction';
 import { decideTier } from './kyc-tier-decision';
 import { KycTierEvidenceReader } from './kyc-tier-evidence.reader';
 import { KycTierPolicyService } from './kyc-tier-policy.service';
@@ -58,7 +59,10 @@ export class CustomerFinancialEligibilityService {
     let policy;
     try {
       policy = await this.policies.effective(manager, now);
-    } catch {
+    } catch (error) {
+      // A database-aborted transaction has made no decision about the policy. Preserve
+      // the driver signal for the transaction owner's existing bounded retry, never retry here.
+      if (isRetryableTransactionError(error)) throw error;
       throw new ServiceUnavailableException('Customer financial policy is unavailable');
     }
     if (!policy) throw new ServiceUnavailableException('Customer financial policy is unavailable');
@@ -82,7 +86,8 @@ export class CustomerFinancialEligibilityService {
     let source;
     try {
       source = await this.reader.read(manager, customerId);
-    } catch {
+    } catch (error) {
+      if (isRetryableTransactionError(error)) throw error;
       throw new ServiceUnavailableException('Trusted KYC evidence is unavailable');
     }
     if (!source) throw new ServiceUnavailableException('Trusted KYC evidence is unavailable');
