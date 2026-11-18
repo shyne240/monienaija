@@ -1079,6 +1079,75 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     expect(await dataSource.query(`SELECT id FROM ledger_journals`)).toHaveLength(0);
   });
 
+  it('uses configured database-clock quote expiry, session cap and immutable replay', async () => {
+    const sender = await createCustomerWithCredential();
+    const receiver = await createCustomerWithCredential();
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const { ConfigService } = await import('@nestjs/config');
+    const wallets = app.get(WalletService);
+    const source = await wallets.createWallet({
+      customerId: sender.customerId,
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    const destination = await wallets.createWallet({
+      customerId: receiver.customerId,
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    const config = app.get(ConfigService);
+    const original = config.get.bind(config);
+    let ttl: unknown = 120;
+    const spy = jest
+      .spyOn(config, 'get')
+      .mockImplementation(((name: string, ...args: unknown[]) =>
+        name === 'WALLET_TRANSFER_QUOTE_TTL_SECONDS'
+          ? ttl
+          : original<unknown>(name, ...(args as []))) as typeof config.get);
+    try {
+      const sessions: Array<{ expires_at: Date }> = await dataSource.query(
+        `WITH changed AS (UPDATE authentication_sessions SET expires_at=clock_timestamp()+interval '40 seconds' WHERE customer_id=$1 RETURNING expires_at) SELECT expires_at FROM changed`,
+        [sender.customerId],
+      );
+      const path = '/api/v1/customers/me/transfer-quotes';
+      const key = randomUUID();
+      const make = (idempotencyKey: string) =>
+        request(app.getHttpServer())
+          .post(path)
+          .set('Authorization', `Bearer ${sender.token}`)
+          .set('Idempotency-Key', idempotencyKey)
+          .send({
+            sourceWalletId: source.id,
+            destinationWalletId: destination.id,
+            amountMinor: '100',
+            currency: 'NGN',
+          });
+      const first = await make(key).expect(201);
+      expect(new Date(first.body.expiresAt as string).getTime()).toBe(
+        sessions[0]!.expires_at.getTime(),
+      );
+      ttl = 1;
+      const replay = await make(key).expect(201);
+      expect(replay.body.expiresAt).toBe(first.body.expiresAt);
+      await expect(
+        dataSource.query(
+          `UPDATE payment_quotes SET expires_at=expires_at+interval '1 minute' WHERE id=$1`,
+          [first.body.quoteId],
+        ),
+      ).rejects.toThrow();
+      const short = await make(randomUUID()).expect(201);
+      await dataSource.query(`SELECT pg_sleep(1.1)`);
+      const status = await request(app.getHttpServer())
+        .get(`${path}/${short.body.quoteId as string}`)
+        .set('Authorization', `Bearer ${sender.token}`)
+        .expect(200);
+      expect(status.body.status).toBe('EXPIRED');
+      expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('posts four authenticated governed wallet transfer directions with typed evidence and reconciliation', async () => {
     const sender = await createCustomerWithCredential();
     const receiver = await createCustomerWithCredential();

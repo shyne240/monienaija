@@ -10,6 +10,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { AgentService, normalizeAgentService } from '../agent/agent-service.enum';
 import { normalizeCurrency, parsePositiveMinorUnits } from '../common/money';
@@ -31,7 +32,22 @@ import {
   type FinancialContextResolver,
 } from '../institution/financial-context-resolver';
 
-const QUOTE_LIFETIME_MS = 5 * 60 * 1000;
+/** Development/test only; production and staging must configure an approved duration. */
+export function walletTransferQuoteTtlSeconds(raw: unknown, environment: string): number {
+  if (raw === undefined || raw === null || raw === '') {
+    if (environment === 'development' || environment === 'test') return 300;
+    throw new ServiceUnavailableException('Wallet transfer quote lifetime is not configured');
+  }
+  const value =
+    typeof raw === 'number'
+      ? raw
+      : typeof raw === 'string' && /^\d+$/.test(raw)
+        ? Number(raw)
+        : NaN;
+  if (!Number.isSafeInteger(value) || value < 1 || value > 86_400)
+    throw new ServiceUnavailableException('Wallet transfer quote lifetime is invalid');
+  return value;
+}
 
 export interface TransferQuoteView {
   quoteId: string;
@@ -86,6 +102,7 @@ export class TransferQuoteService {
     private readonly pricing: TransferPricingService,
     private readonly references: PaymentReferenceService,
     private readonly boundary: WalletFinancialBoundaryService,
+    private readonly config: ConfigService,
     @Inject(FINANCIAL_CONTEXT_RESOLVER) private readonly financialContext: FinancialContextResolver,
   ) {}
 
@@ -182,6 +199,7 @@ export class TransferQuoteService {
               request_hash: string;
               status: PaymentQuoteStatus;
               expires_at: Date;
+              expired: boolean;
               source_wallet_id: string;
               destination_wallet_id: string;
               recipient_type: 'CUSTOMER' | 'AGENT';
@@ -194,7 +212,7 @@ export class TransferQuoteService {
               session_id: string;
             }>
           >(
-            `SELECT q.id,q.request_hash,q.status,q.expires_at,b.session_id,b.source_wallet_id,b.destination_wallet_id,b.recipient_type,b.recipient_id,
+            `SELECT q.id,q.request_hash,q.status,q.expires_at, (q.expires_at <= clock_timestamp()) AS expired,b.session_id,b.source_wallet_id,b.destination_wallet_id,b.recipient_type,b.recipient_id,
                      q.amount_minor::text,q.currency,q.fee_minor::text,q.vat_minor::text,q.total_minor::text
                 FROM payment_quotes q JOIN wallet_transfer_quote_bindings b ON b.quote_id=q.id
                WHERE q.idempotency_key=$1 AND b.principal_type=$2 AND b.principal_id=$3`,
@@ -220,8 +238,7 @@ export class TransferQuoteService {
               totalDebitMinor: quote.total_minor,
               expiresAt: quote.expires_at,
               status:
-                quote.status === PaymentQuoteStatus.ACTIVE &&
-                quote.expires_at.getTime() <= Date.now()
+                quote.status === PaymentQuoteStatus.ACTIVE && quote.expired
                   ? PaymentQuoteStatus.EXPIRED
                   : quote.status,
             };
@@ -281,10 +298,17 @@ export class TransferQuoteService {
             PaymentType.QUOTE,
             quoteId,
           );
-          const expiresAt = new Date(
-            Math.min(Date.now() + QUOTE_LIFETIME_MS, sessionExpiry.getTime()),
+          const ttlSeconds = walletTransferQuoteTtlSeconds(
+            this.config.get<unknown>('WALLET_TRANSFER_QUOTE_TTL_SECONDS'),
+            this.config.get<string>('NODE_ENV') ?? 'development',
           );
-          if (expiresAt.getTime() <= Date.now())
+          const clock = await manager.query<Array<{ expires_at: Date; now: Date }>>(
+            `SELECT LEAST(clock_timestamp() + $1 * interval '1 second', $2::timestamptz) AS expires_at,
+                    clock_timestamp() AS now`,
+            [ttlSeconds, sessionExpiry],
+          );
+          const expiresAt = clock[0]!.expires_at;
+          if (expiresAt.getTime() <= clock[0]!.now.getTime())
             throw new UnauthorizedException('Session has expired');
           await manager.getRepository(PaymentQuote).save(
             manager.getRepository(PaymentQuote).create({
