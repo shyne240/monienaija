@@ -70,6 +70,10 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     // TRUNCATE also clears the singleton tier-policy head + versions, so re-seed the controlled
     // approved policy before each case (otherwise eligibility correctly reports "policy unavailable").
     await evidence.seedPolicy(dataSource);
+    const { ProductCatalogSeedService } = await import(
+      '../src/product-catalog/product-catalog-seed.service'
+    );
+    await app.get(ProductCatalogSeedService).seedIfEmpty();
   });
 
   async function createCustomerWithCredential(
@@ -1016,7 +1020,256 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
-  it('authenticates quote and PIN confirmation over HTTP while agent posting stays closed', async () => {
+  it('posts four authenticated wallet transfer directions with typed evidence and reconciliation', async () => {
+    const sender = await createCustomerWithCredential();
+    const receiver = await createCustomerWithCredential();
+    const tokenA = await createAgentToken();
+    const rowsA: Array<{ id: string; agent_class_id: string }> = await dataSource.query(
+      `SELECT id,agent_class_id FROM agents`,
+    );
+    const agentA = rowsA[0]!;
+    const tokenB = await createAgentToken();
+    const rowsB: Array<{ id: string; agent_class_id: string }> = await dataSource.query(
+      `SELECT id,agent_class_id FROM agents WHERE id<>$1`,
+      [agentA.id],
+    );
+    const agentB = rowsB[0]!;
+    for (const agent of [agentA, agentB]) {
+      await dataSource.query(`UPDATE agent_classes SET applicable_services=$1 WHERE id=$2`, [
+        JSON.stringify(['WALLET_TRANSFER']),
+        agent.agent_class_id,
+      ]);
+      const code = `P2P_${agent.id.replace(/-/g, '').toUpperCase()}`;
+      await dataSource.query(
+        `INSERT INTO limit_profiles (code,name,kind,status,enabled,configuration_status,created_by) VALUES ($1,$1,'AGENT','ACTIVE',true,'CONFIGURED','test')`,
+        [code],
+      );
+      await dataSource.query(
+        `INSERT INTO limit_assignments (id,limit_profile_code,subject_type,subject_id,precedence,effective_from,is_active,created_by) VALUES ($1,$2,'AGENT_CLASS',$3,1,now()-interval '1 day',true,'test')`,
+        [randomUUID(), code, agent.agent_class_id],
+      );
+      for (const direction of ['INCOMING', 'OUTGOING'])
+        await dataSource.query(
+          `INSERT INTO limit_rules (id,limit_profile_code,product,direction,currency,dimension,limit_value_minor,effective_from,is_active,created_by) VALUES ($1,$2,'WALLET_TRANSFER',$3,'NGN','MAX_AMOUNT_PER_TX',100000,now()-interval '1 day',true,'test')`,
+          [randomUUID(), code, direction],
+        );
+    }
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const { LedgerService } = await import('../src/ledger/ledger.service');
+    const { CustomerTransactionPinService } = await import(
+      '../src/customer/customer-transaction-pin.service'
+    );
+    const { AgentAuthenticationService } = await import(
+      '../src/agent-authentication/agent-authentication.service'
+    );
+    const { AgentPasswordHashAlgorithm } = await import(
+      '../src/agent-authentication/agent-authentication.enums'
+    );
+    const { TransferReconciliationService } = await import(
+      '../src/reconciliation/transfer-reconciliation.service'
+    );
+    const wallets = app.get(WalletService),
+      ledger = app.get(LedgerService);
+    const create = (customerId: string) =>
+      wallets.createWallet({ customerId, currency: 'NGN', idempotencyKey: randomUUID() });
+    const source = await create(sender.customerId),
+      dest = await create(receiver.customerId),
+      a = await create(agentA.id),
+      b = await create(agentB.id);
+    const funding = await ledger.createAccount({
+      code: `p2ptest-${randomUUID()}`,
+      name: 'test',
+      accountType: 'ASSET' as any,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+    });
+    await ledger.postJournal({
+      idempotencyKey: randomUUID(),
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+      lines: [
+        { accountId: funding.id, direction: 'DEBIT' as any, amountMinor: '5000' },
+        { accountId: source.ledgerAccountId, direction: 'CREDIT' as any, amountMinor: '5000' },
+      ],
+    });
+    await app.get(CustomerTransactionPinService).setTransactionPin(sender.customerId, {
+      pinHash: encodePbkdf2('1234'),
+      hashAlgorithm: 'PBKDF2',
+      pinVersion: 1,
+      actor: sender.customerId,
+    });
+    await app.get(AgentAuthenticationService).setTransactionPin(agentA.id, {
+      pinHash: encodePbkdf2('1234'),
+      hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2,
+      pinVersion: 1,
+      actor: agentA.id,
+    });
+    const run = async (
+      kind: 'customers' | 'agents',
+      token: string,
+      sourceId: string | undefined,
+      destinationId: string,
+      amountMinor: string,
+    ) => {
+      const path = `/api/v1/${kind}/me/transfer-quotes`;
+      const quote = await request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          ...(sourceId ? { sourceWalletId: sourceId } : {}),
+          destinationWalletId: destinationId,
+          amountMinor,
+          currency: 'NGN',
+        })
+        .expect(201);
+      const key = randomUUID();
+      const result = await request(app.getHttpServer())
+        .post(`${path}/${quote.body.quoteId as string}/confirm`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', key)
+        .send({ pin: '1234' })
+        .expect(201);
+      const replay = await request(app.getHttpServer())
+        .post(`${path}/${quote.body.quoteId as string}/confirm`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', key)
+        .send({ pin: '1234' })
+        .expect(201);
+      expect(replay.body.id).toBe(result.body.id);
+      expect(result.body).toMatchObject({ status: 'COMPLETED', amountMinor });
+      expect(
+        await app.get(TransferReconciliationService).reconcileTransfer(result.body.id as string),
+      ).toMatchObject({ status: 'PASS', discrepancies: [] });
+      return result.body.id as string;
+    };
+    const ids = [
+      await run('customers', sender.token, source.id, dest.id, '100'),
+      await run('customers', sender.token, source.id, a.id, '1000'),
+      await run('agents', tokenA, undefined, dest.id, '300'),
+      await run('agents', tokenA, undefined, b.id, '200'),
+    ];
+    expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('3900');
+    expect((await wallets.getWalletBalance(dest.id)).balanceMinor).toBe('400');
+    expect((await wallets.getWalletBalance(a.id)).balanceMinor).toBe('500');
+    expect((await wallets.getWalletBalance(b.id)).balanceMinor).toBe('200');
+    const events: Array<{ event_type: string; aggregate_id: string }> = await dataSource.query(
+      `SELECT event_type,aggregate_id FROM outbox_events WHERE aggregate_id=ANY($1::uuid[]) AND event_type IN ('transfer.completed','wallet_transfer.completed')`,
+      [ids],
+    );
+    expect(events.filter((e) => e.event_type === 'transfer.completed')).toHaveLength(1);
+    expect(events.filter((e) => e.event_type === 'wallet_transfer.completed')).toHaveLength(3);
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(4);
+    expect(tokenB).toBeTruthy();
+    const { NotificationDispatcherService } = await import(
+      '../src/notification/notification-dispatcher.service'
+    );
+    const dispatcher = app.get(NotificationDispatcherService);
+    const mixed = await dataSource.query<
+      Array<{
+        event_type: string;
+        event_key: string;
+        aggregate_id: string;
+        payload: Record<string, unknown>;
+      }>
+    >(
+      `SELECT event_type,event_key,aggregate_id,payload FROM outbox_events WHERE aggregate_id=ANY($1::uuid[]) AND event_type='wallet_transfer.completed'`,
+      [ids],
+    );
+    for (const event of mixed) {
+      const outcome = await dataSource.transaction((manager) =>
+        dispatcher.dispatch(
+          {
+            eventType: event.event_type,
+            eventKey: event.event_key,
+            aggregateType: 'TRANSFER',
+            aggregateId: event.aggregate_id,
+            payload: event.payload,
+          },
+          manager,
+        ),
+      );
+      expect(outcome.deliveries).toHaveLength(2);
+      expect(outcome.deliveries.some((d) => d.recipientType === 'AGENT')).toBe(true);
+    }
+    // Re-evaluate product and class after quoting, and fail atomically if the outbox fails.
+    const agentPath = '/api/v1/agents/me/transfer-quotes';
+    const q = await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ destinationWalletId: dest.id, amountMinor: '50', currency: 'NGN' })
+      .expect(201);
+    const confirm = () =>
+      request(app.getHttpServer())
+        .post(`${agentPath}/${q.body.quoteId as string}/confirm`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .set('Idempotency-Key', 'p2p-retry-control')
+        .send({ pin: '1234' });
+    await dataSource.query(`UPDATE products SET enabled=false WHERE code='WALLET_TRANSFER'`);
+    await confirm().expect(503);
+    await dataSource.query(`UPDATE products SET enabled=true WHERE code='WALLET_TRANSFER'`);
+    await dataSource.query(`UPDATE agent_classes SET applicable_services='[]'::jsonb WHERE id=$1`, [
+      agentA.agent_class_id,
+    ]);
+    await confirm().expect(403);
+    await dataSource.query(`UPDATE agent_classes SET applicable_services=$1 WHERE id=$2`, [
+      JSON.stringify(['WALLET_TRANSFER']),
+      agentA.agent_class_id,
+    ]);
+    const { OutboxService } = await import('../src/operations/outbox.service');
+    const outbox = app.get(OutboxService);
+    const enqueue = outbox.enqueueOnce.bind(outbox);
+    const failure = jest.spyOn(outbox, 'enqueueOnce').mockImplementation(async (manager, event) => {
+      if (event.eventType === 'wallet_transfer.completed')
+        throw new Error('injected typed outbox failure');
+      return enqueue(manager, event);
+    });
+    try {
+      await confirm().expect(500);
+    } finally {
+      failure.mockRestore();
+    }
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(4);
+    expect((await wallets.getWalletBalance(a.id)).balanceMinor).toBe('500');
+    expect(
+      await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [q.body.quoteId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
+    await confirm().expect(201);
+    expect((await wallets.getWalletBalance(a.id)).balanceMinor).toBe('450');
+    const raceQuote = await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ destinationWalletId: b.id, amountMinor: '100', currency: 'NGN' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`${agentPath}/${raceQuote.body.quoteId as string}/confirm`)
+      .set('Authorization', `Bearer ${tokenB}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ pin: '1234' })
+      .expect(404);
+    const racers = await Promise.all(
+      [randomUUID(), randomUUID()].map((key) =>
+        request(app.getHttpServer())
+          .post(`${agentPath}/${raceQuote.body.quoteId as string}/confirm`)
+          .set('Authorization', `Bearer ${tokenA}`)
+          .set('Idempotency-Key', key)
+          .send({ pin: '1234' }),
+      ),
+    );
+    expect(racers.filter((result) => result.status === 201)).toHaveLength(1);
+    expect(racers.map((result) => ({ status: result.status, body: result.body }))).toEqual(
+      expect.arrayContaining([expect.objectContaining({ status: 409 })]),
+    );
+    expect((await wallets.getWalletBalance(a.id)).balanceMinor).toBe('350');
+    expect((await wallets.getWalletBalance(b.id)).balanceMinor).toBe('300');
+    expect(
+      await dataSource.query(`SELECT id FROM transfers WHERE status='COMPLETED'`),
+    ).toHaveLength(6);
+  });
+
+  it('authenticates quote and PIN confirmation over HTTP and refuses unconfigured agent limits', async () => {
     const sender = await createCustomerWithCredential();
     const receiver = await createCustomerWithCredential();
     const agentToken = await createAgentToken();

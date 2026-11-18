@@ -1,3 +1,4 @@
+import { requireTransferProduct } from './transfer-product';
 import { createHash, randomUUID } from 'node:crypto';
 
 import {
@@ -496,6 +497,7 @@ export class TransferService {
       }
       requireAgentWalletTransferCapability(participants[0]);
       requireAgentWalletTransferCapability(participants[1]);
+      await requireTransferProduct(manager, command.currency);
       confirmedPricing = await this.transferPricingService!.priceWithManager(manager, {
         amountMinor: command.amountMinor,
         currency: command.currency,
@@ -510,18 +512,15 @@ export class TransferService {
       }
     }
 
-    // The v1 commercial, limit and notification paths below are CUSTOMER-specific. Never
-    // process an agent (or unresolved/system owner) using those policies. This temporary gate
-    // is inside the wallet-locked transaction and precedes even a failed-transfer/outbox record;
-    // replay of an already committed result remains available above for safe recovery.
-    // ownerClass is NOT NULL in PostgreSQL. Missing class is tolerated only for historical
-    // direct unit constructions; an authenticated agent binding is never allowed through it.
+    // Agent wallets may enter only the quote/session/PIN-bound path above. Legacy
+    // unconfirmed callers and unresolved/system wallets never acquire agent authority.
     if (
-      command.ownership.kind === 'AGENT_SELF' ||
-      participants?.some((participant) => participant.type === 'AGENT') ||
-      [sourceWallet, destinationWallet].some(
-        (wallet) => wallet.ownerClass != null && wallet.ownerClass !== WalletOwnerClass.CUSTOMER,
-      )
+      !confirmedQuote &&
+      (command.ownership.kind === 'AGENT_SELF' ||
+        participants?.some((participant) => participant.type === 'AGENT') ||
+        [sourceWallet, destinationWallet].some(
+          (wallet) => wallet.ownerClass != null && wallet.ownerClass !== WalletOwnerClass.CUSTOMER,
+        ))
     ) {
       throw new ServiceUnavailableException(
         'Wallet transfer participant policy is not available for this wallet',
@@ -744,6 +743,9 @@ export class TransferService {
         for (const key of [limitIdempotencyKey, recipientLimitIdempotencyKey]) {
           if (key) await this.limitEnforcementService.releaseReservationsWithManager(manager, key);
         }
+        // Configuration/service outages are retryable and must not create a durable FAILED
+        // transfer that poisons the same idempotency key or consumes a confirmation attempt.
+        if (error instanceof HttpException && error.getStatus() >= 500) throw error;
         if (error instanceof HttpException) {
           const resp = error.getResponse() as { error?: string; code?: string; message?: string };
           const rawCode = resp && (resp.error || resp.code);

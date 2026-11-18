@@ -22,6 +22,7 @@ import { WalletOwnerClass, WalletStatus } from '../wallet/wallet.enums';
 import { assertWalletOwnership } from '../wallet/wallet-ownership';
 import { resolveTransferParticipants, type TransferParticipant } from './transfer-participant';
 import { TransferPricingService } from './transfer-pricing.service';
+import { requireTransferProduct } from './transfer-product';
 
 const QUOTE_LIFETIME_MS = 5 * 60 * 1000;
 
@@ -228,6 +229,7 @@ export class TransferQuoteService {
             source.ledgerAccountId,
             destination.ledgerAccountId,
           ]);
+          await requireTransferProduct(manager, currency);
           const price = await this.pricing.priceWithManager(manager, { amountMinor, currency });
           const quoteId = randomUUID();
           const reference = await this.references.nextReference(
@@ -391,9 +393,23 @@ export class TransferQuoteService {
     principal: AuthorizationPrincipal,
     quoteId: string,
   ): Promise<LockedTransferQuote> {
-    return this.dataSource.transaction('SERIALIZABLE', (manager) =>
-      this.lockForSession(manager, principal, quoteId),
-    );
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.dataSource.transaction('SERIALIZABLE', (manager) =>
+          this.lockForSession(manager, principal, quoteId),
+        );
+      } catch (error) {
+        const driver =
+          error instanceof QueryFailedError ? (error.driverError as { code?: string }) : null;
+        if (driver?.code !== '40001' && driver?.code !== '40P01') throw error;
+        if (attempt === 2)
+          throw new ConflictException({
+            code: 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED',
+            message: 'Quote is contended; retry with the same idempotency key',
+          });
+      }
+    }
+    throw new ConflictException('Quote is contended');
   }
 
   /** Link and use a quote only after its matching completed transfer is persisted in this transaction. */
