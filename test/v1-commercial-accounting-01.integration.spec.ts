@@ -1332,7 +1332,7 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     ).toBe(90000n);
   });
 
-  it('authenticated HTTP transfer and cash-in share the agent operating wallet under concurrency', async () => {
+  it('sustains bounded authenticated HTTP transfer and cash-in contention without duplicate posting', async () => {
     const { agent, wallet } = await createActiveAgentWithPin(
       [AgentService.WALLET_TRANSFER, AgentService.CASH_IN],
       '1234',
@@ -1386,42 +1386,86 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
           idempotencyKey: key,
           pin: '1234',
         });
-    const first = await quote();
-    const transferKey = randomUUID();
-    const cashKey = randomUUID();
-    const initial = await Promise.all([
-      transfer(first.body.quoteId as string, transferKey),
-      cashIn(cashKey),
-    ]);
-    expect(initial.map((r) => ({ status: r.status, body: r.body }))).toEqual([
-      expect.objectContaining({ status: 201 }),
-      expect.objectContaining({ status: 201 }),
-    ]);
-    expect(await walletBalance(wallet.ledgerAccountId)).toBe(40000n);
-    const replays = await Promise.all([
-      transfer(first.body.quoteId as string, transferKey),
-      cashIn(cashKey),
-    ]);
-    expect(replays[0].status).toBe(201);
-    expect(replays[0].body.id).toBe(initial[0].body.id);
-    expect(replays[1].status).toBe(201);
-    expect(replays[1].body.journalId).toBe(initial[1].body.journalId);
-    expect(await walletBalance(wallet.ledgerAccountId)).toBe(40000n);
-    const second = await quote();
-    const competing = await Promise.all([
-      transfer(second.body.quoteId as string, randomUUID()),
-      cashIn(randomUUID()),
-    ]);
-    expect(competing.filter((r) => r.status === 201)).toHaveLength(1);
-    expect(
-      competing.filter((r) => r.status !== 201).map((r) => ({ status: r.status, body: r.body })),
-    ).toEqual([expect.objectContaining({ status: 422 })]);
-    expect(await walletBalance(wallet.ledgerAccountId)).toBe(10000n);
-    expect(
-      (await walletBalance(destination.ledgerAccountId)) +
-        (await walletBalance(cashRecipient.walletLedgerAccountId)),
-    ).toBe(90000n);
-  });
+    const successfulTransferIds = new Set<string>();
+    const successfulCashJournals = new Set<string>();
+    const iterations = 12;
+    for (let iteration = 0; iteration < iterations; iteration++) {
+      // At the end of each prior round 10000 remains; restore exactly 100000.
+      if (iteration > 0) await fundWallet(wallet.ledgerAccountId, '90000');
+      const first = await quote();
+      const transferKey = randomUUID();
+      const cashKey = randomUUID();
+      const initial = await Promise.all([
+        transfer(first.body.quoteId as string, transferKey),
+        cashIn(cashKey),
+      ]);
+      expect(initial.map((r) => ({ status: r.status, body: r.body }))).toEqual([
+        expect.objectContaining({ status: 201 }),
+        expect.objectContaining({ status: 201 }),
+      ]);
+      successfulTransferIds.add(initial[0].body.id as string);
+      successfulCashJournals.add(initial[1].body.journalId as string);
+      expect(await walletBalance(wallet.ledgerAccountId)).toBe(40000n);
+      const replays = await Promise.all([
+        transfer(first.body.quoteId as string, transferKey),
+        cashIn(cashKey),
+      ]);
+      expect(replays[0].status).toBe(201);
+      expect(replays[0].body.id).toBe(initial[0].body.id);
+      expect(replays[1].status).toBe(201);
+      expect(replays[1].body.journalId).toBe(initial[1].body.journalId);
+      expect(await walletBalance(wallet.ledgerAccountId)).toBe(40000n);
+      const second = await quote();
+      const competingTransferKey = randomUUID();
+      const competingCashKey = randomUUID();
+      const competing = await Promise.all([
+        transfer(second.body.quoteId as string, competingTransferKey),
+        cashIn(competingCashKey),
+      ]);
+      expect(competing.filter((r) => r.status === 201)).toHaveLength(1);
+      expect(
+        competing.filter((r) => r.status !== 201).map((r) => ({ status: r.status, body: r.body })),
+      ).toEqual([expect.objectContaining({ status: 422 })]);
+      if (competing[0].status === 201) {
+        successfulTransferIds.add(competing[0].body.id as string);
+        const replay = await transfer(second.body.quoteId as string, competingTransferKey);
+        expect(replay.status).toBe(201);
+        expect(replay.body.id).toBe(competing[0].body.id);
+      } else {
+        successfulCashJournals.add(competing[1].body.journalId as string);
+        const replay = await cashIn(competingCashKey);
+        expect(replay.status).toBe(201);
+        expect(replay.body.journalId).toBe(competing[1].body.journalId);
+      }
+      expect(await walletBalance(wallet.ledgerAccountId)).toBe(10000n);
+      expect(
+        (await walletBalance(destination.ledgerAccountId)) +
+          (await walletBalance(cashRecipient.walletLedgerAccountId)),
+      ).toBe(BigInt(iteration + 1) * 90000n);
+    }
+    expect(successfulTransferIds.size + successfulCashJournals.size).toBe(iterations * 3);
+    const transfers: Array<{ id: string; status: string }> = await dataSource.query(
+      `SELECT id,status FROM transfers WHERE status='COMPLETED'`,
+    );
+    expect(new Set(transfers.map((t) => t.id))).toEqual(successfulTransferIds);
+    const journalRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_journals WHERE id = ANY($1::uuid[])`,
+      [Array.from(successfulCashJournals)],
+    );
+    expect(journalRows).toHaveLength(successfulCashJournals.size);
+    const debits: Array<{ journal_id: string; amount_minor: string }> = await dataSource.query(
+      `SELECT journal_id::text, amount_minor::text FROM ledger_lines WHERE ledger_account_id=$1 AND direction='DEBIT'`,
+      [wallet.ledgerAccountId],
+    );
+    const transferJournals: Array<{ journal_id: string }> = await dataSource.query(
+      `SELECT journal_id::text FROM transfers WHERE status='COMPLETED'`,
+    );
+    expect(debits).toHaveLength(iterations * 3);
+    expect(debits.every((line) => line.amount_minor === '30000')).toBe(true);
+    expect(new Set(debits.map((line) => line.journal_id))).toEqual(
+      new Set([...successfulCashJournals, ...transferJournals.map((row) => row.journal_id)]),
+    );
+  }, 180000);
 
   it('agent self quote rejects cross-institution and partially attributed destinations', async () => {
     const { agent, wallet } = await createActiveAgentWithPin(
