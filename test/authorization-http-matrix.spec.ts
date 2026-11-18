@@ -39,6 +39,7 @@ import { MetricsService } from '../src/operations/metrics.service';
 import { OutboxService } from '../src/operations/outbox.service';
 import { ConfigService } from '@nestjs/config';
 
+import { AlertingService } from '../src/operations/alerting.service';
 import { IntegrityMonitoringService } from '../src/operations/integrity-monitoring.service';
 import { OperationalMetricsService } from '../src/operations/operational-metrics.service';
 import { ReconciliationService } from '../src/reconciliation/reconciliation.service';
@@ -363,6 +364,16 @@ describe('HTTP authorization matrix', () => {
           useValue: new WorkerSupervisorService({
             get: () => undefined,
           } as unknown as ConfigService),
+        },
+        {
+          // Group 19 added an alerting dependency to OperationsController.
+          provide: AlertingService,
+          useValue: new AlertingService(
+            dataSource as unknown as DataSource,
+            new WorkerLeaseService(),
+            new WorkerSupervisorService({ get: () => undefined } as unknown as ConfigService),
+            { lastPasses: () => Promise.resolve([]) } as never,
+          ),
         },
         {
           // Group 18 added integrity dependencies to OperationsController.

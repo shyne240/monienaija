@@ -18,7 +18,8 @@ Continuation record. Updated as each group lands; the workspace is the source of
 | Group 15                                    | `f8bb5fdd`    | Worker supervision without a second scheduler.                                          |
 | Group 16                                    | `6451a5c2`    | Sink-level log redaction; compound secret names.                                        |
 | Group 17                                    | `40766952`    | Operational metrics; DLQ and worker signals finally have a consumer.                    |
-| Group 18                                    | _this commit_ | Integrity snapshots and drift detection.                                                |
+| Group 18                                    | `f2a63c0d`    | Integrity snapshots and drift detection.                                                |
+| Group 19                                    | _this commit_ | Alert contract, deduplication, flap suppression, dark delivery default.                 |
 
 Branch: `arena/defdd0fd-monienaija`. There is no upstream; push with `git push origin <branch>`.
 
@@ -357,6 +358,45 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 19 — alerting: the contract, and the suppressions that make it survivable
+
+`src/operations/alerting.types.ts`, `src/operations/alerting.service.ts`, `test/alerting.spec.ts`
+(19 assertions), `GET /internal/alerts`, `/internal/alerts/active`, and `docs/integration/ALERTING.md`.
+
+**Severity is not urgency, and the two are separate fields.** 40 dead letters is `CRITICAL` severity but
+`ROUTINE` urgency — severe, but a stable backlog is a known condition. A single stalled lease is `CRITICAL`
+**and** `IMMEDIATE`, because a worker is dying mid-delivery right now. Collapsing them produces either a
+channel that cries wolf or one that under-reports; both are tested.
+
+**The substance is suppression, not detection.** Two mechanisms:
+
+- **Deduplication keys the condition, not the occurrence** — `worker.stale:banking-dispatch`. A key containing
+  a timestamp would make every evaluation a new alert and deduplication accomplish nothing.
+- **Flap suppression** — a condition that clears and returns within the window is the same incident. An
+  oscillating check otherwise produces a stream nobody reads, which trains operators to ignore the channel
+  and then hides the real incident.
+
+**Silence is never ambiguous.** `satisfied` and `skipped` are reported alongside `alerts`, so "no alerts" is
+distinguishable from "could not check". An unreadable source is `skipped` with a reason, never satisfied. Each
+source is evaluated independently: a database failure silences the outbox rules and leaves the worker rules
+running, because the worker signal usually explains the database problem.
+
+**Delivery is deliberately dark.** `NoneAlertChannel` records and returns `delivered: false`. No vendor is
+integrated, because which paging product to use — and what it costs — is the product owner's decision, and
+inventing an integration would invent an entitlement. `deliveryConfigured` and `channel` accompany every
+response so an evaluation cannot be mistaken for a notification. **No alert has been delivered to any human
+by this system.**
+
+`integrity.regression` is **not** emitted by the evaluator: it comes from `/internal/integrity`, which
+performs the drift comparison. Re-running reconciliation inside the evaluator would make alerting a second
+caller of a read-only scan and a second source of integrity truth. The rule is reported as `skipped` with
+that reason rather than silently omitted.
+
+**A defect the AppModule boot test caught again:** `AlertingService` used `import type { DataSource }`, which
+erases the decorator metadata, so Nest saw `Function` at index 0 and failed to resolve. Interface-typed
+optional dependencies (`AlertChannel`, `AlertTuning`) had the same class of problem and now carry explicit DI
+tokens.
+
 ### Group 18 — integrity monitoring: snapshots and drift
 
 `src/operations/integrity-monitoring.service.ts`, `src/migrations/1785753600607-IntegritySnapshots.ts`,
@@ -612,7 +652,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 19–40 remain: alerting, admin operations
+Groups 20–40 remain: admin operations
 centre, operational security, break-glass, fraud/risk, compliance, complaints, disputes, mobile support,
 SMS/email, privacy/retention, performance harness, CI release gates, the PostgreSQL matrix, sandbox
 readiness, mobile release, browser acceptance, readiness gate, journeys A–J, consolidated acceptance, and
@@ -626,6 +666,12 @@ categories in one database.
 Known gaps carried forward from Group 12: no fixture seeds all eleven backup categories in one database;
 the restore requires superuser; and off-site storage, encryption at rest, retention and point-in-time
 recovery are infrastructure decisions that are not implemented.
+
+Known gaps from Group 19: no vendor integration and no delivery guarantee, retry or dead-letter for alerts —
+a failed delivery is reported in `dispatched[].reason` and then forgotten. No escalation policy, on-call
+rotation or acknowledgement. No scheduled evaluation; alerts are evaluated when the endpoint is called.
+Suppression state is in-process and not shared across instances, so a fleet would double-report — correct for
+a single instance, wrong for a fleet, and named rather than hidden.
 
 Known gaps from Group 18: nothing schedules the checks — snapshots are recorded when the endpoint is called,
 so a cron calling it on an interval is Group 15's supervision model applied to a new consumer and is not

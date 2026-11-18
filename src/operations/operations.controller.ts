@@ -8,6 +8,7 @@ import { DiagnosticsService } from './diagnostics.service';
 import { MetricsService } from './metrics.service';
 import { OutboxService } from './outbox.service';
 import { OutboxEventStatus } from './operations.enums';
+import { AlertingService } from './alerting.service';
 import { IntegrityMonitoringService } from './integrity-monitoring.service';
 import { OperationalMetricsService } from './operational-metrics.service';
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
@@ -52,6 +53,7 @@ export class OperationsController {
     private readonly operationalMetrics: OperationalMetricsService,
     private readonly reconciliation: ReconciliationService,
     private readonly integrity: IntegrityMonitoringService,
+    private readonly alerting: AlertingService,
   ) {}
 
   @Get('metrics')
@@ -136,6 +138,41 @@ export class OperationsController {
   async getIntegrityLastPasses(@Req() req: AuthenticatedRequest) {
     await this.requireFunction(req, 'diagnostics.view');
     return this.integrity.lastPasses();
+  }
+
+  /**
+   * Group 19 — evaluate the alert rules **without dispatching**.
+   *
+   * Read-only on purpose: an operator inspecting alert state must not page anyone. `satisfied` and `skipped`
+   * are both reported so "no alerts" is distinguishable from "nothing was evaluated".
+   */
+  @Get('alerts')
+  async getAlerts(@Req() req: AuthenticatedRequest) {
+    await this.requireFunction(req, 'diagnostics.view');
+    const evaluation = await this.alerting.evaluate();
+    return {
+      ...evaluation,
+      // Stated in the payload: this endpoint evaluates, it does not deliver.
+      deliveryConfigured: this.alerting.deliveryConfigured,
+      channel: this.alerting.channelName,
+      dispatch: false,
+    };
+  }
+
+  /**
+   * Group 19 — conditions currently suppressed as repeats.
+   *
+   * Silence is ambiguous without this: "no alert" and "alert suppressed as an ongoing condition" look
+   * identical from the outside.
+   */
+  @Get('alerts/active')
+  async getActiveAlerts(@Req() req: AuthenticatedRequest) {
+    await this.requireFunction(req, 'diagnostics.view');
+    return {
+      channel: this.alerting.channelName,
+      deliveryConfigured: this.alerting.deliveryConfigured,
+      conditions: this.alerting.activeState(),
+    };
   }
 
   @Get('workers')
