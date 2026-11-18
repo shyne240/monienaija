@@ -2,7 +2,7 @@
 
 **Status: not accepted for release.** This is a working handoff, not the requested original 31-section acceptance matrix. The original headings have not been supplied and searches of the connected Drive did not identify the mission document. Do not infer a PASS for missing sections. The detailed chronological record and test identifiers are in [ARENA2-P2P-PARITY-CONTINUATION-RECORD.md](./ARENA2-P2P-PARITY-CONTINUATION-RECORD.md).
 
-The full guarded backend unit regression passed **271 suites/3,103 tests** on application/test source `3b12fcc7` after correcting three outdated phone-notification unit mocks. The real-PostgreSQL regression on the same fixed source ended **nonzero**: 166 suites passed and two produced no result due to V8 heap exhaustion under a 1300 MB test-process cap. Individual rechecks and a complete rerun using the existing 1536 MB runner default are required. Do not treat this document as evidence of a full PG pass.
+The full guarded backend unit regression passed **271 suites/3,103 tests** on application/test source `3b12fcc7` after correcting three outdated phone-notification unit mocks. The real-PostgreSQL regression on the same fixed source ended **nonzero**: 166 suites passed and two produced no result due to V8 heap exhaustion under a 1300 MB test-process cap. Both no-result suites passed individually at the existing 1536 MB default (29 tests); across separate invocations all 168 suites have passed. A complete fresh run at that default is in progress and remains necessary for a clean single-invocation result. Do not treat this document as evidence of a full PG pass.
 
 ## Capabilities and evidence
 
