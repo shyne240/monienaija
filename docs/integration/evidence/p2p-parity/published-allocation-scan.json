@@ -1,0 +1,30 @@
+{
+  "observedAt": "2026-11-18T21:03:12+00:00",
+  "publishedHeadCount": 42,
+  "distinctTreesInspected": 40,
+  "sameHeadsOnReread": true,
+  "parityRangePresent": [
+    {
+      "commit": "3db04703bfad39488b5b9e34c88c49f73d81389b",
+      "refs": [
+        "arena/e831b371-monienaija"
+      ],
+      "paths": [
+        "src/migrations/1785753600800-BindWalletTransferQuotes.ts",
+        "src/migrations/1785753600801-AgentVerifiedPhone.ts",
+        "src/migrations/1785753600802-ExtendBeneficiaryOwnership.ts"
+      ]
+    },
+    {
+      "commit": "d9635748bc7e391529a6901dba10767e09f77ca4",
+      "refs": [
+        "arena/bcf44621-monienaija"
+      ],
+      "paths": [
+        "src/migrations/1785753600800-BindWalletTransferQuotes.ts",
+        "src/migrations/1785753600801-AgentVerifiedPhone.ts",
+        "src/migrations/1785753600802-ExtendBeneficiaryOwnership.ts"
+      ]
+    }
+  ]
+}
