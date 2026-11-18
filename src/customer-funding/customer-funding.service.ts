@@ -374,9 +374,9 @@ export class CustomerFundingService {
             status: string;
             institution_id: string | null;
           }> = await manager.query(
-              `SELECT id, ledger_account_id, status, institution_id FROM wallet_accounts WHERE customer_id=$1 AND currency=$2 LIMIT 1`,
-              [customerId, currency],
-            );
+            `SELECT id, ledger_account_id, status, institution_id FROM wallet_accounts WHERE customer_id=$1 AND currency=$2 LIMIT 1`,
+            [customerId, currency],
+          );
           const wallet = walletRows[0];
           if (!wallet)
             throw new NotFoundException(

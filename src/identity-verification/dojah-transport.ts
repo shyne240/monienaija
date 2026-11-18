@@ -201,7 +201,7 @@ export const dojahHttpsTransport = createDojahHttpsTransport();
 
 const ADDRESS_REFERENCE = /^[A-Za-z0-9_-]{8,128}$/;
 const ADDRESS_NAME = /^[A-Za-z][A-Za-z' -]{0,99}$/;
-const ADDRESS_OPTIONAL_TEXT = /^[A-Za-z0-9][A-Za-z0-9' .,#\/-]{0,199}$/;
+const ADDRESS_OPTIONAL_TEXT = /^[A-Za-z0-9][A-Za-z0-9' .,#/-]{0,199}$/;
 const ADDRESS_MOBILE = /^[0-9+][0-9]{6,19}$/;
 const ADDRESS_DOB = /^\d{4}-\d{2}-\d{2}$/;
 

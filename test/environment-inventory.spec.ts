@@ -53,6 +53,9 @@ function inventory(): Array<{ key: string; classification: string }> {
  * disturbed before the test body sets it up.
  */
 function isAcceptedInProduction(key: string, value: string): boolean {
+  // Loaded lazily and deliberately: the module validates configuration at import time, so importing it at the
+  // top of this file would evaluate the environment before the test has set it up.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { validateEnvironment } = require('../src/config/environment') as {
     validateEnvironment: (env: Record<string, string | undefined>) => unknown;
   };

@@ -53,7 +53,8 @@ export class InstitutionKycLimitPolicyController {
       typeof value.requestId !== 'string' ||
       typeof value.expectedVersion !== 'number' ||
       typeof value.reason !== 'string'
-    ) throw new BadRequestException('Invalid institutional KYC tier-limit policy proposal');
+    )
+      throw new BadRequestException('Invalid institutional KYC tier-limit policy proposal');
     return this.policies.propose(req.authorizationPrincipal, {
       institutionId,
       requestId: value.requestId,
@@ -93,7 +94,8 @@ export class InstitutionKycLimitPolicyController {
     try {
       await this.institutionScope.assertCanAccessInstitution(principal, institutionId);
     } catch (error) {
-      if (error instanceof ForbiddenException || error instanceof UnauthorizedException) throw error;
+      if (error instanceof ForbiddenException || error instanceof UnauthorizedException)
+        throw error;
       // A missing institution assignment is intentionally indistinguishable from an absent
       // institution, matching the institution-scoped console and directory surfaces.
       throw error;

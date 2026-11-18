@@ -9,7 +9,6 @@ import {
   KYC_ASSURANCE_CAPABILITIES,
   KycFoundationError,
   type IdentityKind,
-  type KycAssuranceCapability,
   type KycProviderCapability,
 } from './kyc.types';
 import { UUID } from './kyc-orchestrator';

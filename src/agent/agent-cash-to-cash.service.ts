@@ -658,7 +658,9 @@ export class AgentCashToCashService {
           }
 
           if (!this.limitEnforcementService) {
-            throw new ServiceUnavailableException('Agent financial limit enforcement is unavailable');
+            throw new ServiceUnavailableException(
+              'Agent financial limit enforcement is unavailable',
+            );
           }
           // V1-LIMIT-04: enforce limits for AGENT OUTGOING CASH_TO_CASH
           let limitIdempotencyKey: string | null = null;

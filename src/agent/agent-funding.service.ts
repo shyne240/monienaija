@@ -1034,7 +1034,9 @@ export class AgentFundingService {
 
           // New agent wallet funding/defunding requires an active configured class/product policy.
           if (!this.limitEnforcementService) {
-            throw new ServiceUnavailableException('Agent financial limit enforcement is unavailable');
+            throw new ServiceUnavailableException(
+              'Agent financial limit enforcement is unavailable',
+            );
           }
           // V1-LIMIT-04: enforce limits for AGENT_FUNDING/AGENT_DEFUNDING
           let limitIdempotencyKey: string | null = null;

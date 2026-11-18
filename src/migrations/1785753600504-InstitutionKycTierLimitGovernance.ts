@@ -79,9 +79,15 @@ export class InstitutionKycTierLimitGovernance1785753600504 implements Migration
       CHECK(maker_principal_id <> checker_principal_id),
       CHECK(expires_at > decided_at)
     )`);
-    await q.query(`ALTER TABLE protected_authority.institution_kyc_limit_decisions OWNER TO monienaija_authority_core`);
-    await q.query(`REVOKE ALL ON protected_authority.institution_kyc_limit_decisions FROM PUBLIC, monienaija_runtime`);
-    await q.query(`GRANT SELECT,INSERT ON protected_authority.institution_kyc_limit_decisions TO monienaija_authority_core`);
+    await q.query(
+      `ALTER TABLE protected_authority.institution_kyc_limit_decisions OWNER TO monienaija_authority_core`,
+    );
+    await q.query(
+      `REVOKE ALL ON protected_authority.institution_kyc_limit_decisions FROM PUBLIC, monienaija_runtime`,
+    );
+    await q.query(
+      `GRANT SELECT,INSERT ON protected_authority.institution_kyc_limit_decisions TO monienaija_authority_core`,
+    );
 
     await q.query(`CREATE FUNCTION protected_authority.institution_kyc_limit_payload_digest(p_id uuid)
       RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
@@ -94,9 +100,15 @@ export class InstitutionKycTierLimitGovernance1785753600504 implements Migration
         )::text,'UTF8')),'hex')
         FROM public.institution_kyc_limit_policy_proposals p WHERE p.id=p_id
       $$`);
-    await q.query(`ALTER FUNCTION protected_authority.institution_kyc_limit_payload_digest(uuid) OWNER TO monienaija_authority_core`);
-    await q.query(`REVOKE ALL ON FUNCTION protected_authority.institution_kyc_limit_payload_digest(uuid) FROM PUBLIC`);
-    await q.query(`GRANT EXECUTE ON FUNCTION protected_authority.institution_kyc_limit_payload_digest(uuid) TO monienaija_authority_core`);
+    await q.query(
+      `ALTER FUNCTION protected_authority.institution_kyc_limit_payload_digest(uuid) OWNER TO monienaija_authority_core`,
+    );
+    await q.query(
+      `REVOKE ALL ON FUNCTION protected_authority.institution_kyc_limit_payload_digest(uuid) FROM PUBLIC`,
+    );
+    await q.query(
+      `GRANT EXECUTE ON FUNCTION protected_authority.institution_kyc_limit_payload_digest(uuid) TO monienaija_authority_core`,
+    );
 
     await q.query(`CREATE FUNCTION protected_authority.institution_kyc_limit_decision_guard()
       RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
@@ -128,8 +140,12 @@ export class InstitutionKycTierLimitGovernance1785753600504 implements Migration
         END IF;
         RETURN NEW;
       END $$`);
-    await q.query(`ALTER FUNCTION protected_authority.institution_kyc_limit_decision_guard() OWNER TO monienaija_authority_core`);
-    await q.query(`REVOKE ALL ON FUNCTION protected_authority.institution_kyc_limit_decision_guard() FROM PUBLIC`);
+    await q.query(
+      `ALTER FUNCTION protected_authority.institution_kyc_limit_decision_guard() OWNER TO monienaija_authority_core`,
+    );
+    await q.query(
+      `REVOKE ALL ON FUNCTION protected_authority.institution_kyc_limit_decision_guard() FROM PUBLIC`,
+    );
     await q.query(`CREATE TRIGGER institution_kyc_limit_decision_immutable
       BEFORE INSERT OR UPDATE OR DELETE ON protected_authority.institution_kyc_limit_decisions
       FOR EACH ROW EXECUTE FUNCTION protected_authority.institution_kyc_limit_decision_guard()`);
@@ -176,8 +192,12 @@ export class InstitutionKycTierLimitGovernance1785753600504 implements Migration
         END IF;
         RETURN NEW;
       END $$`);
-    await q.query(`ALTER FUNCTION protected_authority.institution_kyc_limit_proposal_guard() OWNER TO monienaija_authority_core`);
-    await q.query(`REVOKE ALL ON FUNCTION protected_authority.institution_kyc_limit_proposal_guard() FROM PUBLIC`);
+    await q.query(
+      `ALTER FUNCTION protected_authority.institution_kyc_limit_proposal_guard() OWNER TO monienaija_authority_core`,
+    );
+    await q.query(
+      `REVOKE ALL ON FUNCTION protected_authority.institution_kyc_limit_proposal_guard() FROM PUBLIC`,
+    );
     await q.query(`CREATE TRIGGER institution_kyc_limit_proposal_authority_guard
       BEFORE INSERT OR UPDATE OR DELETE ON institution_kyc_limit_policy_proposals
       FOR EACH ROW EXECUTE FUNCTION protected_authority.institution_kyc_limit_proposal_guard()`);
@@ -207,8 +227,12 @@ export class InstitutionKycTierLimitGovernance1785753600504 implements Migration
         END IF;
         RETURN NEW;
       END $$`);
-    await q.query(`ALTER FUNCTION protected_authority.institution_kyc_limit_version_guard() OWNER TO monienaija_authority_core`);
-    await q.query(`REVOKE ALL ON FUNCTION protected_authority.institution_kyc_limit_version_guard() FROM PUBLIC`);
+    await q.query(
+      `ALTER FUNCTION protected_authority.institution_kyc_limit_version_guard() OWNER TO monienaija_authority_core`,
+    );
+    await q.query(
+      `REVOKE ALL ON FUNCTION protected_authority.institution_kyc_limit_version_guard() FROM PUBLIC`,
+    );
     await q.query(`CREATE TRIGGER institution_kyc_limit_version_authority_guard
       BEFORE INSERT OR UPDATE OR DELETE ON institution_kyc_limit_policy_versions
       FOR EACH ROW EXECUTE FUNCTION protected_authority.institution_kyc_limit_version_guard()`);
@@ -240,33 +264,61 @@ export class InstitutionKycTierLimitGovernance1785753600504 implements Migration
         END IF;
         RETURN NEW;
       END $$`);
-    await q.query(`ALTER FUNCTION protected_authority.institution_kyc_limit_head_guard() OWNER TO monienaija_authority_core`);
-    await q.query(`REVOKE ALL ON FUNCTION protected_authority.institution_kyc_limit_head_guard() FROM PUBLIC`);
+    await q.query(
+      `ALTER FUNCTION protected_authority.institution_kyc_limit_head_guard() OWNER TO monienaija_authority_core`,
+    );
+    await q.query(
+      `REVOKE ALL ON FUNCTION protected_authority.institution_kyc_limit_head_guard() FROM PUBLIC`,
+    );
     await q.query(`CREATE TRIGGER institution_kyc_limit_head_authority_guard
       BEFORE INSERT OR UPDATE OR DELETE ON institution_kyc_limit_policy_heads
       FOR EACH ROW EXECUTE FUNCTION protected_authority.institution_kyc_limit_head_guard()`);
 
     await q.query(`GRANT USAGE ON SCHEMA public TO monienaija_authority_core`);
-    await q.query(`GRANT SELECT,INSERT,UPDATE ON public.institution_kyc_limit_policy_heads TO monienaija_authority_core`);
-    await q.query(`GRANT SELECT,INSERT,UPDATE ON public.institution_kyc_limit_policy_proposals TO monienaija_authority_core`);
-    await q.query(`GRANT SELECT,INSERT ON public.institution_kyc_limit_policy_versions TO monienaija_authority_core`);
+    await q.query(
+      `GRANT SELECT,INSERT,UPDATE ON public.institution_kyc_limit_policy_heads TO monienaija_authority_core`,
+    );
+    await q.query(
+      `GRANT SELECT,INSERT,UPDATE ON public.institution_kyc_limit_policy_proposals TO monienaija_authority_core`,
+    );
+    await q.query(
+      `GRANT SELECT,INSERT ON public.institution_kyc_limit_policy_versions TO monienaija_authority_core`,
+    );
     await q.query(`GRANT SELECT ON public.financial_institutions TO monienaija_authority_core`);
     await q.query(`GRANT SELECT ON public.limit_profiles TO monienaija_authority_core`);
     await q.query(`GRANT SELECT ON public.limit_rules TO monienaija_authority_core`);
-    await q.query(`GRANT EXECUTE ON FUNCTION protected_authority.institution_kyc_limit_payload_digest(uuid) TO monienaija_authority_core`);
+    await q.query(
+      `GRANT EXECUTE ON FUNCTION protected_authority.institution_kyc_limit_payload_digest(uuid) TO monienaija_authority_core`,
+    );
     await q.query(`REVOKE ALL ON public.institution_kyc_limit_policy_heads FROM PUBLIC`);
     await q.query(`REVOKE ALL ON public.institution_kyc_limit_policy_proposals FROM PUBLIC`);
     await q.query(`REVOKE ALL ON public.institution_kyc_limit_policy_versions FROM PUBLIC`);
-    await q.query(`GRANT SELECT ON protected_authority.institution_kyc_limit_decisions TO monienaija_authority_core`);
-    await q.query(`GRANT SELECT ON public.institution_kyc_limit_policy_heads TO monienaija_runtime`);
-    await q.query(`GRANT SELECT ON public.institution_kyc_limit_policy_proposals TO monienaija_runtime`);
-    await q.query(`GRANT SELECT ON public.institution_kyc_limit_policy_versions TO monienaija_runtime`);
-    await q.query(`REVOKE INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER ON public.institution_kyc_limit_policy_heads FROM monienaija_runtime`);
-    await q.query(`REVOKE INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER ON public.institution_kyc_limit_policy_proposals FROM monienaija_runtime`);
-    await q.query(`REVOKE INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER ON public.institution_kyc_limit_policy_versions FROM monienaija_runtime`);
+    await q.query(
+      `GRANT SELECT ON protected_authority.institution_kyc_limit_decisions TO monienaija_authority_core`,
+    );
+    await q.query(
+      `GRANT SELECT ON public.institution_kyc_limit_policy_heads TO monienaija_runtime`,
+    );
+    await q.query(
+      `GRANT SELECT ON public.institution_kyc_limit_policy_proposals TO monienaija_runtime`,
+    );
+    await q.query(
+      `GRANT SELECT ON public.institution_kyc_limit_policy_versions TO monienaija_runtime`,
+    );
+    await q.query(
+      `REVOKE INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER ON public.institution_kyc_limit_policy_heads FROM monienaija_runtime`,
+    );
+    await q.query(
+      `REVOKE INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER ON public.institution_kyc_limit_policy_proposals FROM monienaija_runtime`,
+    );
+    await q.query(
+      `REVOKE INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER ON public.institution_kyc_limit_policy_versions FROM monienaija_runtime`,
+    );
   }
 
   down(): Promise<void> {
-    return Promise.reject(new Error('Refusing to remove institution KYC tier-limit governance history'));
+    return Promise.reject(
+      new Error('Refusing to remove institution KYC tier-limit governance history'),
+    );
   }
 }

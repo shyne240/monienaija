@@ -124,10 +124,10 @@ export class EmergencyAccessReviewRequirement1785753600608 implements MigrationI
      * previously-reviewed incidents as owing review again, or previously-unreviewed ones as beyond scrutiny.
      * Review records are part of the security audit trail.
      */
-    const rows: Array<{ n: string }> = await q.query(
+    const rows = (await q.query(
       `SELECT count(*)::text AS n FROM privileged_action_approvals
         WHERE emergency_review_status IS NOT NULL OR emergency_reviewed_at IS NOT NULL`,
-    );
+    )) as Array<{ n: string }>;
     if (Number(rows[0]?.n ?? '0') > 0) {
       throw new Error(
         'Refusing to roll back: emergency access review records exist. They are part of the security audit ' +

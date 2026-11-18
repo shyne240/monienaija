@@ -37,7 +37,7 @@ import { AuditService } from '../src/operations/audit.service';
 import { DiagnosticsService } from '../src/operations/diagnostics.service';
 import { MetricsService } from '../src/operations/metrics.service';
 import { OutboxService } from '../src/operations/outbox.service';
-import { ConfigService } from '@nestjs/config';
+import type { ConfigService } from '@nestjs/config';
 
 import { AlertingService } from '../src/operations/alerting.service';
 import { IntegrityMonitoringService } from '../src/operations/integrity-monitoring.service';

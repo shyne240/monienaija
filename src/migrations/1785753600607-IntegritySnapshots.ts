@@ -98,9 +98,9 @@ export class IntegritySnapshots1785753600607 implements MigrationInterface {
      * passed. That is exactly the data an incident review needs, so the rollback refuses while any snapshot
      * exists rather than silently deleting the audit trail.
      */
-    const rows: Array<{ n: string }> = await q.query(
-      `SELECT count(*)::text AS n FROM integrity_snapshots`,
-    );
+    const rows = (await q.query(`SELECT count(*)::text AS n FROM integrity_snapshots`)) as Array<{
+      n: string;
+    }>;
     if (Number(rows[0]?.n ?? '0') > 0) {
       throw new Error(
         'Refusing to roll back: integrity snapshots exist. Dropping them would erase the record of when ' +

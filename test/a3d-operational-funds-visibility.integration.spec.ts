@@ -1,4 +1,4 @@
-import { DataSource } from 'typeorm';
+import type { DataSource } from 'typeorm';
 
 import { OperationalFundsVisibilityService } from '../src/banking/operational-funds-visibility.service';
 import { createIntegrationDataSource } from './support/pg-harness';

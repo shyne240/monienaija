@@ -362,6 +362,44 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 29 — CI and deployment gates
+
+`.github/workflows/ci.yml`, `src/deployment/ci-gate.service.ts`, `test/ci-gates.spec.ts` (15 assertions),
+`package.json` (`lint` split) and `docs/integration/CI-AND-DEPLOYMENT-GATES.md`.
+
+A workflow already existed. Five real problems:
+
+1. **`npm run lint` — the first step of the first job — aborted with an out-of-memory kill.**
+   `eslint "{src,test}/**/*.ts"` is a single invocation over ~1,750 files; with `projectService` and
+   `recommendedTypeChecked` it builds one TypeScript program over both trees and dies before reporting a single
+   finding. The consequence is worse than slowness: **the gate could never pass**, so it was either ignored or
+   worked around, and it said nothing about the code either way. Measured: `src` alone ~60 s, `test` alone ~70 s,
+   both together exceed the 3 GB runner. Split into `lint:src` + `lint:test`; `npm run lint` now exits 0.
+2. **That broken gate was hiding eight genuine lint errors**, two of them in migrations written during this
+   programme (unsafe `any` from `QueryRunner.query` in the Group 19 and Group 20 migrations). Fixed rather than
+   suppressed, except where suppression is correct (a deliberate `require()` that must load a module lazily, and
+   a triple-slash reference that needs global scope).
+3. **`npm run format:check` was failing on six files** predating this programme. Now green repo-wide.
+4. **`apps/agent-mobile` was not in the workflow at all** — 323 passing unit tests and a clean `tsc` that never
+   ran on any push. A suite CI does not execute is not a gate.
+5. **The Dockerfile was never built.** A careful multi-stage non-root production image that no pipeline compiled.
+
+The container job claims only that the image **builds** (`push: false, load: false`); it does not run the image
+and does not execute `docker compose`. No container runtime exists in this sandbox, so the build's success is a
+GitHub-side fact, not one asserted here.
+
+**Gates as code.** A workflow is a document that does not defend itself, so `ci-gate.service.ts` reads the file
+and asserts each required job, its required steps, and every npm script those steps call. Mutations confirm it
+works: deleting the `agent-mobile` job produces 3 failures; removing `npm run test:pg` reports
+`job:backend-postgres` missing; deleting the container job reports it missing; removing the `test:pg` script
+reports `script:test:pg` missing. There is also an assertion that the PostgreSQL job does not contain
+`continue-on-error: true` — a gate allowed to fail is not a gate. The extractor reads job indentation from the
+file so a reformatted workflow does not produce false "gate missing" failures.
+
+**Deliberately absent, as unmade decisions:** no deploy job, no registry push, no digest pin, no coverage
+threshold (a number invented to pass), no security scanning/SBOM/signing, no environment configuration, no branch
+protection (those live in repository settings and cannot be asserted from a file).
+
 ### Group 28 — performance acceptance
 
 `src/performance/performance-acceptance.service.ts`, `src/performance/performance.module.ts`,
@@ -1052,8 +1090,8 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 29–40 remain: CI release gates, the PostgreSQL matrix, sandbox readiness, mobile release, browser
-acceptance, readiness gate, journeys A–J, consolidated acceptance, and the final handoff.
+Groups 30–40 remain: the PostgreSQL matrix, sandbox readiness, mobile release, browser acceptance, readiness
+gate, journeys A–J, consolidated acceptance, and the final handoff.
 
 Known gaps carried forward: no secret-manager backend is selected (the contract exists; the environment
 backend satisfies it); a restore requires a superuser; off-site backup storage, encryption at rest,

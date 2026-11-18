@@ -86,6 +86,29 @@ jobs:
           NODE_OPTIONS: --require ./test/support/mission-25c-network-guard.cjs
         run: npm run test:pg
 
+  # The repository ships a production Dockerfile with a multi-stage build, a non-root user and a healthcheck,
+  # and nothing ever built it. A Dockerfile that no pipeline compiles can rot silently — a dependency bump, a
+  # changed COPY path or a dropped file is only discovered at release time, which is the worst moment.
+  #
+  # Scope: this job proves the image *builds*. It does not run the image, does not start the stack, and does not
+  # execute `docker compose`. Those are separate claims, and none of them is made here.
+  backend-container-build:
+    name: Backend (container image builds)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: false
+          tags: monienaija-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   admin-web:
     name: Admin Web (types, tests, build)
     runs-on: ubuntu-latest
@@ -103,6 +126,26 @@ jobs:
       - run: npm run ts:check
       - run: npm test
       - run: npm run build
+
+  # Both mobile apps are gated. `apps/agent-mobile` was absent from this workflow entirely, so its 323 unit
+  # tests and its type check never ran on any push or pull request. A suite that CI does not execute is not a
+  # gate, whatever its coverage says.
+  agent-mobile:
+    name: Agent Mobile (types, tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/agent-mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/agent-mobile/package-lock.json
+      - run: npm ci
+      - run: npm run ts:check
+      - run: npm test
 
   customer-mobile:
     name: Customer Mobile (types, tests)

@@ -1,3 +1,9 @@
+/*
+ * The ambient declaration is referenced rather than imported because it declares global module shims for the
+ * React Native packages this suite reaches into; an `import` would give it module scope and the shims would not
+ * apply.
+ */
+// eslint-disable-next-line @typescript-eslint/triple-slash-reference
 /// <reference path="./support/mobile-native-module-shims.d.ts" />
 import type * as MobilePending from '../apps/agent-mobile/src/services/pending-operation';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
@@ -2356,9 +2362,8 @@ test('bound wallet-redemption claim wiring rolls back OTP with a failed posting 
   // The obligation account is the FUNDING INSTITUTION's own suspense liability, resolved from the
   // transfer's funding evidence — not a shared platform account. Recording that evidence is what
   // makes this a genuinely institutionalised transfer rather than a legacy one.
-  const suspenseAccountId = await claimGoverned.openInstitutionCashToCashSuspenseAccount(
-    claimInstitutionId,
-  );
+  const suspenseAccountId =
+    await claimGoverned.openInstitutionCashToCashSuspenseAccount(claimInstitutionId);
   // NOTE ordering: attribution is executed BEFORE this wallet's ledger account carries any posted
   // history. The governed attribution workflow deliberately refuses a wallet whose ledger account
   // already has journal lines, because attributing it afterwards would fabricate historical
