@@ -362,6 +362,20 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 40 — final handoff
+
+`docs/integration/ARENA3D-FINAL-HANDOFF.md`.
+
+The document a successor opens first: the state of the tree (3343 tests, 282 suites, clean tree, `NOT_READY` with
+16 blockers), an index of every runbook and machine-readable artefact, **ten decisions only the product owner can
+make** with the blocker each one discharges, eight ordered next actions, the list of things a successor must not do
+(weaken the startup gate, edit the gate to say `READY`, mark an `unavailable` row as `PASS`, delete a failing
+journey's suite, treat a configured CI job as a passing one, add a second scheduling layer), and the exact command
+for every gate.
+
+**The closing statement is deliberately two sentences.** The engineering scope is complete and gated; the readiness
+is not, and the record says so in sixteen named places rather than one apologetic paragraph.
+
 ### Group 39 — consolidated acceptance
 
 `docs/integration/ARENA3D-CONSOLIDATED-ACCEPTANCE.md`, and the consolidated matrix regenerated on the final tree
@@ -1417,7 +1431,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Group 40 remains: the final handoff.
+All forty groups are delivered. The mission is complete as engineering acceptance and **not** releasable; the sixteen blockers and the ten owner decisions are enumerated in `docs/integration/ARENA3D-FINAL-HANDOFF.md`.
 consolidated acceptance, and the final handoff.
 
 Known gaps carried forward: no secret-manager backend is selected (the contract exists; the environment
@@ -1492,9 +1506,16 @@ install chromium` fails with `Download failure, code=1` (egress is restricted to
 
 ## 6. Exact next action
 
-Continue in group order. Next: **group 8** (environment configuration inventory and startup
-validation), then group 9 (secrets management), 10 (database operational readiness), 11 (migration
-release workflow), 12 (backup and restoration — must include a real disposable restore).
+All forty groups are delivered. The next actions are no longer mission steps but release steps, in this order:
+
+1. Verify the eight financial dependencies (each is a named constant in
+   `src/production/production-readiness.service.ts`; verifying one moves the release gate in the same commit).
+2. Decide the mobile version/`runtimeVersion` questions and fix the build numbers.
+3. Configure a real alert destination and record one delivered alert.
+4. Choose the worker topology, then observe `PROCESS_ROLE=worker` running in a real deployment.
+5. Build the container once and record the digest; deploy to staging; re-run the consolidated matrix there.
+6. Attempt a restore at production volume and record measured RPO/RTO.
+7. Re-run `npm run gate:release` until it earns `READY`.
 
 Add to §5 while continuing: the container-runtime blocker means group 7's startup acceptance is
 validated at the artifact level, not by `docker run`. Group 38's matrix must not claim container
@@ -1502,5 +1523,18 @@ acceptance was executed.
 
 ## 7. Required product-owner decisions
 
-None yet. Decisions will be recorded here as they arise — each is a question the mission explicitly
-forbids answering by invention.
+Ten, recorded in full in `docs/integration/ARENA3D-FINAL-HANDOFF.md` §3. In summary:
+
+1. Which KYC provider is trusted, with activation evidence, consent notice text and version.
+2. Identity key versions and the effective KYC policy.
+3. Provider governance and routing; wallet ownership governance; institution KYC tier limits and their governance.
+4. The two mobile apps' version scheme and `runtimeVersion`/OTA policy.
+5. Whether either app has already been submitted (this fixes its next build number).
+6. The alert channel, escalation policy, on-call rotation and evaluation cadence.
+7. Worker topology: replica count and the liveness probe for a process with no HTTP listener.
+8. Recovery objectives: RPO/RTO targets, off-site storage, encryption at rest, retention, point-in-time recovery.
+9. The secret-manager backend of record (the contract exists; the environment backend satisfies it).
+10. The support floor for the build register, and whether an anonymous metrics scrape path may exist.
+
+Each is a question this mission explicitly forbids answering by invention, and each is why a named blocker exists
+in `npm run gate:release`.
