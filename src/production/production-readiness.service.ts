@@ -23,7 +23,10 @@ type Row = Record<string, unknown>;
 // establish the remaining governance dependencies. Do not turn environment flags or
 // test evidence into a readiness override. Replace these blockers only alongside real,
 // independently verified integrations and their readiness checks.
-const FINANCIAL_DEPENDENCY_BLOCKERS: readonly string[] = [
+// Exported so the release gate (Group 34) reads this exact list rather than keeping a copy of it.
+// Verifying a dependency means editing this list, which is a reviewable change, and the release
+// gate's verdict moves with it in the same commit.
+export const FINANCIAL_DEPENDENCY_BLOCKERS: readonly string[] = [
   'trusted_kyc_provider_activation_unverified',
   'customer_kyc_consent_notice_and_policy_unverified',
   'identity_key_versions_unverified',

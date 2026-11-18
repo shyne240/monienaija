@@ -362,6 +362,40 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 34 — release readiness gate
+
+`src/readiness/release-gate.service.ts`, `scripts/release-gate.ts` (`npm run gate:release`),
+`test/release-gate.spec.ts` (19 assertions) and `docs/integration/RELEASE-READINESS-GATE.md`.
+
+**Thirty-three verdicts, no answer.** Each group's document is defensible, and none of them answers "may this be
+deployed?". Reading all thirty-three before a release is not a control — a document cannot be invalidated, and the
+paragraph that says "not certified" survives every subsequent commit. So the answer is code.
+
+**The verdict today is `NOT_READY`: 16 blockers, 4 conditions, exit code 1.** The eight unverified financial
+dependencies are **imported** from `ProductionReadinessService` rather than copied — the list was exported for this
+— so verifying one moves the release verdict in the same commit. Eight standing obligations follow, each with the
+document that explains it: worker automated execution, alert delivery, measured disaster recovery, container build,
+deployment, provider sandbox acceptance, single-engine browser acceptance, and the unbuilt mobile binaries. The four
+conditions are the mobile `1.0.0` collision and the missing `runtimeVersion` on each app.
+
+**It still reports its own gates as healthy** — CI 15/15 intact, mobile manifests registerable, 27/27 browser checks
+— and that distinction is the point: a gate that conflated "our gates work" with "we are releasable" would either
+block on finished work or release unfinished work. An `ERROR` from any input gate becomes a blocker; a `WARNING`
+becomes a condition that a human must accept in writing, never silence.
+
+**It can say yes.** The rules are a pure function and a clean input returns `READY`, asserted. Mutation-verified:
+deleting the recorded browser run fails the "own gates healthy" case; forcing the verdict to `READY`
+unconditionally fails **five** cases; an `ERROR` gate whose detail reads "everything is fine, honestly" is still
+refused, because the verdict comes from the field and not from prose.
+
+**No way around it.** There is no environment variable, no flag and no test double that removes a blocker — a flag
+that did would eventually be set, and the suite asserts the module reads no `process.env` and contains no
+bypass-named identifier.
+
+**Not performed by the gate:** no deployment, promotion or rollout; no provider contact; no financial action; no
+re-execution of the evidence it reads. It does not decide whether the mission is finished — it decides whether a
+deployment would be honest, and today it would not be.
+
 ### Group 33 — browser acceptance
 
 `scripts/admin-web-browser-acceptance.cjs`, `test/browser-acceptance-evidence.spec.ts` (11 assertions),
@@ -1249,7 +1283,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 34–40 remain: the readiness gate, journeys A–J,
+Groups 35–40 remain: journeys A–J,
 consolidated acceptance, and the final handoff.
 
 Known gaps carried forward: no secret-manager backend is selected (the contract exists; the environment
