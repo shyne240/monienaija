@@ -2,7 +2,7 @@
 
 **Status: not accepted for release.** This is a working handoff, not the requested original 31-section acceptance matrix. The original headings have not been supplied and searches of the connected Drive did not identify the mission document. Do not infer a PASS for missing sections. The detailed chronological record and test identifiers are in [ARENA2-P2P-PARITY-CONTINUATION-RECORD.md](./ARENA2-P2P-PARITY-CONTINUATION-RECORD.md).
 
-The attempted full run at `eb34243` exposed three outdated phone-notification unit mocks; focused corrected tests pass. Its PostgreSQL portion was stopped because the archived test environment was missing. A new complete guarded, serial backend unit and real-PostgreSQL regression on the corrected application/test source is required. Do not treat this document as evidence that either full run has passed.
+The full guarded backend unit regression passed **271 suites/3,103 tests** on application/test source `3b12fcc7` after correcting three outdated phone-notification unit mocks. The complete real-PostgreSQL regression on the same fixed source is **running; outcome pending**. Do not treat this document as evidence that the PG run has passed.
 
 ## Capabilities and evidence
 
@@ -20,7 +20,7 @@ The attempted full run at `eb34243` exposed three outdated phone-notification un
 ## Outstanding decisions and release gates
 
 1. Obtain the original 31 section headings and acceptance criteria; populate the requested matrix against those exact sections, with evidence, owners and explicit blocked/partial statuses. No substitute numbering or invented requirements.
-2. Collect and inspect the complete corrected-source full-unit and real-PG results. Investigate every failure without weakening assertions or retry/financial/security guarantees; repeat on the actual final application/test source if it changes. Preserve concise evidence and counts in the continuation record.
+2. Collect and inspect the complete corrected-source real-PG result. Investigate every failure without weakening assertions or retry/financial/security guarantees; repeat on the actual final application/test source if it changes. Preserve concise evidence and counts in the continuation record.
 3. Run customer and agent flows on representative physical Android/iOS devices, including session expiry, quote recovery, beneficiary selection, OTP contact and notification preference, before device acceptance. Current Linux sandbox has no `adb`, Android emulator, `xcrun`, `simctl`, USB device bus or physical devices. Arrange an appropriately provisioned Android device and an Apple host/device; simulated Jest and type checks cannot replace this.
 4. Product/security owners must explicitly decide whether beneficiary revocation after quote issuance, the notification pre-send timing boundary, and same-owner new-session inspection without confirmation satisfy the intended policy. A decision to require stronger revocation fencing needs design and concurrency verification, not a documentation-only PASS.
 5. Confirm the existing limit resolver's single highest-precedence GLOBAL/AGENT/AGENT_CLASS assignment, and the intended agent-recipient capability policy. Do not silently replace established governance with a new financial rule.
