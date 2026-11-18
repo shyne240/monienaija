@@ -95,10 +95,10 @@ export const OUTSTANDING_REQUIREMENTS: readonly ReleaseBlocker[] = [
     evidence: 'docs/integration/WORKER-EXECUTION.md',
   },
   {
-    id: 'alert_delivery_unproven',
+    id: 'alert_delivery_not_observed_against_a_real_channel',
     category: 'operations',
     summary:
-      'no alert has been delivered to a real channel; delivery is dark by default and a failed dispatch is reported and then forgotten',
+      'the signed webhook channel exists and delivers to a real socket under test, but no alert has reached a paging provider or an on-call human',
     evidence: 'docs/integration/ALERTING.md',
   },
   {

@@ -133,7 +133,9 @@ describe('release gate — the repository', () => {
     // still true — no deployment has been observed executing it.
     expect(ids).toContain('worker_execution_not_observed_in_deployment');
     expect(ids).not.toContain('worker_automated_execution_unproven');
-    expect(ids).toContain('alert_delivery_unproven');
+    // Narrowed in Group 38: the channel now delivers to a real receiver under test, so the blocker
+    // names what is still true — nothing has reached a paging provider or an on-call human.
+    expect(ids).toContain('alert_delivery_not_observed_against_a_real_channel');
     expect(ids).toContain('disaster_recovery_not_measured');
   });
 

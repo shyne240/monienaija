@@ -121,3 +121,69 @@ for a notification.
   limitation is named rather than hidden.
 
 None of the above is claimed as working.
+
+---
+
+## Group 38 — delivery: from a seam to a signed webhook
+
+Until this group the delivery seam had exactly one implementation, `NoneAlertChannel`, which reported
+`delivered: false` with a reason. That was the correct default — an unconfigured deployment must not appear to have
+paged anyone — but it means **no alert had ever left the process**. "Alerting works" was a statement about
+evaluation, suppression and deduplication, and nothing else.
+
+`src/operations/alert-webhook.channel.ts` adds the missing implementation.
+
+### Configuration
+
+| Setting                    | Behaviour                                                                 |
+| -------------------------- | ------------------------------------------------------------------------- |
+| neither set                | `NoneAlertChannel`: evaluated and recorded, nobody paged, and the report says so |
+| `ALERT_WEBHOOK_URL` + `ALERT_WEBHOOK_SECRET` | a signed HTTPS webhook                                          |
+| only one of the two        | **throws at startup** — half-configured must not run dark while claiming to be on |
+| `ALERT_WEBHOOK_TIMEOUT_MS` | default 5000; a non-positive or unparseable value throws                   |
+
+URLs must be `https`. Plain `http` is accepted only for a loopback host outside production, which is what the local
+receiver in the test uses — an alert body names outages, queues and failures, so a cleartext one is an intelligence
+feed for anyone on the path.
+
+### What the receiver gets
+
+```
+POST <url>
+content-type: application/json
+x-monienaija-timestamp: 1700000000000
+x-monienaija-signature: sha256=<hex HMAC-SHA256 over `${timestamp}.${body}`>
+
+{"dedupeKey":"…","ruleId":"…","severity":"CRITICAL","urgency":"IMMEDIATE","summary":"…","observedAt":"…","context":{…}}
+```
+
+`verifyAlertSignature` is exported so a receiver checks the **exact bytes** the sender signed, not a
+re-serialisation — key order, whitespace and unicode escaping would otherwise differ and a valid alert would be
+rejected. It also enforces a timestamp window (default 300s), because a signature that is valid forever is a
+signature in name only.
+
+### Why `delivered` is not a guess
+
+`delivered: true` means the receiver answered 2xx. A non-2xx, a timeout, a DNS failure or a TLS refusal is
+`delivered: false` with the reason, which `AlertingService` records in `dispatched[].reason`. A channel that
+returned `true` on a failed POST would make the alerting system lie at exactly the moment it exists to be honest.
+
+### Proven, over a real socket
+
+`test/alert-delivery.spec.ts` — 12 cases. The receiver is a real `node:http` server on `127.0.0.1`, so the
+request, the headers, the HMAC over the raw body and the status code are all genuine: delivery to a 204, signature
+verification, tampered body / wrong secret / replayed timestamp all rejected, `503` reported as not delivered,
+a receiver that never answers reported as a timeout, and an unreachable port reported as a failure. Configuration
+cases cover the dark default, the half-configured refusal, the cleartext refusal and a nonsense timeout.
+
+### What this still does not do — unchanged, and now stated more narrowly
+
+- **No paging provider, on-call system or human was contacted.** Delivery is proven to a receiver in this
+  repository, not to PagerDuty, Opsgenie or a phone.
+- **No retry, no dead-letter, no escalation.** A failed delivery is reported in `dispatched[].reason` and then
+  forgotten. There is no acknowledgement, no on-call rotation and no scheduled evaluation; alerts are evaluated
+  when the endpoint is called.
+- **No receipt beyond the HTTP status.** A 204 means the receiver accepted it, not that a human saw it.
+
+The release blocker was therefore **narrowed, not removed**: `alert_delivery_unproven` became
+`alert_delivery_not_observed_against_a_real_channel`.

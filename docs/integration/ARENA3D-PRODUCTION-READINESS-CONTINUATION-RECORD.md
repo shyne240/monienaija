@@ -362,6 +362,32 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 38 — alert delivery
+
+`src/operations/alert-webhook.channel.ts`, the `ALERT_CHANNEL` provider in `operations.module.ts`,
+`test/alert-delivery.spec.ts` (12 assertions), and a delivery section appended to `docs/integration/ALERTING.md`.
+
+**The gap.** Group 19's delivery seam had one implementation, `NoneAlertChannel`, which reported
+`delivered: false`. That was the right default — an unconfigured deployment must not appear to have paged anyone —
+but it means **no alert had ever left the process**. "Alerting works" was a statement about evaluation, suppression
+and deduplication, and nothing else.
+
+**What now exists.** A signed HTTPS webhook: `POST` with `x-monienaija-timestamp` and
+`x-monienaija-signature: sha256=<HMAC-SHA256 over `${timestamp}.${body}`>`, a 5s default timeout, and
+`delivered: true` only on a 2xx. `verifyAlertSignature` is exported so a receiver checks the exact bytes that were
+signed rather than a re-serialisation, and enforces a 300s replay window. Configuration is dark by default,
+**throws when half-configured** rather than running dark while claiming to be on, and refuses cleartext URLs except
+a loopback host outside production.
+
+**Proven over a real socket.** The test's receiver is a real `node:http` server on loopback: 204 delivery,
+signature verification, tampered body / wrong secret / replayed timestamp rejected, `503` reported as not
+delivered, a receiver that never answers reported as a timeout, an unreachable port reported as a failure.
+
+**Still not done, and named.** No paging provider, on-call system or human was contacted; no retry, dead-letter,
+escalation, acknowledgement or scheduled evaluation; a 204 means the receiver accepted the alert, not that someone
+saw it. The blocker was narrowed, not removed: `alert_delivery_unproven` →
+`alert_delivery_not_observed_against_a_real_channel`.
+
 ### Group 37 — automated worker execution
 
 `src/production/process-role.ts`, `src/production/worker-runtime.ts`, `src/main.ts` (role routing),
@@ -1370,7 +1396,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 38–40 remain: the consolidated acceptance report and the final handoff,
+Groups 39–40 remain: the consolidated acceptance report and the final handoff,
 consolidated acceptance, and the final handoff.
 
 Known gaps carried forward: no secret-manager backend is selected (the contract exists; the environment

@@ -214,9 +214,10 @@ export const CONSOLIDATED_MATRIX: readonly MatrixRequirement[] = [
   {
     id: 'alert-delivery',
     area: 'operations',
-    requirement: 'an alert reaches a real channel and is receipted',
+    requirement: 'an alert reaches a paging provider or an on-call human',
     kind: 'unavailable',
-    evidence: 'delivery is dark by default; no channel endpoint was configured or contacted',
+    evidence:
+      'the signed webhook channel delivers over a real socket under test (Group 38); no paging provider, on-call system or external endpoint was contacted',
   },
 ];
 

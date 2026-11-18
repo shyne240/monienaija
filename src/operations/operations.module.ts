@@ -10,7 +10,8 @@ import { IdempotencyRecord } from './idempotency-record.entity';
 import { IdempotencyService } from './idempotency.service';
 import { MetricsService } from './metrics.service';
 import { OperationalMetric } from './operational-metric.entity';
-import { AlertingService } from './alerting.service';
+import { ALERT_CHANNEL, AlertingService } from './alerting.service';
+import { createAlertChannel } from './alert-webhook.channel';
 import { IntegrityMonitoringService } from './integrity-monitoring.service';
 import { OperationsCentreService } from './operations-centre.service';
 import { OperationalMetricsService } from './operational-metrics.service';
@@ -40,6 +41,16 @@ import { WorkerSupervisorService } from './worker-supervisor.service';
     OperationalMetricsService,
     IntegrityMonitoringService,
     AlertingService,
+    /*
+     * ARENA 3D Group 38. The delivery seam from Group 19 finally has a second implementation: when
+     * ALERT_WEBHOOK_URL and ALERT_WEBHOOK_SECRET are set, alerts leave the process over a signed
+     * HTTPS webhook. Unset means NoneAlertChannel — evaluated and recorded, nobody paged, and the
+     * report says so. Half-configured throws here, at startup, rather than running dark.
+     */
+    {
+      provide: ALERT_CHANNEL,
+      useFactory: () => createAlertChannel(process.env),
+    },
     OperationsCentreService,
     WorkerLeaseService,
     // Group 15 supervision. Exported from this @Global module so any worker can report into it without a
