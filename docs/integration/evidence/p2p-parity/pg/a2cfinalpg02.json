@@ -1446,44 +1446,128 @@
       "finished": "2026-11-18T22:57:09.072Z"
     },
     "test/v1-hardening-06-admin-customer-investigation.integration.spec.ts": {
-      "status": "RUNNING",
-      "started": "2026-11-18T22:57:09.073Z"
+      "status": "PASS",
+      "started": "2026-11-18T22:57:09.073Z",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:57:51.233Z"
     },
     "test/v1-hardening-07-admin-agent-financial-position.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:57:51.233Z",
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:58:35.854Z"
     },
     "test/v1-hardening-09-admin-notification-delivery-diagnostics.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:58:35.855Z",
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:59:29.733Z"
     },
     "test/v1-ledger-reversal-governance.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:59:29.734Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:59:58.049Z"
     },
     "test/v1-limit-01-limit-catalogue.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:59:58.050Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:00:42.703Z"
     },
     "test/v1-limit-02-limit-assignment.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:00:42.704Z",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:01:30.736Z"
     },
     "test/v1-limit-03-limit-usage.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:01:30.737Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:02:27.125Z"
     },
     "test/v1-limit-04-limit-runtime.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:02:27.126Z",
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:03:53.410Z"
     },
     "test/v1-limit-05-diagnostics.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:03:53.412Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:04:29.602Z"
     },
     "test/v1-limit-05-flow-matrix.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:04:29.603Z",
+      "passed": 205,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:05:49.341Z"
     },
     "test/v1-limit-05-recovery.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:05:49.342Z",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:06:17.916Z"
     },
     "test/v1-mobile-idempotency-recovery-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:06:17.917Z",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:06:38.030Z"
     },
     "test/v1-notification-provider-configuration-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "RUNNING",
+      "started": "2026-11-18T23:06:38.031Z"
     },
     "test/v1-ops-01-support-workforce-operational.integration.spec.ts": {
       "status": "PENDING"
