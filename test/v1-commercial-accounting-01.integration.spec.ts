@@ -1257,6 +1257,156 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
           commercialSnapshotIds: [snapshots[0].id],
         },
       });
+
+      // Corruption simulation is restricted to this disposable test database. First prove
+      // the production guards reject ordinary edits, then temporarily disable only the
+      // relevant guards inside each fixture transaction to test reconciliation's reader.
+      // Each fixture is restored and guarded before the next case; no real money is used.
+      const reconciliation = app.get(TransferReconciliationService);
+      const principalLines = await dataSource.query(
+        `SELECT id,amount_minor::text FROM ledger_lines WHERE journal_id=$1 AND direction='DEBIT'`,
+        [transfer.journalId],
+      );
+      const vatLines = await dataSource.query(
+        `SELECT l.id,l.amount_minor::text FROM ledger_lines l JOIN ledger_accounts a ON a.id=l.ledger_account_id WHERE l.journal_id=$1 AND a.code=$2`,
+        [journals[0].id, ACCOUNT_LEGEND.VAT_PAYABLE],
+      );
+      expect(principalLines).toHaveLength(1);
+      expect(vatLines).toHaveLength(1);
+      const commissionCredits = await dataSource.query(
+        `SELECT id,ledger_account_id FROM ledger_lines WHERE journal_id=$1 AND direction='CREDIT' AND amount_minor=100`,
+        [journals[0].id],
+      );
+      const vatAccount = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code=$1`, [
+        ACCOUNT_LEGEND.VAT_PAYABLE,
+      ]);
+      expect(commissionCredits).toHaveLength(1);
+      expect(vatAccount).toHaveLength(1);
+      await expect(
+        dataSource.query(`UPDATE ledger_lines SET amount_minor=amount_minor+1 WHERE id=$1`, [
+          vatLines[0].id,
+        ]),
+      ).rejects.toThrow(/immutable/i);
+      await expect(
+        dataSource.query(
+          `UPDATE commercial_decision_snapshots SET fee_decision=fee_decision WHERE id=$1`,
+          [snapshots[0].id],
+        ),
+      ).rejects.toThrow(/immutable/i);
+      async function corruptAndRestore(
+        table: 'ledger_lines' | 'commercial_decision_snapshots',
+        change: string,
+        args: unknown[],
+        restore: string,
+        restoreArgs: unknown[],
+        expected: RegExp,
+      ) {
+        const triggers =
+          table === 'ledger_lines'
+            ? ['ledger_lines_are_immutable', 'ledger_lines_must_balance_journal']
+            : ['trg_commercial_decision_snapshots_immutable'];
+        async function fixture(sql: string, values: unknown[]) {
+          await dataSource.transaction(async (manager) => {
+            for (const trigger of triggers)
+              await manager.query(`ALTER TABLE ${table} DISABLE TRIGGER ${trigger}`);
+            await manager.query(sql, values);
+            for (const trigger of triggers)
+              await manager.query(`ALTER TABLE ${table} ENABLE TRIGGER ${trigger}`);
+          });
+        }
+        await fixture(change, args);
+        try {
+          const report = await reconciliation.reconcileTransfer(transfer.id);
+          expect(report.status).toBe('ERROR');
+          expect(report.discrepancies).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                severity: 'ERROR',
+                message: expect.stringMatching(expected),
+              }),
+            ]),
+          );
+        } finally {
+          await fixture(restore, restoreArgs);
+        }
+        expect(await reconciliation.reconcileTransfer(transfer.id)).toMatchObject({
+          status: 'PASS',
+          discrepancies: [],
+        });
+      }
+      await corruptAndRestore(
+        'ledger_lines',
+        `UPDATE ledger_lines SET amount_minor=amount_minor+1 WHERE id=$1`,
+        [principalLines[0].id],
+        `UPDATE ledger_lines SET amount_minor=$2 WHERE id=$1`,
+        [principalLines[0].id, principalLines[0].amount_minor],
+        /journal debit and credit totals differ|transfer amount does not match/i,
+      );
+      await corruptAndRestore(
+        'ledger_lines',
+        `UPDATE ledger_lines SET amount_minor=amount_minor+1 WHERE id=$1`,
+        [vatLines[0].id],
+        `UPDATE ledger_lines SET amount_minor=$2 WHERE id=$1`,
+        [vatLines[0].id, vatLines[0].amount_minor],
+        /commercial journal is unbalanced|commercial journal lines do not match/i,
+      );
+      // Still balanced, but the commission credit was diverted to the wrong account.
+      await corruptAndRestore(
+        'ledger_lines',
+        `UPDATE ledger_lines SET ledger_account_id=$2 WHERE id=$1`,
+        [commissionCredits[0].id, vatAccount[0].id],
+        `UPDATE ledger_lines SET ledger_account_id=$2 WHERE id=$1`,
+        [commissionCredits[0].id, commissionCredits[0].ledger_account_id],
+        /commercial journal lines do not match/i,
+      );
+      await corruptAndRestore(
+        'commercial_decision_snapshots',
+        `UPDATE commercial_decision_snapshots SET fee_decision=jsonb_set(fee_decision,'{feeMinor}','"1001"'::jsonb) WHERE id=$1`,
+        [snapshots[0].id],
+        `UPDATE commercial_decision_snapshots SET fee_decision=$2::jsonb WHERE id=$1`,
+        [snapshots[0].id, JSON.stringify(snapshots[0].fee_decision)],
+        /fee decision economics|quoted pricing hash/i,
+      );
+      await corruptAndRestore(
+        'commercial_decision_snapshots',
+        `UPDATE commercial_decision_snapshots SET fee_decision=jsonb_set(fee_decision,'{posting,vatMinorPosted}','"76"'::jsonb) WHERE id=$1`,
+        [snapshots[0].id],
+        `UPDATE commercial_decision_snapshots SET fee_decision=$2::jsonb WHERE id=$1`,
+        [snapshots[0].id, JSON.stringify(snapshots[0].fee_decision)],
+        /fee and VAT posting evidence/i,
+      );
+      await corruptAndRestore(
+        'commercial_decision_snapshots',
+        `UPDATE commercial_decision_snapshots SET commission_decision=jsonb_set(commission_decision,'{allocations,0,amountMinor}','"101"'::jsonb) WHERE id=$1`,
+        [snapshots[0].id],
+        `UPDATE commercial_decision_snapshots SET commission_decision=$2::jsonb WHERE id=$1`,
+        [snapshots[0].id, JSON.stringify(snapshots[0].commission_decision)],
+        /commission allocation and expense do not agree/i,
+      );
+      // Missing or inconsistent accounting registry evidence cannot be certified as PASS.
+      await dataSource.query(
+        `UPDATE commercial_accounting_registry SET account_type='EXPENSE' WHERE family_code='VAT_PAYABLE'`,
+      );
+      try {
+        const report = await reconciliation.reconcileTransfer(transfer.id);
+        expect(report.status).toBe('WARNING');
+        expect(report.discrepancies).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              severity: 'WARNING',
+              message: expect.stringMatching(/registry evidence for VAT_PAYABLE/i),
+            }),
+          ]),
+        );
+      } finally {
+        await dataSource.query(
+          `UPDATE commercial_accounting_registry SET account_type='LIABILITY' WHERE family_code='VAT_PAYABLE'`,
+        );
+      }
+      expect(await reconciliation.reconcileTransfer(transfer.id)).toMatchObject({
+        status: 'PASS',
+        discrepancies: [],
+      });
     },
   );
 
