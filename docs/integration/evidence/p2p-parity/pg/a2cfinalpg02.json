@@ -2,7 +2,7 @@
   "id": "a2cfinalpg02",
   "source": "fa9ec89e5c5e989ca8ca6f8b15e4d6cd4ab04849",
   "started": "2026-11-18T21:22:16.895Z",
-  "state": "RUNNING",
+  "state": "PASSED",
   "resumeFrom": [],
   "suites": {
     "test/a10-agent-service-capability.integration.spec.ts": {
@@ -1701,5 +1701,6 @@
     "perProcess": 1,
     "concurrency": 1,
     "heapMiB": 1536
-  }
+  },
+  "finished": "2026-11-18T23:13:57.815Z"
 }
