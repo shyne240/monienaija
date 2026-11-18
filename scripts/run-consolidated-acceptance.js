@@ -103,14 +103,16 @@ function main() {
     record('unit-suite', 'MISSING', '--skip-suite was passed');
   } else {
     const suite = sh('npx', ['jest', '--config', 'jest.config.js']);
-    const tests = /Tests:\s+(\d+) passed, (\d+) total/.exec(String(suite.stdout ?? ''));
-    const suites = /Test Suites:\s+(\d+) passed, (\d+) total/.exec(String(suite.stdout ?? ''));
+    // Jest writes its summary to stderr; reading only stdout reported "? tests" for a passing run.
+    const output = `${String(suite.stdout ?? '')}\n${String(suite.stderr ?? '')}`;
+    const tests = /Tests:\s+(\d+) passed, (\d+) total/.exec(output);
+    const suites = /Test Suites:\s+(\d+) passed, (\d+) total/.exec(output);
     record(
       'unit-suite',
       suite.status === 0 ? 'PASS' : 'FAIL',
       suite.status === 0
         ? `${tests ? tests[1] : '?'} tests in ${suites ? suites[1] : '?'} suites`
-        : tail(suite.stdout),
+        : tail(output),
     );
   }
 
