@@ -497,6 +497,7 @@ export class TransferService {
       }
       requireAgentWalletTransferCapability(participants[0]);
       requireAgentWalletTransferCapability(participants[1]);
+      await this.transferQuoteService!.requireInstitutionalContext(manager, participants);
       await requireTransferProduct(manager, command.currency);
       confirmedPricing = await this.transferPricingService!.priceWithManager(manager, {
         amountMinor: command.amountMinor,

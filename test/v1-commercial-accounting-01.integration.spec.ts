@@ -55,6 +55,7 @@ import { DataSource } from 'typeorm';
 import { randomUUID, randomBytes, pbkdf2Sync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { OutboxService } from '../src/operations/outbox.service';
@@ -1286,14 +1287,12 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     expect(await walletBalance(destination.ledgerAccountId)).toBe(30000n);
     expect(await walletBalance(cashRecipient.walletLedgerAccountId)).toBe(30000n);
     // Competing debits total more than the remaining float: at most one can post.
-    const second = await app
-      .get(TransferQuoteService)
-      .create(agentPrincipal(agent.id), {
-        destinationWalletId: destination.id,
-        amountMinor: '30000',
-        currency: 'NGN',
-        idempotencyKey: randomUUID(),
-      });
+    const second = await app.get(TransferQuoteService).create(agentPrincipal(agent.id), {
+      destinationWalletId: destination.id,
+      amountMinor: '30000',
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
     const competing = await Promise.allSettled([
       transferService.createConfirmedTransfer(
         agentPrincipal(agent.id),
@@ -1318,6 +1317,209 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       (await walletBalance(destination.ledgerAccountId)) +
         (await walletBalance(cashRecipient.walletLedgerAccountId)),
     ).toBe(90000n);
+  });
+
+  it('agent self quote rejects cross-institution and partially attributed destinations', async () => {
+    const { agent, wallet } = await createActiveAgentWithPin(
+      [AgentService.WALLET_TRANSFER],
+      '1234',
+    );
+    const foreignInstitution = await governed.fixture.institution('foreign-p2p');
+    const foreignCustomer = await eligibleCustomerId();
+    const foreign = await walletService.createWallet({
+      customerId: foreignCustomer,
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    await governed.fixture.enrolCustomer(foreignCustomer, foreignInstitution, {
+      targetStatus: 'ACTIVE',
+      financialEligibility: 'ELIGIBLE',
+    });
+    await governed.fixture.attributeWallet(foreign.id, foreignInstitution);
+    const legacyCustomer = await eligibleCustomerId();
+    const legacy = await walletService.createWallet({
+      customerId: legacyCustomer,
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const quotes = app.get(TransferQuoteService);
+    const input = { amountMinor: '1000', currency: 'NGN', idempotencyKey: randomUUID() };
+    await expect(
+      quotes.create(agentPrincipal(agent.id), { ...input, destinationWalletId: foreign.id }),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      quotes.create(agentPrincipal(agent.id), {
+        ...input,
+        idempotencyKey: randomUUID(),
+        destinationWalletId: legacy.id,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(0n);
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    expect(
+      await dataSource.query(`SELECT quote_id FROM wallet_transfer_quote_bindings`),
+    ).toHaveLength(0);
+  });
+
+  it('refuses confirmation after the governing institution is suspended', async () => {
+    const { agent, wallet } = await createActiveAgentWithPin(
+      [AgentService.WALLET_TRANSFER],
+      '1234',
+    );
+    const destination = await createWallet(await eligibleCustomerId());
+    await seedLimitProfile(
+      `SUSP_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'WALLET_TRANSFER',
+    );
+    await fundWallet(wallet.ledgerAccountId, '50000');
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const quote = await app.get(TransferQuoteService).create(agentPrincipal(agent.id), {
+      destinationWalletId: destination.id,
+      amountMinor: '1000',
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    const key = randomUUID();
+    await governed.fixture.changeInstitutionStatus(governed.institutionId, 'SUSPENDED');
+    await expect(
+      transferService.createConfirmedTransfer(agentPrincipal(agent.id), quote.quoteId, key, '1234'),
+    ).rejects.toMatchObject({ status: 503 });
+    await expect(
+      app.get(TransferQuoteService).create(agentPrincipal(agent.id), {
+        destinationWalletId: destination.id,
+        amountMinor: '1000',
+        currency: 'NGN',
+        idempotencyKey: randomUUID(),
+      }),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(50000n);
+    expect(await walletBalance(destination.ledgerAccountId)).toBe(0n);
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    expect(
+      await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [quote.quoteId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
+    await governed.fixture.changeInstitutionStatus(governed.institutionId, 'APPROVED');
+    const result = await transferService.createConfirmedTransfer(
+      agentPrincipal(agent.id),
+      quote.quoteId,
+      key,
+      '1234',
+    );
+    expect(result.status).toBe('COMPLETED');
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(49000n);
+    expect(await walletBalance(destination.ledgerAccountId)).toBe(1000n);
+  });
+
+  it('refuses a quoted transfer after governed agent affiliation suspension', async () => {
+    const { agent, wallet } = await createActiveAgentWithPin(
+      [AgentService.WALLET_TRANSFER],
+      '1234',
+    );
+    const destination = await createWallet(await eligibleCustomerId());
+    await fundWallet(wallet.ledgerAccountId, '50000');
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const quote = await app.get(TransferQuoteService).create(agentPrincipal(agent.id), {
+      destinationWalletId: destination.id,
+      amountMinor: '1000',
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    const { networkManager, controller } = await governed.fixture.workforce();
+    const body = {
+      institutionId: governed.institutionId,
+      changeKind: 'SUSPEND',
+      evidenceType: 'INSTITUTION_APPROVAL_LETTER',
+      evidenceReference: `SUSP-${randomUUID()}`,
+      reason: 'Agent affiliation suspended under the institution governance procedure',
+    };
+    const path = `/api/v1/internal/agent-affiliations/${agent.id}`;
+    const prepared = await request(app.getHttpServer())
+      .post(`${path}/request`)
+      .set('Authorization', `Bearer ${networkManager.token}`)
+      .send(body)
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/a2/workforce/approvals/${prepared.body.approvalId as string}/approve`)
+      .set('Authorization', `Bearer ${controller.token}`)
+      .send({ comment: 'independently checked' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`${path}/execute`)
+      .set('Authorization', `Bearer ${controller.token}`)
+      .send({ ...body, approvalId: prepared.body.approvalId })
+      .expect(201);
+    await expect(
+      transferService.createConfirmedTransfer(
+        agentPrincipal(agent.id),
+        quote.quoteId,
+        randomUUID(),
+        '1234',
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(50000n);
+    expect(await walletBalance(destination.ledgerAccountId)).toBe(0n);
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    expect(
+      await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [quote.quoteId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
+  });
+
+  it('refuses a quoted transfer after governed recipient enrolment suspension', async () => {
+    const { agent, wallet } = await createActiveAgentWithPin(
+      [AgentService.WALLET_TRANSFER],
+      '1234',
+    );
+    const customerId = await eligibleCustomerId();
+    const destination = await createWallet(customerId);
+    await fundWallet(wallet.ledgerAccountId, '50000');
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const quote = await app.get(TransferQuoteService).create(agentPrincipal(agent.id), {
+      destinationWalletId: destination.id,
+      amountMinor: '1000',
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    const { networkManager, controller } = await governed.fixture.workforce();
+    const path = `/api/v1/internal/institutions/${governed.institutionId}/enrolments`;
+    const body = {
+      customerId,
+      reference: `SUSP-${randomUUID()}`,
+      targetStatus: 'SUSPENDED',
+      financialEligibility: 'RESTRICTED',
+      statusReason: 'Customer enrolment suspended under institution governance procedure',
+    };
+    const prepared = await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${networkManager.token}`)
+      .send(body)
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/a2/workforce/approvals/${prepared.body.approvalId as string}/approve`)
+      .set('Authorization', `Bearer ${controller.token}`)
+      .send({ comment: 'independently checked' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`${path}/execute`)
+      .set('Authorization', `Bearer ${controller.token}`)
+      .send({ ...body, approvalId: prepared.body.approvalId })
+      .expect(201);
+    await expect(
+      transferService.createConfirmedTransfer(
+        agentPrincipal(agent.id),
+        quote.quoteId,
+        randomUUID(),
+        '1234',
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(50000n);
+    expect(await walletBalance(destination.ledgerAccountId)).toBe(0n);
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    expect(
+      await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [quote.quoteId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
   });
 
   it('confirmed transfer refuses a nonzero commission when accounting is disabled', async () => {

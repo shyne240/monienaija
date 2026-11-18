@@ -4,6 +4,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Inject,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -23,6 +24,11 @@ import { assertWalletOwnership } from '../wallet/wallet-ownership';
 import { resolveTransferParticipants, type TransferParticipant } from './transfer-participant';
 import { TransferPricingService } from './transfer-pricing.service';
 import { requireTransferProduct } from './transfer-product';
+import {
+  FINANCIAL_CONTEXT_RESOLVER,
+  assertFinancialContextCompatible,
+  type FinancialContextResolver,
+} from '../institution/financial-context-resolver';
 
 const QUOTE_LIFETIME_MS = 5 * 60 * 1000;
 
@@ -79,7 +85,37 @@ export class TransferQuoteService {
     private readonly pricing: TransferPricingService,
     private readonly references: PaymentReferenceService,
     private readonly boundary: WalletFinancialBoundaryService,
+    @Inject(FINANCIAL_CONTEXT_RESOLVER) private readonly financialContext: FinancialContextResolver,
   ) {}
+
+  /** Re-resolve each owner using the governed institution authority, retaining its locks until commit. */
+  async requireInstitutionalContext(
+    manager: EntityManager,
+    participants: [TransferParticipant, TransferParticipant],
+  ): Promise<void> {
+    const institutionId = participants[0].wallet.institutionId ?? null;
+    if (institutionId !== (participants[1].wallet.institutionId ?? null))
+      throw new ConflictException('Institutional wallet context is unavailable');
+    // Preserve the existing legacy wholly-unattributed rollout policy; limits and ledger still
+    // enforce their own production restrictions. Never apply it to a partly attributed pair.
+    if (!institutionId) return;
+    for (const participant of [...participants].sort((a, b) =>
+      a.wallet.id.localeCompare(b.wallet.id),
+    )) {
+      const context = await this.financialContext.resolve(manager, {
+        institutionId,
+        ...(participant.type === 'AGENT'
+          ? { agentId: participant.id }
+          : { customerId: participant.id }),
+        walletIds: [participant.wallet.id],
+        ledgerAccountIds: [participant.wallet.ledgerAccountId],
+        lock: 'SHARE',
+      });
+      assertFinancialContextCompatible(context);
+      if (context.institutionId !== institutionId)
+        throw new ConflictException('Institutional wallet context is unavailable');
+    }
+  }
 
   async create(
     principal: AuthorizationPrincipal,
@@ -225,6 +261,7 @@ export class TransferQuoteService {
             throw new ConflictException('Wallet is not eligible for this currency');
           if ((source.institutionId ?? null) !== (destination.institutionId ?? null))
             throw new ConflictException('Institutional wallet context is unavailable');
+          await this.requireInstitutionalContext(manager, participants);
           await this.boundary.requireAccounts(manager, [
             source.ledgerAccountId,
             destination.ledgerAccountId,
