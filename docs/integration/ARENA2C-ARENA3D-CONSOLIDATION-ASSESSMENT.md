@@ -8,7 +8,8 @@
 |---|---|
 | Common ancestor (`git merge-base`) | `e20b31167f50f251ff84a6cdce662eb63b49b820` |
 | 2B recovered | `3db04703bfad39488b5b9e34c88c49f73d81389b` |
-| 2C application/test source | `d9635748bc7e391529a6901dba10767e09f77ca4` |
+| 2C contact/cross-flow checkpoint | `d9635748bc7e391529a6901dba10767e09f77ca4` |
+| 2C final application/test source | `fa9ec89e5c5e989ca8ca6f8b15e4d6cd4ab04849` |
 | 3D application/test source | `75e17690d0c69ee9c5c5b7ab7369b6c60e52e139` |
 | `arena/defdd0fd-monienaija` frozen head | `6816a760bd460df2a5347016d7d84f5c62cab642` |
 
@@ -24,7 +25,7 @@ Read the 3D handoff with `git show 6816a760:docs/integration/ARENA3D-FINAL-HANDO
 | `test/migration-inventory.spec.ts` | Keep the 0600–0605 contiguous banking assertion, scope that assertion to its range as 3D does, then assert the nine appended 0606–0614 identities and the three 0800–0802 identities. Pin the **actual latest** to 0802, not an allowlist. Also update the full expected sequence in `migration-chain.integration.spec.ts` (includes earlier names, not just the tail). Retain 2C's A8/A19/A20 and Stage 8/10 exact-head corrections. |
 | `test/a3d-agent-float-funding.integration.spec.ts` | Both sides correct double destruction after Nest closes the injected DataSource. Prefer 2C's `destroyIntegrationDataSource` after app close: it can drop the run-owned DB even when `isInitialized` is already false. Preserve 3D's harness isolation and explicit drill-only keep mode; keep mode must be **off** in regression. Verify all 14 bodies **and teardown**. |
 
-These are six paths, not six textual merge conflicts. For reproduction: intersect the sorted outputs of `git diff --name-only e20b311 d9635748` and `git diff --name-only e20b311 6816a760`. Non-overlapping files can still have conflicting contracts.
+These are six paths, not six textual merge conflicts. For reproduction: intersect the sorted outputs of `git diff --name-only e20b311 fa9ec89e` and `git diff --name-only e20b311 6816a760`. Non-overlapping files can still have conflicting contracts. The final A14 Cash-Out and shared KYC eligibility corrections add **no** shared paths or migrations. Re-run same-customer concurrent OTP withdrawals plus session, KYC, limit and worker transitions; true serialization/deadlock errors must reach the bounded transaction owner without pretending the policy is missing.
 
 ## Full migration inventory and compatibility
 
