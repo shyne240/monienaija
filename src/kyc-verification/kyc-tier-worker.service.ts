@@ -2,6 +2,10 @@ import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@ne
 import type { DataSource } from 'typeorm';
 import type { KycTierTransitionService } from './kyc-tier-transition.service';
 import type { KycTierPolicyService } from './kyc-tier-policy.service';
+import {
+  SUPERVISED_WORKERS,
+  type WorkerSupervisorService,
+} from '../operations/worker-supervisor.service';
 
 /** Bounded, persistent work; customer locks and queue revisions serialize concurrent workers. */
 export interface KycTierWorkerOptions {
@@ -42,9 +46,22 @@ export class KycTierWorker implements OnModuleInit, OnModuleDestroy {
     this.timer = null;
     await this.active;
   }
+  /** Group 15 supervisor, optional so direct construction in tests is unchanged. */
+  private supervisor: WorkerSupervisorService | null = null;
+
+  attachSupervisor(supervisor: WorkerSupervisorService): void {
+    this.supervisor = supervisor;
+  }
+
   tick(): Promise<void> {
     if (this.active) return this.active;
-    this.active = this.run()
+    // Observation only; the driver stays this worker's own interval.
+    const observed = this.supervisor
+      ? this.supervisor.scheduler.observe(SUPERVISED_WORKERS.KYC_TIER_REEVALUATION, () =>
+          this.run(),
+        )
+      : this.run();
+    this.active = observed
       .catch(() => {
         this.logger.error('KYC reevaluation tick failed');
       })

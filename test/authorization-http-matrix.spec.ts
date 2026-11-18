@@ -37,6 +37,9 @@ import { AuditService } from '../src/operations/audit.service';
 import { DiagnosticsService } from '../src/operations/diagnostics.service';
 import { MetricsService } from '../src/operations/metrics.service';
 import { OutboxService } from '../src/operations/outbox.service';
+import { ConfigService } from '@nestjs/config';
+
+import { WorkerSupervisorService } from '../src/operations/worker-supervisor.service';
 import { CustomerAuthenticationRuntimeService } from '../src/customer-authentication/customer-authentication-runtime.service';
 import { DepositController } from '../src/deposit/deposit.controller';
 import { DepositService } from '../src/deposit/deposit.service';
@@ -349,6 +352,14 @@ describe('HTTP authorization matrix', () => {
         { provide: DiagnosticsService, useValue: diagnosticsService },
         { provide: MetricsService, useValue: metricsService },
         { provide: OutboxService, useValue: outboxService },
+        // Group 15 added a supervisor dependency to OperationsController. A real instance over a stub
+        // ConfigService is used rather than a bare object, so this suite exercises the actual report shape.
+        {
+          provide: WorkerSupervisorService,
+          useValue: new WorkerSupervisorService({
+            get: () => undefined,
+          } as unknown as ConfigService),
+        },
         { provide: DepositService, useValue: depositService },
         { provide: WithdrawalService, useValue: withdrawalService },
         { provide: TransferService, useValue: transferService },

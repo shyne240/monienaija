@@ -27,7 +27,7 @@
  * a dead letter is a status. A process that dies leaves nothing stranded and nothing double-run, because
  * it never held anything in the first place.
  */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 
 /** Default ceiling on delivery attempts before an event is dead-lettered. Configurable, not magic. */
@@ -98,7 +98,19 @@ export interface DeadLetterRecord {
  */
 @Injectable()
 export class WorkerLeaseService {
-  constructor(private readonly defaultMaxAttempts = DEFAULT_MAX_DELIVERY_ATTEMPTS) {}
+  /**
+   * The ceiling is a constructor argument for testability, **not** an injected dependency.
+   *
+   * It was originally a defaulted parameter, which Nest reads as a dependency at index 0 and fails to
+   * resolve — caught by the AppModule boot test, not by the unit suite, because unit tests instantiate the
+   * class directly. `@Optional()` keeps both paths working: DI leaves it undefined, direct construction can
+   * pass a smaller ceiling.
+   */
+  private readonly defaultMaxAttempts: number;
+
+  constructor(@Optional() defaultMaxAttempts?: number) {
+    this.defaultMaxAttempts = defaultMaxAttempts ?? DEFAULT_MAX_DELIVERY_ATTEMPTS;
+  }
 
   /**
    * Claims a bounded batch of due events for one worker.

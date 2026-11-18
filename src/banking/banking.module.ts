@@ -7,6 +7,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
 import { FeeModule } from '../fee/fee.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { OperationsModule } from '../operations/operations.module';
+import { WorkerSupervisorService } from '../operations/worker-supervisor.service';
 import { ProtectedAuthorityModule } from '../authorization/protected-authority.module';
 
 import { BankingProviderRegistry } from './banking-provider.registry';
@@ -216,12 +217,13 @@ export interface BankingRuntime {
     },
     {
       provide: BankingDispatchWorker,
-      inject: [ConfigService, BankingOutboundService],
+      inject: [ConfigService, BankingOutboundService, WorkerSupervisorService],
       useFactory: (
         config: ConfigService<Environment, true>,
         outbound: BankingOutboundService,
-      ): BankingDispatchWorker =>
-        new BankingDispatchWorker(outbound.dataSource, outbound, {
+        supervisor: WorkerSupervisorService,
+      ): BankingDispatchWorker => {
+        const worker = new BankingDispatchWorker(outbound.dataSource, outbound, {
           enabled:
             config.get('BANKING_DISPATCH_WORKER_ENABLED', { infer: true }) ??
             (config.get('BANKING_ENABLED', { infer: true }) && process.env.NODE_ENV !== 'test'),
@@ -229,7 +231,12 @@ export interface BankingRuntime {
           leaseMs: config.get('BANKING_DISPATCH_LEASE_MS', { infer: true }),
           maxAttempts: config.get('BANKING_DISPATCH_MAX_ATTEMPTS', { infer: true }),
           intakeDisabled: config.get('BANKING_INTAKE_DISABLED', { infer: true }),
-        }),
+        });
+        // Group 15: observation only. The worker's own interval, lease and fence remain the sole
+        // scheduling and ownership mechanism.
+        worker.attachSupervisor(supervisor);
+        return worker;
+      },
     },
   ],
   controllers: [

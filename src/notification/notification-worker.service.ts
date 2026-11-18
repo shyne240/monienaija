@@ -20,6 +20,10 @@ import { NotificationDispatcherService } from './notification-dispatcher.service
 import { NotificationProviderConfigService } from './notification-provider-config.service';
 import { NotificationTemplateService } from './notification-template.service';
 import type { NotificationEmailTemplateLookup, NotificationProvider } from './notification.types';
+import {
+  SUPERVISED_WORKERS,
+  type WorkerSupervisorService,
+} from '../operations/worker-supervisor.service';
 
 export interface NotificationWorkerTickResult {
   outboxProcessed: number;
@@ -54,6 +58,9 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
     _emailTemplates: NotificationEmailTemplateLookup | null = null,
     @Optional() private readonly templateService?: NotificationTemplateService,
     @Optional() private readonly providerConfigService?: NotificationProviderConfigService,
+    // Group 15: object-typed and `@Optional`, so Nest resolves it without a token and direct construction
+    // in tests continues to compile unchanged.
+    @Optional() private readonly supervisor?: WorkerSupervisorService,
   ) {
     void _emailTemplates;
   }
@@ -74,7 +81,9 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
       return;
     }
     this.timer = setInterval(() => {
-      void this.tick().catch(() => this.logger.warn({ event: 'notification.worker_tick_failed' }));
+      void this.observeTick().catch(() =>
+        this.logger.warn({ event: 'notification.worker_tick_failed' }),
+      );
     }, this.pollIntervalMs);
     this.timer.unref?.();
     this.logger.log('Notification worker started');
@@ -83,6 +92,21 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
   onModuleDestroy(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+  }
+
+  /**
+   * Observation is attached around the *body* of the tick, inside the existing `running` guard.
+   *
+   * Wrapping outside the guard would count a skipped re-entrant tick as a completed one, which would make a
+   * worker that is permanently skipping look healthy. `observe` is therefore called only on the path that
+   * actually does work.
+   */
+  private observeTick(): Promise<NotificationWorkerTickResult> {
+    return this.supervisor
+      ? this.supervisor.scheduler.observe(SUPERVISED_WORKERS.NOTIFICATION_DELIVERY, () =>
+          this.tick(),
+        )
+      : this.tick();
   }
 
   async tick(): Promise<NotificationWorkerTickResult> {

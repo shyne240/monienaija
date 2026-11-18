@@ -13,6 +13,8 @@ import { OperationalMetric } from './operational-metric.entity';
 import { OutboxEvent } from './outbox-event.entity';
 import { OutboxService } from './outbox.service';
 import { OperationsController } from './operations.controller';
+import { WorkerLeaseService } from './worker-lease.service';
+import { WorkerSupervisorService } from './worker-supervisor.service';
 
 @Global()
 @Module({
@@ -25,7 +27,25 @@ import { OperationsController } from './operations.controller';
     TypeOrmModule.forFeature([AuditEvent, IdempotencyRecord, OperationalMetric, OutboxEvent]),
   ],
   controllers: [OperationsController],
-  providers: [AuditService, DiagnosticsService, IdempotencyService, MetricsService, OutboxService],
-  exports: [AuditService, DiagnosticsService, IdempotencyService, MetricsService, OutboxService],
+  providers: [
+    AuditService,
+    DiagnosticsService,
+    IdempotencyService,
+    MetricsService,
+    OutboxService,
+    WorkerLeaseService,
+    // Group 15 supervision. Exported from this @Global module so any worker can report into it without a
+    // new module edge — all four worker modules already import OperationsModule.
+    WorkerSupervisorService,
+  ],
+  exports: [
+    AuditService,
+    DiagnosticsService,
+    IdempotencyService,
+    MetricsService,
+    OutboxService,
+    WorkerLeaseService,
+    WorkerSupervisorService,
+  ],
 })
 export class OperationsModule {}

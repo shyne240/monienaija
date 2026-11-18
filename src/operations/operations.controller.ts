@@ -8,6 +8,7 @@ import { DiagnosticsService } from './diagnostics.service';
 import { MetricsService } from './metrics.service';
 import { OutboxService } from './outbox.service';
 import { OutboxEventStatus } from './operations.enums';
+import { WorkerSupervisorService } from './worker-supervisor.service';
 
 interface AuthenticatedRequest {
   headers: Record<string, string | string[] | undefined>;
@@ -44,6 +45,7 @@ export class OperationsController {
     private readonly metricsService: MetricsService,
     private readonly outboxService: OutboxService,
     private readonly auth: AuthorizationService,
+    private readonly workerSupervisor: WorkerSupervisorService,
   ) {}
 
   @Get('metrics')
@@ -56,6 +58,22 @@ export class OperationsController {
   async getDiagnostics(@Req() req: AuthenticatedRequest) {
     await this.requireFunction(req, 'diagnostics.view');
     return this.diagnosticsService.getDiagnostics();
+  }
+
+  /**
+   * Group 15 — background worker supervision for this instance.
+   *
+   * Behind `diagnostics.view`, reusing the existing function rather than introducing a new catalogue
+   * permission: this is the same class of operational detail as `/internal/diagnostics`, and inventing a
+   * permission would require a seed change and a role assignment decision that is the product owner's.
+   *
+   * The payload states its own scope. It is **process-local**: it says what this instance has observed, and
+   * does not claim that work is progressing fleet-wide.
+   */
+  @Get('workers')
+  async getWorkers(@Req() req: AuthenticatedRequest) {
+    await this.requireFunction(req, 'diagnostics.view');
+    return this.workerSupervisor.report();
   }
 
   // Not migrated — see class-level comment: SUPPORT is a proven, tested consumer of this exact

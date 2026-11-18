@@ -3,6 +3,10 @@ import { Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } fro
 import { DataSource } from 'typeorm';
 
 import type { BankingOutboundService, OutboundState } from './banking-outbound.service';
+import {
+  SUPERVISED_WORKERS,
+  type WorkerSupervisorService,
+} from '../operations/worker-supervisor.service';
 
 /**
  * Durable outbound dispatch.
@@ -67,6 +71,20 @@ export class BankingDispatchWorker implements OnModuleInit, OnApplicationShutdow
   private shuttingDown = false;
   private intakeDisabled: boolean;
 
+  /**
+   * Group 15 supervisor, optional on purpose.
+   *
+   * This worker is constructed by hand in tests and in the module factory below, so a required dependency
+   * would change every call site for a purely observational concern. When absent, ticks run exactly as
+   * before — supervision must never be a precondition for dispatch.
+   */
+  private supervisor: WorkerSupervisorService | null = null;
+
+  /** Wired by the module factory (or a test) once the supervisor is available. */
+  attachSupervisor(supervisor: WorkerSupervisorService): void {
+    this.supervisor = supervisor;
+  }
+
   constructor(
     private readonly db: DataSource,
     private readonly outbound: BankingOutboundService,
@@ -111,7 +129,12 @@ export class BankingDispatchWorker implements OnModuleInit, OnApplicationShutdow
 
   async tick(): Promise<DispatchTickResult> {
     if (this.active) return this.active;
-    const run = this.runOnce().finally(() => {
+    // Group 15: observation only. The scheduler wraps this worker's existing driver and passes the result
+    // through untouched; it does not start, stop, or re-time anything here.
+    const observe = this.supervisor
+      ? this.supervisor.scheduler.observe(SUPERVISED_WORKERS.BANKING_DISPATCH, () => this.runOnce())
+      : this.runOnce();
+    const run = observe.finally(() => {
       this.active = null;
     });
     this.active = run;

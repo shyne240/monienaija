@@ -14,7 +14,8 @@ Continuation record. Updated as each group lands; the workspace is the source of
 | Group 8                                     | `5670bc97`    | 152/152 environment keys inventoried and classified; completeness test.                 |
 | Group 12                                    | `3e0c9985`    | Backup and restore exercise, executed and verified.                                     |
 | Groups 9, 10, 11                            | `62368a3b`    | Secret resolution and rotation, runtime/authority separation proof, migration workflow. |
-| Groups 13, 14                               | _this commit_ | Recovery objectives and resume policy; outbox leases and dead letters.                  |
+| Groups 13, 14                               | `cc6392a7`    | Recovery objectives and resume policy; outbox leases and dead letters.                  |
+| Group 15                                    | _this commit_ | Worker scheduling decision, supervision, `/internal/workers` observability.             |
 
 Branch: `arena/defdd0fd-monienaija`. There is no upstream; push with `git push origin <branch>`.
 
@@ -353,6 +354,54 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 15 — worker scheduling and supervision
+
+`src/operations/worker-scheduler.service.ts`, `src/operations/worker-supervisor.service.ts`,
+`test/worker-supervision.spec.ts` (16 assertions), `GET /api/v1/internal/workers`, and
+`docs/integration/WORKER-SCHEDULING-AND-SUPERVISION.md`.
+
+**The decision that shaped the group.** Group 14 established that the existing ownership mechanisms are
+correct — the banking lease with fencing, KYC's `ON CONFLICT DO NOTHING`, and the outbox's
+`FOR UPDATE SKIP LOCKED`. A scheduler that "owns" the workers would therefore have created a **second**
+authority over the same concern: a scheduler deciding when banking dispatch runs while the database lease
+decides who may dispatch. Two authorities over one concern is how double-dispatch bugs are born.
+
+So this group adds **supervision, not scheduling**. Every worker keeps its own driver and its own
+cross-process guarantee; the supervisor attaches to each tick as an observer, records timing and outcome,
+and returns the result untouched. The attachment is optional — a worker with no supervisor runs exactly as
+before, so supervision is never a precondition for financial work.
+
+**What it adds.** One authoritative per-instance view: which workers exist, whether each is enabled and
+actually ticking, last success/failure, duration, and consecutive failures. Previously this was scattered
+across four `getStatus()` methods with different shapes, of which three did not exist.
+
+**`indeterminate` is load-bearing.** If nothing was measured — every worker disabled, or supervision attached
+to a process that is not the driver — the aggregate status is `indeterminate`, not `ok`. A supervisor that
+reports `ok` when every worker is switched off is worse than none: it converts an unmeasured system into an
+apparently-checked one. `disabled` and `neverObserved` are separate lists because the operator action is
+opposite — a configuration decision versus a fault.
+
+**Two real defects were caught by tests that already existed:**
+
+- `WorkerLeaseService` had a defaulted primitive constructor parameter, which Nest reads as a dependency at
+  index 0. The unit suite passed (it constructs the class directly); the **AppModule boot test** failed.
+  Fixed with `@Optional()` plus a normalised field.
+- The registry's first draft guessed that banking's interval key was
+  `BANKING_DISPATCH_WORKER_POLL_INTERVAL_MS` by analogy with the other three. It is
+  `BANKING_DISPATCH_POLL_INTERVAL_MS`. That failure is silent — the registry reports a default while the
+  worker runs on a configured value — so the exact key strings are now pinned in a test. Banking enablement
+  also follows `BANKING_DISPATCH_WORKER_ENABLED ?? (BANKING_ENABLED && !test)`, mirroring the module
+  factory; both branches are tested.
+
+**Configuration is not duplicated.** The registry reads the same keys through the same `ConfigService` as
+each worker. A second set of supervisor keys would let the registry and the worker disagree, and the
+registry's answer would look authoritative while being wrong.
+
+**What the report cannot see**, recorded in the payload itself and in the runbook: it is process-local, it is
+not a liveness proof for the queue (a worker can be healthy while the queue does not drain), it says nothing
+about external submission outcomes, and it does not measure recovery. Declared objectives (Group 13) and
+measured recovery performance remain distinct.
+
 ### Group 13 — disaster recovery objectives and resume policy
 
 `src/recovery/disaster-recovery.service.ts` and `test/disaster-recovery.spec.ts` (10 assertions).
@@ -451,7 +500,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 15–40 remain: scheduling, logging, metrics/health, integrity monitoring, alerting, admin operations
+Groups 16–40 remain: logging, metrics/health, integrity monitoring, alerting, admin operations
 centre, operational security, break-glass, fraud/risk, compliance, complaints, disputes, mobile support,
 SMS/email, privacy/retention, performance harness, CI release gates, the PostgreSQL matrix, sandbox
 readiness, mobile release, browser acceptance, readiness gate, journeys A–J, consolidated acceptance, and
@@ -465,6 +514,12 @@ categories in one database.
 Known gaps carried forward from Group 12: no fixture seeds all eleven backup categories in one database;
 the restore requires superuser; and off-site storage, encryption at rest, retention and point-in-time
 recovery are infrastructure decisions that are not implemented.
+
+Known gaps from Group 15: there is no fleet-wide scheduler, leader election or distributed cron, by design —
+each instance runs its own timers and correctness rests on the database mechanisms, so the supervisor
+observes one process and cannot prove that work is progressing anywhere else. Staleness is pull-only with no
+alerting thresholds (Group 19) and no metrics export (Group 17); the supervisor does not retry, restart or
+back-pressure a worker, because retries belong to the lease and dead-letter bounds established in Group 14.
 
 Known gaps from Groups 13–14: recovery objectives are configuration with no measurement behind them — the
 service classifies and reports, it does not measure actual RPO/RTO, so "ready" means "declared and

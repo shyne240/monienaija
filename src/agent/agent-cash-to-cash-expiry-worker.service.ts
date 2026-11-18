@@ -4,6 +4,10 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 
 import { AgentCashToCashExpiryService } from './agent-cash-to-cash-expiry.service';
+import {
+  SUPERVISED_WORKERS,
+  type WorkerSupervisorService,
+} from '../operations/worker-supervisor.service';
 
 export interface ExpiryTickResult {
   status: 'COMPLETED' | 'FAILED' | 'SKIPPED' | 'DISABLED';
@@ -40,6 +44,13 @@ export class AgentCashToCashExpiryWorker implements OnModuleInit, OnModuleDestro
     void this.tick(); // Catch up persisted due work immediately on startup/restart.
   }
 
+  /** Group 15 supervisor, optional so direct construction in tests is unchanged. */
+  private supervisor: WorkerSupervisorService | null = null;
+
+  attachSupervisor(supervisor: WorkerSupervisorService): void {
+    this.supervisor = supervisor;
+  }
+
   async onModuleDestroy(): Promise<void> {
     this.stopping = true;
     if (this.timer) clearInterval(this.timer);
@@ -65,7 +76,13 @@ export class AgentCashToCashExpiryWorker implements OnModuleInit, OnModuleDestro
       return Promise.resolve({ status: 'DISABLED', expiredCount: 0 });
     }
     if (this.active) return Promise.resolve({ status: 'SKIPPED', expiredCount: 0 });
-    this.active = this.run().finally(() => {
+    // Observation only; the worker's own interval remains the sole driver.
+    const observed = this.supervisor
+      ? this.supervisor.scheduler.observe(SUPERVISED_WORKERS.AGENT_CASH_TO_CASH_EXPIRY, () =>
+          this.run(),
+        )
+      : this.run();
+    this.active = observed.finally(() => {
       this.active = null;
     });
     return this.active;
