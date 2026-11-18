@@ -54,7 +54,9 @@ export type FetchLike = (
 /** Whether a host may be reached over plain HTTP. */
 function isLoopbackHost(hostname: string): boolean {
   const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.localhost');
+  return (
+    host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.localhost')
+  );
 }
 
 /**
@@ -94,7 +96,8 @@ export function resolveWebhookConfig(
   const secret = env[ALERT_WEBHOOK_SECRET]?.trim() ?? '';
   if (url === '' && secret === '') return null;
   if (url === '') throw new Error(`${ALERT_WEBHOOK_SECRET} is set but ${ALERT_WEBHOOK_URL} is not`);
-  if (secret === '') throw new Error(`${ALERT_WEBHOOK_URL} is set but ${ALERT_WEBHOOK_SECRET} is not`);
+  if (secret === '')
+    throw new Error(`${ALERT_WEBHOOK_URL} is set but ${ALERT_WEBHOOK_SECRET} is not`);
 
   const timeoutRaw = env[ALERT_WEBHOOK_TIMEOUT_MS]?.trim() ?? '';
   const timeoutMs = timeoutRaw === '' ? DEFAULT_TIMEOUT_MS : Number(timeoutRaw);
