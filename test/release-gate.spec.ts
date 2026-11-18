@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -231,19 +231,13 @@ describe('release gate — browser evidence handling', () => {
 describe('release gate — no way around it', () => {
   it('reads no environment variable', () => {
     // A flag that waives a blocker would eventually be set. There is none, and this asserts it.
-    const source = require('node:fs').readFileSync(
-      join(ROOT, 'src/readiness/release-gate.service.ts'),
-      'utf8',
-    ) as string;
+    const source = readFileSync(join(ROOT, 'src/readiness/release-gate.service.ts'), 'utf8');
     expect(source).not.toMatch(/process\.env/);
     expect(source).not.toMatch(/skipReadiness|allowUnverified|forceReady|bypass/i);
   });
 
   it('does not import a deployer, a provider client or a financial service', () => {
-    const source = require('node:fs').readFileSync(
-      join(ROOT, 'src/readiness/release-gate.service.ts'),
-      'utf8',
-    ) as string;
+    const source = readFileSync(join(ROOT, 'src/readiness/release-gate.service.ts'), 'utf8');
     expect(source).not.toMatch(/from '\.\.\/banking/);
     expect(source).not.toMatch(/from '\.\.\/ledger/);
     expect(source).not.toMatch(/monnify|dojah|paystack/i);
