@@ -606,44 +606,128 @@
       "finished": "2026-11-18T21:52:46.853Z"
     },
     "test/institution-console.integration.spec.ts": {
-      "status": "RUNNING",
-      "started": "2026-11-18T21:52:46.853Z"
+      "status": "PASS",
+      "started": "2026-11-18T21:52:46.853Z",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:53:13.790Z"
     },
     "test/institution-financial-ownership.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:53:13.790Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:54:03.734Z"
     },
     "test/institution-foundation.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:54:03.734Z",
+      "passed": 32,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:55:41.956Z"
     },
     "test/kyc-fixture-contract.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:55:41.957Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:56:06.275Z"
     },
     "test/local-dev-11-roles.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:56:06.276Z",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:56:39.627Z"
     },
     "test/metrics-transaction-safety.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:56:39.627Z",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:56:52.590Z"
     },
     "test/migration-chain.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:56:52.591Z",
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:57:14.358Z"
     },
     "test/mission-15a-agent-sessions.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:57:14.359Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:57:33.870Z"
     },
     "test/mission-15a-management.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:57:33.871Z",
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:57:53.813Z"
     },
     "test/mission-16a-agent-read-authorization.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:57:53.814Z",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:58:12.431Z"
     },
     "test/mission-19a-workforce-logout.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:58:12.432Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:58:31.472Z"
     },
     "test/mission-25g-customer-preference-authorization.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:58:31.472Z",
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:59:23.850Z"
     },
     "test/mission-25o-credential-binding-upgrade.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "RUNNING",
+      "started": "2026-11-18T21:59:23.850Z"
     },
     "test/mission-25o-credential-binding.integration.spec.ts": {
       "status": "PENDING"
