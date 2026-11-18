@@ -362,6 +362,39 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 31 — sandbox integration readiness
+
+`test/sandbox-integration-readiness.integration.spec.ts` (11 integration assertions) and
+`docs/integration/SANDBOX-INTEGRATION-READINESS.md`.
+
+**The finding that matters.** Booting the compiled application against a fully migrated database exits with
+`Application startup failed: Production readiness failed: financial_dependencies_not_ready`. Not because the
+database is missing — the schema is current, reconciliation is healthy and the runtime role is safe — but because
+eight financial dependencies have never been independently verified: trusted KYC provider activation, KYC consent
+notice and policy, identity key versions, effective KYC policy, provider governance and routing, wallet ownership
+governance, institution KYC tier limit governance, financial authorization dependencies.
+
+**That is the gate working, and it is asserted rather than worked around.** The obvious "fix" — a flag that skips
+readiness in development — would skip it in production too. A sandbox that boots is not evidence of any of those
+eight. The suite asserts the distinction directly: `database.status === 'ok'` and `migrations.compatible === true`
+at the same moment the verdict is `error`, so the refusal is dependency policy rather than broken infrastructure.
+
+**What the suite does prove.** It boots the **entire `AppModule`** — not the handful of services a focused suite
+instantiates — with the real Fastify adapter, the real `api/v1` prefix and the real validation pipe, mirroring
+`main.ts`. Eleven assertions: provider graph resolves; a substantial route surface registers; routes mount under
+`api/v1` **and 404 at the root** (a route that answers 404 in the container can pass every in-process test);
+liveness answers unauthenticated; readiness answers; a protected route refuses an anonymous caller; a 404 is
+structured with no stack trace; the gate refuses; every blocker is named individually; the database is
+simultaneously healthy; no live provider credential is exported.
+
+The suite caught a real error in itself: the first run asserted `/api/v1/health/live`, which 404s — liveness is
+`/api/v1/health`. Asserting a path from memory rather than from the router is how a smoke test becomes fiction;
+the comment recording it is left in place.
+
+**Not certified:** not a deployment, not `docker compose` (no container runtime here), not production
+configuration, not live provider connectivity, not browser acceptance (Group 33), not a load or soak test, not the
+mobile apps (Group 32), and none of the eight dependencies verified.
+
 ### Group 30 — full PostgreSQL acceptance
 
 `src/deployment/postgres-acceptance.service.ts`, `test/postgres-acceptance.spec.ts` (12 assertions), the
@@ -1127,8 +1160,8 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 31–40 remain: sandbox integration readiness, mobile release readiness, browser acceptance, the readiness
-gate, journeys A–J, consolidated acceptance, and the final handoff.
+Groups 32–40 remain: mobile release readiness, browser acceptance, the readiness gate, journeys A–J,
+consolidated acceptance, and the final handoff.
 
 Known gaps carried forward: no secret-manager backend is selected (the contract exists; the environment
 backend satisfies it); a restore requires a superuser; off-site backup storage, encryption at rest,
