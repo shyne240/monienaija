@@ -75,8 +75,13 @@ function validPending(value: unknown, ownerId: string): value is Pending {
 
 /** One outstanding confirmation per owner. No PIN is persisted or put in navigation state. */
 export const QuotedSendMoneyScreen: React.FC = () => {
-  const navigation = useNavigation<any>();
   const ownerId = useAuthStore((s) => s.agentId);
+  // Discard all in-memory recipient, receipt and PIN state when the signed-in owner changes.
+  return <QuotedSendMoneyForOwner key={ownerId ?? 'missing'} ownerId={ownerId} />;
+};
+
+const QuotedSendMoneyForOwner: React.FC<{ ownerId: string | null | undefined }> = ({ ownerId }) => {
+  const navigation = useNavigation<any>();
   const [ready, setReady] = useState(false);
   const [storageError, setStorageError] = useState('');
   const [pending, setPending] = useState<Pending | null>(null);
@@ -103,6 +108,9 @@ export const QuotedSendMoneyScreen: React.FC = () => {
           const value: unknown = JSON.parse(raw);
           if (!validPending(value, ownerId)) throw new Error('Recovery state is unreadable');
           if (alive) {
+            // A restored record may belong to a previous login. Require a fresh status
+            // check before offering a PIN retry, even when this owner is signed in again.
+            setCanRetry(false);
             setPending(value);
             setQuote(value.quote);
             setRecipient(value.recipient);
@@ -248,10 +256,18 @@ export const QuotedSendMoneyScreen: React.FC = () => {
         );
       } else if (status.status === 'EXPIRED' && !status.receipt) {
         // Server observed expiry with the quote locked, so this quote can no longer post.
-        await SecureStorage.removeDurable(storageKey);
+        try {
+          await SecureStorage.removeDurable(storageKey);
+        } catch {
+          setError(
+            'Could not clear recovery storage. Check status again before starting another transfer.',
+          );
+          return;
+        }
         setPending(null);
         setQuote(null);
         setPin('');
+        setCanRetry(true);
         setError('This quote expired without a completed transfer. Request a new quote.');
       } else
         setError(
@@ -291,8 +307,8 @@ export const QuotedSendMoneyScreen: React.FC = () => {
         <>
           {pending && (
             <Text testID="pending-notice">
-              A transfer needs recovery. Check its status or retry the same confirmation. Do not
-              send it again as a new transfer.
+              A transfer needs recovery. Check its status before retrying a restored confirmation.
+              Do not send it again as a new transfer.
             </Text>
           )}
           {!pending && (
@@ -382,6 +398,14 @@ export const QuotedSendMoneyScreen: React.FC = () => {
             variant="outline"
             onPress={() => navigation.navigate('Transactions')}
           />
+          {pending && (
+            <Button
+              label="Check transfer status"
+              variant="outline"
+              onPress={check}
+              loading={busy}
+            />
+          )}
           {!pending && <Button label="Make another transfer" onPress={reset} />}
         </View>
       )}

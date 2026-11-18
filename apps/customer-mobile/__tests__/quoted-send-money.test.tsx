@@ -8,8 +8,9 @@ jest.setTimeout(30000);
 
 jest.mock('../src/services/api-client', () => ({ ApiClient: { get: jest.fn(), post: jest.fn() } }));
 jest.mock('@react-navigation/native', () => ({ useNavigation: () => ({ navigate: jest.fn() }) }));
+let mockOwnerId = 'owner-test';
 jest.mock('../src/store/auth-store', () => ({
-  useAuthStore: (select: (state: any) => unknown) => select({ customerId: 'owner-test' }),
+  useAuthStore: (select: (state: any) => unknown) => select({ customerId: mockOwnerId }),
 }));
 const recipient = {
   ownerType: 'AGENT',
@@ -44,7 +45,9 @@ const key = 'p2p.confirm.owner-test';
 
 beforeEach(async () => {
   jest.clearAllMocks();
+  mockOwnerId = 'owner-test';
   await SecureStorage.removeDurable(key);
+  await SecureStorage.removeDurable('p2p.confirm.other-owner');
   (ApiClient.get as jest.Mock).mockImplementation(async (path: string) => {
     if (path === '/customers/me/wallets')
       return [{ id: 'source', currency: 'NGN', status: 'ACTIVE' }];
@@ -196,5 +199,150 @@ test('new session can read status but cannot retry an active old-session quote',
   fireEvent.changeText(screen.getByTestId('send-pin'), '1234');
   fireEvent.press(screen.getByText('Retry same confirmation'));
   expect(ApiClient.post).toHaveBeenCalledTimes(calls);
+  expect(await SecureStorage.getDurable(key)).not.toBeNull();
+});
+
+test('restored confirmation requires status before any PIN retry', async () => {
+  await SecureStorage.setDurable(
+    key,
+    JSON.stringify({ ownerId: 'owner-test', quote, recipient, key: 'confirm:quote-1' }),
+  );
+  const screen = render(<QuotedSendMoneyScreen />);
+  await waitFor(() => expect(screen.getByTestId('pending-notice')).toBeTruthy());
+  fireEvent.changeText(screen.getByTestId('send-pin'), '1234');
+  fireEvent.press(screen.getByText('Retry same confirmation'));
+  expect(ApiClient.post).not.toHaveBeenCalled();
+  expect(await SecureStorage.getDurable(key)).not.toBeNull();
+});
+
+test('storage write failure prevents posting confirmation', async () => {
+  const screen = render(<QuotedSendMoneyScreen />);
+  await prepare(screen);
+  const failure = jest
+    .spyOn(SecureStorage, 'setDurable')
+    .mockRejectedValueOnce(new Error('write failed'));
+  fireEvent.changeText(screen.getByTestId('send-pin'), '1234');
+  fireEvent.press(screen.getByText('Confirm transfer'));
+  await waitFor(() => expect(screen.getByTestId('send-error')).toBeTruthy());
+  expect(
+    (ApiClient.post as jest.Mock).mock.calls.filter(([path]: [string]) =>
+      path.endsWith('/confirm'),
+    ),
+  ).toHaveLength(0);
+  failure.mockRestore();
+});
+
+test('expired recovery only clears when durable removal succeeds', async () => {
+  await SecureStorage.setDurable(
+    key,
+    JSON.stringify({ ownerId: 'owner-test', quote, recipient, key: 'confirm:quote-1' }),
+  );
+  (ApiClient.get as jest.Mock).mockImplementation(async (path: string) => {
+    if (path.includes('transfer-quotes/'))
+      return { ...quote, status: 'EXPIRED', sessionMatches: false, receipt: null };
+    if (path === '/customers/me/wallets')
+      return [{ id: 'source', currency: 'NGN', status: 'ACTIVE' }];
+    if (path === '/customers/me/beneficiaries') return { items: [] };
+    throw new Error('unexpected');
+  });
+  const screen = render(<QuotedSendMoneyScreen />);
+  await waitFor(() => expect(screen.getByTestId('pending-notice')).toBeTruthy());
+  const failure = jest
+    .spyOn(SecureStorage, 'removeDurable')
+    .mockRejectedValueOnce(new Error('delete failed'));
+  fireEvent.press(screen.getByText('Check transfer status'));
+  await waitFor(() => expect(screen.getByText(/Could not clear recovery storage/)).toBeTruthy());
+  expect(screen.getByTestId('pending-notice')).toBeTruthy();
+  expect(await SecureStorage.getDurable(key)).not.toBeNull();
+  failure.mockRestore();
+  fireEvent.press(screen.getByText('Check transfer status'));
+  await waitFor(() =>
+    expect(screen.getByText(/expired without a completed transfer/)).toBeTruthy(),
+  );
+  expect(await SecureStorage.getDurable(key)).toBeNull();
+  expect(screen.queryByTestId('pending-notice')).toBeNull();
+});
+
+test('a receipt remains available and blocks another send if recovery deletion fails', async () => {
+  const screen = render(<QuotedSendMoneyScreen />);
+  await prepare(screen);
+  const failure = jest
+    .spyOn(SecureStorage, 'removeDurable')
+    .mockRejectedValueOnce(new Error('delete failed'));
+  fireEvent.changeText(screen.getByTestId('send-pin'), '1234');
+  fireEvent.press(screen.getByText('Confirm transfer'));
+  await waitFor(() => expect(screen.getByTestId('transfer-receipt')).toBeTruthy());
+  expect(screen.getByText(/recovery storage could not be cleared/)).toBeTruthy();
+  expect(screen.queryByText('Make another transfer')).toBeNull();
+  expect(await SecureStorage.getDurable(key)).not.toBeNull();
+  failure.mockRestore();
+  fireEvent.press(screen.getByText('Check transfer status'));
+  await waitFor(() => expect(screen.getByText('Make another transfer')).toBeTruthy());
+  expect(await SecureStorage.getDurable(key)).toBeNull();
+});
+
+test('same-session status permits retry after a restored confirmation', async () => {
+  await SecureStorage.setDurable(
+    key,
+    JSON.stringify({ ownerId: 'owner-test', quote, recipient, key: 'confirm:quote-1' }),
+  );
+  (ApiClient.get as jest.Mock).mockImplementation(async (path: string) => {
+    if (path.includes('transfer-quotes/'))
+      return { ...quote, status: 'ACTIVE', sessionMatches: true, receipt: null };
+    if (path === '/customers/me/wallets')
+      return [{ id: 'source', currency: 'NGN', status: 'ACTIVE' }];
+    if (path === '/customers/me/beneficiaries') return { items: [] };
+    throw new Error('unexpected');
+  });
+  const screen = render(<QuotedSendMoneyScreen />);
+  await waitFor(() => expect(screen.getByTestId('pending-notice')).toBeTruthy());
+  fireEvent.press(screen.getByText('Check transfer status'));
+  await waitFor(() => expect(screen.getByText(/Not completed yet/)).toBeTruthy());
+  fireEvent.changeText(screen.getByTestId('send-pin'), '1234');
+  fireEvent.press(screen.getByText('Retry same confirmation'));
+  await waitFor(() => expect(screen.getByTestId('transfer-receipt')).toBeTruthy());
+  expect(ApiClient.post).toHaveBeenCalledWith(
+    `${base}/transfer-quotes/quote-1/confirm`,
+    { pin: '1234' },
+    { idempotencyKey: 'confirm:quote-1', preserveSessionOn401: true },
+  );
+});
+
+test('switching owners discards the previous owner’s recovery display and PIN', async () => {
+  await SecureStorage.setDurable(
+    key,
+    JSON.stringify({ ownerId: 'owner-test', quote, recipient, key: 'confirm:quote-1' }),
+  );
+  const screen = render(<QuotedSendMoneyScreen />);
+  await waitFor(() => expect(screen.getByTestId('pending-notice')).toBeTruthy());
+  fireEvent.changeText(screen.getByTestId('send-pin'), '1234');
+  mockOwnerId = 'other-owner';
+  screen.rerender(<QuotedSendMoneyScreen />);
+  await waitFor(() => expect(screen.getByTestId('recipient-number')).toBeTruthy());
+  expect(screen.queryByTestId('pending-notice')).toBeNull();
+  expect(screen.queryByTestId('recipient-name')).toBeNull();
+  expect(screen.queryByTestId('send-pin')).toBeNull();
+  expect(await SecureStorage.getDurable(key)).not.toBeNull();
+});
+
+test('an unavailable or revoked session cannot clear or retry restored recovery', async () => {
+  await SecureStorage.setDurable(
+    key,
+    JSON.stringify({ ownerId: 'owner-test', quote, recipient, key: 'confirm:quote-1' }),
+  );
+  (ApiClient.get as jest.Mock).mockImplementation(async (path: string) => {
+    if (path.includes('transfer-quotes/')) throw new Error('session revoked');
+    if (path === '/customers/me/wallets')
+      return [{ id: 'source', currency: 'NGN', status: 'ACTIVE' }];
+    if (path === '/customers/me/beneficiaries') return { items: [] };
+    throw new Error('unexpected');
+  });
+  const screen = render(<QuotedSendMoneyScreen />);
+  await waitFor(() => expect(screen.getByTestId('pending-notice')).toBeTruthy());
+  fireEvent.press(screen.getByText('Check transfer status'));
+  await waitFor(() => expect(screen.getByText(/Status is unavailable/)).toBeTruthy());
+  fireEvent.changeText(screen.getByTestId('send-pin'), '1234');
+  fireEvent.press(screen.getByText('Retry same confirmation'));
+  expect(ApiClient.post).not.toHaveBeenCalled();
   expect(await SecureStorage.getDurable(key)).not.toBeNull();
 });
