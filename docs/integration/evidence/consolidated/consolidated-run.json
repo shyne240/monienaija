@@ -1,0 +1,217 @@
+{
+  "generatedAt": "2026-11-18T17:29:06.089Z",
+  "commit": "f6bef64a916722a072d08b26ecebc6aef9e06e2d",
+  "cleanTree": true,
+  "rows": [
+    {
+      "id": "typescript",
+      "area": "engineering",
+      "requirement": "the repository type-checks under its own strict configuration",
+      "kind": "executed",
+      "evidence": "npx tsc --noEmit -p tsconfig.json",
+      "status": "PASS",
+      "detail": "tsc --noEmit clean"
+    },
+    {
+      "id": "lint",
+      "area": "engineering",
+      "requirement": "src and test lint clean (split, because a whole-repo run exhausts this box)",
+      "kind": "executed",
+      "evidence": "npm run lint",
+      "status": "PASS",
+      "detail": "eslint src and test clean (0 errors)"
+    },
+    {
+      "id": "format",
+      "area": "engineering",
+      "requirement": "every in-scope file matches the formatter",
+      "kind": "executed",
+      "evidence": "npm run format:check",
+      "status": "PASS",
+      "detail": "prettier clean"
+    },
+    {
+      "id": "unit-suite",
+      "area": "engineering",
+      "requirement": "the whole unit suite passes in one run",
+      "kind": "executed",
+      "evidence": "npx jest --config jest.config.js",
+      "status": "PASS",
+      "detail": "3303 tests in 279 suites"
+    },
+    {
+      "id": "ci-gates",
+      "area": "delivery",
+      "requirement": "every required CI job exists and invokes the script it claims to run",
+      "kind": "executed",
+      "evidence": "evaluateRepositoryCiGates() over .github/workflows/ci.yml",
+      "status": "PASS",
+      "detail": "15 required jobs and scripts intact"
+    },
+    {
+      "id": "release-gate",
+      "area": "delivery",
+      "requirement": "the release verdict is derived, not asserted",
+      "kind": "executed",
+      "evidence": "evaluateRepositoryReleaseGate()",
+      "status": "NOT_READY",
+      "detail": "16 blocker(s), 4 condition(s)"
+    },
+    {
+      "id": "journeys",
+      "area": "product",
+      "requirement": "the ten participant journeys run against real PostgreSQL",
+      "kind": "recorded",
+      "evidence": "docs/integration/evidence/journeys/journey-results.json",
+      "status": "PASS",
+      "detail": "10/10 journeys, 263 tests, recorded 2026-11-18T17:09:09.067Z"
+    },
+    {
+      "id": "browser",
+      "area": "product",
+      "requirement": "the admin console boots, authenticates and scopes itself in a real browser engine",
+      "kind": "recorded",
+      "evidence": "docs/integration/evidence/browser-acceptance/browser-acceptance.json",
+      "status": "PASS",
+      "detail": "27/27 checks in Blink 153.0.8010.0, recorded 2026-11-18T15:44:57.523Z"
+    },
+    {
+      "id": "mobile-manifests",
+      "area": "product",
+      "requirement": "both mobile manifests are registerable, submittable and identifiable",
+      "kind": "executed",
+      "evidence": "evaluateRepositoryMobileRelease()",
+      "status": "PASS",
+      "detail": "8 checks, 4 warning(s), 0 error"
+    },
+    {
+      "id": "postgres-inventory",
+      "area": "database",
+      "requirement": "every integration suite is claimed by a runner that CI invokes",
+      "kind": "recorded",
+      "evidence": "src/deployment/postgres-acceptance.service.ts (inventory is static: wired, not proven)",
+      "status": "PASS",
+      "detail": "recorded at src/deployment/postgres-acceptance.service.ts"
+    },
+    {
+      "id": "privacy-retention",
+      "area": "compliance",
+      "requirement": "erasure anonymises personal data and never deletes financial evidence",
+      "kind": "recorded",
+      "evidence": "test/privacy-retention.integration.spec.ts — executed inside journey J",
+      "status": "PASS",
+      "detail": "recorded at docs/integration/PRIVACY-AND-RETENTION.md"
+    },
+    {
+      "id": "performance",
+      "area": "operations",
+      "requirement": "query plans are asserted on shape, not on wall-clock in a noisy sandbox",
+      "kind": "recorded",
+      "evidence": "docs/integration/PERFORMANCE-ACCEPTANCE.md",
+      "status": "PASS",
+      "detail": "recorded at docs/integration/PERFORMANCE-ACCEPTANCE.md"
+    },
+    {
+      "id": "startup-gate",
+      "area": "operations",
+      "requirement": "the application refuses to start while financial dependencies are unverified",
+      "kind": "recorded",
+      "evidence": "test/sandbox-integration-readiness.integration.spec.ts",
+      "status": "PASS",
+      "detail": "recorded at docs/integration/SANDBOX-INTEGRATION-READINESS.md"
+    },
+    {
+      "id": "container-build",
+      "area": "delivery",
+      "requirement": "the container image builds",
+      "kind": "unavailable",
+      "evidence": "no container runtime exists in this environment; the CI job is declared and unexecuted here",
+      "status": "UNAVAILABLE",
+      "detail": "no container runtime exists in this environment; the CI job is declared and unexecuted here"
+    },
+    {
+      "id": "deployment",
+      "area": "delivery",
+      "requirement": "the application is deployed and serves traffic",
+      "kind": "unavailable",
+      "evidence": "no environment, orchestrator or registry exists here; nothing was deployed",
+      "status": "UNAVAILABLE",
+      "detail": "no environment, orchestrator or registry exists here; nothing was deployed"
+    },
+    {
+      "id": "provider-sandbox",
+      "area": "providers",
+      "requirement": "a real provider contract is exercised in a provider sandbox",
+      "kind": "unavailable",
+      "evidence": "no authorized provider credential was supplied and provider calls are outside this mission",
+      "status": "UNAVAILABLE",
+      "detail": "no authorized provider credential was supplied and provider calls are outside this mission"
+    },
+    {
+      "id": "cross-browser",
+      "area": "product",
+      "requirement": "the console works in WebKit and Gecko as well as Blink",
+      "kind": "unavailable",
+      "evidence": "only a Blink build could be obtained; no WebKit or Gecko engine is available here",
+      "status": "UNAVAILABLE",
+      "detail": "only a Blink build could be obtained; no WebKit or Gecko engine is available here"
+    },
+    {
+      "id": "mobile-build",
+      "area": "product",
+      "requirement": "both mobile apps are built, signed, submitted and installed",
+      "kind": "unavailable",
+      "evidence": "no Xcode, no Android SDK, no signing identity, no store account, no device",
+      "status": "UNAVAILABLE",
+      "detail": "no Xcode, no Android SDK, no signing identity, no store account, no device"
+    },
+    {
+      "id": "restore-at-volume",
+      "area": "operations",
+      "requirement": "a restore is attempted at production volume and RPO/RTO are measured",
+      "kind": "unavailable",
+      "evidence": "no production-scale dataset exists here; recovery objectives remain declared, not measured",
+      "status": "UNAVAILABLE",
+      "detail": "no production-scale dataset exists here; recovery objectives remain declared, not measured"
+    },
+    {
+      "id": "worker-execution",
+      "area": "operations",
+      "requirement": "a deployable mechanism guarantees essential background workers run",
+      "kind": "unavailable",
+      "evidence": "supervision observes; no invocation mechanism is provisioned or tested (standing requirement)",
+      "status": "UNAVAILABLE",
+      "detail": "supervision observes; no invocation mechanism is provisioned or tested (standing requirement)"
+    },
+    {
+      "id": "alert-delivery",
+      "area": "operations",
+      "requirement": "an alert reaches a real channel and is receipted",
+      "kind": "unavailable",
+      "evidence": "delivery is dark by default; no channel endpoint was configured or contacted",
+      "status": "UNAVAILABLE",
+      "detail": "delivery is dark by default; no channel endpoint was configured or contacted"
+    }
+  ],
+  "summary": {
+    "requirements": 21,
+    "executed": 7,
+    "recorded": 6,
+    "unavailable": 8,
+    "failing": 0
+  },
+  "releaseVerdict": "NOT_READY",
+  "notClaimed": [
+    "container build success",
+    "docker compose validation",
+    "any deployment or rollout",
+    "provider sandbox acceptance or entitlement",
+    "an executed financial transaction with real money",
+    "store approval, signing or submission of either mobile app",
+    "second- and third-engine browser acceptance",
+    "screen-reader or assistive-technology acceptance",
+    "a restore at production volume, or a measured RPO/RTO",
+    "a delivered alert, or automated worker execution in a deployment",
+    "that an isolated-PostgreSQL suite passed in this environment"
+  ]
+}

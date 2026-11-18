@@ -362,6 +362,32 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 36 — consolidated acceptance matrix
+
+`src/acceptance/consolidated-matrix.ts`, `scripts/run-consolidated-acceptance.js`,
+`test/consolidated-matrix.spec.ts` (13 assertions), `docs/integration/evidence/consolidated/consolidated-run.json`
+and `docs/integration/CONSOLIDATED-ACCEPTANCE-MATRIX.md`.
+
+**The problem it solves.** By this point there are thirty-six groups of evidence and no single page saying which of
+them were executed, which are recorded from an earlier run, and which were never possible. Those three blur in
+prose and cannot blur in a table with a column for them.
+
+**Result: 21 requirements — 7 executed here, 6 recorded, 8 unavailable, 0 failing; release verdict `NOT_READY`.**
+Executed: typecheck, lint, format, the unit suite (3303 tests, 279 suites), the CI job inventory, the mobile
+manifests, and the release gate itself. Recorded: journeys (10/10, 263 tests), browser (27/27, Blink 153), the
+PostgreSQL suite inventory, privacy retention, performance and the startup gate. Unavailable, each with a reason:
+container build, deployment, provider sandbox acceptance, WebKit/Gecko, mobile build and signing, restore at
+production volume, automated worker execution and alert delivery.
+
+**`UNAVAILABLE` is neither a failure nor a pass.** Reporting it as either is how a mission claims a container build
+it never ran. The matrix enforces the distinction rather than describing it — an `unavailable` row carrying `PASS`
+fails the suite (mutation-verified), a requirement with no row counts as a failure, the artefact must have been
+produced on a **clean tree** from a commit that is an **ancestor of HEAD**, a recorded row must point at a file that
+exists, and the release verdict must agree with Group 34's gate.
+
+**Not certified:** not a deployment, not provider acceptance, not a container build, not mobile, not cross-browser,
+not measured recovery, and not a claim that the platform has no defect elsewhere.
+
 ### Group 35 — platform journeys A–J
 
 `src/acceptance/platform-journeys.ts`, `scripts/run-journey-acceptance.js` (`npm run acceptance:journeys`),
@@ -1314,7 +1340,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 36–40 remain: the consolidated matrix,
+Groups 37–40 remain: the consolidated acceptance report and the final handoff,
 consolidated acceptance, and the final handoff.
 
 Known gaps carried forward: no secret-manager backend is selected (the contract exists; the environment
