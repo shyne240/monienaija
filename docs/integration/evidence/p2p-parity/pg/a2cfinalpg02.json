@@ -966,44 +966,128 @@
       "finished": "2026-11-18T22:17:43.676Z"
     },
     "test/v1-admin-authorization-read-surface-01.integration.spec.ts": {
-      "status": "RUNNING",
-      "started": "2026-11-18T22:17:43.676Z"
+      "status": "PASS",
+      "started": "2026-11-18T22:17:43.676Z",
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:18:33.847Z"
     },
     "test/v1-admin-configurable-dashboard-platform-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:18:33.848Z",
+      "passed": 47,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:21:15.502Z"
     },
     "test/v1-admin-customer-pii-authorization-implementation-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:21:15.502Z",
+      "passed": 48,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:24:03.036Z"
     },
     "test/v1-admin-full-surface-audit-01-auth-propagation.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:24:03.036Z",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:24:28.156Z"
     },
     "test/v1-admin-local-login-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:24:28.158Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:25:05.382Z"
     },
     "test/v1-admin-p1-authorization-hardening.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:25:05.383Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:25:53.159Z"
     },
     "test/v1-admin-role-definition-governance-implementation-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:25:53.160Z",
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:27:18.097Z"
     },
     "test/v1-administrator-role-and-assignment-implementation-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:27:18.097Z",
+      "passed": 38,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:29:12.849Z"
     },
     "test/v1-agent-05-transaction-pin-security.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:29:12.849Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:30:03.830Z"
     },
     "test/v1-agent-cash-to-cash-operations.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:30:03.830Z",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:30:17.375Z"
     },
     "test/v1-agent-credentials-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:30:17.377Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:31:01.756Z"
     },
     "test/v1-agent-history-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:31:01.757Z",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:32:00.310Z"
     },
     "test/v1-agent-mfa-api-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "RUNNING",
+      "started": "2026-11-18T22:32:00.310Z"
     },
     "test/v1-agent-mobile-idempotency-persistence-01.integration.spec.ts": {
       "status": "PENDING"
