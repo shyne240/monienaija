@@ -1086,44 +1086,128 @@
       "finished": "2026-11-18T22:32:00.310Z"
     },
     "test/v1-agent-mfa-api-01.integration.spec.ts": {
-      "status": "RUNNING",
-      "started": "2026-11-18T22:32:00.310Z"
+      "status": "PASS",
+      "started": "2026-11-18T22:32:00.310Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:32:25.467Z"
     },
     "test/v1-agent-mobile-idempotency-persistence-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:32:25.468Z",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:32:46.334Z"
     },
     "test/v1-agent-receiving-number-authorization.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:32:46.335Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:33:29.401Z"
     },
     "test/v1-capability-registry.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:33:29.401Z",
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:34:20.696Z"
     },
     "test/v1-commercial-02-product-catalogue.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:34:20.697Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:35:03.034Z"
     },
     "test/v1-commercial-03-fee-rule-schema.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:35:03.035Z",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:35:41.088Z"
     },
     "test/v1-commercial-04-fee-rule-resolver.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:35:41.089Z",
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:36:32.009Z"
     },
     "test/v1-commercial-accounting-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:36:32.010Z",
+      "passed": 46,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:39:37.573Z"
     },
     "test/v1-commercial-decision-01-snapshot.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:39:37.573Z",
+      "passed": 27,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:40:49.390Z"
     },
     "test/v1-commercial-decision-02-pilot-snapshot.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:40:49.391Z",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:41:20.432Z"
     },
     "test/v1-commercial-decision-03a-cash-to-wallet-snapshot.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:41:20.433Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:41:38.689Z"
     },
     "test/v1-commercial-decision-03b-wallet-to-cash-snapshot.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:41:38.690Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:41:59.987Z"
     },
     "test/v1-commercial-decision-03c-cash-to-cash-snapshot.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "RUNNING",
+      "started": "2026-11-18T22:41:59.988Z"
     },
     "test/v1-commercial-decision-03d-customer-funding-snapshot.integration.spec.ts": {
       "status": "PENDING"
