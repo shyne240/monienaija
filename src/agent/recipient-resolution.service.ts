@@ -87,6 +87,24 @@ export class RecipientResolutionService {
     throw new NotFoundException(`Recipient ${canonical} not found`);
   }
 
+  /** Resolve a registered identifier to its unique active wallet, never by client owner claims.
+   * A quote subsequently re-locks and validates wallet, eligibility and institution. */
+  async resolveForWalletTransfer(identifier: string, currency: string) {
+    const normalizedCurrency = typeof currency === 'string' ? currency.trim().toUpperCase() : '';
+    if (!/^[A-Z]{3}$/.test(normalizedCurrency))
+      throw new BadRequestException('currency is required');
+    const recipient = await this.resolve(identifier);
+    if (recipient.status !== 'ACTIVE') throw new ConflictException('Recipient is not active');
+    const wallets = await this.dataSource.query<Array<{ id: string }>>(
+      `SELECT id FROM wallet_accounts WHERE lower(customer_id)=lower($1) AND owner_class=$2
+         AND wallet_owner_class(customer_id)=owner_class AND currency=$3 AND status='ACTIVE' ORDER BY id LIMIT 2`,
+      [recipient.ownerId, recipient.ownerType, normalizedCurrency],
+    );
+    if (wallets.length !== 1)
+      throw new ConflictException('Recipient wallet is unavailable or ambiguous');
+    return { ...recipient, walletId: wallets[0]!.id, currency: normalizedCurrency };
+  }
+
   private async agentDisplay(agent: Agent): Promise<string> {
     // Try to get business_name from origin application payload or reference
     // For minimal, return agent reference; if we can find application with businessName, use that

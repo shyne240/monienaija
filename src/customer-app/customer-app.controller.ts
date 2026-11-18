@@ -730,6 +730,16 @@ export class CustomerAppController {
     return this.recipientService.resolve(identifier.trim());
   }
 
+  @Get('customers/me/transfer-recipient')
+  async resolveTransferRecipient(
+    @Query('identifier') identifier: string,
+    @Query('currency') currency: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    this.requireCustomerPrincipal(req);
+    return this.recipientService.resolveForWalletTransfer(identifier, currency);
+  }
+
   // ──────────────────────────────────────────────
   // Wallet→Wallet  (contract #7) — reuse TransferService engine
   // ──────────────────────────────────────────────

@@ -1076,6 +1076,38 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       dest = await create(receiver.customerId),
       a = await create(agentA.id),
       b = await create(agentB.id);
+    const { AgentReceivingNumberService } = await import(
+      '../src/agent/agent-receiving-number.service'
+    );
+    const numberA = await app.get(AgentReceivingNumberService).ensureForAgent(agentA.id, 'test');
+    const numberB = await app.get(AgentReceivingNumberService).ensureForAgent(agentB.id, 'test');
+    const resolve = (kind: 'customers' | 'agents', token: string, identifier: string) =>
+      request(app.getHttpServer())
+        .get(`/api/v1/${kind}/me/transfer-recipient`)
+        .query({ identifier, currency: 'NGN' })
+        .set('Authorization', `Bearer ${token}`);
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me/transfer-recipient')
+      .query({ identifier: receiver.phone, currency: 'NGN' })
+      .expect(401);
+    const customerDest = await resolve('customers', sender.token, receiver.phone).expect(200);
+    const customerAgent = await resolve('customers', sender.token, numberA.receivingNumber).expect(
+      200,
+    );
+    const agentCustomer = await resolve('agents', tokenA, receiver.phone).expect(200);
+    const agentAgent = await resolve('agents', tokenA, numberB.receivingNumber).expect(200);
+    expect(customerDest.body).toMatchObject({
+      walletId: dest.id,
+      ownerType: 'CUSTOMER',
+      ownerId: receiver.customerId,
+    });
+    expect(customerAgent.body).toMatchObject({
+      walletId: a.id,
+      ownerType: 'AGENT',
+      ownerId: agentA.id,
+    });
+    expect(agentCustomer.body).toMatchObject({ walletId: dest.id, ownerType: 'CUSTOMER' });
+    expect(agentAgent.body).toMatchObject({ walletId: b.id, ownerType: 'AGENT' });
     const funding = await ledger.createAccount({
       code: `p2ptest-${randomUUID()}`,
       name: 'test',
@@ -1144,10 +1176,16 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       return result.body.id as string;
     };
     const ids = [
-      await run('customers', sender.token, source.id, dest.id, '100'),
-      await run('customers', sender.token, source.id, a.id, '1000'),
-      await run('agents', tokenA, undefined, dest.id, '300'),
-      await run('agents', tokenA, undefined, b.id, '200'),
+      await run('customers', sender.token, source.id, customerDest.body.walletId as string, '100'),
+      await run(
+        'customers',
+        sender.token,
+        source.id,
+        customerAgent.body.walletId as string,
+        '1000',
+      ),
+      await run('agents', tokenA, undefined, agentCustomer.body.walletId as string, '300'),
+      await run('agents', tokenA, undefined, agentAgent.body.walletId as string, '200'),
     ];
     expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('3900');
     expect((await wallets.getWalletBalance(dest.id)).balanceMinor).toBe('400');
