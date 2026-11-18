@@ -1566,41 +1566,124 @@
       "finished": "2026-11-18T23:06:38.030Z"
     },
     "test/v1-notification-provider-configuration-01.integration.spec.ts": {
-      "status": "RUNNING",
-      "started": "2026-11-18T23:06:38.031Z"
+      "status": "PASS",
+      "started": "2026-11-18T23:06:38.031Z",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:07:21.014Z"
     },
     "test/v1-ops-01-support-workforce-operational.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:07:21.015Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:07:58.399Z"
     },
     "test/v1-release-01-production-readiness-migration-sync.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:07:58.400Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:08:12.579Z"
     },
     "test/v1-reward-01-reward-engine.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:08:12.580Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:09:06.617Z"
     },
     "test/v1-security-super-admin-recovery-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:09:06.618Z",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:10:09.102Z"
     },
     "test/v1-sprint1-f01-historical-delivery-disclosure.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:10:09.103Z",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:10:35.996Z"
     },
     "test/v1-sprint1-notification-delivery-authorization.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:10:35.997Z",
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:11:27.703Z"
     },
     "test/v1-sprint3-agent-history-workforce.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:11:27.704Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:11:48.098Z"
     },
     "test/v1-system-01-suspended-customer-financial-boundary.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:11:48.099Z",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:12:07.476Z"
     },
     "test/v1-w2w-recovery-audit-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:12:07.477Z",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:12:30.678Z"
     },
     "test/v1-workforce-bootstrap-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:12:30.679Z",
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:12:58.346Z"
     },
     "test/wallet-ownership-resolution.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T23:12:58.347Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:13:57.041Z"
     }
   },
   "profile": {
