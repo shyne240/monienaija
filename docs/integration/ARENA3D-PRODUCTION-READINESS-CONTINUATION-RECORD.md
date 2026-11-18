@@ -362,6 +362,40 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 28 — performance acceptance
+
+`src/performance/performance-acceptance.service.ts`, `src/performance/performance.module.ts`,
+`test/performance-acceptance.integration.spec.ts` (10 integration assertions) and
+`docs/integration/PERFORMANCE-ACCEPTANCE.md`.
+
+**There was no performance harness.** The obvious deliverable — a table of p99 latencies and throughput figures —
+would be fabricated: one Postgres instance, synthetic data, no network, no pool contention, no concurrent load.
+Publishing those numbers as acceptance evidence is the performance equivalent of an alert channel reporting a
+delivery it never performed.
+
+**What is measured instead: query plan shape.** A statement that seq-scans at 1,000 rows seq-scans at 10 million;
+the plan is a property of schema, indexes and query text, all identical between here and production. What is
+_not_ identical is how long the same plan takes. So "does this hot query use an index?" has a truthful answer
+here and "how fast is it?" does not. Eight hot paths are planned, including the outbox claim query, which runs
+every worker tick whether or not there is work — a seq scan there is a permanent tax, not a slow page.
+
+**Three rules keep it honest.** (1) Below a declared `minRows` threshold a finding is `NOT_MEASURED`, never
+`PASS`, because Postgres correctly seq-scans small tables and calling that a pass claims a validation that never
+happened. (2) Parameters are realistic values, never `NULL` — substituting `NULL` lets the planner prove the
+predicate is unsatisfiable and return a `Result` node touching no table, so the harness "measures" nothing while
+appearing to succeed. **Verified by mutation:** forcing every parameter to `NULL` failed exactly the four
+plan-shape tests. (`PREPARE`/`EXECUTE` was tried first and does not work: Postgres rejects bound parameters in an
+`EXECUTE` argument list.) (3) `EXPLAIN` without `ANALYZE`, so the harness plans queries and never executes them,
+making it safe against data that matters.
+
+**The harness can fail.** Dropping `idx_audit_events_entity_time` turns the entity lookup from `PASS` to `ERROR`
+with a sequential scan, and drags the aggregate verdict with it. The report also confirms the Group 23 range
+index is the one the evidence export uses — an index nobody uses is only write amplification.
+
+Explicitly **not** measured, recorded in the report rather than omitted: latency, throughput, concurrency and
+contention, worker tick cost under a real backlog, index bloat, end-to-end user-perceived latency, connection-pool
+sizing. A structural test asserts the report contains no timing field and no latency or throughput value.
+
 ### Group 27 — privacy and retention
 
 `src/migrations/1785753600614-PrivacyAndRetention.ts`, `src/privacy/erasure.service.ts`,
@@ -1018,8 +1052,8 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 28–40 remain: performance harness, CI release gates, the PostgreSQL matrix, sandbox readiness, mobile
-release, browser acceptance, readiness gate, journeys A–J, consolidated acceptance, and the final handoff.
+Groups 29–40 remain: CI release gates, the PostgreSQL matrix, sandbox readiness, mobile release, browser
+acceptance, readiness gate, journeys A–J, consolidated acceptance, and the final handoff.
 
 Known gaps carried forward: no secret-manager backend is selected (the contract exists; the environment
 backend satisfies it); a restore requires a superuser; off-site backup storage, encryption at rest,

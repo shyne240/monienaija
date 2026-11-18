@@ -70,6 +70,7 @@ import { ComplianceModule } from './compliance/compliance.module';
 import { DisputesModule } from './disputes/disputes.module';
 import { MobileModule } from './mobile/mobile.module';
 import { PrivacyModule } from './privacy/privacy.module';
+import { PerformanceModule } from './performance/performance.module';
 import { PaymentModule } from './payment/payment.module';
 import { PartnerModule } from './partner/partner.module';
 import { ProductionModule } from './production/production.module';
@@ -182,6 +183,8 @@ import { ProtectedAuthorityModule } from './authorization/protected-authority.mo
     MobileModule,
     // ARENA 3D Group 27: privacy and retention (erasure requests).
     PrivacyModule,
+    // ARENA 3D Group 28: performance acceptance (plan shape, not timings).
+    PerformanceModule,
     PartnerModule,
     PaymentModule,
     ProductionModule,
