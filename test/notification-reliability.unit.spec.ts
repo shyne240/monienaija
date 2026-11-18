@@ -118,7 +118,10 @@ describe('notification reliability and privacy boundaries', () => {
       unregistered.resolve('PHONE', '8012345678', 'SMS', undefined, 'transfer.completed'),
     ).resolves.toMatchObject({ reason: 'UNSUPPORTED_RECIPIENT' });
     const unverified = new NotificationChannelResolverService({
-      query: jest.fn().mockResolvedValue([{ customer_id: 'c', verified_at: null }]),
+      query: jest
+        .fn()
+        .mockResolvedValueOnce([{ customer_id: 'c', verified_at: null }])
+        .mockResolvedValueOnce([]),
     } as never);
     await expect(
       unverified.resolve('PHONE', '8012345678', 'SMS', undefined, 'cash_to_cash.created'),
@@ -127,6 +130,7 @@ describe('notification reliability and privacy boundaries', () => {
       query: jest
         .fn()
         .mockResolvedValueOnce([{ customer_id: 'c', verified_at: new Date() }])
+        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([{ enabled: false }]),
     } as never);
     await expect(
