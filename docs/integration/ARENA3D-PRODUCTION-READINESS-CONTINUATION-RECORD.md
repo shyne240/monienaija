@@ -362,6 +362,36 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 37 — automated worker execution
+
+`src/production/process-role.ts`, `src/production/worker-runtime.ts`, `src/main.ts` (role routing),
+`test/worker-execution.spec.ts` (15 assertions), the `PROCESS_ROLE` pass-through in `docker-compose.yml` and
+`docs/integration/WORKER-EXECUTION.md`.
+
+**The standing requirement, closed as far as this environment allows.** Since Group 15 the record has said that
+supervision *observes* and does not *start* anything, and that a documented, deployable, tested invocation
+mechanism was required before final acceptance — without a second scheduler or new financial authority. Every
+worker started from `onModuleInit` in whichever process booted `AppModule`, which was only ever the HTTP process, so
+four API replicas meant four of every worker and a worker crash could take an API with it.
+
+**The mechanism: one image, three roles.** `PROCESS_ROLE=all-in-one` (default, today's behaviour), `api` (HTTP, no
+worker timers) and `worker` (worker drivers, **no HTTP listener**). The worker process runs the **same**
+`verifyStartup()` gate — a worker processing real queue items against a schema the API refuses to serve is worse
+than a worker that does not start — in the asserted order create → initialise → verify → announce.
+
+**Guards, each with a reason.** A typo (`worke`) throws rather than falling back to `all-in-one` and discarding the
+operator's intent; `PROCESS_ROLE=api` with an explicitly enabled worker flag **throws** instead of silently
+preferring one of them; `api` turns every worker flag off, or the split is cosmetic. Shutdown closes the context
+exactly once on `SIGTERM`/`SIGINT` and exits 0; a close exceeding its 30s deadline exits 1 with the deadline in the
+log, because a `SIGTERM` that hangs is a deployment that hangs. No ledger, banking, agent, `DataSource` or leader
+election appears in either module.
+
+**What is still not proven, and the gate says so.** No deployment has been observed running the worker role, no
+orchestrator or compose manifest was validated (no container runtime here), the worker role has no liveness probe
+(a process with no HTTP listener cannot answer an HTTP healthcheck), and fleet-wide liveness remains unanswerable
+from inside any process. The release blocker was therefore **narrowed**, not removed:
+`worker_automated_execution_unproven` → `worker_execution_not_observed_in_deployment`.
+
 ### Group 36 — consolidated acceptance matrix
 
 `src/acceptance/consolidated-matrix.ts`, `scripts/run-consolidated-acceptance.js`,
@@ -1340,7 +1370,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 37–40 remain: the consolidated acceptance report and the final handoff,
+Groups 38–40 remain: the consolidated acceptance report and the final handoff,
 consolidated acceptance, and the final handoff.
 
 Known gaps carried forward: no secret-manager backend is selected (the contract exists; the environment
@@ -1381,15 +1411,14 @@ decisions, not implemented here. Redaction is name-based, so a secret in a gener
 caught; `redactionFailure` records are emitted but not counted, alerted on (Group 19) or exported as a metric
 (Group 17).
 
-**OUTSTANDING REQUIREMENT (must be resolved before final consolidated acceptance).** Worker _supervision_ does
-not establish automated worker _execution_. The four workers each own an `onModuleInit` interval driver, so
-they start when the application starts — but nothing in this repository documents, provisions or tests a
-deployable mechanism that guarantees essential background workers are actually invoked in a running
-deployment. Supervision observes; it does not start anything. This must be resolved with a documented,
-deployable and tested invocation mechanism — an internal scheduler, a dedicated worker process, or an
-external scheduler — **without** introducing competing job ownership or financial execution authority: the
-database leases (Group 14), fencing, idempotency and the existing financial authority remain authoritative.
-Do not treat Group 15 as satisfying automated execution readiness.
+**OUTSTANDING REQUIREMENT — resolved in Group 37, with one part left open.** Worker _supervision_ did not establish
+automated worker _execution_. Group 37 built the mechanism: `PROCESS_ROLE=worker` boots the dependency graph with no
+HTTP listener and the same production readiness gate, `PROCESS_ROLE=api` starts no worker timers, contradictions are
+refused rather than resolved, and shutdown is bounded. It adds no scheduler, no leader election and no financial
+authority — the database leases (Group 14), fencing, idempotency and the existing financial authority remain
+authoritative. What remains open is observation: no deployment has been seen running the worker role, no orchestrator
+manifest was validated, and the worker role has no liveness probe. See `docs/integration/WORKER-EXECUTION.md`; the
+release gate carries `worker_execution_not_observed_in_deployment`.
 
 Known gaps from Group 15: there is no fleet-wide scheduler, leader election or distributed cron, by design —
 each instance runs its own timers and correctness rests on the database mechanisms, so the supervisor

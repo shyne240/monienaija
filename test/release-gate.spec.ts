@@ -129,7 +129,10 @@ describe('release gate — the repository', () => {
     const ids = report.blockers.map((blocker) => blocker.id);
     expect(ids).toEqual(expect.arrayContaining(OUTSTANDING_REQUIREMENTS.map((entry) => entry.id)));
     // The three the mission explicitly refuses to consider settled.
-    expect(ids).toContain('worker_automated_execution_unproven');
+    // Narrowed in Group 37: the mechanism now exists and is tested, so the blocker names what is
+    // still true — no deployment has been observed executing it.
+    expect(ids).toContain('worker_execution_not_observed_in_deployment');
+    expect(ids).not.toContain('worker_automated_execution_unproven');
     expect(ids).toContain('alert_delivery_unproven');
     expect(ids).toContain('disaster_recovery_not_measured');
   });

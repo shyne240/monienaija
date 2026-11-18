@@ -6,6 +6,9 @@ import { Logger } from 'nestjs-pino';
 
 import { AppModule } from './app.module';
 import { validateEnvironment } from './config/environment';
+import { applyProcessRoleEnvironment, resolveProcessRole } from './production/process-role';
+import { startWorkerRuntime } from './production/worker-runtime';
+import { WorkerSupervisorService } from './operations/worker-supervisor.service';
 import { applyHttpSecurity, fastifyAdapterOptions } from './production/http-security';
 import { GlobalExceptionFilter } from './http-exception.filter';
 import { ProductionReadinessService } from './production/production-readiness.service';
@@ -13,7 +16,51 @@ import { registerRequestContextHooks } from './production/request-hooks';
 import { RequestTrackerService } from './production/request-tracker.service';
 import { GovernanceService } from './maturity/governance.service';
 
+/**
+ * ARENA 3D Group 37 — the worker role.
+ *
+ * Same image, different entry behaviour: `PROCESS_ROLE=worker` boots the dependency graph with no
+ * HTTP listener and the same production readiness gate. Deliberately a separate function rather than
+ * a branch inside the HTTP bootstrap, so reading `main.ts` shows that a worker process can never
+ * reach `NestFactory.create<NestFastifyApplication>` or `app.listen`.
+ */
+async function bootstrapWorker(): Promise<void> {
+  const environment = validateEnvironment(process.env);
+  await startWorkerRuntime({
+    role: 'worker',
+    createApplication: async () => {
+      const { NestFactory: factory } = await import('@nestjs/core');
+      const { Logger: PinoLogger } = await import('nestjs-pino');
+      const context = await factory.createApplicationContext(AppModule, { bufferLogs: true });
+      context.useLogger(context.get(PinoLogger));
+      return context;
+    },
+    verifyReadiness: async (context) => {
+      await context.get<ProductionReadinessService>(ProductionReadinessService).verifyStartup();
+    },
+    describeWorkers: (context) =>
+      context
+        .get<WorkerSupervisorService>(WorkerSupervisorService)
+        .report()
+        .workers.filter((worker) => worker.scheduled && worker.enabled)
+        .map((worker) => worker.name),
+  });
+  // The environment is validated before the context is built, so a misconfigured worker process
+  // fails on configuration rather than on a half-built dependency graph.
+  void environment;
+}
+
 async function bootstrap(): Promise<void> {
+  const role = resolveProcessRole(process.env.PROCESS_ROLE);
+  if (role === 'worker') {
+    await bootstrapWorker();
+    return;
+  }
+  // An API process starts no background worker timers; a contradiction is refused, not resolved.
+  for (const change of applyProcessRoleEnvironment(role, process.env)) {
+    process.stdout.write(`process role ${role}: ${change}\n`);
+  }
+
   const environment = validateEnvironment(process.env);
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,

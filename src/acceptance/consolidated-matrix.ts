@@ -206,10 +206,10 @@ export const CONSOLIDATED_MATRIX: readonly MatrixRequirement[] = [
   {
     id: 'worker-execution',
     area: 'operations',
-    requirement: 'a deployable mechanism guarantees essential background workers run',
+    requirement: 'a deployment is observed running the essential background workers',
     kind: 'unavailable',
     evidence:
-      'supervision observes; no invocation mechanism is provisioned or tested (standing requirement)',
+      'the worker role is implemented and tested (PROCESS_ROLE=worker, readiness-gated, bounded shutdown); no deployment exists here to observe it running',
   },
   {
     id: 'alert-delivery',

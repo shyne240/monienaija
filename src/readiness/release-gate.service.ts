@@ -88,11 +88,11 @@ export interface ReleaseGateReport {
  */
 export const OUTSTANDING_REQUIREMENTS: readonly ReleaseBlocker[] = [
   {
-    id: 'worker_automated_execution_unproven',
+    id: 'worker_execution_not_observed_in_deployment',
     category: 'operations',
     summary:
-      'no deployable, tested mechanism guarantees the essential background workers are invoked in a running deployment; supervision observes, it does not start',
-    evidence: 'docs/integration/ARENA3D-PRODUCTION-READINESS-CONTINUATION-RECORD.md §4',
+      'the worker role exists, is readiness-gated and is tested, but no deployment has been observed running it: the mechanism is proven, the execution is not',
+    evidence: 'docs/integration/WORKER-EXECUTION.md',
   },
   {
     id: 'alert_delivery_unproven',

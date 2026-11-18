@@ -118,6 +118,12 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: '3000'
+      # ARENA 3D Group 37. Unset means today's behaviour: HTTP plus in-process worker drivers. Set
+      # PROCESS_ROLE=api on an API replica to start no worker timers at all, or run the same image
+      # with PROCESS_ROLE=worker for a process that starts the drivers and serves no HTTP. The
+      # application refuses a role that contradicts an explicitly enabled worker flag rather than
+      # silently preferring one of them — see docs/integration/WORKER-EXECUTION.md.
+      PROCESS_ROLE: ${PROCESS_ROLE:-all-in-one}
       APP_VERSION: ${APP_VERSION:-0.1.0}
       BUILD_TIMESTAMP: ${BUILD_TIMESTAMP:-unknown}
       LOG_LEVEL: ${LOG_LEVEL:-info}
