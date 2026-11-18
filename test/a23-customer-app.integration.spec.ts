@@ -9,6 +9,7 @@ import * as request from 'supertest';
 import type { HistoryResponseFixture } from './support/history-response-fixture';
 import { AppModule } from '../src/app.module';
 import { TrustedTierFixture } from './support/trusted-tier-fixture';
+import { GovernedFinancialFixture } from './support/governed-financial-fixture';
 import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
@@ -1020,7 +1021,7 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
-  it('posts four authenticated wallet transfer directions with typed evidence and reconciliation', async () => {
+  it('posts four authenticated governed wallet transfer directions with typed evidence and reconciliation', async () => {
     const sender = await createCustomerWithCredential();
     const receiver = await createCustomerWithCredential();
     const tokenA = await createAgentToken();
@@ -1055,7 +1056,6 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
         );
     }
     const { WalletService } = await import('../src/wallet/wallet.service');
-    const { LedgerService } = await import('../src/ledger/ledger.service');
     const { CustomerTransactionPinService } = await import(
       '../src/customer/customer-transaction-pin.service'
     );
@@ -1068,14 +1068,20 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     const { TransferReconciliationService } = await import(
       '../src/reconciliation/transfer-reconciliation.service'
     );
-    const wallets = app.get(WalletService),
-      ledger = app.get(LedgerService);
+    const wallets = app.get(WalletService);
     const create = (customerId: string) =>
       wallets.createWallet({ customerId, currency: 'NGN', idempotencyKey: randomUUID() });
     const source = await create(sender.customerId),
       dest = await create(receiver.customerId),
       a = await create(agentA.id),
       b = await create(agentB.id);
+    const governed = new GovernedFinancialFixture({ app, dataSource, label: 'p2p-http' });
+    const institutionId = await governed.institution('http-p2p');
+    for (const customer of [sender, receiver])
+      await governed.enrolCustomer(customer.customerId, institutionId);
+    for (const agent of [agentA, agentB]) await governed.affiliateAgent(agent.id, institutionId);
+    for (const wallet of [source, dest, a, b])
+      await governed.attributeWallet(wallet.id, institutionId);
     const { AgentReceivingNumberService } = await import(
       '../src/agent/agent-receiving-number.service'
     );
@@ -1108,22 +1114,7 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     });
     expect(agentCustomer.body).toMatchObject({ walletId: dest.id, ownerType: 'CUSTOMER' });
     expect(agentAgent.body).toMatchObject({ walletId: b.id, ownerType: 'AGENT' });
-    const funding = await ledger.createAccount({
-      code: `p2ptest-${randomUUID()}`,
-      name: 'test',
-      accountType: 'ASSET' as any,
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-    });
-    await ledger.postJournal({
-      idempotencyKey: randomUUID(),
-      currency: 'NGN',
-      accountingUnit: 'CUSTOMER_FUNDS',
-      lines: [
-        { accountId: funding.id, direction: 'DEBIT' as any, amountMinor: '5000' },
-        { accountId: source.ledgerAccountId, direction: 'CREDIT' as any, amountMinor: '5000' },
-      ],
-    });
+    await governed.fundLedgerAccount(source.ledgerAccountId, '5000', { institutionId });
     await app.get(CustomerTransactionPinService).setTransactionPin(sender.customerId, {
       pinHash: encodePbkdf2('1234'),
       hashAlgorithm: 'PBKDF2',
@@ -1299,6 +1290,19 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       expect(outcome.deliveries).toHaveLength(2);
       expect(outcome.deliveries.some((d) => d.recipientType === 'AGENT')).toBe(true);
     }
+    // A different governed institution cannot be selected by an authenticated sender.
+    const foreignInstitution = await governed.institution('foreign-http-p2p');
+    const foreignCustomer = await createCustomerWithCredential();
+    const foreignWallet = await create(foreignCustomer.customerId);
+    await governed.enrolCustomer(foreignCustomer.customerId, foreignInstitution);
+    await governed.attributeWallet(foreignWallet.id, foreignInstitution);
+    await request(app.getHttpServer())
+      .post('/api/v1/agents/me/transfer-quotes')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ destinationWalletId: foreignWallet.id, amountMinor: '50', currency: 'NGN' })
+      .expect(409);
+
     // Re-evaluate product and class after quoting, and fail atomically if the outbox fails.
     const agentPath = '/api/v1/agents/me/transfer-quotes';
     const q = await request(app.getHttpServer())
@@ -1313,6 +1317,13 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
         .set('Authorization', `Bearer ${tokenA}`)
         .set('Idempotency-Key', 'p2p-retry-control')
         .send({ pin: '1234' });
+    await governed.changeInstitutionStatus(institutionId, 'SUSPENDED');
+    await confirm().expect(503);
+    expect((await wallets.getWalletBalance(a.id)).balanceMinor).toBe('500');
+    expect(
+      await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [q.body.quoteId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
+    await governed.changeInstitutionStatus(institutionId, 'APPROVED');
     await dataSource.query(`UPDATE products SET enabled=false WHERE code='WALLET_TRANSFER'`);
     await confirm().expect(503);
     await dataSource.query(`UPDATE products SET enabled=true WHERE code='WALLET_TRANSFER'`);
@@ -1350,6 +1361,44 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       .set('Idempotency-Key', randomUUID())
       .send({ destinationWalletId: b.id, amountMinor: '100', currency: 'NGN' })
       .expect(201);
+    const { networkManager, controller } = await governed.workforce();
+    const affiliationPath = `/api/v1/internal/agent-affiliations/${agentB.id}`;
+    const changeAffiliation = async (changeKind: 'SUSPEND' | 'REACTIVATE') => {
+      const body = {
+        institutionId,
+        changeKind,
+        evidenceType: 'INSTITUTION_APPROVAL_LETTER',
+        evidenceReference: `AFF-${randomUUID()}`,
+        reason: 'Institutional agent authority changed through governance approval',
+      };
+      const prepared = await request(app.getHttpServer())
+        .post(`${affiliationPath}/request`)
+        .set('Authorization', `Bearer ${networkManager.token}`)
+        .send(body)
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(
+          `/api/v1/internal/a2/workforce/approvals/${prepared.body.approvalId as string}/approve`,
+        )
+        .set('Authorization', `Bearer ${controller.token}`)
+        .send({ comment: 'independent check' })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(`${affiliationPath}/execute`)
+        .set('Authorization', `Bearer ${controller.token}`)
+        .send({ ...body, approvalId: prepared.body.approvalId })
+        .expect(201);
+    };
+    await changeAffiliation('SUSPEND');
+    await request(app.getHttpServer())
+      .post(`${agentPath}/${raceQuote.body.quoteId as string}/confirm`)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Idempotency-Key', 'suspended-recipient')
+      .send({ pin: '1234' })
+      .expect(409);
+    expect((await wallets.getWalletBalance(a.id)).balanceMinor).toBe('450');
+    expect((await wallets.getWalletBalance(b.id)).balanceMinor).toBe('200');
+    await changeAffiliation('REACTIVATE');
     await request(app.getHttpServer())
       .get(`${agentPath}/${raceQuote.body.quoteId as string}`)
       .set('Authorization', `Bearer ${tokenB}`)
