@@ -362,6 +362,43 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 30 — full PostgreSQL acceptance
+
+`src/deployment/postgres-acceptance.service.ts`, `test/postgres-acceptance.spec.ts` (12 assertions), the
+`backend-postgres-isolated` CI job, the `test:pg:isolated-kyc:ci` script and
+`docs/integration/POSTGRESQL-ACCEPTANCE.md`.
+
+**What was already good needed no replacing.** The matrix runner is genuinely engineered: 179 integration suites,
+each in a dedicated database; sequential batches in separate OS processes because a single long-lived Jest process
+accumulates heap across suites (measured ~720 MB → ~1.4 GB over 19 files, then OOM) — batching is memory
+management, not reduced coverage; every batch always runs so failures are reported together; a pid-scoped
+migration template database so a run reuses one migrated schema instead of 160+ migrations per suite.
+
+**The gap was eleven suites nothing ran.** `jest.integration.config.js` matches `*.integration.spec.ts`; eleven
+files are named `*.isolated-pg.test.ts` and match nothing. They are run by `run-isolated-kyc-tests.js` — a careful
+script that creates a disposable socket-only cluster with a provenance contract several suites assert on — and
+**nothing in CI invoked it**. On every push they did not run. Between them they guard the KYC foundation schema,
+provider governance singletons, tier policy and limit enforcement, registration API and session lifecycle,
+governed ledger reversal, and legacy registration/session remediation. A suite nothing runs is worse than no
+suite: it inflates apparent coverage while asserting nothing.
+
+Fixed with a `:ci` wrapper script and a `backend-postgres-isolated` job that installs the server binaries. An
+inventory service classifies every suite by naming convention and reports any that no configured runner executes
+— claimed only when the npm script exists **and** a workflow invokes it, because a script nobody calls executes
+nothing.
+
+One subtlety a failing test caught: `npm run test:pg` is a strict **prefix** of `npm run test:pg:isolated-kyc`, so
+a naive `includes` let the integration pattern claim the isolated suites and everything looked wired up. The
+matcher now requires a whole `run:` value.
+
+Mutations: removing the isolated script → 11 unclaimed; changing the CI step to `echo skipped` → 11 unclaimed;
+removing `test:pg` → over 150 unclaimed.
+
+**Not accepted:** the isolated suites were **not executed here** (no `initdb`/`pg_ctl` in this sandbox — they are
+wired into CI, and that is the claim, not that they passed); CI has not run; not at production volume; not
+concurrency; not a soak test; not a DR drill (Group 18's declared-vs-measured record stands). The five most recent
+integration suites do pass **126/126** against a real cluster here.
+
 ### Group 29 — CI and deployment gates
 
 `.github/workflows/ci.yml`, `src/deployment/ci-gate.service.ts`, `test/ci-gates.spec.ts` (15 assertions),
@@ -1090,7 +1127,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 30–40 remain: the PostgreSQL matrix, sandbox readiness, mobile release, browser acceptance, readiness
+Groups 31–40 remain: sandbox integration readiness, mobile release readiness, browser acceptance, the readiness
 gate, journeys A–J, consolidated acceptance, and the final handoff.
 
 Known gaps carried forward: no secret-manager backend is selected (the contract exists; the environment

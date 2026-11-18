@@ -109,6 +109,36 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # A second PostgreSQL gate, for the suites the first one structurally cannot run.
+  #
+  # `jest.integration.config.js` matches `*.integration.spec.ts`. The eleven `*.isolated-pg.test.ts` suites do
+  # not match that pattern by design: they own a disposable socket-only cluster of their own and assert on its
+  # provenance. They were run by `npm run test:pg:isolated-kyc`, and nothing invoked that script — so migration
+  # chains, governance singletons, KYC registration flows and governed ledger reversal were guarded by tests
+  # that never ran on a push.
+  #
+  # Installing postgresql-client provides the `initdb`/`pg_ctl` binaries the script needs; the script creates
+  # its own cluster in a temp directory and refuses to touch anything it did not create.
+  backend-postgres-isolated:
+    name: Backend (isolated PostgreSQL suites)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Install PostgreSQL server binaries for the disposable cluster
+        run: sudo apt-get update && sudo apt-get install -y postgresql
+      - name: Run the isolated PostgreSQL suites against a disposable cluster
+        env:
+          NODE_OPTIONS: --require ./test/support/mission-25c-network-guard.cjs
+          NOTIFICATION_WORKER_ENABLED: 'false'
+          CASH_TO_CASH_EXPIRY_WORKER_ENABLED: 'false'
+        run: npm run test:pg:isolated-kyc:ci
+
   admin-web:
     name: Admin Web (types, tests, build)
     runs-on: ubuntu-latest

@@ -61,6 +61,12 @@ export const REQUIRED_CI: WorkflowRequirement = {
       ],
     },
     {
+      name: 'backend-postgres-isolated',
+      description:
+        'the isolated disposable-cluster suites, which the integration pattern cannot match',
+      requiredFragments: ['npm run test:pg:isolated-kyc:ci', 'postgresql'],
+    },
+    {
       name: 'backend-container-build',
       description: 'the production image builds',
       requiredFragments: ['docker/build-push-action', 'Dockerfile'],
@@ -81,7 +87,16 @@ export const REQUIRED_CI: WorkflowRequirement = {
       requiredFragments: ['npm run ts:check', 'npm test'],
     },
   ],
-  requiredScripts: ['lint', 'lint:src', 'lint:test', 'format:check', 'build', 'test', 'test:pg'],
+  requiredScripts: [
+    'lint',
+    'lint:src',
+    'lint:test',
+    'format:check',
+    'build',
+    'test',
+    'test:pg',
+    'test:pg:isolated-kyc:ci',
+  ],
 };
 
 export interface GateCheck {
