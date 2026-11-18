@@ -1,0 +1,30 @@
+{
+  "id": "a2ciso02",
+  "source": "fa9ec89e5c5e989ca8ca6f8b15e4d6cd4ab04849",
+  "state": "FAILED",
+  "started": "2026-11-18T23:17:55.264Z",
+  "lane": "isolated-pg single-suite recheck",
+  "priorInvocation": "a2ciso01",
+  "directlyExecuted": [
+    "test/batch2c-eligibility.isolated-pg.test.ts"
+  ],
+  "reusedResults": [],
+  "unfiltered": true,
+  "verifiedSourceBlobs": 2160,
+  "compileCache": "existing Jest transform cache; unchanged archive and locked dependencies",
+  "networkGuard": "test/support/mission-25c-network-guard.cjs",
+  "perCluster": 1,
+  "perProcess": 1,
+  "concurrency": 1,
+  "heapMiB": 1536,
+  "suites": {
+    "test/batch2c-eligibility.isolated-pg.test.ts": {
+      "status": "NO_RESULT",
+      "started": "2026-11-18T23:17:55.264Z",
+      "exit": 1,
+      "signal": null,
+      "finished": "2026-11-18T23:18:32.242Z"
+    }
+  },
+  "finished": "2026-11-18T23:18:32.242Z"
+}
