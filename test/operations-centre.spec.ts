@@ -511,6 +511,90 @@ describe('Group 20 — operations centre', () => {
     });
   });
 
+  describe('undelivered security notices are visible (Group 26)', () => {
+    function withNotifications(posture: unknown, suppressed: unknown = []) {
+      const built = build();
+      return new OperationsCentreService(
+        { manager: {} } as DataSource,
+        built.leases,
+        built.supervisor,
+        built.integrity as never,
+        new AlertingService(
+          { manager: {} } as DataSource,
+          built.leases,
+          built.supervisor,
+          built.integrity as never,
+        ),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        posture instanceof Error
+          ? ({ securityDeliveryPosture: () => Promise.reject(posture) } as never)
+          : ({
+              securityDeliveryPosture: () => Promise.resolve(posture),
+              suppressedDestinations: () =>
+                suppressed instanceof Error
+                  ? Promise.reject(suppressed)
+                  : Promise.resolve(suppressed),
+            } as never),
+      );
+    }
+
+    it('reports confirmed-undelivered security notices as immediate', async () => {
+      const service = withNotifications([
+        { channel: 'SMS', attempted: 10, confirmedDelivered: 7, knownUndelivered: 3, noReceipt: 0 },
+      ]);
+      const view = await service.view();
+      const item = view.items.find((entry) => entry.id === 'notifications:undelivered:sms');
+      expect(item?.area).toBe('NOTIFICATIONS');
+      expect(item?.urgency).toBe('IMMEDIATE');
+      expect(item?.context.knownUndelivered).toBe(3);
+    });
+
+    it('does not alert merely because most messages have no receipt', async () => {
+      // Providers do not report every message. Alerting on that would be permanent and meaningless, and would
+      // train operators to ignore this area entirely.
+      const service = withNotifications([
+        {
+          channel: 'EMAIL',
+          attempted: 500,
+          confirmedDelivered: 10,
+          knownUndelivered: 0,
+          noReceipt: 490,
+        },
+      ]);
+      const view = await service.view();
+      expect(view.items.some((entry) => entry.id === 'notifications:undelivered:email')).toBe(
+        false,
+      );
+    });
+
+    it('lists suppressed destinations as routine, not as an incident', async () => {
+      const service = withNotifications(
+        [
+          {
+            channel: 'EMAIL',
+            attempted: 5,
+            confirmedDelivered: 5,
+            knownUndelivered: 0,
+            noReceipt: 0,
+          },
+        ],
+        [{ channel: 'EMAIL', destinationMasked: 'ab***@example.com' }],
+      );
+      const view = await service.view();
+      const item = view.items.find((entry) => entry.id === 'notifications:suppressed-destinations');
+      expect(item?.urgency).toBe('ROUTINE');
+    });
+
+    it('treats an unreadable notification posture as unavailable', async () => {
+      const service = withNotifications(new Error('db down'));
+      const view = await service.view();
+      expect(view.unavailable.map((entry) => entry.area)).toContain('NOTIFICATIONS');
+    });
+  });
+
   describe('it is read-only and says so', () => {
     it('states that no remediation is offered', async () => {
       const { service } = build();

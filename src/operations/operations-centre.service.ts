@@ -35,6 +35,7 @@ import type { EmergencyAccessReviewService } from '../authorization/emergency-ac
 import type { ComplianceAuditExportService } from '../compliance/compliance-audit-export.service';
 import type { FraudDetectionService } from '../fraud/fraud-detection.service';
 import type { DisputeService } from '../disputes/dispute.service';
+import type { NotificationReceiptService } from '../notification/notification-receipt.service';
 import { AlertingService } from './alerting.service';
 import type { Alert, AlertUrgency } from './alerting.types';
 import { IntegrityMonitoringService } from './integrity-monitoring.service';
@@ -54,7 +55,8 @@ export interface AttentionItem {
     | 'SECURITY'
     | 'FRAUD'
     | 'COMPLIANCE'
-    | 'DISPUTES';
+    | 'DISPUTES'
+    | 'NOTIFICATIONS';
   urgency: AlertUrgency;
   severity: 'INFO' | 'WARNING' | 'CRITICAL';
   summary: string;
@@ -111,6 +113,8 @@ export class OperationsCentreService {
     @Optional() private readonly compliance?: ComplianceAuditExportService,
     /* Group 24. */
     @Optional() private readonly disputes?: DisputeService,
+    /* Group 26. */
+    @Optional() private readonly notificationReceipts?: NotificationReceiptService,
   ) {}
 
   async view(): Promise<OperationsCentreView> {
@@ -380,6 +384,58 @@ export class OperationsCentreService {
         unavailable.push({
           area: 'DISPUTES',
           reason: 'dispute posture could not be read',
+        });
+      }
+    }
+
+    // --- Notifications (Group 26): do security messages actually reach people ---
+    if (this.notificationReceipts) {
+      try {
+        const posture = await this.notificationReceipts.securityDeliveryPosture();
+        for (const entry of posture) {
+          /*
+           * Only `knownUndelivered` is actionable. `noReceipt` is the normal state of most traffic — providers
+           * do not report every message — so treating it as a failure would produce a permanent, meaningless
+           * alert that trains operators to ignore this area entirely.
+           */
+          if (entry.knownUndelivered > 0) {
+            items.push({
+              id: `notifications:undelivered:${entry.channel.toLowerCase()}`,
+              area: 'NOTIFICATIONS',
+              /*
+               * Any confirmed undelivered security-critical message is immediate. These are the notices that
+               * deliberately bypass a customer's opt-out because the platform judged them necessary; if they
+               * are bouncing, the customer is not being told something the platform decided they had to know.
+               */
+              urgency: 'IMMEDIATE',
+              severity: 'WARNING',
+              summary: `${entry.knownUndelivered} ${entry.channel} security notice(s) confirmed undelivered`,
+              context: {
+                channel: entry.channel,
+                attempted: entry.attempted,
+                confirmedDelivered: entry.confirmedDelivered,
+                knownUndelivered: entry.knownUndelivered,
+                noReceipt: entry.noReceipt,
+              },
+            });
+          }
+        }
+
+        const suppressed = await this.notificationReceipts.suppressedDestinations({ limit: 200 });
+        if (suppressed.length > 0) {
+          items.push({
+            id: 'notifications:suppressed-destinations',
+            area: 'NOTIFICATIONS',
+            urgency: 'ROUTINE',
+            severity: 'WARNING',
+            summary: `${suppressed.length} destination(s) suppressed after bounce or complaint`,
+            context: { suppressed: suppressed.length },
+          });
+        }
+      } catch {
+        unavailable.push({
+          area: 'NOTIFICATIONS',
+          reason: 'notification delivery posture could not be read',
         });
       }
     }

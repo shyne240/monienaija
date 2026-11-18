@@ -14,8 +14,8 @@ import {
 // The schema head this build requires. A deployment whose database has not reached this migration
 // refuses to serve traffic, which is the intended behaviour — advancing this constant is part of shipping
 // a migration, not an afterthought.
-const EXPECTED_MIGRATION_TIMESTAMP = '1785753600612';
-const EXPECTED_MIGRATION_NAME = 'MobileClientSupport1785753600612';
+const EXPECTED_MIGRATION_TIMESTAMP = '1785753600613';
+const EXPECTED_MIGRATION_NAME = 'NotificationDeliveryReceipts1785753600613';
 
 type Row = Record<string, unknown>;
 

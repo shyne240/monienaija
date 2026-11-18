@@ -9,6 +9,7 @@ import {
   NOTIFICATION_PROVIDER_TOKEN,
 } from './notification.constants';
 import { NotificationChannelResolverService } from './notification-channel-resolver.service';
+import { NotificationReceiptService } from './notification-receipt.service';
 import { NotificationDelivery } from './notification-delivery.entity';
 import { NotificationDispatcherService } from './notification-dispatcher.service';
 import { CodeNotificationEmailTemplateService } from './notification-email-template.service';
@@ -46,6 +47,7 @@ import { NormalizingSmsNotificationProvider } from './normalizing-sms-notificati
     },
     NotificationSecretEncryptionService,
     NotificationProviderConfigService,
+    NotificationReceiptService,
     ConfigurableSmsNotificationProvider,
     NormalizingSmsNotificationProvider,
     ConfigurableEmailNotificationProvider,
@@ -63,6 +65,7 @@ import { NormalizingSmsNotificationProvider } from './normalizing-sms-notificati
       useExisting: CodeNotificationEmailTemplateService,
     },
     NotificationChannelResolverService,
+    NotificationReceiptService,
     NotificationTemplateService,
     NotificationDispatcherService,
     NotificationInboxService,

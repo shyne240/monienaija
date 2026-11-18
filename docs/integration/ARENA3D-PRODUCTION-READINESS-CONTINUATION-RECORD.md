@@ -362,6 +362,50 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 26 — SMS and email delivery receipts
+
+`src/migrations/1785753600613-NotificationDeliveryReceipts.ts`,
+`src/notification/notification-receipt.service.ts`, `test/notification-receipts.integration.spec.ts`
+(27 integration assertions), 4 unit assertions in `test/operations-centre.spec.ts`, and
+`docs/integration/SMS-AND-EMAIL-DELIVERY.md`.
+
+**The pipeline already sent correctly; nothing could learn what happened next.** The dispatcher, the leased
+delivery processor with bounded retries, the Brevo/Resend/SMS adapters and the opt-out resolver with its
+security-critical bypass were all already there and were not rebuilt. But `email-provider.interface.ts` said in
+its own comment that confirmed delivery was "a documented future enhancement": `SENT` meant _the provider
+accepted it_. A dead destination was retried forever, "did the customer receive the OTP that mattered" was
+unanswerable, and bounce/complaint rates — the signals that get a sending domain blocked — were invisible.
+
+**A receipt never rewrites the original verdict.** A delivery marked `SENT` stays `SENT`; a later bounce is a
+separate fact with its own timestamp, so the history reads "accepted at 10:00, bounced at 10:00:04". Collapsing
+the two would erase the distinction between _the system could not know_ and _the system knew and continued_ —
+the same declared-versus-measured discipline that governs recovery and alerting here. A test asserts the
+delivery row is untouched after a hard bounce lands against it.
+
+**Suppression is the most dangerous write in the group**, because it stops messages that deliberately bypass
+opt-out. It requires permanent evidence (hard bounce, spam complaint, unsubscribe) **and** an authenticated
+receipt. Deferrals and soft bounces never suppress: a greylisted server or a full mailbox is temporary, and
+suppressing there cuts off a customer whose only problem was timing. An `UNVERIFIED` receipt — a public webhook
+is forgeable — is recorded but cannot suppress, enforced by a table `CHECK`. **Verified by mutation:** removing
+that `CHECK` failed exactly the DB-layer test and nothing else; restoring returned 27/27.
+
+`(channel, provider_event_id)` is unique, so the same webhook arriving five times is one bounce rather than
+letting whichever provider retries hardest dominate the reputation calculation. Destinations are stored as hash
+plus masked form, because a bounce dashboard must not become a readable list of customer phone numbers.
+
+`notification_security_delivery_posture` answers "how many security notices did we _know_ reached the
+recipient". `no_receipt` is deliberately **not** a failure — most providers do not report every message, and
+alerting on it would be a permanent signal that trains operators to ignore the area. Only `knownUndelivered`
+produces an operations-centre item, and it is `IMMEDIATE`.
+
+Known gaps from Group 26: **no webhook HTTP endpoint** — the service is tested but nothing exposes a public
+route, which needs per-provider signature verification and no provider webhook secret exists in this
+environment; no provider signature scheme implemented (`verification` is set by the caller); no status-polling
+fallback; **suppression is advisory, not enforced** — `isSuppressed()` exists but the delivery processor does not
+call it, because wiring it in changes send behaviour and needs the interaction with the security-critical
+bypass decided deliberately; open/click receipts are stored but not aggregated; `down()` refuses once any
+receipt exists.
+
 ### Group 25 — customer and agent mobile client support
 
 `src/migrations/1785753600612-MobileClientSupport.ts`, `src/mobile/mobile-client-support.service.ts`,
@@ -928,8 +972,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 26–40 remain:
-SMS/email, privacy/retention, performance harness, CI release gates, the PostgreSQL matrix, sandbox
+Groups 27–40 remain: privacy/retention, performance harness, CI release gates, the PostgreSQL matrix, sandbox
 readiness, mobile release, browser acceptance, readiness gate, journeys A–J, consolidated acceptance, and
 the final handoff.
 
