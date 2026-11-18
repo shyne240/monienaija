@@ -10,6 +10,7 @@ import { OutboxService } from './outbox.service';
 import { OutboxEventStatus } from './operations.enums';
 import { AlertingService } from './alerting.service';
 import { IntegrityMonitoringService } from './integrity-monitoring.service';
+import { OperationsCentreService } from './operations-centre.service';
 import { OperationalMetricsService } from './operational-metrics.service';
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
 import { WorkerSupervisorService } from './worker-supervisor.service';
@@ -54,6 +55,7 @@ export class OperationsController {
     private readonly reconciliation: ReconciliationService,
     private readonly integrity: IntegrityMonitoringService,
     private readonly alerting: AlertingService,
+    private readonly operationsCentre: OperationsCentreService,
   ) {}
 
   @Get('metrics')
@@ -173,6 +175,19 @@ export class OperationsController {
       deliveryConfigured: this.alerting.deliveryConfigured,
       conditions: this.alerting.activeState(),
     };
+  }
+
+  /**
+   * Group 20 — the operations centre: everything needing attention, ranked.
+   *
+   * Read-only. `clear: true` means "measured and clear", never "not measured" — an unreadable source sets
+   * `partial` and appears in `unavailable`. No remediation is offered here; those are audited write paths
+   * with their own authority decision.
+   */
+  @Get('operations-centre')
+  async getOperationsCentre(@Req() req: AuthenticatedRequest) {
+    await this.requireFunction(req, 'diagnostics.view');
+    return this.operationsCentre.view();
   }
 
   @Get('workers')

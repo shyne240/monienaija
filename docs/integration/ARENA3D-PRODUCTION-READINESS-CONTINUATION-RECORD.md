@@ -19,7 +19,8 @@ Continuation record. Updated as each group lands; the workspace is the source of
 | Group 16                                    | `6451a5c2`    | Sink-level log redaction; compound secret names.                                        |
 | Group 17                                    | `40766952`    | Operational metrics; DLQ and worker signals finally have a consumer.                    |
 | Group 18                                    | `f2a63c0d`    | Integrity snapshots and drift detection.                                                |
-| Group 19                                    | _this commit_ | Alert contract, deduplication, flap suppression, dark delivery default.                 |
+| Group 19                                    | `0fe477bc`    | Alert contract, deduplication, flap suppression, dark delivery default.                 |
+| Group 20                                    | _this commit_ | Operations centre: one ranked read-only view of what needs attention.                   |
 
 Branch: `arena/defdd0fd-monienaija`. There is no upstream; push with `git push origin <branch>`.
 
@@ -358,6 +359,41 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 20 — operations centre
+
+`src/operations/operations-centre.service.ts`, `test/operations-centre.spec.ts` (15 assertions),
+`GET /internal/operations-centre`, and `docs/integration/OPERATIONS-CENTRE.md`.
+
+**The problem was aggregation, not detection.** By Group 19 every signal existed, each behind its own
+endpoint: queue depth, dead letters, stalled leases, per-worker state, supervision status, integrity
+passes, alert conditions. An operator starting a shift had to know which of a dozen endpoints to call and how
+to combine the answers. That is a filing cabinet.
+
+**The rule that shapes it: nothing here decides anything new.** Every item is derived from the service that
+already owns the verdict — integrity from Group 18's `lastPasses()`, queue from Group 14's `health()`, worker
+state from Group 15's `report()`, conditions from Group 19's `evaluate()`. Re-deriving a verdict in the
+aggregator would create a second source of truth that can disagree with the endpoint the operator is
+simultaneously looking at, with no way to tell which is right.
+
+**`clear` means measured-and-clear.** It requires an empty `items` list **and** an empty `unavailable` list.
+Reporting `clear` while a source was unreadable is the same failure as a supervisor reporting healthy when it
+measured nothing.
+
+**Two real duplicates were found by inspecting actual output**, not by writing a test first: the
+indeterminate supervision state appeared as both `supervision:indeterminate` and
+`alert:worker.supervision-indeterminate`, and a failing worker could appear both individually and as a
+generic alert. Both are now suppressed with regression tests. Duplicates are how an operator learns to
+distrust a list.
+
+**It is deliberately read-only.** No acknowledge, resolve, retry, requeue or replay — those are audited write
+paths needing their own authority decision (Groups 21–22), and requeueing a dead letter re-submits an
+external operation. A test asserts the service exposes exactly one method, so adding a mutation surface fails
+the suite and forces the authority question to be asked rather than assumed.
+
+Ids are stable across polls (`integrity:<check>`, `queue:dead-letters`, `worker:<name>:<STATE>`), because an
+id that changed per poll would make "is this the same problem?" unanswerable — the exact question Group 18
+exists to answer. Passing checks are not listed; they would bury the failing ones.
+
 ### Group 19 — alerting: the contract, and the suppressions that make it survivable
 
 `src/operations/alerting.types.ts`, `src/operations/alerting.service.ts`, `test/alerting.spec.ts`
@@ -652,7 +688,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 20–40 remain: admin operations
+Groups 21–40 remain: admin operations
 centre, operational security, break-glass, fraud/risk, compliance, complaints, disputes, mobile support,
 SMS/email, privacy/retention, performance harness, CI release gates, the PostgreSQL matrix, sandbox
 readiness, mobile release, browser acceptance, readiness gate, journeys A–J, consolidated acceptance, and
@@ -666,6 +702,11 @@ categories in one database.
 Known gaps carried forward from Group 12: no fixture seeds all eleven backup categories in one database;
 the restore requires superuser; and off-site storage, encryption at rest, retention and point-in-time
 recovery are infrastructure decisions that are not implemented.
+
+Known gaps from Group 20: no write actions by design, no history or trend (integrity history is Group 18's
+endpoint, suppression state is Group 19's), no financial figures — reconciliation and unresolved-funds data
+stay in their own read surfaces with their own permissions, because aggregating money into an operations view
+would widen access to it. No scheduling and no UI; this is the API only.
 
 Known gaps from Group 19: no vendor integration and no delivery guarantee, retry or dead-letter for alerts —
 a failed delivery is reported in `dispatched[].reason` and then forgotten. No escalation policy, on-call

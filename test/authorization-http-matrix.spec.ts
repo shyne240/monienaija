@@ -41,6 +41,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { AlertingService } from '../src/operations/alerting.service';
 import { IntegrityMonitoringService } from '../src/operations/integrity-monitoring.service';
+import { OperationsCentreService } from '../src/operations/operations-centre.service';
 import { OperationalMetricsService } from '../src/operations/operational-metrics.service';
 import { ReconciliationService } from '../src/reconciliation/reconciliation.service';
 import { WorkerLeaseService } from '../src/operations/worker-lease.service';
@@ -366,6 +367,11 @@ describe('HTTP authorization matrix', () => {
           } as unknown as ConfigService),
         },
         {
+          // Group 20 added an operations-centre dependency to OperationsController.
+          provide: OperationsCentreService,
+          useValue: { view: () => Promise.resolve({ clear: true, items: [] }) },
+        },
+        {
           // Group 19 added an alerting dependency to OperationsController.
           provide: AlertingService,
           useValue: new AlertingService(
@@ -380,7 +386,10 @@ describe('HTTP authorization matrix', () => {
           provide: IntegrityMonitoringService,
           useValue: new IntegrityMonitoringService(dataSource as unknown as DataSource),
         },
-        { provide: ReconciliationService, useValue: { runReconciliation: () => Promise.resolve() } },
+        {
+          provide: ReconciliationService,
+          useValue: { runReconciliation: () => Promise.resolve() },
+        },
         {
           // Group 17 added a metrics dependency to OperationsController.
           provide: OperationalMetricsService,
