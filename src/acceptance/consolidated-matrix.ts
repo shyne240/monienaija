@@ -42,7 +42,10 @@ export interface ConsolidatedMatrixReport {
   readonly generatedAt: string;
   readonly commit: string;
   readonly cleanTree: boolean;
-  readonly rows: readonly (MatrixRequirement & { readonly status: MatrixStatus; readonly detail: string })[];
+  readonly rows: readonly (MatrixRequirement & {
+    readonly status: MatrixStatus;
+    readonly detail: string;
+  })[];
   readonly summary: {
     readonly requirements: number;
     readonly executed: number;
@@ -114,7 +117,8 @@ export const CONSOLIDATED_MATRIX: readonly MatrixRequirement[] = [
   {
     id: 'browser',
     area: 'product',
-    requirement: 'the admin console boots, authenticates and scopes itself in a real browser engine',
+    requirement:
+      'the admin console boots, authenticates and scopes itself in a real browser engine',
     kind: 'recorded',
     evidence: 'docs/integration/evidence/browser-acceptance/browser-acceptance.json',
   },
@@ -130,7 +134,8 @@ export const CONSOLIDATED_MATRIX: readonly MatrixRequirement[] = [
     area: 'database',
     requirement: 'every integration suite is claimed by a runner that CI invokes',
     kind: 'recorded',
-    evidence: 'src/deployment/postgres-acceptance.service.ts (inventory is static: wired, not proven)',
+    evidence:
+      'src/deployment/postgres-acceptance.service.ts (inventory is static: wired, not proven)',
   },
   {
     id: 'privacy-retention',
@@ -158,7 +163,8 @@ export const CONSOLIDATED_MATRIX: readonly MatrixRequirement[] = [
     area: 'delivery',
     requirement: 'the container image builds',
     kind: 'unavailable',
-    evidence: 'no container runtime exists in this environment; the CI job is declared and unexecuted here',
+    evidence:
+      'no container runtime exists in this environment; the CI job is declared and unexecuted here',
   },
   {
     id: 'deployment',
@@ -172,7 +178,8 @@ export const CONSOLIDATED_MATRIX: readonly MatrixRequirement[] = [
     area: 'providers',
     requirement: 'a real provider contract is exercised in a provider sandbox',
     kind: 'unavailable',
-    evidence: 'no authorized provider credential was supplied and provider calls are outside this mission',
+    evidence:
+      'no authorized provider credential was supplied and provider calls are outside this mission',
   },
   {
     id: 'cross-browser',
@@ -193,14 +200,16 @@ export const CONSOLIDATED_MATRIX: readonly MatrixRequirement[] = [
     area: 'operations',
     requirement: 'a restore is attempted at production volume and RPO/RTO are measured',
     kind: 'unavailable',
-    evidence: 'no production-scale dataset exists here; recovery objectives remain declared, not measured',
+    evidence:
+      'no production-scale dataset exists here; recovery objectives remain declared, not measured',
   },
   {
     id: 'worker-execution',
     area: 'operations',
     requirement: 'a deployable mechanism guarantees essential background workers run',
     kind: 'unavailable',
-    evidence: 'supervision observes; no invocation mechanism is provisioned or tested (standing requirement)',
+    evidence:
+      'supervision observes; no invocation mechanism is provisioned or tested (standing requirement)',
   },
   {
     id: 'alert-delivery',
