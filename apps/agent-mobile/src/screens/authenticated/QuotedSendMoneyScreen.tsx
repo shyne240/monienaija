@@ -14,6 +14,14 @@ interface Recipient {
   display: string;
   status: string;
 }
+interface SavedBeneficiary {
+  id: string;
+  nickname: string;
+  receivingNumber: string | null;
+  isActive: boolean;
+  recipientType?: 'CUSTOMER' | 'AGENT' | null;
+  recipientId?: string | null;
+}
 interface Quote {
   quoteId: string;
   sourceWalletId: string;
@@ -96,6 +104,8 @@ const QuotedSendMoneyForOwner: React.FC<{ ownerId: string | null | undefined }> 
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
 
+  const [beneficiaries, setBeneficiaries] = useState<SavedBeneficiary[]>([]);
+  const [selectedSaved, setSelectedSaved] = useState<SavedBeneficiary | null>(null);
   const storageKey = `p2p.confirm.${ownerId ?? 'missing'}`;
   const base = 'api/v1/agents/me';
   useEffect(() => {
@@ -115,6 +125,12 @@ const QuotedSendMoneyForOwner: React.FC<{ ownerId: string | null | undefined }> 
             setQuote(value.quote);
             setRecipient(value.recipient);
           }
+        }
+        try {
+          const list = await ApiClient.get<{ items: SavedBeneficiary[] }>(`${base}/beneficiaries`);
+          if (alive) setBeneficiaries(list.items ?? []);
+        } catch {
+          /* optional saved recipients */
         }
       } catch {
         if (alive)
@@ -143,12 +159,35 @@ const QuotedSendMoneyForOwner: React.FC<{ ownerId: string | null | undefined }> 
       );
       if (r.status !== 'ACTIVE' || !r.walletId || !r.ownerId)
         throw new Error('Recipient unavailable');
+      if (
+        selectedSaved?.recipientId &&
+        (selectedSaved.recipientId !== r.ownerId || selectedSaved.recipientType !== r.ownerType)
+      )
+        throw new Error('Saved recipient identity changed');
       setRecipient(r);
     } catch {
       setError('Could not verify this recipient. Check the number and try again.');
     } finally {
       setBusy(false);
       inFlight.current = false;
+    }
+  };
+  const saveRecipient = async () => {
+    if (inFlight.current || pending || !recipient) return;
+    inFlight.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      const saved = await ApiClient.post<SavedBeneficiary>(`${base}/beneficiaries`, {
+        beneficiaryIdentifier: recipient.receivingNumber,
+        nickname: recipient.display,
+      });
+      setBeneficiaries((items) => [...items.filter((item) => item.id !== saved.id), saved]);
+    } catch {
+      setError('Could not save this recipient. You can still send using their number.');
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
     }
   };
   const getQuote = async () => {
@@ -321,11 +360,27 @@ const QuotedSendMoneyForOwner: React.FC<{ ownerId: string | null | undefined }> 
                 value={identifier}
                 onChangeText={(v) => {
                   setIdentifier(v);
+                  setSelectedSaved(null);
                   setRecipient(null);
                   setQuote(null);
                 }}
               />
               <Button label="Verify recipient" onPress={verify} loading={busy} />
+              {beneficiaries
+                .filter((b) => b.isActive && b.receivingNumber)
+                .map((b) => (
+                  <Button
+                    key={b.id}
+                    label={`Saved: ${b.nickname}`}
+                    variant="outline"
+                    onPress={() => {
+                      setIdentifier(b.receivingNumber!);
+                      setSelectedSaved(b);
+                      setRecipient(null);
+                      setQuote(null);
+                    }}
+                  />
+                ))}
             </>
           )}
           {recipient && (
@@ -335,6 +390,12 @@ const QuotedSendMoneyForOwner: React.FC<{ ownerId: string | null | undefined }> 
           )}
           {recipient && !pending && (
             <>
+              <Button
+                label="Save recipient"
+                variant="outline"
+                onPress={saveRecipient}
+                loading={busy}
+              />
               <Text>Amount in NGN</Text>
               <TextInput
                 testID="send-amount"

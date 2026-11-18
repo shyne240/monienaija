@@ -65,11 +65,11 @@ describe('migration inventory', () => {
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at the allocated verified agent contact migration', () => {
+  it('ends at the allocated beneficiary ownership migration', () => {
     // Arena 3D's published banking chain remains intact; the P2P migration follows it.
     expect(migrations.at(-1)).toMatchObject({
-      timestamp: '1785753600801',
-      name: 'AgentVerifiedPhone1785753600801',
+      timestamp: '1785753600802',
+      name: 'ExtendBeneficiaryOwnership1785753600802',
     });
   });
 

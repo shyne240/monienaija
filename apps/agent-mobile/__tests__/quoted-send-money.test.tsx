@@ -310,3 +310,48 @@ test('an unavailable or revoked session cannot clear or retry restored recovery'
   expect(ApiClient.post).not.toHaveBeenCalled();
   expect(await SecureStorage.getDurable(key)).not.toBeNull();
 });
+
+test('agent saves recipients and rejects a changed saved identity before quoting', async () => {
+  (ApiClient.get as jest.Mock).mockImplementation(async (path: string) => {
+    if (path === `${base}/beneficiaries`)
+      return {
+        items: [
+          {
+            id: 'saved',
+            nickname: 'Friend',
+            receivingNumber: recipient.receivingNumber,
+            isActive: true,
+            recipientType: 'AGENT',
+            recipientId: 'original',
+          },
+        ],
+      };
+    if (path.includes('transfer-recipient')) return recipient;
+    throw new Error('unexpected');
+  });
+  const screen = render(<QuotedSendMoneyScreen />);
+  await waitFor(() => expect(screen.getByText('Saved: Friend')).toBeTruthy());
+  fireEvent.press(screen.getByText('Saved: Friend'));
+  fireEvent.press(screen.getByText('Verify recipient'));
+  await waitFor(() => expect(screen.getByTestId('send-error')).toBeTruthy());
+  expect(screen.queryByTestId('recipient-name')).toBeNull();
+  expect(screen.queryByText('Review fees')).toBeNull();
+  fireEvent.changeText(screen.getByTestId('recipient-number'), recipient.receivingNumber);
+  fireEvent.press(screen.getByText('Verify recipient'));
+  await waitFor(() => expect(screen.getByText('Save recipient')).toBeTruthy());
+  (ApiClient.post as jest.Mock).mockResolvedValueOnce({
+    id: 'new',
+    nickname: 'Ada',
+    receivingNumber: recipient.receivingNumber,
+    isActive: true,
+    recipientType: 'AGENT',
+    recipientId: recipient.ownerId,
+  });
+  fireEvent.press(screen.getByText('Save recipient'));
+  await waitFor(() =>
+    expect(ApiClient.post).toHaveBeenCalledWith(`${base}/beneficiaries`, {
+      beneficiaryIdentifier: recipient.receivingNumber,
+      nickname: 'Ada',
+    }),
+  );
+});

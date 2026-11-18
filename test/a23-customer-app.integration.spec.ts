@@ -354,6 +354,142 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     expect(resAgent.body.receivingNumber).toBe(agentNumber);
   });
 
+  it('uses shared beneficiary history for agent ownership and customer or agent recipients', async () => {
+    const customer = await createCustomerWithCredential();
+    const agentToken = await createAgentToken();
+    const secondToken = await createAgentToken();
+    const agentRows: Array<{ agent_id: string }> = await dataSource.query(
+      `SELECT agent_id FROM agent_authentication_sessions WHERE token_hash=$1`,
+      [createHash('sha256').update(agentToken).digest('hex')],
+    );
+    const otherRows: Array<{ agent_id: string }> = await dataSource.query(
+      `SELECT agent_id FROM agent_authentication_sessions WHERE token_hash=$1`,
+      [createHash('sha256').update(secondToken).digest('hex')],
+    );
+    const agentId = agentRows[0]!.agent_id;
+    const otherId = otherRows[0]!.agent_id;
+    const number = '7011112345';
+    await dataSource.query(
+      `INSERT INTO agent_receiving_numbers(agent_id,receiving_number,status) VALUES ($1,$2,'ACTIVE')`,
+      [otherId, number],
+    );
+    const agentPath = '/api/v1/agents/me/beneficiaries';
+    const customerPath = '/api/v1/customers/me/beneficiaries';
+    await request(app.getHttpServer()).get(agentPath).expect(401);
+    await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ beneficiaryIdentifier: customer.phone, agentId: otherId })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${secondToken}`)
+      .send({ beneficiaryIdentifier: number })
+      .expect(400);
+    const agentCustomer = await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ beneficiaryIdentifier: customer.phone, nickname: 'Customer' })
+      .expect(201);
+    expect(agentCustomer.body).toMatchObject({
+      recipientType: 'CUSTOMER',
+      recipientId: customer.customerId,
+      isActive: true,
+      isVerified: true,
+    });
+    const agentAgent = await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ beneficiaryIdentifier: number, nickname: 'Agent' })
+      .expect(201);
+    expect(agentAgent.body).toMatchObject({
+      recipientType: 'AGENT',
+      recipientId: otherId,
+      isActive: true,
+      isVerified: true,
+    });
+    const customerAgent = await request(app.getHttpServer())
+      .post(customerPath)
+      .set('Authorization', `Bearer ${customer.token}`)
+      .send({ beneficiaryIdentifier: number, nickname: 'Agent' })
+      .expect(201);
+    expect(customerAgent.body).toMatchObject({
+      recipientType: 'AGENT',
+      recipientId: otherId,
+      isActive: true,
+      isVerified: true,
+    });
+    await request(app.getHttpServer())
+      .get(`${agentPath}/${agentAgent.body.id as string}`)
+      .set('Authorization', `Bearer ${secondToken}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .get(`${customerPath}/${agentAgent.body.id as string}`)
+      .set('Authorization', `Bearer ${customer.token}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ beneficiaryIdentifier: number })
+      .expect(409);
+    const list = await request(app.getHttpServer())
+      .get(agentPath)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .expect(200);
+    expect(list.body.items).toHaveLength(2);
+    const savedId = agentAgent.body.id as string;
+    const rows = await dataSource.query(
+      `SELECT b.customer_id,b.agent_id,b.wallet_recipient_type,b.wallet_recipient_id,o.agent_id AS ownership_agent FROM customer_beneficiaries b JOIN beneficiary_ownerships o ON o.beneficiary_id=b.id WHERE b.id=$1`,
+      [savedId],
+    );
+    expect(rows).toEqual([
+      {
+        customer_id: null,
+        agent_id: agentId,
+        wallet_recipient_type: 'AGENT',
+        wallet_recipient_id: otherId,
+        ownership_agent: agentId,
+      },
+    ]);
+    expect(
+      await dataSource.query(
+        `SELECT action FROM beneficiary_histories WHERE beneficiary_id=$1 ORDER BY created_at`,
+        [savedId],
+      ),
+    ).toHaveLength(4);
+    await expect(
+      dataSource.query(`UPDATE customer_beneficiaries SET wallet_recipient_id=$2 WHERE id=$1`, [
+        savedId,
+        agentId,
+      ]),
+    ).rejects.toThrow();
+    await expect(
+      dataSource.query(`UPDATE beneficiary_ownerships SET agent_id=$2 WHERE beneficiary_id=$1`, [
+        savedId,
+        otherId,
+      ]),
+    ).rejects.toThrow();
+    await request(app.getHttpServer())
+      .patch(`${agentPath}/${savedId}`)
+      .set('Authorization', `Bearer ${secondToken}`)
+      .send({ status: 'DELETED' })
+      .expect(404);
+    await request(app.getHttpServer())
+      .patch(`${agentPath}/${savedId}`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ status: 'SUSPENDED' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .patch(`${agentPath}/${savedId}`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ status: 'DELETED' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .get(`${agentPath}/${savedId}`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .expect(404);
+  });
+
   it('6. Wallet→Wallet — reuse TransferService, preserves idempotency/concurrency/double-entry/fee not via customer app', async () => {
     const { token, customerId: custA } = await createCustomerWithCredential();
     const { customerId: custB } = await createCustomerWithCredential();

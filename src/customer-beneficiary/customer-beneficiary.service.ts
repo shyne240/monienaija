@@ -15,7 +15,12 @@ import { BeneficiaryHistory } from './beneficiary-history.entity';
 import { BeneficiaryOwnership } from './beneficiary-ownership.entity';
 import { BeneficiaryVerification } from './beneficiary-verification.entity';
 import { CustomerBeneficiary } from './customer-beneficiary.entity';
-import { BeneficiaryHistoryAction, CustomerBeneficiaryStatus } from './customer-beneficiary.enums';
+import {
+  BeneficiaryHistoryAction,
+  CustomerBeneficiaryStatus,
+  CustomerBeneficiaryType,
+} from './customer-beneficiary.enums';
+import type { RecipientResolution } from '../agent/agent-receiving-number.types';
 import type {
   CreateCustomerBeneficiaryCommand,
   CustomerBeneficiaryView,
@@ -39,6 +44,279 @@ export class CustomerBeneficiaryService {
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
   ) {}
+
+  /** Create a verified internal wallet beneficiary in the existing ownership/history model.
+   * Only server-side resolution may supply recipient; no caller-supplied owner or type is trusted.
+   */
+  async createResolvedWalletBeneficiary(
+    owner: { type: 'CUSTOMER' | 'AGENT'; id: string },
+    recipient: RecipientResolution,
+    nicknameRaw?: string,
+  ): Promise<CustomerBeneficiaryView> {
+    this.assertUuid(owner.id, 'ownerId');
+    this.assertUuid(recipient.ownerId, 'recipientId');
+    if (recipient.status !== 'ACTIVE')
+      throw new BadRequestException('Beneficiary recipient is not active');
+    if (recipient.ownerType === owner.type && recipient.ownerId === owner.id)
+      throw new BadRequestException('Cannot add self as beneficiary');
+    if (recipient.ownerType !== 'CUSTOMER' && recipient.ownerType !== 'AGENT')
+      throw new BadRequestException('Unsupported beneficiary recipient');
+    const displayName = this.normalizeText(recipient.display, 'displayName', 200);
+    const destinationIdentifier = this.normalizeText(
+      recipient.receivingNumber,
+      'destinationIdentifier',
+      160,
+    );
+    const normalizedDestinationIdentifier = this.normalizeDestination(destinationIdentifier);
+    const nickname = this.normalizeOptionalText(nicknameRaw, 'nickname', 120) ?? displayName;
+    const reference = `wallet-ben-${randomUUID()}`;
+    const ownerFields =
+      owner.type === 'CUSTOMER'
+        ? { customerId: owner.id, agentId: null }
+        : { customerId: null, agentId: owner.id };
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        if (owner.type === 'CUSTOMER')
+          await this.requireCustomer(manager.getRepository(Customer), owner.id);
+        else {
+          const rows: Array<{ id: string }> = await manager.query(
+            `SELECT id FROM agents WHERE id=$1 AND status='ACTIVE' AND deleted_at IS NULL FOR SHARE`,
+            [owner.id],
+          );
+          if (!rows.length) throw new NotFoundException('Agent not found');
+        }
+        const repository = manager.getRepository(CustomerBeneficiary);
+        const existing = await repository.findOne({
+          where:
+            owner.type === 'CUSTOMER'
+              ? { customerId: owner.id, normalizedDestinationIdentifier }
+              : { agentId: owner.id, normalizedDestinationIdentifier },
+        });
+        if (existing && this.isNotDeleted(existing.deletedAt))
+          throw new ConflictException('A beneficiary for this destination already exists');
+        let beneficiary = await repository.save(
+          repository.create({
+            id: randomUUID(),
+            ...ownerFields,
+            type:
+              recipient.ownerType === 'CUSTOMER'
+                ? CustomerBeneficiaryType.INTERNAL_CUSTOMER
+                : CustomerBeneficiaryType.INTERNAL_AGENT,
+            walletRecipientType: recipient.ownerType,
+            walletRecipientId: recipient.ownerId,
+            displayName,
+            reference,
+            destinationIdentifier,
+            normalizedDestinationIdentifier,
+            destinationName: displayName,
+            destinationInstitution: 'MONIE_NAIJA',
+            nickname,
+            status: CustomerBeneficiaryStatus.PENDING,
+            verified: false,
+            version: 1,
+            deletedAt: null,
+          }),
+        );
+        const ownership = await manager.getRepository(BeneficiaryOwnership).save(
+          manager.getRepository(BeneficiaryOwnership).create({
+            id: randomUUID(),
+            beneficiaryId: beneficiary.id,
+            ...ownerFields,
+            version: 1,
+            deletedAt: null,
+          }),
+        );
+        await this.audit(
+          manager,
+          'CUSTOMER_BENEFICIARY',
+          beneficiary.id,
+          'CREATED',
+          owner.id,
+          undefined,
+          this.beneficiaryValues(beneficiary),
+        );
+        await this.audit(
+          manager,
+          'BENEFICIARY_OWNERSHIP',
+          ownership.id,
+          'CREATED',
+          owner.id,
+          undefined,
+          this.ownershipValues(ownership),
+        );
+        await this.appendHistory(
+          manager,
+          beneficiary.id,
+          BeneficiaryHistoryAction.CREATED,
+          owner.id,
+          null,
+          beneficiary.status,
+          null,
+          false,
+          { type: beneficiary.type, reference },
+        );
+        await this.appendHistory(
+          manager,
+          beneficiary.id,
+          BeneficiaryHistoryAction.OWNERSHIP_CREATED,
+          owner.id,
+          null,
+          null,
+          null,
+          null,
+          { ownershipId: ownership.id },
+        );
+        beneficiary.verified = true;
+        const verification = await manager
+          .getRepository(BeneficiaryVerification)
+          .save(
+            manager
+              .getRepository(BeneficiaryVerification)
+              .create({
+                id: randomUUID(),
+                beneficiaryId: beneficiary.id,
+                verifiedBy: owner.id,
+                verifiedAt: new Date(),
+                verificationMethod: 'WALLET_RECIPIENT_RESOLUTION',
+                remarks: null,
+                deletedAt: null,
+              }),
+          );
+        beneficiary = await repository.save(beneficiary);
+        await this.audit(
+          manager,
+          'BENEFICIARY_VERIFICATION',
+          verification.id,
+          'CREATED',
+          owner.id,
+          undefined,
+          this.verificationValues(verification),
+        );
+        await this.audit(
+          manager,
+          'CUSTOMER_BENEFICIARY',
+          beneficiary.id,
+          'VERIFIED',
+          owner.id,
+          { verified: false },
+          { verified: true, version: beneficiary.version },
+        );
+        await this.appendHistory(
+          manager,
+          beneficiary.id,
+          BeneficiaryHistoryAction.VERIFIED,
+          owner.id,
+          CustomerBeneficiaryStatus.PENDING,
+          CustomerBeneficiaryStatus.PENDING,
+          false,
+          true,
+          { verificationId: verification.id, verificationMethod: verification.verificationMethod },
+        );
+        beneficiary.status = CustomerBeneficiaryStatus.ACTIVE;
+        beneficiary = await repository.save(beneficiary);
+        await this.audit(
+          manager,
+          'CUSTOMER_BENEFICIARY',
+          beneficiary.id,
+          'STATUS_UPDATED',
+          owner.id,
+          { status: CustomerBeneficiaryStatus.PENDING },
+          { status: beneficiary.status, verified: true, version: beneficiary.version },
+        );
+        await this.appendHistory(
+          manager,
+          beneficiary.id,
+          BeneficiaryHistoryAction.STATUS_CHANGED,
+          owner.id,
+          CustomerBeneficiaryStatus.PENDING,
+          beneficiary.status,
+          true,
+          true,
+          {},
+        );
+        return this.toView(beneficiary);
+      });
+    } catch (error) {
+      if (this.isUniqueViolation(error))
+        throw new ConflictException('A beneficiary for this destination already exists');
+      throw error;
+    }
+  }
+
+  async listAgentBeneficiaries(agentId: string): Promise<CustomerBeneficiaryView[]> {
+    this.assertUuid(agentId, 'agentId');
+    const rows = await this.beneficiaryRepository.find({ where: { agentId } });
+    return this.sortByCreatedAt(
+      rows.filter((row) => this.isNotDeleted(row.deletedAt)).map((row) => this.toView(row)),
+    );
+  }
+
+  async getAgentBeneficiary(
+    agentId: string,
+    beneficiaryId: string,
+  ): Promise<CustomerBeneficiaryView> {
+    this.assertUuid(agentId, 'agentId');
+    this.assertUuid(beneficiaryId, 'beneficiaryId');
+    const beneficiary = await this.beneficiaryRepository.findOne({
+      where: { id: beneficiaryId, agentId },
+    });
+    if (!beneficiary || !this.isNotDeleted(beneficiary.deletedAt))
+      throw new NotFoundException('Beneficiary not found');
+    return this.toView(beneficiary);
+  }
+
+  async updateAgentBeneficiary(
+    agentId: string,
+    beneficiaryId: string,
+    status: CustomerBeneficiaryStatus,
+  ): Promise<CustomerBeneficiaryView> {
+    this.assertUuid(agentId, 'agentId');
+    this.assertUuid(beneficiaryId, 'beneficiaryId');
+    if (
+      ![
+        CustomerBeneficiaryStatus.ACTIVE,
+        CustomerBeneficiaryStatus.SUSPENDED,
+        CustomerBeneficiaryStatus.DELETED,
+      ].includes(status)
+    )
+      throw new BadRequestException('Invalid beneficiary status');
+    return this.dataSource.transaction(async (manager) => {
+      const repository = manager.getRepository(CustomerBeneficiary);
+      const beneficiary = await repository.findOne({
+        where: { id: beneficiaryId, agentId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!beneficiary || !this.isNotDeleted(beneficiary.deletedAt))
+        throw new NotFoundException('Beneficiary not found');
+      if (beneficiary.status === status) return this.toView(beneficiary);
+      this.assertStatusTransition(beneficiary.status, status);
+      const previous = beneficiary.status;
+      beneficiary.status = status;
+      if (status === CustomerBeneficiaryStatus.DELETED) beneficiary.deletedAt = new Date();
+      const saved = await repository.save(beneficiary);
+      await this.audit(
+        manager,
+        'CUSTOMER_BENEFICIARY',
+        saved.id,
+        'STATUS_UPDATED',
+        agentId,
+        { status: previous },
+        { status: saved.status, verified: saved.verified, version: saved.version },
+      );
+      await this.appendHistory(
+        manager,
+        saved.id,
+        BeneficiaryHistoryAction.STATUS_CHANGED,
+        agentId,
+        previous,
+        saved.status,
+        saved.verified,
+        saved.verified,
+        {},
+      );
+      return this.toView(saved);
+    });
+  }
 
   async createBeneficiary(
     customerId: string,
@@ -523,6 +801,9 @@ export class CustomerBeneficiaryService {
     return {
       id: beneficiary.id,
       customerId: beneficiary.customerId,
+      agentId: beneficiary.agentId,
+      walletRecipientType: beneficiary.walletRecipientType,
+      walletRecipientId: beneficiary.walletRecipientId,
       type: beneficiary.type,
       displayName: beneficiary.displayName,
       reference: beneficiary.reference,
@@ -541,6 +822,9 @@ export class CustomerBeneficiaryService {
   private beneficiaryValues(beneficiary: CustomerBeneficiary): Record<string, unknown> {
     return {
       customerId: beneficiary.customerId,
+      agentId: beneficiary.agentId,
+      walletRecipientType: beneficiary.walletRecipientType,
+      walletRecipientId: beneficiary.walletRecipientId,
       type: beneficiary.type,
       displayName: beneficiary.displayName,
       reference: beneficiary.reference,
@@ -558,6 +842,7 @@ export class CustomerBeneficiaryService {
     return {
       beneficiaryId: ownership.beneficiaryId,
       customerId: ownership.customerId,
+      agentId: ownership.agentId,
       version: ownership.version,
     };
   }

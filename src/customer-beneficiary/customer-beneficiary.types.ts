@@ -28,7 +28,10 @@ export interface VerifyCustomerBeneficiaryCommand {
 
 export interface CustomerBeneficiaryView {
   id: string;
-  customerId: string;
+  customerId: string | null;
+  agentId: string | null;
+  walletRecipientType: 'CUSTOMER' | 'AGENT' | null;
+  walletRecipientId: string | null;
   type: CustomerBeneficiaryType;
   displayName: string;
   reference: string;

@@ -24,8 +24,11 @@ export class BeneficiaryOwnership {
   @Column({ name: 'beneficiary_id', type: 'uuid' })
   beneficiaryId!: string;
 
-  @Column({ name: 'customer_id', type: 'uuid' })
-  customerId!: string;
+  @Column({ name: 'customer_id', type: 'uuid', nullable: true })
+  customerId!: string | null;
+
+  @Column({ name: 'agent_id', type: 'uuid', nullable: true })
+  agentId!: string | null;
 
   @VersionColumn({ type: 'integer', default: 1 })
   version!: number;

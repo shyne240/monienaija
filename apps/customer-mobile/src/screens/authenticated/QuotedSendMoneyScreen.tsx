@@ -14,6 +14,14 @@ interface Recipient {
   display: string;
   status: string;
 }
+interface SavedBeneficiary {
+  id: string;
+  nickname: string;
+  receivingNumber: string | null;
+  isActive: boolean;
+  recipientType?: 'CUSTOMER' | 'AGENT' | null;
+  recipientId?: string | null;
+}
 interface Quote {
   quoteId: string;
   sourceWalletId: string;
@@ -96,9 +104,8 @@ const QuotedSendMoneyForOwner: React.FC<{ ownerId: string | null | undefined }> 
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
   const [walletId, setWalletId] = useState('');
-  const [beneficiaries, setBeneficiaries] = useState<
-    Array<{ id: string; nickname: string; receivingNumber: string | null; isActive: boolean }>
-  >([]);
+  const [beneficiaries, setBeneficiaries] = useState<SavedBeneficiary[]>([]);
+  const [selectedSaved, setSelectedSaved] = useState<SavedBeneficiary | null>(null);
   const storageKey = `p2p.confirm.${ownerId ?? 'missing'}`;
   const base = '/customers/me';
   useEffect(() => {
@@ -132,14 +139,9 @@ const QuotedSendMoneyForOwner: React.FC<{ ownerId: string | null | undefined }> 
           /* Recovery remains accessible even if wallet listing is unavailable. */
         }
         try {
-          const list = await ApiClient.get<{
-            items: Array<{
-              id: string;
-              nickname: string;
-              receivingNumber: string | null;
-              isActive: boolean;
-            }>;
-          }>('/customers/me/beneficiaries');
+          const list = await ApiClient.get<{ items: SavedBeneficiary[] }>(
+            '/customers/me/beneficiaries',
+          );
           if (alive) setBeneficiaries(list.items ?? []);
         } catch {
           /* Optional saved recipients; direct lookup remains available. */
@@ -171,6 +173,11 @@ const QuotedSendMoneyForOwner: React.FC<{ ownerId: string | null | undefined }> 
       );
       if (r.status !== 'ACTIVE' || !r.walletId || !r.ownerId)
         throw new Error('Recipient unavailable');
+      if (
+        selectedSaved?.recipientId &&
+        (selectedSaved.recipientId !== r.ownerId || selectedSaved.recipientType !== r.ownerType)
+      )
+        throw new Error('Saved recipient identity changed');
       setRecipient(r);
     } catch {
       setError('Could not verify this recipient. Check the number and try again.');
@@ -180,17 +187,12 @@ const QuotedSendMoneyForOwner: React.FC<{ ownerId: string | null | undefined }> 
     }
   };
   const saveRecipient = async () => {
-    if (inFlight.current || pending || !recipient || recipient.ownerType !== 'CUSTOMER') return;
+    if (inFlight.current || pending || !recipient) return;
     inFlight.current = true;
     setBusy(true);
     setError('');
     try {
-      const saved = await ApiClient.post<{
-        id: string;
-        nickname: string;
-        receivingNumber: string | null;
-        isActive: boolean;
-      }>('/customers/me/beneficiaries', {
+      const saved = await ApiClient.post<SavedBeneficiary>('/customers/me/beneficiaries', {
         beneficiaryIdentifier: recipient.receivingNumber,
         nickname: recipient.display,
       });
@@ -376,6 +378,7 @@ const QuotedSendMoneyForOwner: React.FC<{ ownerId: string | null | undefined }> 
                 value={identifier}
                 onChangeText={(v) => {
                   setIdentifier(v);
+                  setSelectedSaved(null);
                   setRecipient(null);
                   setQuote(null);
                 }}
@@ -390,6 +393,7 @@ const QuotedSendMoneyForOwner: React.FC<{ ownerId: string | null | undefined }> 
                     variant="outline"
                     onPress={() => {
                       setIdentifier(b.receivingNumber!);
+                      setSelectedSaved(b);
                       setRecipient(null);
                       setQuote(null);
                     }}
@@ -404,19 +408,12 @@ const QuotedSendMoneyForOwner: React.FC<{ ownerId: string | null | undefined }> 
           )}
           {recipient && !pending && (
             <>
-              {recipient.ownerType === 'CUSTOMER' && (
-                <Button
-                  label="Save recipient"
-                  variant="outline"
-                  onPress={saveRecipient}
-                  loading={busy}
-                />
-              )}
-              {recipient.ownerType === 'AGENT' && (
-                <Text>
-                  Agent recipients can be sent to by number; saving them is not yet supported.
-                </Text>
-              )}
+              <Button
+                label="Save recipient"
+                variant="outline"
+                onPress={saveRecipient}
+                loading={busy}
+              />
               <Text>Amount in NGN</Text>
               <TextInput
                 testID="send-amount"

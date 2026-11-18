@@ -816,6 +816,12 @@ export class CustomerAppController {
       if (!resolution || resolution.ownerType !== 'CUSTOMER') {
         throw new BadRequestException('Beneficiary does not resolve to a wallet customer');
       }
+      if (
+        beneficiary.walletRecipientId &&
+        (beneficiary.walletRecipientType !== resolution.ownerType ||
+          beneficiary.walletRecipientId !== resolution.ownerId)
+      )
+        throw new ConflictException('Beneficiary recipient identity has changed');
       // Resolve to canonical wallet via WalletService (reuse existing indexes, no new query pattern)
       const wallets = await this.walletService.listWallets(resolution.ownerId);
       if (!wallets || wallets.length === 0) {
