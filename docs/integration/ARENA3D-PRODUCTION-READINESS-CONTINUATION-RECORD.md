@@ -362,6 +362,27 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 39 — consolidated acceptance
+
+`docs/integration/ARENA3D-CONSOLIDATED-ACCEPTANCE.md`, and the consolidated matrix regenerated on the final tree
+(commit `75e17690`, clean tree, 3343 tests in 282 suites, 7 executed / 6 recorded / 8 unavailable, 0 failing).
+
+**The verdict: conditional engineering acceptance, not releasable.** The platform assembles, refuses to start with
+unverified financial dependencies, holds its financial and institutional boundaries, runs ten participant journeys
+against real PostgreSQL, runs one real browser engine, and carries an executable gate that answers `NOT_READY` with
+16 blockers, 4 conditions and exit code 1.
+
+**What was found and fixed during acceptance** — five defects, each found by executing rather than reading, each
+fixed with a test that would catch it again: the login screen unmounting mid-request and discarding the typed email
+(browser run); `a3d-agent-float-funding` failing its own teardown with all fourteen assertions green (journey run);
+the CI-gate substring match letting one script claim another's suites; the matrix runner reading only stdout for a
+Jest summary written to stderr; and `String(unknown)` turning a malformed manifest field into `"[object Object]"`.
+Two of the five were invisible to every existing check.
+
+**Standing requirements.** Automated worker execution: mechanism delivered, deployment observation open. Alert
+delivery: channel delivered and proven over a real socket, real-channel observation open. Measured disaster
+recovery: open. Eight financial dependencies: open by design.
+
 ### Group 38 — alert delivery
 
 `src/operations/alert-webhook.channel.ts`, the `ALERT_CHANNEL` provider in `operations.module.ts`,
@@ -1396,7 +1417,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 39–40 remain: the consolidated acceptance report and the final handoff,
+Group 40 remains: the final handoff.
 consolidated acceptance, and the final handoff.
 
 Known gaps carried forward: no secret-manager backend is selected (the contract exists; the environment

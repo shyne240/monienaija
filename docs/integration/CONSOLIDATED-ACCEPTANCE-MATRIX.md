@@ -6,12 +6,12 @@ and one that cannot blur "we ran it", "we recorded it" and "we could not do it".
 ## The result
 
 ```
-commit 324e4041…, clean tree
+commit 75e17690, clean tree
 
 PASS        typescript — tsc --noEmit clean
 PASS        lint — eslint src and test clean (0 errors)
 PASS        format — prettier clean
-PASS        unit-suite — 3303 tests in 279 suites
+PASS        unit-suite — 3343 tests in 282 suites
 PASS        ci-gates — 15 required jobs and scripts intact
 PASS        mobile-manifests — 8 checks, 4 warning(s), 0 error
 NOT_READY   release-gate — 16 blocker(s), 4 condition(s)
@@ -27,8 +27,8 @@ UNAVAILABLE provider-sandbox — no authorized provider credential was supplied
 UNAVAILABLE cross-browser — no WebKit or Gecko engine is available here
 UNAVAILABLE mobile-build — no Xcode, no Android SDK, no signing identity, no device
 UNAVAILABLE restore-at-volume — no production-scale dataset exists here
-UNAVAILABLE worker-execution — supervision observes; no invocation mechanism is provisioned
-UNAVAILABLE alert-delivery — delivery is dark by default; no channel was contacted
+UNAVAILABLE worker-execution — the worker role is implemented and tested; no deployment exists here to observe it
+UNAVAILABLE alert-delivery — the signed webhook delivers over a real socket under test; no paging provider was contacted
 
 21 requirements: 7 executed, 6 recorded, 8 unavailable, 0 failing
 release verdict: NOT_READY

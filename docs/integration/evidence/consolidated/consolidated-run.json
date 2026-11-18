@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-11-18T17:29:06.089Z",
-  "commit": "f6bef64a916722a072d08b26ecebc6aef9e06e2d",
+  "generatedAt": "2026-11-18T17:57:39.020Z",
+  "commit": "75e17690d0c69ee9c5c5b7ab7369b6c60e52e139",
   "cleanTree": true,
   "rows": [
     {
@@ -37,7 +37,7 @@
       "kind": "executed",
       "evidence": "npx jest --config jest.config.js",
       "status": "PASS",
-      "detail": "3303 tests in 279 suites"
+      "detail": "3343 tests in 282 suites"
     },
     {
       "id": "ci-gates",
@@ -177,20 +177,20 @@
     {
       "id": "worker-execution",
       "area": "operations",
-      "requirement": "a deployable mechanism guarantees essential background workers run",
+      "requirement": "a deployment is observed running the essential background workers",
       "kind": "unavailable",
-      "evidence": "supervision observes; no invocation mechanism is provisioned or tested (standing requirement)",
+      "evidence": "the worker role is implemented and tested (PROCESS_ROLE=worker, readiness-gated, bounded shutdown); no deployment exists here to observe it running",
       "status": "UNAVAILABLE",
-      "detail": "supervision observes; no invocation mechanism is provisioned or tested (standing requirement)"
+      "detail": "the worker role is implemented and tested (PROCESS_ROLE=worker, readiness-gated, bounded shutdown); no deployment exists here to observe it running"
     },
     {
       "id": "alert-delivery",
       "area": "operations",
-      "requirement": "an alert reaches a real channel and is receipted",
+      "requirement": "an alert reaches a paging provider or an on-call human",
       "kind": "unavailable",
-      "evidence": "delivery is dark by default; no channel endpoint was configured or contacted",
+      "evidence": "the signed webhook channel delivers over a real socket under test (Group 38); no paging provider, on-call system or external endpoint was contacted",
       "status": "UNAVAILABLE",
-      "detail": "delivery is dark by default; no channel endpoint was configured or contacted"
+      "detail": "the signed webhook channel delivers over a real socket under test (Group 38); no paging provider, on-call system or external endpoint was contacted"
     }
   ],
   "summary": {
