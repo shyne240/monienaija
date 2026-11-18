@@ -293,9 +293,107 @@ run already owns.
 
 ---
 
+### Group 9 — secret resolution and rotation
+
+`src/config/secret-resolver.ts` puts a resolution layer in front of the environment. No secret manager
+was selected (that is a product-owner decision, and inventing a provider entitlement is forbidden); what
+exists is the **contract** such a backend must satisfy, an environment-backed implementation that
+satisfies it today, and the guarantees the rest of the application codes against.
+
+What it makes true:
+
+- a secret is resolved **by name**, never passed around as a value;
+- every resolved secret carries a **version** and a **fingerprint** (SHA-256, 12 hex characters, one-way),
+  so "did the rotation take effect?" and "which version signed this request?" are answerable;
+- `rotate(name)` is per-secret and needs no restart; a handle already held by an in-flight request keeps
+  the value it resolved, so rotation during traffic does not fail a request halfway;
+- `reveal(purpose)` is the only way to obtain the value and records an **access record** with the purpose
+  and the version actually used;
+- handles are **frozen**, so a caller cannot attach a `value` property and leak it through a later
+  serialisation of a structure that happens to contain the handle.
+
+`DB_PASSWORD` is deliberately **absent** from the mapping. Rotating it is a connection-pool operation
+bound to a restart; exposing it through a hot-swap interface would advertise a capability that does not
+exist and hide a restart requirement behind an API claiming there is none.
+
+`test/secret-resolver.spec.ts` (20 cases) proves rotation works, then tries every route a value could
+escape by — `toString`, `JSON.stringify` including nesting, `describe()` health output, error messages,
+the known-name list, a caller mutating the handle, and the repository-wide redactor — and asserts the
+value is absent from each. A rotation feature that leaks is worse than none, because the leak is silent.
+
+### Group 10 — database operational readiness
+
+The claim tested is narrow and load-bearing: **the ordinary runtime login cannot reach protected
+authority, and cannot acquire it through inheritance, session state, or a function it may call.**
+
+`test/database-operational-readiness.integration.spec.ts` (13 cases) provisions a real runtime/authority/
+migration split by executing the same `scripts/sql/*.sql` an operator runs, then connects **as the
+provisioned runtime login** — a test that connects as a superuser and inspects `pg_roles` proves nothing
+about what the runtime can do. Verified:
+
+| Property                                                            | Result |
+| ------------------------------------------------------------------- | ------ |
+| Three distinct non-superuser logins                                 | proven |
+| Group roles are `NOINHERIT` and cannot log in                       | proven |
+| Runtime cannot read, write or resolve `protected_authority`         | proven |
+| Runtime holds zero grants in that schema                            | proven |
+| Runtime cannot `SET ROLE` into the authority group                  | proven |
+| Runtime cannot write the 9 governance tables that decide its limits | proven |
+| Runtime retains the ordinary reads it needs                         | proven |
+| Authority retains the writes runtime is denied (the mirror image)   | proven |
+| Authority is not superuser and cannot create databases or roles     | proven |
+| `public` is owned by the migrator, not the runtime credential       | proven |
+| Runtime cannot create or drop schema objects                        | proven |
+| Runtime cannot set `session_replication_role` (trigger bypass)      | proven |
+| Runtime cannot `SET SESSION AUTHORIZATION`                          | proven |
+
+The mirror-image assertions matter: a boundary that denies everything is broken provisioning, not a
+working boundary. Three of my own initial assumptions were wrong and were corrected against what
+PostgreSQL actually does — recorded in the test so the reasoning is not lost.
+
+### Group 11 — migration workflow, locking, and non-destructive recovery
+
+`scripts/migration-workflow.js` with `status` / `apply` / `verify`, and
+`docs/integration/MIGRATION-WORKFLOW.md` as the runbook.
+
+**Locking.** `apply` holds an advisory lock (`pg_advisory_lock(7348120945001337)`) for the whole run.
+TypeORM takes no lock across a migration run, so two release jobs can read the same pending set and both
+attempt it; each migration is transactional, so the loser aborts on a duplicate object and leaves
+`typeorm_migrations` recording a partial truth. Verified by execution: with the lock held by another
+session, a second `apply --no-wait` exits **2** and names the holder rather than interleaving. The wait is
+bounded by `statement_timeout` because a release that waits forever is not a release, and the unlock lives
+in a `finally` so a failed run cannot strand the next deploy.
+
+**No revert.** There is no `revert` command, and the absence is enforced by test. 126 of 152 migrations
+implement `down()`, but they are not data-safe inverses: several seed ledger accounts, governance roles
+and protected-authority structures that later rows reference, so `down()` deletes them — a foreign-key
+error at best, destroyed financial evidence at worst. Recovery is **roll-forward**, and the runbook
+documents the two distinct failure shapes (nothing committed vs partial run) with the action for each,
+including the three things never to do: `DELETE FROM typeorm_migrations`, `migration:revert` in
+production, and restoring a backup to recover from a migration that lost no data.
+
+**`status` distinguishes three states**, including the dangerous one: applied-but-not-in-this-repository
+means the database is _ahead_ of the code, which `verify` fails on. Migrations are compared by
+**timestamp**, the key TypeORM itself uses, so a renamed file does not look permanently unapplied.
+
+`test/migration-workflow.spec.ts` (14 cases) pins the absence of revert, the lock's existence and fixed
+key, the bounded wait, the `finally` unlock, the re-check after applying, and that the runbook's exit
+codes and lock key match the code. Verified to fail when a revert command is added.
+
+---
+
 ## 4. Outstanding
 
-Groups 9–11 (secret rotation, DB operational readiness, migration workflow) and 13–40 remain.
+Groups 13–40 remain: DR/BC, worker consolidation, scheduling, logging, metrics/health, integrity
+monitoring, alerting, admin operations centre, operational security, break-glass, fraud/risk, compliance,
+complaints, disputes, mobile support, SMS/email, privacy/retention, performance harness, CI release gates,
+the PostgreSQL matrix, sandbox readiness, mobile release, browser acceptance, readiness gate, journeys
+A–J, consolidated acceptance, and the final handoff.
+
+Known gaps carried forward: no secret-manager backend is selected (the contract exists; the environment
+backend satisfies it); a restore requires a superuser; off-site backup storage, encryption at rest,
+retention and point-in-time recovery are infrastructure decisions; no fixture seeds all eleven backup
+categories in one database.
 
 Known gaps carried forward from Group 12: no fixture seeds all eleven backup categories in one database;
 the restore requires superuser; and off-site storage, encryption at rest, retention and point-in-time
