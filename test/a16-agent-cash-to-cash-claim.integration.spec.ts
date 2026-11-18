@@ -2,7 +2,7 @@
 import { NotFoundException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { DataSource, type EntityManager } from 'typeorm';
+import { DataSource, QueryFailedError, type EntityManager } from 'typeorm';
 import { randomUUID, pbkdf2Sync, randomBytes } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
@@ -3527,7 +3527,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     }
   });
 
-  it('traces overlapping institution suspense lock upgrades without financial duplication', async () => {
+  it('avoids the suspense lock-upgrade deadlock while preserving concurrent initiation and replay', async () => {
     // Setup is deliberately sequential: no funding, affiliation, login, or HTTP fixture work
     // overlaps the two measured initiations. Both services receive real, funded agent wallets.
     const first = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
@@ -3535,18 +3535,18 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     await fundAgent(first.wallet.ledgerAccountId, '10000');
     await fundAgent(second.wallet.ledgerAccountId, '10000');
     const beforeSuspense = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
-    const originalResolve = institutionSuspense.requireInstitutionCashToCashSuspenseAccount;
+    const originalResolve = institutionSuspense.findInstitutionCashToCashSuspenseAccount;
     let arrivals = 0;
     let release!: () => void;
     const barrier = new Promise<void>((resolve) => {
       release = resolve;
     });
     jest
-      .spyOn(institutionSuspense, 'requireInstitutionCashToCashSuspenseAccount')
+      .spyOn(institutionSuspense, 'findInstitutionCashToCashSuspenseAccount')
       .mockImplementation(async (manager, id) => {
         const row = await originalResolve(manager, id);
-        // Hold both initial transactions after obtaining SHARE on the very same suspense row.
-        // Retried transactions do not wait at the barrier.
+        // Both initial transactions locate the same suspense row before either posts.
+        // The lookup takes no row lock; retried transactions do not wait at the barrier.
         if (++arrivals <= 2) {
           if (arrivals === 2) release();
           await barrier;
@@ -3600,14 +3600,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const completed = outcomes.map((outcome) => (outcome as PromiseFulfilledResult<any>).value);
     expect(completed.map((result) => result.status)).toEqual(['COMPLETED', 'COMPLETED']);
     expect(new Set(completed.map((result) => result.transferNumber)).size).toBe(2);
-    expect(trace).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: '40P01',
-          sql: expect.stringMatching(/^SELECT "account"/),
-        }),
-      ]),
-    );
+    expect(trace.filter((entry) => entry.code === '40P01')).toEqual([]);
     for (let i = 0; i < commands.length; i++) {
       const replay = await cashToCashService.execute(commands[i]!);
       expect(replay.status).toBe('REPLAYED');
@@ -3632,6 +3625,206 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const afterSuspense = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
     expect(BigInt(afterSuspense.balanceMinor) - BigInt(beforeSuspense.balanceMinor)).toBe(2000n);
   }, 120000);
+
+  it('revalidates institutional suspense after a concurrent closure without a financial effect', async () => {
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
+    await fundAgent(wallet.ledgerAccountId, '10000');
+    const before = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
+    const original = institutionSuspense.findInstitutionCashToCashSuspenseAccount;
+    let closed = false;
+    jest
+      .spyOn(institutionSuspense, 'findInstitutionCashToCashSuspenseAccount')
+      .mockImplementation(async (manager, id) => {
+        const selected = await original(manager, id);
+        if (!closed && selected) {
+          closed = true;
+          await dataSource.query(`UPDATE ledger_accounts SET is_active=false WHERE id=$1`, [
+            selected.id,
+          ]);
+        }
+        return selected;
+      });
+    const key = `closed-suspense-${randomUUID()}`;
+    try {
+      await expect(
+        cashToCashService.execute({
+          agentId: agent.id,
+          agentPrincipal: agentPrincipal(agent.id) as any,
+          agentPin: '1234',
+          beneficiaryPhone: '08039998877',
+          senderPhone: '08035550113',
+          amountMinor: '1000',
+          currency: 'NGN',
+          idempotencyKey: key,
+        }),
+      ).rejects.toThrow(/suspense account unavailable/i);
+      expect(closed).toBe(true);
+      expect(
+        await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`, [
+          `agent:${agent.id}:${key}`,
+        ]),
+      ).toEqual([]);
+      expect(
+        await dataSource.query(
+          `SELECT id FROM cash_to_cash_transfers WHERE agent_id=$1 AND idempotency_key=$2`,
+          [agent.id, key],
+        ),
+      ).toEqual([]);
+      expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe(
+        before.balanceMinor,
+      );
+    } finally {
+      await dataSource.query(`UPDATE ledger_accounts SET is_active=true WHERE id=$1`, [
+        unclaimedLedgerAccountId,
+      ]);
+    }
+  });
+
+  it('rolls back a provisional journal if suspense revalidation fails after posting', async () => {
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
+    await fundAgent(wallet.ledgerAccountId, '10000');
+    const original = institutionSuspense.requireInstitutionCashToCashSuspenseAccount;
+    let checked = false;
+    jest
+      .spyOn(institutionSuspense, 'requireInstitutionCashToCashSuspenseAccount')
+      .mockImplementation(async (manager, id, expected) => {
+        expect(expected).toBe(unclaimedLedgerAccountId);
+        // Test-only mutation occurs after Ledger has posted provisionally, under the same lock.
+        await manager.query(`UPDATE ledger_accounts SET is_active=false WHERE id=$1`, [expected]);
+        checked = true;
+        return original(manager, id, expected);
+      });
+    const key = `revalidate-suspense-${randomUUID()}`;
+    await expect(
+      cashToCashService.execute({
+        agentId: agent.id,
+        agentPrincipal: agentPrincipal(agent.id) as any,
+        agentPin: '1234',
+        beneficiaryPhone: '08039998877',
+        senderPhone: '08035550116',
+        amountMinor: '1000',
+        currency: 'NGN',
+        idempotencyKey: key,
+      }),
+    ).rejects.toThrow(/suspense account unavailable/i);
+    expect(checked).toBe(true);
+    expect(
+      await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`, [
+        `agent:${agent.id}:${key}`,
+      ]),
+    ).toEqual([]);
+    expect(
+      await dataSource.query(
+        `SELECT id FROM cash_to_cash_transfers WHERE agent_id=$1 AND idempotency_key=$2`,
+        [agent.id, key],
+      ),
+    ).toEqual([]);
+    expect(
+      await dataSource.query(`SELECT is_active FROM ledger_accounts WHERE id=$1`, [
+        unclaimedLedgerAccountId,
+      ]),
+    ).toEqual([{ is_active: true }]);
+    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe(
+      '10000',
+    );
+  });
+
+  it('holds the selected suspense row locked through final transactional revalidation', async () => {
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
+    await fundAgent(wallet.ledgerAccountId, '10000');
+    const original = institutionSuspense.requireInstitutionCashToCashSuspenseAccount;
+    let checked = false;
+    jest
+      .spyOn(institutionSuspense, 'requireInstitutionCashToCashSuspenseAccount')
+      .mockImplementation(async (manager, id, expected) => {
+        const selected = await original(manager, id, expected);
+        // Separate PostgreSQL connection must not acquire a conflicting lock before commit.
+        await expect(
+          dataSource.query(`SELECT id FROM ledger_accounts WHERE id=$1 FOR UPDATE NOWAIT`, [
+            selected.id,
+          ]),
+        ).rejects.toMatchObject({ driverError: { code: '55P03' } });
+        checked = true;
+        return selected;
+      });
+    const result = await cashToCashService.execute({
+      agentId: agent.id,
+      agentPrincipal: agentPrincipal(agent.id) as any,
+      agentPin: '1234',
+      beneficiaryPhone: '08039998877',
+      senderPhone: '08035550114',
+      amountMinor: '1000',
+      currency: 'NGN',
+      idempotencyKey: `locked-suspense-${randomUUID()}`,
+    });
+    expect(checked).toBe(true);
+    expect(result.status).toBe('COMPLETED');
+    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe(
+      '9000',
+    );
+  });
+
+  it('retries an aborted sender-display SQL lookup instead of masking a failed transaction', async () => {
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
+    await fundAgent(wallet.ledgerAccountId, '10000');
+    const original = (cashToCashService as any).findVerifiedSenderDisplayName.bind(
+      cashToCashService,
+    );
+    let attempts = 0;
+    jest
+      .spyOn(cashToCashService as any, 'findVerifiedSenderDisplayName')
+      .mockImplementation(async (...args: unknown[]) => {
+        const [manager, phone] = args as [EntityManager, string];
+        attempts++;
+        if (attempts === 1) {
+          jest
+            .spyOn(manager, 'query')
+            .mockRejectedValueOnce(
+              new QueryFailedError(
+                'test sender lookup',
+                [],
+                Object.assign(new Error('serialization failure'), { code: '40001' }),
+              ),
+            );
+        }
+        return await original(manager, phone);
+      });
+    const key = `sender-lookup-${randomUUID()}`;
+    const command = {
+      agentId: agent.id,
+      agentPrincipal: agentPrincipal(agent.id) as any,
+      agentPin: '1234',
+      beneficiaryPhone: '08039998877',
+      senderPhone: '08035550115',
+      amountMinor: '1000',
+      currency: 'NGN',
+      idempotencyKey: key,
+    };
+    const result = await cashToCashService.execute(command);
+    expect(result.status).toBe('COMPLETED');
+    expect(attempts).toBe(2);
+    expect(
+      await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`, [
+        `agent:${agent.id}:${key}`,
+      ]),
+    ).toEqual([{ id: result.journalId }]);
+    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe(
+      '9000',
+    );
+    expect((await cashToCashService.execute(command)).transferId).toBe(result.transferId);
+  });
 
   it('exhausted collision retries roll back initiation journal and idempotency reservation', async () => {
     const first = await initiateTransfer('1000', undefined, undefined, '08035550202');
