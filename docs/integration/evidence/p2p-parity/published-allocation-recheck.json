@@ -1,0 +1,32 @@
+{
+  "observedAt": "2026-11-18T21:22:10+00:00",
+  "publishedHeadCount": 42,
+  "distinctHeadCommitsInspected": 40,
+  "distinctRootTrees": 39,
+  "sameHeadsOnReread": true,
+  "parityRangePresent": [
+    {
+      "commit": "107f7b85dd7f2c958f07b7db3476f65227e4b1c8",
+      "refs": [
+        "arena/bcf44621-monienaija"
+      ],
+      "paths": [
+        "src/migrations/1785753600800-BindWalletTransferQuotes.ts",
+        "src/migrations/1785753600801-AgentVerifiedPhone.ts",
+        "src/migrations/1785753600802-ExtendBeneficiaryOwnership.ts"
+      ]
+    },
+    {
+      "commit": "3db04703bfad39488b5b9e34c88c49f73d81389b",
+      "refs": [
+        "arena/e831b371-monienaija"
+      ],
+      "paths": [
+        "src/migrations/1785753600800-BindWalletTransferQuotes.ts",
+        "src/migrations/1785753600801-AgentVerifiedPhone.ts",
+        "src/migrations/1785753600802-ExtendBeneficiaryOwnership.ts"
+      ]
+    }
+  ],
+  "frozen3D": "6816a760bd460df2a5347016d7d84f5c62cab642"
+}

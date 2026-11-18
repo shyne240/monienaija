@@ -1,4 +1,6 @@
-# MonieNaija P2P parity — working handoff
+# MonieNaija P2P parity — working handoff (historical Arena 2B)
+
+**Superseded:** use the [Arena 2C handoff and 31-section acceptance matrix](./MONIENAIJA-AGENT-CUSTOMER-P2P-PARITY-HANDOFF.md) for current source, run identities, limitations and disposition. This file records what was known at the recovered 2B checkpoint; its “in progress” run is not evidence of completion.
 
 **Status: not accepted for release.** This is a working handoff, not the requested original 31-section acceptance matrix. The original headings have not been supplied and searches of the connected Drive did not identify the mission document. Do not infer a PASS for missing sections. The detailed chronological record and test identifiers are in [ARENA2-P2P-PARITY-CONTINUATION-RECORD.md](./ARENA2-P2P-PARITY-CONTINUATION-RECORD.md).
 
