@@ -1,9 +1,10 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-argument, no-empty */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, no-empty */
 import { NotFoundException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource, type EntityManager } from 'typeorm';
 import { randomUUID, pbkdf2Sync, randomBytes } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 import { CreateCashToCashLocators1785753600096 } from '../src/migrations/1785753600096-CreateCashToCashLocators';
 import { LimitEnforcementService } from '../src/limit-catalog/limit-enforcement.service';
@@ -12,6 +13,7 @@ import { KycTierEvidenceReader } from '../src/kyc-verification/kyc-tier-evidence
 import { TrustedTierFixture } from './support/trusted-tier-fixture';
 import { AgentService } from '../src/agent/agent-service.enum';
 import { AgentCashToCashService } from '../src/agent/agent-cash-to-cash.service';
+import * as institutionSuspense from '../src/agent/cash-to-cash-institution-suspense';
 import { AgentCashToCashClaimService } from '../src/agent/agent-cash-to-cash-claim.service';
 import { AgentTransactionHistoryService } from '../src/agent/agent-transaction-history.service';
 import { CustomerTransactionHistoryService } from '../src/customer-app/customer-transaction-history.service';
@@ -3524,6 +3526,112 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       generator.mockRestore();
     }
   });
+
+  it('traces overlapping institution suspense lock upgrades without financial duplication', async () => {
+    // Setup is deliberately sequential: no funding, affiliation, login, or HTTP fixture work
+    // overlaps the two measured initiations. Both services receive real, funded agent wallets.
+    const first = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const second = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    await fundAgent(first.wallet.ledgerAccountId, '10000');
+    await fundAgent(second.wallet.ledgerAccountId, '10000');
+    const beforeSuspense = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    const originalResolve = institutionSuspense.requireInstitutionCashToCashSuspenseAccount;
+    let arrivals = 0;
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    jest
+      .spyOn(institutionSuspense, 'requireInstitutionCashToCashSuspenseAccount')
+      .mockImplementation(async (manager, id) => {
+        const row = await originalResolve(manager, id);
+        // Hold both initial transactions after obtaining SHARE on the very same suspense row.
+        // Retried transactions do not wait at the barrier.
+        if (++arrivals <= 2) {
+          if (arrivals === 2) release();
+          await barrier;
+        }
+        return row;
+      });
+    const originalTransaction = dataSource.transaction.bind(dataSource);
+    const context = new AsyncLocalStorage<number>();
+    const trace: Array<{ operation: number | undefined; code: string; sql: string }> = [];
+    jest.spyOn(dataSource, 'transaction').mockImplementation((...args: any[]) =>
+      (originalTransaction as any)(...args).catch((error: any) => {
+        const code = error?.driverError?.code;
+        if (code === '40001' || code === '40P01')
+          trace.push({
+            operation: context.getStore(),
+            code,
+            sql: String(error.query ?? '')
+              .replace(/\s+/g, ' ')
+              .slice(0, 180),
+          });
+        throw error;
+      }),
+    );
+    let generated = 0;
+    jest
+      .spyOn(cashToCashService as any, 'generateTransferNumber')
+      .mockImplementation(() => (++generated <= 2 ? '123456' : String(200000 + generated)));
+    const commands = [first, second].map(({ agent }) => ({
+      agentId: agent.id,
+      agentPrincipal: agentPrincipal(agent.id) as any,
+      agentPin: '1234',
+      senderPhone: '08035550112',
+      beneficiaryPhone: '08039998877',
+      amountMinor: '1000',
+      currency: 'NGN',
+      idempotencyKey: `trace-${randomUUID()}`,
+    }));
+    const outcomes = await Promise.allSettled(
+      commands.map((command, index) =>
+        context.run(index, () => cashToCashService.execute(command)),
+      ),
+    );
+    // Expose only SQL shape and codes if the safety/liveness assertion fails, never identities.
+    const failures = outcomes.filter(
+      (outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected',
+    );
+    if (failures.length)
+      throw new Error(
+        `Initiation failed: ${String(failures[0]!.reason)}; trace=${JSON.stringify(trace)}`,
+      );
+    const completed = outcomes.map((outcome) => (outcome as PromiseFulfilledResult<any>).value);
+    expect(completed.map((result) => result.status)).toEqual(['COMPLETED', 'COMPLETED']);
+    expect(new Set(completed.map((result) => result.transferNumber)).size).toBe(2);
+    expect(trace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: '40P01',
+          sql: expect.stringMatching(/^SELECT "account"/),
+        }),
+      ]),
+    );
+    for (let i = 0; i < commands.length; i++) {
+      const replay = await cashToCashService.execute(commands[i]!);
+      expect(replay.status).toBe('REPLAYED');
+      expect(replay.transferId).toBe(completed[i].transferId);
+      expect(
+        await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`, [
+          `agent:${commands[i]!.agentId}:${commands[i]!.idempotencyKey}`,
+        ]),
+      ).toEqual([{ id: completed[i].journalId }]);
+      expect(
+        await dataSource.query(`SELECT journal_id FROM cash_to_cash_transfers WHERE id=$1`, [
+          completed[i].transferId,
+        ]),
+      ).toEqual([{ journal_id: completed[i].journalId }]);
+    }
+    expect((await ledgerService.getAccountBalance(first.wallet.ledgerAccountId)).balanceMinor).toBe(
+      '9000',
+    );
+    expect(
+      (await ledgerService.getAccountBalance(second.wallet.ledgerAccountId)).balanceMinor,
+    ).toBe('9000');
+    const afterSuspense = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    expect(BigInt(afterSuspense.balanceMinor) - BigInt(beforeSuspense.balanceMinor)).toBe(2000n);
+  }, 120000);
 
   it('exhausted collision retries roll back initiation journal and idempotency reservation', async () => {
     const first = await initiateTransfer('1000', undefined, undefined, '08035550202');
