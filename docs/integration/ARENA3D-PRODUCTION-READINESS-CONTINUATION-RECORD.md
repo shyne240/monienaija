@@ -362,6 +362,47 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 25 — customer and agent mobile client support
+
+`src/migrations/1785753600612-MobileClientSupport.ts`, `src/mobile/mobile-client-support.service.ts`,
+`src/mobile/mobile.module.ts`, `test/mobile-client-support.integration.spec.ts` (23 integration assertions),
+and `docs/integration/MOBILE-CLIENT-SUPPORT.md`.
+
+**Both mobile surfaces already worked; nothing knew what was talking to them.** `CustomerAppController` and the
+agent controllers serve the clients, and `ApiVersionService` reports a version list — but nothing reads the
+`X-API-Version` header it advertises, `deprecated` is hard-coded empty, and `APP_VERSION` describes the
+_server_. So "a customer is running a build from eight months ago — is that acceptable?" had no answer:
+no build register, no support floor, no degradation policy, no adoption visibility.
+
+**Four states instead of a boolean.** `DEPRECATED` is advisory and does **not** refuse money: an old app that
+still works is not a security event, and refusing a transaction because someone has not updated is a worse
+outcome than a stale UI. `UNKNOWN` is served rather than blocked, because an empty register is the normal case
+and a malformed version usually means a client parsing bug — blocking there turns a cosmetic defect into an
+outage for every user of that build. A build above every registered version is reported `UNKNOWN` rather than
+`SUPPORTED`, because the register has not seen it.
+
+**The floor is read from the register, never from the client's own row.** A release engineer raises the floor on
+the newest build; if the floor came from the matching row, an old client would keep its own old floor forever —
+exactly the failure a force-update prevents. `evaluate()` takes the highest floor across the client/platform.
+
+**Versions compare numerically, verified by mutation.** Comparing labels puts `9.10.0` below `9.9.0`, silently,
+and the bug appears only on the release that crosses a double-digit component. Mutating `compare()` to lexical
+comparison failed exactly that test and nothing else.
+
+**A blocked build must state why** (`floor_rationale`, enforced in service and schema): an unexplained block is
+the kind of thing that becomes a complaint. The register is a release fact — identity immutable, `DELETE`
+refused, `down()` refused while builds exist — so a past force-update stays explainable.
+
+**Adoption visibility stores no identities**: sessions per build per day, with a test asserting the table has no
+`device_id`, `customer_id` or `request_id`. Blocked and deprecated shares are reported separately because they
+call for opposite decisions. Telemetry failure is swallowed: a metric is never worth failing a customer
+request.
+
+Known gaps from Group 25: **no request-path enforcement yet** — the service is tested but no controller calls
+it, because whether an endpoint should enforce `allowed` or merely surface the advisory is a per-endpoint
+decision this group did not make for existing routes; no push notification of a required update; no staged
+rollout; no app-store reconciliation; no device attestation.
+
 ### Group 24 — complaints and transaction disputes
 
 `src/migrations/1785753600611-ComplaintsAndDisputes.ts`, `src/disputes/dispute.service.ts`,
@@ -887,7 +928,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 25–40 remain: mobile support,
+Groups 26–40 remain:
 SMS/email, privacy/retention, performance harness, CI release gates, the PostgreSQL matrix, sandbox
 readiness, mobile release, browser acceptance, readiness gate, journeys A–J, consolidated acceptance, and
 the final handoff.

@@ -65,12 +65,12 @@ describe('migration inventory', () => {
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at the complaints and disputes migration', () => {
-    // ARENA 3D Group 24 superseded the compliance register migration as the newest. Earlier identifiers
+  it('ends at the mobile client support migration', () => {
+    // ARENA 3D Group 25 superseded the complaints and disputes migration as the newest. Earlier identifiers
     // remain present and unchanged (asserted below); only the "latest" pin moves.
     expect(migrations.at(-1)).toMatchObject({
-      timestamp: '1785753600611',
-      name: 'ComplaintsAndDisputes1785753600611',
+      timestamp: '1785753600612',
+      name: 'MobileClientSupport1785753600612',
     });
   });
 
