@@ -121,6 +121,43 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     expect(queryByText(/^Welcome back, /)).toBeNull();
   });
 
+  test('keeps the login form mounted during a sign-in attempt so a rejection does not discard the email', async () => {
+    // Regression for a defect found by the Group 33 browser acceptance run: the app gated the
+    // whole screen on `isLoading`, which is true for the duration of every sign-in attempt, so
+    // LoginScreen unmounted mid-request and a rejected login returned a blank form.
+    let reject: ((reason?: unknown) => void) | undefined;
+    (ApiClient.post as jest.Mock).mockReturnValue(
+      new Promise((_resolve, rejectFn) => {
+        reject = rejectFn;
+      }),
+    );
+
+    const { getByLabelText, getByText, queryByText } = render(<App />);
+    fireEvent.change(getByLabelText('Email or username'), {
+      target: { value: 'admin@monienaija.local' },
+    });
+    fireEvent.change(getByLabelText('Password'), { target: { value: 'wrong-password' } });
+    fireEvent.click(getByText('Sign In'));
+
+    await waitFor(() => {
+      expect(ApiClient.post).toHaveBeenCalled();
+    });
+
+    // In flight: the form the operator is typing into must still be on screen.
+    expect(getByLabelText('Email or username')).toBeTruthy();
+    expect(queryByText('Initializing MonieNaija Admin Core...')).toBeNull();
+
+    reject?.(new Error('Invalid local administrator credentials'));
+    await waitFor(() => {
+      expect(getByText('Invalid local administrator credentials')).toBeTruthy();
+    });
+
+    // After the rejection the typed address is still there, so retrying is one field, not two.
+    expect((getByLabelText('Email or username') as HTMLInputElement).value).toBe(
+      'admin@monienaija.local',
+    );
+  });
+
   test('should render Dashboard and FINANCE_ADMIN sidebar link for SUPER_ADMIN operator', async () => {
     useAuthStore.setState({
       isAuthenticated: true,

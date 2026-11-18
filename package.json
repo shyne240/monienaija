@@ -34,6 +34,7 @@
     "migration:show:compiled": "typeorm migration:show -d dist/config/data-source.js",
     "migration:revert:compiled": "typeorm migration:revert -d dist/config/data-source.js",
     "test:e2e:batch-2a": "node scripts/batch-2a-customer-registration-e2e.cjs",
+    "acceptance:browser:admin": "node scripts/admin-web-browser-acceptance.cjs",
     "local:preflight": "node scripts/local-preflight.cjs",
     "local:start:safe": "node scripts/start-local-safe.cjs",
     "test:local-safety": "node --test test/local-preflight.test.cjs",

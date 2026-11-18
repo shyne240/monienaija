@@ -362,6 +362,48 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 33 — browser acceptance
+
+`scripts/admin-web-browser-acceptance.cjs`, `test/browser-acceptance-evidence.spec.ts` (11 assertions),
+`docs/integration/evidence/browser-acceptance/` and `docs/integration/BROWSER-ACCEPTANCE.md`.
+
+**A blocker recorded since Group 1 turned out to be a blocker on one route only.** Every earlier checkpoint said
+browser acceptance was impossible here because `npx playwright install chromium` cannot reach its CDN and
+`libnss3`/`libnspr4` are not installable. Both are still true. But a Chromium binary is obtainable from the
+package registry the sandbox *can* reach — `@sparticuz/chromium`, 67 MB, which carries an Amazon-Linux library
+bundle containing exactly the NSS objects `apt` could not provide. With `LD_LIBRARY_PATH` pointed at that bundle,
+Playwright drives `HeadlessChrome/153.0.8010.0` normally. The acceptance run is real.
+
+**The defect the run found.** `LOGIN-RETRY-PRESERVES-EMAIL` failed on the first run: after a rejected sign-in the
+email field was empty. `App.tsx` gated the whole screen on `isLoading`, which is true for the duration of **every**
+sign-in attempt, not just boot — so `LoginScreen` unmounted mid-request, its state was discarded, and it remounted
+blank. An operator who mistyped a password lost their email too, and watched the form be replaced by a boot
+spinner. No unit test could see this (jsdom mounts the component and never observes it being replaced) and no file
+is wrong on its own. Fixed by gating the initialising screen on the first paint only (`isLoading && !booted`) with
+a regression test in `apps/admin-web/__tests__/app.test.tsx`; mutation-verified — reverting the fix reproduces the
+empty field and the run then aborts at the authenticated-shell step.
+
+**What the 15-check run proves.** The production Vite bundle boots to a labelled login form with zero uncaught
+errors and no protected chrome; Tab lands on a real control; both inputs are reachable by label; `html[lang]` is
+set; the password ships masked and is never written to storage; a 401 renders `role="alert"`, sets no token and
+keeps the typed email; one attempt is one `POST` carrying `{email, password}` and nothing else; the session
+persists, survives a full reload and is cleared by an expiry 401 back to login; navigation is scope-driven (24
+items for a scoped principal, **1** for one with no scopes, privileged view absent) and the skip link is genuinely
+first in tab order; the shell produces real layout with a measured sidebar; a valid `my-dashboard` payload renders
+without the error state; 1.9 MB of served JS/CSS contains no `localhost` or `127.0.0.1`; every request is
+same-origin; two console errors occur and both are the deliberate 401s.
+
+**The API was stubbed, deliberately.** The backend refuses to start while eight financial dependencies are
+unverified (Group 31). The alternative to stubbing was a flag that lets it boot — which is a flag that lets it boot
+in production. `page.route('**/api/v1/**')` intercepts everything, so every assertion here is about the client and
+none of them is evidence about the server; the report records that in `api.origin` and the evidence suite fails if
+that statement is removed.
+
+**Not certified:** not the server, not cross-browser (Blink only — no WebKit, no Gecko), not a handset (1440x900,
+DPR 1, no touch), not assistive technology (roles and focus order only; no screen reader announced anything), not a
+visual regression baseline (screenshots are evidence, not a compared baseline), not load or performance, and not a
+deployment (a local static server, not nginx or a container).
+
 ### Group 32 — mobile release readiness
 
 `src/mobile/mobile-release-readiness.service.ts`, `test/mobile-release-readiness.spec.ts` (21 assertions) and
@@ -1207,7 +1249,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 33–40 remain: browser acceptance, the readiness gate, journeys A–J,
+Groups 34–40 remain: the readiness gate, journeys A–J,
 consolidated acceptance, and the final handoff.
 
 Known gaps carried forward: no secret-manager backend is selected (the contract exists; the environment

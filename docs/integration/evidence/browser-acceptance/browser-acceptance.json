@@ -1,0 +1,175 @@
+{
+  "mission": "ARENA 3D",
+  "group": 33,
+  "generatedAt": "2026-11-18T15:44:57.523Z",
+  "browser": {
+    "name": "chromium",
+    "version": "153.0.8010.0",
+    "engine": "Blink",
+    "headless": true
+  },
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "api": {
+    "origin": "stubbed at the browser network layer (page.route)",
+    "reason": "the backend refuses to start while eight financial dependencies are unverified; see docs/integration/SANDBOX-INTEGRATION-READINESS.md",
+    "calls": 9
+  },
+  "bundle": {
+    "path": "/tmp/g33-dist",
+    "assets": 2
+  },
+  "checks": [
+    {
+      "id": "BOOT-RENDERS-LOGIN",
+      "ok": true,
+      "detail": "email field visible=true"
+    },
+    {
+      "id": "BOOT-NO-PAGE-ERROR",
+      "ok": true,
+      "detail": "no uncaught page errors"
+    },
+    {
+      "id": "BOOT-NO-PROTECTED-CHROME",
+      "ok": true,
+      "detail": "desktop-nav nodes on a fresh load=0"
+    },
+    {
+      "id": "KEYBOARD-FIRST-TAB-LANDS-IN-DOCUMENT",
+      "ok": true,
+      "detail": "first Tab -> <input id=\"admin-login-email\" class=\"mn-login__input\">"
+    },
+    {
+      "id": "A11Y-FORM-LABELS",
+      "ok": true,
+      "detail": "getByLabel(Email or username)=1 getByLabel(Password)=1"
+    },
+    {
+      "id": "A11Y-DOCUMENT-LANG",
+      "ok": true,
+      "detail": "html[lang]=\"en\""
+    },
+    {
+      "id": "PASSWORD-MASKED-BY-DEFAULT",
+      "ok": true,
+      "detail": "password input type=\"password\""
+    },
+    {
+      "id": "LOGIN-FAILURE-SHOWS-ALERT",
+      "ok": true,
+      "detail": "role=\"alert\" login still visible=true"
+    },
+    {
+      "id": "LOGIN-FAILURE-SETS-NO-TOKEN",
+      "ok": true,
+      "detail": "admin_workforce_token after 401 = absent"
+    },
+    {
+      "id": "LOGIN-RETRY-PRESERVES-EMAIL",
+      "ok": true,
+      "detail": "email field after a rejected sign-in = \"operator@monienaija.local\""
+    },
+    {
+      "id": "LOGIN-FORM-STAYS-MOUNTED-IN-FLIGHT",
+      "ok": true,
+      "detail": "during the attempt: form mounted=true, initialising screen=false"
+    },
+    {
+      "id": "LOGIN-IS-ONE-POST",
+      "ok": true,
+      "detail": "1 call(s) to the login endpoint"
+    },
+    {
+      "id": "LOGIN-BODY-CARRIES-CREDENTIALS-ONLY",
+      "ok": true,
+      "detail": "keys=email,password"
+    },
+    {
+      "id": "AUTHENTICATED-NAV-RENDERS",
+      "ok": true,
+      "detail": "24 nav items rendered for a scoped principal; Customers visible after expanding its section=true"
+    },
+    {
+      "id": "SESSION-PERSISTED-IN-LOCALSTORAGE",
+      "ok": true,
+      "detail": "keys=admin_workforce_principal,admin_workforce_session_id,admin_workforce_token"
+    },
+    {
+      "id": "PASSWORD-NEVER-PERSISTED",
+      "ok": true,
+      "detail": "storage copied=734 bytes, password present=false"
+    },
+    {
+      "id": "RENDER-PRODUCED-AUTHENTICATED-LAYOUT",
+      "ok": true,
+      "detail": "126 elements, 378 chars of text, nav box={\"width\":280,\"height\":900}, backgrounds=rgb(248, 250, 252)/rgb(253, 253, 251)"
+    },
+    {
+      "id": "DASHBOARD-ACCEPTS-A-WELL-FORMED-RESPONSE",
+      "ok": true,
+      "detail": "main content: Welcome back, super admin Here's what's happening across your authorized workspace. Operations overview Action Items ◇ KYC assessments Unava"
+    },
+    {
+      "id": "SESSION-RESTORED-AFTER-RELOAD",
+      "ok": true,
+      "detail": "authenticated shell after a full reload with a stored session=true"
+    },
+    {
+      "id": "A11Y-SKIP-LINK-FIRST-IN-AUTHENTICATED-SHELL",
+      "ok": true,
+      "detail": "first Tab on a restored session -> \"Skip to main content\" (class=\"mn-skip-link\")"
+    },
+    {
+      "id": "EXPIRED-SESSION-RETURNS-TO-LOGIN",
+      "ok": true,
+      "detail": "login visible=true, token after 401=cleared"
+    },
+    {
+      "id": "ROLE-DIFFERENTIAL-NAV",
+      "ok": true,
+      "detail": "SUPER_ADMIN=24 items, no-role principal=1 items, privileged item present=0"
+    },
+    {
+      "id": "ROLE-DIFFERENTIAL-NO-PAGE-ERROR",
+      "ok": true,
+      "detail": "none"
+    },
+    {
+      "id": "CONSOLE-NO-UNEXPECTED-ERRORS",
+      "ok": true,
+      "detail": "2 console error(s): 2 expected 401(s) from the two deliberate rejections, 0 unexpected"
+    },
+    {
+      "id": "NETWORK-SAME-ORIGIN-ONLY",
+      "ok": true,
+      "detail": "9 requests, all relative to the console origin"
+    },
+    {
+      "id": "BUNDLE-HAS-NO-LOOPBACK-HOST",
+      "ok": true,
+      "detail": "2 assets, 1942663 bytes scanned, 0 loopback occurrences"
+    },
+    {
+      "id": "SCREENSHOTS-CAPTURED",
+      "ok": true,
+      "detail": "authenticated screenshot 61082 bytes at 1440x900"
+    }
+  ],
+  "summary": {
+    "total": 27,
+    "passed": 27,
+    "failed": 0
+  },
+  "notPerformed": [
+    "no server assertion: every API response in this run was a stub",
+    "no cross-browser: Blink only, no WebKit and no Gecko",
+    "not a handset: a 1440x900 desktop viewport, no touch, no device pixel ratio above 1",
+    "no assistive technology: labels and roles were asserted through the accessibility tree only",
+    "no screen-reader announcement, no real keyboard-only user session",
+    "no visual regression baseline: screenshots are evidence, not a compared baseline",
+    "no load, concurrency or performance measurement"
+  ]
+}
