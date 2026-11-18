@@ -1083,7 +1083,12 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       );
       expect(
         await app.get(TransferReconciliationService).reconcileTransfer(transfer.id),
-      ).toMatchObject({ status: 'PASS', discrepancies: [] });
+      ).toMatchObject({
+        status: 'WARNING',
+        discrepancies: [
+          expect.objectContaining({ code: 'COMMERCIAL_LEGS_NOT_RECONCILED', severity: 'WARNING' }),
+        ],
+      });
     },
   );
 
@@ -1234,7 +1239,12 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     );
     expect(
       await app.get(TransferReconciliationService).reconcileTransfer(transfer.id),
-    ).toMatchObject({ status: 'PASS', discrepancies: [] });
+    ).toMatchObject({
+      status: 'WARNING',
+      discrepancies: [
+        expect.objectContaining({ code: 'COMMERCIAL_LEGS_NOT_RECONCILED', severity: 'WARNING' }),
+      ],
+    });
   });
 
   it('concurrent confirmed transfer and agency cash-in share one operating balance safely', async () => {
@@ -1282,6 +1292,9 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
         idempotencyKey: randomUUID(),
       }),
     ]);
+    for (const attempt of attempts) {
+      if (attempt.status === 'rejected') throw attempt.reason;
+    }
     expect(attempts.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled']);
     expect(await walletBalance(wallet.ledgerAccountId)).toBe(40000n);
     expect(await walletBalance(destination.ledgerAccountId)).toBe(30000n);

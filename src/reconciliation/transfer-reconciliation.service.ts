@@ -104,6 +104,14 @@ export class TransferReconciliationService {
       `,
       [transferId, expectedCorrelation, transfer?.journalId ?? transferId],
     );
+    const commercialRows = await this.queryRows<SqlRow>(
+      manager,
+      `SELECT count(*)::int AS count FROM ledger_journals j
+        WHERE (j.metadata->>'transferId' = $1 OR j.correlation_id = $2)
+          AND j.metadata->>'accountingPurpose' = 'FEE_REVENUE_AND_COMMISSION'`,
+      [transferId, expectedCorrelation],
+    );
+    const commercialJournalCount = this.numberValue(commercialRows[0]?.count);
     const journalCandidates = journalRows.map((row) => this.toJournalFact(row));
     const journal = transfer?.journalId
       ? (journalCandidates.find((candidate) => candidate.id === transfer.journalId) ?? null)
@@ -168,7 +176,15 @@ export class TransferReconciliationService {
       )
     ).map((row) => this.toAuditFact(row));
 
-    return { transfer, journal, journalCandidates, lines, outboxEvents, auditEvents };
+    return {
+      transfer,
+      journal,
+      journalCandidates,
+      commercialJournalCount,
+      lines,
+      outboxEvents,
+      auditEvents,
+    };
   }
 
   private toTransferFact(row: SqlRow): TransferReconciliationTransferFact {
@@ -344,6 +360,16 @@ export function evaluateTransferReconciliation(
       );
     }
     return makeReport(facts, generatedAt, discrepancies);
+  }
+
+  if ((facts.commercialJournalCount ?? 0) > 0 || Boolean(transfer.quoteSourceId)) {
+    addDiscrepancy(
+      discrepancies,
+      facts,
+      TransferReconciliationDiscrepancyCode.COMMERCIAL_LEGS_NOT_RECONCILED,
+      'WARNING',
+      'Principal evidence is checked, but fee, VAT and commission legs have not been fully reconciled',
+    );
   }
 
   if (!transfer.journalId) {
@@ -604,7 +630,11 @@ function makeReport(
     ),
   );
   return {
-    status: sorted.length === 0 ? 'PASS' : 'ERROR',
+    status: sorted.some((item) => item.severity === 'ERROR')
+      ? 'ERROR'
+      : sorted.length > 0
+        ? 'WARNING'
+        : 'PASS',
     generatedAt,
     readOnly: true,
     transfer,

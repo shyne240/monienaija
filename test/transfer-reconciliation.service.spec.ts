@@ -157,6 +157,29 @@ function expectCode(
 }
 
 describe('internal transfer reconciliation evaluation', () => {
+  it('warns rather than claiming full reconciliation for commercial journals or any quoted transfer', () => {
+    for (const facts of [
+      makeFacts({ commercialJournalCount: 1 }),
+      makeFacts({ transfer: makeTransfer({ quoteSourceId: SOURCE_CUSTOMER_ID }) }),
+    ]) {
+      const report = evaluateTransferReconciliation(facts);
+      expect(report.status).toBe('WARNING');
+      expect(report.discrepancies).toEqual([
+        expect.objectContaining({
+          code: TransferReconciliationDiscrepancyCode.COMMERCIAL_LEGS_NOT_RECONCILED,
+          severity: 'WARNING',
+        }),
+      ]);
+    }
+    const broken = evaluateTransferReconciliation(
+      makeFacts({ commercialJournalCount: 1, journal: null }),
+    );
+    expect(broken.status).toBe('ERROR');
+    expect(broken.discrepancies.map((d) => d.code)).toContain(
+      TransferReconciliationDiscrepancyCode.COMMERCIAL_LEGS_NOT_RECONCILED,
+    );
+  });
+
   it('reports a complete transfer, Ledger, outbox, and audit trace as PASS', () => {
     const report = evaluateTransferReconciliation(makeFacts(), '2026-08-07T12:00:00.000Z');
 
@@ -196,7 +219,7 @@ describe('internal transfer reconciliation evaluation', () => {
     });
     expect(
       evaluateTransferReconciliation(makeFacts({ transfer, outboxEvents: [event] })).status,
-    ).toBe('PASS');
+    ).toBe('WARNING');
     expectCode(
       makeFacts({
         transfer,

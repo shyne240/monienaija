@@ -23,6 +23,7 @@ export enum TransferReconciliationDiscrepancyCode {
   MISSING_AUDIT_EVENT = 'MISSING_AUDIT_EVENT',
   AUDIT_CORRELATION_MISMATCH = 'AUDIT_CORRELATION_MISMATCH',
   QUERY_UNAVAILABLE = 'QUERY_UNAVAILABLE',
+  COMMERCIAL_LEGS_NOT_RECONCILED = 'COMMERCIAL_LEGS_NOT_RECONCILED',
 }
 
 export interface TransferReconciliationDiscrepancy {
@@ -104,6 +105,8 @@ export interface TransferReconciliationFacts {
   transfer: TransferReconciliationTransferFact | null;
   journal: TransferReconciliationJournalFact | null;
   journalCandidates: readonly TransferReconciliationJournalFact[];
+  /** Correlated commercial journal candidates, not yet reconciled as individual legs. */
+  commercialJournalCount?: number;
   lines: readonly TransferReconciliationLineFact[];
   outboxEvents: readonly TransferReconciliationOutboxFact[];
   auditEvents: readonly TransferReconciliationAuditFact[];
