@@ -1423,6 +1423,28 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     );
     const limits = app.get(LimitEnforcementService);
     const enforce = limits.enforceWithManager.bind(limits);
+    let failures = 0;
+    const exhausted = jest
+      .spyOn(limits, 'enforceWithManager')
+      .mockImplementation(async (manager) => {
+        failures += 1;
+        await manager.query(
+          `DO $$ BEGIN RAISE EXCEPTION 'injected serialization' USING ERRCODE = '40001'; END $$`,
+        );
+        throw new Error('unreachable');
+      });
+    try {
+      const response = await confirm().expect(409);
+      expect(response.body.code).toBe('TRANSACTION_CONTENTION_RETRY_EXHAUSTED');
+    } finally {
+      exhausted.mockRestore();
+    }
+    expect(failures).toBe(3);
+    expect((await wallets.getWalletBalance(a.id)).balanceMinor).toBe('500');
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(4);
+    expect(
+      await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [q.body.quoteId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
     let injected = false;
     const conflict = jest
       .spyOn(limits, 'enforceWithManager')
