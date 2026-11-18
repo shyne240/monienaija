@@ -17,7 +17,8 @@ Continuation record. Updated as each group lands; the workspace is the source of
 | Groups 13, 14                               | `cc6392a7`    | Recovery objectives and resume policy; outbox leases and dead letters.                  |
 | Group 15                                    | `f8bb5fdd`    | Worker supervision without a second scheduler.                                          |
 | Group 16                                    | `6451a5c2`    | Sink-level log redaction; compound secret names.                                        |
-| Group 17                                    | _this commit_ | Operational metrics; the DLQ and worker signals finally have a consumer.                |
+| Group 17                                    | `40766952`    | Operational metrics; DLQ and worker signals finally have a consumer.                    |
+| Group 18                                    | _this commit_ | Integrity snapshots and drift detection.                                                |
 
 Branch: `arena/defdd0fd-monienaija`. There is no upstream; push with `git push origin <branch>`.
 
@@ -356,6 +357,51 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 18 — integrity monitoring: snapshots and drift
+
+`src/operations/integrity-monitoring.service.ts`, `src/migrations/1785753600607-IntegritySnapshots.ts`,
+`test/integrity-monitoring.integration.spec.ts` (13 assertions against real PostgreSQL),
+`GET /internal/integrity`, `/integrity/history`, `/integrity/last-passes`, and
+`docs/integration/INTEGRITY-MONITORING.md`.
+
+**Integrity was already enforced; it was not observable over time.** Write-time triggers refuse an
+unbalanced journal and reject ledger mutation, and `ReconciliationService` runs eleven cross-table checks.
+Verified against a clean database: all eleven `PASS`. But `runReconciliation()` was **stateless** — it
+returned a report and persisted nothing, so two questions were unanswerable: _was this balanced yesterday,
+and when did it stop?_ and _is this failure new?_
+
+**Why the second question is the one that matters.** A check showing `ERROR` today and yesterday is a known
+problem being worked. The same check flipping `PASS` → `ERROR` between runs is a new incident. From one
+report the two are identical, which is how a newly-broken invariant gets triaged as "the same old
+reconciliation warning" and sits for a week.
+
+**What was added.** Append-only `integrity_snapshots` + `integrity_check_results` (enforced by a database
+trigger — `UPDATE`/`DELETE` raise `restrict_violation`, because the evidence used to judge whether a drift is
+new must not be editable), and drift classification:
+
+| Yesterday | Today   | `change`                 |
+| --------- | ------- | ------------------------ |
+| ERROR     | ERROR   | — (stable, known)        |
+| PASS      | ERROR   | `newly-failing`          |
+| PASS      | WARNING | `newly-degraded`         |
+| ERROR     | PASS    | `recovered`              |
+| —         | any     | `new` (not a regression) |
+
+`regressionDetected` is true only for the two new-incident rows, and is the field an alert should key on —
+**not** the aggregate status, or a week-old failure pages on every run until the alert is muted.
+
+`finding_count` is stored per check because "3 mismatches" and "3000" call for different responses, and a
+bare `ERROR` loses that. `lastPasses()` answers "how long has this been broken?".
+
+**Two design points worth carrying forward.** `record()` never throws: readiness and diagnostics also run
+reconciliation, so failing those because the _history_ table is unavailable would convert an observability
+problem into an availability problem — instead the report returns `snapshot: null`, and the runbook says a
+null snapshot means "history incomplete", not "integrity fine". And monitoring stores verdicts verbatim
+rather than recomputing the aggregate, so it never becomes a second, divergent source of integrity truth.
+
+A first-ever observation is reported as `new`, **not** as a regression — otherwise every deployment that
+adds a check would fire an alert.
+
 ### Group 17 — operational metrics, and the signals that had no consumer
 
 `src/operations/operational-metrics.service.ts`, `test/operational-metrics.spec.ts` (11 assertions),
@@ -566,7 +612,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 18–40 remain: integrity monitoring, alerting, admin operations
+Groups 19–40 remain: alerting, admin operations
 centre, operational security, break-glass, fraud/risk, compliance, complaints, disputes, mobile support,
 SMS/email, privacy/retention, performance harness, CI release gates, the PostgreSQL matrix, sandbox
 readiness, mobile release, browser acceptance, readiness gate, journeys A–J, consolidated acceptance, and
@@ -580,6 +626,13 @@ categories in one database.
 Known gaps carried forward from Group 12: no fixture seeds all eleven backup categories in one database;
 the restore requires superuser; and off-site storage, encryption at rest, retention and point-in-time
 recovery are infrastructure decisions that are not implemented.
+
+Known gaps from Group 18: nothing schedules the checks — snapshots are recorded when the endpoint is called,
+so a cron calling it on an interval is Group 15's supervision model applied to a new consumer and is not
+wired. `regressionDetected` is returned but sent nowhere (Group 19). No retention or archival: snapshots grow
+unbounded, and pruning must respect the append-only trigger. No automatic remediation — every check runs in a
+read-only transaction and repair requires a human decision. These checks compare the application's own tables
+to each other; provider agreement is external reconciliation, a different service.
 
 Known gaps from Group 17: no scraper, dashboard, retention or histogram — `worker_last_duration_ms` is a
 latest observation, not a distribution, so percentiles are not available. Every threshold in the runbook is

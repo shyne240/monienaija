@@ -8,7 +8,9 @@ import { DiagnosticsService } from './diagnostics.service';
 import { MetricsService } from './metrics.service';
 import { OutboxService } from './outbox.service';
 import { OutboxEventStatus } from './operations.enums';
+import { IntegrityMonitoringService } from './integrity-monitoring.service';
 import { OperationalMetricsService } from './operational-metrics.service';
+import { ReconciliationService } from '../reconciliation/reconciliation.service';
 import { WorkerSupervisorService } from './worker-supervisor.service';
 
 interface AuthenticatedRequest {
@@ -48,6 +50,8 @@ export class OperationsController {
     private readonly auth: AuthorizationService,
     private readonly workerSupervisor: WorkerSupervisorService,
     private readonly operationalMetrics: OperationalMetricsService,
+    private readonly reconciliation: ReconciliationService,
+    private readonly integrity: IntegrityMonitoringService,
   ) {}
 
   @Get('metrics')
@@ -94,6 +98,44 @@ export class OperationsController {
   async getPrometheusMetrics(@Req() req: AuthenticatedRequest) {
     await this.requireFunction(req, 'metrics.view');
     return this.operationalMetrics.prometheus();
+  }
+
+  /**
+   * Group 18 — run the integrity checks, record a snapshot, and report drift.
+   *
+   * Recording is deliberate rather than incidental: a check that is only evaluated when someone looks is
+   * unmeasured between looks, and "when did this last pass?" becomes unanswerable. `regressionDetected` is
+   * the field an alert should key on — a system that has been failing for a week must not page on every run,
+   * but a check that just broke must.
+   */
+  @Get('integrity')
+  async getIntegrity(@Req() req: AuthenticatedRequest) {
+    await this.requireFunction(req, 'diagnostics.view');
+    const startedAt = performance.now();
+    const report = await this.reconciliation.runReconciliation();
+    return this.integrity.record(report, {
+      durationMs: performance.now() - startedAt,
+      observer: 'internal-integrity-endpoint',
+    });
+  }
+
+  /** Group 18 — snapshot history, newest first. */
+  @Get('integrity/history')
+  async getIntegrityHistory(@Req() req: AuthenticatedRequest, @Query('limit') limit?: string) {
+    await this.requireFunction(req, 'diagnostics.view');
+    const parsed = limit === undefined ? 50 : Number(limit);
+    return this.integrity.history(Number.isFinite(parsed) ? parsed : 50);
+  }
+
+  /**
+   * Group 18 — for each check, when it last passed.
+   *
+   * Answers "how long has this been broken?", which a stateless report cannot answer at all.
+   */
+  @Get('integrity/last-passes')
+  async getIntegrityLastPasses(@Req() req: AuthenticatedRequest) {
+    await this.requireFunction(req, 'diagnostics.view');
+    return this.integrity.lastPasses();
   }
 
   @Get('workers')

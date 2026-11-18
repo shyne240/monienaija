@@ -65,12 +65,12 @@ describe('migration inventory', () => {
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at the outbox leases and dead-letter migration', () => {
-    // ARENA 3D Group 14 superseded the agent float funding migration as the newest. The earlier
-    // identifier remains present and unchanged (asserted below); only the "latest" pin moves.
+  it('ends at the integrity snapshots migration', () => {
+    // ARENA 3D Group 18 superseded the outbox leases migration as the newest. Earlier identifiers remain
+    // present and unchanged (asserted below); only the "latest" pin moves.
     expect(migrations.at(-1)).toMatchObject({
-      timestamp: '1785753600606',
-      name: 'OutboxLeasesAndDeadLetters1785753600606',
+      timestamp: '1785753600607',
+      name: 'IntegritySnapshots1785753600607',
     });
   });
 
@@ -94,6 +94,7 @@ describe('migration inventory', () => {
       '1785753600604',
       '1785753600605',
       '1785753600606',
+      '1785753600607',
     ]);
   });
 
