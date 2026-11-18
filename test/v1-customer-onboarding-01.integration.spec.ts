@@ -13,6 +13,7 @@ import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
   truncateAllTables,
+  seedTransferParticipant,
 } from './support/pg-harness';
 import { CustomerService } from '../src/customer/customer.service';
 import {
@@ -176,6 +177,117 @@ describe('V1-CUSTOMER-ONBOARDING-01 registration + phone verification (real Post
       .send({ smsEnabled: true })
       .expect(200);
 
+    // Continue the very same OTP-backed identity through governed notification delivery.
+    // Transfers below are synthetic FAILED database fixtures; no financial posting or vendor call occurs.
+    const { seedNotificationDefaultsV1 } = await import(
+      '../src/notification/notification-defaults-v1'
+    );
+    const { seedNotificationDefaultsV2 } = await import(
+      '../src/notification/notification-defaults-v2'
+    );
+    const { NotificationDispatcherService } = await import(
+      '../src/notification/notification-dispatcher.service'
+    );
+    const { NotificationWorkerService } = await import(
+      '../src/notification/notification-worker.service'
+    );
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    await seedNotificationDefaultsV1(dataSource.manager);
+    await seedNotificationDefaultsV2(dataSource.manager);
+    await dataSource.query(
+      `UPDATE notification_event_configurations SET is_enabled=true,version=version+1 WHERE event_type='transfer.failed' AND channel IN ('EVENT','SMS')`,
+    );
+    const { LedgerService } = await import('../src/ledger/ledger.service');
+    const { LedgerAccountType, LedgerNormalBalance } = await import('../src/ledger/ledger.enums');
+    const ledgerAccount = await app.get(LedgerService).createAccount({
+      code: `OTP-${randomUUID()}`,
+      name: 'Synthetic customer',
+      accountType: LedgerAccountType.LIABILITY,
+      normalBalance: LedgerNormalBalance.CREDIT,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+    });
+    const counterparty = await seedTransferParticipant(
+      dataSource,
+      'otp-notification',
+      ledgerAccount.id,
+    );
+    const agentWallet = await app.get(WalletService).createWallet({
+      customerId: agentId,
+      currency: 'NGN',
+      idempotencyKey: `otp-agent-${randomUUID()}`,
+    });
+    const dispatcher = app.get(NotificationDispatcherService);
+    const worker = app.get(NotificationWorkerService);
+    provider.clear(); // The recorded OTP is not a transaction notification.
+    async function materialize() {
+      const id = randomUUID();
+      await dataSource.query(
+        `INSERT INTO transfers (id,source_wallet_id,destination_wallet_id,amount_minor,currency,status,idempotency_key,request_hash) VALUES ($1,$2,$3,1000,'NGN','FAILED',$4,$5)`,
+        [
+          id,
+          agentWallet.id,
+          counterparty.walletAccountId,
+          `otp-failed-${randomUUID()}`,
+          'a'.repeat(64),
+        ],
+      );
+      const eventType = 'wallet_transfer.failed';
+      const command = {
+        eventType,
+        eventKey: `${eventType}:${id}:v1`,
+        aggregateType: 'TRANSFER',
+        aggregateId: id,
+        payload: { transferId: id },
+      };
+      await dataSource.transaction((manager) => dispatcher.dispatch(command, manager));
+      return { id, command };
+    }
+    const accepted = await materialize();
+    await worker.tick();
+    expect(provider.sent).toHaveLength(1);
+    expect(provider.sent[0]).toMatchObject({
+      recipientType: 'AGENT',
+      recipientId: agentId,
+      destination: canonical,
+    });
+    await dataSource.transaction((manager) => dispatcher.dispatch(accepted.command, manager));
+    await worker.tick();
+    expect(provider.sent).toHaveLength(1); // replay cannot duplicate
+    const optedOut = await materialize();
+    await request(app.getHttpServer())
+      .patch(`${path}/notification-preferences`)
+      .set('Authorization', auth)
+      .send({ smsEnabled: false })
+      .expect(200);
+    await worker.tick();
+    expect(
+      await dataSource.query(
+        `SELECT status,last_error FROM notification_deliveries WHERE event_key=$1`,
+        [optedOut.command.eventKey],
+      ),
+    ).toEqual([{ status: 'SKIPPED', last_error: 'SMS_OPT_OUT' }]);
+    await request(app.getHttpServer())
+      .patch(`${path}/notification-preferences`)
+      .set('Authorization', auth)
+      .send({ smsEnabled: true })
+      .expect(200);
+    const disabled = await materialize();
+    await dataSource.query(
+      `UPDATE notification_event_configurations SET is_enabled=false,version=version+1 WHERE event_type='transfer.failed' AND channel='SMS'`,
+    );
+    await worker.tick();
+    expect(
+      await dataSource.query(
+        `SELECT status,last_error FROM notification_deliveries WHERE event_key=$1`,
+        [disabled.command.eventKey],
+      ),
+    ).toEqual([{ status: 'SKIPPED', last_error: 'EVENT_DISABLED' }]);
+    await dataSource.query(
+      `UPDATE notification_event_configurations SET is_enabled=true,version=version+1 WHERE event_type='transfer.failed' AND channel='SMS'`,
+    );
+    const ambiguous = await materialize();
+
     const customer = await dataSource.query<Array<{ id: string }>>(
       `INSERT INTO customers(reference,customer_type,status,kyc_level,kyc_status) VALUES ($1,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED') RETURNING id`,
       [`collision-${randomUUID()}`],
@@ -184,6 +296,14 @@ describe('V1-CUSTOMER-ONBOARDING-01 registration + phone verification (real Post
       `INSERT INTO customer_contact_methods(customer_id,type,value,normalized_value,is_primary,verified_at) VALUES ($1,'PHONE',$2,$2,true,now())`,
       [customer[0]!.id, canonical],
     );
+    await worker.tick();
+    expect(
+      await dataSource.query(
+        `SELECT status,last_error FROM notification_deliveries WHERE event_key=$1`,
+        [ambiguous.command.eventKey],
+      ),
+    ).toEqual([{ status: 'SKIPPED', last_error: 'AGENT_PHONE_AMBIGUOUS' }]);
+    expect(provider.sent).toHaveLength(1);
     await expect(app.get(RecipientResolutionService).resolve(phone)).rejects.toMatchObject({
       status: 409,
     });
@@ -204,7 +324,7 @@ describe('V1-CUSTOMER-ONBOARDING-01 registration + phone verification (real Post
     await expect(
       dataSource.query(`DELETE FROM agent_verified_phone_contacts WHERE id=$1`, [rows[0]!.id]),
     ).rejects.toThrow();
-    expect(provider.sent).toHaveLength(1); // the OTP went to the synthetic provider only
+    expect(provider.sent).toHaveLength(1); // only the permitted notification reached the synthetic provider
   });
 
   // ---------------------------------------------------------------- helpers
