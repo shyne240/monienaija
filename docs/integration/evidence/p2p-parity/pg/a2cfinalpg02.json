@@ -1206,44 +1206,128 @@
       "finished": "2026-11-18T22:41:59.987Z"
     },
     "test/v1-commercial-decision-03c-cash-to-cash-snapshot.integration.spec.ts": {
-      "status": "RUNNING",
-      "started": "2026-11-18T22:41:59.988Z"
+      "status": "PASS",
+      "started": "2026-11-18T22:41:59.988Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:42:22.255Z"
     },
     "test/v1-commercial-decision-03d-customer-funding-snapshot.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:42:22.255Z",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:42:40.228Z"
     },
     "test/v1-commercial-decision-03e-agent-funding-snapshot.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:42:40.229Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:42:59.563Z"
     },
     "test/v1-commercial-rule-governance.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:42:59.563Z",
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:43:34.009Z"
     },
     "test/v1-commercial-scenario-matrix-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:43:34.010Z",
+      "passed": 27,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:45:01.243Z"
     },
     "test/v1-commission-01-commission-engine.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:45:01.243Z",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:45:51.764Z"
     },
     "test/v1-commission-runtime-wiring.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:45:51.764Z",
+      "passed": 24,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:47:11.199Z"
     },
     "test/v1-commission-settlement-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:47:11.200Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:47:45.067Z"
     },
     "test/v1-customer-05-transaction-pin-security.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:47:45.067Z",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:48:26.613Z"
     },
     "test/v1-customer-08-limits-view.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:48:26.614Z",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:48:57.397Z"
     },
     "test/v1-customer-09-support-workforce-boundary.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:48:57.398Z",
+      "passed": 36,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:49:16.041Z"
     },
     "test/v1-customer-credentials-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:49:16.043Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:49:53.615Z"
     },
     "test/v1-customer-onboarding-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "RUNNING",
+      "started": "2026-11-18T22:49:53.616Z"
     },
     "test/v1-customer-onboarding-02.integration.spec.ts": {
       "status": "PENDING"
