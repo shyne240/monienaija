@@ -486,44 +486,128 @@
       "finished": "2026-11-18T21:47:13.972Z"
     },
     "test/banking-virtual-account-service.integration.spec.ts": {
-      "status": "RUNNING",
-      "started": "2026-11-18T21:47:13.973Z"
+      "status": "PASS",
+      "started": "2026-11-18T21:47:13.973Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:47:25.598Z"
     },
     "test/banking-webhook-ingestion.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:47:25.599Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:47:37.320Z"
     },
     "test/batch-01-customer-servicing.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:47:37.321Z",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:48:00.911Z"
     },
     "test/batch-2a-customer-registration.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:48:00.912Z",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:48:23.743Z"
     },
     "test/customer-compliance-authorization.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:48:23.744Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:49:20.911Z"
     },
     "test/final-integration-gates-focus.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:49:20.912Z",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:49:46.269Z"
     },
     "test/financial-commitment-initiation.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:49:46.270Z",
+      "passed": 41,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:50:15.105Z"
     },
     "test/financial-commitment-schema.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:50:15.105Z",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:50:28.101Z"
     },
     "test/governed-financial-fixture.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:50:28.102Z",
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:51:08.742Z"
     },
     "test/h04-h06-cash-to-cash-channels.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:51:08.742Z",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:51:21.137Z"
     },
     "test/h04-h06-notification-upgrade.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:51:21.137Z",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:51:33.486Z"
     },
     "test/hardening-04-customer-transaction-history.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:51:33.486Z",
+      "passed": 26,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:52:46.853Z"
     },
     "test/institution-console.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "RUNNING",
+      "started": "2026-11-18T21:52:46.853Z"
     },
     "test/institution-financial-ownership.integration.spec.ts": {
       "status": "PENDING"
