@@ -36,6 +36,7 @@
     "test:e2e:batch-2a": "node scripts/batch-2a-customer-registration-e2e.cjs",
     "acceptance:browser:admin": "node scripts/admin-web-browser-acceptance.cjs",
     "gate:release": "ts-node -T scripts/release-gate.ts",
+    "acceptance:journeys": "node scripts/run-journey-acceptance.js",
     "local:preflight": "node scripts/local-preflight.cjs",
     "local:start:safe": "node scripts/start-local-safe.cjs",
     "test:local-safety": "node --test test/local-preflight.test.cjs",

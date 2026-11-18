@@ -1,0 +1,196 @@
+{
+  "generatedAt": "2026-11-18T17:09:09.067Z",
+  "command": "node scripts/run-journey-acceptance.js (jest -c jest.integration.config.js --runInBand)",
+  "database": {
+    "host": "127.0.0.1",
+    "port": 44679,
+    "disposableCluster": true
+  },
+  "journeys": [
+    {
+      "id": "A",
+      "title": "A customer registers and becomes usable",
+      "suites": [
+        {
+          "file": "test/batch-2a-customer-registration.integration.spec.ts",
+          "status": "PASS",
+          "tests": 2,
+          "failed": 0,
+          "durationMs": 7034
+        },
+        {
+          "file": "test/v1-customer-onboarding-01.integration.spec.ts",
+          "status": "PASS",
+          "tests": 20,
+          "failed": 0,
+          "durationMs": 44869
+        }
+      ],
+      "verdict": "PASS",
+      "tests": 22
+    },
+    {
+      "id": "B",
+      "title": "A customer funds their wallet through an agent",
+      "suites": [
+        {
+          "file": "test/v1-001-customer-funding.integration.spec.ts",
+          "status": "PASS",
+          "tests": 26,
+          "failed": 0,
+          "durationMs": 63244
+        },
+        {
+          "file": "test/a13-agent-cash-in.integration.spec.ts",
+          "status": "PASS",
+          "tests": 33,
+          "failed": 0,
+          "durationMs": 9217
+        }
+      ],
+      "verdict": "PASS",
+      "tests": 59
+    },
+    {
+      "id": "C",
+      "title": "A customer transfers to another customer",
+      "suites": [
+        {
+          "file": "test/a5-transfer-lifecycle.integration.spec.ts",
+          "status": "PASS",
+          "tests": 15,
+          "failed": 0,
+          "durationMs": 30145
+        }
+      ],
+      "verdict": "PASS",
+      "tests": 15
+    },
+    {
+      "id": "D",
+      "title": "A customer withdraws cash through an agent",
+      "suites": [
+        {
+          "file": "test/a14-agent-cash-out.integration.spec.ts",
+          "status": "PASS",
+          "tests": 33,
+          "failed": 0,
+          "durationMs": 28150
+        }
+      ],
+      "verdict": "PASS",
+      "tests": 33
+    },
+    {
+      "id": "E",
+      "title": "An agent is funded and its float is classified",
+      "suites": [
+        {
+          "file": "test/a3d-agent-float-funding.integration.spec.ts",
+          "status": "PASS",
+          "tests": 14,
+          "failed": 0,
+          "durationMs": 8010
+        }
+      ],
+      "verdict": "PASS",
+      "tests": 14
+    },
+    {
+      "id": "F",
+      "title": "A financial commitment needs two people",
+      "suites": [
+        {
+          "file": "test/financial-commitment-initiation.integration.spec.ts",
+          "status": "PASS",
+          "tests": 41,
+          "failed": 0,
+          "durationMs": 20071
+        },
+        {
+          "file": "test/v1-funding-approvals-inbox.integration.spec.ts",
+          "status": "PASS",
+          "tests": 7,
+          "failed": 0,
+          "durationMs": 5570
+        }
+      ],
+      "verdict": "PASS",
+      "tests": 48
+    },
+    {
+      "id": "G",
+      "title": "Provider settlement is reconciled, not assumed",
+      "suites": [
+        {
+          "file": "test/banking-reconciliation.integration.spec.ts",
+          "status": "PASS",
+          "tests": 15,
+          "failed": 0,
+          "durationMs": 727
+        }
+      ],
+      "verdict": "PASS",
+      "tests": 15
+    },
+    {
+      "id": "H",
+      "title": "KYC tiering decides what a customer may do",
+      "suites": [
+        {
+          "file": "test/kyc-fixture-contract.integration.spec.ts",
+          "status": "PASS",
+          "tests": 8,
+          "failed": 0,
+          "durationMs": 11101
+        }
+      ],
+      "verdict": "PASS",
+      "tests": 8
+    },
+    {
+      "id": "I",
+      "title": "Risk signals become cases, and cases get decisions",
+      "suites": [
+        {
+          "file": "test/fraud-detection.integration.spec.ts",
+          "status": "PASS",
+          "tests": 22,
+          "failed": 0,
+          "durationMs": 48553
+        }
+      ],
+      "verdict": "PASS",
+      "tests": 22
+    },
+    {
+      "id": "J",
+      "title": "A customer’s data is erased without erasing the ledger",
+      "suites": [
+        {
+          "file": "test/privacy-retention.integration.spec.ts",
+          "status": "PASS",
+          "tests": 27,
+          "failed": 0,
+          "durationMs": 64052
+        }
+      ],
+      "verdict": "PASS",
+      "tests": 27
+    }
+  ],
+  "summary": {
+    "journeys": 10,
+    "passed": 10,
+    "failed": 0,
+    "notRun": 0,
+    "tests": 263
+  },
+  "notPerformed": [
+    "no provider was contacted: every provider interaction is a controlled fixture",
+    "no real money moved: every amount is a test fixture in a disposable database",
+    "no browser, mobile app or device took part — these are API and service-layer journeys",
+    "no deployment exists behind them, and none was created",
+    "the suites were run, not re-read: this report is the result of executing them"
+  ]
+}

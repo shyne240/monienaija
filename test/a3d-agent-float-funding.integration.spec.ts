@@ -61,7 +61,16 @@ describe('Agent float funding from verified inbound (real PostgreSQL)', () => {
 
   afterAll(async () => {
     await app?.close();
-    await db?.destroy();
+    /*
+     * `app.close()` already tears down the TypeORM DataSource, because this suite overrides the
+     * `DataSource` provider with its own instance. Calling `destroy()` unconditionally afterwards
+     * throws `CannotExecuteNotConnectedError` and reddens the suite *after* every assertion has
+     * passed — which is exactly how it went unnoticed: the failure is in teardown, so the suite
+     * reports "failed to run" while all fourteen tests are green. The guard is the pattern the
+     * other suites here already use. Found by the Group 35 journey run, which executes the suites
+     * rather than asserting that CI is configured to.
+     */
+    if (db?.isInitialized) await db.destroy().catch(() => undefined);
   });
 
   /**

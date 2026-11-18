@@ -362,6 +362,37 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 35 — platform journeys A–J
+
+`src/acceptance/platform-journeys.ts`, `scripts/run-journey-acceptance.js` (`npm run acceptance:journeys`),
+`test/platform-journeys.spec.ts` (16 assertions), `docs/integration/evidence/journeys/journey-results.json` and
+`docs/integration/PLATFORM_JOURNEYS.md`.
+
+**Ten journeys, executed: 10/10 passed, 263 tests.** A (registration to a usable session), B (agent cash-in), C
+(customer-to-customer transfer), D (agent cash-out), E (agent float funding and pool classification), F (two-person
+financial control), G (settlement and reconciliation), H (KYC tiering), I (risk signals and cases), J (privacy
+erasure that keeps the ledger). Thirteen integration suites against real PostgreSQL, grouped by the participant
+whose path they prove.
+
+**No new end-to-end scripts.** Each step is proved by an existing suite. Ten new scripts would have asserted
+whatever they were written to assert, while the existing suites encode years of decisions about refusals,
+authorization and ledger balance. The registry is the map; the runner executes it and refuses to invent a cluster.
+Each journey carries explicit **guardrails** — an approval that cannot approve itself, a reconciliation that cannot
+post an adjustment, an erasure that cannot delete financial evidence — because those are the half of a financial
+journey that matters.
+
+**The defect the run found.** Journey E's suite reported *failed* while all fourteen assertions passed:
+`afterAll` called `app.close()` and then `db.destroy()`, and because the suite overrides the `DataSource` provider,
+`app.close()` had already destroyed it — `CannotExecuteNotConnectedError`, thrown after the tests were green. Two
+consequences matter more than the one-line fix: a **presence-based CI gate cannot see this** (Group 29's gate
+correctly reports the `backend-postgres` job present and correctly configured), and a verdict built from
+failing-assertion counts would have called it green. The runner now uses Jest's per-file status, and the evaluator
+fails a journey whose suite reports `FAIL` with zero red assertions — a case with its own test.
+
+**Not certified:** no provider contacted (every interaction is a controlled fixture), no real money moved (fixtures
+in a dropped database), no browser or device, no deployment, not exhaustive, and no timing thresholds — durations
+are recorded, not judged.
+
 ### Group 34 — release readiness gate
 
 `src/readiness/release-gate.service.ts`, `scripts/release-gate.ts` (`npm run gate:release`),
@@ -1283,7 +1314,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 35–40 remain: journeys A–J,
+Groups 36–40 remain: the consolidated matrix,
 consolidated acceptance, and the final handoff.
 
 Known gaps carried forward: no secret-manager backend is selected (the contract exists; the environment
