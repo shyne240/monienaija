@@ -1,7 +1,11 @@
 import type { FastifyRequest } from 'fastify';
 import type { Options as PinoHttpOptions } from 'pino-http';
 
-import { redactRequestUrl, sanitizeDiagnosticParams } from '../common/sensitive-data-redaction';
+import {
+  redactRequestUrl,
+  redactSensitiveData,
+  sanitizeDiagnosticParams,
+} from '../common/sensitive-data-redaction';
 import { getRequestContext } from './request-context';
 
 /**
@@ -14,6 +18,31 @@ import { getRequestContext } from './request-context';
 export function buildPinoHttpOptions(): PinoHttpOptions {
   return {
     level: process.env.LOG_LEVEL ?? 'info',
+    /**
+     * Group 16: object-level redaction for **every** log record, not only HTTP ones.
+     *
+     * The `redact.paths` list below is path-based and covers `req.*` / `res.*` only. That left service and
+     * worker logs — which carry provider payloads, PINs and DB coordinates — entirely unredacted. Measured,
+     * not assumed: a plain pino instance with these paths wrote
+     * `{ providerApiKey, customerPin, nested: { dbPassword } }` to the stream verbatim.
+     *
+     * `formatters.log` runs for every record from every logger, so it is the only place that can cover both
+     * HTTP and non-HTTP sinks. The redactor is the existing, already-adversarially-tested one; this hook only
+     * decides *where* it applies.
+     *
+     * Ordering matters: this runs **before** the `redact` paths, so `req`/`res` objects are already handled
+     * here, and the path-based list remains as defence in depth for shapes this walker might skip.
+     */
+    formatters: {
+      log: (object) => {
+        const redacted = redactSensitiveData(object);
+        // Fail closed. If the redactor ever returns a non-object (it returns `[REDACTED]` on budget
+        // exhaustion or an unexpected shape), emitting the original object would defeat the hook entirely.
+        return redacted !== null && typeof redacted === 'object' && !Array.isArray(redacted)
+          ? (redacted as Record<string, unknown>)
+          : { redactionFailure: true };
+      },
+    },
     genReqId: (request) => getRequestContext(request as unknown as FastifyRequest).requestId,
     redact: {
       paths: [

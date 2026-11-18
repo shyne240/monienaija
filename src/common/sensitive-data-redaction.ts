@@ -1020,8 +1020,56 @@ function redactObjectValue(
   return output;
 }
 
+/**
+ * Compound secret names that the exact-match list missed.
+ *
+ * Group 16 found this by writing a log and reading it: `{ agentPin, customerPin, dbPassword,
+ * providerApiKey }` passed through `redactSensitiveData` unchanged. The set above is an **exact** name
+ * match (`apikey`, `password`, `pin`), so a prefixed field — the normal way these appear in DTOs and
+ * provider payloads — was invisible to it. `agentPin` alone appears 32 times in this codebase.
+ *
+ * The fix is a bounded prefix rule rather than a suffix rule. A suffix rule ("anything ending in `pin`")
+ * would silently swallow legitimate columns like `pinAttemptCount` or `tokenCount` and change diagnostic
+ * output for non-secret data; a prefix rule over a fixed, named set of *qualifiers* only fires on the
+ * shapes this application actually uses, and adding a new one is a visible edit to this list.
+ */
+const SENSITIVE_KEY_QUALIFIERS = [
+  'agent',
+  'customer',
+  'user',
+  'staff',
+  'owner',
+  'admin',
+  'db',
+  'database',
+  'provider',
+  'banking',
+  'aggregator',
+  'partner',
+  'merchant',
+  'webhook',
+  'sms',
+  'email',
+  'resend',
+];
+
+/** Words that are secret on their own but too generic to match as a suffix. */
+const SENSITIVE_KEY_SUFFIXES = [
+  'pin',
+  'password',
+  'apikey',
+  'secret',
+  'accesstoken',
+  'refreshtoken',
+];
+
 function isObjectSensitiveKey(key: string): boolean {
-  return SENSITIVE_KEY_NAMES.has(normalizeKeyName(key));
+  const normalized = normalizeKeyName(key);
+  if (SENSITIVE_KEY_NAMES.has(normalized)) return true;
+  // `agentPin` -> `agent` + `pin`; `dbPassword` -> `db` + `password`.
+  return SENSITIVE_KEY_QUALIFIERS.some((qualifier) =>
+    SENSITIVE_KEY_SUFFIXES.some((suffix) => normalized === `${qualifier}${suffix}`),
+  );
 }
 
 function charAt(text: string, index: number): string {

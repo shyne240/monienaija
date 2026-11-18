@@ -15,7 +15,8 @@ Continuation record. Updated as each group lands; the workspace is the source of
 | Group 12                                    | `3e0c9985`    | Backup and restore exercise, executed and verified.                                     |
 | Groups 9, 10, 11                            | `62368a3b`    | Secret resolution and rotation, runtime/authority separation proof, migration workflow. |
 | Groups 13, 14                               | `cc6392a7`    | Recovery objectives and resume policy; outbox leases and dead letters.                  |
-| Group 15                                    | _this commit_ | Worker scheduling decision, supervision, `/internal/workers` observability.             |
+| Group 15                                    | `f8bb5fdd`    | Worker supervision without a second scheduler.                                          |
+| Group 16                                    | _this commit_ | Sink-level log redaction; compound secret names.                                        |
 
 Branch: `arena/defdd0fd-monienaija`. There is no upstream; push with `git push origin <branch>`.
 
@@ -354,6 +355,40 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 16 — structured logging and redaction at the sink
+
+`src/production/pino-config.ts`, `src/common/sensitive-data-redaction.ts`,
+`test/logging-redaction-at-sink.spec.ts` (11 assertions), and
+`docs/integration/STRUCTURED-LOGGING-AND-REDACTION.md`.
+
+**The configuration looked complete.** A long `redact.paths` list covered authorization headers, cookies,
+API keys and 31 `req.body.*` fields. Writing one log line and reading it showed two independent problems.
+
+**The paths only reached HTTP logs.** Every entry began `req.` or `res.`, so a service or worker log — which
+carries provider payloads, PINs and database coordinates — matched nothing. Measured with a plain pino
+instance using the production list, `{ providerApiKey, customerPin, nested: { dbPassword } }` was written
+verbatim.
+
+**The object redactor matched exact names only.** Its key list contains `apikey`/`password`/`pin`, so the
+compound names this codebase actually uses were invisible: `agentPin` (32 uses in `src/`), `customerPin`
+(10), `providerApiKey`, `dbPassword`. This was not only a logging defect: `redactRecord` shares that
+function and is used at **30 call sites**, including persisted audit metadata.
+
+**Fixes.** A `formatters.log` hook applies object redaction to every record from every logger — the only
+place that covers both HTTP and non-HTTP sinks — and **fails closed**, replacing a record with
+`{ redactionFailure: true }` if the redactor returns a non-object rather than emitting it unredacted. A
+bounded **prefix** rule over a named qualifier list (`agent`, `customer`, `db`, `provider`, …) is layered on
+the unchanged exact-match list. A suffix rule was rejected because it would swallow `pinAttemptCount` and
+`tokenCount`; the suite asserts those survive.
+
+**Both fixes were verified to be independently load-bearing** by reverting each: without the hook 5 of 11
+fail, without the prefix rule 6 of 11 fail, with both restored 11/11 pass. The tests emit **real log lines
+through a real pino instance**; a test that inspected the options object would have passed against the
+broken configuration.
+
+**Known limitation, stated in the runbook:** redaction is **name-based, not value-based**. A credential
+placed in a generically named field (`note`, `comment`) is not detected.
+
 ### Group 15 — worker scheduling and supervision
 
 `src/operations/worker-scheduler.service.ts`, `src/operations/worker-supervisor.service.ts`,
@@ -500,7 +535,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 16–40 remain: logging, metrics/health, integrity monitoring, alerting, admin operations
+Groups 17–40 remain: metrics/health, integrity monitoring, alerting, admin operations
 centre, operational security, break-glass, fraud/risk, compliance, complaints, disputes, mobile support,
 SMS/email, privacy/retention, performance harness, CI release gates, the PostgreSQL matrix, sandbox
 readiness, mobile release, browser acceptance, readiness gate, journeys A–J, consolidated acceptance, and
@@ -514,6 +549,11 @@ categories in one database.
 Known gaps carried forward from Group 12: no fixture seeds all eleven backup categories in one database;
 the restore requires superuser; and off-site storage, encryption at rest, retention and point-in-time
 recovery are infrastructure decisions that are not implemented.
+
+Known gaps from Group 16: no log shipping, aggregation, retention policy or sampling — those are deployment
+decisions, not implemented here. Redaction is name-based, so a secret in a generically named field is not
+caught; `redactionFailure` records are emitted but not counted, alerted on (Group 19) or exported as a metric
+(Group 17).
 
 Known gaps from Group 15: there is no fleet-wide scheduler, leader election or distributed cron, by design —
 each instance runs its own timers and correctness rests on the database mechanisms, so the supervisor
