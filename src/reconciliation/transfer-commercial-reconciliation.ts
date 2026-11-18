@@ -1,6 +1,11 @@
 import { COMMERCIAL_ACCOUNTING_ACCOUNT_CODES } from '../commercial-accounting/commercial-accounting-registry.service';
 import { CommercialAccountingFamilyRole } from '../commercial-accounting/commercial-accounting.enums';
 import { paymentRequestHash } from '../payment/payment-support';
+import { CommissionCalculator } from '../commission/commission.calculator';
+import type {
+  CommissionRuleDefinition,
+  CommissionTier,
+} from '../commission/commission-rule.entity';
 import type { TransferReconciliationTransferFact } from './transfer-reconciliation.types';
 
 /** Read-only rows from the same repeatable-read snapshot as principal reconciliation. */
@@ -268,6 +273,155 @@ export function evaluateTransferCommercial(
       error('Commission allocation is malformed');
     else {
       const nonzero = parsed.filter((a): a is Obj => !!a && (amount(a.amountMinor) ?? 0n) > 0n);
+      // Reuse the existing commission calculator with the immutable snapshot parameters;
+      // do not re-resolve today's rules or invent a second pricing policy. Missing historical
+      // calculation evidence cannot be certified, while contradictions are errors.
+      if (cd.commissionEvent === undefined) incomplete('Commission event evidence is unavailable');
+      else if (cd.commissionEvent !== 'TRANSACTION_COMPLETION')
+        error('Commission event is inconsistent with transfer completion');
+      for (const allocation of parsed) {
+        if (!allocation) continue;
+        const id = allocation.beneficiaryId;
+        if (allocation.beneficiaryType === 'AGENT' && (!id || typeof id !== 'string'))
+          incomplete('Commission beneficiary identity is unavailable');
+        else if (
+          allocation.beneficiaryType === 'AGENT' &&
+          transfer.quoteSourceType === 'AGENT' &&
+          id !== transfer.quoteSourceId
+        )
+          error('Commission beneficiary does not match the acting agent');
+        const params = obj(allocation.calculationParameters);
+        const model = allocation.calculationModel;
+        const basis = allocation.basis;
+        const refs = Array.isArray(cd.ruleRefs) ? cd.ruleRefs.map(obj) : [];
+        if (
+          !params ||
+          typeof model !== 'string' ||
+          typeof basis !== 'string' ||
+          typeof allocation.ruleId !== 'string' ||
+          !Number.isSafeInteger(allocation.ruleVersion)
+        ) {
+          incomplete('Commission calculation evidence is unavailable');
+          continue;
+        }
+        if (
+          !refs.some(
+            (ref) =>
+              ref?.ruleId === allocation.ruleId && ref?.ruleVersion === allocation.ruleVersion,
+          )
+        )
+          error('Commission allocation rule identity does not match its snapshot references');
+        const expectedBase =
+          basis === 'PRINCIPAL'
+            ? principal
+            : basis === 'FEE'
+              ? rawFee
+              : basis === 'NET' && principal !== null && rawFee !== null && principal >= rawFee
+                ? principal - rawFee
+                : null;
+        if (expectedBase === null) {
+          incomplete('Commission calculation basis is unsupported or unavailable');
+          continue;
+        }
+        if (!exact(allocation.baseAmountMinor, expectedBase.toString()))
+          error('Commission calculation base does not match the transfer');
+        const supported = [
+          'FIXED',
+          'PERCENTAGE',
+          'PERCENTAGE_MIN',
+          'PERCENTAGE_MAX',
+          'PERCENTAGE_MIN_MAX',
+          'FLAT_PLUS_PERCENTAGE',
+          'TIERED',
+        ];
+        if (!supported.includes(model)) {
+          incomplete('Commission calculation model is unsupported');
+          continue;
+        }
+        try {
+          const requiredAmounts: string[] = [];
+          if (model === 'FIXED' || model === 'FLAT_PLUS_PERCENTAGE')
+            requiredAmounts.push('flatCommissionMinor');
+          if (model === 'PERCENTAGE_MIN' || model === 'PERCENTAGE_MIN_MAX')
+            requiredAmounts.push('minimumCommissionMinor');
+          if (model === 'PERCENTAGE_MAX' || model === 'PERCENTAGE_MIN_MAX')
+            requiredAmounts.push('maximumCommissionMinor');
+          if (requiredAmounts.some((name) => amount(params[name]) === null))
+            throw new Error('invalid amount parameter');
+          if (model.startsWith('PERCENTAGE') || model === 'FLAT_PLUS_PERCENTAGE') {
+            if (
+              typeof params.percentageBps !== 'number' ||
+              !Number.isInteger(params.percentageBps) ||
+              params.percentageBps < 0 ||
+              params.percentageBps > 10000
+            )
+              throw new Error('invalid percentage parameter');
+          }
+          if (
+            model === 'PERCENTAGE_MIN_MAX' &&
+            amount(params.minimumCommissionMinor)! > amount(params.maximumCommissionMinor)!
+          )
+            throw new Error('invalid bounds');
+          const tiers: CommissionTier[] | null =
+            model === 'TIERED' && Array.isArray(params.tiers)
+              ? params.tiers.map((entry) => {
+                  const tier = obj(entry);
+                  if (
+                    !tier ||
+                    !(tier.upToMinor === null || typeof tier.upToMinor === 'string') ||
+                    !(tier.bps === null || typeof tier.bps === 'number') ||
+                    typeof tier.flatMinor !== 'string'
+                  )
+                    throw new Error('invalid tier evidence');
+                  return { upToMinor: tier.upToMinor, bps: tier.bps, flatMinor: tier.flatMinor };
+                })
+              : null;
+          const rule = {
+            calculationBasis: basis,
+            calculationModel: model,
+            flatCommissionMinor: params.flatCommissionMinor,
+            percentageBps: params.percentageBps,
+            minimumCommissionMinor: params.minimumCommissionMinor,
+            maximumCommissionMinor: params.maximumCommissionMinor,
+            tiers,
+          } as CommissionRuleDefinition;
+          const calculated = new CommissionCalculator().calculate(
+            rule,
+            expectedBase,
+            expectedBase.toString(),
+          );
+          if (!exact(calculated.amountMinor, allocation.amountMinor))
+            error('Commission amount does not match its calculation evidence');
+          if (model === 'TIERED') {
+            const computedTiers = calculated.appliedParameters.tiers;
+            if (
+              !Array.isArray(computedTiers) ||
+              !Array.isArray(params.tiers) ||
+              computedTiers.length !== params.tiers.length ||
+              computedTiers.some((entry, index) => {
+                const left = obj(entry),
+                  right = obj((params.tiers as unknown[])[index]);
+                return (
+                  !left ||
+                  !right ||
+                  [
+                    'index',
+                    'fromMinor',
+                    'upToMinor',
+                    'sliceMinor',
+                    'flatMinor',
+                    'bps',
+                    'bracketCommissionMinor',
+                  ].some((key) => left[key] !== right[key])
+                );
+              })
+            )
+              error('Commission tier evidence is inconsistent');
+          }
+        } catch {
+          error('Commission calculation evidence is malformed');
+        }
+      }
       const commission = nonzero.reduce((sum, a) => sum + amount(a.amountMinor)!, 0n);
       if (!nonzero.length) {
         if (cp?.journalLegsPosted === true) error('Zero commission has posted legs');

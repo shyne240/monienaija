@@ -1383,6 +1383,22 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
         [snapshots[0].id, JSON.stringify(snapshots[0].commission_decision)],
         /commission allocation and expense do not agree/i,
       );
+      await corruptAndRestore(
+        'commercial_decision_snapshots',
+        `UPDATE commercial_decision_snapshots SET commission_decision=jsonb_set(commission_decision,'{allocations,0,calculationParameters,percentageBps}','1100'::jsonb) WHERE id=$1`,
+        [snapshots[0].id],
+        `UPDATE commercial_decision_snapshots SET commission_decision=$2::jsonb WHERE id=$1`,
+        [snapshots[0].id, JSON.stringify(snapshots[0].commission_decision)],
+        /commission amount does not match its calculation evidence/i,
+      );
+      await corruptAndRestore(
+        'commercial_decision_snapshots',
+        `UPDATE commercial_decision_snapshots SET commission_decision=jsonb_set(commission_decision,'{allocations,0,beneficiaryId}',to_jsonb($2::text)) WHERE id=$1`,
+        [snapshots[0].id, randomUUID()],
+        `UPDATE commercial_decision_snapshots SET commission_decision=$2::jsonb WHERE id=$1`,
+        [snapshots[0].id, JSON.stringify(snapshots[0].commission_decision)],
+        /commission beneficiary does not match the acting agent/i,
+      );
       // Missing or inconsistent accounting registry evidence cannot be certified as PASS.
       await dataSource.query(
         `UPDATE commercial_accounting_registry SET account_type='EXPENSE' WHERE family_code='VAT_PAYABLE'`,

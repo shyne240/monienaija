@@ -140,12 +140,20 @@ function facts(): TransferCommercialFacts {
         commission_decision: {
           status: 'ALLOCATED',
           payable: true,
+          commissionEvent: 'TRANSACTION_COMPLETION',
+          ruleRefs: [{ ruleId: 'commission-rule', ruleVersion: 1 }],
           allocations: [
             {
               beneficiaryType: 'AGENT',
               beneficiaryId: 'agent',
               amountMinor: '100',
               currency: 'NGN',
+              basis: 'FEE',
+              baseAmountMinor: '1000',
+              calculationModel: 'PERCENTAGE',
+              calculationParameters: { percentageBps: 1000 },
+              ruleId: 'commission-rule',
+              ruleVersion: 1,
             },
           ],
           posting: {
@@ -292,6 +300,105 @@ describe('quoted transfer commercial reconciliation', () => {
     mutate(f);
     expect(errs(f).length).toBeGreaterThan(0);
   });
+  it('rejects coherently changed commission amounts when the recorded calculation is unchanged', () => {
+    const f = facts();
+    const decision = f.snapshots[0]!.commission_decision as {
+      allocations: Array<{
+        amountMinor: string;
+        beneficiaryId: string | null;
+        calculationParameters?: unknown;
+      }>;
+      posting: { expenseMinor: string; payableMinor: string };
+    };
+    decision.allocations[0]!.amountMinor = '101';
+    decision.posting.expenseMinor = '101';
+    decision.posting.payableMinor = '101';
+    f.lines[3]!.amount_minor = '101';
+    f.lines[4]!.amount_minor = '101';
+    f.journals[0]!.total_minor = '1176';
+    const metadata = f.journals[0]!.metadata as { legs: Array<{ amountMinor: string }> };
+    metadata.legs[3]!.amountMinor = '101';
+    metadata.legs[4]!.amountMinor = '101';
+    expect(
+      errs(f).some((issue) =>
+        /commission amount does not match its calculation/i.test(issue.message),
+      ),
+    ).toBe(true);
+  });
+  it('does not certify missing commission calculation or beneficiary evidence', () => {
+    const f = facts();
+    const decision = f.snapshots[0]!.commission_decision as {
+      allocations: Array<{
+        amountMinor: string;
+        beneficiaryId: string | null;
+        calculationParameters?: unknown;
+      }>;
+      posting: { expenseMinor: string; payableMinor: string };
+    };
+    delete decision.allocations[0]!.calculationParameters;
+    decision.allocations[0]!.beneficiaryId = null;
+    const warnings = evaluateTransferCommercial(transfer, f).filter(
+      (issue) => issue.severity === 'WARNING',
+    );
+    expect(
+      warnings.some((issue) => /calculation evidence is unavailable/i.test(issue.message)),
+    ).toBe(true);
+    expect(
+      warnings.some((issue) => /beneficiary identity is unavailable/i.test(issue.message)),
+    ).toBe(true);
+  });
+
+  it('rejects missing percentage parameters rather than implicitly treating them as zero', () => {
+    const f = facts();
+    const decision = f.snapshots[0]!.commission_decision as {
+      allocations: Array<{ calculationParameters: Record<string, unknown> }>;
+    };
+    delete decision.allocations[0]!.calculationParameters.percentageBps;
+    expect(errs(f).some((issue) => /calculation evidence is malformed/i.test(issue.message))).toBe(
+      true,
+    );
+  });
+  it('verifies marginal tier evidence using the existing calculator', () => {
+    const f = facts();
+    const decision = f.snapshots[0]!.commission_decision as {
+      allocations: Array<{
+        calculationModel: string;
+        calculationParameters: Record<string, unknown>;
+      }>;
+    };
+    decision.allocations[0]!.calculationModel = 'TIERED';
+    decision.allocations[0]!.calculationParameters = {
+      tiers: [
+        {
+          index: 0,
+          fromMinor: '0',
+          upToMinor: '500',
+          sliceMinor: '500',
+          flatMinor: '0',
+          bps: 1000,
+          bracketCommissionMinor: '50',
+        },
+        {
+          index: 1,
+          fromMinor: '500',
+          upToMinor: null,
+          sliceMinor: '500',
+          flatMinor: '0',
+          bps: 1000,
+          bracketCommissionMinor: '50',
+        },
+      ],
+    };
+    expect(evaluateTransferCommercial(transfer, f)).toEqual([]);
+    const tiers = decision.allocations[0]!.calculationParameters.tiers as Array<{
+      sliceMinor: string;
+    }>;
+    tiers[0]!.sliceMinor = '499';
+    expect(errs(f).some((issue) => /tier evidence is inconsistent/i.test(issue.message))).toBe(
+      true,
+    );
+  });
+
   it('does not claim pass when the approved registry cannot be verified', () => {
     const f = facts();
     f.registry = [];
