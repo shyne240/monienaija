@@ -3,6 +3,10 @@ import { DataSource, EntityManager } from 'typeorm';
 
 import { TransferStatus } from '../transfer/transfer.enums';
 import {
+  evaluateTransferCommercial,
+  type TransferCommercialFacts,
+} from './transfer-commercial-reconciliation';
+import {
   TransferReconciliationDiscrepancyCode,
   type TransferReconciliationAuditFact,
   type TransferReconciliationBatchReport,
@@ -181,10 +185,96 @@ export class TransferReconciliationService {
       journal,
       journalCandidates,
       commercialJournalCount,
+      commercial: transfer?.quoteSourceId
+        ? await this.loadCommercialFacts(manager, transferId, transfer.journalId)
+        : undefined,
       lines,
       outboxEvents,
       auditEvents,
     };
+  }
+
+  private async loadCommercialFacts(
+    manager: EntityManager,
+    transferId: string,
+    journalId: string | null,
+  ): Promise<TransferCommercialFacts> {
+    const key = `transfer:${transferId}`;
+    const quotes = await this.queryRows<SqlRow>(
+      manager,
+      `
+      SELECT q.id::text AS id,q.payment_type,q.status,q.used_at,q.currency,q.amount_minor::text,q.fee_minor::text,q.vat_minor::text,q.total_minor::text,
+             b.source_wallet_id::text,b.destination_wallet_id::text,b.source_ledger_id::text,b.destination_ledger_id::text,
+             b.principal_type,b.principal_id::text,b.recipient_type,b.recipient_id::text,b.pricing_hash,
+             t.fee_minor::text AS transfer_fee_minor,t.vat_minor::text AS transfer_vat_minor
+        FROM wallet_transfer_quote_bindings b JOIN payment_quotes q ON q.id=b.quote_id
+        JOIN transfers t ON t.id=b.transfer_id WHERE b.transfer_id=$1::uuid`,
+      [transferId],
+    );
+    const snapshots = await this.queryRows<SqlRow>(
+      manager,
+      `
+      SELECT id::text,idempotency_key,transaction_reference,correlation_id,journal_id::text,product,direction,decision_status,finalized_at,
+             principal_type,principal_id::text,currency,principal_amount_minor::text,fee_decision,commission_decision
+        FROM commercial_decision_snapshots WHERE idempotency_key=$1 OR transaction_reference=$2 OR journal_id=$3::uuid ORDER BY id`,
+      [key, transferId, journalId],
+    );
+    const postedJournalIds = new Set<string>();
+    for (const snapshot of snapshots) {
+      for (const decision of [snapshot.fee_decision, snapshot.commission_decision]) {
+        const posting = this.objectValue(this.objectValue(decision).posting);
+        if (
+          typeof posting.accountingJournalId === 'string' &&
+          UUID_PATTERN.test(posting.accountingJournalId)
+        )
+          postedJournalIds.add(posting.accountingJournalId);
+      }
+    }
+    const journals = await this.queryRows<SqlRow>(
+      manager,
+      `
+      SELECT id::text,idempotency_key,correlation_id,currency,accounting_unit,status,total_minor::text,metadata
+        FROM ledger_journals WHERE (metadata->>'accountingPurpose'='FEE_REVENUE_AND_COMMISSION' AND
+          (metadata->>'transferId'=$1 OR correlation_id=$2 OR metadata->>'snapshotIdempotencyKey'=$2))
+          OR idempotency_key=$3 OR id=ANY($4::uuid[]) ORDER BY id`,
+      [transferId, key, `${key}:commercial-accounting`, [...postedJournalIds]],
+    );
+    const lines = journals.length
+      ? await this.queryRows<SqlRow>(
+          manager,
+          `
+      SELECT journal_id::text,ledger_account_id::text AS account_id,direction,amount_minor::text,currency,accounting_unit
+        FROM ledger_lines WHERE journal_id=ANY($1::uuid[]) ORDER BY journal_id,line_number`,
+          [journals.map((j) => j.id)],
+        )
+      : [];
+    const registry = await this.queryRows<SqlRow>(
+      manager,
+      `
+      SELECT r.family_code,r.account_code,r.account_type,r.normal_balance,r.currency,r.accounting_unit,
+             a.id::text AS account_id,a.code AS ledger_code,a.account_type AS ledger_type,a.normal_balance AS ledger_normal_balance,
+             a.currency AS ledger_currency,a.accounting_unit AS ledger_unit
+        FROM commercial_accounting_registry r LEFT JOIN ledger_accounts a ON a.code=r.account_code`,
+    );
+    const owners = new Set<string>();
+    for (const snapshot of snapshots) {
+      const commission = this.objectValue(snapshot.commission_decision);
+      if (Array.isArray(commission.allocations))
+        for (const allocation of commission.allocations) {
+          const value = this.objectValue(allocation).beneficiaryId;
+          if (typeof value === 'string') owners.add(value);
+        }
+    }
+    const wallets = owners.size
+      ? await this.queryRows<SqlRow>(
+          manager,
+          `
+      SELECT customer_id,owner_class,currency,ledger_account_id::text FROM wallet_accounts
+       WHERE customer_id=ANY($1::text[])`,
+          [[...owners]],
+        )
+      : [];
+    return { quotes, snapshots, journals, lines, registry, wallets };
   }
 
   private toTransferFact(row: SqlRow): TransferReconciliationTransferFact {
@@ -337,7 +427,11 @@ export function evaluateTransferReconciliation(
       'ERROR',
       'The requested internal transfer does not exist',
     );
-    for (let index = 0; index < facts.journalCandidates.length; index += 1) {
+    for (
+      let index = 0;
+      index < facts.journalCandidates.length + (facts.commercialJournalCount ?? 0);
+      index += 1
+    ) {
       addDiscrepancy(
         discrepancies,
         facts,
@@ -350,7 +444,11 @@ export function evaluateTransferReconciliation(
   }
 
   if (transfer.status !== TransferStatus.COMPLETED) {
-    if (facts.journalCandidates.length > 0 || facts.journal) {
+    if (
+      facts.journalCandidates.length > 0 ||
+      facts.journal ||
+      (facts.commercialJournalCount ?? 0) > 0
+    ) {
       addDiscrepancy(
         discrepancies,
         facts,
@@ -362,7 +460,19 @@ export function evaluateTransferReconciliation(
     return makeReport(facts, generatedAt, discrepancies);
   }
 
-  if ((facts.commercialJournalCount ?? 0) > 0 || Boolean(transfer.quoteSourceId)) {
+  if (transfer.quoteSourceId && facts.commercial) {
+    for (const issue of evaluateTransferCommercial(transfer, facts.commercial)) {
+      addDiscrepancy(
+        discrepancies,
+        facts,
+        issue.severity === 'ERROR'
+          ? TransferReconciliationDiscrepancyCode.COMMERCIAL_EVIDENCE_MISMATCH
+          : TransferReconciliationDiscrepancyCode.COMMERCIAL_LEGS_NOT_RECONCILED,
+        issue.severity,
+        issue.message,
+      );
+    }
+  } else if ((facts.commercialJournalCount ?? 0) > 0 || Boolean(transfer.quoteSourceId)) {
     addDiscrepancy(
       discrepancies,
       facts,
@@ -619,6 +729,18 @@ function makeReport(
     sourceLedgerAccountId: transfer?.sourceLedgerAccountId ?? null,
     destinationLedgerAccountId: transfer?.destinationLedgerAccountId ?? null,
     journalId: transfer?.journalId ?? null,
+    commercialJournalIds: (facts.commercial?.journals ?? [])
+      .map((row) => row.id)
+      .filter((id): id is string => typeof id === 'string')
+      .sort(),
+    commercialSnapshotIds: (facts.commercial?.snapshots ?? [])
+      .map((row) => row.id)
+      .filter((id): id is string => typeof id === 'string')
+      .sort(),
+    quoteIds: (facts.commercial?.quotes ?? [])
+      .map((row) => row.id)
+      .filter((id): id is string => typeof id === 'string')
+      .sort(),
     outboxEventIds: facts.outboxEvents.map((event) => event.id).sort(),
     auditEventIds: facts.auditEvents.map((event) => event.id).sort(),
     correlationId: transfer?.correlationId ?? null,

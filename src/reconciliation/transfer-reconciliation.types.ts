@@ -1,4 +1,5 @@
 import type { TransferStatus } from '../transfer/transfer.enums';
+import type { TransferCommercialFacts } from './transfer-commercial-reconciliation';
 
 export type TransferReconciliationSeverity = 'WARNING' | 'ERROR';
 export type TransferReconciliationStatus = 'PASS' | 'WARNING' | 'ERROR';
@@ -24,6 +25,7 @@ export enum TransferReconciliationDiscrepancyCode {
   AUDIT_CORRELATION_MISMATCH = 'AUDIT_CORRELATION_MISMATCH',
   QUERY_UNAVAILABLE = 'QUERY_UNAVAILABLE',
   COMMERCIAL_LEGS_NOT_RECONCILED = 'COMMERCIAL_LEGS_NOT_RECONCILED',
+  COMMERCIAL_EVIDENCE_MISMATCH = 'COMMERCIAL_EVIDENCE_MISMATCH',
 }
 
 export interface TransferReconciliationDiscrepancy {
@@ -107,6 +109,8 @@ export interface TransferReconciliationFacts {
   journalCandidates: readonly TransferReconciliationJournalFact[];
   /** Correlated commercial journal candidates, not yet reconciled as individual legs. */
   commercialJournalCount?: number;
+  /** Omitted when commercial evidence was not loaded or is not applicable. */
+  commercial?: TransferCommercialFacts;
   lines: readonly TransferReconciliationLineFact[];
   outboxEvents: readonly TransferReconciliationOutboxFact[];
   auditEvents: readonly TransferReconciliationAuditFact[];
@@ -120,6 +124,9 @@ export interface TransferReconciliationTrace {
   sourceLedgerAccountId: string | null;
   destinationLedgerAccountId: string | null;
   journalId: string | null;
+  commercialJournalIds: string[];
+  commercialSnapshotIds: string[];
+  quoteIds: string[];
   outboxEventIds: string[];
   auditEventIds: string[];
   correlationId: string | null;

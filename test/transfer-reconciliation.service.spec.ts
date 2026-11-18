@@ -157,6 +157,29 @@ function expectCode(
 }
 
 describe('internal transfer reconciliation evaluation', () => {
+  it('rejects commercial journal evidence attached to a non-completed or missing transfer', () => {
+    expectCode(
+      makeFacts({
+        transfer: makeTransfer({ status: TransferStatus.FAILED }),
+        journal: null,
+        journalCandidates: [],
+        commercialJournalCount: 1,
+      }),
+      TransferReconciliationDiscrepancyCode.ORPHAN_JOURNAL,
+    );
+    const report = evaluateTransferReconciliation(
+      makeFacts({
+        transfer: null,
+        journal: null,
+        journalCandidates: [],
+        commercialJournalCount: 1,
+      }),
+    );
+    expect(report.status).toBe('ERROR');
+    expect(report.discrepancies.map((d) => d.code)).toContain(
+      TransferReconciliationDiscrepancyCode.ORPHAN_JOURNAL,
+    );
+  });
   it('warns rather than claiming full reconciliation for commercial journals or any quoted transfer', () => {
     for (const facts of [
       makeFacts({ commercialJournalCount: 1 }),

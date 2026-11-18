@@ -1088,10 +1088,8 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     );
     const reconciliation = app.get(TransferReconciliationService);
     expect(await reconciliation.reconcileTransfer(completed.id)).toMatchObject({
-      status: 'WARNING',
-      discrepancies: [
-        expect.objectContaining({ code: 'COMMERCIAL_LEGS_NOT_RECONCILED', severity: 'WARNING' }),
-      ],
+      status: 'PASS',
+      discrepancies: [],
     });
     expect(
       (await reconciliation.reconcileAll()).reports.map((report) => report.transfer?.id),
@@ -1437,10 +1435,8 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       expect(
         await app.get(TransferReconciliationService).reconcileTransfer(result.body.id as string),
       ).toMatchObject({
-        status: 'WARNING',
-        discrepancies: [
-          expect.objectContaining({ code: 'COMMERCIAL_LEGS_NOT_RECONCILED', severity: 'WARNING' }),
-        ],
+        status: 'PASS',
+        discrepancies: [],
       });
       return result.body.id as string;
     };

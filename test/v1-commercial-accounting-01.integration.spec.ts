@@ -1084,10 +1084,8 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       expect(
         await app.get(TransferReconciliationService).reconcileTransfer(transfer.id),
       ).toMatchObject({
-        status: 'WARNING',
-        discrepancies: [
-          expect.objectContaining({ code: 'COMMERCIAL_LEGS_NOT_RECONCILED', severity: 'WARNING' }),
-        ],
+        status: 'PASS',
+        discrepancies: [],
       });
     },
   );
@@ -1151,101 +1149,116 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     ).toEqual([{ status: 'ACTIVE', transfer_id: null }]);
   });
 
-  it('confirmed agent transfer posts fee VAT and class commission to the actual operating wallet', async () => {
-    configureAccounting({
-      COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT: 'AGENT_WALLET_NETTING',
-      COMMERCIAL_COMMISSION_RECOGNITION_TIMING: 'AT_COMPLETION',
-    });
-    await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1000', vatBps: 750 });
-    const { agent, cls, wallet } = await createActiveAgentWithPin(
-      [AgentService.WALLET_TRANSFER],
-      '1234',
-    );
-    await seedLimitProfile(
-      `P2PA_${randomUUID().slice(0, 6).toUpperCase()}`,
-      'AGENT',
-      agent.id,
-      'WALLET_TRANSFER',
-    );
-    await seedCommissionRule({
-      productCode: 'WALLET_TRANSFER',
-      percentageBps: 1000,
-      calculationBasis: 'FEE',
-      agentClassId: cls.id,
-    });
-    const recipient = await createWallet(await eligibleCustomerId());
-    await fundWallet(wallet.ledgerAccountId, '200000');
-    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
-    const quote = await app.get(TransferQuoteService).create(agentPrincipal(agent.id), {
-      destinationWalletId: recipient.id,
-      amountMinor: '50000',
-      currency: 'NGN',
-      idempotencyKey: randomUUID(),
-    });
-    expect(quote).toMatchObject({
-      sourceWalletId: wallet.id,
-      feeMinor: '1000',
-      vatMinor: '75',
-      totalDebitMinor: '51075',
-    });
-    const { OutboxEvent } = await import('../src/operations/outbox-event.entity');
-    const realOutbox = new OutboxService(dataSource.getRepository(OutboxEvent));
-    const spy = jest
-      .spyOn(throwingOutbox, 'enqueueOnce')
-      .mockImplementation((manager, event) => realOutbox.enqueueOnce(manager, event));
-    let transfer;
-    try {
-      transfer = await transferService.createConfirmedTransfer(
-        agentPrincipal(agent.id),
-        quote.quoteId,
-        randomUUID(),
+  it.each([
+    { treatment: 'AGENT_WALLET_NETTING', timing: 'AT_COMPLETION', balance: 149025n },
+    { treatment: 'EXPENSE_PAYABLE', timing: 'ACCRUE_NOW_SETTLE_LATER', balance: 148925n },
+  ])(
+    'confirmed agent transfer reconciles fee VAT and class commission under $treatment',
+    async ({ treatment, timing, balance }) => {
+      configureAccounting({
+        COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT: treatment,
+        COMMERCIAL_COMMISSION_RECOGNITION_TIMING: timing,
+      });
+      await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1000', vatBps: 750 });
+      const { agent, cls, wallet } = await createActiveAgentWithPin(
+        [AgentService.WALLET_TRANSFER],
         '1234',
       );
-    } finally {
-      spy.mockRestore();
-    }
-    expect(transfer.status).toBe('COMPLETED');
-    expect(await walletBalance(wallet.ledgerAccountId)).toBe(149025n);
-    expect(await walletBalance(recipient.ledgerAccountId)).toBe(50000n);
-    const journals = await accountingJournals();
-    expect(journals).toHaveLength(1);
-    const lines = await linesForJournal(journals[0].id);
-    expect(lines).toContainEqual({
-      direction: 'CREDIT',
-      amount_minor: '75',
-      account_code: ACCOUNT_LEGEND.VAT_PAYABLE,
-    });
-    expect(lines).toContainEqual({
-      direction: 'DEBIT',
-      amount_minor: '100',
-      account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE,
-    });
-    expect(lines).toContainEqual(
-      expect.objectContaining({ direction: 'CREDIT', amount_minor: '100' }),
-    );
-    const snapshots = await snapshotsFor('journal_id=$1', [transfer.journalId]);
-    expect(snapshots).toHaveLength(1);
-    expect(snapshots[0].commission_decision.allocations).toEqual(
-      expect.arrayContaining([
+      await seedLimitProfile(
+        `P2PA_${randomUUID().slice(0, 6).toUpperCase()}`,
+        'AGENT',
+        agent.id,
+        'WALLET_TRANSFER',
+      );
+      await seedCommissionRule({
+        productCode: 'WALLET_TRANSFER',
+        percentageBps: 1000,
+        calculationBasis: 'FEE',
+        agentClassId: cls.id,
+      });
+      const recipient = await createWallet(await eligibleCustomerId());
+      await fundWallet(wallet.ledgerAccountId, '200000');
+      const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+      const quote = await app.get(TransferQuoteService).create(agentPrincipal(agent.id), {
+        destinationWalletId: recipient.id,
+        amountMinor: '50000',
+        currency: 'NGN',
+        idempotencyKey: randomUUID(),
+      });
+      expect(quote).toMatchObject({
+        sourceWalletId: wallet.id,
+        feeMinor: '1000',
+        vatMinor: '75',
+        totalDebitMinor: '51075',
+      });
+      const { OutboxEvent } = await import('../src/operations/outbox-event.entity');
+      const realOutbox = new OutboxService(dataSource.getRepository(OutboxEvent));
+      const spy = jest
+        .spyOn(throwingOutbox, 'enqueueOnce')
+        .mockImplementation((manager, event) => realOutbox.enqueueOnce(manager, event));
+      let transfer;
+      try {
+        transfer = await transferService.createConfirmedTransfer(
+          agentPrincipal(agent.id),
+          quote.quoteId,
+          randomUUID(),
+          '1234',
+        );
+      } finally {
+        spy.mockRestore();
+      }
+      expect(transfer.status).toBe('COMPLETED');
+      expect(await walletBalance(wallet.ledgerAccountId)).toBe(balance);
+      expect(await walletBalance(recipient.ledgerAccountId)).toBe(50000n);
+      const journals = await accountingJournals();
+      expect(journals).toHaveLength(1);
+      const lines = await linesForJournal(journals[0].id);
+      expect(lines).toContainEqual({
+        direction: 'CREDIT',
+        amount_minor: '75',
+        account_code: ACCOUNT_LEGEND.VAT_PAYABLE,
+      });
+      expect(lines).toContainEqual({
+        direction: 'DEBIT',
+        amount_minor: '100',
+        account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE,
+      });
+      expect(lines).toContainEqual(
         expect.objectContaining({
-          beneficiaryType: 'AGENT',
-          beneficiaryId: agent.id,
-          amountMinor: '100',
+          direction: 'CREDIT',
+          amount_minor: '100',
+          ...(treatment === 'EXPENSE_PAYABLE'
+            ? { account_code: ACCOUNT_LEGEND.COMMISSION_PAYABLE }
+            : {}),
         }),
-      ]),
-    );
-    const { TransferReconciliationService } = await import(
-      '../src/reconciliation/transfer-reconciliation.service'
-    );
-    expect(
-      await app.get(TransferReconciliationService).reconcileTransfer(transfer.id),
-    ).toMatchObject({
-      status: 'WARNING',
-      discrepancies: [
-        expect.objectContaining({ code: 'COMMERCIAL_LEGS_NOT_RECONCILED', severity: 'WARNING' }),
-      ],
-    });
-  });
+      );
+      const snapshots = await snapshotsFor('journal_id=$1', [transfer.journalId]);
+      expect(snapshots).toHaveLength(1);
+      expect(snapshots[0].commission_decision.allocations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            beneficiaryType: 'AGENT',
+            beneficiaryId: agent.id,
+            amountMinor: '100',
+          }),
+        ]),
+      );
+      const { TransferReconciliationService } = await import(
+        '../src/reconciliation/transfer-reconciliation.service'
+      );
+      expect(
+        await app.get(TransferReconciliationService).reconcileTransfer(transfer.id),
+      ).toMatchObject({
+        status: 'PASS',
+        discrepancies: [],
+        trace: {
+          quoteIds: [quote.quoteId],
+          commercialJournalIds: [journals[0].id],
+          commercialSnapshotIds: [snapshots[0].id],
+        },
+      });
+    },
+  );
 
   it('concurrent confirmed transfer and agency cash-in share one operating balance safely', async () => {
     const { agent, wallet } = await createActiveAgentWithPin(
