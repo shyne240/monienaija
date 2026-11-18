@@ -293,6 +293,79 @@ describe('Group 20 — operations centre', () => {
     });
   });
 
+  describe('open fraud findings and a silent detector are both visible (Group 22)', () => {
+    function withFraud(posture: unknown) {
+      const built = build();
+      return new OperationsCentreService(
+        { manager: {} } as DataSource,
+        built.leases,
+        built.supervisor,
+        built.integrity as never,
+        new AlertingService(
+          { manager: {} } as DataSource,
+          built.leases,
+          built.supervisor,
+          built.integrity as never,
+        ),
+        undefined,
+        posture instanceof Error
+          ? ({ detectionPosture: () => Promise.reject(posture) } as never)
+          : ({ detectionPosture: () => Promise.resolve(posture) } as never),
+      );
+    }
+
+    it('lists unreviewed findings', async () => {
+      const service = withFraud({
+        lastPassAt: '2026-01-01T00:00:00.000Z',
+        lastRunAt: '2026-01-01T00:00:00.000Z',
+        lastStatus: 'PASS',
+        secondsSinceLastPass: 60,
+        openFindings: 2,
+      });
+      const view = await service.view();
+      const item = view.items.find((entry) => entry.id === 'fraud:open-findings');
+      expect(item?.area).toBe('FRAUD');
+      expect(item?.context).toMatchObject({ openFindings: 2 });
+    });
+
+    it('reports detection that never ran as unavailable, never as clean', async () => {
+      // "No findings" and "we did not look" are identical in a findings count, and only the second is
+      // dangerous. This is the Group 18 distinction applied to fraud.
+      const service = withFraud({
+        lastPassAt: null,
+        lastRunAt: null,
+        lastStatus: null,
+        secondsSinceLastPass: null,
+        openFindings: 0,
+      });
+      const view = await service.view();
+      expect(view.unavailable.map((entry) => entry.area)).toContain('FRAUD');
+      expect(view.partial).toBe(true);
+      expect(view.clear).toBe(false);
+    });
+
+    it('reports a stalled evaluator separately from finding volume', async () => {
+      // An evaluator that last passed days ago is an outage even when it found nothing; folding this into
+      // the findings item would make "no findings" look like good news.
+      const service = withFraud({
+        lastPassAt: '2026-01-01T00:00:00.000Z',
+        lastRunAt: '2026-01-01T00:00:00.000Z',
+        lastStatus: 'PASS',
+        secondsSinceLastPass: 90_000,
+        openFindings: 0,
+      });
+      const view = await service.view();
+      const stale = view.items.find((entry) => entry.id === 'fraud:detection-stale');
+      expect(stale?.urgency).toBe('IMMEDIATE');
+    });
+
+    it('treats an unreadable detector as unavailable', async () => {
+      const service = withFraud(new Error('db down'));
+      const view = await service.view();
+      expect(view.unavailable.map((entry) => entry.area)).toContain('FRAUD');
+    });
+  });
+
   describe('it is read-only and says so', () => {
     it('states that no remediation is offered', async () => {
       const { service } = build();

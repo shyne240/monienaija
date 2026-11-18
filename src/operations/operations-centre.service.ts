@@ -32,6 +32,7 @@ import { Injectable, Optional } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import type { EmergencyAccessReviewService } from '../authorization/emergency-access-review.service';
+import type { FraudDetectionService } from '../fraud/fraud-detection.service';
 import { AlertingService } from './alerting.service';
 import type { Alert, AlertUrgency } from './alerting.types';
 import { IntegrityMonitoringService } from './integrity-monitoring.service';
@@ -43,7 +44,7 @@ export interface AttentionItem {
   /** Stable identifier for this item, so repeated polls do not look like new items. */
   id: string;
   /** Which subsystem produced it. Fixed set; dashboards and filters key on this. */
-  area: 'INTEGRITY' | 'QUEUE' | 'WORKER' | 'SUPERVISION' | 'SECURITY';
+  area: 'INTEGRITY' | 'QUEUE' | 'WORKER' | 'SUPERVISION' | 'SECURITY' | 'FRAUD';
   urgency: AlertUrgency;
   severity: 'INFO' | 'WARNING' | 'CRITICAL';
   summary: string;
@@ -90,6 +91,11 @@ export class OperationsCentreService {
      * access is an additional signal rather than a precondition for the centre working at all.
      */
     @Optional() private readonly emergencyReviews?: EmergencyAccessReviewService,
+    /*
+     * Group 22. Optional for the same reason: the centre must stay constructible without the fraud module,
+     * and fraud findings are an additional signal rather than a precondition for the centre working.
+     */
+    @Optional() private readonly fraud?: FraudDetectionService,
   ) {}
 
   async view(): Promise<OperationsCentreView> {
@@ -205,6 +211,63 @@ export class OperationsCentreService {
         unavailable.push({
           area: 'SECURITY',
           reason: 'emergency access review state could not be read',
+        });
+      }
+    }
+
+    // --- Fraud (Group 22): open findings, and whether detection is actually running ---
+    if (this.fraud) {
+      try {
+        const posture = await this.fraud.detectionPosture();
+        /*
+         * Detection that has never passed is reported as unavailable, not as clean.
+         *
+         * This is the Group 18 distinction applied to fraud: "no findings" and "we did not look" look
+         * identical in a findings count, and only the second one is dangerous. A deployment with no rules
+         * configured, or an evaluator that stopped, would otherwise report a quiet fraud posture forever.
+         */
+        if (posture.lastPassAt === null) {
+          unavailable.push({
+            area: 'FRAUD',
+            reason:
+              posture.lastStatus === 'ERROR'
+                ? 'fraud detection last ran and failed'
+                : 'fraud detection has never completed',
+          });
+        } else {
+          if (posture.openFindings > 0) {
+            items.push({
+              id: 'fraud:open-findings',
+              area: 'FRAUD',
+              urgency: posture.openFindings >= 10 ? 'IMMEDIATE' : 'ROUTINE',
+              severity: 'WARNING',
+              summary: `${posture.openFindings} unreviewed fraud finding(s)`,
+              context: {
+                openFindings: posture.openFindings,
+                secondsSinceLastPass: posture.secondsSinceLastPass,
+              },
+            });
+          }
+          /*
+           * Staleness is reported separately from volume. An evaluator that last passed days ago is a
+           * detection outage even when it found nothing, and burying that inside the findings item would
+           * make "no findings" look like good news.
+           */
+          if (posture.secondsSinceLastPass !== null && posture.secondsSinceLastPass >= 86_400) {
+            items.push({
+              id: 'fraud:detection-stale',
+              area: 'FRAUD',
+              urgency: 'IMMEDIATE',
+              severity: 'WARNING',
+              summary: 'fraud detection has not completed in over 24 hours',
+              context: { secondsSinceLastPass: posture.secondsSinceLastPass },
+            });
+          }
+        }
+      } catch {
+        unavailable.push({
+          area: 'FRAUD',
+          reason: 'fraud detection state could not be read',
         });
       }
     }

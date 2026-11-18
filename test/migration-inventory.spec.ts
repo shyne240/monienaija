@@ -65,12 +65,12 @@ describe('migration inventory', () => {
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at the emergency access review migration', () => {
-    // ARENA 3D Group 21 superseded the integrity snapshots migration as the newest. Earlier identifiers remain
-    // present and unchanged (asserted below); only the "latest" pin moves.
+  it('ends at the fraud risk signals migration', () => {
+    // ARENA 3D Group 22 superseded the emergency access review migration as the newest. Earlier identifiers
+    // remain present and unchanged (asserted below); only the "latest" pin moves.
     expect(migrations.at(-1)).toMatchObject({
-      timestamp: '1785753600608',
-      name: 'EmergencyAccessReviewRequirement1785753600608',
+      timestamp: '1785753600609',
+      name: 'FraudRiskSignals1785753600609',
     });
   });
 

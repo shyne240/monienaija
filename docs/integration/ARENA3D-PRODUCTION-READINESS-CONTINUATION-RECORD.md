@@ -6,22 +6,23 @@ Continuation record. Updated as each group lands; the workspace is the source of
 
 ## 1. Checkpoints
 
-| Point                                       | Commit        | Notes                                                                                   |
-| ------------------------------------------- | ------------- | --------------------------------------------------------------------------------------- |
-| Mission start (accepted banking checkpoint) | `e0e0d550`    | Conditional engineering acceptance of the banking mission. Local == remote, clean tree. |
-| Groups 3, 2, 4/5                            | `e20b3116`    | Financial completeness and unresolved-funds visibility.                                 |
-| Group 7                                     | `9b04c45c`    | Containers, admin-web loopback guard, mobile fail-closed endpoint.                      |
-| Group 8                                     | `5670bc97`    | 152/152 environment keys inventoried and classified; completeness test.                 |
-| Group 12                                    | `3e0c9985`    | Backup and restore exercise, executed and verified.                                     |
-| Groups 9, 10, 11                            | `62368a3b`    | Secret resolution and rotation, runtime/authority separation proof, migration workflow. |
-| Groups 13, 14                               | `cc6392a7`    | Recovery objectives and resume policy; outbox leases and dead letters.                  |
-| Group 15                                    | `f8bb5fdd`    | Worker supervision without a second scheduler.                                          |
-| Group 16                                    | `6451a5c2`    | Sink-level log redaction; compound secret names.                                        |
-| Group 17                                    | `40766952`    | Operational metrics; DLQ and worker signals finally have a consumer.                    |
-| Group 18                                    | `f2a63c0d`    | Integrity snapshots and drift detection.                                                |
-| Group 19                                    | `0fe477bc`    | Alert contract, deduplication, flap suppression, dark delivery default.                 |
-| Group 20                                    | `90b06a4f`    | Operations centre: one ranked read-only view of what needs attention.                   |
-| Group 21                                    | _this commit_ | Break-glass post-incident review, enforced by constraint rather than convention.        |
+| Point                                       | Commit        | Notes                                                                                    |
+| ------------------------------------------- | ------------- | ---------------------------------------------------------------------------------------- |
+| Mission start (accepted banking checkpoint) | `e0e0d550`    | Conditional engineering acceptance of the banking mission. Local == remote, clean tree.  |
+| Groups 3, 2, 4/5                            | `e20b3116`    | Financial completeness and unresolved-funds visibility.                                  |
+| Group 7                                     | `9b04c45c`    | Containers, admin-web loopback guard, mobile fail-closed endpoint.                       |
+| Group 8                                     | `5670bc97`    | 152/152 environment keys inventoried and classified; completeness test.                  |
+| Group 12                                    | `3e0c9985`    | Backup and restore exercise, executed and verified.                                      |
+| Groups 9, 10, 11                            | `62368a3b`    | Secret resolution and rotation, runtime/authority separation proof, migration workflow.  |
+| Groups 13, 14                               | `cc6392a7`    | Recovery objectives and resume policy; outbox leases and dead letters.                   |
+| Group 15                                    | `f8bb5fdd`    | Worker supervision without a second scheduler.                                           |
+| Group 16                                    | `6451a5c2`    | Sink-level log redaction; compound secret names.                                         |
+| Group 17                                    | `40766952`    | Operational metrics; DLQ and worker signals finally have a consumer.                     |
+| Group 18                                    | `f2a63c0d`    | Integrity snapshots and drift detection.                                                 |
+| Group 19                                    | `0fe477bc`    | Alert contract, deduplication, flap suppression, dark delivery default.                  |
+| Group 20                                    | `90b06a4f`    | Operations centre: one ranked read-only view of what needs attention.                    |
+| Group 21                                    | `7420586a`    | Break-glass post-incident review, enforced by constraint rather than convention.         |
+| Group 22                                    | _this commit_ | Fraud/risk signals: detection separated from financial authority; no invented threshold. |
 
 Branch: `arena/defdd0fd-monienaija`. There is no upstream; push with `git push origin <branch>`.
 
@@ -359,6 +360,60 @@ about what the runtime can do. Verified:
 The mirror-image assertions matter: a boundary that denies everything is broken provisioning, not a
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
+
+### Group 22 — fraud and risk signals
+
+`src/migrations/1785753600609-FraudRiskSignals.ts`, `src/fraud/fraud-detection.service.ts`,
+`src/fraud/fraud.module.ts`, `test/fraud-detection.integration.spec.ts` (22 integration assertions),
+4 unit assertions in `test/operations-centre.spec.ts`, and `docs/integration/FRAUD-AND-RISK.md`.
+
+**Risk was already enforced; pattern detection was absent.** `CapabilityPolicyService.evaluateRisk` consumes
+`CustomerRiskProfileService` and DENY/PENDING_REVIEWs on `CRITICAL`, stale, missing or legacy-`PROHIBITED`
+levels — real enforcement, not duplicated here. `LimitEnforcementService` enforces fixed pre-approved ceilings
+including `DAILY_COUNT`/`DAILY_AMOUNT`. What did not exist: velocity, duplicate-shape, or any record of what
+fired and how it was dispositioned. A daily limit is a ceiling, not a signal — five transfers of 10,000 under
+a 100,000 limit are invisible.
+
+**Detection is separated from financial authority.** A finding cannot stop money. Blocking remains with
+limits, capability policy, balances and authorization. The migration has **no blocking verdict value** —
+`escalation` is `OBSERVE` or `REVIEW_QUEUE` only — because a heuristic that also refused transfers would be a
+second unaccountable authority over customer funds whose behaviour changes when a threshold is tuned, and
+velocity/duplicate rules have predictable false positives (salary in three parts, institutional bulk pay).
+
+**Findings dedupe at the source, not at the aggregation layer.** Group 20 fixed that class of bug by filtering
+duplicates downstream; here `dedupe_key` is unique and a repeat observation refreshes the open finding. Two
+consequences: a refresh is **not** counted as a new finding (`xmax = 0` distinguishes the insert branch from
+the update branch — without it the run summary over-reports), and `observed_count` rising on one finding shows
+escalation that duplicate rows would hide.
+
+**A corrected test caught a test that would have passed for the wrong reason.** The dedupe test initially gave
+all three runs the same `now`, so a dedupe key that wrongly included the run time would still have collided
+and the suite stayed green under mutation. Advancing the clock between runs made the mutation fail exactly the
+two dedupe tests; restoring returned 22/22. Recorded because "green under mutation" is not the same as "the
+guard is load-bearing", and the first mutation I tried (`DO NOTHING`) also left the suite green because it
+returns no row at all — a bad mutation looks exactly like a good guard.
+
+**A run that did not look is not a clean run.** `fraud_evaluation_runs` records every evaluation including
+failures. The operations centre reports detection that never completed as `FRAUD` `unavailable` (forcing
+`partial`, never `clear`) and a stalled evaluator as a separate `IMMEDIATE` item from finding volume — folding
+staleness into the findings item would make "no findings" look like good news.
+
+**Findings are append-only evidence:** DELETE refused by trigger; observation columns immutable; disposition
+changeable; `DISMISSED`/`ESCALATED` cannot return to `OPEN`; dismissal needs a reason; reviewed status needs a
+named reviewer and timestamp; a dismissed finding is not re-raised by the same rule and bucket. `down()`
+refuses while any finding exists.
+
+**Thresholds are configuration, and out of the box the system detects nothing — and says so.** All windows,
+counts and amounts live in `fraud_signal_rules`; there is a test asserting `rulesEvaluated: 0` with no rules,
+because a hard-coded plausible value would dress an invented policy as an implemented control. `NEW_DESTINATION`
+is a declared type that never fires: a genuine new-destination check needs durable first-seen history, and the
+approximation would fire on every quiet customer's first payment.
+
+Known gaps from Group 22: no rule is configured until the product owner sets thresholds; no blocking or
+automatic hold by design; **no scheduled invocation** — this is the same outstanding Group 15 requirement that
+supervision is not execution; no automatic compliance-case creation (`REVIEW_QUEUE` is recorded, not acted on);
+no HTTP surface (deciding who may read fraud data is a policy decision); no sanctions/watchlist/device
+controls; `MAX_FACTS_PER_RUN` bounds a run to 5,000 facts, so a busy deployment needs windowed evaluation.
 
 ### Group 21 — operational security: break-glass review
 
@@ -736,7 +791,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 22–40 remain: fraud/risk, compliance, complaints, disputes, mobile support,
+Groups 23–40 remain: compliance, complaints, disputes, mobile support,
 SMS/email, privacy/retention, performance harness, CI release gates, the PostgreSQL matrix, sandbox
 readiness, mobile release, browser acceptance, readiness gate, journeys A–J, consolidated acceptance, and
 the final handoff.
