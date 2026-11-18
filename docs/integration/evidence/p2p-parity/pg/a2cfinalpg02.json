@@ -726,44 +726,128 @@
       "finished": "2026-11-18T21:59:23.850Z"
     },
     "test/mission-25o-credential-binding-upgrade.integration.spec.ts": {
-      "status": "RUNNING",
-      "started": "2026-11-18T21:59:23.850Z"
+      "status": "PASS",
+      "started": "2026-11-18T21:59:23.850Z",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:59:35.847Z"
     },
     "test/mission-25o-credential-binding.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:59:35.848Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:00:34.347Z"
     },
     "test/notification-migration-upgrade-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:00:34.348Z",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:00:46.768Z"
     },
     "test/notification-registry.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:00:46.769Z",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:01:19.875Z"
     },
     "test/notification-reliability.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:01:19.876Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:02:12.704Z"
     },
     "test/p0-p1-security-remediation.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:02:12.705Z",
+      "passed": 41,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:02:32.493Z"
     },
     "test/phase1-agent-security.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:02:32.494Z",
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:02:52.981Z"
     },
     "test/protected-authority-boundary.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:02:52.982Z",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:03:14.469Z"
     },
     "test/report26-correlation-persistence.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:03:14.471Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:03:27.043Z"
     },
     "test/s-fix-01-customer-lifecycle-authorization.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:03:27.044Z",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:03:53.387Z"
     },
     "test/sms-v1-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:03:53.388Z",
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:04:26.143Z"
     },
     "test/stage10-recovery-migration.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:04:26.143Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:04:42.396Z"
     },
     "test/stage8-financial-engine-migration.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "RUNNING",
+      "started": "2026-11-18T22:04:42.397Z"
     },
     "test/transaction-boundary.integration.spec.ts": {
       "status": "PENDING"
