@@ -429,6 +429,88 @@ describe('Group 20 — operations centre', () => {
     });
   });
 
+  describe('disputes distinguish what is owed from what is merely open (Group 24)', () => {
+    function withDisputes(posture: unknown) {
+      const built = build();
+      return new OperationsCentreService(
+        { manager: {} } as DataSource,
+        built.leases,
+        built.supervisor,
+        built.integrity as never,
+        new AlertingService(
+          { manager: {} } as DataSource,
+          built.leases,
+          built.supervisor,
+          built.integrity as never,
+        ),
+        undefined,
+        undefined,
+        undefined,
+        posture instanceof Error
+          ? ({ outstandingPosture: () => Promise.reject(posture) } as never)
+          : ({ outstandingPosture: () => Promise.resolve(posture) } as never),
+      );
+    }
+
+    it('reports an un-informed claimant as immediate, because that is the regulatory complaint', async () => {
+      const service = withDisputes({
+        undecided: 0,
+        oldestUndecidedAgeSeconds: null,
+        decidedNotInformed: 1,
+        awardedNotExecuted: 0,
+        totalOpen: 1,
+      });
+      const view = await service.view();
+      const item = view.items.find((entry) => entry.id === 'disputes:decided-not-informed');
+      expect(item?.area).toBe('DISPUTES');
+      expect(item?.urgency).toBe('IMMEDIATE');
+    });
+
+    it('reports an unexecuted award separately from an uninformed claimant', async () => {
+      // Different populations, different actions. Collapsing them would hide one behind the other.
+      const service = withDisputes({
+        undecided: 0,
+        oldestUndecidedAgeSeconds: null,
+        decidedNotInformed: 0,
+        awardedNotExecuted: 3,
+        totalOpen: 3,
+      });
+      const view = await service.view();
+      expect(view.items.some((entry) => entry.id === 'disputes:award-not-executed')).toBe(true);
+      expect(view.items.some((entry) => entry.id === 'disputes:decided-not-informed')).toBe(false);
+    });
+
+    it('escalates an undecided dispute only once it is a week old', async () => {
+      const recent = withDisputes({
+        undecided: 4,
+        oldestUndecidedAgeSeconds: 3_600,
+        decidedNotInformed: 0,
+        awardedNotExecuted: 0,
+        totalOpen: 4,
+      });
+      const old = withDisputes({
+        undecided: 1,
+        oldestUndecidedAgeSeconds: 700_000,
+        decidedNotInformed: 0,
+        awardedNotExecuted: 0,
+        totalOpen: 1,
+      });
+
+      expect((await recent.view()).items.find((i) => i.id === 'disputes:undecided')?.urgency).toBe(
+        'ROUTINE',
+      );
+      expect((await old.view()).items.find((i) => i.id === 'disputes:undecided')?.urgency).toBe(
+        'IMMEDIATE',
+      );
+    });
+
+    it('treats an unreadable dispute posture as unavailable', async () => {
+      const service = withDisputes(new Error('db down'));
+      const view = await service.view();
+      expect(view.unavailable.map((entry) => entry.area)).toContain('DISPUTES');
+    });
+  });
+
   describe('it is read-only and says so', () => {
     it('states that no remediation is offered', async () => {
       const { service } = build();

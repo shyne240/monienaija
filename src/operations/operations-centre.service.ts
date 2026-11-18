@@ -34,6 +34,7 @@ import { DataSource } from 'typeorm';
 import type { EmergencyAccessReviewService } from '../authorization/emergency-access-review.service';
 import type { ComplianceAuditExportService } from '../compliance/compliance-audit-export.service';
 import type { FraudDetectionService } from '../fraud/fraud-detection.service';
+import type { DisputeService } from '../disputes/dispute.service';
 import { AlertingService } from './alerting.service';
 import type { Alert, AlertUrgency } from './alerting.types';
 import { IntegrityMonitoringService } from './integrity-monitoring.service';
@@ -45,7 +46,15 @@ export interface AttentionItem {
   /** Stable identifier for this item, so repeated polls do not look like new items. */
   id: string;
   /** Which subsystem produced it. Fixed set; dashboards and filters key on this. */
-  area: 'INTEGRITY' | 'QUEUE' | 'WORKER' | 'SUPERVISION' | 'SECURITY' | 'FRAUD' | 'COMPLIANCE';
+  area:
+    | 'INTEGRITY'
+    | 'QUEUE'
+    | 'WORKER'
+    | 'SUPERVISION'
+    | 'SECURITY'
+    | 'FRAUD'
+    | 'COMPLIANCE'
+    | 'DISPUTES';
   urgency: AlertUrgency;
   severity: 'INFO' | 'WARNING' | 'CRITICAL';
   summary: string;
@@ -100,6 +109,8 @@ export class OperationsCentreService {
     /* Group 23. Optional for the same reason: compliance posture is an additional signal, not a
      * precondition for the centre working. */
     @Optional() private readonly compliance?: ComplianceAuditExportService,
+    /* Group 24. */
+    @Optional() private readonly disputes?: DisputeService,
   ) {}
 
   async view(): Promise<OperationsCentreView> {
@@ -321,6 +332,54 @@ export class OperationsCentreService {
         unavailable.push({
           area: 'COMPLIANCE',
           reason: 'compliance posture could not be read',
+        });
+      }
+    }
+
+    // --- Disputes (Group 24): what is owed, separately from what is merely open ---
+    if (this.disputes) {
+      try {
+        const posture = await this.disputes.outstandingPosture();
+        /*
+         * Three distinct populations, reported separately because they need different actions. Collapsing
+         * them into one "open disputes" count would hide the two that are actually failures: a customer who
+         * has not been told the outcome, and an award that has not been paid.
+         */
+        if (posture.undecided > 0) {
+          const oldest = posture.oldestUndecidedAgeSeconds;
+          items.push({
+            id: 'disputes:undecided',
+            area: 'DISPUTES',
+            urgency: oldest !== null && oldest >= 604_800 ? 'IMMEDIATE' : 'ROUTINE',
+            severity: 'WARNING',
+            summary: `${posture.undecided} dispute(s) awaiting a decision`,
+            context: { undecided: posture.undecided, oldestUndecidedSeconds: oldest },
+          });
+        }
+        if (posture.decidedNotInformed > 0) {
+          items.push({
+            id: 'disputes:decided-not-informed',
+            area: 'DISPUTES',
+            urgency: 'IMMEDIATE',
+            severity: 'WARNING',
+            summary: `${posture.decidedNotInformed} dispute(s) decided but the claimant has not been told`,
+            context: { decidedNotInformed: posture.decidedNotInformed },
+          });
+        }
+        if (posture.awardedNotExecuted > 0) {
+          items.push({
+            id: 'disputes:award-not-executed',
+            area: 'DISPUTES',
+            urgency: 'IMMEDIATE',
+            severity: 'WARNING',
+            summary: `${posture.awardedNotExecuted} dispute award(s) recorded but not executed`,
+            context: { awardedNotExecuted: posture.awardedNotExecuted },
+          });
+        }
+      } catch {
+        unavailable.push({
+          area: 'DISPUTES',
+          reason: 'dispute posture could not be read',
         });
       }
     }

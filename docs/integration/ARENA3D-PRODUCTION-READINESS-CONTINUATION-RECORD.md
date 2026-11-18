@@ -362,6 +362,53 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 24 — complaints and transaction disputes
+
+`src/migrations/1785753600611-ComplaintsAndDisputes.ts`, `src/disputes/dispute.service.ts`,
+`src/disputes/disputes.module.ts`, `test/disputes.integration.spec.ts` (39 integration assertions),
+4 unit assertions in `test/operations-centre.spec.ts`, and `docs/integration/COMPLAINTS-AND-DISPUTES.md`.
+
+**`SupportService` is a helpdesk, not a disputes register.** It has tickets, categories, assignment, threads and
+status, and `related_transfer_id` even points at a transaction. But a ticket is a conversation; a dispute is a
+claim with a decidable outcome against an identified transaction, for a stated amount, under a stated grounds,
+where a refusal is a first-class outcome and where closing requires the claimant to have been told. Searches
+for "complaint", "redress" and "chargeback" returned nothing outside commercial-governance constants, so the
+object was genuinely missing.
+
+**A dispute cannot move money, and the schema makes that structural.** An upheld decision credits nobody and
+touches no journal; it records an amount owed and points at the governed path — `LedgerReversalGovernance` or
+the approval machinery — that must execute it. There is no journal, wallet or credit-account column anywhere in
+the table, `remedy_execution_reference` is a pointer and never an authorization, and `DisputesModule`
+deliberately does not import `LedgerModule`. A test completes a full upheld lifecycle and asserts that
+`ledger_journals` and `ledger_lines` are unchanged. The alternative is the hole this avoids: a support agent
+with dispute rights would hold an unaudited path to customer funds that bypasses reversal governance.
+
+**An upheld award needs two people, enforced by CHECK.** The adjudicator must differ from the raiser and from
+the investigator; removing the constraint failed exactly the DB-layer test and nothing else, so the guard is
+load-bearing rather than decorative. A rejection has no such requirement: a decision owing nothing is not a
+financial act.
+
+**The award must match the outcome** (full = claim, partial strictly between zero and the claim, rejected and
+withdrawn = zero), in the service and in the schema. **The claim is immutable** — otherwise the award rules
+could be satisfied by editing the claim instead of honouring it, a full uphold of 1 naira against a rewritten
+claim. **The decision is final**: outcome, award and adjudicator cannot change after the fact.
+
+**Closure requires that the claimant was told**, and that any award was executed. This is the substantive rule
+of the group: an un-informed customer is not a resolved case, it is the regulatory complaint, and closure is
+the moment everyone stops looking. Correspondence distinguishes an internal note from a communication to the
+customer, because conflating them is how a bank convinces itself it informed someone who heard nothing.
+
+The operations centre reports **three separate populations** — undecided, decided-not-informed,
+awarded-not-executed — each `IMMEDIATE` except undecided-until-a-week-old. Collapsing them into one "open
+disputes" number would hide the two that are actual failures.
+
+Known gaps from Group 24: no HTTP surface (customer-raise and staff-decide need different authorization
+policies, and an upheld decision needs a financial-control policy — all access decisions this group does not
+make); `recordRemedyExecution` records a reference but cannot verify the ledger execution without trusting its
+own write; no appeal or regression claim; no card-scheme or ombudsman escalation; no dispute SLA (age is
+reported, the correct deadline is a regulatory decision); no customer-facing status view; `down()` refuses once
+any dispute exists.
+
 ### Group 23 — compliance readiness: evidence export and case age
 
 `src/migrations/1785753600610-ComplianceRegister.ts`, `src/compliance/compliance-audit-export.service.ts`,
@@ -840,7 +887,7 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 24–40 remain: complaints, disputes, mobile support,
+Groups 25–40 remain: mobile support,
 SMS/email, privacy/retention, performance harness, CI release gates, the PostgreSQL matrix, sandbox
 readiness, mobile release, browser acceptance, readiness gate, journeys A–J, consolidated acceptance, and
 the final handoff.

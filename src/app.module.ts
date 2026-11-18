@@ -67,6 +67,7 @@ import { MaturityModule } from './maturity/maturity.module';
 import { OperationsModule } from './operations/operations.module';
 import { FraudModule } from './fraud/fraud.module';
 import { ComplianceModule } from './compliance/compliance.module';
+import { DisputesModule } from './disputes/disputes.module';
 import { PaymentModule } from './payment/payment.module';
 import { PartnerModule } from './partner/partner.module';
 import { ProductionModule } from './production/production.module';
@@ -173,6 +174,8 @@ import { ProtectedAuthorityModule } from './authorization/protected-authority.mo
     FraudModule,
     // ARENA 3D Group 23: compliance register and audit evidence export.
     ComplianceModule,
+    // ARENA 3D Group 24: complaints and transaction disputes.
+    DisputesModule,
     PartnerModule,
     PaymentModule,
     ProductionModule,
