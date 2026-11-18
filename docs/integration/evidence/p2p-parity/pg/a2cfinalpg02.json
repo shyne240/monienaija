@@ -6,44 +6,128 @@
   "resumeFrom": [],
   "suites": {
     "test/a10-agent-service-capability.integration.spec.ts": {
-      "status": "RUNNING",
-      "started": "2026-11-18T21:22:31.912Z"
+      "status": "PASS",
+      "started": "2026-11-18T21:22:31.912Z",
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:23:11.129Z"
     },
     "test/a11-agent-transaction-authorization.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:23:11.129Z",
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:23:30.138Z"
     },
     "test/a12-agent-financial-execution.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:23:30.139Z",
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:23:49.352Z"
     },
     "test/a13-agent-cash-in.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:23:49.352Z",
+      "passed": 33,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:24:10.963Z"
     },
     "test/a14-agent-cash-out.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:24:10.963Z",
+      "passed": 33,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:24:43.629Z"
     },
     "test/a14-otp-hardening.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:24:43.630Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:25:06.372Z"
     },
     "test/a15-agent-cash-to-cash.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:25:06.373Z",
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:25:29.020Z"
     },
     "test/a16-agent-cash-to-cash-claim.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:25:29.020Z",
+      "passed": 95,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:26:41.336Z"
     },
     "test/a17-agent-cash-to-cash-expiry.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:26:41.337Z",
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:27:09.113Z"
     },
     "test/a18-aggregator-foundation.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:27:09.114Z",
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:27:27.508Z"
     },
     "test/a19-agent-funding.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:27:27.509Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:27:46.977Z"
     },
     "test/a2-workforce-session.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T21:27:46.978Z",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:28:28.189Z"
     },
     "test/a20-outlets-terminals.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "RUNNING",
+      "started": "2026-11-18T21:28:28.190Z"
     },
     "test/a21-agent-app.integration.spec.ts": {
       "status": "PENDING"
