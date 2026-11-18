@@ -1332,6 +1332,97 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     ).toBe(90000n);
   });
 
+  it('authenticated HTTP transfer and cash-in share the agent operating wallet under concurrency', async () => {
+    const { agent, wallet } = await createActiveAgentWithPin(
+      [AgentService.WALLET_TRANSFER, AgentService.CASH_IN],
+      '1234',
+    );
+    await dataSource.query(
+      `UPDATE agent_authentication_credentials SET password_hash=$2 WHERE agent_id=$1 AND status='ACTIVE'`,
+      [agent.id, hashPin('agent-pass')],
+    );
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId: agent.id, password: 'agent-pass' })
+      .expect(200);
+    const bearer = `Bearer ${login.body.accessToken as string}`;
+    await seedLimitProfile(
+      `P2PH_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'WALLET_TRANSFER',
+    );
+    const destination = await createWallet(await eligibleCustomerId());
+    const phone = newPhone();
+    const cashRecipient = await createCustomerWithPhone(phone);
+    await seedLimitProfile(
+      `P2PI_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      cashRecipient.customerId,
+      'CASH_TO_WALLET',
+    );
+    await fundWallet(wallet.ledgerAccountId, '100000');
+    const quote = async () =>
+      request(app.getHttpServer())
+        .post('/api/v1/agents/me/transfer-quotes')
+        .set('Authorization', bearer)
+        .set('Idempotency-Key', randomUUID())
+        .send({ destinationWalletId: destination.id, amountMinor: '30000', currency: 'NGN' })
+        .expect(201);
+    const transfer = (quoteId: string, key: string) =>
+      request(app.getHttpServer())
+        .post(`/api/v1/agents/me/transfer-quotes/${quoteId}/confirm`)
+        .set('Authorization', bearer)
+        .set('Idempotency-Key', key)
+        .send({ pin: '1234' });
+    const cashIn = (key: string) =>
+      request(app.getHttpServer())
+        .post('/api/v1/agents/cash-in')
+        .set('Authorization', bearer)
+        .send({
+          recipientIdentifier: phone,
+          amountMinor: '30000',
+          currency: 'NGN',
+          idempotencyKey: key,
+          pin: '1234',
+        });
+    const first = await quote();
+    const transferKey = randomUUID();
+    const cashKey = randomUUID();
+    const initial = await Promise.all([
+      transfer(first.body.quoteId as string, transferKey),
+      cashIn(cashKey),
+    ]);
+    expect(initial.map((r) => ({ status: r.status, body: r.body }))).toEqual([
+      expect.objectContaining({ status: 201 }),
+      expect.objectContaining({ status: 201 }),
+    ]);
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(40000n);
+    const replays = await Promise.all([
+      transfer(first.body.quoteId as string, transferKey),
+      cashIn(cashKey),
+    ]);
+    expect(replays[0].status).toBe(201);
+    expect(replays[0].body.id).toBe(initial[0].body.id);
+    expect(replays[1].status).toBe(201);
+    expect(replays[1].body.journalId).toBe(initial[1].body.journalId);
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(40000n);
+    const second = await quote();
+    const competing = await Promise.all([
+      transfer(second.body.quoteId as string, randomUUID()),
+      cashIn(randomUUID()),
+    ]);
+    expect(competing.filter((r) => r.status === 201)).toHaveLength(1);
+    expect(
+      competing.filter((r) => r.status !== 201).map((r) => ({ status: r.status, body: r.body })),
+    ).toEqual([expect.objectContaining({ status: 422 })]);
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(10000n);
+    expect(
+      (await walletBalance(destination.ledgerAccountId)) +
+        (await walletBalance(cashRecipient.walletLedgerAccountId)),
+    ).toBe(90000n);
+  });
+
   it('agent self quote rejects cross-institution and partially attributed destinations', async () => {
     const { agent, wallet } = await createActiveAgentWithPin(
       [AgentService.WALLET_TRANSFER],
