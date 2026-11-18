@@ -846,44 +846,128 @@
       "finished": "2026-11-18T22:04:42.396Z"
     },
     "test/stage8-financial-engine-migration.integration.spec.ts": {
-      "status": "RUNNING",
-      "started": "2026-11-18T22:04:42.397Z"
+      "status": "PASS",
+      "started": "2026-11-18T22:04:42.397Z",
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:05:01.446Z"
     },
     "test/transaction-boundary.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:05:01.447Z",
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:05:13.998Z"
     },
     "test/transfer-notification-producer-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:05:13.999Z",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:05:36.738Z"
     },
     "test/v1-001-customer-funding.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:05:36.738Z",
+      "passed": 26,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:06:40.865Z"
     },
     "test/v1-003-admin-operational-writes.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:06:40.866Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:07:30.325Z"
     },
     "test/v1-005-notification-delivery.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:07:30.326Z",
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:08:28.214Z"
     },
     "test/v1-006-customer-notification-inbox.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:08:28.215Z",
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:09:26.183Z"
     },
     "test/v1-007-support-ticket.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:09:26.184Z",
+      "passed": 31,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:10:50.868Z"
     },
     "test/v1-admin-authorization-customer-read-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:10:50.869Z",
+      "passed": 54,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:14:18.744Z"
     },
     "test/v1-admin-authorization-foundation-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:14:18.745Z",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:14:36.650Z"
     },
     "test/v1-admin-authorization-hardening-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:14:36.651Z",
+      "passed": 36,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:16:23.164Z"
     },
     "test/v1-admin-authorization-kyc-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "PASS",
+      "started": "2026-11-18T22:16:23.165Z",
+      "passed": 29,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:17:43.676Z"
     },
     "test/v1-admin-authorization-read-surface-01.integration.spec.ts": {
-      "status": "PENDING"
+      "status": "RUNNING",
+      "started": "2026-11-18T22:17:43.676Z"
     },
     "test/v1-admin-configurable-dashboard-platform-01.integration.spec.ts": {
       "status": "PENDING"
