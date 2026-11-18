@@ -3527,6 +3527,77 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     }
   });
 
+  it.each(['CUSTOMER_WALLET', 'AGENT_CASH'] as const)(
+    'conserves institutional suspense across concurrent initiation and %s claim',
+    async (method) => {
+      // All setup/OTP/funding is sequential. The old claim and new initiation contend on the
+      // SAME institutional liability and original funding agent's operating wallet.
+      const f = await locatorHttpFixture(method);
+      const command = {
+        agentId: f.transfer.agent.id,
+        agentPrincipal: agentPrincipal(f.transfer.agent.id),
+        agentPin: '1234',
+        beneficiaryPhone: f.transfer.phone,
+        amountMinor: '1000',
+        currency: 'NGN',
+        idempotencyKey: randomUUID(),
+      };
+      const destination = method === 'AGENT_CASH' ? f.claimant.wallet : f.wallet;
+      const ids = [
+        f.transfer.wallet.ledgerAccountId,
+        unclaimedLedgerAccountId,
+        destination.ledgerAccountId,
+      ];
+      const balances = async () => {
+        const byId = await ledgerService.getAccountBalances(ids);
+        return ids.map((id) => BigInt(byId.get(id)!.balanceMinor));
+      };
+      const claim = () =>
+        app.inject({
+          method: 'POST',
+          url: '/api/v1/agents/cash-to-cash/claim-by-number',
+          headers: f.headers,
+          payload: f.payload,
+        });
+      const before = await balances();
+      const [funded, redeemed] = await Promise.all([cashToCashService.execute(command), claim()]);
+      expect(funded.status).toBe('COMPLETED');
+      expect(redeemed.statusCode).toBe(200);
+      expect(redeemed.json()).toMatchObject({
+        transferId: f.transfer.transferId,
+        redemptionMethod: method,
+        status: 'COMPLETED',
+      });
+      const fundedReplay = await cashToCashService.execute(command);
+      expect(fundedReplay).toMatchObject({
+        transferId: funded.transferId,
+        journalId: funded.journalId,
+        status: 'REPLAYED',
+      });
+      const claimReplay = await claim();
+      expect(claimReplay.statusCode).toBe(200);
+      expect(claimReplay.json().journalId).toBe(redeemed.json().journalId);
+      expect(funded.journalId).not.toBe(redeemed.json().journalId);
+      const journals = await dataSource.query<Array<{ id: string }>>(
+        `SELECT id FROM ledger_journals WHERE idempotency_key=ANY($1::text[])`,
+        [
+          [
+            `agent:${command.agentId}:${command.idempotencyKey}`,
+            `claim:${f.transfer.transferId}:${f.payload.idempotencyKey}`,
+          ],
+        ],
+      );
+      expect(journals.map((row) => row.id).sort()).toEqual(
+        [funded.journalId, redeemed.json().journalId].sort(),
+      );
+      expect((await balances()).map((value, i) => value - before[i]!)).toEqual([
+        -1000n,
+        -1000n,
+        2000n,
+      ]);
+    },
+  );
+
   it('avoids the suspense lock-upgrade deadlock while preserving concurrent initiation and replay', async () => {
     // Setup is deliberately sequential: no funding, affiliation, login, or HTTP fixture work
     // overlaps the two measured initiations. Both services receive real, funded agent wallets.

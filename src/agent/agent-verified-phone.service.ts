@@ -37,6 +37,8 @@ export class AgentVerifiedPhoneService {
        JOIN agent_authentication_credentials c ON c.id=s.credential_id AND c.agent_id=s.agent_id
        WHERE s.id=$1 AND s.agent_id=$2 AND s.audience='agent-api' AND s.status='ACTIVE'
        AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp() AND c.status='ACTIVE'
+       AND c.deleted_at IS NULL AND NOT c.rotation_required AND NOT c.account_locked
+       AND date_trunc('milliseconds',s.issued_at)>=date_trunc('milliseconds',c.password_changed_at)
        AND (c.password_expires_at IS NULL OR c.password_expires_at>clock_timestamp()) FOR SHARE OF s,c`,
       [sessionId, agentId],
     );

@@ -100,7 +100,8 @@ describe('notification reliability and privacy boundaries', () => {
       query: jest
         .fn()
         .mockResolvedValueOnce([{ enabled: true }])
-        .mockResolvedValueOnce([{ normalized_value: '08012345678' }]),
+        .mockResolvedValueOnce([{ normalized_value: '08012345678' }])
+        .mockResolvedValueOnce([]), // no conflicting OTP-verified agent phone
     } as never);
     await expect(verified.resolve('CUSTOMER', 'customer-id', 'SMS')).resolves.toMatchObject({
       destination: '8012345678',

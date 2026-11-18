@@ -1282,6 +1282,57 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     }
   });
 
+  it('does not treat a legacy unbound beneficiary as identity proof for a quote', async () => {
+    const owner = await createCustomerWithCredential();
+    const recipient = await createCustomerWithCredential();
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const wallets = app.get(WalletService);
+    const create = (customerId: string) =>
+      wallets.createWallet({ customerId, currency: 'NGN', idempotencyKey: randomUUID() });
+    const source = await create(owner.customerId),
+      dest = await create(recipient.customerId);
+    const id = randomUUID();
+    await dataSource.query(
+      `INSERT INTO customer_beneficiaries(id,customer_id,beneficiary_type,display_name,reference,
+        destination_identifier,normalized_destination_identifier,status,verified)
+        VALUES ($1,$2,'INTERNAL_CUSTOMER','legacy',$4,$3,$3,'ACTIVE',true)`,
+      [id, owner.customerId, recipient.phone, `legacy-${id}`],
+    );
+    const auth = `Bearer ${owner.token}`;
+    const resolved = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/transfer-recipient')
+      .set('Authorization', auth)
+      .query({ identifier: recipient.phone, currency: 'NGN' })
+      .expect(200);
+    expect(resolved.body).toMatchObject({ walletId: dest.id, ownerId: recipient.customerId });
+    const post = (extra: object) =>
+      request(app.getHttpServer())
+        .post('/api/v1/customers/me/transfer-quotes')
+        .set('Authorization', auth)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          sourceWalletId: source.id,
+          destinationWalletId: dest.id,
+          amountMinor: '100',
+          currency: 'NGN',
+          ...extra,
+        });
+    await post({ beneficiaryId: id }).expect(409);
+    const direct = await post({}).expect(201);
+    expect(direct.body).toMatchObject({
+      recipientType: 'CUSTOMER',
+      recipientId: recipient.customerId,
+      status: 'ACTIVE',
+    });
+    expect(
+      await dataSource.query(
+        `SELECT wallet_recipient_id,wallet_recipient_type FROM customer_beneficiaries WHERE id=$1`,
+        [id],
+      ),
+    ).toEqual([{ wallet_recipient_id: null, wallet_recipient_type: null }]);
+    expect(await dataSource.query('SELECT id FROM transfers')).toEqual([]);
+  });
+
   it('posts four authenticated governed wallet transfer directions with typed evidence and reconciliation', async () => {
     const sender = await createCustomerWithCredential();
     const receiver = await createCustomerWithCredential();
@@ -1513,6 +1564,21 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
         .set('Idempotency-Key', quoteKey)
         .send(quoteBody)
         .expect(201);
+      if (beneficiaryId === customerAgentSaved.id) {
+        // Characterize, not approve, issue-time binding. The saved entry no longer admits a
+        // NEW quote; replay and confirmation below still use the original wallet and price.
+        await request(app.getHttpServer())
+          .patch(`/api/v1/customers/me/beneficiaries/${beneficiaryId}`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({ status: 'SUSPENDED' })
+          .expect(200);
+        await request(app.getHttpServer())
+          .post(path)
+          .set('Authorization', `Bearer ${token}`)
+          .set('Idempotency-Key', randomUUID())
+          .send(quoteBody)
+          .expect(404);
+      }
       const quoteReplay = await request(app.getHttpServer())
         .post(path)
         .set('Authorization', `Bearer ${token}`)

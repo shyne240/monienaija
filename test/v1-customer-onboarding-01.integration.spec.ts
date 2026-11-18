@@ -15,6 +15,7 @@ import {
   truncateAllTables,
   seedTransferParticipant,
 } from './support/pg-harness';
+import { AgentVerifiedPhoneService } from '../src/agent/agent-verified-phone.service';
 import { CustomerService } from '../src/customer/customer.service';
 import {
   createDraftCustomerWithPhone,
@@ -75,7 +76,7 @@ describe('V1-CUSTOMER-ONBOARDING-01 registration + phone verification (real Post
     provider.clear();
   });
 
-  it('binds agent phone only to real one-time OTP proof and honors SMS opt-in and collisions', async () => {
+  async function loginContactAgent() {
     const agentRows: Array<{ id: string }> = await dataSource.query(
       `INSERT INTO agents(reference,status) VALUES ($1,'ACTIVE') RETURNING id`,
       [`agent-phone-${randomUUID()}`],
@@ -92,7 +93,54 @@ describe('V1-CUSTOMER-ONBOARDING-01 registration + phone verification (real Post
       .post('/api/v1/agents/sessions')
       .send({ agentId, password: 'agent-phone-password' })
       .expect(200);
-    const auth = `Bearer ${login.body.accessToken as string}`;
+    const [session] = await dataSource.query<Array<{ id: string }>>(
+      'SELECT id FROM agent_authentication_sessions WHERE agent_id=$1',
+      [agentId],
+    );
+    return { agentId, auth: `Bearer ${login.body.accessToken as string}`, sessionId: session!.id };
+  }
+
+  it('rechecks agent credentials inside the contact write after request authentication', async () => {
+    const { agentId, sessionId } = await loginContactAgent();
+    const principal = {
+      type: 'AGENT' as const,
+      principalId: agentId,
+      agentId,
+      sessionId,
+      customerAccess: 'NONE' as const,
+      roles: [],
+      scopes: [],
+    };
+    const phones = app.get(AgentVerifiedPhoneService);
+    // The already authenticated principal reaches the write after the credential change.
+    // Both mutation methods use this transaction gate; no HTTP guard can substitute for it.
+    for (const condition of [
+      'account_locked=true',
+      'rotation_required=true',
+      'deleted_at=clock_timestamp()',
+      "password_changed_at=clock_timestamp()+interval '1 second'",
+    ]) {
+      await dataSource.query(
+        `UPDATE agent_authentication_credentials SET ${condition} WHERE agent_id=$1`,
+        [agentId],
+      );
+      await expect(phones.setSmsPreference(principal, true)).rejects.toMatchObject({ status: 401 });
+      await dataSource.query(
+        `UPDATE agent_authentication_credentials SET account_locked=false,rotation_required=false,
+        deleted_at=NULL,password_changed_at=clock_timestamp()-interval '1 minute' WHERE agent_id=$1`,
+        [agentId],
+      );
+    }
+    expect(
+      await dataSource.query(
+        'SELECT agent_id FROM agent_notification_preferences WHERE agent_id=$1',
+        [agentId],
+      ),
+    ).toEqual([]);
+  });
+
+  it('binds agent phone only to real one-time OTP proof and honors SMS opt-in and collisions', async () => {
+    const { agentId, auth } = await loginContactAgent();
     const phone = nextPhone();
     const canonical = phone.slice(1);
     const path = '/api/v1/agents/me/contact';
@@ -220,14 +268,14 @@ describe('V1-CUSTOMER-ONBOARDING-01 registration + phone verification (real Post
     const dispatcher = app.get(NotificationDispatcherService);
     const worker = app.get(NotificationWorkerService);
     provider.clear(); // The recorded OTP is not a transaction notification.
-    async function materialize() {
+    async function materialize(fromCustomer = false) {
       const id = randomUUID();
       await dataSource.query(
         `INSERT INTO transfers (id,source_wallet_id,destination_wallet_id,amount_minor,currency,status,idempotency_key,request_hash) VALUES ($1,$2,$3,1000,'NGN','FAILED',$4,$5)`,
         [
           id,
-          agentWallet.id,
-          counterparty.walletAccountId,
+          fromCustomer ? counterparty.walletAccountId : agentWallet.id,
+          fromCustomer ? agentWallet.id : counterparty.walletAccountId,
           `otp-failed-${randomUUID()}`,
           'a'.repeat(64),
         ],
@@ -288,14 +336,16 @@ describe('V1-CUSTOMER-ONBOARDING-01 registration + phone verification (real Post
     );
     const ambiguous = await materialize();
 
-    const customer = await dataSource.query<Array<{ id: string }>>(
-      `INSERT INTO customers(reference,customer_type,status,kyc_level,kyc_status) VALUES ($1,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED') RETURNING id`,
-      [`collision-${randomUUID()}`],
-    );
     await dataSource.query(
       `INSERT INTO customer_contact_methods(customer_id,type,value,normalized_value,is_primary,verified_at) VALUES ($1,'PHONE',$2,$2,true,now())`,
-      [customer[0]!.id, canonical],
+      [counterparty.customerId, `+234${canonical}`],
     );
+    await dataSource.query(
+      `INSERT INTO customer_preferences(customer_id,notification_sms_enabled) VALUES ($1,true)`,
+      [counterparty.customerId],
+    );
+    // The same ambiguous phone must not receive the CUSTOMER sender's notification either.
+    const customerEvent = await materialize(true);
     await worker.tick();
     expect(
       await dataSource.query(
@@ -303,6 +353,12 @@ describe('V1-CUSTOMER-ONBOARDING-01 registration + phone verification (real Post
         [ambiguous.command.eventKey],
       ),
     ).toEqual([{ status: 'SKIPPED', last_error: 'AGENT_PHONE_AMBIGUOUS' }]);
+    expect(
+      await dataSource.query(
+        `SELECT status,last_error FROM notification_deliveries WHERE event_key=$1 AND channel='SMS'`,
+        [customerEvent.command.eventKey],
+      ),
+    ).toEqual([{ status: 'SKIPPED', last_error: 'CUSTOMER_PHONE_AMBIGUOUS' }]);
     expect(provider.sent).toHaveLength(1);
     await expect(app.get(RecipientResolutionService).resolve(phone)).rejects.toMatchObject({
       status: 409,

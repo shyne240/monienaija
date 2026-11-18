@@ -105,11 +105,21 @@ export class NotificationChannelResolverService {
       const destination = contacts[0]?.normalized_value;
       if (!destination) return missing(`CUSTOMER_${type}_VERIFIED_MISSING`);
       if (channel === 'SMS') {
+        let phone: string;
         try {
-          return { channel, destination: normalizeNigerianPhone(destination).canonical };
+          phone = normalizeNigerianPhone(destination).canonical;
         } catch {
           return missing('CUSTOMER_PHONE_INVALID');
         }
+        // The agent proof may predate this customer contact. Neither registration order nor
+        // the event's typed customer ID proves who now controls a shared SMS destination.
+        const agents = await query<{ id: string }>(
+          `SELECT a.id FROM agent_verified_phone_contacts p JOIN agents a ON a.id=p.agent_id
+           WHERE p.canonical_phone=$1 AND p.revoked_at IS NULL AND a.deleted_at IS NULL LIMIT 1`,
+          [phone],
+        );
+        if (agents.length) return missing('CUSTOMER_PHONE_AMBIGUOUS');
+        return { channel, destination: phone };
       }
       return { channel, destination };
     }
