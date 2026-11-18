@@ -30,13 +30,13 @@ import {
 function fakeApplication(overrides: Partial<WorkerApplicationContext> = {}) {
   const calls: string[] = [];
   const application: WorkerApplicationContext = {
-    init: async () => {
+    init: () => {
       calls.push('init');
-      return undefined;
+      return Promise.resolve();
     },
-    close: async () => {
+    close: () => {
       calls.push('close');
-      return undefined;
+      return Promise.resolve();
     },
     get: <T>() => ({}) as T,
     ...overrides,
@@ -127,14 +127,15 @@ describe('worker runtime', () => {
 
     const handle = await startWorkerRuntime({
       role: 'worker',
-      createApplication: async () => {
+      createApplication: () => {
         order.push('create');
-        return application;
+        return Promise.resolve(application);
       },
-      verifyReadiness: async () => {
+      verifyReadiness: () => {
         order.push('verify');
         // The application must already be initialised when the gate runs.
         expect(calls).toEqual(['init']);
+        return Promise.resolve();
       },
       describeWorkers: () => ['banking-dispatch', 'kyc-tier-reevaluation'],
       ...h.options,
@@ -155,10 +156,9 @@ describe('worker runtime', () => {
 
     const handle = await startWorkerRuntime({
       role: 'worker',
-      createApplication: async () => application,
-      verifyReadiness: async () => {
-        throw new Error('Production readiness failed: financial_dependencies_not_ready');
-      },
+      createApplication: () => Promise.resolve(application),
+      verifyReadiness: () =>
+        Promise.reject(new Error('Production readiness failed: financial_dependencies_not_ready')),
       ...h.options,
     });
 
@@ -177,8 +177,8 @@ describe('worker runtime', () => {
 
     const handle = await startWorkerRuntime({
       role: 'worker',
-      createApplication: async () => application,
-      verifyReadiness: async () => undefined,
+      createApplication: () => Promise.resolve(application),
+      verifyReadiness: () => Promise.resolve(),
       ...h.options,
     });
 
@@ -196,8 +196,8 @@ describe('worker runtime', () => {
 
     const handle = await startWorkerRuntime({
       role: 'worker',
-      createApplication: async () => application,
-      verifyReadiness: async () => undefined,
+      createApplication: () => Promise.resolve(application),
+      verifyReadiness: () => Promise.resolve(),
       ...h.options,
     });
 
@@ -216,8 +216,8 @@ describe('worker runtime', () => {
 
     const handle = await startWorkerRuntime({
       role: 'worker',
-      createApplication: async () => application,
-      verifyReadiness: async () => undefined,
+      createApplication: () => Promise.resolve(application),
+      verifyReadiness: () => Promise.resolve(),
       shutdownTimeoutMs: 10,
       ...h.options,
     });
@@ -232,8 +232,8 @@ describe('worker runtime', () => {
     await expect(
       startWorkerRuntime({
         role: 'api',
-        createApplication: async () => fakeApplication().application,
-        verifyReadiness: async () => undefined,
+        createApplication: () => Promise.resolve(fakeApplication().application),
+        verifyReadiness: () => Promise.resolve(),
         ...h.options,
       }),
     ).rejects.toThrow(/asked to start a "api" process/);
