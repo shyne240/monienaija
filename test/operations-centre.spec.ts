@@ -595,6 +595,63 @@ describe('Group 20 — operations centre', () => {
     });
   });
 
+  describe('erasure requests owed to customers are visible (Group 27)', () => {
+    function withPrivacy(posture: unknown) {
+      const built = build();
+      return new OperationsCentreService(
+        { manager: {} } as DataSource,
+        built.leases,
+        built.supervisor,
+        built.integrity as never,
+        new AlertingService(
+          { manager: {} } as DataSource,
+          built.leases,
+          built.supervisor,
+          built.integrity as never,
+        ),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        posture instanceof Error
+          ? ({ outstandingPosture: () => Promise.reject(posture) } as never)
+          : ({ outstandingPosture: () => Promise.resolve(posture) } as never),
+      );
+    }
+
+    it('reports an approved-but-unexecuted erasure as immediate', async () => {
+      // The customer has been told their data will be erased and it has not happened.
+      const service = withPrivacy({
+        open: 1,
+        approvedNotExecuted: 1,
+        oldestOpenAgeSeconds: 3_600,
+      });
+      const view = await service.view();
+      const item = view.items.find((entry) => entry.id === 'privacy:erasure-approved-not-executed');
+      expect(item?.area).toBe('PRIVACY');
+      expect(item?.urgency).toBe('IMMEDIATE');
+    });
+
+    it('escalates a month-old open request and leaves a recent one routine', async () => {
+      const recent = withPrivacy({ open: 1, approvedNotExecuted: 0, oldestOpenAgeSeconds: 3_600 });
+      const old = withPrivacy({ open: 1, approvedNotExecuted: 0, oldestOpenAgeSeconds: 3_000_000 });
+
+      expect(
+        (await recent.view()).items.find((i) => i.id === 'privacy:erasure-open')?.urgency,
+      ).toBe('ROUTINE');
+      expect((await old.view()).items.find((i) => i.id === 'privacy:erasure-open')?.urgency).toBe(
+        'IMMEDIATE',
+      );
+    });
+
+    it('treats an unreadable privacy posture as unavailable', async () => {
+      const service = withPrivacy(new Error('db down'));
+      const view = await service.view();
+      expect(view.unavailable.map((entry) => entry.area)).toContain('PRIVACY');
+    });
+  });
+
   describe('it is read-only and says so', () => {
     it('states that no remediation is offered', async () => {
       const { service } = build();

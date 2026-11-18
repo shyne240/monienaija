@@ -69,6 +69,7 @@ import { FraudModule } from './fraud/fraud.module';
 import { ComplianceModule } from './compliance/compliance.module';
 import { DisputesModule } from './disputes/disputes.module';
 import { MobileModule } from './mobile/mobile.module';
+import { PrivacyModule } from './privacy/privacy.module';
 import { PaymentModule } from './payment/payment.module';
 import { PartnerModule } from './partner/partner.module';
 import { ProductionModule } from './production/production.module';
@@ -179,6 +180,8 @@ import { ProtectedAuthorityModule } from './authorization/protected-authority.mo
     DisputesModule,
     // ARENA 3D Group 25: mobile client support states and adoption visibility.
     MobileModule,
+    // ARENA 3D Group 27: privacy and retention (erasure requests).
+    PrivacyModule,
     PartnerModule,
     PaymentModule,
     ProductionModule,

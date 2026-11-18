@@ -36,6 +36,7 @@ import type { ComplianceAuditExportService } from '../compliance/compliance-audi
 import type { FraudDetectionService } from '../fraud/fraud-detection.service';
 import type { DisputeService } from '../disputes/dispute.service';
 import type { NotificationReceiptService } from '../notification/notification-receipt.service';
+import type { ErasureService } from '../privacy/erasure.service';
 import { AlertingService } from './alerting.service';
 import type { Alert, AlertUrgency } from './alerting.types';
 import { IntegrityMonitoringService } from './integrity-monitoring.service';
@@ -56,7 +57,8 @@ export interface AttentionItem {
     | 'FRAUD'
     | 'COMPLIANCE'
     | 'DISPUTES'
-    | 'NOTIFICATIONS';
+    | 'NOTIFICATIONS'
+    | 'PRIVACY';
   urgency: AlertUrgency;
   severity: 'INFO' | 'WARNING' | 'CRITICAL';
   summary: string;
@@ -115,6 +117,8 @@ export class OperationsCentreService {
     @Optional() private readonly disputes?: DisputeService,
     /* Group 26. */
     @Optional() private readonly notificationReceipts?: NotificationReceiptService,
+    /* Group 27. */
+    @Optional() private readonly privacy?: ErasureService,
   ) {}
 
   async view(): Promise<OperationsCentreView> {
@@ -436,6 +440,44 @@ export class OperationsCentreService {
         unavailable.push({
           area: 'NOTIFICATIONS',
           reason: 'notification delivery posture could not be read',
+        });
+      }
+    }
+
+    // --- Privacy (Group 27): erasure requests owed to customers ---
+    if (this.privacy) {
+      try {
+        const posture = await this.privacy.outstandingPosture();
+        if (posture.approvedNotExecuted > 0) {
+          /*
+           * An approved-but-unexecuted request is the privacy equivalent of an unexecuted dispute award: the
+           * customer has been told their data will be erased and it has not happened. Immediate, because the
+           * customer is relying on a commitment the system has not kept.
+           */
+          items.push({
+            id: 'privacy:erasure-approved-not-executed',
+            area: 'PRIVACY',
+            urgency: 'IMMEDIATE',
+            severity: 'WARNING',
+            summary: `${posture.approvedNotExecuted} approved erasure request(s) not yet executed`,
+            context: { approvedNotExecuted: posture.approvedNotExecuted },
+          });
+        }
+        if (posture.open > 0) {
+          const oldest = posture.oldestOpenAgeSeconds;
+          items.push({
+            id: 'privacy:erasure-open',
+            area: 'PRIVACY',
+            urgency: oldest !== null && oldest >= 2_592_000 ? 'IMMEDIATE' : 'ROUTINE',
+            severity: 'WARNING',
+            summary: `${posture.open} erasure request(s) open`,
+            context: { open: posture.open, oldestOpenSeconds: oldest },
+          });
+        }
+      } catch {
+        unavailable.push({
+          area: 'PRIVACY',
+          reason: 'privacy erasure posture could not be read',
         });
       }
     }

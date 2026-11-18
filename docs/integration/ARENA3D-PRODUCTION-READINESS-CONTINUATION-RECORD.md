@@ -362,6 +362,52 @@ The mirror-image assertions matter: a boundary that denies everything is broken 
 working boundary. Three of my own initial assumptions were wrong and were corrected against what
 PostgreSQL actually does — recorded in the test so the reasoning is not lost.
 
+### Group 27 — privacy and retention
+
+`src/migrations/1785753600614-PrivacyAndRetention.ts`, `src/privacy/erasure.service.ts`,
+`src/privacy/privacy.module.ts`, `test/privacy-retention.integration.spec.ts` (27 integration assertions),
+3 unit assertions in `test/operations-centre.spec.ts`, and `docs/integration/PRIVACY-AND-RETENTION.md`.
+
+**Nothing could answer a data-subject request.** Searches for "retention", "erasure", "anonymise", "right to" and
+"data subject" returned only unrelated hits; `customers` has a soft-delete timestamp, which hides data rather
+than erasing it.
+
+**Why a request workflow and not a delete.** Ledger records are immutable by trigger precisely so money movement
+cannot be edited — an erasure routine reaching into them would fail or, worse, succeed because someone relaxed
+the trigger. Statutory retention periods are not mine to invent: deciding a Nigerian customer's KYC evidence may
+go after 30 days carries criminal liability. And an erasure must be auditable without retaining the data.
+
+**The safety property: no policy means no erasure.** `privacy_retention_policies` ships empty, `erasable`
+defaults to false, and a category with no policy row is held with the gap recorded. **Verified by mutation** —
+defaulting a missing policy to `erasable: true` failed exactly that test and nothing else.
+
+**Refusing is a first-class outcome.** `HELD_UNDER_RETENTION` with the legal basis recorded is the correct answer
+to most real requests in a financial institution, and a system that can only say "done" or "failed" cannot give
+it. `PARTIALLY_COMPLETED` is deliberately **not** terminal — it means the part that can be done is done and the
+rest is still owed, so closing it would end the tracking of what the customer is waiting for. A schema conflict
+during development revealed my first constraint treated it as terminal; the workflow won and the constraint
+changed.
+
+**Verification gates erasure.** An unverified claimant cannot erase a customer's data — that is a denial of
+service against the customer, not a service to them.
+
+**Anonymisation, never deletion, and never the ledger.** Targets are fixed and enumerated per category, with no
+dynamic SQL and no caller-supplied table name. Rows survive because the financial history still needs an owner.
+`city`/`state`/`country` are NOT NULL so they are replaced rather than nulled — nulling would fail the update and
+leave the data in place while the log claimed otherwise; that too was caught by a test. `BENEFICIARY_DETAILS`,
+`AUTHENTICATION_CREDENTIALS` and `RISK_FACTORS` are reported as `NOT_IMPLEMENTED` with zero rows touched rather
+than approximated: they need their own decisions. A test asserts `ledger_journals` is unchanged and that no
+action row names a ledger table.
+
+**The record of erasure is evidence but does not contain what was erased** — a log that kept a copy would defeat
+the erasure. Claim fields are immutable, requests cannot be deleted, `down()` refuses while any request exists.
+
+Known gaps from Group 27: no HTTP surface (raise/approve/execute are three authorization decisions and the
+approver must not be the requester); retention is registered but **not enforced** — nothing sweeps old data
+because no period is configured; `minimum_age_days` is stored but not consulted, because "the age of the data"
+per category needs a definition that depends on the retention rule itself; three categories cannot be erased; no
+export/portability counterpart; no consent register.
+
 ### Group 26 — SMS and email delivery receipts
 
 `src/migrations/1785753600613-NotificationDeliveryReceipts.ts`,
@@ -972,9 +1018,8 @@ codes and lock key match the code. Verified to fail when a revert command is add
 
 ## 4. Outstanding
 
-Groups 27–40 remain: privacy/retention, performance harness, CI release gates, the PostgreSQL matrix, sandbox
-readiness, mobile release, browser acceptance, readiness gate, journeys A–J, consolidated acceptance, and
-the final handoff.
+Groups 28–40 remain: performance harness, CI release gates, the PostgreSQL matrix, sandbox readiness, mobile
+release, browser acceptance, readiness gate, journeys A–J, consolidated acceptance, and the final handoff.
 
 Known gaps carried forward: no secret-manager backend is selected (the contract exists; the environment
 backend satisfies it); a restore requires a superuser; off-site backup storage, encryption at rest,
