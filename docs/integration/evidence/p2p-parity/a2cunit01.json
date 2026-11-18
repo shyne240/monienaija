@@ -1,0 +1,1715 @@
+{
+  "id": "a2cunit01",
+  "source": "d9635748bc7e391529a6901dba10767e09f77ca4",
+  "guard": "test/support/mission-25c-network-guard.cjs",
+  "discovered": 271,
+  "heapMiB": 2048,
+  "started": "2026-11-18T21:02:49+00:00",
+  "state": "PASS",
+  "batches": [
+    {
+      "start": "2026-11-18T21:02:49+00:00",
+      "suites": {
+        "src/admin/admin-notification.controller.spec.ts": {
+          "status": "passed",
+          "passed": 19,
+          "failed": 0,
+          "other": 0
+        },
+        "src/agent/agent-cash-to-cash-claim-containment.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "src/agent/agent-cash-to-cash-claim-transaction.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "src/agent/agent-cash-to-cash-notification.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "src/agent/agent-cash-to-cash-operations.controller.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "src/agent/cash-to-cash-institution-adapter.spec.ts": {
+          "status": "passed",
+          "passed": 6,
+          "failed": 0,
+          "other": 0
+        },
+        "src/agent/cash-to-cash-reconciliation.controller.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "src/kyc-verification/dojah-assurance-kyc.provider.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "src/notification/cash-to-cash-notification.spec.ts": {
+          "status": "passed",
+          "passed": 6,
+          "failed": 0,
+          "other": 0
+        },
+        "src/notification/notification-worker-phone-recipient.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "src/outlet/public-agent-locator.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a2-workforce-authentication.contract.spec.ts": {
+          "status": "passed",
+          "passed": 11,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a2-workforce-configuration.spec.ts": {
+          "status": "passed",
+          "passed": 30,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a2-workforce-oidc.service.spec.ts": {
+          "status": "passed",
+          "passed": 19,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a5-ar-control-account-provisioning.module.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a5-ar-control-account-provisioning.service.spec.ts": {
+          "status": "passed",
+          "passed": 16,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-inbound-admission.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-persistence-obligations.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-command.constants.spec.ts": {
+          "status": "passed",
+          "passed": 13,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-command.module.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-command.service.spec.ts": {
+          "status": "passed",
+          "passed": 27,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-command.types.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-customer-binding.constants.spec.ts": {
+          "status": "passed",
+          "passed": 13,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-customer-binding.module.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-customer-binding.repository.spec.ts": {
+          "status": "passed",
+          "passed": 21,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-customer-binding.service.spec.ts": {
+          "status": "passed",
+          "passed": 31,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-customer-binding.types.spec.ts": {
+          "status": "passed",
+          "passed": 18,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-data-minimization.constants.spec.ts": {
+          "status": "passed",
+          "passed": 10,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-data-minimization.module.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-data-minimization.service.spec.ts": {
+          "status": "passed",
+          "passed": 23,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-data-minimization.types.spec.ts": {
+          "status": "passed",
+          "passed": 7,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-financial-effect.constants.spec.ts": {
+          "status": "passed",
+          "passed": 22,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-financial-effect.module.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-financial-effect.service.spec.ts": {
+          "status": "passed",
+          "passed": 59,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-financial-effect.types.spec.ts": {
+          "status": "passed",
+          "passed": 6,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-lifecycle.constants.spec.ts": {
+          "status": "passed",
+          "passed": 21,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-lifecycle.module.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-lifecycle.service.spec.ts": {
+          "status": "passed",
+          "passed": 60,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-lifecycle.types.spec.ts": {
+          "status": "passed",
+          "passed": 6,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-notification-delivery.constants.spec.ts": {
+          "status": "passed",
+          "passed": 15,
+          "failed": 0,
+          "other": 0
+        }
+      },
+      "exit": 0,
+      "finished": "2026-11-18T21:03:18+00:00",
+      "passed": 507,
+      "failed": 0,
+      "skipped": 0,
+      "ok": true
+    },
+    {
+      "start": "2026-11-18T21:03:18+00:00",
+      "suites": {
+        "test/a7-product-notification-delivery.module.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-notification-delivery.service.spec.ts": {
+          "status": "passed",
+          "passed": 31,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-notification-delivery.types.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-policy.audit.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-policy.persistence.spec.ts": {
+          "status": "passed",
+          "passed": 13,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-policy.profiles.spec.ts": {
+          "status": "passed",
+          "passed": 19,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-policy.replay.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-policy.service.spec.ts": {
+          "status": "passed",
+          "passed": 19,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-reconciliation.constants.spec.ts": {
+          "status": "passed",
+          "passed": 14,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-reconciliation.module.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-reconciliation.service.spec.ts": {
+          "status": "passed",
+          "passed": 29,
+          "failed": 0,
+          "other": 0
+        },
+        "test/a7-product-reconciliation.types.spec.ts": {
+          "status": "passed",
+          "passed": 12,
+          "failed": 0,
+          "other": 0
+        },
+        "test/agent-cash-to-cash-expiry-worker.spec.ts": {
+          "status": "passed",
+          "passed": 5,
+          "failed": 0,
+          "other": 0
+        },
+        "test/agent-cash-to-cash-precondition-codes.spec.ts": {
+          "status": "passed",
+          "passed": 5,
+          "failed": 0,
+          "other": 0
+        },
+        "test/agent-wallet-transfer-limit-configuration.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/authentication-execution.service.spec.ts": {
+          "status": "passed",
+          "passed": 9,
+          "failed": 0,
+          "other": 0
+        },
+        "test/authentication-session.service.spec.ts": {
+          "status": "passed",
+          "passed": 8,
+          "failed": 0,
+          "other": 0
+        },
+        "test/authorization-http-matrix.spec.ts": {
+          "status": "passed",
+          "passed": 160,
+          "failed": 0,
+          "other": 0
+        },
+        "test/authorization.service.spec.ts": {
+          "status": "passed",
+          "passed": 6,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-billing-engine.module.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-billing-engine.repository.spec.ts": {
+          "status": "passed",
+          "passed": 26,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-billing-engine.service.spec.ts": {
+          "status": "passed",
+          "passed": 14,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-billing-engine.types.spec.ts": {
+          "status": "passed",
+          "passed": 15,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-campaign-engine.module.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-campaign-engine.repository.spec.ts": {
+          "status": "passed",
+          "passed": 26,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-campaign-engine.service.spec.ts": {
+          "status": "passed",
+          "passed": 14,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-campaign-engine.types.spec.ts": {
+          "status": "passed",
+          "passed": 19,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-commercial-analytics-engine.module.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-commercial-analytics-engine.repository.spec.ts": {
+          "status": "passed",
+          "passed": 26,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-commercial-analytics-engine.service.spec.ts": {
+          "status": "passed",
+          "passed": 14,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-commercial-analytics-engine.types.spec.ts": {
+          "status": "passed",
+          "passed": 25,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-commercial-catalog.constants.spec.ts": {
+          "status": "passed",
+          "passed": 15,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-commercial-catalog.module.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-commercial-catalog.repository.spec.ts": {
+          "status": "passed",
+          "passed": 23,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-commercial-catalog.service.spec.ts": {
+          "status": "passed",
+          "passed": 8,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-commercial-catalog.types.spec.ts": {
+          "status": "passed",
+          "passed": 17,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-commercial-governance-engine.module.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-commercial-governance-engine.repository.spec.ts": {
+          "status": "passed",
+          "passed": 33,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-commercial-governance-engine.service.spec.ts": {
+          "status": "passed",
+          "passed": 10,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-commercial-governance-engine.types.spec.ts": {
+          "status": "passed",
+          "passed": 31,
+          "failed": 0,
+          "other": 0
+        }
+      },
+      "exit": 0,
+      "finished": "2026-11-18T21:03:44+00:00",
+      "passed": 685,
+      "failed": 0,
+      "skipped": 0,
+      "ok": true
+    },
+    {
+      "start": "2026-11-18T21:03:44+00:00",
+      "suites": {
+        "test/b1-fee-engine.module.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-fee-engine.repository.spec.ts": {
+          "status": "passed",
+          "passed": 28,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-fee-engine.service.spec.ts": {
+          "status": "passed",
+          "passed": 9,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-fee-engine.types.spec.ts": {
+          "status": "passed",
+          "passed": 12,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-payment-term.contract.spec.ts": {
+          "status": "passed",
+          "passed": 27,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-payment-term.service.spec.ts": {
+          "status": "passed",
+          "passed": 9,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-referral-engine.module.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-referral-engine.repository.spec.ts": {
+          "status": "passed",
+          "passed": 26,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-referral-engine.service.spec.ts": {
+          "status": "passed",
+          "passed": 14,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-referral-engine.types.spec.ts": {
+          "status": "passed",
+          "passed": 22,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-revenue-recognition-engine.module.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-revenue-recognition-engine.repository.spec.ts": {
+          "status": "passed",
+          "passed": 26,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-revenue-recognition-engine.service.spec.ts": {
+          "status": "passed",
+          "passed": 14,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b1-revenue-recognition-engine.types.spec.ts": {
+          "status": "passed",
+          "passed": 24,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-activation-workflow.module.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-activation-workflow.repository.spec.ts": {
+          "status": "passed",
+          "passed": 8,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-activation-workflow.service.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-activation-workflow.types.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-api-consumer.module.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-api-consumer.repository.spec.ts": {
+          "status": "passed",
+          "passed": 10,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-api-consumer.service.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-api-consumer.types.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-consent.module.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-consent.repository.spec.ts": {
+          "status": "passed",
+          "passed": 8,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-consent.service.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-consent.types.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-customer-activation-readiness.module.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-customer-activation-readiness.repository.spec.ts": {
+          "status": "passed",
+          "passed": 8,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-customer-activation-readiness.service.spec.ts": {
+          "status": "passed",
+          "passed": 6,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-customer-activation-readiness.types.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-merchant-agent-activation-readiness.module.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-merchant-agent-activation-readiness.repository.spec.ts": {
+          "status": "passed",
+          "passed": 8,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-merchant-agent-activation-readiness.service.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-merchant-agent-activation-readiness.types.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-openapi.spec.ts": {
+          "status": "passed",
+          "passed": 8,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-public-api-authentication.module.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-public-api-authentication.repository.spec.ts": {
+          "status": "passed",
+          "passed": 18,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-public-api-authentication.service.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-public-api-authentication.types.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-webhook.module.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        }
+      },
+      "exit": 0,
+      "finished": "2026-11-18T21:04:03+00:00",
+      "passed": 327,
+      "failed": 0,
+      "skipped": 0,
+      "ok": true
+    },
+    {
+      "start": "2026-11-18T21:04:03+00:00",
+      "suites": {
+        "test/b2-webhook.repository.spec.ts": {
+          "status": "passed",
+          "passed": 10,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-webhook.service.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2-webhook.types.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2f-account-mapping.module.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2f-account-mapping.service.spec.ts": {
+          "status": "passed",
+          "passed": 15,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2f-accounting-treatment.module.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2f-accounting-treatment.service.spec.ts": {
+          "status": "passed",
+          "passed": 16,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2f-finance-control.module.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2f-finance-control.service.spec.ts": {
+          "status": "passed",
+          "passed": 16,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2f-fiscal-period.module.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2f-fiscal-period.repository.spec.ts": {
+          "status": "passed",
+          "passed": 10,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2f-fiscal-period.service.spec.ts": {
+          "status": "passed",
+          "passed": 8,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2f-journal-governance.module.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/b2f-journal-governance.service.spec.ts": {
+          "status": "passed",
+          "passed": 12,
+          "failed": 0,
+          "other": 0
+        },
+        "test/banking-provider-registry.unit.spec.ts": {
+          "status": "passed",
+          "passed": 6,
+          "failed": 0,
+          "other": 0
+        },
+        "test/batch2c-locator-errors.spec.ts": {
+          "status": "passed",
+          "passed": 5,
+          "failed": 0,
+          "other": 0
+        },
+        "test/capability-policy-evidence.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/capability-policy-explanation.service.spec.ts": {
+          "status": "passed",
+          "passed": 5,
+          "failed": 0,
+          "other": 0
+        },
+        "test/capability-policy-persistence.spec.ts": {
+          "status": "passed",
+          "passed": 9,
+          "failed": 0,
+          "other": 0
+        },
+        "test/capability-policy-recovery.service.spec.ts": {
+          "status": "passed",
+          "passed": 10,
+          "failed": 0,
+          "other": 0
+        },
+        "test/capability-policy.service.spec.ts": {
+          "status": "passed",
+          "passed": 8,
+          "failed": 0,
+          "other": 0
+        },
+        "test/cash-out-institution.spec.ts": {
+          "status": "passed",
+          "passed": 10,
+          "failed": 0,
+          "other": 0
+        },
+        "test/cash-to-cash-locator-contract.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "test/commercial-rule-governance.service.spec.ts": {
+          "status": "passed",
+          "passed": 10,
+          "failed": 0,
+          "other": 0
+        },
+        "test/commercial-transfer-fee-quote.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/controller-promise-contract.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-app.login.spec.ts": {
+          "status": "passed",
+          "passed": 7,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-authentication-rate-limit.spec.ts": {
+          "status": "passed",
+          "passed": 18,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-authentication-runtime.service.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-authentication.service.spec.ts": {
+          "status": "passed",
+          "passed": 6,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-beneficiary.service.spec.ts": {
+          "status": "passed",
+          "passed": 5,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-compliance-route-policy.spec.ts": {
+          "status": "passed",
+          "passed": 5,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-compliance.service.spec.ts": {
+          "status": "passed",
+          "passed": 6,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-eligibility.service.spec.ts": {
+          "status": "passed",
+          "passed": 5,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-financial-account-binding-repair.service.spec.ts": {
+          "status": "passed",
+          "passed": 8,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-financial-account-binding.persistence.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-financial-account-binding.service.spec.ts": {
+          "status": "passed",
+          "passed": 6,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-financial-account-read.service.spec.ts": {
+          "status": "passed",
+          "passed": 7,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-financial-account-reconciliation.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-funding-instrument.service.spec.ts": {
+          "status": "passed",
+          "passed": 5,
+          "failed": 0,
+          "other": 0
+        }
+      },
+      "exit": 0,
+      "finished": "2026-11-18T21:04:22+00:00",
+      "passed": 260,
+      "failed": 0,
+      "skipped": 0,
+      "ok": true
+    },
+    {
+      "start": "2026-11-18T21:04:22+00:00",
+      "suites": {
+        "test/customer-kyc-controller.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-onboarding.service.spec.ts": {
+          "status": "passed",
+          "passed": 6,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-preference.service.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-proof-of-address.model.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-proof-of-address.service.spec.ts": {
+          "status": "passed",
+          "passed": 12,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-registration.service.spec.ts": {
+          "status": "passed",
+          "passed": 5,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-risk-profile.service.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-validation.spec.ts": {
+          "status": "passed",
+          "passed": 12,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer-wallet.service.spec.ts": {
+          "status": "passed",
+          "passed": 5,
+          "failed": 0,
+          "other": 0
+        },
+        "test/customer.service.spec.ts": {
+          "status": "passed",
+          "passed": 9,
+          "failed": 0,
+          "other": 0
+        },
+        "test/dojah-address-verification.unit.spec.ts": {
+          "status": "passed",
+          "passed": 18,
+          "failed": 0,
+          "other": 0
+        },
+        "test/dojah-verification.unit.spec.ts": {
+          "status": "passed",
+          "passed": 15,
+          "failed": 0,
+          "other": 0
+        },
+        "test/environment.spec.ts": {
+          "status": "passed",
+          "passed": 13,
+          "failed": 0,
+          "other": 0
+        },
+        "test/external-data-minimization.service.spec.ts": {
+          "status": "passed",
+          "passed": 70,
+          "failed": 0,
+          "other": 0
+        },
+        "test/external-funding-target.service.spec.ts": {
+          "status": "passed",
+          "passed": 8,
+          "failed": 0,
+          "other": 0
+        },
+        "test/external-operation-lifecycle.service.spec.ts": {
+          "status": "passed",
+          "passed": 8,
+          "failed": 0,
+          "other": 0
+        },
+        "test/external-operation.service.spec.ts": {
+          "status": "passed",
+          "passed": 7,
+          "failed": 0,
+          "other": 0
+        },
+        "test/external-reconciliation.service.spec.ts": {
+          "status": "passed",
+          "passed": 30,
+          "failed": 0,
+          "other": 0
+        },
+        "test/external-settlement.service.spec.ts": {
+          "status": "passed",
+          "passed": 30,
+          "failed": 0,
+          "other": 0
+        },
+        "test/f01-historical-provider-ref-security.unit.spec.ts": {
+          "status": "passed",
+          "passed": 10,
+          "failed": 0,
+          "other": 0
+        },
+        "test/financial-invariants.spec.ts": {
+          "status": "passed",
+          "passed": 5,
+          "failed": 0,
+          "other": 0
+        },
+        "test/governed-action.registry.spec.ts": {
+          "status": "passed",
+          "passed": 10,
+          "failed": 0,
+          "other": 0
+        },
+        "test/governed-financial-fixture-workforce.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/h04-h06-event-map.spec.ts": {
+          "status": "passed",
+          "passed": 29,
+          "failed": 0,
+          "other": 0
+        },
+        "test/health.e2e.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/http-exception-filter.spec.ts": {
+          "status": "passed",
+          "passed": 18,
+          "failed": 0,
+          "other": 0
+        },
+        "test/http-security.spec.ts": {
+          "status": "passed",
+          "passed": 15,
+          "failed": 0,
+          "other": 0
+        },
+        "test/institution-financial-ownership.unit.spec.ts": {
+          "status": "passed",
+          "passed": 11,
+          "failed": 0,
+          "other": 0
+        },
+        "test/institution-foundation.unit.spec.ts": {
+          "status": "passed",
+          "passed": 9,
+          "failed": 0,
+          "other": 0
+        },
+        "test/internal-transfer-gate.service.spec.ts": {
+          "status": "passed",
+          "passed": 9,
+          "failed": 0,
+          "other": 0
+        },
+        "test/kyc-customer-verification.config.spec.ts": {
+          "status": "passed",
+          "passed": 5,
+          "failed": 0,
+          "other": 0
+        },
+        "test/kyc-foundation.unit.spec.ts": {
+          "status": "passed",
+          "passed": 11,
+          "failed": 0,
+          "other": 0
+        },
+        "test/kyc-tier-decision.unit.spec.ts": {
+          "status": "passed",
+          "passed": 20,
+          "failed": 0,
+          "other": 0
+        },
+        "test/kyc-tier-evidence-reader.unit.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "test/ledger-reversal-governance.service.spec.ts": {
+          "status": "passed",
+          "passed": 6,
+          "failed": 0,
+          "other": 0
+        },
+        "test/m6.expanded-products.spec.ts": {
+          "status": "passed",
+          "passed": 6,
+          "failed": 0,
+          "other": 0
+        },
+        "test/m7.operational-resilience.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/m9.production-maturity.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/mfa-execution.service.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/migration-inventory.spec.ts": {
+          "status": "passed",
+          "passed": 7,
+          "failed": 0,
+          "other": 0
+        }
+      },
+      "exit": 0,
+      "finished": "2026-11-18T21:04:43+00:00",
+      "passed": 451,
+      "failed": 0,
+      "skipped": 0,
+      "ok": true
+    },
+    {
+      "start": "2026-11-18T21:04:43+00:00",
+      "suites": {
+        "test/mission-15a-expiry-status.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/mission-15a-route-policy.spec.ts": {
+          "status": "passed",
+          "passed": 30,
+          "failed": 0,
+          "other": 0
+        },
+        "test/mission-19a-workforce-logout.guard.spec.ts": {
+          "status": "passed",
+          "passed": 23,
+          "failed": 0,
+          "other": 0
+        },
+        "test/mission-22a-fastify-dependency.spec.ts": {
+          "status": "passed",
+          "passed": 18,
+          "failed": 0,
+          "other": 0
+        },
+        "test/mission-25c-notification-diagnostics.spec.ts": {
+          "status": "passed",
+          "passed": 23,
+          "failed": 0,
+          "other": 0
+        },
+        "test/mission-25c-provider-routing.spec.ts": {
+          "status": "passed",
+          "passed": 28,
+          "failed": 0,
+          "other": 0
+        },
+        "test/mission-25g-customer-preference-policy.spec.ts": {
+          "status": "passed",
+          "passed": 12,
+          "failed": 0,
+          "other": 0
+        },
+        "test/mission-25o-credential-binding.spec.ts": {
+          "status": "passed",
+          "passed": 15,
+          "failed": 0,
+          "other": 0
+        },
+        "test/module-di-wiring.spec.ts": {
+          "status": "passed",
+          "passed": 8,
+          "failed": 0,
+          "other": 0
+        },
+        "test/money.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/monnify-http-allowlist.unit.spec.ts": {
+          "status": "passed",
+          "passed": 9,
+          "failed": 0,
+          "other": 0
+        },
+        "test/monnify-provider.unit.spec.ts": {
+          "status": "passed",
+          "passed": 24,
+          "failed": 0,
+          "other": 0
+        },
+        "test/monnify-token-manager.unit.spec.ts": {
+          "status": "passed",
+          "passed": 14,
+          "failed": 0,
+          "other": 0
+        },
+        "test/monnify-verification.unit.spec.ts": {
+          "status": "passed",
+          "passed": 27,
+          "failed": 0,
+          "other": 0
+        },
+        "test/monnify-webhook-signature.unit.spec.ts": {
+          "status": "passed",
+          "passed": 12,
+          "failed": 0,
+          "other": 0
+        },
+        "test/notification-direct-security-logging.unit.spec.ts": {
+          "status": "passed",
+          "passed": 6,
+          "failed": 0,
+          "other": 0
+        },
+        "test/notification-email-template.unit.spec.ts": {
+          "status": "passed",
+          "passed": 7,
+          "failed": 0,
+          "other": 0
+        },
+        "test/notification-pinned-http-fetch.unit.spec.ts": {
+          "status": "passed",
+          "passed": 15,
+          "failed": 0,
+          "other": 0
+        },
+        "test/notification-provider-config.unit.spec.ts": {
+          "status": "passed",
+          "passed": 17,
+          "failed": 0,
+          "other": 0
+        },
+        "test/notification-reliability.unit.spec.ts": {
+          "status": "passed",
+          "passed": 5,
+          "failed": 0,
+          "other": 0
+        },
+        "test/notification-template-engine.spec.ts": {
+          "status": "passed",
+          "passed": 5,
+          "failed": 0,
+          "other": 0
+        },
+        "test/outbox.service.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "test/partner-callback-ingestion.service.spec.ts": {
+          "status": "passed",
+          "passed": 11,
+          "failed": 0,
+          "other": 0
+        },
+        "test/partner-connection.service.spec.ts": {
+          "status": "passed",
+          "passed": 9,
+          "failed": 0,
+          "other": 0
+        },
+        "test/payment.lifecycle.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/payment.service.spec.ts": {
+          "status": "passed",
+          "passed": 11,
+          "failed": 0,
+          "other": 0
+        },
+        "test/pg-run-namespace.spec.ts": {
+          "status": "passed",
+          "passed": 28,
+          "failed": 0,
+          "other": 0
+        },
+        "test/pg-test-safety.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/pilot-control.service.spec.ts": {
+          "status": "passed",
+          "passed": 9,
+          "failed": 0,
+          "other": 0
+        },
+        "test/privileged-action-approval.service.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/product-governance.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/production-config.spec.ts": {
+          "status": "passed",
+          "passed": 16,
+          "failed": 0,
+          "other": 0
+        },
+        "test/production-readiness.spec.ts": {
+          "status": "passed",
+          "passed": 13,
+          "failed": 0,
+          "other": 0
+        },
+        "test/proof-of-address-authorization.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/proof-of-address-dto.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "test/proof-of-address-encryption.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        },
+        "test/proof-of-address-file-validation.spec.ts": {
+          "status": "passed",
+          "passed": 8,
+          "failed": 0,
+          "other": 0
+        },
+        "test/proof-of-address-migration.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "test/proof-of-address-s3-storage.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/proof-of-address-scanner.spec.ts": {
+          "status": "passed",
+          "passed": 8,
+          "failed": 0,
+          "other": 0
+        }
+      },
+      "exit": 0,
+      "finished": "2026-11-18T21:05:09+00:00",
+      "passed": 441,
+      "failed": 0,
+      "skipped": 0,
+      "ok": true
+    },
+    {
+      "start": "2026-11-18T21:05:09+00:00",
+      "suites": {
+        "test/proof-of-address-storage.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "test/reconciliation.service.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "test/report16-redaction-hardening.spec.ts": {
+          "status": "passed",
+          "passed": 29,
+          "failed": 0,
+          "other": 0
+        },
+        "test/report19-final-error-boundary.spec.ts": {
+          "status": "passed",
+          "passed": 22,
+          "failed": 0,
+          "other": 0
+        },
+        "test/report21-basic-scheme-and-proxy-safety.spec.ts": {
+          "status": "passed",
+          "passed": 20,
+          "failed": 0,
+          "other": 0
+        },
+        "test/report23-scheme-and-revoked-proxy.spec.ts": {
+          "status": "passed",
+          "passed": 18,
+          "failed": 0,
+          "other": 0
+        },
+        "test/report25-cross-boundary-e2e.spec.ts": {
+          "status": "passed",
+          "passed": 10,
+          "failed": 0,
+          "other": 0
+        },
+        "test/report25-scheme-case-gaps.spec.ts": {
+          "status": "passed",
+          "passed": 15,
+          "failed": 0,
+          "other": 0
+        },
+        "test/report26-business-correlation-ids.spec.ts": {
+          "status": "passed",
+          "passed": 17,
+          "failed": 0,
+          "other": 0
+        },
+        "test/report26-notfound-query-reflection.spec.ts": {
+          "status": "passed",
+          "passed": 10,
+          "failed": 0,
+          "other": 0
+        },
+        "test/resend-email-provider.unit.spec.ts": {
+          "status": "passed",
+          "passed": 20,
+          "failed": 0,
+          "other": 0
+        },
+        "test/robase-notification-provider.unit.spec.ts": {
+          "status": "passed",
+          "passed": 14,
+          "failed": 0,
+          "other": 0
+        },
+        "test/runtime-access.guard.spec.ts": {
+          "status": "passed",
+          "passed": 16,
+          "failed": 0,
+          "other": 0
+        },
+        "test/sensitive-data-protection.spec.ts": {
+          "status": "passed",
+          "passed": 5,
+          "failed": 0,
+          "other": 0
+        },
+        "test/sensitive-data-redaction-adversarial.spec.ts": {
+          "status": "passed",
+          "passed": 35,
+          "failed": 0,
+          "other": 0
+        },
+        "test/transfer-commercial-participant.spec.ts": {
+          "status": "passed",
+          "passed": 1,
+          "failed": 0,
+          "other": 0
+        },
+        "test/transfer-commercial-reconciliation.spec.ts": {
+          "status": "passed",
+          "passed": 21,
+          "failed": 0,
+          "other": 0
+        },
+        "test/transfer-lifecycle.service.spec.ts": {
+          "status": "passed",
+          "passed": 20,
+          "failed": 0,
+          "other": 0
+        },
+        "test/transfer-participant-limit.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "test/transfer-quote-config.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "test/transfer-reconciliation.service.spec.ts": {
+          "status": "passed",
+          "passed": 12,
+          "failed": 0,
+          "other": 0
+        },
+        "test/transfer.service.spec.ts": {
+          "status": "passed",
+          "passed": 28,
+          "failed": 0,
+          "other": 0
+        },
+        "test/typed-transfer-events.spec.ts": {
+          "status": "passed",
+          "passed": 2,
+          "failed": 0,
+          "other": 0
+        },
+        "test/v1-admin-local-login-01.spec.ts": {
+          "status": "passed",
+          "passed": 14,
+          "failed": 0,
+          "other": 0
+        },
+        "test/v1-sprint3-cross-surface-payloads.spec.ts": {
+          "status": "passed",
+          "passed": 8,
+          "failed": 0,
+          "other": 0
+        },
+        "test/v1-test-01-agent-cash-to-cash-retry-exhaustion.spec.ts": {
+          "status": "passed",
+          "passed": 5,
+          "failed": 0,
+          "other": 0
+        },
+        "test/wallet-agent-self-ownership.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/wallet-ownership-resolution.unit.spec.ts": {
+          "status": "passed",
+          "passed": 12,
+          "failed": 0,
+          "other": 0
+        },
+        "test/wallet-provisioning-authorization.spec.ts": {
+          "status": "passed",
+          "passed": 3,
+          "failed": 0,
+          "other": 0
+        },
+        "test/workforce-administration-validation.spec.ts": {
+          "status": "passed",
+          "passed": 60,
+          "failed": 0,
+          "other": 0
+        },
+        "test/workforce-session-principal-type.spec.ts": {
+          "status": "passed",
+          "passed": 4,
+          "failed": 0,
+          "other": 0
+        }
+      },
+      "exit": 0,
+      "finished": "2026-11-18T21:05:27+00:00",
+      "passed": 432,
+      "failed": 0,
+      "skipped": 0,
+      "ok": true
+    }
+  ],
+  "finished": "2026-11-18T21:05:27+00:00"
+}
