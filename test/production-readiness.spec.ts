@@ -42,8 +42,10 @@ const migrationHead = repositoryMigrations().at(-1)!;
 const previousMigrationHead = repositoryMigrations().at(-2)!;
 
 class ReadinessDataSource {
-  /** The application's loaded migration classes (none in the generic stub). */
-  readonly migrations: Array<{ name: string }> = [];
+  /** The application's loaded migration classes. */
+  readonly migrations: Array<{ name: string }> = repositoryMigrations().map(({ name }) => ({
+    name,
+  }));
 
   constructor(readonly head: MigrationHead = migrationHead) {}
 
@@ -55,7 +57,9 @@ class ReadinessDataSource {
       return Promise.resolve([{ unsafe: false }]);
     }
     if (sql.includes('LIMIT 1') || sql.includes('ORDER BY timestamp ASC')) {
-      return Promise.resolve([{ timestamp: this.head.timestamp, name: this.head.name }]);
+      return Promise.resolve(
+        repositoryMigrations().filter((entry) => entry.timestamp <= this.head.timestamp),
+      );
     }
     if (sql.includes('applied_count')) {
       return Promise.resolve([{ applied_count: '18' }]);
@@ -258,6 +262,38 @@ describe('M8 production readiness', () => {
         'InstitutionGovernanceExecutionIntegrity1785753600500',
       ]),
     );
+  });
+
+  it('fails closed when the loaded inventory is empty, duplicated, or has a wrong applied timestamp', async () => {
+    class EmptyInventory extends ReadinessDataSource {
+      override readonly migrations: Array<{ name: string }> = [];
+    }
+    class DuplicateInventory extends ReadinessDataSource {
+      override readonly migrations = [
+        ...repositoryMigrations().map(({ name }) => ({ name })),
+        { name: repositoryMigrations()[0]!.name },
+      ];
+    }
+    class WrongTimestamp extends ReadinessDataSource {
+      override query(sql: string): Promise<unknown[]> {
+        if (sql.includes('ORDER BY timestamp ASC')) {
+          return Promise.resolve(
+            repositoryMigrations().map((row, index) =>
+              index === 0 ? { ...row, timestamp: '1785753600001' } : row,
+            ),
+          );
+        }
+        return super.query(sql);
+      }
+    }
+    for (const source of [new EmptyInventory(), new DuplicateInventory(), new WrongTimestamp()]) {
+      const readiness = new ProductionReadinessService(
+        source as unknown as DataSource,
+        new ReconciliationStub() as never,
+      );
+      expect((await readiness.getReadiness()).migrations.compatible).toBe(false);
+      await expect(readiness.verifyStartup()).rejects.toThrow('schema_incompatible');
+    }
   });
 
   it('rejects an applied migration the application does not ship', async () => {

@@ -124,6 +124,9 @@ describe('Protected checker authority (ARENA 3) — provisioned runtime/authorit
       database,
     );
     await runtime.initialize();
+    // This independently connected runtime role must inspect the same shipped migrations as
+    // the actual application; a role-only connection deliberately has no migration options.
+    runtime.migrations.splice(0, runtime.migrations.length, ...admin.migrations);
     authority = roleConnection(
       adminOnDatabase,
       { user: roles.authorityRole, password: roles.authorityPassword },
