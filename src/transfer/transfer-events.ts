@@ -195,3 +195,44 @@ export function buildInternalTransferCompletedEvent(
     policyDecisionReference: transfer.policyDecisionReference,
   };
 }
+
+/** A distinct contract; unlike transfer.* v1 it never labels agent IDs as customers. */
+export interface TypedTransferRecipients {
+  source: { type: 'CUSTOMER' | 'AGENT'; id: string };
+  destination: { type: 'CUSTOMER' | 'AGENT'; id: string };
+}
+
+export function buildTypedWalletTransferEvent(
+  transfer: Transfer,
+  recipients: TypedTransferRecipients,
+  outcome: 'completed' | 'failed',
+  occurredAt: Date,
+): Record<string, unknown> {
+  if (!transfer.id || (outcome === 'completed' && !transfer.journalId)) {
+    throw new ConflictException('Transfer event metadata is unavailable');
+  }
+  const eventType = `wallet_transfer.${outcome}`;
+  return {
+    eventKey: `${eventType}:${transfer.id}:v1`,
+    eventType,
+    schemaVersion: 1,
+    aggregateType: 'TRANSFER',
+    aggregateId: transfer.id,
+    occurredAt: occurredAt.toISOString(),
+    transferId: transfer.id,
+    commandId: transfer.commandId,
+    sourceLedgerAccountId: transfer.sourceLedgerAccountId,
+    destinationLedgerAccountId: transfer.destinationLedgerAccountId,
+    accountingUnit: transfer.accountingUnit,
+    requestHash: transfer.requestHash,
+    sourceParticipant: recipients.source,
+    destinationParticipant: recipients.destination,
+    sourceWalletAccountId: transfer.sourceWalletId,
+    destinationWalletAccountId: transfer.destinationWalletId,
+    amountMinor: transfer.amountMinor,
+    currency: transfer.currency,
+    ...(outcome === 'completed'
+      ? { journalId: transfer.journalId }
+      : { failureCode: transfer.failureCode }),
+  };
+}

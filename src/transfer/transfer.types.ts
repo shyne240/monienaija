@@ -1,4 +1,5 @@
 import type { WalletOwnershipBinding } from '../wallet/wallet-ownership';
+import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import type { TransferDirection, TransferFailureCode, TransferStatus } from './transfer.enums';
 
 export interface CreateTransferCommand {
@@ -11,6 +12,8 @@ export interface CreateTransferCommand {
    */
   ownership: WalletOwnershipBinding;
   destinationWalletId: string;
+  /** Internal-only: authenticated principal and immutable quote; never accepted directly from a client. */
+  confirmation?: { quoteId: string; principal: AuthorizationPrincipal; pinAuditId: string };
   amountMinor: string | number | bigint;
   currency: string;
   idempotencyKey: string;

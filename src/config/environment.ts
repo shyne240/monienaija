@@ -74,6 +74,11 @@ export const environmentSchema = z
       .max(60_000)
       .default(10_000),
     CASH_TO_CASH_EXPIRY_SECONDS: z.coerce.number().int().min(60).max(31_536_000).default(604800),
+    // No production value is assumed. Bounds prevent non-finite or unbounded authorization.
+    WALLET_TRANSFER_QUOTE_TTL_SECONDS: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.coerce.number().int().min(1).max(86_400).optional(),
+    ),
     // Optional public locator URL; included in beneficiary SMS only when configured.
     CASH_TO_CASH_LOCATOR_URL: optionalEnvironmentHttpsUrl,
     // Secure PoA uploads are inert unless explicitly enabled. Local disk/key-file storage is

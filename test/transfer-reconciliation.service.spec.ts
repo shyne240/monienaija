@@ -157,6 +157,52 @@ function expectCode(
 }
 
 describe('internal transfer reconciliation evaluation', () => {
+  it('rejects commercial journal evidence attached to a non-completed or missing transfer', () => {
+    expectCode(
+      makeFacts({
+        transfer: makeTransfer({ status: TransferStatus.FAILED }),
+        journal: null,
+        journalCandidates: [],
+        commercialJournalCount: 1,
+      }),
+      TransferReconciliationDiscrepancyCode.ORPHAN_JOURNAL,
+    );
+    const report = evaluateTransferReconciliation(
+      makeFacts({
+        transfer: null,
+        journal: null,
+        journalCandidates: [],
+        commercialJournalCount: 1,
+      }),
+    );
+    expect(report.status).toBe('ERROR');
+    expect(report.discrepancies.map((d) => d.code)).toContain(
+      TransferReconciliationDiscrepancyCode.ORPHAN_JOURNAL,
+    );
+  });
+  it('warns rather than claiming full reconciliation for commercial journals or any quoted transfer', () => {
+    for (const facts of [
+      makeFacts({ commercialJournalCount: 1 }),
+      makeFacts({ transfer: makeTransfer({ quoteSourceId: SOURCE_CUSTOMER_ID }) }),
+    ]) {
+      const report = evaluateTransferReconciliation(facts);
+      expect(report.status).toBe('WARNING');
+      expect(report.discrepancies).toEqual([
+        expect.objectContaining({
+          code: TransferReconciliationDiscrepancyCode.COMMERCIAL_LEGS_NOT_RECONCILED,
+          severity: 'WARNING',
+        }),
+      ]);
+    }
+    const broken = evaluateTransferReconciliation(
+      makeFacts({ commercialJournalCount: 1, journal: null }),
+    );
+    expect(broken.status).toBe('ERROR');
+    expect(broken.discrepancies.map((d) => d.code)).toContain(
+      TransferReconciliationDiscrepancyCode.COMMERCIAL_LEGS_NOT_RECONCILED,
+    );
+  });
+
   it('reports a complete transfer, Ledger, outbox, and audit trace as PASS', () => {
     const report = evaluateTransferReconciliation(makeFacts(), '2026-08-07T12:00:00.000Z');
 
@@ -172,6 +218,50 @@ describe('internal transfer reconciliation evaluation', () => {
       },
       discrepancies: [],
     });
+  });
+
+  it('checks typed outbox identities against immutable quote participants', () => {
+    const eventKey = `wallet_transfer.completed:${TRANSFER_ID}:v1`;
+    const transfer = makeTransfer({
+      quoteSourceType: 'AGENT',
+      quoteSourceId: SOURCE_CUSTOMER_ID,
+      quoteDestinationType: 'CUSTOMER',
+      quoteDestinationId: DESTINATION_CUSTOMER_ID,
+    });
+    const base = makeOutbox();
+    const event = makeOutbox({
+      eventKey,
+      eventType: 'wallet_transfer.completed',
+      payload: {
+        ...base.payload,
+        eventKey,
+        eventType: 'wallet_transfer.completed',
+        sourceParticipant: { id: SOURCE_CUSTOMER_ID, type: 'AGENT' },
+        destinationParticipant: { id: DESTINATION_CUSTOMER_ID, type: 'CUSTOMER' },
+      },
+    });
+    expect(
+      evaluateTransferReconciliation(makeFacts({ transfer, outboxEvents: [event] })).status,
+    ).toBe('WARNING');
+    expectCode(
+      makeFacts({
+        transfer,
+        outboxEvents: [
+          {
+            ...event,
+            payload: {
+              ...event.payload,
+              sourceParticipant: { type: 'CUSTOMER', id: SOURCE_CUSTOMER_ID },
+            },
+          },
+        ],
+      }),
+      TransferReconciliationDiscrepancyCode.OUTBOX_PAYLOAD_MISMATCH,
+    );
+    expectCode(
+      makeFacts({ transfer, outboxEvents: [base] }),
+      TransferReconciliationDiscrepancyCode.OUTBOX_PAYLOAD_MISMATCH,
+    );
   });
 
   it('classifies a completed transfer without a journal', () => {

@@ -12,7 +12,7 @@ import { AuditService } from '../src/operations/audit.service';
 import { OutboxService } from '../src/operations/outbox.service';
 import { PolicyAgentFloatFundingAuthority } from '../src/banking/agent-float-funding-authority';
 import { GovernedFinancialFixture } from './support/governed-financial-fixture';
-import { createIntegrationDataSource } from './support/pg-harness';
+import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 
 /**
  * Agent operating float funded by a verified inbound payment.
@@ -65,12 +65,11 @@ describe('Agent float funding from verified inbound (real PostgreSQL)', () => {
      * `app.close()` already tears down the TypeORM DataSource, because this suite overrides the
      * `DataSource` provider with its own instance. Calling `destroy()` unconditionally afterwards
      * throws `CannotExecuteNotConnectedError` and reddens the suite *after* every assertion has
-     * passed — which is exactly how it went unnoticed: the failure is in teardown, so the suite
-     * reports "failed to run" while all fourteen tests are green. The guard is the pattern the
-     * other suites here already use. Found by the Group 35 journey run, which executes the suites
-     * rather than asserting that CI is configured to.
+     * passed — which is exactly how it went unnoticed. The harness's destroy path is safe in
+     * either state: it handles Nest having already closed the connection, and it also removes
+     * this run's isolated test database. Keep mode (drill-only) remains off in regression.
      */
-    if (db?.isInitialized) await db.destroy().catch(() => undefined);
+    if (db) await destroyIntegrationDataSource(db);
   });
 
   /**

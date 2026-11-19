@@ -10,7 +10,7 @@ import type {
  * workforce/internal authority granted to them by the route policy (`internal:access` or the
  * A2 workforce roles), never under a customer identity.
  */
-export type InternalPrincipalType = Exclude<AuthorizationPrincipalType, 'CUSTOMER'>;
+export type InternalPrincipalType = Exclude<AuthorizationPrincipalType, 'CUSTOMER' | 'AGENT'>;
 
 /**
  * Explains who a wallet-backed operation is being performed for.
@@ -21,6 +21,7 @@ export type InternalPrincipalType = Exclude<AuthorizationPrincipalType, 'CUSTOME
  */
 export type WalletOwnershipBinding =
   | { readonly kind: 'CUSTOMER_SELF'; readonly customerId: string }
+  | { readonly kind: 'AGENT_SELF'; readonly agentId: string }
   | {
       readonly kind: 'INTERNAL';
       readonly principalId: string;
@@ -36,6 +37,10 @@ export function walletOwnershipBinding(principal: AuthorizationPrincipal): Walle
       throw new ForbiddenException('Customer principal is missing a customer id');
     }
     return { kind: 'CUSTOMER_SELF', customerId: principal.customerId };
+  }
+  if (principal.type === 'AGENT') {
+    if (!principal.agentId) throw new ForbiddenException('Agent principal is missing an agent id');
+    return { kind: 'AGENT_SELF', agentId: principal.agentId };
   }
   return { kind: 'INTERNAL', principalId: principal.principalId, principalType: principal.type };
 }
@@ -63,8 +68,20 @@ export function customerSelfId(principal: AuthorizationPrincipal): string | null
 export function assertWalletOwnership(
   binding: WalletOwnershipBinding,
   walletCustomerId: string | null | undefined,
+  walletOwnerClass?: string | null,
 ): void {
-  if (binding.kind === 'CUSTOMER_SELF' && walletCustomerId !== binding.customerId) {
+  if (
+    binding.kind === 'CUSTOMER_SELF' &&
+    (walletCustomerId !== binding.customerId ||
+      (walletOwnerClass != null && walletOwnerClass !== 'CUSTOMER'))
+  ) {
+    throw new NotFoundException('Wallet was not found');
+  }
+  if (
+    binding.kind === 'AGENT_SELF' &&
+    (walletCustomerId?.toLowerCase() !== binding.agentId.toLowerCase() ||
+      walletOwnerClass !== 'AGENT')
+  ) {
     throw new NotFoundException('Wallet was not found');
   }
 }

@@ -42,10 +42,13 @@ export interface EnforceInput {
    * Pin the resolved limit profile and rules as immutable evidence of what governed this
    * admission (commercial-accounting snapshot). This never changes admission behaviour: a missing
    * assignment/profile/rule still follows the legacy advisory contract described on
-   * `enforceWithManager`. Do not use it as a fail-closed switch — use `requireConfiguration` or
-   * `requireKycTierPolicy` for that.
+   * `enforceWithManager`. Do not use it as a fail-closed switch — use
+   * `strictConfiguredRules` or an enforced `requireKycTierPolicy` for that.
    */
   requireConfiguration?: boolean;
+  /** Explicitly require a resolved active profile and an applicable rule, independent of tier
+   * rollout. For new admissions that cannot safely use the legacy advisory contract. */
+  strictConfiguredRules?: boolean;
   /**
    * Institution-scoped tier-bound admission. Supplying it *selects* the authoritative tier path:
    * trusted financial eligibility, an approved institution tier mapping that binds this exact
@@ -153,7 +156,7 @@ export class LimitEnforcementService {
    *    - DAILY/WEEKLY/MONTHLY/YEARLY amount+count via reserveBatchWithManager (checks used+reserved+delta > limit then increments reserved FOR UPDATE)
    * 4) Reserve windowed usages via LimitUsageService.reserveBatchWithManager inside same manager (atomic with ledger)
    * Legacy/advisory callers retain their historical permissive behavior. Financial admission callers
-   * set requireConfiguration and/or requireKycTierPolicy; those paths reject missing assignments,
+   * set strictConfiguredRules or an enforced requireKycTierPolicy to reject missing assignments,
    * mappings, profiles and applicable rules. No thresholds are invented.
    */
   async enforceWithManager(manager: EntityManager, input: EnforceInput): Promise<EnforceResult> {
@@ -218,11 +221,10 @@ export class LimitEnforcementService {
         ...(tierProfileCode ? [tierProfileCode] : []),
       ]),
     ];
-    // Fail-closed configuration only when the authoritative tier path is in force. In
-    // `LEGACY_UNENFORCED` mode the historical advisory contract is preserved exactly, so
-    // already-committed financial obligations are not stranded by a rollout that has not been
-    // activated.
-    const configurationRequired = tierEnforcement === 'ENFORCED';
+    // Existing flows retain the advisory behavior until the tier rollout is active. New flows
+    // can explicitly require configured rules without changing that rollout or old obligations.
+    const configurationRequired =
+      tierEnforcement === 'ENFORCED' || input.strictConfiguredRules === true;
     if (profileCodes.length === 0 && configurationRequired) {
       throw this.configurationException(
         explicitTierNonApplicability

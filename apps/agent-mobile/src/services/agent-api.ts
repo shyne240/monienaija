@@ -103,6 +103,7 @@ export async function getAgentFinancialPosition(): Promise<AgentFinancialPositio
 
 /** Canonical backend service identifiers (agents/me/capabilities). */
 export type AgentCanonicalService =
+  | 'WALLET_TRANSFER'
   | 'CASH_IN'
   | 'CASH_OUT'
   | 'CASH_TO_CASH'
@@ -886,6 +887,7 @@ export function describeCashToCashClaimError(error: unknown): string {
  * ------------------------------------------------------------------------- */
 
 export type AgentHistoryType =
+  | 'WALLET_TRANSFER'
   | 'CASH_IN'
   | 'CASH_OUT'
   | 'CASH_TO_CASH'
@@ -920,6 +922,7 @@ export interface AgentHistoryItem {
   reference: string | null;
   narration: string | null;
   feeMinor: string;
+  vatMinor?: string;
   counterparty: AgentHistoryCounterparty;
   commission: AgentHistoryCommission | null;
   failureCode: string | null;

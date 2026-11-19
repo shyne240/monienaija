@@ -1,0 +1,1706 @@
+{
+  "id": "a2cfinalpg02",
+  "source": "fa9ec89e5c5e989ca8ca6f8b15e4d6cd4ab04849",
+  "started": "2026-11-18T21:22:16.895Z",
+  "state": "PASSED",
+  "resumeFrom": [],
+  "suites": {
+    "test/a10-agent-service-capability.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:22:31.912Z",
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:23:11.129Z"
+    },
+    "test/a11-agent-transaction-authorization.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:23:11.129Z",
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:23:30.138Z"
+    },
+    "test/a12-agent-financial-execution.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:23:30.139Z",
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:23:49.352Z"
+    },
+    "test/a13-agent-cash-in.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:23:49.352Z",
+      "passed": 33,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:24:10.963Z"
+    },
+    "test/a14-agent-cash-out.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:24:10.963Z",
+      "passed": 33,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:24:43.629Z"
+    },
+    "test/a14-otp-hardening.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:24:43.630Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:25:06.372Z"
+    },
+    "test/a15-agent-cash-to-cash.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:25:06.373Z",
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:25:29.020Z"
+    },
+    "test/a16-agent-cash-to-cash-claim.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:25:29.020Z",
+      "passed": 95,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:26:41.336Z"
+    },
+    "test/a17-agent-cash-to-cash-expiry.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:26:41.337Z",
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:27:09.113Z"
+    },
+    "test/a18-aggregator-foundation.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:27:09.114Z",
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:27:27.508Z"
+    },
+    "test/a19-agent-funding.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:27:27.509Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:27:46.977Z"
+    },
+    "test/a2-workforce-session.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:27:46.978Z",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:28:28.189Z"
+    },
+    "test/a20-outlets-terminals.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:28:28.190Z",
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:28:47.467Z"
+    },
+    "test/a21-agent-app.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:28:47.467Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:29:22.513Z"
+    },
+    "test/a22-admin-foundation.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:29:22.514Z",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:29:41.028Z"
+    },
+    "test/a23-customer-app.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:29:41.029Z",
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:30:58.870Z"
+    },
+    "test/a24-customer-transaction-pin-hardening.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:30:58.872Z",
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:31:50.194Z"
+    },
+    "test/a25-customer-history-hardening.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:31:50.194Z",
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:32:37.671Z"
+    },
+    "test/a26-customer-profile-hardening.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:32:37.672Z",
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:33:29.238Z"
+    },
+    "test/a3d-agent-float-funding.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:33:29.238Z",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:33:50.407Z"
+    },
+    "test/a3d-operational-funds-visibility.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:33:50.408Z",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:34:02.641Z"
+    },
+    "test/a5-ledger-reversal.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:34:02.642Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:34:53.799Z"
+    },
+    "test/a5-payment-lifecycle.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:34:53.800Z",
+      "passed": 39,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:36:45.812Z"
+    },
+    "test/a5-transfer-lifecycle.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:36:45.813Z",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:37:20.625Z"
+    },
+    "test/a5t11-b2f03-convergence.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:37:20.625Z",
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:37:49.183Z"
+    },
+    "test/a6-settlement-lifecycle.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:37:49.183Z",
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:38:43.884Z"
+    },
+    "test/a7-agent-authentication-http.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:38:43.885Z",
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:39:34.332Z"
+    },
+    "test/a7-authoritative-persistence.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:39:34.332Z",
+      "passed": 37,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:39:56.630Z"
+    },
+    "test/a7-product-financial-effect.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:39:56.631Z",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:40:16.665Z"
+    },
+    "test/a7-product-lifecycle.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:40:16.665Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:40:39.621Z"
+    },
+    "test/a8-agent-lifecycle.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:40:39.621Z",
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:41:39.774Z"
+    },
+    "test/a9-agent-receiving-number.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:41:39.775Z",
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:41:57.667Z"
+    },
+    "test/agent-application-access-migration-upgrade.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:41:57.668Z",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:42:08.933Z"
+    },
+    "test/agent-funding-pool-classification.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:42:08.933Z",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:42:27.634Z"
+    },
+    "test/arena3d-agent-banking-http.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:42:27.635Z",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:42:53.483Z"
+    },
+    "test/arena3d-banking-http.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:42:53.484Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:43:29.657Z"
+    },
+    "test/arena3d-banking-journeys.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:43:29.658Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:43:58.926Z"
+    },
+    "test/arena4-customer-journey.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:43:58.927Z",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:44:33.533Z"
+    },
+    "test/arena4-customer-kyc-view.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:44:33.535Z",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:44:59.849Z"
+    },
+    "test/b2f-finance-lifecycle.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:44:59.850Z",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:45:35.838Z"
+    },
+    "test/banking-dispatch-worker.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:45:35.838Z",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:45:48.937Z"
+    },
+    "test/banking-fee-binding.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:45:48.937Z",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:46:01.192Z"
+    },
+    "test/banking-inbound-service.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:46:01.192Z",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:46:13.346Z"
+    },
+    "test/banking-operation-records.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:46:13.346Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:46:25.461Z"
+    },
+    "test/banking-outbound-service.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:46:25.461Z",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:46:37.587Z"
+    },
+    "test/banking-provider-governance-schema.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:46:37.588Z",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:46:49.688Z"
+    },
+    "test/banking-provider-governance-service.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:46:49.688Z",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:47:01.989Z"
+    },
+    "test/banking-reconciliation.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:47:01.989Z",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:47:13.972Z"
+    },
+    "test/banking-virtual-account-service.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:47:13.973Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:47:25.598Z"
+    },
+    "test/banking-webhook-ingestion.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:47:25.599Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:47:37.320Z"
+    },
+    "test/batch-01-customer-servicing.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:47:37.321Z",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:48:00.911Z"
+    },
+    "test/batch-2a-customer-registration.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:48:00.912Z",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:48:23.743Z"
+    },
+    "test/customer-compliance-authorization.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:48:23.744Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:49:20.911Z"
+    },
+    "test/final-integration-gates-focus.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:49:20.912Z",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:49:46.269Z"
+    },
+    "test/financial-commitment-initiation.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:49:46.270Z",
+      "passed": 41,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:50:15.105Z"
+    },
+    "test/financial-commitment-schema.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:50:15.105Z",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:50:28.101Z"
+    },
+    "test/governed-financial-fixture.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:50:28.102Z",
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:51:08.742Z"
+    },
+    "test/h04-h06-cash-to-cash-channels.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:51:08.742Z",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:51:21.137Z"
+    },
+    "test/h04-h06-notification-upgrade.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:51:21.137Z",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:51:33.486Z"
+    },
+    "test/hardening-04-customer-transaction-history.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:51:33.486Z",
+      "passed": 26,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:52:46.853Z"
+    },
+    "test/institution-console.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:52:46.853Z",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:53:13.790Z"
+    },
+    "test/institution-financial-ownership.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:53:13.790Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:54:03.734Z"
+    },
+    "test/institution-foundation.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:54:03.734Z",
+      "passed": 32,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:55:41.956Z"
+    },
+    "test/kyc-fixture-contract.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:55:41.957Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:56:06.275Z"
+    },
+    "test/local-dev-11-roles.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:56:06.276Z",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:56:39.627Z"
+    },
+    "test/metrics-transaction-safety.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:56:39.627Z",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:56:52.590Z"
+    },
+    "test/migration-chain.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:56:52.591Z",
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:57:14.358Z"
+    },
+    "test/mission-15a-agent-sessions.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:57:14.359Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:57:33.870Z"
+    },
+    "test/mission-15a-management.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:57:33.871Z",
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:57:53.813Z"
+    },
+    "test/mission-16a-agent-read-authorization.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:57:53.814Z",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:58:12.431Z"
+    },
+    "test/mission-19a-workforce-logout.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:58:12.432Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:58:31.472Z"
+    },
+    "test/mission-25g-customer-preference-authorization.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:58:31.472Z",
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:59:23.850Z"
+    },
+    "test/mission-25o-credential-binding-upgrade.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:59:23.850Z",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:59:35.847Z"
+    },
+    "test/mission-25o-credential-binding.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:59:35.848Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:00:34.347Z"
+    },
+    "test/notification-migration-upgrade-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:00:34.348Z",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:00:46.768Z"
+    },
+    "test/notification-registry.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:00:46.769Z",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:01:19.875Z"
+    },
+    "test/notification-reliability.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:01:19.876Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:02:12.704Z"
+    },
+    "test/p0-p1-security-remediation.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:02:12.705Z",
+      "passed": 41,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:02:32.493Z"
+    },
+    "test/phase1-agent-security.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:02:32.494Z",
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:02:52.981Z"
+    },
+    "test/protected-authority-boundary.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:02:52.982Z",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:03:14.469Z"
+    },
+    "test/report26-correlation-persistence.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:03:14.471Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:03:27.043Z"
+    },
+    "test/s-fix-01-customer-lifecycle-authorization.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:03:27.044Z",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:03:53.387Z"
+    },
+    "test/sms-v1-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:03:53.388Z",
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:04:26.143Z"
+    },
+    "test/stage10-recovery-migration.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:04:26.143Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:04:42.396Z"
+    },
+    "test/stage8-financial-engine-migration.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:04:42.397Z",
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:05:01.446Z"
+    },
+    "test/transaction-boundary.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:05:01.447Z",
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:05:13.998Z"
+    },
+    "test/transfer-notification-producer-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:05:13.999Z",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:05:36.738Z"
+    },
+    "test/v1-001-customer-funding.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:05:36.738Z",
+      "passed": 26,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:06:40.865Z"
+    },
+    "test/v1-003-admin-operational-writes.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:06:40.866Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:07:30.325Z"
+    },
+    "test/v1-005-notification-delivery.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:07:30.326Z",
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:08:28.214Z"
+    },
+    "test/v1-006-customer-notification-inbox.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:08:28.215Z",
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:09:26.183Z"
+    },
+    "test/v1-007-support-ticket.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:09:26.184Z",
+      "passed": 31,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:10:50.868Z"
+    },
+    "test/v1-admin-authorization-customer-read-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:10:50.869Z",
+      "passed": 54,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:14:18.744Z"
+    },
+    "test/v1-admin-authorization-foundation-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:14:18.745Z",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:14:36.650Z"
+    },
+    "test/v1-admin-authorization-hardening-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:14:36.651Z",
+      "passed": 36,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:16:23.164Z"
+    },
+    "test/v1-admin-authorization-kyc-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:16:23.165Z",
+      "passed": 29,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:17:43.676Z"
+    },
+    "test/v1-admin-authorization-read-surface-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:17:43.676Z",
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:18:33.847Z"
+    },
+    "test/v1-admin-configurable-dashboard-platform-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:18:33.848Z",
+      "passed": 47,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:21:15.502Z"
+    },
+    "test/v1-admin-customer-pii-authorization-implementation-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:21:15.502Z",
+      "passed": 48,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:24:03.036Z"
+    },
+    "test/v1-admin-full-surface-audit-01-auth-propagation.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:24:03.036Z",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:24:28.156Z"
+    },
+    "test/v1-admin-local-login-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:24:28.158Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:25:05.382Z"
+    },
+    "test/v1-admin-p1-authorization-hardening.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:25:05.383Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:25:53.159Z"
+    },
+    "test/v1-admin-role-definition-governance-implementation-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:25:53.160Z",
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:27:18.097Z"
+    },
+    "test/v1-administrator-role-and-assignment-implementation-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:27:18.097Z",
+      "passed": 38,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:29:12.849Z"
+    },
+    "test/v1-agent-05-transaction-pin-security.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:29:12.849Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:30:03.830Z"
+    },
+    "test/v1-agent-cash-to-cash-operations.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:30:03.830Z",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:30:17.375Z"
+    },
+    "test/v1-agent-credentials-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:30:17.377Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:31:01.756Z"
+    },
+    "test/v1-agent-history-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:31:01.757Z",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:32:00.310Z"
+    },
+    "test/v1-agent-mfa-api-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:32:00.310Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:32:25.467Z"
+    },
+    "test/v1-agent-mobile-idempotency-persistence-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:32:25.468Z",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:32:46.334Z"
+    },
+    "test/v1-agent-receiving-number-authorization.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:32:46.335Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:33:29.401Z"
+    },
+    "test/v1-capability-registry.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:33:29.401Z",
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:34:20.696Z"
+    },
+    "test/v1-commercial-02-product-catalogue.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:34:20.697Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:35:03.034Z"
+    },
+    "test/v1-commercial-03-fee-rule-schema.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:35:03.035Z",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:35:41.088Z"
+    },
+    "test/v1-commercial-04-fee-rule-resolver.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:35:41.089Z",
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:36:32.009Z"
+    },
+    "test/v1-commercial-accounting-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:36:32.010Z",
+      "passed": 46,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:39:37.573Z"
+    },
+    "test/v1-commercial-decision-01-snapshot.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:39:37.573Z",
+      "passed": 27,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:40:49.390Z"
+    },
+    "test/v1-commercial-decision-02-pilot-snapshot.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:40:49.391Z",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:41:20.432Z"
+    },
+    "test/v1-commercial-decision-03a-cash-to-wallet-snapshot.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:41:20.433Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:41:38.689Z"
+    },
+    "test/v1-commercial-decision-03b-wallet-to-cash-snapshot.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:41:38.690Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:41:59.987Z"
+    },
+    "test/v1-commercial-decision-03c-cash-to-cash-snapshot.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:41:59.988Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:42:22.255Z"
+    },
+    "test/v1-commercial-decision-03d-customer-funding-snapshot.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:42:22.255Z",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:42:40.228Z"
+    },
+    "test/v1-commercial-decision-03e-agent-funding-snapshot.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:42:40.229Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:42:59.563Z"
+    },
+    "test/v1-commercial-rule-governance.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:42:59.563Z",
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:43:34.009Z"
+    },
+    "test/v1-commercial-scenario-matrix-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:43:34.010Z",
+      "passed": 27,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:45:01.243Z"
+    },
+    "test/v1-commission-01-commission-engine.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:45:01.243Z",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:45:51.764Z"
+    },
+    "test/v1-commission-runtime-wiring.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:45:51.764Z",
+      "passed": 24,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:47:11.199Z"
+    },
+    "test/v1-commission-settlement-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:47:11.200Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:47:45.067Z"
+    },
+    "test/v1-customer-05-transaction-pin-security.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:47:45.067Z",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:48:26.613Z"
+    },
+    "test/v1-customer-08-limits-view.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:48:26.614Z",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:48:57.397Z"
+    },
+    "test/v1-customer-09-support-workforce-boundary.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:48:57.398Z",
+      "passed": 36,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:49:16.041Z"
+    },
+    "test/v1-customer-credentials-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:49:16.043Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:49:53.615Z"
+    },
+    "test/v1-customer-onboarding-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:49:53.616Z",
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:50:54.270Z"
+    },
+    "test/v1-customer-onboarding-02.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:50:54.270Z",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:51:23.289Z"
+    },
+    "test/v1-customer-self-service-lifecycle.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:51:23.290Z",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:51:41.462Z"
+    },
+    "test/v1-email-notification-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:51:41.463Z",
+      "passed": 26,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:52:44.269Z"
+    },
+    "test/v1-fee-runtime-wiring.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:52:44.269Z",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:53:27.557Z"
+    },
+    "test/v1-funding-approvals-inbox.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:53:27.558Z",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:53:46.343Z"
+    },
+    "test/v1-harden-01-a2-rate-limit-serialization.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:53:46.344Z",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:54:06.164Z"
+    },
+    "test/v1-harden-01-limit-catalog-check-constraint-boundary.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:54:06.166Z",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:54:29.945Z"
+    },
+    "test/v1-harden-01-runtime-access-guard-boundary.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:54:29.945Z",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:54:50.035Z"
+    },
+    "test/v1-harden-01-support-adversarial.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:54:50.036Z",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:55:20.639Z"
+    },
+    "test/v1-harden-01-support-provision-race.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:55:20.641Z",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:55:36.067Z"
+    },
+    "test/v1-hardening-01-customer-beneficiary.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:55:36.068Z",
+      "passed": 31,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:57:09.072Z"
+    },
+    "test/v1-hardening-06-admin-customer-investigation.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:57:09.073Z",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:57:51.233Z"
+    },
+    "test/v1-hardening-07-admin-agent-financial-position.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:57:51.233Z",
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:58:35.854Z"
+    },
+    "test/v1-hardening-09-admin-notification-delivery-diagnostics.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:58:35.855Z",
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:59:29.733Z"
+    },
+    "test/v1-ledger-reversal-governance.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:59:29.734Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T22:59:58.049Z"
+    },
+    "test/v1-limit-01-limit-catalogue.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T22:59:58.050Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:00:42.703Z"
+    },
+    "test/v1-limit-02-limit-assignment.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:00:42.704Z",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:01:30.736Z"
+    },
+    "test/v1-limit-03-limit-usage.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:01:30.737Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:02:27.125Z"
+    },
+    "test/v1-limit-04-limit-runtime.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:02:27.126Z",
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:03:53.410Z"
+    },
+    "test/v1-limit-05-diagnostics.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:03:53.412Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:04:29.602Z"
+    },
+    "test/v1-limit-05-flow-matrix.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:04:29.603Z",
+      "passed": 205,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:05:49.341Z"
+    },
+    "test/v1-limit-05-recovery.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:05:49.342Z",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:06:17.916Z"
+    },
+    "test/v1-mobile-idempotency-recovery-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:06:17.917Z",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:06:38.030Z"
+    },
+    "test/v1-notification-provider-configuration-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:06:38.031Z",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:07:21.014Z"
+    },
+    "test/v1-ops-01-support-workforce-operational.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:07:21.015Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:07:58.399Z"
+    },
+    "test/v1-release-01-production-readiness-migration-sync.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:07:58.400Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:08:12.579Z"
+    },
+    "test/v1-reward-01-reward-engine.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:08:12.580Z",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:09:06.617Z"
+    },
+    "test/v1-security-super-admin-recovery-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:09:06.618Z",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:10:09.102Z"
+    },
+    "test/v1-sprint1-f01-historical-delivery-disclosure.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:10:09.103Z",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:10:35.996Z"
+    },
+    "test/v1-sprint1-notification-delivery-authorization.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:10:35.997Z",
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:11:27.703Z"
+    },
+    "test/v1-sprint3-agent-history-workforce.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:11:27.704Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:11:48.098Z"
+    },
+    "test/v1-system-01-suspended-customer-financial-boundary.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:11:48.099Z",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:12:07.476Z"
+    },
+    "test/v1-w2w-recovery-audit-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:12:07.477Z",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:12:30.678Z"
+    },
+    "test/v1-workforce-bootstrap-01.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:12:30.679Z",
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:12:58.346Z"
+    },
+    "test/wallet-ownership-resolution.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:12:58.347Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:13:57.041Z"
+    }
+  },
+  "profile": {
+    "source": "fa9ec89e5c5e989ca8ca6f8b15e4d6cd4ab04849",
+    "tree": "996fb7096f251de92a72740221a3fbf89c11ca14",
+    "inventorySha256": "ba342f45276bd99b16dab4581183d1198d1858d4f24142b156faea26611448de",
+    "runnerSha256": "c7779a540a47b07a9a6c594a2abfadf711e39aff0e1cb9244af5c9c2eae98c85",
+    "lockSha256": "f1743cf9ea508fefed5fa8b44f023f466e23bbfa9adf5675c2d4970d1975020b",
+    "node": "v22.22.3",
+    "platform": "linux/x64",
+    "npm": "10.9.8",
+    "postgres": "18.4",
+    "config": "jest.integration.config.js",
+    "guard": "test/support/mission-25c-network-guard.cjs",
+    "perProcess": 1,
+    "concurrency": 1,
+    "heapMiB": 1536
+  },
+  "finished": "2026-11-18T23:13:57.815Z"
+}

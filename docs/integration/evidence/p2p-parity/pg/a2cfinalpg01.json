@@ -1,0 +1,611 @@
+{
+  "id": "a2cfinalpg01",
+  "source": "d9635748bc7e391529a6901dba10767e09f77ca4",
+  "started": "2026-11-18T21:05:29.222Z",
+  "state": "RUNNING",
+  "resumeFrom": [],
+  "suites": {
+    "test/a10-agent-service-capability.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:05:45.216Z",
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:06:29.517Z"
+    },
+    "test/a11-agent-transaction-authorization.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:06:29.518Z",
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:06:51.143Z"
+    },
+    "test/a12-agent-financial-execution.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:06:51.144Z",
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:07:12.468Z"
+    },
+    "test/a13-agent-cash-in.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:07:12.468Z",
+      "passed": 33,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:07:39.287Z"
+    },
+    "test/a14-agent-cash-out.integration.spec.ts": {
+      "status": "FAIL",
+      "started": "2026-11-18T21:07:39.287Z",
+      "passed": 32,
+      "failed": 1,
+      "skipped": 0,
+      "exit": 1,
+      "signal": null,
+      "finished": "2026-11-18T21:08:22.330Z"
+    },
+    "test/a14-otp-hardening.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:08:22.331Z",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:08:46.818Z"
+    },
+    "test/a15-agent-cash-to-cash.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:08:46.819Z",
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:09:11.657Z"
+    },
+    "test/a16-agent-cash-to-cash-claim.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:09:11.658Z",
+      "passed": 95,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:10:37.268Z"
+    },
+    "test/a17-agent-cash-to-cash-expiry.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:10:37.269Z",
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:11:11.446Z"
+    },
+    "test/a18-aggregator-foundation.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:11:11.448Z",
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:11:32.528Z"
+    },
+    "test/a19-agent-funding.integration.spec.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T21:11:32.529Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T21:11:54.825Z"
+    },
+    "test/a2-workforce-session.integration.spec.ts": {
+      "status": "NO_RESULT",
+      "started": "2026-11-18T21:11:54.825Z",
+      "exit": null,
+      "signal": "SIGTERM",
+      "finished": "2026-11-18T21:11:58.830Z"
+    },
+    "test/a20-outlets-terminals.integration.spec.ts": {
+      "status": "RUNNING",
+      "started": "2026-11-18T21:11:58.831Z"
+    },
+    "test/a21-agent-app.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a22-admin-foundation.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a23-customer-app.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a24-customer-transaction-pin-hardening.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a25-customer-history-hardening.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a26-customer-profile-hardening.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a3d-agent-float-funding.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a3d-operational-funds-visibility.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a5-ledger-reversal.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a5-payment-lifecycle.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a5-transfer-lifecycle.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a5t11-b2f03-convergence.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a6-settlement-lifecycle.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a7-agent-authentication-http.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a7-authoritative-persistence.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a7-product-financial-effect.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a7-product-lifecycle.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a8-agent-lifecycle.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/a9-agent-receiving-number.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/agent-application-access-migration-upgrade.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/agent-funding-pool-classification.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/arena3d-agent-banking-http.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/arena3d-banking-http.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/arena3d-banking-journeys.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/arena4-customer-journey.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/arena4-customer-kyc-view.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/b2f-finance-lifecycle.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/banking-dispatch-worker.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/banking-fee-binding.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/banking-inbound-service.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/banking-operation-records.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/banking-outbound-service.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/banking-provider-governance-schema.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/banking-provider-governance-service.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/banking-reconciliation.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/banking-virtual-account-service.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/banking-webhook-ingestion.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/batch-01-customer-servicing.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/batch-2a-customer-registration.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/customer-compliance-authorization.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/final-integration-gates-focus.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/financial-commitment-initiation.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/financial-commitment-schema.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/governed-financial-fixture.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/h04-h06-cash-to-cash-channels.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/h04-h06-notification-upgrade.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/hardening-04-customer-transaction-history.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/institution-console.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/institution-financial-ownership.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/institution-foundation.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/kyc-fixture-contract.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/local-dev-11-roles.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/metrics-transaction-safety.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/migration-chain.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/mission-15a-agent-sessions.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/mission-15a-management.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/mission-16a-agent-read-authorization.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/mission-19a-workforce-logout.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/mission-25g-customer-preference-authorization.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/mission-25o-credential-binding-upgrade.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/mission-25o-credential-binding.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/notification-migration-upgrade-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/notification-registry.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/notification-reliability.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/p0-p1-security-remediation.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/phase1-agent-security.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/protected-authority-boundary.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/report26-correlation-persistence.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/s-fix-01-customer-lifecycle-authorization.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/sms-v1-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/stage10-recovery-migration.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/stage8-financial-engine-migration.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/transaction-boundary.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/transfer-notification-producer-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-001-customer-funding.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-003-admin-operational-writes.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-005-notification-delivery.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-006-customer-notification-inbox.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-007-support-ticket.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-admin-authorization-customer-read-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-admin-authorization-foundation-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-admin-authorization-hardening-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-admin-authorization-kyc-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-admin-authorization-read-surface-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-admin-configurable-dashboard-platform-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-admin-customer-pii-authorization-implementation-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-admin-full-surface-audit-01-auth-propagation.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-admin-local-login-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-admin-p1-authorization-hardening.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-admin-role-definition-governance-implementation-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-administrator-role-and-assignment-implementation-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-agent-05-transaction-pin-security.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-agent-cash-to-cash-operations.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-agent-credentials-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-agent-history-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-agent-mfa-api-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-agent-mobile-idempotency-persistence-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-agent-receiving-number-authorization.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-capability-registry.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-commercial-02-product-catalogue.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-commercial-03-fee-rule-schema.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-commercial-04-fee-rule-resolver.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-commercial-accounting-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-commercial-decision-01-snapshot.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-commercial-decision-02-pilot-snapshot.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-commercial-decision-03a-cash-to-wallet-snapshot.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-commercial-decision-03b-wallet-to-cash-snapshot.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-commercial-decision-03c-cash-to-cash-snapshot.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-commercial-decision-03d-customer-funding-snapshot.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-commercial-decision-03e-agent-funding-snapshot.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-commercial-rule-governance.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-commercial-scenario-matrix-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-commission-01-commission-engine.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-commission-runtime-wiring.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-commission-settlement-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-customer-05-transaction-pin-security.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-customer-08-limits-view.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-customer-09-support-workforce-boundary.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-customer-credentials-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-customer-onboarding-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-customer-onboarding-02.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-customer-self-service-lifecycle.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-email-notification-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-fee-runtime-wiring.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-funding-approvals-inbox.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-harden-01-a2-rate-limit-serialization.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-harden-01-limit-catalog-check-constraint-boundary.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-harden-01-runtime-access-guard-boundary.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-harden-01-support-adversarial.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-harden-01-support-provision-race.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-hardening-01-customer-beneficiary.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-hardening-06-admin-customer-investigation.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-hardening-07-admin-agent-financial-position.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-hardening-09-admin-notification-delivery-diagnostics.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-ledger-reversal-governance.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-limit-01-limit-catalogue.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-limit-02-limit-assignment.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-limit-03-limit-usage.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-limit-04-limit-runtime.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-limit-05-diagnostics.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-limit-05-flow-matrix.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-limit-05-recovery.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-mobile-idempotency-recovery-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-notification-provider-configuration-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-ops-01-support-workforce-operational.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-release-01-production-readiness-migration-sync.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-reward-01-reward-engine.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-security-super-admin-recovery-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-sprint1-f01-historical-delivery-disclosure.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-sprint1-notification-delivery-authorization.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-sprint3-agent-history-workforce.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-system-01-suspended-customer-financial-boundary.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-w2w-recovery-audit-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/v1-workforce-bootstrap-01.integration.spec.ts": {
+      "status": "PENDING"
+    },
+    "test/wallet-ownership-resolution.integration.spec.ts": {
+      "status": "PENDING"
+    }
+  },
+  "profile": {
+    "source": "d9635748bc7e391529a6901dba10767e09f77ca4",
+    "tree": "7e8f054f3293d44a2274878f2c05b8cb49164fe9",
+    "inventorySha256": "ba342f45276bd99b16dab4581183d1198d1858d4f24142b156faea26611448de",
+    "runnerSha256": "c7779a540a47b07a9a6c594a2abfadf711e39aff0e1cb9244af5c9c2eae98c85",
+    "lockSha256": "f1743cf9ea508fefed5fa8b44f023f466e23bbfa9adf5675c2d4970d1975020b",
+    "node": "v22.22.3",
+    "platform": "linux/x64",
+    "npm": "10.9.8",
+    "postgres": "18.4",
+    "config": "jest.integration.config.js",
+    "guard": "test/support/mission-25c-network-guard.cjs",
+    "perProcess": 1,
+    "concurrency": 1,
+    "heapMiB": 1536
+  }
+}

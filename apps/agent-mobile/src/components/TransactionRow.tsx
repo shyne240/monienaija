@@ -16,6 +16,7 @@ import { formatNairaFromMinor } from '../utils/format';
  */
 
 const TYPE_LABEL: Record<string, string> = {
+  WALLET_TRANSFER: 'Wallet Transfer',
   CASH_IN: 'Cash→Wallet',
   CASH_OUT: 'Wallet→Cash',
   CASH_TO_CASH: 'Cash→Cash sent',
@@ -31,6 +32,7 @@ function counterpartyLabel(item: AgentHistoryItem): string | null {
       ? `Customer · beneficiary ${cp.beneficiaryPhone}`
       : 'Customer wallet';
   }
+  if (cp.type === 'AGENT') return 'Agent wallet';
   if (cp.type === 'AGGREGATOR') return 'Aggregator';
   if (cp.type === 'WORKFORCE') return 'MonieNaija Workforce';
   return null;

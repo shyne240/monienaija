@@ -1,3 +1,7 @@
+import { CustomerBeneficiaryModule } from '../customer-beneficiary/customer-beneficiary.module';
+import { AgentBeneficiaryMeController } from './agent-beneficiary-me.controller';
+import { AgentVerifiedPhoneService } from './agent-verified-phone.service';
+import { AgentVerifiedPhoneController } from './agent-verified-phone.controller';
 import { KycTierModule } from '../kyc-verification/kyc-tier.module';
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -84,6 +88,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     // placeholders; no module in this file derives an institution by itself.
     forwardRef(() => InstitutionModule),
     OperationsModule,
+    CustomerBeneficiaryModule,
     // V1-ADMIN-AUTHORIZATION-HARDENING-01: AgentLifecycleController now calls
     // AuthorizationService.requireFunction() for catalogue-backed function checks.
     AuthorizationModule,
@@ -112,6 +117,8 @@ import { AuthorizationModule } from '../authorization/authorization.module';
   ],
   controllers: [
     AgentAppController,
+    AgentVerifiedPhoneController,
+    AgentBeneficiaryMeController,
     AgentApplicationPublicController,
     AgentApplicationAdminController,
     AgentClassController,
@@ -139,6 +146,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     CashOutReconciliationService,
     CashToCashReconciliationService,
     CashToCashWorkforceScope,
+    AgentVerifiedPhoneService,
     AgentClassService,
     AgentApplicationService,
     AgentReceivingNumberService,

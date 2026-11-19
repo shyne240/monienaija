@@ -1,0 +1,123 @@
+{
+  "id": "a2ciso01",
+  "source": "fa9ec89e5c5e989ca8ca6f8b15e4d6cd4ab04849",
+  "state": "FAILED",
+  "started": "2026-11-18T23:13:57.817Z",
+  "lane": "isolated-pg (socket-only)",
+  "parentCommand": "scripts/run-isolated-kyc-tests.js",
+  "networkGuard": "test/support/mission-25c-network-guard.cjs",
+  "heapMiB": 1536,
+  "perProcess": 1,
+  "perCluster": 1,
+  "concurrency": 1,
+  "suites": {
+    "test/batch2-legacy-registration.isolated-pg.test.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:14:12.880Z",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:14:56.484Z"
+    },
+    "test/batch2c-eligibility.isolated-pg.test.ts": {
+      "status": "NO_RESULT",
+      "started": "2026-11-18T23:14:56.485Z",
+      "exit": 1,
+      "signal": null,
+      "finished": "2026-11-18T23:15:31.845Z"
+    },
+    "test/batch2c-session-remediation.isolated-pg.test.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:15:31.846Z",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:15:50.541Z"
+    },
+    "test/governed-ledger-reversal.isolated-pg.test.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:15:50.542Z",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:16:09.491Z"
+    },
+    "test/kyc-foundation.isolated-pg.test.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:16:09.492Z",
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:16:20.449Z"
+    },
+    "test/kyc-provider-governance.isolated-pg.test.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:16:20.450Z",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:16:31.906Z"
+    },
+    "test/kyc-registration-api.isolated-pg.test.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:16:31.907Z",
+      "passed": 24,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:16:49.094Z"
+    },
+    "test/kyc-registration-session.isolated-pg.test.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:16:49.094Z",
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:17:00.317Z"
+    },
+    "test/kyc-tier-limit-enforcement.isolated-pg.test.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:17:00.318Z",
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:17:11.528Z"
+    },
+    "test/kyc-tier-policy.isolated-pg.test.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:17:11.529Z",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:17:22.734Z"
+    },
+    "test/kyc-tier-transition.isolated-pg.test.ts": {
+      "status": "PASS",
+      "started": "2026-11-18T23:17:22.734Z",
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "signal": null,
+      "finished": "2026-11-18T23:17:35.025Z"
+    }
+  },
+  "finished": "2026-11-18T23:17:35.025Z"
+}

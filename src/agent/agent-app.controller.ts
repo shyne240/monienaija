@@ -14,6 +14,7 @@ import { Repository } from 'typeorm';
 import { Agent } from './agent.entity';
 import { AgentClass } from './agent-class.entity';
 import { AgentReceivingNumberService } from './agent-receiving-number.service';
+import { RecipientResolutionService } from './recipient-resolution.service';
 import { AgentServiceCapabilityService } from './agent-service-capability.service';
 import { OutletService } from '../outlet/outlet.service';
 import { TerminalService } from '../outlet/terminal.service';
@@ -40,7 +41,18 @@ export class AgentAppController {
     private readonly terminalService: TerminalService,
     private readonly walletService: WalletService,
     private readonly transactionHistoryService: AgentTransactionHistoryService,
+    private readonly recipientResolution: RecipientResolutionService,
   ) {}
+
+  @Get('transfer-recipient')
+  async resolveTransferRecipient(
+    @Req() req: AuthenticatedRequest,
+    @Query('identifier') identifier: string,
+    @Query('currency') currency: string,
+  ) {
+    this.requireAgentPrincipal(req);
+    return this.recipientResolution.resolveForWalletTransfer(identifier, currency);
+  }
 
   // V1-AGENT-HISTORY-01 — unified read-only agent transaction history (customer-history contract).
   @Get('transactions')
@@ -90,6 +102,7 @@ export class AgentAppController {
   async getCapabilities(@Req() req: AuthenticatedRequest) {
     const principal = this.requireAgentPrincipal(req);
     const services = [
+      AgentService.WALLET_TRANSFER,
       AgentService.CASH_IN,
       AgentService.CASH_OUT,
       AgentService.CASH_TO_CASH,

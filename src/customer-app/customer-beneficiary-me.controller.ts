@@ -14,15 +14,11 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { randomBytes } from 'node:crypto';
 
 import { CustomerBeneficiaryService } from '../customer-beneficiary/customer-beneficiary.service';
 import type { CustomerBeneficiaryView } from '../customer-beneficiary/customer-beneficiary.types';
 import type { RecipientResolution } from '../agent/agent-receiving-number.types';
-import {
-  CustomerBeneficiaryStatus,
-  CustomerBeneficiaryType,
-} from '../customer-beneficiary/customer-beneficiary.enums';
+import { CustomerBeneficiaryStatus } from '../customer-beneficiary/customer-beneficiary.enums';
 import { RecipientResolutionService } from '../agent/recipient-resolution.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
@@ -58,6 +54,8 @@ function toSafeProjection(view: BeneficiaryView, beneficiaryCustomerId: string |
     id: view.id,
     nickname: view.nickname,
     beneficiaryCustomerId,
+    recipientType: view.walletRecipientType ?? null,
+    recipientId: view.walletRecipientId ?? null,
     displayName: view.displayName,
     receivingNumber: view.destinationIdentifier ?? view.normalizedDestinationIdentifier ?? null,
     isVerified: !!view.verified,
@@ -110,21 +108,16 @@ export class CustomerBeneficiaryMeController {
         if (dest) {
           try {
             const res = await this.recipientService.resolve(String(dest));
-            if (res.ownerType === 'CUSTOMER') beneficiaryCustomerId = res.ownerId;
+            if (
+              res.ownerType === 'CUSTOMER' &&
+              (!view.walletRecipientId ||
+                (view.walletRecipientType === res.ownerType &&
+                  view.walletRecipientId === res.ownerId))
+            )
+              beneficiaryCustomerId = res.ownerId;
           } catch {
-            // Try direct lookup via customer_contact_methods for internal mapping if resolve threw NotFound due to agent ACTIVE? fallback
-            try {
-              const canonical = String(dest).replace(/\D/g, '').slice(-10);
-              if (canonical.length === 10) {
-                const rows: Array<{ customer_id: string }> = await this.dataSource.query(
-                  `SELECT customer_id FROM customer_contact_methods WHERE type='PHONE' AND deleted_at IS NULL AND (normalized_value = $1 OR normalized_value = '+234' || $1 OR normalized_value = '234' || $1 OR normalized_value = '0' || $1) LIMIT 1`,
-                  [canonical],
-                );
-                if (rows[0]?.customer_id) beneficiaryCustomerId = rows[0].customer_id;
-              }
-            } catch {
-              // Keep an unresolved customer ID when the fallback lookup fails.
-            }
+            // A failed or ambiguous resolution must remain unresolved. A direct phone
+            // lookup here would bypass the resolver's identity and collision checks.
           }
         }
       } catch {
@@ -177,86 +170,21 @@ export class CustomerBeneficiaryMeController {
       nickname = trimmed;
     }
 
-    // Resolve identifier via existing mechanism — must be valid Nigerian 10-digit and map to CUSTOMER
     let resolution: RecipientResolution;
     try {
       resolution = await this.recipientService.resolve(beneficiaryIdentifier);
-    } catch (e: unknown) {
-      // Convert NotFound/BadRequest from resolution to 400 invalid
-      const msg =
-        (e as { message?: string } | null | undefined)?.message ?? 'Invalid beneficiaryIdentifier';
-      throw new BadRequestException(msg);
+    } catch (error: unknown) {
+      if (error instanceof ConflictException) throw error;
+      if (error instanceof BadRequestException || error instanceof NotFoundException)
+        throw new BadRequestException('Invalid beneficiaryIdentifier');
+      throw error;
     }
-    if (!resolution || resolution.ownerType !== 'CUSTOMER') {
-      throw new BadRequestException(
-        'beneficiaryIdentifier must resolve to an internal wallet customer',
-      );
-    }
-    if (resolution.ownerId === principal.customerId) {
-      throw new BadRequestException('Cannot add self as beneficiary');
-    }
-    // Only ACTIVE customers are valid recipients for wallet transfer; SUSPENDED should be blocked
-    if (resolution.status && resolution.status !== 'ACTIVE') {
-      throw new BadRequestException('Beneficiary recipient is not active');
-    }
-
-    const displayName = resolution.display ?? String(beneficiaryIdentifier).trim();
-    const destinationIdentifier = resolution.receivingNumber ?? beneficiaryIdentifier;
-    const reference = `CUST-BEN-${principal.customerId!.slice(0, 8)}-${randomBytes(4).toString('hex').toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
-
-    let view: BeneficiaryView;
-    try {
-      view = await this.beneficiaryService.createBeneficiary(principal.customerId!, {
-        type: CustomerBeneficiaryType.INTERNAL_CUSTOMER,
-        displayName,
-        reference,
-        destinationIdentifier,
-        destinationName: displayName,
-        destinationInstitution: 'MONIE_NAIJA',
-        nickname: nickname ?? displayName,
-        actor: principal.customerId!,
-      });
-    } catch (e: unknown) {
-      // Preserve 409 duplicates, 400 invalid
-      if (e instanceof ConflictException) throw e;
-      if (e instanceof BadRequestException) throw e;
-      throw e;
-    }
-
-    // Auto-verify and activate for internal wallet beneficiaries (zero ledger, uses existing verification + status transition)
-    // This makes the beneficiary immediately usable for transfers without workforce step, since RecipientResolution already proves existence.
-    try {
-      await this.beneficiaryService.verifyBeneficiary(principal.customerId!, view.id, {
-        verifiedBy: principal.customerId!,
-        verificationMethod: 'CUSTOMER_RESOLUTION',
-        remarks: 'Auto-verified via RecipientResolutionService for internal wallet beneficiary',
-      });
-    } catch {
-      // If already verified or conflict, ignore? But we want to ensure verified true
-      // Fetch latest and check
-    }
-    let latest: BeneficiaryView;
-    try {
-      latest = await this.beneficiaryService.getBeneficiary(principal.customerId!, view.id);
-    } catch {
-      latest = view;
-    }
-    if (latest.status !== CustomerBeneficiaryStatus.ACTIVE) {
-      try {
-        // Need latest version for transition
-        const fresh = await this.beneficiaryService.getBeneficiary(principal.customerId!, view.id);
-        await this.beneficiaryService.updateBeneficiary(principal.customerId!, view.id, {
-          status: CustomerBeneficiaryStatus.ACTIVE,
-          actor: principal.customerId!,
-          version: fresh.version,
-        });
-      } catch {
-        // If fails due to already ACTIVE or version conflict, fetch again
-      }
-    }
-    const finalView = await this.beneficiaryService.getBeneficiary(principal.customerId!, view.id);
-    const beneficiaryCustomerId = resolution.ownerId;
-    return toSafeProjection(finalView, beneficiaryCustomerId);
+    const view = await this.beneficiaryService.createResolvedWalletBeneficiary(
+      { type: 'CUSTOMER', id: principal.customerId! },
+      resolution,
+      nickname,
+    );
+    return toSafeProjection(view, resolution.ownerType === 'CUSTOMER' ? resolution.ownerId : null);
   }
 
   // GET /customers/me/beneficiaries/:beneficiaryId
@@ -284,7 +212,12 @@ export class CustomerBeneficiaryMeController {
       const dest = view.destinationIdentifier ?? view.normalizedDestinationIdentifier;
       if (dest) {
         const res = await this.recipientService.resolve(String(dest));
-        if (res.ownerType === 'CUSTOMER') beneficiaryCustomerId = res.ownerId;
+        if (
+          res.ownerType === 'CUSTOMER' &&
+          (!view.walletRecipientId ||
+            (view.walletRecipientType === res.ownerType && view.walletRecipientId === res.ownerId))
+        )
+          beneficiaryCustomerId = res.ownerId;
       }
     } catch {
       // Keep an unresolved customer ID when resolution fails.
@@ -406,7 +339,13 @@ export class CustomerBeneficiaryMeController {
       const dest = updatedView.destinationIdentifier ?? updatedView.normalizedDestinationIdentifier;
       if (dest) {
         const res = await this.recipientService.resolve(String(dest));
-        if (res.ownerType === 'CUSTOMER') beneficiaryCustomerId = res.ownerId;
+        if (
+          res.ownerType === 'CUSTOMER' &&
+          (!updatedView.walletRecipientId ||
+            (updatedView.walletRecipientType === res.ownerType &&
+              updatedView.walletRecipientId === res.ownerId))
+        )
+          beneficiaryCustomerId = res.ownerId;
       }
     } catch {
       // Keep an unresolved customer ID when resolution fails.

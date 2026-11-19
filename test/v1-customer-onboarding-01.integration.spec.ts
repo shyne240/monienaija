@@ -2,7 +2,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, pbkdf2Sync, randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import request = require('supertest');
 
@@ -13,7 +13,9 @@ import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
   truncateAllTables,
+  seedTransferParticipant,
 } from './support/pg-harness';
+import { AgentVerifiedPhoneService } from '../src/agent/agent-verified-phone.service';
 import { CustomerService } from '../src/customer/customer.service';
 import {
   createDraftCustomerWithPhone,
@@ -72,6 +74,313 @@ describe('V1-CUSTOMER-ONBOARDING-01 registration + phone verification (real Post
   beforeEach(async () => {
     await truncateAllTables(dataSource);
     provider.clear();
+  });
+
+  async function loginContactAgent() {
+    const agentRows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agents(reference,status) VALUES ($1,'ACTIVE') RETURNING id`,
+      [`agent-phone-${randomUUID()}`],
+    );
+    const agentId = agentRows[0]!.id;
+    const salt = Buffer.from('agent-phone-test');
+    const digest = pbkdf2Sync('agent-phone-password', salt, 10000, 32, 'sha256');
+    const hash = `PBKDF2$sha256$10000$${salt.toString('base64url')}$${digest.toString('base64url')}`;
+    await dataSource.query(
+      `INSERT INTO agent_authentication_credentials(agent_id,password_hash,hash_algorithm,password_version,password_changed_at,status) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE')`,
+      [agentId, hash],
+    );
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId, password: 'agent-phone-password' })
+      .expect(200);
+    const [session] = await dataSource.query<Array<{ id: string }>>(
+      'SELECT id FROM agent_authentication_sessions WHERE agent_id=$1',
+      [agentId],
+    );
+    return { agentId, auth: `Bearer ${login.body.accessToken as string}`, sessionId: session!.id };
+  }
+
+  it('rechecks agent credentials inside the contact write after request authentication', async () => {
+    const { agentId, sessionId } = await loginContactAgent();
+    const principal = {
+      type: 'AGENT' as const,
+      principalId: agentId,
+      agentId,
+      sessionId,
+      customerAccess: 'NONE' as const,
+      roles: [],
+      scopes: [],
+    };
+    const phones = app.get(AgentVerifiedPhoneService);
+    // The already authenticated principal reaches the write after the credential change.
+    // Both mutation methods use this transaction gate; no HTTP guard can substitute for it.
+    for (const condition of [
+      'account_locked=true',
+      'rotation_required=true',
+      'deleted_at=clock_timestamp()',
+      "password_changed_at=clock_timestamp()+interval '1 second'",
+    ]) {
+      await dataSource.query(
+        `UPDATE agent_authentication_credentials SET ${condition} WHERE agent_id=$1`,
+        [agentId],
+      );
+      await expect(phones.setSmsPreference(principal, true)).rejects.toMatchObject({ status: 401 });
+      await dataSource.query(
+        `UPDATE agent_authentication_credentials SET account_locked=false,rotation_required=false,
+        deleted_at=NULL,password_changed_at=clock_timestamp()-interval '1 minute' WHERE agent_id=$1`,
+        [agentId],
+      );
+    }
+    expect(
+      await dataSource.query(
+        'SELECT agent_id FROM agent_notification_preferences WHERE agent_id=$1',
+        [agentId],
+      ),
+    ).toEqual([]);
+  });
+
+  it('binds agent phone only to real one-time OTP proof and honors SMS opt-in and collisions', async () => {
+    const { agentId, auth } = await loginContactAgent();
+    const phone = nextPhone();
+    const canonical = phone.slice(1);
+    const path = '/api/v1/agents/me/contact';
+    await request(app.getHttpServer()).get(path).expect(401);
+    const initial = await request(app.getHttpServer())
+      .get(path)
+      .set('Authorization', auth)
+      .expect(200);
+    expect(initial.body).toEqual({ registeredPhone: null, verifiedAt: null, smsEnabled: false });
+    await requestOtp(phone);
+    const otp = extractCode(`+234${canonical}`);
+    const verified = await request(app.getHttpServer())
+      .post(VERIFY_PATH)
+      .send({ phone, code: otp })
+      .expect(200);
+    const token = verified.body.verificationToken as string;
+    await request(app.getHttpServer())
+      .post(`${path}/phone`)
+      .set('Authorization', auth)
+      .send({ phone, verificationToken: 'a'.repeat(43) })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(`${path}/phone`)
+      .set('Authorization', auth)
+      .send({ phone: '08012349876', verificationToken: token })
+      .expect(400);
+    const saved = await request(app.getHttpServer())
+      .post(`${path}/phone`)
+      .set('Authorization', auth)
+      .send({ phone, verificationToken: token })
+      .expect(201);
+    expect(saved.body).toMatchObject({ registeredPhone: canonical, smsEnabled: false });
+    expect(saved.body.verifiedAt).toBeTruthy();
+    await request(app.getHttpServer())
+      .post(`${path}/phone`)
+      .set('Authorization', auth)
+      .send({ phone, verificationToken: token })
+      .expect(400);
+    const { RecipientResolutionService } = await import(
+      '../src/agent/recipient-resolution.service'
+    );
+    const recipient = await app.get(RecipientResolutionService).resolve(phone);
+    expect(recipient).toMatchObject({
+      ownerType: 'AGENT',
+      ownerId: agentId,
+      receivingNumber: canonical,
+    });
+    const { NotificationChannelResolverService } = await import(
+      '../src/notification/notification-channel-resolver.service'
+    );
+    const resolver = app.get(NotificationChannelResolverService);
+    expect(await resolver.resolve('AGENT', agentId, 'SMS')).toMatchObject({
+      destination: null,
+      reason: 'SMS_PREFERENCE_UNAVAILABLE',
+    });
+    await request(app.getHttpServer())
+      .patch(`${path}/notification-preferences`)
+      .set('Authorization', auth)
+      .send({ smsEnabled: true })
+      .expect(200);
+    expect(await resolver.resolve('AGENT', agentId, 'SMS')).toMatchObject({
+      destination: canonical,
+    });
+    expect(
+      await resolver.resolve('PHONE', canonical, 'SMS', undefined, 'cash_to_cash.created'),
+    ).toMatchObject({ destination: canonical });
+    await request(app.getHttpServer())
+      .patch(`${path}/notification-preferences`)
+      .set('Authorization', auth)
+      .send({ smsEnabled: false })
+      .expect(200);
+    expect(await resolver.resolve('AGENT', agentId, 'SMS')).toMatchObject({
+      destination: null,
+      reason: 'SMS_OPT_OUT',
+    });
+    expect(
+      await resolver.resolve('PHONE', canonical, 'SMS', undefined, 'cash_to_cash.created'),
+    ).toMatchObject({ destination: null, reason: 'SMS_OPT_OUT' });
+    await request(app.getHttpServer())
+      .patch(`${path}/notification-preferences`)
+      .set('Authorization', auth)
+      .send({ smsEnabled: true })
+      .expect(200);
+
+    // Continue the very same OTP-backed identity through governed notification delivery.
+    // Transfers below are synthetic FAILED database fixtures; no financial posting or vendor call occurs.
+    const { seedNotificationDefaultsV1 } = await import(
+      '../src/notification/notification-defaults-v1'
+    );
+    const { seedNotificationDefaultsV2 } = await import(
+      '../src/notification/notification-defaults-v2'
+    );
+    const { NotificationDispatcherService } = await import(
+      '../src/notification/notification-dispatcher.service'
+    );
+    const { NotificationWorkerService } = await import(
+      '../src/notification/notification-worker.service'
+    );
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    await seedNotificationDefaultsV1(dataSource.manager);
+    await seedNotificationDefaultsV2(dataSource.manager);
+    await dataSource.query(
+      `UPDATE notification_event_configurations SET is_enabled=true,version=version+1 WHERE event_type='transfer.failed' AND channel IN ('EVENT','SMS')`,
+    );
+    const { LedgerService } = await import('../src/ledger/ledger.service');
+    const { LedgerAccountType, LedgerNormalBalance } = await import('../src/ledger/ledger.enums');
+    const ledgerAccount = await app.get(LedgerService).createAccount({
+      code: `OTP-${randomUUID()}`,
+      name: 'Synthetic customer',
+      accountType: LedgerAccountType.LIABILITY,
+      normalBalance: LedgerNormalBalance.CREDIT,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+    });
+    const counterparty = await seedTransferParticipant(
+      dataSource,
+      'otp-notification',
+      ledgerAccount.id,
+    );
+    const agentWallet = await app.get(WalletService).createWallet({
+      customerId: agentId,
+      currency: 'NGN',
+      idempotencyKey: `otp-agent-${randomUUID()}`,
+    });
+    const dispatcher = app.get(NotificationDispatcherService);
+    const worker = app.get(NotificationWorkerService);
+    provider.clear(); // The recorded OTP is not a transaction notification.
+    async function materialize(fromCustomer = false) {
+      const id = randomUUID();
+      await dataSource.query(
+        `INSERT INTO transfers (id,source_wallet_id,destination_wallet_id,amount_minor,currency,status,idempotency_key,request_hash) VALUES ($1,$2,$3,1000,'NGN','FAILED',$4,$5)`,
+        [
+          id,
+          fromCustomer ? counterparty.walletAccountId : agentWallet.id,
+          fromCustomer ? agentWallet.id : counterparty.walletAccountId,
+          `otp-failed-${randomUUID()}`,
+          'a'.repeat(64),
+        ],
+      );
+      const eventType = 'wallet_transfer.failed';
+      const command = {
+        eventType,
+        eventKey: `${eventType}:${id}:v1`,
+        aggregateType: 'TRANSFER',
+        aggregateId: id,
+        payload: { transferId: id },
+      };
+      await dataSource.transaction((manager) => dispatcher.dispatch(command, manager));
+      return { id, command };
+    }
+    const accepted = await materialize();
+    await worker.tick();
+    expect(provider.sent).toHaveLength(1);
+    expect(provider.sent[0]).toMatchObject({
+      recipientType: 'AGENT',
+      recipientId: agentId,
+      destination: canonical,
+    });
+    await dataSource.transaction((manager) => dispatcher.dispatch(accepted.command, manager));
+    await worker.tick();
+    expect(provider.sent).toHaveLength(1); // replay cannot duplicate
+    const optedOut = await materialize();
+    await request(app.getHttpServer())
+      .patch(`${path}/notification-preferences`)
+      .set('Authorization', auth)
+      .send({ smsEnabled: false })
+      .expect(200);
+    await worker.tick();
+    expect(
+      await dataSource.query(
+        `SELECT status,last_error FROM notification_deliveries WHERE event_key=$1`,
+        [optedOut.command.eventKey],
+      ),
+    ).toEqual([{ status: 'SKIPPED', last_error: 'SMS_OPT_OUT' }]);
+    await request(app.getHttpServer())
+      .patch(`${path}/notification-preferences`)
+      .set('Authorization', auth)
+      .send({ smsEnabled: true })
+      .expect(200);
+    const disabled = await materialize();
+    await dataSource.query(
+      `UPDATE notification_event_configurations SET is_enabled=false,version=version+1 WHERE event_type='transfer.failed' AND channel='SMS'`,
+    );
+    await worker.tick();
+    expect(
+      await dataSource.query(
+        `SELECT status,last_error FROM notification_deliveries WHERE event_key=$1`,
+        [disabled.command.eventKey],
+      ),
+    ).toEqual([{ status: 'SKIPPED', last_error: 'EVENT_DISABLED' }]);
+    await dataSource.query(
+      `UPDATE notification_event_configurations SET is_enabled=true,version=version+1 WHERE event_type='transfer.failed' AND channel='SMS'`,
+    );
+    const ambiguous = await materialize();
+
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods(customer_id,type,value,normalized_value,is_primary,verified_at) VALUES ($1,'PHONE',$2,$2,true,now())`,
+      [counterparty.customerId, `+234${canonical}`],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_preferences(customer_id,notification_sms_enabled) VALUES ($1,true)`,
+      [counterparty.customerId],
+    );
+    // The same ambiguous phone must not receive the CUSTOMER sender's notification either.
+    const customerEvent = await materialize(true);
+    await worker.tick();
+    expect(
+      await dataSource.query(
+        `SELECT status,last_error FROM notification_deliveries WHERE event_key=$1`,
+        [ambiguous.command.eventKey],
+      ),
+    ).toEqual([{ status: 'SKIPPED', last_error: 'AGENT_PHONE_AMBIGUOUS' }]);
+    expect(
+      await dataSource.query(
+        `SELECT status,last_error FROM notification_deliveries WHERE event_key=$1 AND channel='SMS'`,
+        [customerEvent.command.eventKey],
+      ),
+    ).toEqual([{ status: 'SKIPPED', last_error: 'CUSTOMER_PHONE_AMBIGUOUS' }]);
+    expect(provider.sent).toHaveLength(1);
+    await expect(app.get(RecipientResolutionService).resolve(phone)).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(await resolver.resolve('AGENT', agentId, 'SMS')).toMatchObject({
+      destination: null,
+      reason: 'AGENT_PHONE_AMBIGUOUS',
+    });
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM agent_verified_phone_contacts WHERE agent_id=$1`,
+      [agentId],
+    );
+    await expect(
+      dataSource.query(
+        `UPDATE agent_verified_phone_contacts SET canonical_phone='8123456789' WHERE id=$1`,
+        [rows[0]!.id],
+      ),
+    ).rejects.toThrow();
+    await expect(
+      dataSource.query(`DELETE FROM agent_verified_phone_contacts WHERE id=$1`, [rows[0]!.id]),
+    ).rejects.toThrow();
+    expect(provider.sent).toHaveLength(1); // only the permitted notification reached the synthetic provider
   });
 
   // ---------------------------------------------------------------- helpers

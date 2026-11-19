@@ -125,6 +125,7 @@ describe('Cash-to-Cash beneficiary notification contract', () => {
     const query = jest
       .fn()
       .mockResolvedValueOnce([{ customer_id: 'customer-uuid', verified_at: new Date() }])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ enabled: false }]);
     const resolver = new NotificationChannelResolverService({ query } as never);
 
@@ -135,10 +136,10 @@ describe('Cash-to-Cash beneficiary notification contract', () => {
       destination: null,
       reason: 'SMS_OPT_OUT',
     });
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledTimes(3);
 
     const unregisteredResolver = new NotificationChannelResolverService({
-      query: jest.fn().mockResolvedValueOnce([]),
+      query: jest.fn().mockResolvedValue([]),
     } as never);
     await expect(
       unregisteredResolver.resolve('PHONE', phone, 'SMS', undefined, 'cash_to_cash.created'),

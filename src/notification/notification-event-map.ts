@@ -74,6 +74,31 @@ export function mapEventToIntents(
     ];
   }
 
+  // Typed wallet-transfer identities have already been resolved from the committed transfer
+  // and wallet rows by the dispatcher; they are never inferred from an outbox payload alone.
+  if (eventType === 'wallet_transfer.completed' || eventType === 'wallet_transfer.failed') {
+    const candidates = eventType.endsWith('.completed')
+      ? [payload.sourceParticipant, payload.destinationParticipant]
+      : [payload.sourceParticipant];
+    const intents: NotificationIntent[] = [];
+    for (const candidate of candidates) {
+      if (!candidate || typeof candidate !== 'object') continue;
+      const { type, id } = candidate as { type?: unknown; id?: unknown };
+      if ((type !== 'CUSTOMER' && type !== 'AGENT') || typeof id !== 'string') continue;
+      if (intents.some((intent) => intent.recipientType === type && intent.recipientId === id))
+        continue;
+      intents.push({
+        recipientType: type,
+        recipientId: id,
+        channel: 'SMS',
+        templateKey: eventType.endsWith('.completed') ? 'transfer.completed' : 'transfer.failed',
+        correlationId,
+        causationId,
+      });
+    }
+    return intents;
+  }
+
   // Transfer events — internal transfer completed
   if (eventType === 'transfer.completed') {
     const sourceCustomerId = payload.sourceCustomerId as string | undefined;
@@ -299,6 +324,8 @@ const EMAIL_ENABLED_CUSTOMER_EVENTS: ReadonlySet<string> = new Set([
   'cash-to-cash.expired',
   'transfer.completed',
   'transfer.failed',
+  'wallet_transfer.completed',
+  'wallet_transfer.failed',
   'transfer.unknown',
   'support.ticket.created',
   'support.ticket.assigned',

@@ -484,7 +484,7 @@ describe('V1-HARDENING-01 Customer Beneficiary Exposure + Wallet→Wallet Transf
       .expect(400);
   });
 
-  it('13. Security: Agent cannot access customer beneficiary routes 401/403, no agent route exists', async () => {
+  it('13. Security: customer and agent beneficiary routes are principal scoped', async () => {
     const a = await createCustomer();
     // create agent token via direct insert like a23
     const classRows: Array<{ id: string }> = await dataSource.query(
@@ -522,20 +522,20 @@ describe('V1-HARDENING-01 Customer Beneficiary Exposure + Wallet→Wallet Transf
       .set('Authorization', `Bearer ${agentToken}`)
       .send({ nickname: 'x', beneficiaryIdentifier: a.phone })
       .expect((r) => expect([401, 403].includes(r.status)).toBe(true));
-    await request(app.getHttpServer())
+    const agentList = await request(app.getHttpServer())
       .get('/api/v1/agents/me/beneficiaries')
       .set('Authorization', `Bearer ${agentToken}`)
-      .expect(404);
+      .expect(200);
+    expect(agentList.body.items).toEqual([]);
     await request(app.getHttpServer())
       .post('/api/v1/agents/me/beneficiaries')
       .set('Authorization', `Bearer ${agentToken}`)
       .send({ nickname: 'x', beneficiaryIdentifier: a.phone })
-      .expect(404);
-    // ensure no agent beneficiary table exposure
+      .expect(201);
     await request(app.getHttpServer())
       .get('/api/v1/agents/me/beneficiaries')
       .set('Authorization', `Bearer ${a.token}`)
-      .expect(404);
+      .expect(403);
   });
 
   it('14. Beneficiary CRUD zero ledger isolation', async () => {
@@ -645,6 +645,31 @@ describe('V1-HARDENING-01 Customer Beneficiary Exposure + Wallet→Wallet Transf
     // after funding 200k and transfer 15k, src should be 185k, dst 15k
     expect(Number(srcBalRows[0]!.bal)).toBe(185000);
     expect(Number(dstBalRows[0]!.bal)).toBe(15000);
+  });
+
+  it('refuses a beneficiary wallet in a different currency without posting', async () => {
+    const src = await createCustomer();
+    const dst = await createCustomer();
+    const srcWallet = await getWalletId(src.customerId);
+    const ben = await request(app.getHttpServer())
+      .post('/api/v1/customers/me/beneficiaries')
+      .set('Authorization', `Bearer ${src.token}`)
+      .send({ nickname: 'toDst', beneficiaryIdentifier: dst.phone })
+      .expect(201);
+    const before = await countJournals();
+    await request(app.getHttpServer())
+      .post('/api/v1/customers/me/transfers')
+      .set('Authorization', `Bearer ${src.token}`)
+      .set('Idempotency-Key', `idem-${randomUUID()}`)
+      .send({
+        sourceWalletId: srcWallet,
+        beneficiaryId: ben.body.id,
+        amountMinor: '1000',
+        currency: 'USD',
+        pin: '1234',
+      })
+      .expect(404);
+    expect(await countJournals()).toBe(before);
   });
 
   it('17. POST via beneficiaryId requires exactly one of destinationWalletId/beneficiaryId', async () => {
@@ -1033,17 +1058,17 @@ describe('V1-HARDENING-01 Customer Beneficiary Exposure + Wallet→Wallet Transf
       .expect(409);
   });
 
-  it('25. No GET/POST /agents/me/beneficiaries route', async () => {
+  it('25. Customer cannot use agent-owned beneficiary routes', async () => {
     const c = await createCustomer();
     await request(app.getHttpServer())
       .get('/api/v1/agents/me/beneficiaries')
       .set('Authorization', `Bearer ${c.token}`)
-      .expect(404);
+      .expect(403);
     await request(app.getHttpServer())
       .post('/api/v1/agents/me/beneficiaries')
       .set('Authorization', `Bearer ${c.token}`)
       .send({ nickname: 'x', beneficiaryIdentifier: c.phone })
-      .expect(404);
+      .expect(403);
   });
 
   it('26. Forged customerId in body ignored, ownership enforced via auth principal', async () => {

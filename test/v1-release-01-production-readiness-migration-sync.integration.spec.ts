@@ -110,6 +110,7 @@ describe('V1-RELEASE-01 production readiness vs. real migration chain', () => {
       username: role,
       password,
       synchronize: false,
+      migrations: options.migrations,
     });
     await dataSource.query(
       `CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '${password}'`,
@@ -146,6 +147,56 @@ describe('V1-RELEASE-01 production readiness vs. real migration chain', () => {
     await expect(readinessService.verifyStartup()).rejects.toThrow(
       'financial_dependencies_not_ready',
     );
+  });
+
+  it('rejects an empty loaded migration inventory even when the database head is current', async () => {
+    const loaded = [...dataSource.migrations];
+    dataSource.migrations.splice(0);
+    try {
+      const result = await readinessService.getReadiness();
+      expect(result.migrations).toMatchObject({ compatible: false, expectedCount: 0 });
+      expect(result.reason).toBe('schema_incompatible');
+      await expect(readinessService.verifyStartup()).rejects.toThrow('schema_incompatible');
+    } finally {
+      dataSource.migrations.splice(0, dataSource.migrations.length, ...loaded);
+    }
+    expect((await readinessService.getReadiness()).migrations.compatible).toBe(true);
+  });
+
+  it('rejects a wrong timestamp or duplicate applied row even with the correct head', async () => {
+    const [row] = await dataSource.query<Array<{ id: number; timestamp: string; name: string }>>(
+      `SELECT id,timestamp::text,name FROM typeorm_migrations WHERE timestamp=1785753600116`,
+    );
+    expect(row).toBeDefined();
+    await dataSource.query(`UPDATE typeorm_migrations SET timestamp=1785753600115 WHERE id=$1`, [
+      row!.id,
+    ]);
+    try {
+      const result = await readinessService.getReadiness();
+      expect(result.reason).toBe('schema_incompatible');
+      expect(result.migrations.missing).toContain(row!.name);
+      expect(result.migrations.unexpected).toContain(row!.name);
+    } finally {
+      await dataSource.query(`UPDATE typeorm_migrations SET timestamp=$2 WHERE id=$1`, [
+        row!.id,
+        row!.timestamp,
+      ]);
+    }
+    await dataSource.query(`INSERT INTO typeorm_migrations(timestamp,name) VALUES($1,$2)`, [
+      row!.timestamp,
+      row!.name,
+    ]);
+    try {
+      const result = await readinessService.getReadiness();
+      expect(result.reason).toBe('schema_incompatible');
+      expect(result.migrations.compatible).toBe(false);
+    } finally {
+      await dataSource.query(`DELETE FROM typeorm_migrations WHERE timestamp=$1 AND id<>$2`, [
+        row!.timestamp,
+        row!.id,
+      ]);
+    }
+    expect((await readinessService.getReadiness()).migrations.compatible).toBe(true);
   });
 
   it('fails closed when an earlier shipped migration is missing from the applied inventory', async () => {

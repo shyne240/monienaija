@@ -594,65 +594,9 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(
       `SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
     );
-    expect([
-      '1785753600095',
-      '1785753600096',
-      '1785753600097',
-      '1785753600098',
-      '1785753600099',
-      '1785753600100',
-      '1785753600101',
-      '1785753600102',
-      '1785753600103',
-      '1785753600116',
-      '1785753600117',
-      '1785753600118',
-      '1785753600400',
-      '1785753600401',
-      '1785753600500',
-      '1785753600501',
-      '1785753600502',
-      '1785753600503',
-      '1785753600504',
-      '1785753600505',
-      // ARENA 3D banking chain (reserved 0600-0699). The banking migrations are the current head, so
-      // this acceptance list must include them; the alternative would be to assert an older head,
-      // which would pass by describing a tree that is not the one under test.
-      '1785753600600',
-      '1785753600601',
-      '1785753600602',
-      '1785753600603',
-      '1785753600604',
-      '1785753600605',
-    ]).toContain(latest[0]!.timestamp);
-    expect([
-      'SecureAgentApplicationAccess1785753600095',
-      'CreateCashToCashLocators1785753600096',
-      'AddEmailNotificationChannel1785753600097',
-      'CreateNotificationTemplateRegistry1785753600098',
-      'AllowPhoneNotificationRecipients1785753600099',
-      'CreateNotificationProviderConfiguration1785753600100',
-      'NotificationReliability1785753600101',
-      'AddNotificationCredentialBinding1785753600102',
-      'ConfigureTransactionNotificationEvents1785753600103',
-      'WalletOwnerClassification1785753600116',
-      'CashOutInstitutionalScope1785753600503',
-      'InstitutionKycTierLimitGovernance1785753600504',
-      'KycIdentityRevisionAndEvidenceRead1785753600505',
-      'CreateGovernedLedgerReversalExecutions1785753600117',
-      'CreateInstitutionFoundation1785753600400',
-      'CreateInstitutionalFinancialOwnership1785753600401',
-      'GovernedWalletOwnershipResolution1785753600118',
-      'InstitutionGovernanceExecutionIntegrity1785753600500',
-      'ProtectedAuthorityBoundary1785753600501',
-      'ProtectedAuthorityInstitutionalOwnership1785753600502',
-      // ARENA 3D banking chain, the current migration head.
-      'BankingProviderGovernance1785753600600',
-      'BankingOperationRecords1785753600601',
-      'BankingReconciliation1785753600602',
-      'BankingDispatchLeases1785753600603',
-      'CreateInstitutionAgentFloatFunding1785753600605',
-      'CreateInstitutionAgentFloatFunding1785753600605',
-    ]).toContain(latest[0]!.name);
+    expect(latest[0]).toEqual({
+      timestamp: '1785753600802',
+      name: 'ExtendBeneficiaryOwnership1785753600802',
+    });
   });
 });

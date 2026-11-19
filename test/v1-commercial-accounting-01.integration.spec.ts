@@ -55,6 +55,7 @@ import { DataSource } from 'typeorm';
 import { randomUUID, randomBytes, pbkdf2Sync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { OutboxService } from '../src/operations/outbox.service';
@@ -982,6 +983,937 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     expect(debit).toBe(credit);
   });
 
+  it.each([
+    ['EXCLUSIVE_ADD_ON', '1000', '75', '51075', 148925n],
+    ['INCLUSIVE_IN_FEE', '931', '69', '51000', 149000n],
+  ])(
+    'confirmed quote %s matches real fee/VAT ledger debit',
+    async (treatment, fee, vat, total, remaining) => {
+      configureAccounting({ COMMERCIAL_ACCOUNTING_VAT_TREATMENT: treatment });
+      await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1000', vatBps: 750 });
+      const customerId = await eligibleCustomerId();
+      const a = await createWallet(customerId);
+      const b = await createWallet(await eligibleCustomerId());
+      await fundWallet(a.ledgerAccountId, '200000');
+      const credentialId = randomUUID();
+      const sessionId = randomUUID();
+      await dataSource.query(
+        `INSERT INTO customer_authentication_credentials (id,customer_id,credential_type,password_hash,hash_algorithm,password_version,password_changed_at,status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE')`,
+        [credentialId, customerId],
+      );
+      await dataSource.query(
+        `INSERT INTO authentication_sessions (id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at,onboarding_password_version) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW()+interval '1 hour',NOW(),1)`,
+        [sessionId, customerId, credentialId, randomBytes(32).toString('hex')],
+      );
+      const principal = {
+        type: 'CUSTOMER' as const,
+        customerId,
+        principalId: customerId,
+        sessionId,
+        roles: [],
+        scopes: [],
+        customerAccess: 'SELF' as const,
+      };
+      await customerPinService.setTransactionPin(customerId, {
+        pinHash: hashPin('1234'),
+        hashAlgorithm: 'PBKDF2',
+        pinVersion: 1,
+        actor: customerId,
+      });
+      const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+      const quote = await app.get(TransferQuoteService).create(principal, {
+        sourceWalletId: a.id,
+        destinationWalletId: b.id,
+        amountMinor: '50000',
+        currency: 'NGN',
+        idempotencyKey: `fee-quote-${randomUUID()}`,
+      });
+      expect(quote).toMatchObject({ feeMinor: fee, vatMinor: vat, totalDebitMinor: total });
+      const { OutboxEvent } = await import('../src/operations/outbox-event.entity');
+      const realOutbox = new OutboxService(dataSource.getRepository(OutboxEvent));
+      const outboxSpy = jest
+        .spyOn(throwingOutbox, 'enqueueOnce')
+        .mockImplementation((manager, event) => realOutbox.enqueueOnce(manager, event));
+      const keys = [`fee-confirm-${randomUUID()}`, `fee-confirm-${randomUUID()}`];
+      const attempts = await Promise.allSettled(
+        keys.map((key) =>
+          transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234'),
+        ),
+      );
+      outboxSpy.mockRestore();
+      const winners = attempts
+        .map((result, index) => ({ result, key: keys[index] }))
+        .filter((item) => item.result.status === 'fulfilled');
+      expect(winners).toHaveLength(1);
+      expect(attempts.filter((result) => result.status === 'rejected')).toHaveLength(1);
+      const transfer = (winners[0].result as PromiseFulfilledResult<any>).value;
+      const key = winners[0].key;
+      expect(transfer).toMatchObject({ status: 'COMPLETED', amountMinor: '50000' });
+      expect(
+        await dataSource.query(
+          `SELECT fee_minor::text,vat_minor::text FROM transfers WHERE id=$1`,
+          [transfer.id],
+        ),
+      ).toEqual([{ fee_minor: fee, vat_minor: vat }]);
+      expect(await walletBalance(a.ledgerAccountId)).toBe(remaining);
+      expect(await walletBalance(b.ledgerAccountId)).toBe(50000n);
+      const { CustomerAppController } = await import('../src/customer-app/customer-app.controller');
+      const receipt = await app
+        .get(CustomerAppController)
+        .getTransferDetail(transfer.id, { headers: {}, authorizationPrincipal: principal });
+      expect(receipt).toMatchObject({
+        feeMinor: fee,
+        vatMinor: vat,
+        totalDebitMinor: total,
+        direction: 'SENT',
+      });
+      const journals = await accountingJournals();
+      expect(journals).toHaveLength(1);
+      expect(
+        (await linesForJournal(journals[0].id)).find(
+          (line) => line.account_code === ACCOUNT_LEGEND.VAT_PAYABLE,
+        ).amount_minor,
+      ).toBe(vat);
+      expect(
+        (await transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234')).id,
+      ).toBe(transfer.id);
+      expect(await accountingJournals()).toHaveLength(1);
+      const { TransferReconciliationService } = await import(
+        '../src/reconciliation/transfer-reconciliation.service'
+      );
+      expect(
+        await app.get(TransferReconciliationService).reconcileTransfer(transfer.id),
+      ).toMatchObject({
+        status: 'PASS',
+        discrepancies: [],
+      });
+    },
+  );
+
+  it('confirmed nonzero fee rolls back principal when total debit exceeds balance', async () => {
+    await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1000', vatBps: 750 });
+    const customerId = await eligibleCustomerId();
+    const a = await createWallet(customerId);
+    const b = await createWallet(await eligibleCustomerId());
+    await fundWallet(a.ledgerAccountId, '50000');
+    const credentialId = randomUUID();
+    const sessionId = randomUUID();
+    await dataSource.query(
+      `INSERT INTO customer_authentication_credentials (id,customer_id,credential_type,password_hash,hash_algorithm,password_version,password_changed_at,status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE')`,
+      [credentialId, customerId],
+    );
+    await dataSource.query(
+      `INSERT INTO authentication_sessions (id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at,onboarding_password_version) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW()+interval '1 hour',NOW(),1)`,
+      [sessionId, customerId, credentialId, randomBytes(32).toString('hex')],
+    );
+    const principal = {
+      type: 'CUSTOMER' as const,
+      customerId,
+      principalId: customerId,
+      sessionId,
+      roles: [],
+      scopes: [],
+      customerAccess: 'SELF' as const,
+    };
+    await customerPinService.setTransactionPin(customerId, {
+      pinHash: hashPin('1234'),
+      hashAlgorithm: 'PBKDF2',
+      pinVersion: 1,
+      actor: customerId,
+    });
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const quote = await app.get(TransferQuoteService).create(principal, {
+      sourceWalletId: a.id,
+      destinationWalletId: b.id,
+      amountMinor: '50000',
+      currency: 'NGN',
+      idempotencyKey: `fee-quote-${randomUUID()}`,
+    });
+    await expect(
+      transferService.createConfirmedTransfer(
+        principal,
+        quote.quoteId,
+        `fee-confirm-${randomUUID()}`,
+        '1234',
+      ),
+    ).rejects.toBeDefined();
+    expect(await walletBalance(a.ledgerAccountId)).toBe(50000n);
+    expect(await walletBalance(b.ledgerAccountId)).toBe(0n);
+    expect(await accountingJournals()).toHaveLength(0);
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    expect(
+      await dataSource.query(
+        `SELECT q.status,b.transfer_id FROM payment_quotes q JOIN wallet_transfer_quote_bindings b ON b.quote_id=q.id WHERE q.id=$1`,
+        [quote.quoteId],
+      ),
+    ).toEqual([{ status: 'ACTIVE', transfer_id: null }]);
+  });
+
+  it.each([
+    { treatment: 'AGENT_WALLET_NETTING', timing: 'AT_COMPLETION', balance: 149025n },
+    { treatment: 'EXPENSE_PAYABLE', timing: 'ACCRUE_NOW_SETTLE_LATER', balance: 148925n },
+  ])(
+    'confirmed agent transfer reconciles fee VAT and class commission under $treatment',
+    async ({ treatment, timing, balance }) => {
+      configureAccounting({
+        COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT: treatment,
+        COMMERCIAL_COMMISSION_RECOGNITION_TIMING: timing,
+      });
+      await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1000', vatBps: 750 });
+      const { agent, cls, wallet } = await createActiveAgentWithPin(
+        [AgentService.WALLET_TRANSFER],
+        '1234',
+      );
+      await seedLimitProfile(
+        `P2PA_${randomUUID().slice(0, 6).toUpperCase()}`,
+        'AGENT',
+        agent.id,
+        'WALLET_TRANSFER',
+      );
+      await seedCommissionRule({
+        productCode: 'WALLET_TRANSFER',
+        percentageBps: 1000,
+        calculationBasis: 'FEE',
+        agentClassId: cls.id,
+      });
+      const recipient = await createWallet(await eligibleCustomerId());
+      await fundWallet(wallet.ledgerAccountId, '200000');
+      const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+      const quote = await app.get(TransferQuoteService).create(agentPrincipal(agent.id), {
+        destinationWalletId: recipient.id,
+        amountMinor: '50000',
+        currency: 'NGN',
+        idempotencyKey: randomUUID(),
+      });
+      expect(quote).toMatchObject({
+        sourceWalletId: wallet.id,
+        feeMinor: '1000',
+        vatMinor: '75',
+        totalDebitMinor: '51075',
+      });
+      const { OutboxEvent } = await import('../src/operations/outbox-event.entity');
+      const realOutbox = new OutboxService(dataSource.getRepository(OutboxEvent));
+      const spy = jest
+        .spyOn(throwingOutbox, 'enqueueOnce')
+        .mockImplementation((manager, event) => realOutbox.enqueueOnce(manager, event));
+      let transfer;
+      try {
+        transfer = await transferService.createConfirmedTransfer(
+          agentPrincipal(agent.id),
+          quote.quoteId,
+          randomUUID(),
+          '1234',
+        );
+      } finally {
+        spy.mockRestore();
+      }
+      expect(transfer.status).toBe('COMPLETED');
+      expect(await walletBalance(wallet.ledgerAccountId)).toBe(balance);
+      expect(await walletBalance(recipient.ledgerAccountId)).toBe(50000n);
+      const journals = await accountingJournals();
+      expect(journals).toHaveLength(1);
+      const lines = await linesForJournal(journals[0].id);
+      expect(lines).toContainEqual({
+        direction: 'CREDIT',
+        amount_minor: '75',
+        account_code: ACCOUNT_LEGEND.VAT_PAYABLE,
+      });
+      expect(lines).toContainEqual({
+        direction: 'DEBIT',
+        amount_minor: '100',
+        account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE,
+      });
+      expect(lines).toContainEqual(
+        expect.objectContaining({
+          direction: 'CREDIT',
+          amount_minor: '100',
+          ...(treatment === 'EXPENSE_PAYABLE'
+            ? { account_code: ACCOUNT_LEGEND.COMMISSION_PAYABLE }
+            : {}),
+        }),
+      );
+      const snapshots = await snapshotsFor('journal_id=$1', [transfer.journalId]);
+      expect(snapshots).toHaveLength(1);
+      expect(snapshots[0].commission_decision.allocations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            beneficiaryType: 'AGENT',
+            beneficiaryId: agent.id,
+            amountMinor: '100',
+          }),
+        ]),
+      );
+      const { TransferReconciliationService } = await import(
+        '../src/reconciliation/transfer-reconciliation.service'
+      );
+      expect(
+        await app.get(TransferReconciliationService).reconcileTransfer(transfer.id),
+      ).toMatchObject({
+        status: 'PASS',
+        discrepancies: [],
+        trace: {
+          quoteIds: [quote.quoteId],
+          commercialJournalIds: [journals[0].id],
+          commercialSnapshotIds: [snapshots[0].id],
+        },
+      });
+
+      // Corruption simulation is restricted to this disposable test database. First prove
+      // the production guards reject ordinary edits, then temporarily disable only the
+      // relevant guards inside each fixture transaction to test reconciliation's reader.
+      // Each fixture is restored and guarded before the next case; no real money is used.
+      const reconciliation = app.get(TransferReconciliationService);
+      const principalLines = await dataSource.query(
+        `SELECT id,amount_minor::text FROM ledger_lines WHERE journal_id=$1 AND direction='DEBIT'`,
+        [transfer.journalId],
+      );
+      const vatLines = await dataSource.query(
+        `SELECT l.id,l.amount_minor::text FROM ledger_lines l JOIN ledger_accounts a ON a.id=l.ledger_account_id WHERE l.journal_id=$1 AND a.code=$2`,
+        [journals[0].id, ACCOUNT_LEGEND.VAT_PAYABLE],
+      );
+      expect(principalLines).toHaveLength(1);
+      expect(vatLines).toHaveLength(1);
+      const commissionCredits = await dataSource.query(
+        `SELECT id,ledger_account_id FROM ledger_lines WHERE journal_id=$1 AND direction='CREDIT' AND amount_minor=100`,
+        [journals[0].id],
+      );
+      const vatAccount = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code=$1`, [
+        ACCOUNT_LEGEND.VAT_PAYABLE,
+      ]);
+      expect(commissionCredits).toHaveLength(1);
+      expect(vatAccount).toHaveLength(1);
+      await expect(
+        dataSource.query(`UPDATE ledger_lines SET amount_minor=amount_minor+1 WHERE id=$1`, [
+          vatLines[0].id,
+        ]),
+      ).rejects.toThrow(/immutable/i);
+      await expect(
+        dataSource.query(
+          `UPDATE commercial_decision_snapshots SET fee_decision=fee_decision WHERE id=$1`,
+          [snapshots[0].id],
+        ),
+      ).rejects.toThrow(/immutable/i);
+      async function corruptAndRestore(
+        table: 'ledger_lines' | 'commercial_decision_snapshots',
+        change: string,
+        args: unknown[],
+        restore: string,
+        restoreArgs: unknown[],
+        expected: RegExp,
+      ) {
+        const triggers =
+          table === 'ledger_lines'
+            ? ['ledger_lines_are_immutable', 'ledger_lines_must_balance_journal']
+            : ['trg_commercial_decision_snapshots_immutable'];
+        async function fixture(sql: string, values: unknown[]) {
+          await dataSource.transaction(async (manager) => {
+            for (const trigger of triggers)
+              await manager.query(`ALTER TABLE ${table} DISABLE TRIGGER ${trigger}`);
+            await manager.query(sql, values);
+            for (const trigger of triggers)
+              await manager.query(`ALTER TABLE ${table} ENABLE TRIGGER ${trigger}`);
+          });
+        }
+        await fixture(change, args);
+        try {
+          const report = await reconciliation.reconcileTransfer(transfer.id);
+          expect(report.status).toBe('ERROR');
+          expect(report.discrepancies).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                severity: 'ERROR',
+                message: expect.stringMatching(expected),
+              }),
+            ]),
+          );
+        } finally {
+          await fixture(restore, restoreArgs);
+        }
+        expect(await reconciliation.reconcileTransfer(transfer.id)).toMatchObject({
+          status: 'PASS',
+          discrepancies: [],
+        });
+      }
+      await corruptAndRestore(
+        'ledger_lines',
+        `UPDATE ledger_lines SET amount_minor=amount_minor+1 WHERE id=$1`,
+        [principalLines[0].id],
+        `UPDATE ledger_lines SET amount_minor=$2 WHERE id=$1`,
+        [principalLines[0].id, principalLines[0].amount_minor],
+        /journal debit and credit totals differ|transfer amount does not match/i,
+      );
+      await corruptAndRestore(
+        'ledger_lines',
+        `UPDATE ledger_lines SET amount_minor=amount_minor+1 WHERE id=$1`,
+        [vatLines[0].id],
+        `UPDATE ledger_lines SET amount_minor=$2 WHERE id=$1`,
+        [vatLines[0].id, vatLines[0].amount_minor],
+        /commercial journal is unbalanced|commercial journal lines do not match/i,
+      );
+      // Still balanced, but the commission credit was diverted to the wrong account.
+      await corruptAndRestore(
+        'ledger_lines',
+        `UPDATE ledger_lines SET ledger_account_id=$2 WHERE id=$1`,
+        [commissionCredits[0].id, vatAccount[0].id],
+        `UPDATE ledger_lines SET ledger_account_id=$2 WHERE id=$1`,
+        [commissionCredits[0].id, commissionCredits[0].ledger_account_id],
+        /commercial journal lines do not match/i,
+      );
+      await corruptAndRestore(
+        'commercial_decision_snapshots',
+        `UPDATE commercial_decision_snapshots SET fee_decision=jsonb_set(fee_decision,'{feeMinor}','"1001"'::jsonb) WHERE id=$1`,
+        [snapshots[0].id],
+        `UPDATE commercial_decision_snapshots SET fee_decision=$2::jsonb WHERE id=$1`,
+        [snapshots[0].id, JSON.stringify(snapshots[0].fee_decision)],
+        /fee decision economics|quoted pricing hash/i,
+      );
+      await corruptAndRestore(
+        'commercial_decision_snapshots',
+        `UPDATE commercial_decision_snapshots SET fee_decision=jsonb_set(fee_decision,'{posting,vatMinorPosted}','"76"'::jsonb) WHERE id=$1`,
+        [snapshots[0].id],
+        `UPDATE commercial_decision_snapshots SET fee_decision=$2::jsonb WHERE id=$1`,
+        [snapshots[0].id, JSON.stringify(snapshots[0].fee_decision)],
+        /fee and VAT posting evidence/i,
+      );
+      await corruptAndRestore(
+        'commercial_decision_snapshots',
+        `UPDATE commercial_decision_snapshots SET commission_decision=jsonb_set(commission_decision,'{allocations,0,amountMinor}','"101"'::jsonb) WHERE id=$1`,
+        [snapshots[0].id],
+        `UPDATE commercial_decision_snapshots SET commission_decision=$2::jsonb WHERE id=$1`,
+        [snapshots[0].id, JSON.stringify(snapshots[0].commission_decision)],
+        /commission allocation and expense do not agree/i,
+      );
+      await corruptAndRestore(
+        'commercial_decision_snapshots',
+        `UPDATE commercial_decision_snapshots SET commission_decision=jsonb_set(commission_decision,'{allocations,0,calculationParameters,percentageBps}','1100'::jsonb) WHERE id=$1`,
+        [snapshots[0].id],
+        `UPDATE commercial_decision_snapshots SET commission_decision=$2::jsonb WHERE id=$1`,
+        [snapshots[0].id, JSON.stringify(snapshots[0].commission_decision)],
+        /commission amount does not match its calculation evidence/i,
+      );
+      await corruptAndRestore(
+        'commercial_decision_snapshots',
+        `UPDATE commercial_decision_snapshots SET commission_decision=jsonb_set(commission_decision,'{allocations,0,beneficiaryId}',to_jsonb($2::text)) WHERE id=$1`,
+        [snapshots[0].id, randomUUID()],
+        `UPDATE commercial_decision_snapshots SET commission_decision=$2::jsonb WHERE id=$1`,
+        [snapshots[0].id, JSON.stringify(snapshots[0].commission_decision)],
+        /commission beneficiary does not match the acting agent/i,
+      );
+      // Missing or inconsistent accounting registry evidence cannot be certified as PASS.
+      await dataSource.query(
+        `UPDATE commercial_accounting_registry SET account_type='EXPENSE' WHERE family_code='VAT_PAYABLE'`,
+      );
+      try {
+        const report = await reconciliation.reconcileTransfer(transfer.id);
+        expect(report.status).toBe('WARNING');
+        expect(report.discrepancies).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              severity: 'WARNING',
+              message: expect.stringMatching(/registry evidence for VAT_PAYABLE/i),
+            }),
+          ]),
+        );
+      } finally {
+        await dataSource.query(
+          `UPDATE commercial_accounting_registry SET account_type='LIABILITY' WHERE family_code='VAT_PAYABLE'`,
+        );
+      }
+      expect(await reconciliation.reconcileTransfer(transfer.id)).toMatchObject({
+        status: 'PASS',
+        discrepancies: [],
+      });
+    },
+  );
+
+  it('concurrent confirmed transfer and agency cash-in share one operating balance safely', async () => {
+    const { agent, wallet } = await createActiveAgentWithPin(
+      [AgentService.WALLET_TRANSFER, AgentService.CASH_IN],
+      '1234',
+    );
+    await seedLimitProfile(
+      `P2PC_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'WALLET_TRANSFER',
+    );
+    const destination = await createWallet(await eligibleCustomerId());
+    const phone = newPhone();
+    const cashRecipient = await createCustomerWithPhone(phone);
+    await seedLimitProfile(
+      `P2PR_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      cashRecipient.customerId,
+      'CASH_TO_WALLET',
+    );
+    await fundWallet(wallet.ledgerAccountId, '100000');
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const quote = await app.get(TransferQuoteService).create(agentPrincipal(agent.id), {
+      destinationWalletId: destination.id,
+      amountMinor: '30000',
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    const attempts = await Promise.allSettled([
+      transferService.createConfirmedTransfer(
+        agentPrincipal(agent.id),
+        quote.quoteId,
+        randomUUID(),
+        '1234',
+      ),
+      cashInService.execute({
+        agentId: agent.id,
+        principal: agentPrincipal(agent.id),
+        pin: '1234',
+        recipientIdentifier: phone,
+        amountMinor: '30000',
+        currency: 'NGN',
+        idempotencyKey: randomUUID(),
+      }),
+    ]);
+    for (const attempt of attempts) {
+      if (attempt.status === 'rejected') throw attempt.reason;
+    }
+    expect(attempts.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled']);
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(40000n);
+    expect(await walletBalance(destination.ledgerAccountId)).toBe(30000n);
+    expect(await walletBalance(cashRecipient.walletLedgerAccountId)).toBe(30000n);
+    // Competing debits total more than the remaining float: at most one can post.
+    const second = await app.get(TransferQuoteService).create(agentPrincipal(agent.id), {
+      destinationWalletId: destination.id,
+      amountMinor: '30000',
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    const competing = await Promise.allSettled([
+      transferService.createConfirmedTransfer(
+        agentPrincipal(agent.id),
+        second.quoteId,
+        randomUUID(),
+        '1234',
+      ),
+      cashInService.execute({
+        agentId: agent.id,
+        principal: agentPrincipal(agent.id),
+        pin: '1234',
+        recipientIdentifier: phone,
+        amountMinor: '30000',
+        currency: 'NGN',
+        idempotencyKey: randomUUID(),
+      }),
+    ]);
+    expect(competing.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(competing.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(10000n);
+    expect(
+      (await walletBalance(destination.ledgerAccountId)) +
+        (await walletBalance(cashRecipient.walletLedgerAccountId)),
+    ).toBe(90000n);
+  });
+
+  it('sustains bounded authenticated HTTP transfer and cash-in contention without duplicate posting', async () => {
+    const { agent, wallet } = await createActiveAgentWithPin(
+      [AgentService.WALLET_TRANSFER, AgentService.CASH_IN],
+      '1234',
+    );
+    await dataSource.query(
+      `UPDATE agent_authentication_credentials SET password_hash=$2 WHERE agent_id=$1 AND status='ACTIVE'`,
+      [agent.id, hashPin('agent-pass')],
+    );
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId: agent.id, password: 'agent-pass' })
+      .expect(200);
+    const bearer = `Bearer ${login.body.accessToken as string}`;
+    await seedLimitProfile(
+      `P2PH_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'WALLET_TRANSFER',
+    );
+    const destination = await createWallet(await eligibleCustomerId());
+    const phone = newPhone();
+    const cashRecipient = await createCustomerWithPhone(phone);
+    await seedLimitProfile(
+      `P2PI_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      cashRecipient.customerId,
+      'CASH_TO_WALLET',
+    );
+    await fundWallet(wallet.ledgerAccountId, '100000');
+    const quote = async () =>
+      request(app.getHttpServer())
+        .post('/api/v1/agents/me/transfer-quotes')
+        .set('Authorization', bearer)
+        .set('Idempotency-Key', randomUUID())
+        .send({ destinationWalletId: destination.id, amountMinor: '30000', currency: 'NGN' })
+        .expect(201);
+    const transfer = (quoteId: string, key: string) =>
+      request(app.getHttpServer())
+        .post(`/api/v1/agents/me/transfer-quotes/${quoteId}/confirm`)
+        .set('Authorization', bearer)
+        .set('Idempotency-Key', key)
+        .send({ pin: '1234' });
+    const cashIn = (key: string) =>
+      request(app.getHttpServer())
+        .post('/api/v1/agents/cash-in')
+        .set('Authorization', bearer)
+        .send({
+          recipientIdentifier: phone,
+          amountMinor: '30000',
+          currency: 'NGN',
+          idempotencyKey: key,
+          pin: '1234',
+        });
+    const successfulTransferIds = new Set<string>();
+    const successfulCashJournals = new Set<string>();
+    const iterations = 12;
+    for (let iteration = 0; iteration < iterations; iteration++) {
+      // At the end of each prior round 10000 remains; restore exactly 100000.
+      if (iteration > 0) await fundWallet(wallet.ledgerAccountId, '90000');
+      const first = await quote();
+      const transferKey = randomUUID();
+      const cashKey = randomUUID();
+      const initial = await Promise.all([
+        transfer(first.body.quoteId as string, transferKey),
+        cashIn(cashKey),
+      ]);
+      expect(initial.map((r) => ({ status: r.status, body: r.body }))).toEqual([
+        expect.objectContaining({ status: 201 }),
+        expect.objectContaining({ status: 201 }),
+      ]);
+      successfulTransferIds.add(initial[0].body.id as string);
+      successfulCashJournals.add(initial[1].body.journalId as string);
+      expect(await walletBalance(wallet.ledgerAccountId)).toBe(40000n);
+      const replays = await Promise.all([
+        transfer(first.body.quoteId as string, transferKey),
+        cashIn(cashKey),
+      ]);
+      expect(replays[0].status).toBe(201);
+      expect(replays[0].body.id).toBe(initial[0].body.id);
+      expect(replays[1].status).toBe(201);
+      expect(replays[1].body.journalId).toBe(initial[1].body.journalId);
+      expect(await walletBalance(wallet.ledgerAccountId)).toBe(40000n);
+      const second = await quote();
+      const competingTransferKey = randomUUID();
+      const competingCashKey = randomUUID();
+      const competing = await Promise.all([
+        transfer(second.body.quoteId as string, competingTransferKey),
+        cashIn(competingCashKey),
+      ]);
+      expect(competing.filter((r) => r.status === 201)).toHaveLength(1);
+      expect(
+        competing.filter((r) => r.status !== 201).map((r) => ({ status: r.status, body: r.body })),
+      ).toEqual([expect.objectContaining({ status: 422 })]);
+      if (competing[0].status === 201) {
+        successfulTransferIds.add(competing[0].body.id as string);
+        const replay = await transfer(second.body.quoteId as string, competingTransferKey);
+        expect(replay.status).toBe(201);
+        expect(replay.body.id).toBe(competing[0].body.id);
+      } else {
+        successfulCashJournals.add(competing[1].body.journalId as string);
+        const replay = await cashIn(competingCashKey);
+        expect(replay.status).toBe(201);
+        expect(replay.body.journalId).toBe(competing[1].body.journalId);
+      }
+      expect(await walletBalance(wallet.ledgerAccountId)).toBe(10000n);
+      expect(
+        (await walletBalance(destination.ledgerAccountId)) +
+          (await walletBalance(cashRecipient.walletLedgerAccountId)),
+      ).toBe(BigInt(iteration + 1) * 90000n);
+    }
+    expect(successfulTransferIds.size + successfulCashJournals.size).toBe(iterations * 3);
+    const transfers: Array<{ id: string; status: string }> = await dataSource.query(
+      `SELECT id,status FROM transfers WHERE status='COMPLETED'`,
+    );
+    expect(new Set(transfers.map((t) => t.id))).toEqual(successfulTransferIds);
+    const journalRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_journals WHERE id = ANY($1::uuid[])`,
+      [Array.from(successfulCashJournals)],
+    );
+    expect(journalRows).toHaveLength(successfulCashJournals.size);
+    const debits: Array<{ journal_id: string; amount_minor: string }> = await dataSource.query(
+      `SELECT journal_id::text, amount_minor::text FROM ledger_lines WHERE ledger_account_id=$1 AND direction='DEBIT'`,
+      [wallet.ledgerAccountId],
+    );
+    const transferJournals: Array<{ journal_id: string }> = await dataSource.query(
+      `SELECT journal_id::text FROM transfers WHERE status='COMPLETED'`,
+    );
+    expect(debits).toHaveLength(iterations * 3);
+    expect(debits.every((line) => line.amount_minor === '30000')).toBe(true);
+    expect(new Set(debits.map((line) => line.journal_id))).toEqual(
+      new Set([...successfulCashJournals, ...transferJournals.map((row) => row.journal_id)]),
+    );
+  }, 180000);
+
+  it('agent self quote rejects cross-institution and partially attributed destinations', async () => {
+    const { agent, wallet } = await createActiveAgentWithPin(
+      [AgentService.WALLET_TRANSFER],
+      '1234',
+    );
+    const foreignInstitution = await governed.fixture.institution('foreign-p2p');
+    const foreignCustomer = await eligibleCustomerId();
+    const foreign = await walletService.createWallet({
+      customerId: foreignCustomer,
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    await governed.fixture.enrolCustomer(foreignCustomer, foreignInstitution, {
+      targetStatus: 'ACTIVE',
+      financialEligibility: 'ELIGIBLE',
+    });
+    await governed.fixture.attributeWallet(foreign.id, foreignInstitution);
+    const legacyCustomer = await eligibleCustomerId();
+    const legacy = await walletService.createWallet({
+      customerId: legacyCustomer,
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const quotes = app.get(TransferQuoteService);
+    const input = { amountMinor: '1000', currency: 'NGN', idempotencyKey: randomUUID() };
+    await expect(
+      quotes.create(agentPrincipal(agent.id), { ...input, destinationWalletId: foreign.id }),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      quotes.create(agentPrincipal(agent.id), {
+        ...input,
+        idempotencyKey: randomUUID(),
+        destinationWalletId: legacy.id,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(0n);
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    expect(
+      await dataSource.query(`SELECT quote_id FROM wallet_transfer_quote_bindings`),
+    ).toHaveLength(0);
+  });
+
+  it('refuses confirmation after the governing institution is suspended', async () => {
+    const { agent, wallet } = await createActiveAgentWithPin(
+      [AgentService.WALLET_TRANSFER],
+      '1234',
+    );
+    const destination = await createWallet(await eligibleCustomerId());
+    await seedLimitProfile(
+      `SUSP_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'WALLET_TRANSFER',
+    );
+    await fundWallet(wallet.ledgerAccountId, '50000');
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const quote = await app.get(TransferQuoteService).create(agentPrincipal(agent.id), {
+      destinationWalletId: destination.id,
+      amountMinor: '1000',
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    const key = randomUUID();
+    await governed.fixture.changeInstitutionStatus(governed.institutionId, 'SUSPENDED');
+    await expect(
+      transferService.createConfirmedTransfer(agentPrincipal(agent.id), quote.quoteId, key, '1234'),
+    ).rejects.toMatchObject({ status: 503 });
+    await expect(
+      app.get(TransferQuoteService).create(agentPrincipal(agent.id), {
+        destinationWalletId: destination.id,
+        amountMinor: '1000',
+        currency: 'NGN',
+        idempotencyKey: randomUUID(),
+      }),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(50000n);
+    expect(await walletBalance(destination.ledgerAccountId)).toBe(0n);
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    expect(
+      await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [quote.quoteId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
+    await governed.fixture.changeInstitutionStatus(governed.institutionId, 'APPROVED');
+    const result = await transferService.createConfirmedTransfer(
+      agentPrincipal(agent.id),
+      quote.quoteId,
+      key,
+      '1234',
+    );
+    expect(result.status).toBe('COMPLETED');
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(49000n);
+    expect(await walletBalance(destination.ledgerAccountId)).toBe(1000n);
+  });
+
+  it('refuses a quoted transfer after governed agent affiliation suspension', async () => {
+    const { agent, wallet } = await createActiveAgentWithPin(
+      [AgentService.WALLET_TRANSFER],
+      '1234',
+    );
+    const destination = await createWallet(await eligibleCustomerId());
+    await fundWallet(wallet.ledgerAccountId, '50000');
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const quote = await app.get(TransferQuoteService).create(agentPrincipal(agent.id), {
+      destinationWalletId: destination.id,
+      amountMinor: '1000',
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    const { networkManager, controller } = await governed.fixture.workforce();
+    const body = {
+      institutionId: governed.institutionId,
+      changeKind: 'SUSPEND',
+      evidenceType: 'INSTITUTION_APPROVAL_LETTER',
+      evidenceReference: `SUSP-${randomUUID()}`,
+      reason: 'Agent affiliation suspended under the institution governance procedure',
+    };
+    const path = `/api/v1/internal/agent-affiliations/${agent.id}`;
+    const prepared = await request(app.getHttpServer())
+      .post(`${path}/request`)
+      .set('Authorization', `Bearer ${networkManager.token}`)
+      .send(body)
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/a2/workforce/approvals/${prepared.body.approvalId as string}/approve`)
+      .set('Authorization', `Bearer ${controller.token}`)
+      .send({ comment: 'independently checked' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`${path}/execute`)
+      .set('Authorization', `Bearer ${controller.token}`)
+      .send({ ...body, approvalId: prepared.body.approvalId })
+      .expect(201);
+    await expect(
+      transferService.createConfirmedTransfer(
+        agentPrincipal(agent.id),
+        quote.quoteId,
+        randomUUID(),
+        '1234',
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(50000n);
+    expect(await walletBalance(destination.ledgerAccountId)).toBe(0n);
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    expect(
+      await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [quote.quoteId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
+  });
+
+  it('refuses a quoted transfer after governed recipient enrolment suspension', async () => {
+    const { agent, wallet } = await createActiveAgentWithPin(
+      [AgentService.WALLET_TRANSFER],
+      '1234',
+    );
+    const customerId = await eligibleCustomerId();
+    const destination = await createWallet(customerId);
+    await fundWallet(wallet.ledgerAccountId, '50000');
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const quote = await app.get(TransferQuoteService).create(agentPrincipal(agent.id), {
+      destinationWalletId: destination.id,
+      amountMinor: '1000',
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    const { networkManager, controller } = await governed.fixture.workforce();
+    const path = `/api/v1/internal/institutions/${governed.institutionId}/enrolments`;
+    const body = {
+      customerId,
+      reference: `SUSP-${randomUUID()}`,
+      targetStatus: 'SUSPENDED',
+      financialEligibility: 'RESTRICTED',
+      statusReason: 'Customer enrolment suspended under institution governance procedure',
+    };
+    const prepared = await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${networkManager.token}`)
+      .send(body)
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/a2/workforce/approvals/${prepared.body.approvalId as string}/approve`)
+      .set('Authorization', `Bearer ${controller.token}`)
+      .send({ comment: 'independently checked' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`${path}/execute`)
+      .set('Authorization', `Bearer ${controller.token}`)
+      .send({ ...body, approvalId: prepared.body.approvalId })
+      .expect(201);
+    await expect(
+      transferService.createConfirmedTransfer(
+        agentPrincipal(agent.id),
+        quote.quoteId,
+        randomUUID(),
+        '1234',
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(50000n);
+    expect(await walletBalance(destination.ledgerAccountId)).toBe(0n);
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    expect(
+      await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [quote.quoteId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
+  });
+
+  it('confirmed transfer refuses a nonzero commission when accounting is disabled', async () => {
+    configureAccounting({ COMMERCIAL_ACCOUNTING_ENABLED: undefined });
+    await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '0', vatBps: 0 });
+    await seedCommissionRule({
+      productCode: 'WALLET_TRANSFER',
+      flatCommissionMinor: '100',
+      calculationBasis: 'PRINCIPAL',
+    });
+    const customerId = await eligibleCustomerId();
+    const a = await createWallet(customerId);
+    const b = await createWallet(await eligibleCustomerId());
+    await fundWallet(a.ledgerAccountId, '50000');
+    const credentialId = randomUUID();
+    const sessionId = randomUUID();
+    await dataSource.query(
+      `INSERT INTO customer_authentication_credentials (id,customer_id,credential_type,password_hash,hash_algorithm,password_version,password_changed_at,status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE')`,
+      [credentialId, customerId],
+    );
+    await dataSource.query(
+      `INSERT INTO authentication_sessions (id,customer_id,credential_id,token_hash,audience,status,issued_at,expires_at,last_seen_at,onboarding_password_version) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW()+interval '1 hour',NOW(),1)`,
+      [sessionId, customerId, credentialId, randomBytes(32).toString('hex')],
+    );
+    const principal = {
+      type: 'CUSTOMER' as const,
+      customerId,
+      principalId: customerId,
+      sessionId,
+      roles: [],
+      scopes: [],
+      customerAccess: 'SELF' as const,
+    };
+    await customerPinService.setTransactionPin(customerId, {
+      pinHash: hashPin('1234'),
+      hashAlgorithm: 'PBKDF2',
+      pinVersion: 1,
+      actor: customerId,
+    });
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const quote = await app.get(TransferQuoteService).create(principal, {
+      sourceWalletId: a.id,
+      destinationWalletId: b.id,
+      amountMinor: '50000',
+      currency: 'NGN',
+      idempotencyKey: `fee-quote-${randomUUID()}`,
+    });
+    await expect(
+      transferService.createConfirmedTransfer(
+        principal,
+        quote.quoteId,
+        `fee-confirm-${randomUUID()}`,
+        '1234',
+      ),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(await walletBalance(a.ledgerAccountId)).toBe(50000n);
+    expect(await walletBalance(b.ledgerAccountId)).toBe(0n);
+    expect(await accountingJournals()).toHaveLength(0);
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    expect(
+      await dataSource.query(
+        `SELECT q.status,b.transfer_id FROM payment_quotes q JOIN wallet_transfer_quote_bindings b ON b.quote_id=q.id WHERE q.id=$1`,
+        [quote.quoteId],
+      ),
+    ).toEqual([{ status: 'ACTIVE', transfer_id: null }]);
+  });
+
   // ── 12-16: VAT (configurable, never hard-coded, fail closed) ──
 
   it('12. EXCLUSIVE_ADD_ON: VAT leg == authoritative decision vatMinor; payer debited fee+vat', async () => {
@@ -1166,6 +2098,46 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     // The netting credit LANDED on the acting agent's wallet:
     // 500000 funded − 30000 principal + 100 netting credit.
     expect(await walletBalance(run.agentWallet.ledgerAccountId)).toBe(470100n);
+  });
+
+  it('agent commission netting refuses a customer wallet even when its ID is supplied as beneficiary', async () => {
+    configureAccounting({
+      COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT: 'AGENT_WALLET_NETTING',
+      COMMERCIAL_COMMISSION_RECOGNITION_TIMING: 'AT_COMPLETION',
+    });
+    const customerId = await eligibleCustomerId();
+    const wallet = await createWallet(customerId);
+    await fundWallet(wallet.ledgerAccountId, '1000');
+    const input = {
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      baseIdempotencyKey: `invalid-beneficiary-${randomUUID()}`,
+      correlationId: null,
+      reference: null,
+      snapshotIdempotencyKey: `snapshot-${randomUUID()}`,
+      metadata: {},
+      feePayerCustomerId: customerId,
+      feeDecision: { status: 'ZERO' },
+      commissionDecision: {
+        status: 'ALLOCATED',
+        allocations: [
+          {
+            beneficiaryType: 'AGENT',
+            beneficiaryId: customerId,
+            amountMinor: '100',
+            currency: 'NGN',
+          },
+        ],
+      },
+    };
+    await expect(
+      dataSource.transaction((manager) => accountingService.postForCompletion(manager, input)),
+    ).rejects.toMatchObject({
+      status: 422,
+      blockerCode: 'COMMERCIAL_BENEFICIARY_WALLET_NOT_RESOLVABLE',
+    });
+    expect(await walletBalance(wallet.ledgerAccountId)).toBe(1000n);
+    expect(await accountingJournals()).toHaveLength(0);
   });
 
   it('20b. WT (no acting agent) + netting → fails closed (beneficiary wallet unresolvable)', async () => {

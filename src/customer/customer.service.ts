@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 import {
   BadRequestException,
@@ -14,8 +14,7 @@ import { DataSource, EntityManager, IsNull, Not, QueryFailedError, Repository } 
 import { AuthenticationSessionService } from '../customer-authentication/authentication-session.service';
 import { CustomerFinancialEligibilityService } from '../kyc-verification/customer-financial-eligibility.service';
 import { AuditService } from '../operations/audit.service';
-import { REGISTRATION_VERIFICATION_TOKEN_TTL_SECONDS } from '../customer-registration/customer-registration.constants';
-import { CustomerRegistrationPhoneChallenge } from '../customer-registration/customer-registration-phone-challenge.entity';
+import { consumePhoneVerificationToken } from '../customer-registration/phone-verification-token';
 import { normalizeNigerianPhone } from '../customer-registration/phone-normalization';
 import { maskCustomerReference } from './customer-privacy';
 import {
@@ -770,11 +769,9 @@ export class CustomerService {
             );
           }
           const phone = normalizeNigerianPhone(parsedPhone.e164);
-          verifiedAt = await this.consumePhoneVerificationToken(
-            manager,
-            phone.canonical,
-            command.verificationToken,
-          );
+          verifiedAt = (
+            await consumePhoneVerificationToken(manager, phone.canonical, command.verificationToken)
+          ).verifiedAt;
           contact.value = phone.e164;
           contact.normalizedValue = phone.canonical;
           contact.verifiedAt = verifiedAt;
@@ -1132,48 +1129,6 @@ export class CustomerService {
         { isPrimary: false },
       );
     }
-  }
-
-  private async consumePhoneVerificationToken(
-    manager: EntityManager,
-    normalizedPhone: string,
-    token: string,
-  ): Promise<Date> {
-    const tokenHash = createHash('sha256').update(token).digest('hex');
-    const repository = manager.getRepository(CustomerRegistrationPhoneChallenge);
-    const challenge = await repository
-      .createQueryBuilder('challenge')
-      .where('challenge.normalized_phone = :phone', { phone: normalizedPhone })
-      .andWhere("challenge.status = 'VERIFIED'")
-      .andWhere('challenge.consumed_at IS NULL')
-      .andWhere('challenge.revoked_at IS NULL')
-      .orderBy('challenge.created_at', 'DESC')
-      .setLock('pessimistic_write')
-      .getOne();
-    const storedHash = challenge?.verificationTokenHash;
-    const storedBytes =
-      storedHash && /^[a-f0-9]{64}$/i.test(storedHash)
-        ? Buffer.from(storedHash, 'hex')
-        : Buffer.alloc(0);
-    const suppliedBytes = Buffer.from(tokenHash, 'hex');
-    const tokenMatches =
-      storedBytes.length === suppliedBytes.length &&
-      storedBytes.length > 0 &&
-      timingSafeEqual(storedBytes, suppliedBytes);
-    const verifiedAt = challenge?.verifiedAt;
-    const now = new Date();
-    if (
-      !challenge ||
-      !verifiedAt ||
-      !tokenMatches ||
-      verifiedAt.getTime() > now.getTime() ||
-      now.getTime() - verifiedAt.getTime() > REGISTRATION_VERIFICATION_TOKEN_TTL_SECONDS * 1000
-    ) {
-      throw new BadRequestException('Phone verification token is invalid or expired');
-    }
-    challenge.consumedAt = now;
-    await repository.save(challenge);
-    return verifiedAt;
   }
 
   private async lockCustomer(manager: EntityManager, id: string): Promise<Customer | null> {

@@ -10,6 +10,7 @@ import { LoginScreen } from '../screens/unauthenticated/LoginScreen';
 import { RotateCredentialScreen } from '../screens/unauthenticated/RotateCredentialScreen';
 
 import { HomeScreen } from '../screens/authenticated/HomeScreen';
+import { QuotedSendMoneyScreen } from '../screens/authenticated/QuotedSendMoneyScreen';
 import { AccountScreen } from '../screens/authenticated/AccountScreen';
 import { FundingAccountScreen } from '../screens/authenticated/FundingAccountScreen';
 import { TransactionsScreen } from '../screens/authenticated/TransactionsScreen';
@@ -83,7 +84,16 @@ export const AppNavigator: React.FC = () => {
             component={HomeScreen}
             options={{ title: 'MonieNaija Agent' }}
           />
-          <Stack.Screen name="Account" component={AccountScreen} options={{ title: 'Agent Account' }} />
+          <Stack.Screen
+            name="SendMoney"
+            component={QuotedSendMoneyScreen}
+            options={{ title: 'Send Money' }}
+          />
+          <Stack.Screen
+            name="Account"
+            component={AccountScreen}
+            options={{ title: 'Agent Account' }}
+          />
           <Stack.Screen
             name="FundingAccount"
             component={FundingAccountScreen}

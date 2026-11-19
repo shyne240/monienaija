@@ -25,7 +25,7 @@ import { CustomerBeneficiaryStatus, CustomerBeneficiaryType } from './customer-b
 @Index('idx_customer_beneficiaries_customer_status', ['customerId', 'status'])
 @Check(
   'chk_customer_beneficiaries_type',
-  "beneficiary_type IN ('INTERNAL_CUSTOMER', 'BANK_ACCOUNT', 'MOBILE_MONEY', 'CASH_AGENT')",
+  "beneficiary_type IN ('INTERNAL_CUSTOMER', 'INTERNAL_AGENT', 'BANK_ACCOUNT', 'MOBILE_MONEY', 'CASH_AGENT')",
 )
 @Check(
   'chk_customer_beneficiaries_status',
@@ -37,8 +37,17 @@ export class CustomerBeneficiary {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'customer_id', type: 'uuid' })
-  customerId!: string;
+  @Column({ name: 'customer_id', type: 'uuid', nullable: true })
+  customerId!: string | null;
+
+  @Column({ name: 'agent_id', type: 'uuid', nullable: true })
+  agentId!: string | null;
+
+  @Column({ name: 'wallet_recipient_type', type: 'varchar', length: 12, nullable: true })
+  walletRecipientType!: 'CUSTOMER' | 'AGENT' | null;
+
+  @Column({ name: 'wallet_recipient_id', type: 'uuid', nullable: true })
+  walletRecipientId!: string | null;
 
   @Column({ name: 'beneficiary_type', type: 'varchar', length: 30 })
   type!: CustomerBeneficiaryType;

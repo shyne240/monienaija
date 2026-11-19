@@ -1244,6 +1244,9 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       customerId: customerId,
       amountMinor: '8000',
     });
+    // Observe real PostgreSQL errors, including a deadlock hidden by a later successful
+    // retry. Do not change scheduling, retry policy, authorization or the DB response.
+    const queryErrors = jest.spyOn(dataSource.logger, 'logQueryError');
     const results = await Promise.allSettled([
       cashOutService.execute({
         agentId: agent.id,
@@ -1270,15 +1273,36 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         idempotencyKey: xKey2,
       }),
     ]);
-    const fulfilled = results.filter(
-      (r) => r.status === 'fulfilled',
-    ) as PromiseFulfilledResult<any>[];
+    const dbCodes = queryErrors.mock.calls.map(([error]) => (error as { code?: string }).code);
+    queryErrors.mockRestore();
+    const fulfilled = results.filter((r) => r.status === 'fulfilled') as PromiseFulfilledResult<
+      Awaited<ReturnType<AgentCashOutService['execute']>>
+    >[];
     const rejected = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
-    expect(fulfilled.length).toBe(1);
-    expect(rejected.length).toBe(1);
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    const winner = fulfilled[0]!.value;
+    expect(winner.status).toBe('COMPLETED');
+    expect((await ledgerService.getAccountBalance(custWallet.ledgerAccountId)).balanceMinor).toBe(
+      '2000',
+    );
+    expect((await ledgerService.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe(
+      '8000',
+    );
+    expect(
+      await dataSource.query(
+        `SELECT id FROM ledger_journals WHERE idempotency_key = ANY($1::text[])`,
+        [[xKey1, xKey2].map((key) => `agent:${agent.id}:${key}`)],
+      ),
+    ).toEqual([{ id: winner.journalId }]);
+    expect(
+      await dataSource.query(
+        `SELECT journal_id, idempotency_key FROM cash_out_execution_records WHERE agent_id=$1 AND idempotency_key = ANY($2::text[])`,
+        [agent.id, [xKey1, xKey2]],
+      ),
+    ).toEqual([{ journal_id: winner.journalId, idempotency_key: winner.idempotencyKey }]);
     expect((rejected[0]!.reason as Error).message.toLowerCase()).toContain('sufficient');
-    const custBal = await ledgerService.getAccountBalance(custWallet.ledgerAccountId);
-    expect(custBal.balanceMinor).toBe('2000');
+    expect(dbCodes).not.toContain('40P01');
   });
 
   it('Y. concurrent Agent credits remain correct', async () => {

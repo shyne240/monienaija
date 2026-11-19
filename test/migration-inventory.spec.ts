@@ -65,12 +65,13 @@ describe('migration inventory', () => {
     expect(timestamps.has('1785753600118')).toBe(true);
   });
 
-  it('ends at the privacy and retention migration', () => {
-    // ARENA 3D Group 27 superseded the notification delivery receipts migration as the newest. Earlier
-    // identifiers remain present and unchanged (asserted below); only the "latest" pin moves.
+  it('ends at the allocated beneficiary ownership migration', () => {
+    // The consolidated chain carries both frozen branches: Arena 3D appended 0606-0614 after the
+    // banking range and Arena 2C appended 0800-0802 after that. The consolidated head is 0802 and
+    // it is pinned exactly — a head-only allowance would let a skipped earlier identity pass.
     expect(migrations.at(-1)).toMatchObject({
-      timestamp: '1785753600614',
-      name: 'PrivacyAndRetention1785753600614',
+      timestamp: '1785753600802',
+      name: 'ExtendBeneficiaryOwnership1785753600802',
     });
   });
 
@@ -100,6 +101,56 @@ describe('migration inventory', () => {
       '1785753600604',
       '1785753600605',
     ]);
+  });
+
+  it('contains the Arena 3D appended identities 0606-0614 in order', () => {
+    // ARENA 3D appended these after the banking range. They are required published identities:
+    // they are never renumbered, rewritten or dropped, and no gap is permitted inside the range
+    // even though they are not part of the contiguous 0600-0605 banking allocation.
+    const arena3d = [
+      ['1785753600606', 'OutboxLeasesAndDeadLetters1785753600606'],
+      ['1785753600607', 'IntegritySnapshots1785753600607'],
+      ['1785753600608', 'EmergencyAccessReviewRequirement1785753600608'],
+      ['1785753600609', 'FraudRiskSignals1785753600609'],
+      ['1785753600610', 'ComplianceRegister1785753600610'],
+      ['1785753600611', 'ComplaintsAndDisputes1785753600611'],
+      ['1785753600612', 'MobileClientSupport1785753600612'],
+      ['1785753600613', 'NotificationDeliveryReceipts1785753600613'],
+      ['1785753600614', 'PrivacyAndRetention1785753600614'],
+    ] as const;
+    const byTimestamp = new Map(migrations.map((migration) => [migration.timestamp, migration.name]));
+    for (const [timestamp, name] of arena3d) {
+      expect(byTimestamp.get(timestamp)).toBe(name);
+    }
+    const positions = arena3d.map(([timestamp]) =>
+      migrations.findIndex((migration) => migration.timestamp === timestamp),
+    );
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+  });
+
+  it('contains the Arena 2C appended identities 0800-0802 in order after the 3D range', () => {
+    // Arena 2C appended these after the Arena 3D range. They carry the wallet-transfer quote
+    // binding, agent verified-phone proof and typed beneficiary ownership. Each identity is
+    // published and is never renumbered.
+    const arena2c = [
+      ['1785753600800', 'BindWalletTransferQuotes1785753600800'],
+      ['1785753600801', 'AgentVerifiedPhone1785753600801'],
+      ['1785753600802', 'ExtendBeneficiaryOwnership1785753600802'],
+    ] as const;
+    const byTimestamp = new Map(migrations.map((migration) => [migration.timestamp, migration.name]));
+    for (const [timestamp, name] of arena2c) {
+      expect(byTimestamp.get(timestamp)).toBe(name);
+    }
+    const last3d = migrations.findIndex((migration) => migration.timestamp === '1785753600614');
+    const first2c = migrations.findIndex((migration) => migration.timestamp === '1785753600800');
+    expect(first2c).toBeGreaterThan(last3d);
+  });
+
+  it('contains exactly 164 migration identities', () => {
+    // The consolidated inventory is the union of the two frozen branches: 152 common identities
+    // (151 byte-identical plus one formatted 3D copy), nine appended by Arena 3D and three by
+    // Arena 2C. Any additional or missing file fails this assertion.
+    expect(migrations.length).toBe(164);
   });
 
   it('orders the adopted Arena 2 evidence migrations before the institutional chain', () => {

@@ -23,6 +23,8 @@ export interface UnifiedHistoryItem {
   reference: string | null;
   narration: string | null;
   feeMinor: string;
+  vatMinor?: string;
+  totalDebitMinor?: string | null;
   sourceWalletId: string | null;
   destinationWalletId: string | null;
   counterparty: Record<string, unknown> | null;
@@ -73,7 +75,7 @@ export class CustomerTransactionHistoryService {
     // Fetch wallets + ledger account ids for this customer (bounded, indexed)
     const walletRows: Array<{ id: string; ledger_account_id: string }> =
       await this.dataSource.query(
-        `SELECT id, ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
+        `SELECT id, ledger_account_id FROM wallet_accounts WHERE customer_id=$1 AND owner_class='CUSTOMER' AND wallet_owner_class(customer_id)='CUSTOMER'`,
         [customerId],
       );
     const walletIds = walletRows.map((r) => r.id);
@@ -98,7 +100,7 @@ export class CustomerTransactionHistoryService {
     if (shouldInclude('WALLET_TRANSFER')) {
       if (walletIds.length > 0) {
         const rows: Array<{ count: string }> = await this.dataSource.query(
-          `SELECT count(*)::text as count FROM transfers WHERE source_wallet_id = ANY($1::uuid[]) OR destination_wallet_id = ANY($1::uuid[])`,
+          `SELECT count(*)::text as count FROM transfers WHERE source_wallet_id = ANY($1::uuid[]) OR (destination_wallet_id = ANY($1::uuid[]) AND status='COMPLETED')`,
           [walletIds],
         );
         total += Number(rows[0]?.count ?? '0');
@@ -166,7 +168,7 @@ export class CustomerTransactionHistoryService {
 
     if (shouldInclude('WALLET_TRANSFER') && walletIds.length > 0) {
       const rows: Array<any> = await this.dataSource.query(
-        `SELECT id::text as id, 'WALLET_TRANSFER'::text as type, status::text as status, amount_minor::text as amount_minor, currency::text as currency, fee_minor::text as fee_minor, vat_minor::text as vat_minor, created_at, completed_at, reference::text as reference, narration::text as narration, source_wallet_id::text as source_wallet_id, destination_wallet_id::text as destination_wallet_id, failure_code::text as failure_code, failure_message::text as failure_message FROM transfers WHERE source_wallet_id = ANY($1::uuid[]) OR destination_wallet_id = ANY($1::uuid[]) ORDER BY created_at DESC, id DESC`,
+        `SELECT t.id::text as id, 'WALLET_TRANSFER'::text as type, t.status::text as status, t.amount_minor::text as amount_minor, t.currency::text as currency, t.fee_minor::text as fee_minor, t.vat_minor::text as vat_minor, q.total_minor::text as total_debit_minor, t.created_at, t.completed_at, COALESCE(t.payment_reference,t.reference)::text as reference, t.narration::text as narration, t.source_wallet_id::text as source_wallet_id, t.destination_wallet_id::text as destination_wallet_id, t.failure_code::text as failure_code, t.failure_message::text as failure_message FROM transfers t LEFT JOIN wallet_transfer_quote_bindings b ON b.transfer_id=t.id LEFT JOIN payment_quotes q ON q.id=b.quote_id WHERE t.source_wallet_id = ANY($1::uuid[]) OR (t.destination_wallet_id = ANY($1::uuid[]) AND t.status='COMPLETED') ORDER BY t.created_at DESC, t.id DESC`,
         [walletIds],
       );
       for (const r of rows) {
@@ -296,6 +298,7 @@ export class CustomerTransactionHistoryService {
     const walletMap = new Map<string, any>();
     const profileMap = new Map<string, any>();
     const contactMap = new Map<string, any>();
+    const agentMap = new Map<string, any>();
     if (walletTransferRows.length > 0 && walletIds.length > 0) {
       const counterpartyWalletIds = [
         ...new Set(
@@ -313,13 +316,28 @@ export class CustomerTransactionHistoryService {
       ];
       if (counterpartyWalletIds.length > 0) {
         const cpWallets: Array<any> = await this.dataSource.query(
-          `SELECT id::text as id, customer_id::text as customer_id, currency::text as currency FROM wallet_accounts WHERE id = ANY($1::uuid[])`,
+          `SELECT id::text as id, customer_id::text as customer_id, currency::text as currency, owner_class, wallet_owner_class(customer_id) AS current_class FROM wallet_accounts WHERE id = ANY($1::uuid[])`,
           [counterpartyWalletIds],
         );
         for (const w of cpWallets) walletMap.set(w.id, w);
         const customerIds = [
-          ...new Set(cpWallets.map((w) => w.customer_id).filter(Boolean)),
+          ...new Set(
+            cpWallets
+              .filter((w) => w.owner_class === 'CUSTOMER' && w.current_class === 'CUSTOMER')
+              .map((w) => w.customer_id)
+              .filter(Boolean),
+          ),
         ] as string[];
+        const agentIds = cpWallets
+          .filter((w) => w.owner_class === 'AGENT' && w.current_class === 'AGENT')
+          .map((w) => w.customer_id);
+        if (agentIds.length > 0) {
+          const agents: Array<any> = await this.dataSource.query(
+            `SELECT a.id::text AS id, a.reference, r.receiving_number FROM agents a LEFT JOIN agent_receiving_numbers r ON r.agent_id=a.id AND r.deleted_at IS NULL AND r.status='ACTIVE' WHERE a.id=ANY($1::uuid[]) AND a.deleted_at IS NULL`,
+            [agentIds],
+          );
+          for (const agent of agents) agentMap.set(agent.id, agent);
+        }
         if (customerIds.length > 0) {
           const profiles: Array<any> = await this.dataSource.query(
             `SELECT customer_id::text as customer_id, display_name::text as display_name, is_active, deleted_at FROM customer_profiles WHERE customer_id = ANY($1::uuid[])`,
@@ -367,15 +385,24 @@ export class CustomerTransactionHistoryService {
         const cpWallet = counterpartyWalletId
           ? (walletMap.get(counterpartyWalletId) ?? null)
           : null;
-        const cpCustomerId = cpWallet?.customer_id ?? null;
+        const cpType =
+          cpWallet?.owner_class === cpWallet?.current_class ? cpWallet?.owner_class : null;
+        const cpCustomerId = cpType === 'CUSTOMER' ? cpWallet?.customer_id : null;
+        const cpAgent = cpType === 'AGENT' ? agentMap.get(cpWallet?.customer_id) : null;
         const cpProfile = cpCustomerId ? (profileMap.get(cpCustomerId) ?? null) : null;
         const cpContact = cpCustomerId ? (contactMap.get(cpCustomerId) ?? null) : null;
         counterparty = counterpartyWalletId
           ? {
               walletId: counterpartyWalletId,
+              ownerType: cpType === 'CUSTOMER' || cpType === 'AGENT' ? cpType : null,
               customerId: cpCustomerId,
-              displayName: cpProfile?.display_name ?? null,
-              receivingNumber: cpContact?.normalized_value ?? cpContact?.value ?? null,
+              agentId: cpType === 'AGENT' ? (cpAgent?.id ?? null) : null,
+              displayName: cpProfile?.display_name ?? cpAgent?.reference ?? null,
+              receivingNumber:
+                cpContact?.normalized_value ??
+                cpContact?.value ??
+                cpAgent?.receiving_number ??
+                null,
             }
           : null;
         // failureCode already from transfer.failure_code
@@ -455,7 +482,19 @@ export class CustomerTransactionHistoryService {
         completedAt,
         reference: r.reference ?? null,
         narration: r.narration ?? null,
-        feeMinor: (r.fee_minor as string | number | bigint | null | undefined)?.toString() ?? '0',
+        feeMinor:
+          r.type === 'WALLET_TRANSFER' && (direction === 'RECEIVED' || r.status !== 'COMPLETED')
+            ? '0'
+            : ((r.fee_minor as string | number | bigint | null | undefined)?.toString() ?? '0'),
+        ...(r.type === 'WALLET_TRANSFER'
+          ? {
+              vatMinor:
+                direction === 'RECEIVED' || r.status !== 'COMPLETED'
+                  ? '0'
+                  : String(r.vat_minor ?? '0'),
+              totalDebitMinor: direction === 'RECEIVED' ? null : (r.total_debit_minor ?? null),
+            }
+          : {}),
         sourceWalletId,
         destinationWalletId,
         counterparty,

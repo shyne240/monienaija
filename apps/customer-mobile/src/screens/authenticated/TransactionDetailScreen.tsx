@@ -83,7 +83,7 @@ export const TransactionDetailScreen: React.FC = () => {
     void load();
   }, [load]);
 
-  const reference = detail?.reference ?? preview?.reference ?? null;
+  const reference = detail?.paymentReference ?? detail?.reference ?? preview?.reference ?? null;
   const copyReference = useCallback(async () => {
     if (!reference) return;
     try {
@@ -141,6 +141,10 @@ export const TransactionDetailScreen: React.FC = () => {
             />
           ) : null}
           {detail?.feeMinor ? <DetailRow label="Fee" value={formatMinor(detail.feeMinor)} /> : null}
+          {detail?.vatMinor ? <DetailRow label="VAT" value={formatMinor(detail.vatMinor)} /> : null}
+          {detail?.totalDebitMinor ? (
+            <DetailRow label="Total debit" value={formatMinor(detail.totalDebitMinor)} />
+          ) : null}
           {reference ? (
             <View style={styles.referenceRow}>
               <View style={styles.referenceCopy}>

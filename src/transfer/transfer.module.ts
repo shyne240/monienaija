@@ -1,6 +1,15 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { CustomerModule } from '../customer/customer.module';
+import { InstitutionModule } from '../institution/institution.module';
+import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
+import { AgentAuthenticationModule } from '../agent-authentication/agent-authentication.module';
+import { TransferPinAuthorizationService } from './transfer-pin-authorization.service';
+import {
+  CustomerSelfTransferQuoteController,
+  AgentSelfTransferQuoteController,
+} from './self-transfer-quote.controller';
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { CapabilityPolicyModule } from '../policy/capability-policy.module';
 import { OperationsModule } from '../operations/operations.module';
@@ -30,11 +39,18 @@ import {
   INTERNAL_TRANSFER_IDEMPOTENCY_PORT,
 } from './internal-transfer-gate.types';
 import { TransferService } from './transfer.service';
+import { TransferPricingService } from './transfer-pricing.service';
+import { TransferQuoteService } from './transfer-quote.service';
+import { PaymentQuote } from '../quote/payment-quote.entity';
 import { WalletTransactionController } from './wallet-transaction.controller';
 
 @Module({
   imports: [
     AuthorizationModule,
+    CustomerModule,
+    InstitutionModule,
+    CustomerAuthenticationModule,
+    AgentAuthenticationModule,
     CapabilityPolicyModule,
     LedgerModule,
     OperationsModule,
@@ -49,11 +65,19 @@ import { WalletTransactionController } from './wallet-transaction.controller';
     FeeRulesModule,
     CommissionModule, // V1-COMMERCIAL-IMPLEMENTATION-02 — CommissionEngine for flow snapshot sites
     CommercialAccountingModule, // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (inert unless enabled)
-    TypeOrmModule.forFeature([Transfer, WalletAccount, LedgerJournal]),
+    TypeOrmModule.forFeature([Transfer, WalletAccount, LedgerJournal, PaymentQuote]),
   ],
-  controllers: [TransferController, WalletTransactionController],
+  controllers: [
+    TransferController,
+    WalletTransactionController,
+    CustomerSelfTransferQuoteController,
+    AgentSelfTransferQuoteController,
+  ],
   providers: [
     TransferService,
+    TransferPinAuthorizationService,
+    TransferPricingService,
+    TransferQuoteService,
     A3InternalTransferBindingAdapter,
     TypeOrmInternalTransferGateAuditAdapter,
     TypeOrmInternalTransferGateIdempotencyAdapter,
@@ -72,6 +96,12 @@ import { WalletTransactionController } from './wallet-transaction.controller';
     InternalTransferGateService,
     TransferLifecycleService,
   ],
-  exports: [TransferService, InternalTransferGateService, TransferLifecycleService],
+  exports: [
+    TransferService,
+    TransferPricingService,
+    TransferQuoteService,
+    InternalTransferGateService,
+    TransferLifecycleService,
+  ],
 })
 export class TransferModule {}

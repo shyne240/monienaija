@@ -67,6 +67,8 @@ export interface AgentSetPinCommand {
 export interface AgentVerifyPinCommand {
   pin: string;
   actor: string;
+  /** Internal financial request evidence; not an authorization by itself. */
+  financialBinding?: { requestHash: string; sessionId: string };
 }
 
 @Injectable()
@@ -488,9 +490,18 @@ export class AgentAuthenticationService {
     verificationService: {
       verify: (pin: string, alg: AgentPasswordHashAlgorithm, hash: string) => { verified: boolean };
     },
-  ): Promise<{ verified: boolean; locked?: boolean; failureReason?: string }> {
+  ): Promise<{ verified: boolean; locked?: boolean; failureReason?: string; auditId?: string }> {
     this.assertUuid(agentId, 'agentId');
     const actor = this.normalizeActor(command.actor);
+    const binding = command.financialBinding;
+    if (
+      binding &&
+      (!/^[a-f0-9]{64}$/.test(binding.requestHash) ||
+        !UUID_PATTERN.test(binding.sessionId) ||
+        actor !== agentId)
+    ) {
+      throw new BadRequestException('Financial PIN binding is invalid');
+    }
     const pin = command.pin;
     if (typeof pin !== 'string' || pin.length === 0 || pin.length > 1024) {
       return { verified: false, failureReason: 'INVALID_PIN' };
@@ -499,7 +510,7 @@ export class AgentAuthenticationService {
       const stored = await manager
         .getRepository(AgentTransactionPin)
         .findOne({ where: { agentId }, lock: { mode: 'pessimistic_write' } });
-      return this.verifyPinWithManager(manager, stored, pin, actor, verificationService);
+      return this.verifyPinWithManager(manager, stored, pin, actor, verificationService, binding);
     });
   }
 
@@ -511,7 +522,8 @@ export class AgentAuthenticationService {
     verifier: {
       verify: (pin: string, alg: AgentPasswordHashAlgorithm, hash: string) => { verified: boolean };
     },
-  ): Promise<{ verified: boolean; locked?: boolean; failureReason?: string }> {
+    binding?: { requestHash: string; sessionId: string },
+  ): Promise<{ verified: boolean; locked?: boolean; failureReason?: string; auditId?: string }> {
     if (!stored || stored.deletedAt !== null)
       return { verified: false, failureReason: 'PIN_NOT_FOUND' };
     if (stored.accountLocked) return { verified: false, locked: true, failureReason: 'PIN_LOCKED' };
@@ -527,18 +539,24 @@ export class AgentAuthenticationService {
       }
     }
     await manager.getRepository(AgentTransactionPin).save(stored);
-    await this.audit(
+    const auditId = await this.audit(
       manager,
       'AGENT_TRANSACTION_PIN',
       stored.id,
       verified ? 'PIN_VERIFIED' : 'PIN_FAILED',
       actor,
       previous,
-      this.pinValues(stored),
+      {
+        ...this.pinValues(stored),
+        ...(verified && binding
+          ? { financialRequestHash: binding.requestHash, sessionId: binding.sessionId }
+          : {}),
+      },
     );
     return {
       verified,
       locked: stored.accountLocked,
+      ...(verified && binding ? { auditId } : {}),
       ...(verified ? {} : { failureReason: stored.accountLocked ? 'PIN_LOCKED' : 'MISMATCH' }),
     };
   }
@@ -715,8 +733,8 @@ export class AgentAuthenticationService {
     actor: string,
     previousValues?: Record<string, unknown>,
     newValues?: Record<string, unknown>,
-  ): Promise<void> {
-    await this.auditService.record(manager, {
+  ): Promise<string> {
+    const event = await this.auditService.record(manager, {
       entityType,
       entityId,
       action,
@@ -724,6 +742,7 @@ export class AgentAuthenticationService {
       previousValues: previousValues ? redactRecord(previousValues) : undefined,
       newValues: newValues ? redactRecord(newValues) : undefined,
     });
+    return event?.id ?? '';
   }
 
   private assertUuid(value: string, field: string): void {

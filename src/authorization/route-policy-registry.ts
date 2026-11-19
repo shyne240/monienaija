@@ -1627,7 +1627,9 @@ export class RoutePolicyRegistry {
     // specific classes, funding, receiving-number and history branches are matched above.
     if (
       lookedUpMethod === 'GET' &&
-      /^\/api\/v1\/internal\/agents(?:\/[^/]+(?:\/financial-position)?)?$/.test(path)
+      /^\/api\/v1\/internal\/agents(?:\/[^/]+(?:\/(?:financial-position|phone-verification))?)?$/.test(
+        path,
+      )
     ) {
       return {
         public: false,

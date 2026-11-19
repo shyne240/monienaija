@@ -68,6 +68,31 @@ export class AdminAgentController {
     return this.toSafeAgent(agent);
   }
 
+  /** Workforce can identify legacy agents needing self-service phone proof, without exposing the number. */
+  @Get(':id/phone-verification')
+  async phoneVerification(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    this.requireWorkforce(req);
+    await this.requireFunction(req, 'agent.view');
+    this.assertUuid(id, 'id');
+    const agent = await this.repo.findOne({ where: { id } as never });
+    if (!agent) throw new NotFoundException('Agent not found');
+    const rows: Array<{ canonical_phone: string; verified_at: Date; sms_enabled: boolean | null }> =
+      await this.repo.manager.query(
+        `SELECT p.canonical_phone,p.verified_at,n.sms_enabled
+        FROM agent_verified_phone_contacts p LEFT JOIN agent_notification_preferences n ON n.agent_id=p.agent_id
+        WHERE p.agent_id=$1 AND p.revoked_at IS NULL`,
+        [id],
+      );
+    const contact = rows[0];
+    return {
+      agentId: id,
+      verified: !!contact,
+      phoneSuffix: contact ? contact.canonical_phone.slice(-4) : null,
+      verifiedAt: contact?.verified_at ?? null,
+      smsEnabled: contact?.sms_enabled === true,
+    };
+  }
+
   // ──────────────────────────────────────────────
   // Admin Agent Investigation — financial position (ledger-derived, reuse WalletService)
   // No getSettlementPosition service found; reuse WalletService.listWallets (authoritative ledger)

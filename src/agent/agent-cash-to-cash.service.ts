@@ -14,7 +14,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
 
 import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { canonical, sha256 } from '../authorization/workforce-crypto';
@@ -22,7 +22,10 @@ import {
   CASH_TO_CASH_FUNDING_POLICY_AUTHORITY,
   type CashToCashFundingPolicyAuthority,
 } from './cash-to-cash-funding-policy';
-import { requireInstitutionCashToCashSuspenseAccount } from './cash-to-cash-institution-suspense';
+import {
+  findInstitutionCashToCashSuspenseAccount,
+  requireInstitutionCashToCashSuspenseAccount,
+} from './cash-to-cash-institution-suspense';
 import { AGENT_INSTITUTION_RESOLVER } from '../institution/agent-institution-resolver';
 import type { AgentInstitutionResolver } from '../institution/agent-institution-resolver';
 import {
@@ -633,11 +636,18 @@ export class AgentCashToCashService {
           )
             throw new ServiceUnavailableException('Cash-to-cash funding evidence unavailable');
 
-          // The obligation is held as the funding institution's own unclaimed suspense liability.
-          const unclaimedAccount = await requireInstitutionCashToCashSuspenseAccount(
+          // Locate without a premature SHARE lock: Ledger acquires all posting account locks
+          // in sorted order. Holding SHARE here and later upgrading it to UPDATE in Ledger can
+          // deadlock two initiations for the same institutional suspense account. The selected
+          // account is revalidated under Ledger's UPDATE lock before this transaction commits.
+          const unclaimedAccount = await findInstitutionCashToCashSuspenseAccount(
             manager,
             fundingEvidence.institutionId,
           );
+          if (!unclaimedAccount)
+            throw new ServiceUnavailableException(
+              'Cash-to-cash institutional suspense account unavailable',
+            );
           const lines = [
             {
               accountId: walletInTx.ledgerAccountId,
@@ -758,6 +768,20 @@ export class AgentCashToCashService {
             }
             throw error;
           }
+
+          // A newly posted journal holds Ledger's UPDATE lock until commit; the explicit
+          // SHARE revalidation also protects an existing idempotent journal result. Check the
+          // same account's institution/purpose/code/active predicate; any mismatch rolls back
+          // provisional journal writes and reservations with the transaction.
+          const lockedSuspense = await requireInstitutionCashToCashSuspenseAccount(
+            manager,
+            fundingEvidence.institutionId,
+            unclaimedAccount.id,
+          );
+          if (lockedSuspense.id !== unclaimedAccount.id)
+            throw new ServiceUnavailableException(
+              'Cash-to-cash institutional suspense account unavailable',
+            );
 
           if (limitIdempotencyKey && this.limitEnforcementService) {
             await this.limitEnforcementService.commitReservationsWithManager(
@@ -1270,8 +1294,11 @@ export class AgentCashToCashService {
         ? stripControlCharacters(rows[0].legal_name).trim()
         : undefined;
       return name ? name.slice(0, 80) : null;
-    } catch {
-      // Sender enrichment is best-effort; a profile lookup must never block financial execution.
+    } catch (error) {
+      // A failed SQL statement aborts the enclosing transaction. Do not mask its SQLSTATE or
+      // allow a silent rollback to look like a successful initiation; let the owner retry/abort.
+      if (error instanceof QueryFailedError) throw error;
+      // Non-database sender enrichment remains best-effort.
       return null;
     }
   }

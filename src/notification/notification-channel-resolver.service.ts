@@ -51,8 +51,34 @@ export class NotificationChannelResolverService {
       }
       return missing('PUSH_TOKEN_DEPENDENCY_MISSING');
     }
-    if (recipientType === 'AGENT')
-      return missing(`AGENT_${channel === 'SMS' ? 'PHONE' : 'EMAIL'}_DEPENDENCY_MISSING`);
+    if (recipientType === 'AGENT') {
+      if (channel !== 'SMS') return missing('AGENT_EMAIL_DEPENDENCY_MISSING');
+      const contacts = await query<{
+        canonical_phone: string;
+        sms_enabled: boolean | null;
+        ambiguous: boolean;
+      }>(
+        `SELECT p.canonical_phone, pref.sms_enabled,
+           EXISTS (SELECT 1 FROM customer_contact_methods m JOIN customers c ON c.id=m.customer_id
+             WHERE m.type='PHONE' AND m.deleted_at IS NULL AND c.deleted_at IS NULL
+               AND m.normalized_value=ANY(ARRAY[p.canonical_phone,'0'||p.canonical_phone,'234'||p.canonical_phone,'+234'||p.canonical_phone]))
+           OR EXISTS (SELECT 1 FROM agent_receiving_numbers n JOIN agents other ON other.id=n.agent_id
+             WHERE n.receiving_number=p.canonical_phone AND n.status='ACTIVE' AND n.deleted_at IS NULL
+               AND other.deleted_at IS NULL AND n.agent_id<>p.agent_id) AS ambiguous
+         FROM agent_verified_phone_contacts p JOIN agents a ON a.id=p.agent_id
+         LEFT JOIN agent_notification_preferences pref ON pref.agent_id=p.agent_id
+         WHERE p.agent_id=$1 AND p.revoked_at IS NULL AND a.status='ACTIVE' AND a.deleted_at IS NULL`,
+        [recipientId],
+      );
+      const contact = contacts[0];
+      if (!contact) return missing('AGENT_PHONE_DEPENDENCY_MISSING');
+      if (contacts.length !== 1 || contact.ambiguous) return missing('AGENT_PHONE_AMBIGUOUS');
+      if (!isSecurityCriticalNotificationEvent(eventType)) {
+        if (contact.sms_enabled === false) return missing('SMS_OPT_OUT');
+        if (contact.sms_enabled !== true) return missing('SMS_PREFERENCE_UNAVAILABLE');
+      }
+      return { channel, destination: normalizeNigerianPhone(contact.canonical_phone).canonical };
+    }
 
     const preference = async (customerId: string): Promise<string | null> => {
       if (isSecurityCriticalNotificationEvent(eventType)) return null;
@@ -79,11 +105,21 @@ export class NotificationChannelResolverService {
       const destination = contacts[0]?.normalized_value;
       if (!destination) return missing(`CUSTOMER_${type}_VERIFIED_MISSING`);
       if (channel === 'SMS') {
+        let phone: string;
         try {
-          return { channel, destination: normalizeNigerianPhone(destination).canonical };
+          phone = normalizeNigerianPhone(destination).canonical;
         } catch {
           return missing('CUSTOMER_PHONE_INVALID');
         }
+        // The agent proof may predate this customer contact. Neither registration order nor
+        // the event's typed customer ID proves who now controls a shared SMS destination.
+        const agents = await query<{ id: string }>(
+          `SELECT a.id FROM agent_verified_phone_contacts p JOIN agents a ON a.id=p.agent_id
+           WHERE p.canonical_phone=$1 AND p.revoked_at IS NULL AND a.deleted_at IS NULL LIMIT 1`,
+          [phone],
+        );
+        if (agents.length) return missing('CUSTOMER_PHONE_AMBIGUOUS');
+        return { channel, destination: phone };
       }
       return { channel, destination };
     }
@@ -103,6 +139,23 @@ export class NotificationChannelResolverService {
           WHERE type='PHONE' AND normalized_value = ANY($1::text[]) AND deleted_at IS NULL`,
         [[phone, `0${phone}`, `234${phone}`, `+234${phone}`]],
       );
+      const agentContacts = await query<{
+        agent_id: string;
+        status: string;
+        sms_enabled: boolean | null;
+      }>(
+        `SELECT a.id AS agent_id,a.status,pref.sms_enabled FROM agent_verified_phone_contacts p
+         JOIN agents a ON a.id=p.agent_id LEFT JOIN agent_notification_preferences pref ON pref.agent_id=a.id
+         WHERE p.canonical_phone=$1 AND p.revoked_at IS NULL AND a.deleted_at IS NULL`,
+        [phone],
+      );
+      if (agentContacts.length > 1 || (agentContacts.length > 0 && contacts.length > 0))
+        return missing('PHONE_RECIPIENT_AMBIGUOUS');
+      if (agentContacts[0]) {
+        if (agentContacts[0].status !== 'ACTIVE') return missing('AGENT_INACTIVE');
+        if (agentContacts[0].sms_enabled === false) return missing('SMS_OPT_OUT');
+        if (agentContacts[0].sms_enabled !== true) return missing('SMS_PREFERENCE_UNAVAILABLE');
+      }
       if (contacts.some((contact) => !contact.verified_at))
         return missing('PHONE_RECIPIENT_UNVERIFIED');
       for (const customerId of new Set(contacts.map((contact) => contact.customer_id))) {

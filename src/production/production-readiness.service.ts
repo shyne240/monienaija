@@ -14,8 +14,8 @@ import {
 // The schema head this build requires. A deployment whose database has not reached this migration
 // refuses to serve traffic, which is the intended behaviour — advancing this constant is part of shipping
 // a migration, not an afterthought.
-const EXPECTED_MIGRATION_TIMESTAMP = '1785753600614';
-const EXPECTED_MIGRATION_NAME = 'PrivacyAndRetention1785753600614';
+const EXPECTED_MIGRATION_TIMESTAMP = '1785753600802';
+const EXPECTED_MIGRATION_NAME = 'ExtendBeneficiaryOwnership1785753600802';
 
 type Row = Record<string, unknown>;
 
@@ -214,22 +214,33 @@ export class ProductionReadinessService {
            FROM typeorm_migrations
           ORDER BY timestamp ASC`,
       );
-      const applied = rowsOf(result)
-        .map((row) => ({
-          timestamp: stringValue(row.timestamp),
-          name: stringValue(row.name),
-        }))
-        .filter((row) => row.name.length > 0);
+      const applied = rowsOf(result).map((row) => ({
+        timestamp: stringValue(row.timestamp),
+        name: stringValue(row.name),
+      }));
       const latest = applied[applied.length - 1] ?? { timestamp: '', name: '' };
       const expected = this.expectedMigrations();
-      const appliedNames = new Set(applied.map((row) => row.name));
-      const expectedNames = new Set(expected.map((row) => row.name));
-      const missing = expected.filter((row) => !appliedNames.has(row.name)).map((row) => row.name);
-      const unexpected =
-        expected.length > 0
-          ? applied.filter((row) => !expectedNames.has(row.name)).map((row) => row.name)
-          : [];
+      // Compare full identities, not just names. An empty or malformed loaded inventory must
+      // never degrade into a head-only check, nor may duplicate rows hide a missing migration.
+      const identity = (row: { timestamp: string; name: string }) => `${row.timestamp}:${row.name}`;
+      const appliedIdentities = new Set(applied.map(identity));
+      const expectedIdentities = new Set(expected.map(identity));
+      const missing = expected
+        .filter((row) => !appliedIdentities.has(identity(row)))
+        .map((row) => row.name);
+      const unexpected = applied
+        .filter((row) => !expectedIdentities.has(identity(row)))
+        .map((row) => row.name);
+      const loaded = this.dataSource.migrations;
       const compatible =
+        Array.isArray(loaded) &&
+        expected.length > 0 &&
+        expected.length === loaded.length &&
+        expectedIdentities.size === expected.length &&
+        new Set(expected.map((row) => row.timestamp)).size === expected.length &&
+        appliedIdentities.size === applied.length &&
+        applied.length === expected.length &&
+        expectedIdentities.has(`${EXPECTED_MIGRATION_TIMESTAMP}:${EXPECTED_MIGRATION_NAME}`) &&
         latest.timestamp === EXPECTED_MIGRATION_TIMESTAMP &&
         latest.name === EXPECTED_MIGRATION_NAME &&
         missing.length === 0 &&

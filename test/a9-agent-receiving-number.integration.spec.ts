@@ -416,6 +416,57 @@ describe('A9 Agent MonieNaija receiving number (real PostgreSQL)', () => {
     expect(journalRows.length).toBe(0);
   });
 
+  it('rejects ambiguous customer phone representations instead of selecting the first', async () => {
+    const ids: string[] = [];
+    for (const value of ['8022223333', '+2348022223333']) {
+      const rows: Array<{ id: string }> = await dataSource.query(
+        `INSERT INTO customers (reference, customer_type, status, kyc_level, kyc_status)
+         VALUES ($1,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED') RETURNING id`,
+        [`collision-${randomUUID()}`],
+      );
+      ids.push(rows[0]!.id);
+      await dataSource.query(
+        `INSERT INTO customer_contact_methods (customer_id,type,value,normalized_value,is_primary)
+         VALUES ($1,'PHONE',$2,$2,true)`,
+        [rows[0]!.id, value],
+      );
+    }
+    for (const identifier of ['8022223333', '08022223333', '+2348022223333']) {
+      await expect(resolutionService.resolve(identifier)).rejects.toThrow(
+        'Recipient identifier is ambiguous',
+      );
+    }
+    await dataSource.query(`UPDATE customers SET status='CLOSED' WHERE id=$1`, [ids[1]]);
+    expect((await resolutionService.resolve('8022223333')).ownerId).toBe(ids[0]);
+  });
+
+  it('rejects a later collision between an allocated agent number and a customer phone', async () => {
+    const number = '8022224444';
+    const agentId = randomUUID();
+    await dataSource.query(`INSERT INTO agents (id,reference,status) VALUES ($1,$2,'ACTIVE')`, [
+      agentId,
+      `collision-agent-${randomUUID()}`,
+    ]);
+    await dataSource.query(
+      `INSERT INTO agent_receiving_numbers (agent_id,receiving_number) VALUES ($1,$2)`,
+      [agentId, number],
+    );
+    expect((await resolutionService.resolve(number)).ownerType).toBe('AGENT');
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO customers (reference,customer_type,status,kyc_level,kyc_status)
+       VALUES ($1,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED') RETURNING id`,
+      [`collision-customer-${randomUUID()}`],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods (customer_id,type,value,normalized_value,is_primary)
+       VALUES ($1,'PHONE',$2,$2,true)`,
+      [rows[0]!.id, `+234${number}`],
+    );
+    await expect(resolutionService.resolve(number)).rejects.toThrow(
+      'Recipient identifier is ambiguous',
+    );
+  });
+
   it('Y. No balance column on agent_receiving_numbers', async () => {
     const cols: Array<{ column_name: string }> = await dataSource.query(
       `SELECT column_name FROM information_schema.columns WHERE table_name='agent_receiving_numbers'`,

@@ -1,3 +1,4 @@
+import { requireTransferProduct } from './transfer-product';
 import { createHash, randomUUID } from 'node:crypto';
 
 import {
@@ -22,8 +23,18 @@ import { OutboxService } from '../operations/outbox.service';
 import { LedgerJournal } from '../ledger/ledger-journal.entity';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
-import { assertWalletOwnership } from '../wallet/wallet-ownership';
-import { WalletStatus } from '../wallet/wallet.enums';
+import { assertWalletOwnership, walletOwnershipBinding } from '../wallet/wallet-ownership';
+import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import { PaymentQuoteStatus } from '../quote/quote.enums';
+import {
+  TransferQuoteService,
+  requireAgentWalletTransferCapability,
+} from './transfer-quote.service';
+import { TransferPricingService, type TransferPricing } from './transfer-pricing.service';
+import { TransferPinAuthorizationService } from './transfer-pin-authorization.service';
+import { WalletOwnerClass, WalletStatus } from '../wallet/wallet.enums';
+import { resolveTransferParticipants, type TransferParticipant } from './transfer-participant';
+import { transferParticipantLimitInput } from './transfer-participant-limit';
 import {
   LimitEnforcementService,
   type EnforceResult,
@@ -51,6 +62,8 @@ import { Transfer } from './transfer.entity';
 import {
   buildAuditedInternalTransferCompletedEvent,
   buildAuditedInternalTransferFailedEvent,
+  buildTypedWalletTransferEvent,
+  type TypedTransferRecipients,
   INTERNAL_TRANSFER_EVENT_CLASSIFICATION,
   INTERNAL_TRANSFER_EVENT_RETENTION_CLASS,
   INTERNAL_TRANSFER_EVENT_SCHEMA_VERSION,
@@ -79,6 +92,9 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const DEFAULT_HISTORY_PAGE = 1;
 const DEFAULT_HISTORY_LIMIT = 20;
 const MAX_HISTORY_LIMIT = 100;
+type TransferNotificationRecipients = AuditedTransferRecipientIdentity & {
+  typed?: TypedTransferRecipients;
+};
 
 type NormalizedTransfer = Omit<
   CreateTransferCommand,
@@ -130,7 +146,44 @@ export class TransferService {
     // (manual new TransferService(...)) keep working; absent = legacy evidence-only behavior.
     @Optional()
     private readonly commercialAccountingService?: CommercialAccountingService,
+    @Optional() private readonly transferQuoteService?: TransferQuoteService,
+    @Optional() private readonly transferPricingService?: TransferPricingService,
+    @Optional() private readonly transferPinAuthorizationService?: TransferPinAuthorizationService,
   ) {}
+
+  /** Verifies PIN for this quote before entering the shared financial transaction. */
+  async createConfirmedTransfer(
+    principal: AuthorizationPrincipal,
+    quoteId: string,
+    idempotencyKey: string,
+    pin: string,
+  ): Promise<TransferView> {
+    if (
+      !this.transferQuoteService ||
+      !this.transferPricingService ||
+      !this.transferPinAuthorizationService
+    )
+      throw new ServiceUnavailableException('Transfer confirmation is unavailable');
+    const key = idempotencyKey?.trim();
+    if (!key || key.length > 255) throw new BadRequestException('Idempotency key is required');
+    const quote = await this.transferQuoteService.readForSession(principal, quoteId);
+    const scopedKey = `self-transfer:${createHash('sha256').update(`${quote.principalType}:${quote.principalId}:${key}`).digest('hex')}`;
+    const pinAuditId = await this.transferPinAuthorizationService.authorize(
+      principal,
+      quote.quoteId,
+      scopedKey,
+      pin,
+    );
+    return this.createTransfer({
+      sourceWalletId: quote.sourceWalletId,
+      destinationWalletId: quote.destinationWalletId,
+      amountMinor: quote.amountMinor,
+      currency: quote.currency,
+      idempotencyKey: scopedKey,
+      ownership: walletOwnershipBinding(principal),
+      confirmation: { quoteId: quote.quoteId, principal, pinAuditId },
+    });
+  }
 
   async createTransfer(command: CreateTransferCommand): Promise<TransferView> {
     const normalized = this.normalizeCommand(command);
@@ -181,6 +234,15 @@ export class TransferService {
               'The idempotency key was already used for another transfer',
             );
           }
+          const ownedWallet = await this.walletRepository.findOne({
+            where: { id: existing.sourceWalletId },
+          });
+          assertWalletOwnership(
+            normalized.ownership,
+            ownedWallet?.customerId,
+            ownedWallet?.ownerClass,
+          );
+          await this.verifyConfirmedReplay(normalized, existing);
           result = { transferId: existing.id };
         } else {
           throw error;
@@ -314,6 +376,25 @@ export class TransferService {
     command: NormalizedTransfer,
   ): Promise<TransferTransactionResult> {
     const transferRepository = manager.getRepository(Transfer);
+    let confirmedQuote: Awaited<ReturnType<TransferQuoteService['lockForSession']>> | null = null;
+    if (command.confirmation) {
+      if (!this.transferQuoteService || !this.transferPricingService)
+        throw new ServiceUnavailableException('Transfer confirmation is unavailable');
+      confirmedQuote = await this.transferQuoteService.lockForSession(
+        manager,
+        command.confirmation.principal,
+        command.confirmation.quoteId,
+      );
+      if (!this.transferPinAuthorizationService)
+        throw new ServiceUnavailableException('Transfer PIN authorization is unavailable');
+      await this.transferPinAuthorizationService.assertWithManager(
+        manager,
+        command.confirmation.principal,
+        command.confirmation.quoteId,
+        command.idempotencyKey,
+        command.confirmation.pinAuditId,
+      );
+    }
     const existing = await transferRepository.findOne({
       where: { idempotencyKey: command.idempotencyKey },
     });
@@ -326,9 +407,29 @@ export class TransferService {
       const ownedWallet = await manager
         .getRepository(WalletAccount)
         .findOne({ where: { id: existing.sourceWalletId } });
-      assertWalletOwnership(command.ownership, ownedWallet?.customerId);
+      assertWalletOwnership(command.ownership, ownedWallet?.customerId, ownedWallet?.ownerClass);
+      if (confirmedQuote) this.assertQuoteMatchesReplay(confirmedQuote, existing);
       await this.metricsService?.increment(manager, 'idempotency.hits');
       return { transferId: existing.id };
+    }
+
+    // Optional injection supports legacy direct-service constructions only. A new confirmed
+    // financial execution must never post without atomic admission, audit and delivery evidence.
+    // Replays above remain recoverable if an operational dependency is temporarily unavailable.
+    if (
+      confirmedQuote &&
+      (!this.limitEnforcementService || !this.outboxService || !this.auditService)
+    ) {
+      throw new ServiceUnavailableException('Confirmed transfer controls are unavailable');
+    }
+
+    if (
+      confirmedQuote &&
+      (confirmedQuote.status !== PaymentQuoteStatus.ACTIVE ||
+        confirmedQuote.transferId ||
+        confirmedQuote.expiresAt.getTime() <= Date.now())
+    ) {
+      throw new ConflictException('Transfer quote has expired or was already used');
     }
 
     const wallets = await this.lockWallets(manager, [
@@ -347,7 +448,7 @@ export class TransferService {
       };
     }
 
-    assertWalletOwnership(command.ownership, sourceWallet.customerId);
+    assertWalletOwnership(command.ownership, sourceWallet.customerId, sourceWallet.ownerClass);
 
     const destinationWallet = walletsById.get(command.destinationWalletId);
     if (!destinationWallet) {
@@ -370,6 +471,63 @@ export class TransferService {
       };
     }
 
+    const participants = await resolveTransferParticipants(manager, [
+      sourceWallet,
+      destinationWallet,
+    ]);
+
+    let confirmedPricing: TransferPricing | null = null;
+    if (confirmedQuote) {
+      if (
+        !participants ||
+        confirmedQuote.sourceWalletId !== sourceWallet.id ||
+        confirmedQuote.destinationWalletId !== destinationWallet.id ||
+        confirmedQuote.sourceLedgerId !== sourceWallet.ledgerAccountId ||
+        confirmedQuote.destinationLedgerId !== destinationWallet.ledgerAccountId ||
+        confirmedQuote.principalType !== participants[0].type ||
+        confirmedQuote.principalId !== participants[0].id ||
+        confirmedQuote.recipientType !== participants[1].type ||
+        confirmedQuote.recipientId !== participants[1].id ||
+        confirmedQuote.institutionId !== (sourceWallet.institutionId ?? null) ||
+        confirmedQuote.institutionId !== (destinationWallet.institutionId ?? null) ||
+        confirmedQuote.amountMinor !== command.amountMinor.toString() ||
+        confirmedQuote.currency !== command.currency
+      ) {
+        throw new ConflictException('Transfer no longer matches its confirmed participants');
+      }
+      requireAgentWalletTransferCapability(participants[0]);
+      requireAgentWalletTransferCapability(participants[1]);
+      await this.transferQuoteService!.requireInstitutionalContext(manager, participants);
+      await requireTransferProduct(manager, command.currency);
+      confirmedPricing = await this.transferPricingService!.priceWithManager(manager, {
+        amountMinor: command.amountMinor,
+        currency: command.currency,
+      });
+      if (
+        confirmedPricing.pricingHash !== confirmedQuote.pricingHash ||
+        confirmedPricing.feeMinor !== confirmedQuote.feeMinor ||
+        confirmedPricing.vatMinor !== confirmedQuote.vatMinor ||
+        confirmedPricing.totalDebitMinor !== confirmedQuote.totalDebitMinor
+      ) {
+        throw new ConflictException('Transfer price has changed; request a new quote');
+      }
+    }
+
+    // Agent wallets may enter only the quote/session/PIN-bound path above. Legacy
+    // unconfirmed callers and unresolved/system wallets never acquire agent authority.
+    if (
+      !confirmedQuote &&
+      (command.ownership.kind === 'AGENT_SELF' ||
+        participants?.some((participant) => participant.type === 'AGENT') ||
+        [sourceWallet, destinationWallet].some(
+          (wallet) => wallet.ownerClass != null && wallet.ownerClass !== WalletOwnerClass.CUSTOMER,
+        ))
+    ) {
+      throw new ServiceUnavailableException(
+        'Wallet transfer participant policy is not available for this wallet',
+      );
+    }
+
     const transferId = randomUUID();
     const paymentReference = this.paymentReferenceService
       ? await this.paymentReferenceService.nextReference(manager, PaymentType.TRANSFER, transferId)
@@ -382,6 +540,19 @@ export class TransferService {
       paymentReference,
       amountMinor: command.amountMinor.toString(),
       currency: command.currency,
+      ...(confirmedPricing
+        ? {
+            feeMinor: confirmedPricing.feeMinor,
+            vatMinor: confirmedPricing.vatMinor,
+            sourceLedgerAccountId: sourceWallet.ledgerAccountId,
+            destinationLedgerAccountId: destinationWallet.ledgerAccountId,
+            sourceCustomerId: participants?.[0].type === 'CUSTOMER' ? participants[0].id : null,
+            destinationCustomerId:
+              participants?.[1].type === 'CUSTOMER' ? participants[1].id : null,
+            accountingUnit: 'CUSTOMER_FUNDS',
+            correlationId: `transfer:${transferId}`,
+          }
+        : {}),
       status: TransferStatus.FAILED,
       idempotencyKey: command.idempotencyKey,
       requestHash: command.requestHash,
@@ -396,9 +567,17 @@ export class TransferService {
 
     // Authoritative recipient identity for the versioned notification event contract,
     // derived from the pessimistically-locked wallet rows that back the ledger posting.
-    const notificationRecipients: AuditedTransferRecipientIdentity = {
+    const notificationRecipients: TransferNotificationRecipients = {
       sourceCustomerId: sourceWallet.customerId,
       destinationCustomerId: destinationWallet.customerId,
+      ...(participants?.some((participant) => participant.type === 'AGENT')
+        ? {
+            typed: {
+              source: { type: participants[0].type, id: participants[0].id },
+              destination: { type: participants[1].type, id: participants[1].id },
+            },
+          }
+        : {}),
     };
 
     if (
@@ -509,71 +688,72 @@ export class TransferService {
         throw new ServiceUnavailableException('Institutional wallet context is unavailable');
       }
     }
+    const sourceParticipant = participants?.[0] ?? {
+      wallet: sourceWallet,
+      type: 'CUSTOMER' as const,
+      id: sourceWallet.customerId,
+      agentClassId: null,
+    };
+    const destinationParticipant = participants?.[1] ?? {
+      wallet: destinationWallet,
+      type: 'CUSTOMER' as const,
+      id: destinationWallet.customerId,
+      agentClassId: null,
+    };
     let limitIdempotencyKey: string | null = null;
     let recipientLimitIdempotencyKey: string | null = null;
     let limitOutcome: EnforceResult | null = null;
-    if (this.limitEnforcementService && UUID_PATTERN.test(sourceWallet.customerId)) {
+    if (this.limitEnforcementService) {
       const amountMinorStr = command.amountMinor.toString();
-      limitIdempotencyKey = command.idempotencyKey;
-      recipientLimitIdempotencyKey = `transfer:${transfer.id}:incoming`;
       try {
-        limitOutcome = await this.limitEnforcementService.enforceWithManager(manager, {
-          principalType: 'CUSTOMER',
-          principalId: sourceWallet.customerId,
-          product: 'WALLET_TRANSFER',
-          currency: command.currency,
-          direction: 'OUTGOING',
-          channel: null,
-          amountMinor: amountMinorStr,
-          idempotencyKey: limitIdempotencyKey,
-          requestHash: command.requestHash,
-          correlationId: `transfer:${transfer.id}`,
-          now: new Date(),
-          walletLedgerAccountId: sourceWallet.ledgerAccountId,
-          principalWalletCustomerId: sourceWallet.customerId,
-          requireConfiguration: true,
-          requireKycTierPolicy: true,
-          institutionId: sourceWallet.institutionId,
-          serviceClass: null,
-        });
+        // The two legs are independent: an unclassified/legacy source must not suppress
+        // admission for an identifiable recipient. Each reservation is in this transaction.
+        if (UUID_PATTERN.test(sourceWallet.customerId)) {
+          limitIdempotencyKey = command.idempotencyKey;
+          limitOutcome = await this.limitEnforcementService.enforceWithManager(
+            manager,
+            transferParticipantLimitInput(sourceParticipant, {
+              direction: 'OUTGOING',
+              currency: command.currency,
+              amountMinor: amountMinorStr,
+              idempotencyKey: limitIdempotencyKey,
+              requestHash: command.requestHash,
+              correlationId: `transfer:${transfer.id}`,
+              now: new Date(),
+            }),
+          );
+        }
         if (UUID_PATTERN.test(destinationWallet.customerId)) {
-          await this.limitEnforcementService.enforceWithManager(manager, {
-            principalType: 'CUSTOMER',
-            principalId: destinationWallet.customerId,
-            product: 'WALLET_TRANSFER',
-            currency: command.currency,
-            direction: 'INCOMING',
-            channel: null,
-            amountMinor: amountMinorStr,
-            idempotencyKey: recipientLimitIdempotencyKey,
-            requestHash: createHash('sha256')
-              .update(`${command.requestHash}:incoming:${destinationWallet.customerId}`)
-              .digest('hex'),
-            correlationId: `transfer:${transfer.id}`,
-            now: new Date(),
-            walletLedgerAccountId: destinationWallet.ledgerAccountId,
-            principalWalletCustomerId: destinationWallet.customerId,
-            requireConfiguration: true,
-            requireKycTierPolicy: true,
-            institutionId: destinationWallet.institutionId,
-            serviceClass: null,
-          });
+          recipientLimitIdempotencyKey = `transfer:${transfer.id}:incoming`;
+          await this.limitEnforcementService.enforceWithManager(
+            manager,
+            transferParticipantLimitInput(destinationParticipant, {
+              direction: 'INCOMING',
+              currency: command.currency,
+              amountMinor: amountMinorStr,
+              idempotencyKey: recipientLimitIdempotencyKey,
+              requestHash: createHash('sha256')
+                .update(`${command.requestHash}:incoming:${destinationWallet.customerId}`)
+                .digest('hex'),
+              correlationId: `transfer:${transfer.id}`,
+              now: new Date(),
+            }),
+          );
         }
       } catch (error) {
-        for (const key of [limitIdempotencyKey, recipientLimitIdempotencyKey]) {
-          if (key) {
-            try {
-              await this.limitEnforcementService.releaseReservationsWithManager(manager, key);
-            } catch {
-              // Keep denial fail-closed; the enclosing transaction still owns rollback.
-            }
-          }
-        }
-        if (error instanceof HttpException) {
+        // Only a recognised business-limit denial is persisted as FAILED. All other errors
+        // must escape immediately so the transaction rolls back its reservations. In particular,
+        // issuing release SQL after a PostgreSQL serialization/deadlock failure masks the original
+        // retryable SQLSTATE with 25P02 (transaction aborted) and defeats the outer retry loop.
+        if (error instanceof HttpException && error.getStatus() < 500) {
           const resp = error.getResponse() as { error?: string; code?: string; message?: string };
           const rawCode = resp && (resp.error || resp.code);
           const limitCode = rawCode ? limitCodeToTransferFailureCode(String(rawCode)) : null;
           if (limitCode) {
+            for (const key of [limitIdempotencyKey, recipientLimitIdempotencyKey]) {
+              if (key)
+                await this.limitEnforcementService.releaseReservationsWithManager(manager, key);
+            }
             return this.markFailed(
               manager,
               transfer,
@@ -625,11 +805,9 @@ export class TransferService {
       if (this.limitEnforcementService) {
         for (const key of [limitIdempotencyKey, recipientLimitIdempotencyKey]) {
           if (!key) continue;
-          try {
-            await this.limitEnforcementService.releaseReservationsWithManager(manager, key);
-          } catch {
-            // best-effort release; if no reservations exist this is a no-op
-          }
+          // A release failure must roll back the enclosing transaction, not persist a
+          // failed transfer alongside stranded reservations.
+          await this.limitEnforcementService.releaseReservationsWithManager(manager, key);
         }
       }
       return this.markFailed(
@@ -643,11 +821,9 @@ export class TransferService {
     if (this.limitEnforcementService) {
       for (const key of [limitIdempotencyKey, recipientLimitIdempotencyKey]) {
         if (!key) continue;
-        try {
-          await this.limitEnforcementService.commitReservationsWithManager(manager, key);
-        } catch {
-          // best-effort commit; if no reservations exist this is a no-op
-        }
+        // Admission is part of the financial transaction. Swallowing this error would
+        // commit the journal without committing limit usage.
+        await this.limitEnforcementService.commitReservationsWithManager(manager, key);
       }
     }
 
@@ -660,12 +836,23 @@ export class TransferService {
     await this.recordCommercialDecisionSnapshot(manager, {
       transfer,
       command,
-      sourceCustomerId: sourceWallet.customerId,
+      sourceParticipant,
+      feeDecision: confirmedPricing?.feeDecision,
       journalId,
       limitOutcome,
       payerLedgerAccountId: sourceWallet.ledgerAccountId,
     });
 
+    if (confirmedQuote) {
+      await this.auditService?.record(manager, {
+        entityType: 'TRANSFER',
+        entityId: transfer.id,
+        action: 'LEDGER_POSTED',
+        actor: 'internal',
+        correlationId: `transfer:${transfer.id}`,
+        newValues: { journalId, requestHash: transfer.requestHash },
+      });
+    }
     transfer.status = TransferStatus.COMPLETED;
     transfer.journalId = journalId;
     transfer.completedAt = new Date();
@@ -673,6 +860,12 @@ export class TransferService {
     transfer.failureMessage = null;
     transfer.failureStatusCode = null;
     await transferRepository.save(transfer);
+    if (confirmedQuote)
+      await this.transferQuoteService!.consumeWithManager(
+        manager,
+        confirmedQuote.quoteId,
+        transfer.id,
+      );
     await this.auditService?.record(manager, {
       entityType: 'TRANSFER',
       entityId: transfer.id,
@@ -685,28 +878,23 @@ export class TransferService {
         amountMinor: transfer.amountMinor,
       },
     });
-    // Notification producer contract v1 (Arena 3 producer correction): the audited
-    // completion path emits the same versioned event identity as the lifecycle producer —
-    // stable eventKey, schemaVersion 1, RESTRICTED_FINANCIAL/A5 classification — and the
-    // authoritative recipient identity/safe facts the notification.v1 consumer requires
-    // (locked-wallet customer ids + committed amount/currency). Enqueued inside the same
-    // SERIALIZABLE transaction as the financial state (atomicity preserved); enqueueOnce
-    // makes replays converge without duplicates. Ledger/accounting logic is untouched.
+    // Keep v1 CUSTOMER events byte-compatible; agent-involved transfers use a distinct typed contract.
+    const completedAt = transfer.completedAt ?? new Date();
+    const typed = notificationRecipients.typed;
+    const eventType = typed ? 'wallet_transfer.completed' : INTERNAL_TRANSFER_COMPLETED_EVENT_TYPE;
     await this.outboxService?.enqueueOnce(manager, {
-      eventKey: transferCompletedEventKey(transfer.id),
-      eventType: INTERNAL_TRANSFER_COMPLETED_EVENT_TYPE,
+      eventKey: typed ? `${eventType}:${transfer.id}:v1` : transferCompletedEventKey(transfer.id),
+      eventType,
       aggregateType: 'TRANSFER',
       aggregateId: transfer.id,
       schemaVersion: INTERNAL_TRANSFER_EVENT_SCHEMA_VERSION,
       classification: INTERNAL_TRANSFER_EVENT_CLASSIFICATION,
       retentionClass: INTERNAL_TRANSFER_EVENT_RETENTION_CLASS,
-      occurredAt: transfer.completedAt ?? new Date(),
+      occurredAt: completedAt,
       correlationId: `transfer:${transfer.id}`,
-      payload: buildAuditedInternalTransferCompletedEvent(
-        transfer,
-        notificationRecipients,
-        transfer.completedAt ?? new Date(),
-      ),
+      payload: typed
+        ? buildTypedWalletTransferEvent(transfer, typed, 'completed', completedAt)
+        : buildAuditedInternalTransferCompletedEvent(transfer, notificationRecipients, completedAt),
     });
     await this.metricsService?.increment(manager, 'transfers.completed');
 
@@ -714,79 +902,87 @@ export class TransferService {
   }
 
   /**
-   * V1-COMMERCIAL-DECISION-02 — pilot commercial snapshot capture for WALLET_TRANSFER.
-   *
-   * Runs inside the existing SERIALIZABLE transfer transaction via
-   * `recordDecisionWithManager` (never `recordDecision`, which would open a second
-   * transaction). Read-only fee resolution via `FeeRuleResolverService.resolveWithManager`
-   * participates in the same transaction; its result is EVIDENCE ONLY — no fee is calculated
-   * or charged and the ledger is untouched by this method.
-   *
-   * Fee decision semantics (DECISION-01 precedent): status stays NOT_CONFIGURED while V1 is
-   * fee-free; when a fee rule exists its ruleId/version/effective parameters are captured in
-   * fee_decision.ruleRefs for future APPLIED decisions; an AMBIGUOUS resolution is recorded
-   * honestly without selecting a rule. Limit evidence comes from the authoritative
-   * EnforceResult captured during this same transfer — never re-evaluated.
+   * Capture the resolved fee, acting-participant commission and limit evidence in the existing
+   * SERIALIZABLE transaction. When commercial accounting is enabled, its linked journal is
+   * posted here as part of the same transaction; otherwise fee and commission remain evidence.
+   * The sender's participant class and agent class come from locked authoritative records.
    */
   private async recordCommercialDecisionSnapshot(
     manager: EntityManager,
     ctx: {
       transfer: Transfer;
       command: NormalizedTransfer;
-      sourceCustomerId: string;
+      sourceParticipant: TransferParticipant;
+      feeDecision?: TransferPricing['feeDecision'];
       journalId: string;
       limitOutcome: EnforceResult | null;
       /** Payer-side ledger account for the commercial accounting legs (source wallet in WT). */
       payerLedgerAccountId: string;
     },
   ): Promise<void> {
+    if (
+      ctx.feeDecision &&
+      (!this.feeRuleResolverService ||
+        !this.commercialDecisionSnapshotService ||
+        !this.commissionEngine ||
+        !this.commercialAccountingService)
+    ) {
+      throw new ServiceUnavailableException(
+        'Confirmed transfer commercial authority is unavailable',
+      );
+    }
     if (!this.feeRuleResolverService || !this.commercialDecisionSnapshotService) return;
-    if (!UUID_PATTERN.test(ctx.sourceCustomerId)) return;
+    if (!UUID_PATTERN.test(ctx.sourceParticipant.id)) return;
 
     const productCode = 'WALLET_TRANSFER';
     const decisionAt = new Date();
     const amountMinor = ctx.command.amountMinor.toString();
 
-    const resolution = await this.feeRuleResolverService.resolveWithManager(manager, {
-      productCode,
-      currency: ctx.command.currency,
-      at: decisionAt,
-    });
-
-    // V1-COMMERCIAL-IMPLEMENTATION-01 — authoritative fee computation (single calculator authority);
-    // legacy inline evidence retained only for calculator-absent (manual-construction) wiring.
     let feeDecision: Record<string, unknown>;
-    if (this.feeRuleCalculatorService) {
-      feeDecision = {
-        ...this.feeRuleCalculatorService.compute({
-          resolution,
-          principalAmountMinor: amountMinor,
-          currency: ctx.command.currency,
-        }),
-      };
+    if (ctx.feeDecision) {
+      feeDecision = { ...ctx.feeDecision };
     } else {
-      feeDecision = { ...feeNotConfigured(ctx.command.currency, amountMinor) };
-      if (resolution.status === 'RESOLVED' && resolution.rule) {
-        feeDecision.ruleRefs = [
-          {
-            ruleId: resolution.rule.ruleId,
-            ruleVersion: resolution.rule.ruleVersion,
-            flatFeeMinor: resolution.rule.flatFeeMinor,
-            percentageBps: resolution.rule.percentageBps,
-            minimumFeeMinor: resolution.rule.minimumFeeMinor,
-            maximumFeeMinor: resolution.rule.maximumFeeMinor,
-            vatBps: resolution.rule.vatBps,
-            effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
-            effectiveTo:
-              resolution.rule.effectiveTo === null
-                ? null
-                : resolution.rule.effectiveTo.toISOString(),
-            priority: resolution.rule.priority,
-          },
-        ];
-      } else if (resolution.status === 'AMBIGUOUS') {
-        feeDecision.resolutionStatus = 'AMBIGUOUS';
-        feeDecision.ambiguousRuleIds = resolution.ambiguousRuleIds ?? [];
+      const resolution = await this.feeRuleResolverService.resolveWithManager(manager, {
+        productCode,
+        currency: ctx.command.currency,
+        at: decisionAt,
+      });
+
+      // V1-COMMERCIAL-IMPLEMENTATION-01 — authoritative fee computation (single calculator authority);
+      // legacy inline evidence retained only for calculator-absent (manual-construction) wiring.
+      // The legacy, unconfirmed path retains its established fee resolution behavior.
+      if (this.feeRuleCalculatorService) {
+        feeDecision = {
+          ...this.feeRuleCalculatorService.compute({
+            resolution,
+            principalAmountMinor: amountMinor,
+            currency: ctx.command.currency,
+          }),
+        };
+      } else {
+        feeDecision = { ...feeNotConfigured(ctx.command.currency, amountMinor) };
+        if (resolution.status === 'RESOLVED' && resolution.rule) {
+          feeDecision.ruleRefs = [
+            {
+              ruleId: resolution.rule.ruleId,
+              ruleVersion: resolution.rule.ruleVersion,
+              flatFeeMinor: resolution.rule.flatFeeMinor,
+              percentageBps: resolution.rule.percentageBps,
+              minimumFeeMinor: resolution.rule.minimumFeeMinor,
+              maximumFeeMinor: resolution.rule.maximumFeeMinor,
+              vatBps: resolution.rule.vatBps,
+              effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
+              effectiveTo:
+                resolution.rule.effectiveTo === null
+                  ? null
+                  : resolution.rule.effectiveTo.toISOString(),
+              priority: resolution.rule.priority,
+            },
+          ];
+        } else if (resolution.status === 'AMBIGUOUS') {
+          feeDecision.resolutionStatus = 'AMBIGUOUS';
+          feeDecision.ambiguousRuleIds = resolution.ambiguousRuleIds ?? [];
+        }
       }
     }
 
@@ -796,8 +992,8 @@ export class TransferService {
     // yields the identical byte-shape NONE as before, so an unwired/empty configuration cannot
     // change behavior by accident. Fail-closed: AMBIGUOUS rules or an unavailable FEE base throw
     // (409/400) and abort BEFORE money commits — no silent rule pick, no partial snapshot.
-    // WALLET_TRANSFER has no acting agent, so no agentId/agentClassId context is supplied;
-    // aggregator commission is disabled (aggregatorId never supplied).
+    // An agent-self sender is the acting agent; customer senders supply no agent context.
+    // Aggregator commission remains disabled (aggregatorId never supplied).
     let commissionDecision: Record<string, unknown> = commissionNone();
     if (this.commissionEngine) {
       const engineDecision = await this.commissionEngine.decideWithManager(
@@ -805,8 +1001,8 @@ export class TransferService {
         {
           productCode,
           currency: ctx.command.currency,
-          agentId: null,
-          agentClassId: null,
+          agentId: ctx.sourceParticipant.type === 'AGENT' ? ctx.sourceParticipant.id : null,
+          agentClassId: ctx.sourceParticipant.agentClassId,
           aggregatorId: null,
           at: decisionAt,
         },
@@ -816,11 +1012,34 @@ export class TransferService {
         },
       );
       if (engineDecision.status === 'ALLOCATED') {
+        if (
+          ctx.feeDecision &&
+          !this.commercialAccountingService?.isEnabled() &&
+          (engineDecision.allocations ?? []).some(
+            (allocation) => BigInt(allocation.amountMinor) > 0n,
+          )
+        ) {
+          throw new ServiceUnavailableException(
+            'Confirmed transfer commission accounting is unavailable',
+          );
+        }
         commissionDecision = {
-          ...commissionAllocatedAtAccountingBoundary(engineDecision, {
-            feeCollectionState: commissionFeeCollectionStateOf(feeDecision),
-            commissionEvent: 'TRANSACTION_COMPLETION',
-          }),
+          ...commissionAllocatedAtAccountingBoundary(
+            {
+              ...engineDecision,
+              allocations: (engineDecision.allocations ?? []).map((allocation) =>
+                allocation.beneficiaryType === 'AGENT' &&
+                !allocation.beneficiaryId &&
+                ctx.sourceParticipant.type === 'AGENT'
+                  ? { ...allocation, beneficiaryId: ctx.sourceParticipant.id }
+                  : allocation,
+              ),
+            },
+            {
+              feeCollectionState: commissionFeeCollectionStateOf(feeDecision),
+              commissionEvent: 'TRANSACTION_COMPLETION',
+            },
+          ),
         };
       }
     }
@@ -840,10 +1059,14 @@ export class TransferService {
         metadata: {
           flow: 'WALLET_TRANSFER',
           transferId: ctx.transfer.id,
-          sourceCustomerId: ctx.sourceCustomerId,
+          ...(ctx.sourceParticipant.type === 'CUSTOMER'
+            ? { sourceCustomerId: ctx.sourceParticipant.id }
+            : { sourceAgentId: ctx.sourceParticipant.id }),
         },
         feePayerLedgerAccountId: ctx.payerLedgerAccountId,
-        feePayerCustomerId: ctx.sourceCustomerId,
+        // The accounting service accepts the historical wallet owner reference under this name;
+        // the exact locked payer ledger account above is authoritative for either owner class.
+        feePayerCustomerId: ctx.sourceParticipant.id,
         feeDecision,
         commissionDecision,
       });
@@ -877,8 +1100,8 @@ export class TransferService {
       product: productCode,
       direction: 'OUTGOING',
       channel: null,
-      principalType: 'CUSTOMER',
-      principalId: ctx.sourceCustomerId,
+      principalType: ctx.sourceParticipant.type,
+      principalId: ctx.sourceParticipant.id,
       currency: ctx.command.currency,
       principalAmountMinor: amountMinor,
       transactionReference: ctx.transfer.id,
@@ -912,7 +1135,7 @@ export class TransferService {
     manager: EntityManager,
     transfer: Transfer,
     failure: TransferFailure,
-    recipients: AuditedTransferRecipientIdentity,
+    recipients: TransferNotificationRecipients,
   ): Promise<TransferTransactionResult> {
     transfer.status = TransferStatus.FAILED;
     transfer.journalId = null;
@@ -929,14 +1152,12 @@ export class TransferService {
       correlationId: `transfer:${transfer.id}`,
       newValues: { status: transfer.status, failureCode: transfer.failureCode },
     });
-    // Notification producer contract v1 (Arena 3 producer correction): authoritative
-    // recipient identity from the locked wallet rows so the notification.v1 consumer can
-    // address the failure notice to the source customer instead of quarantining the event.
-    // No journal exists for a failed transfer and no failure prose/PIN/secret is emitted.
     const failedAt = new Date();
+    const typed = recipients.typed;
+    const eventType = typed ? 'wallet_transfer.failed' : INTERNAL_TRANSFER_FAILED_EVENT_TYPE;
     await this.outboxService?.enqueueOnce(manager, {
-      eventKey: transferFailedEventKey(transfer.id),
-      eventType: INTERNAL_TRANSFER_FAILED_EVENT_TYPE,
+      eventKey: typed ? `${eventType}:${transfer.id}:v1` : transferFailedEventKey(transfer.id),
+      eventType,
       aggregateType: 'TRANSFER',
       aggregateId: transfer.id,
       schemaVersion: INTERNAL_TRANSFER_EVENT_SCHEMA_VERSION,
@@ -944,12 +1165,14 @@ export class TransferService {
       retentionClass: INTERNAL_TRANSFER_EVENT_RETENTION_CLASS,
       occurredAt: failedAt,
       correlationId: `transfer:${transfer.id}`,
-      payload: buildAuditedInternalTransferFailedEvent(
-        transfer,
-        recipients,
-        transfer.failureCode,
-        failedAt,
-      ),
+      payload: typed
+        ? buildTypedWalletTransferEvent(transfer, typed, 'failed', failedAt)
+        : buildAuditedInternalTransferFailedEvent(
+            transfer,
+            recipients,
+            transfer.failureCode,
+            failedAt,
+          ),
     });
     await this.metricsService?.increment(manager, 'transfers.failed');
     return { transferId: transfer.id };
@@ -982,6 +1205,7 @@ export class TransferService {
           currency,
           reference: reference ?? null,
           narration: narration ?? null,
+          ...(command.confirmation ? { quoteId: command.confirmation.quoteId } : {}),
         }),
       )
       .digest('hex');
@@ -989,6 +1213,7 @@ export class TransferService {
     return {
       sourceWalletId,
       ownership: command.ownership,
+      confirmation: command.confirmation,
       destinationWalletId,
       amountMinor,
       currency,
@@ -1153,6 +1378,15 @@ export class TransferService {
         if (existing.requestHash !== normalized.requestHash) {
           throw new ConflictException('The idempotency key was already used for another transfer');
         }
+        const ownedWallet = await this.walletRepository.findOne({
+          where: { id: existing.sourceWalletId },
+        });
+        assertWalletOwnership(
+          normalized.ownership,
+          ownedWallet?.customerId,
+          ownedWallet?.ownerClass,
+        );
+        await this.verifyConfirmedReplay(normalized, existing);
         return { transferId: existing.id };
       }
       if (attempt >= delaysMs.length) {
@@ -1160,6 +1394,47 @@ export class TransferService {
       }
       await new Promise((resolve) => setTimeout(resolve, delaysMs[attempt]));
     }
+  }
+
+  private assertQuoteMatchesReplay(
+    quote: Awaited<ReturnType<TransferQuoteService['lockForSession']>>,
+    transfer: Transfer,
+  ): void {
+    const completed = transfer.status === TransferStatus.COMPLETED;
+    if (
+      completed
+        ? quote.status !== PaymentQuoteStatus.USED || quote.transferId !== transfer.id
+        : quote.transferId !== null || quote.status === PaymentQuoteStatus.USED
+    ) {
+      throw new ConflictException('Transfer quote is not bound to this result');
+    }
+  }
+
+  private async verifyConfirmedReplay(
+    command: NormalizedTransfer,
+    transfer: Transfer,
+  ): Promise<void> {
+    if (!command.confirmation) return;
+    if (!this.transferQuoteService)
+      throw new ServiceUnavailableException('Transfer confirmation is unavailable');
+    if (!this.transferPinAuthorizationService)
+      throw new ServiceUnavailableException('Transfer PIN authorization is unavailable');
+    const confirmation = command.confirmation;
+    await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+      const quote = await this.transferQuoteService!.lockForSession(
+        manager,
+        confirmation.principal,
+        confirmation.quoteId,
+      );
+      await this.transferPinAuthorizationService!.assertWithManager(
+        manager,
+        confirmation.principal,
+        confirmation.quoteId,
+        command.idempotencyKey,
+        confirmation.pinAuditId,
+      );
+      this.assertQuoteMatchesReplay(quote, transfer);
+    });
   }
 
   private transactionContentionExhaustedException(): ConflictException {

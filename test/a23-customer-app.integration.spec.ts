@@ -3,12 +3,13 @@ import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
-import { pbkdf2Sync, randomUUID } from 'node:crypto';
+import { createHash, pbkdf2Sync, randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 
 import type { HistoryResponseFixture } from './support/history-response-fixture';
 import { AppModule } from '../src/app.module';
 import { TrustedTierFixture } from './support/trusted-tier-fixture';
+import { GovernedFinancialFixture } from './support/governed-financial-fixture';
 import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
@@ -70,6 +71,10 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     // TRUNCATE also clears the singleton tier-policy head + versions, so re-seed the controlled
     // approved policy before each case (otherwise eligibility correctly reports "policy unavailable").
     await evidence.seedPolicy(dataSource);
+    const { ProductCatalogSeedService } = await import(
+      '../src/product-catalog/product-catalog-seed.service'
+    );
+    await app.get(ProductCatalogSeedService).seedIfEmpty();
   });
 
   async function createCustomerWithCredential(
@@ -349,6 +354,142 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     expect(resAgent.body.receivingNumber).toBe(agentNumber);
   });
 
+  it('uses shared beneficiary history for agent ownership and customer or agent recipients', async () => {
+    const customer = await createCustomerWithCredential();
+    const agentToken = await createAgentToken();
+    const secondToken = await createAgentToken();
+    const agentRows: Array<{ agent_id: string }> = await dataSource.query(
+      `SELECT agent_id FROM agent_authentication_sessions WHERE token_hash=$1`,
+      [createHash('sha256').update(agentToken).digest('hex')],
+    );
+    const otherRows: Array<{ agent_id: string }> = await dataSource.query(
+      `SELECT agent_id FROM agent_authentication_sessions WHERE token_hash=$1`,
+      [createHash('sha256').update(secondToken).digest('hex')],
+    );
+    const agentId = agentRows[0]!.agent_id;
+    const otherId = otherRows[0]!.agent_id;
+    const number = '7011112345';
+    await dataSource.query(
+      `INSERT INTO agent_receiving_numbers(agent_id,receiving_number,status) VALUES ($1,$2,'ACTIVE')`,
+      [otherId, number],
+    );
+    const agentPath = '/api/v1/agents/me/beneficiaries';
+    const customerPath = '/api/v1/customers/me/beneficiaries';
+    await request(app.getHttpServer()).get(agentPath).expect(401);
+    await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ beneficiaryIdentifier: customer.phone, agentId: otherId })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${secondToken}`)
+      .send({ beneficiaryIdentifier: number })
+      .expect(400);
+    const agentCustomer = await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ beneficiaryIdentifier: customer.phone, nickname: 'Customer' })
+      .expect(201);
+    expect(agentCustomer.body).toMatchObject({
+      recipientType: 'CUSTOMER',
+      recipientId: customer.customerId,
+      isActive: true,
+      isVerified: true,
+    });
+    const agentAgent = await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ beneficiaryIdentifier: number, nickname: 'Agent' })
+      .expect(201);
+    expect(agentAgent.body).toMatchObject({
+      recipientType: 'AGENT',
+      recipientId: otherId,
+      isActive: true,
+      isVerified: true,
+    });
+    const customerAgent = await request(app.getHttpServer())
+      .post(customerPath)
+      .set('Authorization', `Bearer ${customer.token}`)
+      .send({ beneficiaryIdentifier: number, nickname: 'Agent' })
+      .expect(201);
+    expect(customerAgent.body).toMatchObject({
+      recipientType: 'AGENT',
+      recipientId: otherId,
+      isActive: true,
+      isVerified: true,
+    });
+    await request(app.getHttpServer())
+      .get(`${agentPath}/${agentAgent.body.id as string}`)
+      .set('Authorization', `Bearer ${secondToken}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .get(`${customerPath}/${agentAgent.body.id as string}`)
+      .set('Authorization', `Bearer ${customer.token}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ beneficiaryIdentifier: number })
+      .expect(409);
+    const list = await request(app.getHttpServer())
+      .get(agentPath)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .expect(200);
+    expect(list.body.items).toHaveLength(2);
+    const savedId = agentAgent.body.id as string;
+    const rows = await dataSource.query(
+      `SELECT b.customer_id,b.agent_id,b.wallet_recipient_type,b.wallet_recipient_id,o.agent_id AS ownership_agent FROM customer_beneficiaries b JOIN beneficiary_ownerships o ON o.beneficiary_id=b.id WHERE b.id=$1`,
+      [savedId],
+    );
+    expect(rows).toEqual([
+      {
+        customer_id: null,
+        agent_id: agentId,
+        wallet_recipient_type: 'AGENT',
+        wallet_recipient_id: otherId,
+        ownership_agent: agentId,
+      },
+    ]);
+    expect(
+      await dataSource.query(
+        `SELECT action FROM beneficiary_histories WHERE beneficiary_id=$1 ORDER BY created_at`,
+        [savedId],
+      ),
+    ).toHaveLength(4);
+    await expect(
+      dataSource.query(`UPDATE customer_beneficiaries SET wallet_recipient_id=$2 WHERE id=$1`, [
+        savedId,
+        agentId,
+      ]),
+    ).rejects.toThrow();
+    await expect(
+      dataSource.query(`UPDATE beneficiary_ownerships SET agent_id=$2 WHERE beneficiary_id=$1`, [
+        savedId,
+        otherId,
+      ]),
+    ).rejects.toThrow();
+    await request(app.getHttpServer())
+      .patch(`${agentPath}/${savedId}`)
+      .set('Authorization', `Bearer ${secondToken}`)
+      .send({ status: 'DELETED' })
+      .expect(404);
+    await request(app.getHttpServer())
+      .patch(`${agentPath}/${savedId}`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ status: 'SUSPENDED' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .patch(`${agentPath}/${savedId}`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ status: 'DELETED' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .get(`${agentPath}/${savedId}`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .expect(404);
+  });
+
   it('6. Wallet→Wallet — reuse TransferService, preserves idempotency/concurrency/double-entry/fee not via customer app', async () => {
     const { token, customerId: custA } = await createCustomerWithCredential();
     const { customerId: custB } = await createCustomerWithCredential();
@@ -445,6 +586,1674 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
       .get(`/api/v1/transfers/${transferId}`)
       .set('Authorization', `Bearer ${token}`)
       .expect((r) => expect([200, 401, 403].includes(r.status)).toBe(true));
+  });
+
+  it('fails closed for customer-to-agent before any transfer, journal or notification is recorded', async () => {
+    const { token, customerId } = await createCustomerWithCredential();
+    const classRows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agent_classes (reference, code, name, is_active, applicable_services, applicable_limits)
+       VALUES ($1,$2,'transfer class',true,$3,$4) RETURNING id`,
+      [
+        `cls-${randomUUID()}`,
+        `C-${randomUUID().slice(0, 8)}`,
+        JSON.stringify(['WALLET_TRANSFER']),
+        JSON.stringify({}),
+      ],
+    );
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agents (reference, status, agent_class_id) VALUES ($1,'ACTIVE',$2) RETURNING id`,
+      [`agent-${randomUUID()}`, classRows[0]!.id],
+    );
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const { LedgerService } = await import('../src/ledger/ledger.service');
+    const wallets = app.get(WalletService);
+    const ledger = app.get(LedgerService);
+    const source = await wallets.createWallet({
+      customerId,
+      currency: 'NGN',
+      idempotencyKey: `src-${randomUUID()}`,
+    });
+    const destination = await wallets.createWallet({
+      customerId: rows[0]!.id,
+      currency: 'NGN',
+      idempotencyKey: `dst-${randomUUID()}`,
+    });
+    const owner: Array<{ owner_class: string }> = await dataSource.query(
+      'SELECT owner_class FROM wallet_accounts WHERE id=$1',
+      [destination.id],
+    );
+    expect(owner[0]!.owner_class).toBe('AGENT');
+    const { WalletAccount } = await import('../src/wallet/wallet-account.entity');
+    const { resolveTransferParticipants } = await import('../src/transfer/transfer-participant');
+    const classify = () =>
+      dataSource.transaction('SERIALIZABLE', async (manager) => {
+        const locked = await manager
+          .getRepository(WalletAccount)
+          .createQueryBuilder('wallet')
+          .where('wallet.id IN (:...ids)', { ids: [source.id, destination.id] })
+          .orderBy('wallet.id', 'ASC')
+          .setLock('pessimistic_write')
+          .getMany();
+        const byId = new Map(locked.map((wallet) => [wallet.id, wallet]));
+        return resolveTransferParticipants(manager, [
+          byId.get(source.id)!,
+          byId.get(destination.id)!,
+        ]);
+      });
+    expect(await classify()).toMatchObject([
+      { type: 'CUSTOMER', id: customerId, agentClassId: null },
+      { type: 'AGENT', id: rows[0]!.id, agentClassId: classRows[0]!.id },
+    ]);
+    await request(app.getHttpServer())
+      .post('/api/v1/customers/me/transaction-pin')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ pin: '1234' })
+      .expect(200);
+    const funding = await ledger.createAccount({
+      code: `fund-${randomUUID()}`,
+      name: 'test funding',
+      accountType: 'ASSET' as any,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+    });
+    await ledger.postJournal({
+      idempotencyKey: `fund-${randomUUID()}`,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+      lines: [
+        { accountId: funding.id, direction: 'DEBIT' as any, amountMinor: '50000' },
+        { accountId: source.ledgerAccountId, direction: 'CREDIT' as any, amountMinor: '50000' },
+      ],
+    });
+    const before = await dataSource.query(
+      `SELECT (SELECT count(*) FROM transfers)::int AS transfers, (SELECT count(*) FROM ledger_journals)::int AS journals, (SELECT count(*) FROM outbox_events WHERE event_type LIKE 'transfer.%')::int AS events`,
+    );
+    await request(app.getHttpServer())
+      .post('/api/v1/customers/me/transfers')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', `transfer-${randomUUID()}`)
+      .send({
+        sourceWalletId: source.id,
+        destinationWalletId: destination.id,
+        amountMinor: '10000',
+        currency: 'NGN',
+        pin: '1234',
+      })
+      .expect(503);
+    expect(
+      await dataSource.query(
+        `SELECT (SELECT count(*) FROM transfers)::int AS transfers, (SELECT count(*) FROM ledger_journals)::int AS journals, (SELECT count(*) FROM outbox_events WHERE event_type LIKE 'transfer.%')::int AS events`,
+      ),
+    ).toEqual(before);
+    expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('50000');
+    expect((await wallets.getWalletBalance(destination.id)).balanceMinor).toBe('0');
+    // A later namespace collision invalidates the previously stored class; never rely on the
+    // stale wallet label or silently address this AGENT identity as a CUSTOMER.
+    await dataSource.query(
+      `INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status)
+      VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`,
+      [rows[0]!.id, `collision-${randomUUID()}`],
+    );
+    await expect(classify()).rejects.toMatchObject({ status: 503 });
+  });
+
+  it('creates session-bound server-priced quotes for customer and agent operating wallets without posting money', async () => {
+    const customer = await createCustomerWithCredential();
+    const classRows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agent_classes (reference,code,name,is_active,applicable_services)
+      VALUES ($1,$2,'quote class',true,$3) RETURNING id`,
+      [`qc-${randomUUID()}`, `QC-${randomUUID().slice(0, 8)}`, JSON.stringify(['WALLET_TRANSFER'])],
+    );
+    const agentRows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agents (reference,status,agent_class_id) VALUES ($1,'ACTIVE',$2) RETURNING id`,
+      [`qa-${randomUUID()}`, classRows[0]!.id],
+    );
+    const agentId = agentRows[0]!.id;
+    await dataSource.query(
+      `INSERT INTO agent_authentication_credentials (agent_id,password_hash,hash_algorithm,password_version,password_changed_at,status)
+      VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE')`,
+      [agentId, encodePbkdf2('quote-agent-password')],
+    );
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId, password: 'quote-agent-password' })
+      .expect(200);
+    expect(login.body.accessToken).toBeTruthy();
+    const customerSessions: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM authentication_sessions WHERE customer_id=$1 AND status='ACTIVE'`,
+      [customer.customerId],
+    );
+    const agentSessions: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM agent_authentication_sessions WHERE agent_id=$1 AND status='ACTIVE'`,
+      [agentId],
+    );
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const wallets = app.get(WalletService);
+    const quotes = app.get(TransferQuoteService);
+    const source = await wallets.createWallet({
+      customerId: customer.customerId,
+      currency: 'NGN',
+      idempotencyKey: `q-src-${randomUUID()}`,
+    });
+    const operating = await wallets.createWallet({
+      customerId: agentId,
+      currency: 'NGN',
+      idempotencyKey: `q-agent-${randomUUID()}`,
+    });
+    const governed = new GovernedFinancialFixture({ app, dataSource, label: 'p2p-quote' });
+    const institutionId = await governed.institution('quote-p2p');
+    await governed.enrolCustomer(customer.customerId, institutionId);
+    await governed.affiliateAgent(agentId, institutionId);
+    await governed.attributeWallet(source.id, institutionId);
+    await governed.attributeWallet(operating.id, institutionId);
+    const cp = {
+      type: 'CUSTOMER' as const,
+      principalId: customer.customerId,
+      customerId: customer.customerId,
+      sessionId: customerSessions[0]!.id,
+      roles: [],
+      scopes: [],
+      customerAccess: 'SELF' as const,
+    };
+    const ap = {
+      type: 'AGENT' as const,
+      principalId: agentId,
+      agentId,
+      sessionId: agentSessions[0]!.id,
+      roles: [],
+      scopes: [],
+      customerAccess: 'NONE' as const,
+      agentAccess: 'SELF' as const,
+    };
+    const input = {
+      sourceWalletId: source.id,
+      destinationWalletId: operating.id,
+      amountMinor: '1234',
+      currency: 'NGN',
+      idempotencyKey: `q-${randomUUID()}`,
+    };
+    const first = await quotes.create(cp, input);
+    expect(first).toMatchObject({
+      sourceWalletId: source.id,
+      destinationWalletId: operating.id,
+      recipientType: 'AGENT',
+      recipientId: agentId,
+      amountMinor: '1234',
+      feeMinor: '0',
+      vatMinor: '0',
+      totalDebitMinor: '1234',
+      status: 'ACTIVE',
+    });
+    expect((await quotes.create(cp, input)).quoteId).toBe(first.quoteId);
+    await expect(quotes.create(cp, { ...input, amountMinor: '1235' })).rejects.toMatchObject({
+      status: 409,
+    });
+    const agentQuote = await quotes.create(ap, {
+      destinationWalletId: source.id,
+      amountMinor: '100',
+      currency: 'NGN',
+      idempotencyKey: `qa-${randomUUID()}`,
+    });
+    expect(agentQuote).toMatchObject({
+      sourceWalletId: operating.id,
+      destinationWalletId: source.id,
+      recipientType: 'CUSTOMER',
+      recipientId: customer.customerId,
+    });
+    await expect(
+      quotes.create(ap, {
+        destinationWalletId: source.id,
+        sourceWalletId: operating.id,
+        amountMinor: '100',
+        currency: 'NGN',
+        idempotencyKey: `bad-${randomUUID()}`,
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    await dataSource.query(`UPDATE agent_classes SET applicable_services=$1 WHERE id=$2`, [
+      JSON.stringify(['CASH_IN']),
+      classRows[0]!.id,
+    ]);
+    await expect(
+      quotes.create(cp, { ...input, idempotencyKey: `recipient-no-capability-${randomUUID()}` }),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      quotes.create(ap, {
+        destinationWalletId: source.id,
+        amountMinor: '100',
+        currency: 'NGN',
+        idempotencyKey: `no-capability-${randomUUID()}`,
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    await dataSource.query(`UPDATE agent_classes SET applicable_services=$1 WHERE id=$2`, [
+      JSON.stringify(['WALLET_TRANSFER']),
+      classRows[0]!.id,
+    ]);
+    await dataSource.query(
+      `UPDATE agent_authentication_credentials SET account_locked=true WHERE agent_id=$1`,
+      [agentId],
+    );
+    await expect(
+      quotes.create(ap, {
+        destinationWalletId: source.id,
+        amountMinor: '100',
+        currency: 'NGN',
+        idempotencyKey: `locked-${randomUUID()}`,
+      }),
+    ).rejects.toMatchObject({ status: 401 });
+    await dataSource.query(
+      `UPDATE agent_authentication_credentials SET account_locked=false WHERE agent_id=$1`,
+      [agentId],
+    );
+    await dataSource.query(
+      `UPDATE agent_authentication_credentials SET password_changed_at=clock_timestamp()+interval '1 second' WHERE agent_id=$1`,
+      [agentId],
+    );
+    await expect(
+      quotes.create(ap, {
+        destinationWalletId: source.id,
+        amountMinor: '100',
+        currency: 'NGN',
+        idempotencyKey: `rotated-${randomUUID()}`,
+      }),
+    ).rejects.toMatchObject({ status: 401 });
+    await dataSource.query(
+      `UPDATE agent_authentication_sessions SET status='REVOKED',revoked_at=now() WHERE id=$1`,
+      [agentSessions[0]!.id],
+    );
+    await expect(
+      quotes.create(ap, {
+        destinationWalletId: source.id,
+        amountMinor: '100',
+        currency: 'NGN',
+        idempotencyKey: `revoked-${randomUUID()}`,
+      }),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toEqual([]);
+    expect(await dataSource.query(`SELECT id FROM ledger_journals`)).toEqual([]);
+  });
+
+  it('atomically consumes a confirmed customer quote and recovers only the identical operation', async () => {
+    const sender = await createCustomerWithCredential();
+    const receiver = await createCustomerWithCredential();
+    const sessions: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM authentication_sessions WHERE customer_id=$1 AND status='ACTIVE'`,
+      [sender.customerId],
+    );
+    const principal = {
+      type: 'CUSTOMER' as const,
+      principalId: sender.customerId,
+      customerId: sender.customerId,
+      sessionId: sessions[0]!.id,
+      roles: [],
+      scopes: [],
+      customerAccess: 'SELF' as const,
+    };
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const { LedgerService } = await import('../src/ledger/ledger.service');
+    const { TransferQuoteService } = await import('../src/transfer/transfer-quote.service');
+    const { TransferService } = await import('../src/transfer/transfer.service');
+    const wallets = app.get(WalletService);
+    const ledger = app.get(LedgerService);
+    const quoteService = app.get(TransferQuoteService);
+    const transferService = app.get(TransferService);
+    const source = await wallets.createWallet({
+      customerId: sender.customerId,
+      currency: 'NGN',
+      idempotencyKey: `confirm-src-${randomUUID()}`,
+    });
+    const destination = await wallets.createWallet({
+      customerId: receiver.customerId,
+      currency: 'NGN',
+      idempotencyKey: `confirm-dst-${randomUUID()}`,
+    });
+    const funding = await ledger.createAccount({
+      code: `confirm-fund-${randomUUID()}`,
+      name: 'test',
+      accountType: 'ASSET' as any,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+    });
+    await ledger.postJournal({
+      idempotencyKey: `confirm-fund-${randomUUID()}`,
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+      lines: [
+        { accountId: funding.id, direction: 'DEBIT' as any, amountMinor: '5000' },
+        { accountId: source.ledgerAccountId, direction: 'CREDIT' as any, amountMinor: '5000' },
+      ],
+    });
+    const quote = await quoteService.create(principal, {
+      sourceWalletId: source.id,
+      destinationWalletId: destination.id,
+      amountMinor: '1200',
+      currency: 'NGN',
+      idempotencyKey: `quote-${randomUUID()}`,
+    });
+    const { CustomerTransactionPinService } = await import(
+      '../src/customer/customer-transaction-pin.service'
+    );
+    await app.get(CustomerTransactionPinService).setTransactionPin(sender.customerId, {
+      pinHash: encodePbkdf2('1234'),
+      hashAlgorithm: 'PBKDF2',
+      pinVersion: 1,
+      actor: sender.customerId,
+    });
+    // Internal service only; there is no HTTP confirmation route yet.
+    const key = `confirm-${randomUUID()}`;
+    await expect(
+      transferService.createConfirmedTransfer(principal, quote.quoteId, key, '9999'),
+    ).rejects.toMatchObject({ status: 401 });
+    const pinRows: Array<{ failed_count: number }> = await dataSource.query(
+      `SELECT failed_count FROM customer_transaction_pins WHERE customer_id=$1`,
+      [sender.customerId],
+    );
+    expect(pinRows[0]!.failed_count).toBe(1);
+    const { TransferPinAuthorizationService } = await import(
+      '../src/transfer/transfer-pin-authorization.service'
+    );
+    const pinAuthorization = app.get(TransferPinAuthorizationService);
+    const scopedKey = `self-transfer:${createHash('sha256').update(`CUSTOMER:${sender.customerId}:${key}`).digest('hex')}`;
+    const proof = await pinAuthorization.authorize(principal, quote.quoteId, scopedKey, '1234');
+    await dataSource.transaction(async (manager) => {
+      await pinAuthorization.assertWithManager(manager, principal, quote.quoteId, scopedKey, proof);
+      await expect(
+        pinAuthorization.assertWithManager(manager, principal, randomUUID(), scopedKey, proof),
+      ).rejects.toMatchObject({ status: 401 });
+      await expect(
+        pinAuthorization.assertWithManager(
+          manager,
+          principal,
+          quote.quoteId,
+          `${scopedKey}-other`,
+          proof,
+        ),
+      ).rejects.toMatchObject({ status: 401 });
+      await expect(
+        pinAuthorization.assertWithManager(
+          manager,
+          { ...principal, sessionId: randomUUID() },
+          quote.quoteId,
+          scopedKey,
+          proof,
+        ),
+      ).rejects.toMatchObject({ status: 401 });
+    });
+    // Simulate PIN lock between verification and the transactional authorization check.
+    const authorize = pinAuthorization.authorize.bind(pinAuthorization);
+    const lockRace = jest
+      .spyOn(pinAuthorization, 'authorize')
+      .mockImplementation(async (...args) => {
+        const id = await authorize(...args);
+        await dataSource.query(
+          `UPDATE customer_transaction_pins SET account_locked=true WHERE customer_id=$1`,
+          [sender.customerId],
+        );
+        return id;
+      });
+    try {
+      await expect(
+        transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234'),
+      ).rejects.toMatchObject({ status: 401 });
+    } finally {
+      lockRace.mockRestore();
+      await dataSource.query(
+        `UPDATE customer_transaction_pins SET account_locked=false WHERE customer_id=$1`,
+        [sender.customerId],
+      );
+    }
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    // Missing any mandatory financial control must fail before creating a transfer, while
+    // leaving the quote reusable. PIN authorization evidence is intentionally independent.
+    const controls = transferService as unknown as Record<string, unknown>;
+    for (const dependency of ['limitEnforcementService', 'outboxService', 'auditService']) {
+      const original = controls[dependency];
+      try {
+        controls[dependency] = undefined;
+        await expect(
+          transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234'),
+        ).rejects.toMatchObject({ status: 503 });
+      } finally {
+        controls[dependency] = original;
+      }
+      expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+      expect(
+        await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [quote.quoteId]),
+      ).toEqual([{ status: 'ACTIVE' }]);
+    }
+    // A late failure after quote use must undo journal, transfer and quote changes together.
+    const journalCountBefore = (
+      await dataSource.query<Array<{ id: string }>>(`SELECT id FROM ledger_journals`)
+    ).length;
+    const consume = quoteService.consumeWithManager.bind(quoteService);
+    const injected = jest
+      .spyOn(quoteService, 'consumeWithManager')
+      .mockImplementation(async (...args) => {
+        await consume(...args);
+        throw new Error('injected post-consumption failure');
+      });
+    try {
+      await expect(
+        transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234'),
+      ).rejects.toThrow('injected post-consumption failure');
+    } finally {
+      injected.mockRestore();
+    }
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    expect(await dataSource.query(`SELECT id FROM ledger_journals`)).toHaveLength(
+      journalCountBefore,
+    );
+    expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('5000');
+    expect((await wallets.getWalletBalance(destination.id)).balanceMinor).toBe('0');
+    expect(
+      await dataSource.query(
+        `SELECT q.status,b.transfer_id FROM payment_quotes q JOIN wallet_transfer_quote_bindings b ON b.quote_id=q.id WHERE q.id=$1`,
+        [quote.quoteId],
+      ),
+    ).toEqual([{ status: 'ACTIVE', transfer_id: null }]);
+    const completed = await transferService.createConfirmedTransfer(
+      principal,
+      quote.quoteId,
+      key,
+      '1234',
+    );
+    expect(completed).toMatchObject({
+      status: 'COMPLETED',
+      amountMinor: '1200',
+      sourceWalletId: source.id,
+      destinationWalletId: destination.id,
+    });
+    expect(
+      (await transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234')).id,
+    ).toBe(completed.id);
+    await expect(
+      transferService.createConfirmedTransfer(
+        principal,
+        quote.quoteId,
+        `different-${randomUUID()}`,
+        '1234',
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(
+      await dataSource.query(
+        `SELECT q.status,b.transfer_id FROM payment_quotes q JOIN wallet_transfer_quote_bindings b ON b.quote_id=q.id WHERE q.id=$1`,
+        [quote.quoteId],
+      ),
+    ).toEqual([{ status: 'USED', transfer_id: completed.id }]);
+    expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('3800');
+    expect((await wallets.getWalletBalance(destination.id)).balanceMinor).toBe('1200');
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(1);
+    const { TransferReconciliationService } = await import(
+      '../src/reconciliation/transfer-reconciliation.service'
+    );
+    const reconciliation = app.get(TransferReconciliationService);
+    expect(await reconciliation.reconcileTransfer(completed.id)).toMatchObject({
+      status: 'PASS',
+      discrepancies: [],
+    });
+    expect(
+      (await reconciliation.reconcileAll()).reports.map((report) => report.transfer?.id),
+    ).toContain(completed.id);
+    const anotherQuote = await quoteService.create(principal, {
+      sourceWalletId: source.id,
+      destinationWalletId: destination.id,
+      amountMinor: '1200',
+      currency: 'NGN',
+      idempotencyKey: `another-quote-${randomUUID()}`,
+    });
+    await expect(
+      transferService.createConfirmedTransfer(principal, anotherQuote.quoteId, key, '1234'),
+    ).rejects.toMatchObject({ status: 409 });
+    const stale = await quoteService.create(principal, {
+      sourceWalletId: source.id,
+      destinationWalletId: destination.id,
+      amountMinor: '100',
+      currency: 'NGN',
+      idempotencyKey: `stale-quote-${randomUUID()}`,
+    });
+    const { ProductCatalogSeedService } = await import(
+      '../src/product-catalog/product-catalog-seed.service'
+    );
+    const { FeeRuleRegistryService } = await import('../src/fee-rules/fee-rule-registry.service');
+    await app.get(ProductCatalogSeedService).seedIfEmpty();
+    await app
+      .get(FeeRuleRegistryService)
+      .createRule(
+        { productCode: 'WALLET_TRANSFER', currency: 'NGN', flatFeeMinor: '0', vatBps: 0 },
+        'test',
+      );
+    await expect(
+      transferService.createConfirmedTransfer(
+        principal,
+        stale.quoteId,
+        `stale-${randomUUID()}`,
+        '1234',
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('3800');
+    expect((await wallets.getWalletBalance(destination.id)).balanceMinor).toBe('1200');
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(1);
+    expect(
+      await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [stale.quoteId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
+    await dataSource.query(
+      `UPDATE customer_authentication_credentials SET account_locked=true WHERE customer_id=$1`,
+      [sender.customerId],
+    );
+    await expect(
+      transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234'),
+    ).rejects.toMatchObject({ status: 401 });
+    await dataSource.query(
+      `UPDATE customer_authentication_credentials SET account_locked=false WHERE customer_id=$1`,
+      [sender.customerId],
+    );
+    await dataSource.query(
+      `UPDATE customer_authentication_credentials SET password_version=password_version+1 WHERE customer_id=$1`,
+      [sender.customerId],
+    );
+    await expect(
+      transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234'),
+    ).rejects.toMatchObject({ status: 401 });
+    await dataSource.query(
+      `UPDATE authentication_sessions SET status='REVOKED', revoked_at=clock_timestamp() WHERE id=$1`,
+      [principal.sessionId],
+    );
+    await expect(
+      transferService.createConfirmedTransfer(principal, quote.quoteId, key, '1234'),
+    ).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('does not grant unattributed wallets agent transfer authority', async () => {
+    const customer = await createCustomerWithCredential();
+    const otherCustomer = await createCustomerWithCredential();
+    const tokenA = await createAgentToken();
+    const agentA: Array<{ id: string; agent_class_id: string }> = await dataSource.query(
+      `SELECT id,agent_class_id FROM agents`,
+    );
+    const tokenB = await createAgentToken();
+    const agentB: Array<{ id: string; agent_class_id: string }> = await dataSource.query(
+      `SELECT id,agent_class_id FROM agents WHERE id<>$1`,
+      [agentA[0]!.id],
+    );
+    for (const agent of [agentA[0]!, agentB[0]!])
+      await dataSource.query(`UPDATE agent_classes SET applicable_services=$1 WHERE id=$2`, [
+        JSON.stringify(['WALLET_TRANSFER']),
+        agent.agent_class_id,
+      ]);
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const wallets = app.get(WalletService);
+    const create = (customerId: string) =>
+      wallets.createWallet({ customerId, currency: 'NGN', idempotencyKey: randomUUID() });
+    const source = await create(customer.customerId);
+    const destination = await create(otherCustomer.customerId);
+    const a = await create(agentA[0]!.id);
+    const b = await create(agentB[0]!.id);
+    const quote = (
+      kind: 'customers' | 'agents',
+      token: string,
+      destinationWalletId: string,
+      sourceWalletId?: string,
+    ) =>
+      request(app.getHttpServer())
+        .post(`/api/v1/${kind}/me/transfer-quotes`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          ...(sourceWalletId ? { sourceWalletId } : {}),
+          destinationWalletId,
+          amountMinor: '100',
+          currency: 'NGN',
+        });
+    await quote('customers', customer.token, a.id, source.id).expect(503);
+    await quote('agents', tokenA, destination.id).expect(503);
+    await quote('agents', tokenA, b.id).expect(503);
+    await quote('customers', customer.token, destination.id, source.id).expect(201);
+    expect(tokenB).toBeTruthy();
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    expect(await dataSource.query(`SELECT id FROM ledger_journals`)).toHaveLength(0);
+  });
+
+  it('uses configured database-clock quote expiry, session cap and immutable replay', async () => {
+    const sender = await createCustomerWithCredential();
+    const receiver = await createCustomerWithCredential();
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const { ConfigService } = await import('@nestjs/config');
+    const wallets = app.get(WalletService);
+    const source = await wallets.createWallet({
+      customerId: sender.customerId,
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    const destination = await wallets.createWallet({
+      customerId: receiver.customerId,
+      currency: 'NGN',
+      idempotencyKey: randomUUID(),
+    });
+    const config = app.get(ConfigService);
+    const original = config.get.bind(config);
+    let ttl: unknown = 120;
+    const spy = jest
+      .spyOn(config, 'get')
+      .mockImplementation(((name: string, ...args: unknown[]) =>
+        name === 'WALLET_TRANSFER_QUOTE_TTL_SECONDS'
+          ? ttl
+          : original<unknown>(name, ...(args as []))) as typeof config.get);
+    try {
+      const sessions: Array<{ expires_at: Date }> = await dataSource.query(
+        `WITH changed AS (UPDATE authentication_sessions SET expires_at=clock_timestamp()+interval '40 seconds' WHERE customer_id=$1 RETURNING expires_at) SELECT expires_at FROM changed`,
+        [sender.customerId],
+      );
+      const path = '/api/v1/customers/me/transfer-quotes';
+      const key = randomUUID();
+      const make = (idempotencyKey: string) =>
+        request(app.getHttpServer())
+          .post(path)
+          .set('Authorization', `Bearer ${sender.token}`)
+          .set('Idempotency-Key', idempotencyKey)
+          .send({
+            sourceWalletId: source.id,
+            destinationWalletId: destination.id,
+            amountMinor: '100',
+            currency: 'NGN',
+          });
+      const first = await make(key).expect(201);
+      expect(new Date(first.body.expiresAt as string).getTime()).toBe(
+        sessions[0]!.expires_at.getTime(),
+      );
+      ttl = 1;
+      const replay = await make(key).expect(201);
+      expect(replay.body.expiresAt).toBe(first.body.expiresAt);
+      await expect(
+        dataSource.query(
+          `UPDATE payment_quotes SET expires_at=expires_at+interval '1 minute' WHERE id=$1`,
+          [first.body.quoteId],
+        ),
+      ).rejects.toThrow();
+      const short = await make(randomUUID()).expect(201);
+      await dataSource.query(`SELECT pg_sleep(1.1)`);
+      const status = await request(app.getHttpServer())
+        .get(`${path}/${short.body.quoteId as string}`)
+        .set('Authorization', `Bearer ${sender.token}`)
+        .expect(200);
+      expect(status.body.status).toBe('EXPIRED');
+      expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('does not treat a legacy unbound beneficiary as identity proof for a quote', async () => {
+    const owner = await createCustomerWithCredential();
+    const recipient = await createCustomerWithCredential();
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const wallets = app.get(WalletService);
+    const create = (customerId: string) =>
+      wallets.createWallet({ customerId, currency: 'NGN', idempotencyKey: randomUUID() });
+    const source = await create(owner.customerId),
+      dest = await create(recipient.customerId);
+    const id = randomUUID();
+    await dataSource.query(
+      `INSERT INTO customer_beneficiaries(id,customer_id,beneficiary_type,display_name,reference,
+        destination_identifier,normalized_destination_identifier,status,verified)
+        VALUES ($1,$2,'INTERNAL_CUSTOMER','legacy',$4,$3,$3,'ACTIVE',true)`,
+      [id, owner.customerId, recipient.phone, `legacy-${id}`],
+    );
+    const auth = `Bearer ${owner.token}`;
+    const resolved = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/transfer-recipient')
+      .set('Authorization', auth)
+      .query({ identifier: recipient.phone, currency: 'NGN' })
+      .expect(200);
+    expect(resolved.body).toMatchObject({ walletId: dest.id, ownerId: recipient.customerId });
+    const post = (extra: object) =>
+      request(app.getHttpServer())
+        .post('/api/v1/customers/me/transfer-quotes')
+        .set('Authorization', auth)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          sourceWalletId: source.id,
+          destinationWalletId: dest.id,
+          amountMinor: '100',
+          currency: 'NGN',
+          ...extra,
+        });
+    await post({ beneficiaryId: id }).expect(409);
+    const direct = await post({}).expect(201);
+    expect(direct.body).toMatchObject({
+      recipientType: 'CUSTOMER',
+      recipientId: recipient.customerId,
+      status: 'ACTIVE',
+    });
+    expect(
+      await dataSource.query(
+        `SELECT wallet_recipient_id,wallet_recipient_type FROM customer_beneficiaries WHERE id=$1`,
+        [id],
+      ),
+    ).toEqual([{ wallet_recipient_id: null, wallet_recipient_type: null }]);
+    expect(await dataSource.query('SELECT id FROM transfers')).toEqual([]);
+  });
+
+  it('posts four authenticated governed wallet transfer directions with typed evidence and reconciliation', async () => {
+    const sender = await createCustomerWithCredential();
+    const receiver = await createCustomerWithCredential();
+    const tokenA = await createAgentToken();
+    const rowsA: Array<{ id: string; agent_class_id: string }> = await dataSource.query(
+      `SELECT id,agent_class_id FROM agents`,
+    );
+    const agentA = rowsA[0]!;
+    const tokenB = await createAgentToken();
+    const rowsB: Array<{ id: string; agent_class_id: string }> = await dataSource.query(
+      `SELECT id,agent_class_id FROM agents WHERE id<>$1`,
+      [agentA.id],
+    );
+    const agentB = rowsB[0]!;
+    for (const agent of [agentA, agentB]) {
+      await dataSource.query(`UPDATE agent_classes SET applicable_services=$1 WHERE id=$2`, [
+        JSON.stringify(['WALLET_TRANSFER']),
+        agent.agent_class_id,
+      ]);
+      const code = `P2P_${agent.id.replace(/-/g, '').toUpperCase()}`;
+      await dataSource.query(
+        `INSERT INTO limit_profiles (code,name,kind,status,enabled,configuration_status,created_by) VALUES ($1,$1,'AGENT','ACTIVE',true,'CONFIGURED','test')`,
+        [code],
+      );
+      await dataSource.query(
+        `INSERT INTO limit_assignments (id,limit_profile_code,subject_type,subject_id,precedence,effective_from,is_active,created_by) VALUES ($1,$2,'AGENT_CLASS',$3,1,now()-interval '1 day',true,'test')`,
+        [randomUUID(), code, agent.agent_class_id],
+      );
+      for (const direction of ['INCOMING', 'OUTGOING'])
+        await dataSource.query(
+          `INSERT INTO limit_rules (id,limit_profile_code,product,direction,currency,dimension,limit_value_minor,effective_from,is_active,created_by) VALUES ($1,$2,'WALLET_TRANSFER',$3,'NGN','MAX_AMOUNT_PER_TX',100000,now()-interval '1 day',true,'test')`,
+          [randomUUID(), code, direction],
+        );
+    }
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const { CustomerTransactionPinService } = await import(
+      '../src/customer/customer-transaction-pin.service'
+    );
+    const { AgentAuthenticationService } = await import(
+      '../src/agent-authentication/agent-authentication.service'
+    );
+    const { AgentPasswordHashAlgorithm } = await import(
+      '../src/agent-authentication/agent-authentication.enums'
+    );
+    const { TransferReconciliationService } = await import(
+      '../src/reconciliation/transfer-reconciliation.service'
+    );
+    const wallets = app.get(WalletService);
+    const create = (customerId: string) =>
+      wallets.createWallet({ customerId, currency: 'NGN', idempotencyKey: randomUUID() });
+    const source = await create(sender.customerId),
+      dest = await create(receiver.customerId),
+      a = await create(agentA.id),
+      b = await create(agentB.id);
+    const governed = new GovernedFinancialFixture({ app, dataSource, label: 'p2p-http' });
+    const institutionId = await governed.institution('http-p2p');
+    for (const customer of [sender, receiver])
+      await governed.enrolCustomer(customer.customerId, institutionId);
+    for (const agent of [agentA, agentB]) await governed.affiliateAgent(agent.id, institutionId);
+    for (const wallet of [source, dest, a, b])
+      await governed.attributeWallet(wallet.id, institutionId);
+    const { AgentReceivingNumberService } = await import(
+      '../src/agent/agent-receiving-number.service'
+    );
+    const numberA = await app.get(AgentReceivingNumberService).ensureForAgent(agentA.id, 'test');
+    const numberB = await app.get(AgentReceivingNumberService).ensureForAgent(agentB.id, 'test');
+    const resolve = (kind: 'customers' | 'agents', token: string, identifier: string) =>
+      request(app.getHttpServer())
+        .get(`/api/v1/${kind}/me/transfer-recipient`)
+        .query({ identifier, currency: 'NGN' })
+        .set('Authorization', `Bearer ${token}`);
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me/transfer-recipient')
+      .query({ identifier: receiver.phone, currency: 'NGN' })
+      .expect(401);
+    const customerDest = await resolve('customers', sender.token, receiver.phone).expect(200);
+    const customerAgent = await resolve('customers', sender.token, numberA.receivingNumber).expect(
+      200,
+    );
+    const agentCustomer = await resolve('agents', tokenA, receiver.phone).expect(200);
+    const agentAgent = await resolve('agents', tokenA, numberB.receivingNumber).expect(200);
+    expect(customerDest.body).toMatchObject({
+      walletId: dest.id,
+      ownerType: 'CUSTOMER',
+      ownerId: receiver.customerId,
+    });
+    expect(customerAgent.body).toMatchObject({
+      walletId: a.id,
+      ownerType: 'AGENT',
+      ownerId: agentA.id,
+    });
+    expect(agentCustomer.body).toMatchObject({ walletId: dest.id, ownerType: 'CUSTOMER' });
+    expect(agentAgent.body).toMatchObject({ walletId: b.id, ownerType: 'AGENT' });
+    const save = async (
+      kind: 'customers' | 'agents',
+      token: string,
+      identifier: string,
+      recipientType: 'CUSTOMER' | 'AGENT',
+      recipientId: string,
+    ) => {
+      const path = `/api/v1/${kind}/me/beneficiaries`;
+      const created = await request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ beneficiaryIdentifier: identifier, nickname: `saved-${recipientType}` })
+        .expect(201);
+      expect(created.body).toMatchObject({
+        recipientType,
+        recipientId,
+        isActive: true,
+        isVerified: true,
+      });
+      const listed = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(listed.body.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: created.body.id, recipientType, recipientId }),
+        ]),
+      );
+      const selected = await request(app.getHttpServer())
+        .get(`${path}/${created.body.id as string}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const revalidated = await resolve(
+        kind,
+        token,
+        selected.body.receivingNumber as string,
+      ).expect(200);
+      expect(revalidated.body).toMatchObject({ ownerType: recipientType, ownerId: recipientId });
+      return { id: created.body.id as string, walletId: revalidated.body.walletId as string };
+    };
+    const customerCustomerSaved = await save(
+      'customers',
+      sender.token,
+      receiver.phone,
+      'CUSTOMER',
+      receiver.customerId,
+    );
+    const customerAgentSaved = await save(
+      'customers',
+      sender.token,
+      numberA.receivingNumber,
+      'AGENT',
+      agentA.id,
+    );
+    const agentCustomerSaved = await save(
+      'agents',
+      tokenA,
+      receiver.phone,
+      'CUSTOMER',
+      receiver.customerId,
+    );
+    const agentAgentSaved = await save(
+      'agents',
+      tokenA,
+      numberB.receivingNumber,
+      'AGENT',
+      agentB.id,
+    );
+    await governed.fundLedgerAccount(source.ledgerAccountId, '5000', { institutionId });
+    await app.get(CustomerTransactionPinService).setTransactionPin(sender.customerId, {
+      pinHash: encodePbkdf2('1234'),
+      hashAlgorithm: 'PBKDF2',
+      pinVersion: 1,
+      actor: sender.customerId,
+    });
+    await app.get(AgentAuthenticationService).setTransactionPin(agentA.id, {
+      pinHash: encodePbkdf2('1234'),
+      hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2,
+      pinVersion: 1,
+      actor: agentA.id,
+    });
+    const customerQuotePath = '/api/v1/customers/me/transfer-quotes';
+    const rejectedQuote = (beneficiaryId: string, destinationWalletId: string) =>
+      request(app.getHttpServer())
+        .post(customerQuotePath)
+        .set('Authorization', `Bearer ${sender.token}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          sourceWalletId: source.id,
+          destinationWalletId,
+          beneficiaryId,
+          amountMinor: '100',
+          currency: 'NGN',
+        });
+    await rejectedQuote(agentCustomerSaved.id, dest.id).expect(404);
+    await rejectedQuote(customerAgentSaved.id, dest.id).expect(409);
+    await request(app.getHttpServer())
+      .patch(`/api/v1/customers/me/beneficiaries/${customerAgentSaved.id}`)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .send({ status: 'SUSPENDED' })
+      .expect(200);
+    await rejectedQuote(customerAgentSaved.id, a.id).expect(404);
+    await request(app.getHttpServer())
+      .patch(`/api/v1/customers/me/beneficiaries/${customerAgentSaved.id}`)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .send({ status: 'ACTIVE' })
+      .expect(200);
+    await dataSource.query(`UPDATE agent_receiving_numbers SET status='REVOKED' WHERE id=$1`, [
+      numberA.id,
+    ]);
+    await rejectedQuote(customerAgentSaved.id, a.id).expect(409);
+    await dataSource.query(`UPDATE agent_receiving_numbers SET status='ACTIVE' WHERE id=$1`, [
+      numberA.id,
+    ]);
+    expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('5000');
+    const run = async (
+      kind: 'customers' | 'agents',
+      token: string,
+      sourceId: string | undefined,
+      destinationId: string,
+      beneficiaryId: string,
+      amountMinor: string,
+    ) => {
+      const path = `/api/v1/${kind}/me/transfer-quotes`;
+      const quoteKey = randomUUID();
+      const quoteBody = {
+        ...(sourceId ? { sourceWalletId: sourceId } : {}),
+        destinationWalletId: destinationId,
+        beneficiaryId,
+        amountMinor,
+        currency: 'NGN',
+      };
+      const quote = await request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', quoteKey)
+        .send(quoteBody)
+        .expect(201);
+      if (beneficiaryId === customerAgentSaved.id) {
+        // Characterize, not approve, issue-time binding. The saved entry no longer admits a
+        // NEW quote; replay and confirmation below still use the original wallet and price.
+        await request(app.getHttpServer())
+          .patch(`/api/v1/customers/me/beneficiaries/${beneficiaryId}`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({ status: 'SUSPENDED' })
+          .expect(200);
+        await request(app.getHttpServer())
+          .post(path)
+          .set('Authorization', `Bearer ${token}`)
+          .set('Idempotency-Key', randomUUID())
+          .send(quoteBody)
+          .expect(404);
+      }
+      const quoteReplay = await request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', quoteKey)
+        .send(quoteBody)
+        .expect(201);
+      expect(quoteReplay.body.quoteId).toBe(quote.body.quoteId);
+      await request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', quoteKey)
+        .send({ ...quoteBody, beneficiaryId: randomUUID() })
+        .expect(409);
+      const key = randomUUID();
+      const result = await request(app.getHttpServer())
+        .post(`${path}/${quote.body.quoteId as string}/confirm`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', key)
+        .send({ pin: '1234' })
+        .expect(201);
+      const replay = await request(app.getHttpServer())
+        .post(`${path}/${quote.body.quoteId as string}/confirm`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', key)
+        .send({ pin: '1234' })
+        .expect(201);
+      expect(replay.body.id).toBe(result.body.id);
+      const status = await request(app.getHttpServer())
+        .get(`${path}/${quote.body.quoteId as string}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(status.body).toMatchObject({
+        status: 'USED',
+        amountMinor,
+        totalDebitMinor: amountMinor,
+        receipt: { id: result.body.id, status: 'COMPLETED' },
+      });
+      expect(result.body).toMatchObject({ status: 'COMPLETED', amountMinor });
+      expect(
+        await app.get(TransferReconciliationService).reconcileTransfer(result.body.id as string),
+      ).toMatchObject({
+        status: 'PASS',
+        discrepancies: [],
+      });
+      return result.body.id as string;
+    };
+    const ids = [
+      await run(
+        'customers',
+        sender.token,
+        source.id,
+        customerCustomerSaved.walletId,
+        customerCustomerSaved.id,
+        '100',
+      ),
+      await run(
+        'customers',
+        sender.token,
+        source.id,
+        customerAgentSaved.walletId,
+        customerAgentSaved.id,
+        '1000',
+      ),
+      await run(
+        'agents',
+        tokenA,
+        undefined,
+        agentCustomerSaved.walletId,
+        agentCustomerSaved.id,
+        '300',
+      ),
+      await run('agents', tokenA, undefined, agentAgentSaved.walletId, agentAgentSaved.id, '200'),
+    ];
+    const sentDetail = await request(app.getHttpServer())
+      .get(`/api/v1/customers/me/transactions/${ids[1]}`)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .expect(200);
+    expect(sentDetail.body).toMatchObject({
+      direction: 'SENT',
+      feeMinor: '0',
+      vatMinor: '0',
+      totalDebitMinor: '1000',
+      counterparty: {
+        ownerType: 'AGENT',
+        customerId: null,
+        agentId: agentA.id,
+        receivingNumber: numberA.receivingNumber,
+      },
+    });
+    const incomingDetail = await request(app.getHttpServer())
+      .get(`/api/v1/customers/me/transactions/${ids[2]}`)
+      .set('Authorization', `Bearer ${receiver.token}`)
+      .expect(200);
+    expect(incomingDetail.body).toMatchObject({
+      direction: 'RECEIVED',
+      feeMinor: '0',
+      vatMinor: '0',
+      totalDebitMinor: null,
+      counterparty: { ownerType: 'AGENT', customerId: null, agentId: agentA.id },
+    });
+    const history = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/transactions')
+      .set('Authorization', `Bearer ${sender.token}`)
+      .expect(200);
+    expect(history.body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: ids[1],
+          counterparty: expect.objectContaining({
+            ownerType: 'AGENT',
+            customerId: null,
+            agentId: agentA.id,
+          }),
+          totalDebitMinor: '1000',
+        }),
+      ]),
+    );
+    const agentHistory = await request(app.getHttpServer())
+      .get('/api/v1/agents/me/transactions?type=WALLET_TRANSFER')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .expect(200);
+    expect(agentHistory.body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: ids[1], direction: 'CREDIT' }),
+        expect.objectContaining({ id: ids[2], direction: 'DEBIT' }),
+        expect.objectContaining({ id: ids[3], direction: 'DEBIT' }),
+      ]),
+    );
+    await request(app.getHttpServer())
+      .get(`/api/v1/customers/me/transactions/${ids[1]}`)
+      .set('Authorization', `Bearer ${receiver.token}`)
+      .expect(404);
+    expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('3900');
+    expect((await wallets.getWalletBalance(dest.id)).balanceMinor).toBe('400');
+    expect((await wallets.getWalletBalance(a.id)).balanceMinor).toBe('500');
+    expect((await wallets.getWalletBalance(b.id)).balanceMinor).toBe('200');
+    const events: Array<{ event_type: string; aggregate_id: string }> = await dataSource.query(
+      `SELECT event_type,aggregate_id FROM outbox_events WHERE aggregate_id=ANY($1::uuid[]) AND event_type IN ('transfer.completed','wallet_transfer.completed')`,
+      [ids],
+    );
+    expect(events.filter((e) => e.event_type === 'transfer.completed')).toHaveLength(1);
+    expect(events.filter((e) => e.event_type === 'wallet_transfer.completed')).toHaveLength(3);
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(4);
+    expect(tokenB).toBeTruthy();
+    const { NotificationDispatcherService } = await import(
+      '../src/notification/notification-dispatcher.service'
+    );
+    const dispatcher = app.get(NotificationDispatcherService);
+    const mixed = await dataSource.query<
+      Array<{
+        event_type: string;
+        event_key: string;
+        aggregate_id: string;
+        payload: Record<string, unknown>;
+      }>
+    >(
+      `SELECT event_type,event_key,aggregate_id,payload FROM outbox_events WHERE aggregate_id=ANY($1::uuid[]) AND event_type='wallet_transfer.completed'`,
+      [ids],
+    );
+    for (const event of mixed) {
+      const outcome = await dataSource.transaction((manager) =>
+        dispatcher.dispatch(
+          {
+            eventType: event.event_type,
+            eventKey: event.event_key,
+            aggregateType: 'TRANSFER',
+            aggregateId: event.aggregate_id,
+            payload: event.payload,
+          },
+          manager,
+        ),
+      );
+      expect(outcome.deliveries).toHaveLength(2);
+      expect(outcome.deliveries.some((d) => d.recipientType === 'AGENT')).toBe(true);
+    }
+    // A different governed institution cannot be selected by an authenticated sender.
+    const foreignInstitution = await governed.institution('foreign-http-p2p');
+    const foreignCustomer = await createCustomerWithCredential();
+    const foreignWallet = await create(foreignCustomer.customerId);
+    await governed.enrolCustomer(foreignCustomer.customerId, foreignInstitution);
+    await governed.attributeWallet(foreignWallet.id, foreignInstitution);
+    await request(app.getHttpServer())
+      .post('/api/v1/agents/me/transfer-quotes')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ destinationWalletId: foreignWallet.id, amountMinor: '50', currency: 'NGN' })
+      .expect(409);
+
+    // Re-evaluate product and class after quoting, and fail atomically if the outbox fails.
+    const agentPath = '/api/v1/agents/me/transfer-quotes';
+    const q = await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ destinationWalletId: dest.id, amountMinor: '50', currency: 'NGN' })
+      .expect(201);
+    const confirm = () =>
+      request(app.getHttpServer())
+        .post(`${agentPath}/${q.body.quoteId as string}/confirm`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .set('Idempotency-Key', 'p2p-retry-control')
+        .send({ pin: '1234' });
+    await governed.changeInstitutionStatus(institutionId, 'SUSPENDED');
+    await confirm().expect(503);
+    expect((await wallets.getWalletBalance(a.id)).balanceMinor).toBe('500');
+    expect(
+      await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [q.body.quoteId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
+    await governed.changeInstitutionStatus(institutionId, 'APPROVED');
+    await dataSource.query(`UPDATE products SET enabled=false WHERE code='WALLET_TRANSFER'`);
+    await confirm().expect(503);
+    await dataSource.query(`UPDATE products SET enabled=true WHERE code='WALLET_TRANSFER'`);
+    await dataSource.query(`UPDATE agent_classes SET applicable_services='[]'::jsonb WHERE id=$1`, [
+      agentA.agent_class_id,
+    ]);
+    await confirm().expect(403);
+    await dataSource.query(`UPDATE agent_classes SET applicable_services=$1 WHERE id=$2`, [
+      JSON.stringify(['WALLET_TRANSFER']),
+      agentA.agent_class_id,
+    ]);
+    const { OutboxService } = await import('../src/operations/outbox.service');
+    const outbox = app.get(OutboxService);
+    const enqueue = outbox.enqueueOnce.bind(outbox);
+    const failure = jest.spyOn(outbox, 'enqueueOnce').mockImplementation(async (manager, event) => {
+      if (event.eventType === 'wallet_transfer.completed')
+        throw new Error('injected typed outbox failure');
+      return enqueue(manager, event);
+    });
+    try {
+      await confirm().expect(500);
+    } finally {
+      failure.mockRestore();
+    }
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(4);
+    expect((await wallets.getWalletBalance(a.id)).balanceMinor).toBe('500');
+    expect(
+      await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [q.body.quoteId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
+    // A real SQLSTATE from limit admission aborts the transaction. It must escape unchanged
+    // (no cleanup SQL on the aborted connection) so the bounded SERIALIZABLE retry can succeed.
+    const { LimitEnforcementService } = await import(
+      '../src/limit-catalog/limit-enforcement.service'
+    );
+    const limits = app.get(LimitEnforcementService);
+    const enforce = limits.enforceWithManager.bind(limits);
+    let failures = 0;
+    const exhausted = jest
+      .spyOn(limits, 'enforceWithManager')
+      .mockImplementation(async (manager) => {
+        failures += 1;
+        await manager.query(
+          `DO $$ BEGIN RAISE EXCEPTION 'injected serialization' USING ERRCODE = '40001'; END $$`,
+        );
+        throw new Error('unreachable');
+      });
+    try {
+      const response = await confirm().expect(409);
+      expect(response.body.code).toBe('TRANSACTION_CONTENTION_RETRY_EXHAUSTED');
+    } finally {
+      exhausted.mockRestore();
+    }
+    expect(failures).toBe(3);
+    expect((await wallets.getWalletBalance(a.id)).balanceMinor).toBe('500');
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(4);
+    expect(
+      await dataSource.query(`SELECT status FROM payment_quotes WHERE id=$1`, [q.body.quoteId]),
+    ).toEqual([{ status: 'ACTIVE' }]);
+    let injected = false;
+    const conflict = jest
+      .spyOn(limits, 'enforceWithManager')
+      .mockImplementation(async (manager, input) => {
+        if (!injected) {
+          injected = true;
+          await manager.query(
+            `DO $$ BEGIN RAISE EXCEPTION 'injected serialization' USING ERRCODE = '40001'; END $$`,
+          );
+        }
+        return enforce(manager, input);
+      });
+    try {
+      await confirm().expect(201);
+    } finally {
+      conflict.mockRestore();
+    }
+    expect(injected).toBe(true);
+    expect((await wallets.getWalletBalance(a.id)).balanceMinor).toBe('450');
+    const raceQuote = await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ destinationWalletId: b.id, amountMinor: '100', currency: 'NGN' })
+      .expect(201);
+    const { networkManager, controller } = await governed.workforce();
+    const affiliationPath = `/api/v1/internal/agent-affiliations/${agentB.id}`;
+    const changeAffiliation = async (changeKind: 'SUSPEND' | 'REACTIVATE') => {
+      const body = {
+        institutionId,
+        changeKind,
+        evidenceType: 'INSTITUTION_APPROVAL_LETTER',
+        evidenceReference: `AFF-${randomUUID()}`,
+        reason: 'Institutional agent authority changed through governance approval',
+      };
+      const prepared = await request(app.getHttpServer())
+        .post(`${affiliationPath}/request`)
+        .set('Authorization', `Bearer ${networkManager.token}`)
+        .send(body)
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(
+          `/api/v1/internal/a2/workforce/approvals/${prepared.body.approvalId as string}/approve`,
+        )
+        .set('Authorization', `Bearer ${controller.token}`)
+        .send({ comment: 'independent check' })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(`${affiliationPath}/execute`)
+        .set('Authorization', `Bearer ${controller.token}`)
+        .send({ ...body, approvalId: prepared.body.approvalId })
+        .expect(201);
+    };
+    await changeAffiliation('SUSPEND');
+    await request(app.getHttpServer())
+      .post(`${agentPath}/${raceQuote.body.quoteId as string}/confirm`)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Idempotency-Key', 'suspended-recipient')
+      .send({ pin: '1234' })
+      .expect(409);
+    expect((await wallets.getWalletBalance(a.id)).balanceMinor).toBe('450');
+    expect((await wallets.getWalletBalance(b.id)).balanceMinor).toBe('200');
+    await changeAffiliation('REACTIVATE');
+    await request(app.getHttpServer())
+      .get(`${agentPath}/${raceQuote.body.quoteId as string}`)
+      .set('Authorization', `Bearer ${tokenB}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(`${agentPath}/${raceQuote.body.quoteId as string}/confirm`)
+      .set('Authorization', `Bearer ${tokenB}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ pin: '1234' })
+      .expect(404);
+    const racers = await Promise.all(
+      [randomUUID(), randomUUID()].map((key) =>
+        request(app.getHttpServer())
+          .post(`${agentPath}/${raceQuote.body.quoteId as string}/confirm`)
+          .set('Authorization', `Bearer ${tokenA}`)
+          .set('Idempotency-Key', key)
+          .send({ pin: '1234' }),
+      ),
+    );
+    expect(racers.filter((result) => result.status === 201)).toHaveLength(1);
+    expect(racers.map((result) => ({ status: result.status, body: result.body }))).toEqual(
+      expect.arrayContaining([expect.objectContaining({ status: 409 })]),
+    );
+    expect((await wallets.getWalletBalance(a.id)).balanceMinor).toBe('350');
+    expect((await wallets.getWalletBalance(b.id)).balanceMinor).toBe('300');
+    expect(
+      await dataSource.query(`SELECT id FROM transfers WHERE status='COMPLETED'`),
+    ).toHaveLength(6);
+    const badQuote = await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ destinationWalletId: dest.id, amountMinor: '1000', currency: 'NGN' })
+      .expect(201);
+    const failed = await request(app.getHttpServer())
+      .post(`${agentPath}/${badQuote.body.quoteId as string}/confirm`)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ pin: '1234' });
+    expect(failed.status).toBeGreaterThanOrEqual(400);
+    expect(failed.status).toBeLessThan(500);
+    const failedRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM transfers WHERE status='FAILED'`,
+    );
+    expect(failedRows).toHaveLength(1);
+    await request(app.getHttpServer())
+      .get(`/api/v1/customers/me/transactions/${failedRows[0]!.id}`)
+      .set('Authorization', `Bearer ${receiver.token}`)
+      .expect(404);
+    const receiverHistory = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/transactions')
+      .set('Authorization', `Bearer ${receiver.token}`)
+      .expect(200);
+    expect(
+      (receiverHistory.body.items as Array<{ id: string }>).some(
+        (item) => item.id === failedRows[0]!.id,
+      ),
+    ).toBe(false);
+    const agentFailed = await request(app.getHttpServer())
+      .get('/api/v1/agents/me/transactions?type=WALLET_TRANSFER')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .expect(200);
+    expect(agentFailed.body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: failedRows[0]!.id,
+          status: 'FAILED',
+          feeMinor: '0',
+          vatMinor: '0',
+        }),
+      ]),
+    );
+  });
+
+  it('authenticates quote and PIN confirmation over HTTP and refuses unconfigured agent limits', async () => {
+    const sender = await createCustomerWithCredential();
+    const receiver = await createCustomerWithCredential();
+    const agentToken = await createAgentToken();
+    const agentRows: Array<{ id: string; agent_class_id: string }> = await dataSource.query(
+      `SELECT id,agent_class_id FROM agents`,
+    );
+    const agent = agentRows[0]!;
+    await dataSource.query(`UPDATE agent_classes SET applicable_services=$1 WHERE id=$2`, [
+      JSON.stringify(['WALLET_TRANSFER']),
+      agent.agent_class_id,
+    ]);
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const { CustomerTransactionPinService } = await import(
+      '../src/customer/customer-transaction-pin.service'
+    );
+    const { AgentAuthenticationService } = await import(
+      '../src/agent-authentication/agent-authentication.service'
+    );
+    const { AgentPasswordHashAlgorithm } = await import(
+      '../src/agent-authentication/agent-authentication.enums'
+    );
+    const wallets = app.get(WalletService);
+    const source = await wallets.createWallet({
+      customerId: sender.customerId,
+      currency: 'NGN',
+      idempotencyKey: `http-src-${randomUUID()}`,
+    });
+    const destination = await wallets.createWallet({
+      customerId: receiver.customerId,
+      currency: 'NGN',
+      idempotencyKey: `http-dst-${randomUUID()}`,
+    });
+    const operating = await wallets.createWallet({
+      customerId: agent.id,
+      currency: 'NGN',
+      idempotencyKey: `http-agent-${randomUUID()}`,
+    });
+    const governed = new GovernedFinancialFixture({ app, dataSource, label: 'p2p-auth' });
+    const institutionId = await governed.institution('auth-p2p');
+    for (const customer of [sender, receiver])
+      await governed.enrolCustomer(customer.customerId, institutionId);
+    await governed.affiliateAgent(agent.id, institutionId);
+    for (const wallet of [source, destination, operating])
+      await governed.attributeWallet(wallet.id, institutionId);
+    await governed.fundLedgerAccount(source.ledgerAccountId, '5000', { institutionId });
+    await app.get(CustomerTransactionPinService).setTransactionPin(sender.customerId, {
+      pinHash: encodePbkdf2('1234'),
+      hashAlgorithm: 'PBKDF2',
+      pinVersion: 1,
+      actor: sender.customerId,
+    });
+    await app.get(AgentAuthenticationService).setTransactionPin(agent.id, {
+      pinHash: encodePbkdf2('1234'),
+      hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2,
+      pinVersion: 1,
+      actor: agent.id,
+    });
+    const customerPath = '/api/v1/customers/me/transfer-quotes';
+    const agentPath = '/api/v1/agents/me/transfer-quotes';
+    const payload = {
+      sourceWalletId: source.id,
+      destinationWalletId: destination.id,
+      amountMinor: '1200',
+      currency: 'NGN',
+    };
+    await request(app.getHttpServer())
+      .post(customerPath)
+      .set('Idempotency-Key', randomUUID())
+      .send(payload)
+      .expect(401);
+    await request(app.getHttpServer())
+      .post(customerPath)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ ...payload, feeMinor: '0' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .set('Idempotency-Key', randomUUID())
+      .send(payload)
+      .expect(400);
+    const quote = await request(app.getHttpServer())
+      .post(customerPath)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', randomUUID())
+      .send(payload)
+      .expect(201);
+    expect(quote.body).toMatchObject({
+      sourceWalletId: source.id,
+      destinationWalletId: destination.id,
+      amountMinor: '1200',
+      totalDebitMinor: '1200',
+    });
+    const path = `${customerPath}/${quote.body.quoteId as string}/confirm`;
+    const key = randomUUID();
+    const secondSession = await request(app.getHttpServer())
+      .post('/api/v1/customers/sessions')
+      .send({ customerId: sender.customerId, password: 'correct-password-a23' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .get(`${customerPath}/${quote.body.quoteId as string}`)
+      .set('Authorization', `Bearer ${secondSession.body.accessToken as string}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({ sessionMatches: false, status: 'ACTIVE', receipt: null });
+      });
+    await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${secondSession.body.accessToken as string}`)
+      .set('Idempotency-Key', key)
+      .send({ pin: '1234' })
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${receiver.token}`)
+      .set('Idempotency-Key', key)
+      .send({ pin: '1234' })
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', key)
+      .send({ pin: '1234', amountMinor: '1' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', key)
+      .send({ pin: '9999' })
+      .expect(401);
+    const completed = await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', key)
+      .send({ pin: '1234' })
+      .expect(201);
+    expect(completed.body).toMatchObject({ status: 'COMPLETED', amountMinor: '1200' });
+    const replay = await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', key)
+      .send({ pin: '1234' })
+      .expect(201);
+    expect(replay.body.id).toBe(completed.body.id);
+    await request(app.getHttpServer())
+      .get(`${customerPath}/${quote.body.quoteId as string}`)
+      .set('Authorization', `Bearer ${secondSession.body.accessToken as string}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          sessionMatches: false,
+          status: 'USED',
+          receipt: { id: completed.body.id },
+        });
+      });
+    expect((await wallets.getWalletBalance(source.id)).balanceMinor).toBe('3800');
+    expect((await wallets.getWalletBalance(destination.id)).balanceMinor).toBe('1200');
+    const customerAgentQuote = await request(app.getHttpServer())
+      .post(customerPath)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ ...payload, destinationWalletId: operating.id })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`${customerPath}/${customerAgentQuote.body.quoteId as string}/confirm`)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ pin: '1234' })
+      .expect(503);
+    const agentQuote = await request(app.getHttpServer())
+      .post(agentPath)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ destinationWalletId: destination.id, amountMinor: '100', currency: 'NGN' })
+      .expect(201);
+    expect(agentQuote.body.sourceWalletId).toBe(operating.id);
+    await request(app.getHttpServer())
+      .post(`${agentPath}/${agentQuote.body.quoteId as string}/confirm`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ pin: '1234' })
+      .expect(503);
+    expect((await wallets.getWalletBalance(operating.id)).balanceMinor).toBe('0');
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(1);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', `Bearer ${sender.token}`)
+        .set('Idempotency-Key', key)
+        .send({ pin: '9999' })
+        .expect(401);
+    }
+    await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('Idempotency-Key', key)
+      .send({ pin: '1234' })
+      .expect(401);
+    expect(
+      await dataSource.query(
+        `SELECT account_locked FROM customer_transaction_pins WHERE customer_id=$1`,
+        [sender.customerId],
+      ),
+    ).toEqual([{ account_locked: true }]);
+    expect(await dataSource.query(`SELECT id FROM transfers`)).toHaveLength(1);
+  });
+
+  it('database protects bound transfer quote facts and refuses premature generic use', async () => {
+    const sender = await createCustomerWithCredential();
+    const recipient = await createCustomerWithCredential();
+    const { WalletService } = await import('../src/wallet/wallet.service');
+    const wallets = app.get(WalletService);
+    const source = await wallets.createWallet({
+      customerId: sender.customerId,
+      currency: 'NGN',
+      idempotencyKey: `qs-${randomUUID()}`,
+    });
+    const destination = await wallets.createWallet({
+      customerId: recipient.customerId,
+      currency: 'NGN',
+      idempotencyKey: `qd-${randomUUID()}`,
+    });
+    const quoteId = randomUUID();
+    await dataSource.query(
+      `INSERT INTO payment_quotes (id,quote_reference,payment_type,amount_minor,fee_minor,vat_minor,total_minor,currency,status,idempotency_key,request_hash,expires_at)
+      VALUES ($1,$2,'TRANSFER',1000,100,7,1107,'NGN','ACTIVE',$3,$4,now()+interval '5 minutes')`,
+      [quoteId, `quote-${randomUUID()}`, `quote-idem-${randomUUID()}`, 'a'.repeat(64)],
+    );
+    await dataSource.query(
+      `INSERT INTO wallet_transfer_quote_bindings
+      (quote_id,principal_type,principal_id,session_id,source_wallet_id,source_ledger_id,destination_wallet_id,destination_ledger_id,recipient_type,recipient_id,pricing_hash)
+      VALUES ($1,'CUSTOMER',$2,$3,$4,$5,$6,$7,'CUSTOMER',$8,$9)`,
+      [
+        quoteId,
+        sender.customerId,
+        randomUUID(),
+        source.id,
+        source.ledgerAccountId,
+        destination.id,
+        destination.ledgerAccountId,
+        recipient.customerId,
+        'b'.repeat(64),
+      ],
+    );
+    await expect(
+      dataSource.query(`UPDATE payment_quotes SET fee_minor=0,total_minor=1007 WHERE id=$1`, [
+        quoteId,
+      ]),
+    ).rejects.toThrow('economics are immutable');
+    await expect(
+      dataSource.query(`UPDATE payment_quotes SET status='USED',used_at=now() WHERE id=$1`, [
+        quoteId,
+      ]),
+    ).rejects.toThrow('Invalid bound transfer quote transition');
+    await expect(
+      dataSource.query(
+        `UPDATE wallet_transfer_quote_bindings SET recipient_id=$2 WHERE quote_id=$1`,
+        [quoteId, sender.customerId],
+      ),
+    ).rejects.toThrow('immutable');
+    await expect(
+      dataSource.query(`DELETE FROM wallet_transfer_quote_bindings WHERE quote_id=$1`, [quoteId]),
+    ).rejects.toThrow('cannot be deleted');
+    expect(
+      await dataSource.query(
+        `SELECT status,fee_minor::text,vat_minor::text,total_minor::text FROM payment_quotes WHERE id=$1`,
+        [quoteId],
+      ),
+    ).toEqual([{ status: 'ACTIVE', fee_minor: '100', vat_minor: '7', total_minor: '1107' }]);
   });
 
   it('7. Transaction history — read-only, direction/amount/status/reference/type/date/fee/identity where permitted', async () => {

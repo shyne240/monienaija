@@ -36,6 +36,7 @@ export interface InstitutionSuspenseAccount {
 export async function requireInstitutionCashToCashSuspenseAccount(
   manager: EntityManager,
   institutionId: string | null,
+  expectedAccountId?: string,
 ): Promise<InstitutionSuspenseAccount> {
   if (!institutionId)
     throw new ServiceUnavailableException(
@@ -49,10 +50,11 @@ export async function requireInstitutionCashToCashSuspenseAccount(
         AND institutional_purpose = 'SUSPENSE'
         AND code LIKE $2
         AND is_active = TRUE
+        AND ($3::uuid IS NULL OR id = $3::uuid)
       ORDER BY created_at ASC
       LIMIT 1
       FOR SHARE`,
-    [institutionId, `${C2C_SUSPENSE_CODE_PREFIX}%`],
+    [institutionId, `${C2C_SUSPENSE_CODE_PREFIX}%`, expectedAccountId ?? null],
   );
   const row = rows[0];
   if (!row)
@@ -62,7 +64,8 @@ export async function requireInstitutionCashToCashSuspenseAccount(
   return { id: row.id, institutionId: row.institution_id, code: row.code };
 }
 
-/** Non-locking read used by reconciliation/read models. */
+/** Non-locking lookup. Financial callers must revalidate under an appropriate transaction lock
+ * before commit; Cash-to-Cash initiation does so after Ledger locks its posting accounts. */
 export async function findInstitutionCashToCashSuspenseAccount(
   manager: EntityManager,
   institutionId: string,

@@ -12,6 +12,7 @@
  * (Cash→Wallet, Wallet→Cash, Cash→Cash, Agent funding/defunding):
  */
 export enum AgentService {
+  WALLET_TRANSFER = 'WALLET_TRANSFER', // Ordinary wallet-to-wallet transfer
   CASH_IN = 'CASH_IN', // Cash → Wallet (also known as CASH_TO_WALLET)
   CASH_OUT = 'CASH_OUT', // Wallet → Cash (also WALLET_TO_CASH)
   CASH_TO_CASH = 'CASH_TO_CASH',
@@ -23,6 +24,7 @@ export enum AgentService {
  * Aliases that were ambiguous in the ticket — normalized to canonical.
  */
 export const AGENT_SERVICE_ALIASES: Readonly<Record<string, AgentService>> = {
+  WALLET_TRANSFER: AgentService.WALLET_TRANSFER,
   CASH_TO_WALLET: AgentService.CASH_IN,
   WALLET_TO_CASH: AgentService.CASH_OUT,
   CASH_IN: AgentService.CASH_IN,
@@ -33,6 +35,7 @@ export const AGENT_SERVICE_ALIASES: Readonly<Record<string, AgentService>> = {
 } as const;
 
 export const CANONICAL_AGENT_SERVICES = new Set<string>([
+  AgentService.WALLET_TRANSFER,
   AgentService.CASH_IN,
   AgentService.CASH_OUT,
   AgentService.CASH_TO_CASH,
