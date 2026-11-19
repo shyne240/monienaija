@@ -72,6 +72,10 @@ class FakeManager {
     if (target === ExternalOperation) return this.operations;
     return this.references;
   }
+
+  async query(_sql: string, _params: unknown[]): Promise<Array<{ owner_class: string }>> {
+    return [{ owner_class: 'CUSTOMER' }];
+  }
 }
 
 class FakeDataSource {

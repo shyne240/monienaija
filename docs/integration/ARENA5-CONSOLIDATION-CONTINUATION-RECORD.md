@@ -516,10 +516,65 @@ full reconciliation/notifications/admin operational slices, Groups 34–40 adver
 acceptance matrix + consolidated handoff. No deployment, real provider, real funds, or production
 activation; release gate still NOT_READY.
 
-## 7. Immediate next groups
+## 6b. Enforcement hardening — ExternalOperationLifecycleService (checkpoint 2a57be1f → current)
 
-1. **Groups 20–33** — reconciliation, notifications, admin visibility, operational integration,
-   remaining mobile history/receipt surfaces, full interrupted-operation recovery verification.
-2. **Groups 34–40** — adversarial verification (type/principal/wallet/institution/operation/
-   authorization collisions), operations/readiness, full regression (unit + PG matrix + builds +
-   lint + inventory), acceptance matrix, combined handoff.
+`ExternalOperationLifecycleService.transitionWithinTransaction` SUBMITTING path now enforces wallet ownership via `wallet_accounts.owner_class` → `requireAgentWallet` vs `requireCustomerWallet` plus `requireWithdrawalOperation`, identical to the financial-commitment gate. The previous fix that conditionally skipped the `manager.query` when the manager was a mock weakened prod enforcement. Reverted to unconditional `manager.query` and fixed the test double `FakeManager` to implement `query() → [{owner_class:'CUSTOMER'}]` and `testWalletFinancialBoundary` to expose `requireAgentWallet`. Verification: `external-operation-lifecycle.service.spec.ts` 8/8, unit suite `3403/3403` (291 suites), financial controls preserved fail-closed on real PG.
+
+`production-readiness.service.ts` head pinned to `1785753600804:GeneralizeExternalOperationsForAgents1785753600804` (was 0803) — the applied-migration ledger check previously reported `schema_incompatible` on a freshly migrated 166-identity chain; `production-readiness.spec.ts` now 13/13.
+
+## 7. Consolidated status of the original 40 groups (honest, evidence-backed)
+
+The original 40-group mission was defined in the Arena/Arena 3D handoffs. The mapping below preserves that numbering. Where predecessor acceptance existed, it is cited and not re-claimed as consolidated acceptance unless re-executed on the merged tree.
+
+| Group | Mission requirement | Verdict on `arena/1f37a4f3-monienaija` tip | Evidence |
+|---|---|---|---|
+| 1 | Repo consolidation (unrelated histories) | **PASS** | merge commit `298efaef`, §1–2 above, migration union 166 |
+| 2 | Environment & config inventory | **PASS** | 157 keys, 0 undocumented, `environment.spec.ts` 20/20 |
+| 3 | Migration inventory & upgrade rehearsals (both predecessors) | **PASS** | `migration-inventory` 10/10, `migration-chain` 20/20, `arena5-consolidation-migration-upgrade` 4/4 on disposable PG; head `1785753600804` |
+| 4 | Nest startup, DI, process roles (api/worker/all-in-one) | **PASS** | `worker-execution` 36/36, `worker-leases` 15/15, `banking-dispatch-worker` 10/10 on PG |
+| 5 | P2P preservation (4 directions, single engine) | **PASS** | `transfer` suites, `wallet-agent-self-ownership` on PG; no second engine |
+| 6 | D1–D8 binding constraints | **HONORED** | register cited, no approvals invented; `NOT_READY` preserved |
+| 7 | Customer banking contract inventory | **DELIVERED** | `ARENA5-GROUP7-*.md`, §5a |
+| 8 | Agent banking contract inventory | **DELIVERED** | `ARENA5-GROUP8-*.md`, §5b |
+| 9 | Shared external bank-transfer authority (customer+agent, one engine) | **PASS** | migration 0803, `financial-authorizations` dual lane, `agent-bank-transfer-commitment` 11/11 on PG |
+| 10 | Bank directory + account-name enquiry + beneficiary creation (both lanes) | **PASS** | customer/agent `BankingDirectoryService` ACTIVE+NIP_SUPPORTED, `BankingAccountEnquiryService` (RESOLVED/NOT_FOUND/UNAVAILABLE, `establishesAccountOwnership:false`), beneficiary `BANK_ACCOUNT ACTIVE verified` gate, mobile `BankDirectoryApi` both lanes |
+| 11 | Bank-account beneficiary management | **PASS** | beneficiary ownership immutable, mobile `BankWithdrawalApi.listBankBeneficiaries` filter, `customer_beneficiary` suites |
+| 12 | Server-authoritative pricing (principal/fee/VAT/total) | **PASS** | `GET .../bank-transfer-preview` via `FeeEngine` → `FeeBinding` snapshot, mobile preview cards, `financial-commitment-initiation` fee checks |
+| 13 | Mobile journey wiring (selection→enquiry→beneficiary→amount→preview→confirm→PIN→submit→tracking) | **PASS (mocked native)** | customer `BankWithdrawalScreen.tsx` + `BankTransferAddBeneficiarySheet` (447 lines → extended), agent `BankWithdrawalScreen.tsx` new, `AppNavigator` wired, `pending-bank-withdrawal` durable intents, `banking-mobile-journeys` 10/10 PG (directory/enquiry/initiate/preview/status both lanes + PIN/idempotency) |
+| 14 | Settlement bridge (commitment→dispatch intent) | **PASS** | `banking-outbound.service` deterministic `operation_reference`, UNKNOWN handling, `financial-commitment-initiation` 43/43 |
+| 15 | Commercial settlement (reservation/settlement/rejection, both lanes) | **PASS** | `bank-transfer-commercial-settlement` 6/6 (reservation, settlement→destination, rejection→RELEASED via `releaseReservedWithdrawal`, duplicate ref, concurrent, stale beneficiary) |
+| 16 | Migration 0804 owner authority | **PASS** | `DROP fk_external_operations_customer` + `validate_external_operation_owner()` trigger, `migration-0804-owner-authority` 6/6 |
+| 17 | Funding/defunding conservation | **PASS** | `funding-defunding-conservation` 4/4 (customer+agent journal balance, concurrent idempotency, governed defunding boundary) |
+| 18 | Limits & capability (customer+agent) | **PASS** | `limit-enforcement` `strictConfiguredRules:true` fail-closed, capability-gated `HomeScreen` nav, `agent-bank-transfer-commitment` capability+missing-limit cases |
+| 19 | Provider governance/dispatch/verification reuse | **PASS** | `BankingProviderRegistry`, `BANKING_RUNTIME`/`READINESS`/`OUTBOUND`, `banking-dispatch-worker` 10/10, verifier abstraction |
+| 20 | Unified history: external ops into customer transaction history | **DEFERRED — owner decision** | Customer history `customer-transaction-history.service.ts` today serves `transfers` (`wallet_transfer` engine) only; external `external_operations`/`financial_commitments` not yet projected into `GET /customers/me/transactions` · transfer history. No duplicate entries would exist today (no projection), but unified receipt is not yet implemented. See handoff § Outstanding. |
+| 21 | Unified history: agent transaction history | **DEFERRED** | Same as 20 for `agent-transaction-history.service.ts`; agent bank withdrawals not yet in `GET /agents/me/transactions`. |
+| 22 | Receipts (owner-scoped, masked, status-accurate) | **PARTIAL** | `TransactionDetail`/`TransferStatus` by `operationReference` exist for bank transfers; unified receipt covering both wallet and bank with authoritative amounts/status is 20/21 dependent. |
+| 23 | Interrupted-operation recovery (pending/unknown surfaced, replay safe) | **PASS (server), PARTIAL (mobile)** | Server: `operationReference` null vs trackable, `replayed` flag, idempotency `PENDING` surfaces as check-history. Mobile: `pending-bank-withdrawal.ts` 24h TTL durable intent (both lanes) restores key after kill/lost response; full restart/lost-response/replay E2E not yet exercised in headless PG (physical-device gap per D7). |
+| 24 | Notifications (outbox→worker→governance→receipt) | **INFRASTRUCTURE PRESENT, BANKING EVENTS DEFERRED** | `notification-*` + `a7-product-notification-*` + outbox exist and are exercised by transfer P2P suites. No customer/agent notification emitted for `external_operations` settlement/rejection yet; event map/registry not yet extended for bank-transfer lifecycle. No real sends. |
+| 25 | Admin: provider governance & capability visibility | **DEFERRED** | Readiness gate exposes `BANKING_RUNTIME` availability; provider admin surface is workforce-gated but banking-specific admin visibility (capability matrix) not yet a dedicated admin-web view. |
+| 26 | Admin: customer & agent banking activity / external operation tracking | **DEFERRED** | `admin-agent`/`admin-customer` transaction history read-only surfaces exist; they project `transfers` only, not `external_operations`. |
+| 27 | Admin: reservations & settlement / reconciliation runs & exceptions | **DEFERRED** | Commercial accounting + reconciliation engine internal (`commercial-accounting`, `reconciliation/*`, `banking_operation_fee_bindings`) with `/internal/banking/reconciliation/*` capability-gated; dedicated admin reconciliation dashboard not yet built. |
+| 28 | Admin: unknown & unresolved outcomes | **DEFERRED** | `UNKNOWN` → `CONFIRMING` mapping + manual-review fencing exists; admin unresolved-funds surface not yet a dedicated view. |
+| 29 | Admin: governed funding/defunding + support investigations | **INFRA PRESENT** | `a3d-agent-float-funding` 14/14 on ledger; funding/defunding inbox/execute governed by `FINANCE_CONTROLLER` + maker-checker; support ticket surfaces exist. |
+| 30 | Admin: approval workflows & audit history | **PASS (generic)** | `audit_*`, `protected-authority`, limit/capability approvals audited; banking-specific approval workflow inherits it. |
+| 31 | Operational: worker execution/supervision, leases/fencing, retry/dead-letter | **PASS** | `worker-*` 36/36 unit + `worker-leases` 15/15 PG + `banking-dispatch-worker` 10/10 PG; outbox leases/dead-letters DB-enforced. |
+| 32 | Operational: integrity monitoring, diagnostics, alerting | **INFRA PRESENT** | Integrity snapshots, `operations-centre`, alerting docs exist; banking-specific integrity checks not yet added. |
+| 33 | Operational: production readiness gates & runtime role separation | **PASS** | `production-readiness` 13/13 (head 0804), `PROCESS_ROLE` api/worker/all-in-one verified. |
+| 34 | Adversarial: participant/param substitution | **PARTIAL (bank lane)** | `agent-bank-transfer-commitment` covers foreign beneficiary, wallet substitution via idempotency `409`, stale session, missing capability/limit. Broader substitution matrix not yet exhaustive. |
+| 35 | Adversarial: session/principal/institution/operation substitution & DB bypass | **PARTIAL** | `agent-bank-transfer-commitment` expired session (401), DB bypass `a.principal_id::uuid` owner check, customer→agent endpoint 401/403. Full matrix not yet. |
+| 36 | Mixed-transaction concurrency & conservation | **PARTIAL (bank lane)** | `bank-transfer-commercial-settlement` concurrent bank commitments + `funding-defunding-conservation` concurrent funding idempotency + `agent-bank-transfer-commitment` concurrent spending. Full mixed wallet+bank adversarial matrix not yet. |
+| 37 | Reversal & compensation disposition | **INFRA PRESENT** | `releaseReservedWithdrawal` (rejection→RELEASED) verified; governed ledger reversal vs provider refund distinction preserved per `EXTERNAL_BANK_TRANSFER` policy (no invented refund contracts). Inbound return not applicable to outbound. |
+| 38 | Mobile regression (customer) | **PASS (mocked native)** | `apps/customer-mobile` unit suite 25/25 (bank-withdrawal 9/9 with mocked ApiClient); server contract covered by PG suites. Physical-device acceptance blocked per D7. |
+| 39 | Mobile regression (agent) & admin-web | **PARTIAL** | Agent `BankWithdrawal` new screen + nav wired; agent-mobile unit suite not yet independently green in this branch's CI matrix; admin-web Chromium acceptance not re-run in this pass. |
+| 40 | Consolidated acceptance programme & handoff | **IN PROGRESS** | This record + `MONIENAIJA-V1-CONSOLIDATED-TRANSACTION-AND-APPLICATION-HANDOFF.md` (next commit). Full PG discovery matrix (all `*.integration.spec.ts`) not yet executed in a single guarded `PG_TEST_RUN_ID` run in this pass — unit + 4 new PG suites verified; remaining PG matrix pending final runner pass. |
+
+### Immediate next actions
+
+1. Project `external_operations`/`financial_commitments` (RESERVED→SETTLED/RELEASED) into `customer-transaction-history` and `agent-transaction-history` as `EXTERNAL_BANK_TRANSFER` history entries with masked destination, operationReference, authoritative status — no duplicates, no reservation-as-settlement.
+2. Emit outbox events from `FinancialCommitmentService`/`ExternalSettlementService` for bank-transfer lifecycle (PENDING→SETTLED/REJECTED) through existing `notification-*` registry (verified contacts, channel governance, duplicate suppression, uncertain-delivery semantics).
+3. Expose banking external-operation timeline in `admin-agent`/`admin-customer` + reconciliation surfaces (read-only, institution-scoped, no force-settlement).
+4. Execute the full guarded PG matrix (`npm run test:pg`) + `customer-mobile`/`agent-mobile`/`admin-web` suites + boot/HTTP + Chromium admin as a single frozen-candidate run, then publish the consolidated handoff with exact commit matrix (see §40).
+5. Extend adversarial/concurrency coverage to the full mixed wallet+bank matrix (groups 34–36) with conservation proofs.
+
+No deployment, provider calls, real funds, notification sends, predecessor mutation, or main-branch merge.

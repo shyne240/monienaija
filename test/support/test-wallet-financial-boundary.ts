@@ -3,5 +3,6 @@ import type { WalletFinancialBoundaryService } from '../../src/wallet/wallet-fin
 export const testWalletFinancialBoundary = {
   requireAccounts: () => Promise.resolve(),
   requireCustomerWallet: () => Promise.resolve(),
+  requireAgentWallet: () => Promise.resolve(),
   requireWithdrawalOperation: () => Promise.resolve(),
 } as unknown as WalletFinancialBoundaryService;
