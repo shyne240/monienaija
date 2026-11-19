@@ -1,0 +1,104 @@
+{
+  "candidateSource": {
+    "branch": "arena/1f37a4f3-monienaija",
+    "tip": "36450c3b",
+    "base": "6816a760bd460df2a5347016d7d84f5c62cab642",
+    "priorTips": ["32eef5bd", "a7467856", "5d9de388"],
+    "migrationHead": "1785753600804:GeneralizeExternalOperationsForAgents1785753600804",
+    "migrationCount": 166
+  },
+  "discoveredInventory": {
+    "unitSuites": 291,
+    "unitTests": 3409,
+    "integrationSpecs": 186,
+    "integrationTestGlob": "test/*.integration.spec.ts",
+    "customerMobileSuites": 26,
+    "customerMobileTests": 230,
+    "agentMobileSuites": 25,
+    "agentMobileTests": 346,
+    "adminWeb": "tsc 0, build vite 5.4.21 458kB gzip (restored via npm ci)",
+    "typeScript": "tsc --noEmit 0",
+    "lint": "eslint src 0"
+  },
+  "recoverySafeguard": {
+    "defectFixed": "Clear/overwrite used filtered GET /transactions?limit=50 paginated heuristic (absence of PENDING in page != terminal). Replaced with authoritative per-intent GET /customers/me/withdrawal-commitments/by-idempotency/:k and /agents/me/banking/bank-transfers/by-idempotency/:k → SELECT financial_commitments WHERE idempotency_key=$1 scoped withdrawal-commitment:${hash(customerId:key)} / AGENT|agentId|key, ownership via financial_authorizations, operationReference via banking_outbound_operations.operation_reference. 404=safe, RESERVED=blocked, error=fail-closed.",
+    "code": [
+      "src/financial-commitment/financial-commitment.service.ts lookupByIdempotencyForCustomer/Agent, lookupBankingOperationReference",
+      "src/financial-commitment/financial-commitment.controller.ts GET by-idempotency/:k",
+      "src/financial-commitment/agent-bank-transfer-commitment.controller.ts GET by-idempotency",
+      "apps/customer-mobile/src/screens/authenticated/BankWithdrawalScreen.tsx isExactPendingUnresolvedOnServer",
+      "apps/agent-mobile/src/screens/authenticated/BankWithdrawalScreen.tsx isExactPendingUnresolvedOnServer (stale hasUnresolvedBankTransferOnServer fixed in 32eef5bd)"
+    ],
+    "tests": "customer-mobile 10/10, agent-mobile 6/6 (was 1/6 ReferenceError)",
+    "historyFix": "fcd join, fa.amount, fcd.bank_code, fc.resolved_at — hardening-04 26/26, v1-agent-history-01 18/18"
+  },
+  "financialFailuresInvestigated": {
+    "A7": {
+      "suite": "a7-authoritative-persistence",
+      "test": "rolls back receipt, journal, execution limit and lifecycle together and retains the observation",
+      "symptom": "HTTP 200 instead of 500, used_minor incremented, receipt created",
+      "rootCause": "Test spied on app.get(AuditService) which is different instance than that injected into A7ProductPersistenceService/InboundFundingService due to Nest module scoping. Injected audit outage never observed.",
+      "fix": "Spy on (service as any).audit — auditService record mock now correctly rejects for A7_PRODUCT_LIFECYCLE/CREDITED, transaction rolls back atomically (receipt 0, journal 0, used_minor 0, observation 1, lifecycle version 2), retry with same idempotencyKey succeeds 200.",
+      "verification": "a7fix01 single-test run 1 passed, debug with service audit 500 then 200, DB checks verified",
+      "regression": "Introduced in predecessor baseline, now corrected; financial conservation preserved"
+    },
+    "A17": {
+      "suite": "a17-agent-cash-to-cash-expiry",
+      "test": "audit failure rolls back expiry and retry after restart processes the persisted due row once; statement timeout rolls back",
+      "symptom": "worker.tick() COMPLETED instead of FAILED, transfer status EXPIRED instead of UNCLAIMED",
+      "rootCause": "Test spied on moduleRef.get(AuditService) different instance than expiryService.auditService",
+      "fix": "Spy on (expiryService as any).auditService — audit failure now propagates, transaction rolls back, worker returns FAILED, retry processes once idempotently",
+      "verification": "a17fix01/a17fix02 single-test runs 1 passed each"
+    },
+    "otherAuditFailures": {
+      "suites": ["v1-limit-02-limit-assignment", "v1-limit-01-limit-catalogue", "a20-outlets-terminals"],
+      "symptom": "Audit injection via app.get(AuditService) not observed, writes succeeded instead of rolling back",
+      "fix": "Spy on service's auditService (LimitAssignmentService, LimitCatalogService, OutletService/TerminalService) or AuditService.prototype where multiple services share; verified v1-limit-02 now passes, a20 passes, v1-limit-01 passes",
+      "note": "Pattern of 14 audit-spy tests across codebase all used wrong instance; 5 files patched in 36450c3b"
+    }
+  },
+  "pgExecution": {
+    "full01": {
+      "runId": "full01",
+      "batches": "31 batches x6 files =186 discovered",
+      "progress": "6/31 finished (1-2 exit1 pre-fix, 3-6 exit0 after initial A7/A17 fix, 38 PASS 3 FAIL: v1-limit-02, a20, v1-limit-01)",
+      "log": "/tmp/pg-full01.log (2.0M)",
+      "failures": "All 3 audit-spy related, now fixed in 36450c3b"
+    },
+    "full02": {
+      "runId": "full02",
+      "progress": "11/31 finished (batches 1-2 exit1 pre-fix, 3-8 exit0, 9 SIGABRT, 10-11 exit0) before timeout 1800s at 76s per batch avg, 6 PASS batches after fix",
+      "log": "/tmp/pg-full02.log",
+      "note": "SIGABRT batch 9 indicates transient resource contention, not test failure; retried as full03"
+    },
+    "full03": {
+      "runId": "full03",
+      "status": "running CONCURRENCY=1 BATCH_SIZE=6 (started 20:22, 1/31 finished with 1 FAIL a19-agent-funding)",
+      "log": "/tmp/pg-full03.log",
+      "next": "Continue sequential execution to 186 suites, capture PG_TEST_SUMMARY, handle a19 failure similarly if audit-spy related"
+    },
+    "correctedCounts": {
+      "financialMatrix8Suites": "124 tests (finchk01 60 + finchk07 64), not 154; migchk 4+26 and debug singles were double-counted",
+      "allExecutedSoFar": "124 + 4 + 26 =154 total across categories, now disambiguated"
+    }
+  },
+  "socketLane": {
+    "status": "pending after normal PG",
+    "prior": "OOM at 1899MB heap (single process, no max-old-space) and timeout 180s even with 3072MB — needs 300s+ and CONCURRENCY=1 isolation",
+    "plan": "Run after full03 with NODE_OPTIONS=--max-old-space-size=3072 and 300s timeout, no concurrent PG"
+  },
+  "adminWeb": {
+    "before": "vite not found (no node_modules), tsc errors due to missing types",
+    "after": "npm ci in apps/admin-web installed 497 packages, tsc 0, vite build 4.11s 458kB gzip",
+    "evidence": "dist/assets/index-fIa7IiAS.js, dist/index.html"
+  },
+  "nextSteps": [
+    "Complete full03 PG inventory (31 batches) — monitor /tmp/pg-full03.log, capture PG_TEST_SUMMARY_PATH, generate per-batch manifests with runId, suite identity, exit, passed/failed/skipped, remaining",
+    "Investigate a19-agent-funding failure if not audit-spy (check if similar pattern)",
+    "Execute socket-only lane with heap 3072 and 300s timeout after PG finishes",
+    "Complete boot + authenticated HTTP journeys + role separation + worker supervision + Chromium admin acceptance (using existing Arena 3D scripts)",
+    "Update MONIENAIJA-V1-CONSOLIDATED-TRANSACTION-AND-APPLICATION-HANDOFF.md and ARENA5-CONTINUATION-RECORD.md with actual evidence, preserve NOT_READY status",
+    "Commit and push verified checkpoints regularly"
+  ],
+  "productionReadiness": "NOT_READY — external prerequisites unmet (real provider credentials, production DB, notification delivery, etc.), no deployment attempted"
+}
