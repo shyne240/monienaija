@@ -67,7 +67,23 @@ export class FinancialCommitmentService {
     private readonly fees: BankingFeeBindingService,
   ) {}
 
-  async initiate(
+  async initiate(input: InitiateFinancialCommitment): Promise<{
+    commitment: FinancialCommitmentRecord;
+    replayed: boolean;
+    /**
+     * The banking dispatch operation reference, when a banking dispatch intent exists. Null for
+     * services that authorize a non-banking provider; never a fabricated value.
+     */
+    operationReference: string | null;
+  }> {
+    const initiated = await this.initiateOnce(input);
+    const operationReference = await this.lookupBankingOperationReference(
+      initiated.commitment.external_operation_id,
+    );
+    return { ...initiated, operationReference };
+  }
+
+  private async initiateOnce(
     input: InitiateFinancialCommitment,
   ): Promise<{ commitment: FinancialCommitmentRecord; replayed: boolean }> {
     const session = await this.sessions.validate({ token: input.token, audience: 'customer-api' });
@@ -130,6 +146,25 @@ export class FinancialCommitmentService {
       }
     }
     throw new ConflictException('Commitment transaction could not complete');
+  }
+
+  /**
+   * Resolves the banking dispatch operation reference created by the commitment bridge, if any.
+   * A missing row is a real answer (a non-banking authorization exists), not an error; an
+   * ambiguous answer indicates corrupted state and is refused rather than guessed.
+   */
+  private async lookupBankingOperationReference(
+    externalOperationId: string,
+  ): Promise<string | null> {
+    const rows = await this.dataSource.query<Array<{ operation_reference: string }>>(
+      `SELECT operation_reference FROM banking_outbound_operations
+       WHERE external_operation_id=$1 LIMIT 2`,
+      [externalOperationId],
+    );
+    if (rows.length > 1) {
+      throw new ConflictException('The banking operation reference is ambiguous');
+    }
+    return rows[0]?.operation_reference ?? null;
   }
 
   private async initiateWithin(

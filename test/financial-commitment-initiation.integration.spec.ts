@@ -951,6 +951,9 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
       replayed: boolean;
     }>();
     expect(body).toMatchObject({ state: 'RESERVED', replayed: false });
+    // No banking provider is registered in this suite, so the commitment carries no dispatch
+    // reference. The contract must still be present and null rather than absent or invented.
+    expect(body).toHaveProperty('operationReference', null);
     expect(await balance(s.sourceId)).toBe('300');
     const replay = await app.inject({ method: 'POST', url, payload, headers });
     expect(replay.statusCode).toBe(201);
@@ -965,6 +968,97 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
     });
     expect(substituted.statusCode).toBeGreaterThanOrEqual(400);
     expect(await balance(other.sourceId)).toBe('1000');
+  });
+
+  it('reports the real banking dispatch reference when a dispatch intent exists', async () => {
+    const s = await subject();
+    const key = randomUUID();
+    const first = await service.initiate(command(s, key));
+    // No banking provider is configured in this suite, so no dispatch intent is created and the
+    // commitment honestly carries no reference.
+    expect(first.operationReference).toBeNull();
+    const externalOperationId = first.commitment.external_operation_id;
+    // Bind a dispatch intent to this commitment exactly the way the bridge does in production:
+    // deterministic reference derived from the external operation id, one row, institution-scoped.
+    const suffix = randomUUID().slice(0, 8).toUpperCase();
+    const institution = await db.query<Array<{ id: string }>>(
+      `INSERT INTO financial_institutions (reference, code, legal_name, institution_type, created_by)
+       VALUES ($1, $2, 'Dispatch intent institution', 'PARTNER', 'fixture') RETURNING id`,
+      [`FCINTENT-${suffix}`, `FCINT_${suffix}`],
+    );
+    const reference = `OP${createHash('sha256')
+      .update(externalOperationId)
+      .digest('hex')
+      .slice(0, 30)
+      .toUpperCase()}`;
+    await db.query(
+      `INSERT INTO banking_outbound_operations
+        (institution_id, provider_key, environment, operation_reference, external_operation_id,
+         wallet_id, currency, amount_minor, destination_bank_code, destination_account_number, state)
+       VALUES ($1, 'MONNIFY', 'sandbox', $2, $3, $4, 'NGN', 700, 'FCBANK', '1234567890', 'CREATED')`,
+      [institution[0]!.id, reference, externalOperationId, s.walletAccountId],
+    );
+    // A replayed request must surface the reference that actually exists, never a fresh one.
+    const replay = await service.initiate(command(s, key));
+    expect(replay.replayed).toBe(true);
+    expect(replay.operationReference).toBe(reference);
+    const http = await app.inject({
+      method: 'POST',
+      url: '/api/v1/customers/me/withdrawal-commitments',
+      headers: { authorization: `Bearer ${s.token}`, 'idempotency-key': key },
+      payload: {
+        walletAccountId: s.walletAccountId,
+        beneficiaryId: s.beneficiaryId,
+        amountMinor: '700',
+        currency: 'NGN',
+        pin: '1234',
+      },
+    });
+    expect(http.statusCode).toBe(201);
+    expect(http.json()).toMatchObject({ replayed: true, operationReference: reference });
+    // Two dispatch intents for one external operation means corrupted state; the reference is
+    // refused rather than guessed. The commitment itself is never duplicated by the refusal.
+    const secondReference = `OP${createHash('sha256')
+      .update(randomUUID())
+      .digest('hex')
+      .slice(0, 30)
+      .toUpperCase()}`;
+    await db.query(
+      `INSERT INTO banking_outbound_operations
+        (institution_id, provider_key, environment, operation_reference, external_operation_id,
+         wallet_id, currency, amount_minor, destination_bank_code, destination_account_number, state)
+       VALUES ($1, 'MONNIFY', 'sandbox', $2, $3, $4, 'NGN', 700, 'FCBANK', '1234567890', 'CREATED')`,
+      [institution[0]!.id, secondReference, externalOperationId, s.walletAccountId],
+    );
+    await expect(service.initiate(command(s, key))).rejects.toThrow('ambiguous');
+    const commitments = await db.query<Array<{ id: string }>>(
+      'SELECT id FROM financial_commitments WHERE external_operation_id=$1',
+      [externalOperationId],
+    );
+    expect(commitments).toHaveLength(1);
+  });
+
+  it('serves the caller’s own verified BANK_ACCOUNT projection with a usable bank reference', async () => {
+    const s = await subject();
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/beneficiaries')
+      .set('Authorization', `Bearer ${s.token}`);
+    expect(res.status).toBe(200);
+    const items = (res.body as { items: Array<Record<string, unknown>> }).items;
+    const item = items.find((candidate) => candidate['id'] === s.beneficiaryId);
+    expect(item).toBeTruthy();
+    // The additive bank projection the customer app binds its picker to: the type marker, the
+    // institution code as bound at verification time, last digits present, and never a wallet
+    // recipient's fields populated on a bank beneficiary.
+    expect(item).toMatchObject({
+      beneficiaryType: 'BANK_ACCOUNT',
+      bankCode: 'FCBANK',
+      isVerified: true,
+      isActive: true,
+      status: 'ACTIVE',
+      recipientType: null,
+      recipientId: null,
+    });
   });
 
   it('registers the product route with the real default unavailable withdrawal authority', async () => {
@@ -1023,6 +1117,7 @@ describe('financial commitment initiation (real PostgreSQL)', () => {
     const s = await subject();
     const result = await service.initiate(command(s, randomUUID()));
     expect(result.commitment.state).toBe('RESERVED');
+    expect(result.operationReference).toBeNull();
     expect(await balance(s.sourceId)).toBe('300');
     const rows = await db.query<
       Array<{

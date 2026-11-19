@@ -53,6 +53,8 @@ export class FinancialCommitmentController {
       externalOperationId: result.commitment.external_operation_id,
       state: result.commitment.state,
       replayed: result.replayed,
+      /** Null when no banking dispatch intent exists for this commitment. */
+      operationReference: result.operationReference,
     };
   }
 }

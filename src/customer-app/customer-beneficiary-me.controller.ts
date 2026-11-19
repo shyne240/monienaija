@@ -18,7 +18,10 @@ import { DataSource } from 'typeorm';
 import { CustomerBeneficiaryService } from '../customer-beneficiary/customer-beneficiary.service';
 import type { CustomerBeneficiaryView } from '../customer-beneficiary/customer-beneficiary.types';
 import type { RecipientResolution } from '../agent/agent-receiving-number.types';
-import { CustomerBeneficiaryStatus } from '../customer-beneficiary/customer-beneficiary.enums';
+import {
+  CustomerBeneficiaryStatus,
+  CustomerBeneficiaryType,
+} from '../customer-beneficiary/customer-beneficiary.enums';
 import { RecipientResolutionService } from '../agent/recipient-resolution.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
@@ -50,13 +53,19 @@ type BeneficiaryView = CustomerBeneficiaryView & {
 };
 
 function toSafeProjection(view: BeneficiaryView, beneficiaryCustomerId: string | null) {
+  // BANK_ACCOUNT details are the caller's own saved beneficiary; exposing them here lets the
+  // app render a usable picker. They are never populated for wallet-recipient beneficiaries.
+  const isBankAccount = view.type === CustomerBeneficiaryType.BANK_ACCOUNT;
   return {
     id: view.id,
     nickname: view.nickname,
     beneficiaryCustomerId,
+    beneficiaryType: view.type,
     recipientType: view.walletRecipientType ?? null,
     recipientId: view.walletRecipientId ?? null,
     displayName: view.displayName,
+    bankCode: isBankAccount ? (view.destinationInstitution ?? null) : null,
+    destinationName: isBankAccount ? (view.destinationName ?? null) : null,
     receivingNumber: view.destinationIdentifier ?? view.normalizedDestinationIdentifier ?? null,
     isVerified: !!view.verified,
     isActive: view.status === CustomerBeneficiaryStatus.ACTIVE,
