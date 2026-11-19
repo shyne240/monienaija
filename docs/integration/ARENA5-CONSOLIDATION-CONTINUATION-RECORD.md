@@ -10,16 +10,16 @@ cumulative handoff lives in `MONIENAIJA-V1-CONSOLIDATED-TRANSACTION-AND-APPLICAT
 (Arena 3D), `arena/bcf44621-monienaija` = `78d999d6e0834e2da990ab7d95a4a38cb2e9709e` (Arena 2C).
 **Branch base:** `6816a760…` (Arena 3D), which is what the session branch was assigned from.
 
-| Gate                              | Current result                                                        |
-| --------------------------------- | --------------------------------------------------------------------- |
-| Merge commit                      | `298efaef510ba999781cfc84c0d62777b79810ec` (parents 3D + 2C)          |
-| Migration head (both sources)     | `1785753600802:ExtendBeneficiaryOwnership1785753600802`               |
-| Combined migration identities     | 164 (3D added 0606–0614, 2C added 0800–0802)                          |
-| `npx tsc --noEmit -p tsconfig.json` | exit 0                                                              |
-| Root unit suite                   | 3402/3402 tests in 291 suites, 0 failed (observed in Group 36 rerun)  |
-| `npm run lint` / `format:check`   | clean / clean                                                         |
-| Consolidated acceptance artefact  | `docs/integration/evidence/consolidated/consolidated-run.json` — 0 failing rows |
-| Release gate                      | **NOT_READY** — 16 blockers, 4 conditions (unchanged by the merge)    |
+| Gate                                | Current result                                                                  |
+| ----------------------------------- | ------------------------------------------------------------------------------- |
+| Merge commit                        | `298efaef510ba999781cfc84c0d62777b79810ec` (parents 3D + 2C)                    |
+| Migration head (both sources)       | `1785753600802:ExtendBeneficiaryOwnership1785753600802`                         |
+| Combined migration identities       | 164 (3D added 0606–0614, 2C added 0800–0802)                                    |
+| `npx tsc --noEmit -p tsconfig.json` | exit 0                                                                          |
+| Root unit suite                     | 3402/3402 tests in 291 suites, 0 failed (observed in Group 36 rerun)            |
+| `npm run lint` / `format:check`     | clean / clean                                                                   |
+| Consolidated acceptance artefact    | `docs/integration/evidence/consolidated/consolidated-run.json` — 0 failing rows |
+| Release gate                        | **NOT_READY** — 16 blockers, 4 conditions (unchanged by the merge)              |
 
 Sections below are a chronological log. Earlier states are kept as history; anything superseded says so.
 
@@ -52,7 +52,7 @@ readiness; 2C: P2P parity, commercial catalog, migration 0800–0802, mobile/adm
 
 Both sides extended the same tail of the file.
 
-- Kept **3D's** boot-time schema-completeness block (A2 recovery, BANKING_* disabled-by-default block,
+- Kept **3D's** boot-time schema-completeness block (A2 recovery, BANKING\_\* disabled-by-default block,
   database pool/timeouts, Dojah, KYC policy, protected-authority DB identity, HTTP CORS, DR/BCP RPO/RTO
   placeholders left deliberately empty as undecided business decisions) and the regenerable inventory
   pointer.
@@ -223,13 +223,81 @@ real configured migration lists rather than fabricating a third inventory. Nothi
 - Interrupted or environment-blocked runs were not counted as passing; the release gate remains
   NOT_READY while its blockers stand.
 
-## 5. Immediate next groups
+## 5. Groups 4–6 — consolidated-runtime preservation (in progress)
 
-1. **Group 3** — re-run the PG migration verification on the combined source: fresh install, upgrade
-   from 3D, upgrade from 2C, idempotent replay, exact inventory checks; record results here.
-2. **Group 4** — Nest startup/DI, PROCESS_ROLE api/worker/all-in-one, worker leases/fencing,
-   ENVIRONMENT-CONFIGURATION-INVENTORY regeneration check.
-3. **Group 5–6** — P2P directions preservation audit on the consolidated runtime; D1–D8 (2C handoff)
-   dispositions (legacy unbound beneficiaries; revocation vs new quotes; quote TTL; read-only recovery).
-4. **Group 9+** — extend the A6 commitment path to typed customer/agent participants for external bank
-   transfers (no new engine; FinancialCommitmentService is currently CUSTOMER-self only).
+### Group 4 — Nest startup, DI and process roles: verified on the combined tree
+
+The consolidated source carries the ARENA 3D worker-role implementation verbatim in behaviour (the
+2C lineage never diverged on it, so there was nothing to resolve in `src/main.ts` /
+`src/production/process-role.ts` / `src/production/worker-runtime.ts`):
+
+- `PROCESS_ROLE` resolves `api` | `worker` | `all-in-one`; a typo is refused, never defaulted; unset
+  means `all-in-one` (upgrade-preserving); `PROCESS_ROLE=api` refuses to start alongside
+  `*_WORKER_ENABLED=true` rather than silently preferring either.
+- A `worker` process boots the dependency graph with no HTTP listener and verifies the same
+  production readiness gate before claiming any work; graceful shutdown drains once, bounded by a
+  deadline; worker leases, fencing and dead-letter ceilings are database-enforced (outbox
+  leases/dead-letters; bank dispatch leases with `fence`).
+
+Evidence on the consolidated tree (real disposable PostgreSQL 18.4, guarded as Group 3):
+
+| Suite                                                                  | Result                                                              |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `test/environment.spec.ts`                                             | 20/20 pass (with `environment-inventory`)                           |
+| `test/worker-execution.spec.ts` (unit, process roles + worker runtime) | 36/36 across the worker unit trio                                   |
+| `test/worker-supervision.spec.ts` (unit)                               | included above                                                      |
+| `test/agent-cash-to-cash-expiry-worker.spec.ts` (unit)                 | included above                                                      |
+| `test/worker-leases.integration.spec.ts` (real PG)                     | 15/15 pass                                                          |
+| `test/banking-dispatch-worker.integration.spec.ts` (real PG)           | 10/10 pass                                                          |
+| `node scripts/generate-env-inventory.js`                               | keys=157, undocumented=0, zero drift against the committed document |
+
+`test/banking-dispatch-worker.integration.spec.ts` additionally demonstrates, on the merged runtime,
+that a CREATED operation dispatches exactly once, that two workers cannot dispatch the same operation,
+that an expired lease is recovered without blind resubmission, that intake-disabled still enquires,
+that bounded attempts park in MANUAL_REVIEW (never FAILED), and that the commitment bridge creates the
+dispatch intent idempotently and refuses non-banking/attribution-less providers.
+
+### Group 5 — P2P directions: preserved (audit, evidence pending)
+
+All four wallet-transfer directions (customer→customer, customer→agent, agent→customer, agent→agent)
+run on the shared `WALLET_TRANSFER` engine in `src/transfer/` with the shared ledger, agent operating
+wallets and two-leg limit enforcement (source OUTGOING / recipient INCOMING, `transferParticipantLimitInput`
+with `principalType` CUSTOMER|AGENT). No second P2P engine, no personal wallet, no parallel ledger was
+introduced. Direction coverage evidence is being assembled for Group 38's acceptance matrix; the
+existing P2P suites (2C: wallet-agent-self-ownership, p2p-parity journeys) are required to pass
+unchanged on the consolidated runtime.
+
+### Group 6 — D1–D8 (Arena 2C handoff) — binding constraints, no approvals invented
+
+The register lives in `docs/integration/MONIENAIJA-AGENT-CUSTOMER-P2P-PARITY-HANDOFF.md`. The
+dispositions below restate the constraints this mission must honour; none of them approves, decides or
+fabricates anything the register reserves to its owners, and none weakens a boundary.
+
+| D   | Owner / topic                                                  | Constraint carried on the consolidated runtime                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Product, fraud and support — legacy **unbound** recipients     | No reuse of a legacy unbound recipient without the owner's explicit decision; require fresh recipient verification (re-enrolment or rebind) for any new bound quote. Do not fabricate a backfill. Suspension/revocation/phone reassignment does **not** retroactively invalidate an already-issued quote (issue-time binding is the current, documented behaviour); changing that would require a designed, concurrency-tested invalidation path. Completed-transaction replay stays recoverable. |
+| D2  | Product and security — quote TTL                               | Quote lifetime is an explicit seconds value within 1–86,400, capped by session expiry, configurable per environment. **300 seconds is dev/test only**; there is no approved staging/production default and none will be invented. Same-owner new-session inspection stays read-only and grants no transaction authorization.                                                                                                                                                                      |
+| D3  | Product, institution and risk — bidirectional agent capability | Keep agent-involving transfer directions available on the shared engine with the single highest-precedence limit profile (tie-breaking by effective/creation time), class/directional amounts and attributed, active institutional authority required. No invented thresholds, no conjunctive rule overlay. Agent wallet-transfer capabilities and directional limits stay intact.                                                                                                                |
+| D4  | Privacy, security and notifications — uncertain delivery       | No automatic resend of an UNKNOWN attempt; pre-send recheck is the only safety net (a DB lock cannot recall a message already handed to a provider). Governed registry, no real sends in this environment.                                                                                                                                                                                                                                                                                        |
+| D5  | Finance/accounting — tariffs, VAT, commissions                 | Never invent tariffs, VAT mode/rate, commission models, beneficiary attribution or payable timing. Fee binding remains governed config (`banking_operation_fee_bindings`, `QuotePaymentType`); show costs before confirmation. No promoting a WARNING to a synthetic PASS.                                                                                                                                                                                                                        |
+| D6  | Reliability/financial engineering — recovery                   | Bounded, same-key recovery only; capture sanitized first SQLSTATE/operation on exhaustion; no unbounded retries; safety under race is not an unlimited liveness guarantee or a production load rating.                                                                                                                                                                                                                                                                                            |
+| D7  | Mobile QA/release — device evidence                            | **Blocked in this sandbox** (no Android/iOS hardware, emulator, adb or Apple tooling): no signing, no submission, no physical-device acceptance claimed. Automated suites and browser acceptance cover what can be covered headlessly; the gap stays explicit.                                                                                                                                                                                                                                    |
+| D8  | Integration, provider and operations owners — real execution   | **Not authorized in this mission:** no provider calls, no transactions, no deployments, no activation, no merges. Preserve 3D's NOT_READY gate, eight financial blockers, operational blockers and conditions; authorized sandbox evidence, real-role runtime and worker observation remain future, separately-authorized work.                                                                                                                                                                   |
+
+## 6. Immediate next groups
+
+3. **Group 5–6** — P2P directions preservation on the consolidated runtime (run the 2C P2P parity
+   suites: customer/agent directions); D1–D8 constraints carried as recorded above.
+4. **Group 7–8** — customer/agent banking journey wiring (no own-bank-account product; no workforce
+   acting-on-behalf; agent may transfer from the operating wallet including to own account).
+5. **Group 9–10** — shared external bank-transfer authority extension of the A6 commitment path
+   (typed CUSTOMER/AGENT participants, immutable refs, institution attribution, provider destination
+   binding, scoped idempotency) + bank directory/name-enquiry via provider capability contracts.
+6. **Group 11–19** — beneficiaries for customer+agent; confirmation evidence; financial auth; fees;
+   limits; commitment authority extension; provider governance/dispatch/verification reuse; completed/rejected
+   financial effects via the commitment/settlement bridge.
+7. **Groups 20–33** — funding/defunding/cash journeys re-verified on the combined runtime; reversal and
+   unresolved-funds governance; reconciliation discipline; mobile banking surfaces; history/receipts;
+   idempotency/recovery; notifications/outbox; admin console; conservation under concurrency (real PG).
+8. **Groups 34–40** — adversarial verification; operations/readiness preservation; full regression
+   (unit + PG matrix + builds + lint + inventory); acceptance matrix; combined handoff; final record.
