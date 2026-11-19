@@ -1,0 +1,116 @@
+{
+  "candidateSource": {
+    "branch": "arena/1f37a4f3-monienaija",
+    "tip": "ac3973b8",
+    "base": "6816a760bd460df2a5347016d7d84f5c62cab642",
+    "mergeCommit": "298efaef510ba999781cfc84c0d62777b79810ec",
+    "migrationHead": "1785753600804:GeneralizeExternalOperationsForAgents1785753600804",
+    "migrationCount": 166
+  },
+  "discoveredInventory": {
+    "unitSuites": 291,
+    "unitTests": 3409,
+    "integrationSpecs": 186,
+    "integrationTestGlob": "test/*.integration.spec.ts",
+    "customerMobileSuites": 26,
+    "customerMobileTests": 230,
+    "agentMobileSuites": 25,
+    "agentMobileTests": 346,
+    "adminWebBuild": "vite (requires vite, not installed in sandbox)",
+    "typeScript": "tsc --noEmit exit 0",
+    "lint": "eslint src/**/*.ts exit 0",
+    "format": "prettier --check warnings fixed via prettier --write"
+  },
+  "executedBatches": [
+    {
+      "batch": 1,
+      "runId": "finchk01",
+      "suites": ["agent-bank-transfer-commitment.integration.spec.ts", "financial-commitment-initiation.integration.spec.ts", "bank-transfer-commercial-settlement.integration.spec.ts"],
+      "command": "PG_TEST_RUN_ID=finchk01 jest --config jest.integration.config.js --runInBand test/agent-bank-transfer-commitment.integration.spec.ts test/financial-commitment-initiation.integration.spec.ts test/bank-transfer-commercial-settlement.integration.spec.ts",
+      "exitStatus": 0,
+      "suitesPassed": 3,
+      "suitesFailed": 0,
+      "testsPassed": 60,
+      "testsFailed": 0
+    },
+    {
+      "batch": 2,
+      "runId": "finchk07",
+      "suites": ["banking-mobile-journeys.integration.spec.ts", "funding-defunding-conservation.integration.spec.ts", "migration-0804-owner-authority.integration.spec.ts", "hardening-04-customer-transaction-history.integration.spec.ts", "v1-agent-history-01.integration.spec.ts"],
+      "command": "PG_TEST_RUN_ID=finchk07 jest ... 5 suites",
+      "exitStatus": 0,
+      "suitesPassed": 5,
+      "suitesFailed": 0,
+      "testsPassed": 64,
+      "testsFailed": 0
+    },
+    {
+      "batch": 3,
+      "runId": "migchk01",
+      "suites": ["arena5-consolidation-migration-upgrade.integration.spec.ts"],
+      "exitStatus": 0,
+      "suitesPassed": 1,
+      "suitesFailed": 0,
+      "testsPassed": 4,
+      "testsFailed": 0
+    },
+    {
+      "batch": 4,
+      "runId": "migchk02",
+      "suites": ["migration-chain.integration.spec.ts", "migration-0804-owner-authority.integration.spec.ts"],
+      "exitStatus": 0,
+      "suitesPassed": 2,
+      "suitesFailed": 0,
+      "testsPassed": 26,
+      "testsFailed": 0
+    },
+    {
+      "batch": 5,
+      "runId": "debug05/06",
+      "suites": ["hardening-04-customer-transaction-history.integration.spec.ts (single)", "v1-agent-history-01.integration.spec.ts (single)"],
+      "exitStatus": 0,
+      "note": "After fixing history projection (fc.beneficiary_id -> fcd join, fa.amount, fcd.bank_code), both suites passed"
+    }
+  ],
+  "regressionEvidence": {
+    "unit": { "exit": 0, "suitesPassed": 291, "testsPassed": 3409, "testsFailed": 0 },
+    "customerMobile": { "exit": 0, "suitesPassed": 26, "testsPassed": 230 },
+    "agentMobile": { "exit": 0, "suitesPassed": 25, "testsPassed": 346 },
+    "typeScript": { "exit": 0 },
+    "lint": { "exit": 0 },
+    "format": { "exit": 0, "warningsFixed": true },
+    "buildBackend": { "exit": 0, "artifact": "dist/main.js" },
+    "buildAdminWeb": { "exit": 1, "reason": "vite not installed in sandbox, not a code defect" },
+    "buildCustomerMobile": { "exit": 0, "note": "expo start only, no build artifact" },
+    "buildAgentMobile": { "exit": 0, "note": "expo start only" },
+    "migrationHead": "1785753600804",
+    "migrationCount": 166,
+    "freshInstall": "pass (arena5-upgrade 4/4)",
+    "upgrade3D": "pass",
+    "upgrade2C": "pass"
+  },
+  "remainingSuites": {
+    "integrationDiscovered": 186,
+    "integrationExecuted": 8,
+    "integrationRemaining": 178,
+    "note": "Remaining includes notification, integrity-monitoring, concurrency adversarial, inbound funding, commercial accounting, etc. Must be executed via bounded runner in next continuation with guarded disposable DB and durable manifest."
+  },
+  "recoverySafeguard": {
+    "defectFixed": [
+      "Clear button now checks authoritative server history (GET /customers/me/transactions?type=EXTERNAL_BANK_TRANSFER or /agents/me/transactions) before discarding local pending; fail-closed on PENDING, blocks duplicate",
+      "Different withdrawal initiation now checks server history before overwriting recovery identity; blocks when prior unresolved, mints fresh key only when terminal",
+      "Preserved wallet ownership (customerId/agentId scoped), participant isolation (principal_type), immutable request identity (idempotencyKey/createdAt reuse), idempotency (409 on reuse)",
+      "History projection now correctly joins financial_commitment_destinations and uses fa.amount_minor/wallet, fcd.bank_code"
+    ],
+    "verification": "customer-mobile 10/10, agent-mobile 6/6, PG history suites 26/26 and 18/18"
+  },
+  "nextContinuation": {
+    "resumePoint": "Execute remaining 178 PG integration suites via scripts/run-pg-integration-tests.js with PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes, PG_TEST_BATCH_SIZE=6, PG_TEST_CONCURRENCY=1, recording PG_TEST_SUMMARY path",
+    "requiredSteps": [
+      "Run full PG matrix in bounded batches, commit evidence between batches",
+      "Run admin-web lint/ts:check, boot consolidated app, HTTP journeys, worker, Chromium",
+      "Update MONIENAIJA-V1-CONSOLIDATED-TRANSACTION-AND-APPLICATION-HANDOFF.md and ARENA5-CONSOLIDATION-CONTINUATION-RECORD.md with exact execution evidence",
+      "Verify 40-group acceptance matrix and V1 transaction matrix"
+    ]
+  }
+}
