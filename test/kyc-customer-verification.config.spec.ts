@@ -48,6 +48,45 @@ describe('customer verification runtime configuration', () => {
     });
   });
 
+  it('treats a raw unvalidated boolean string (test harness) as disabled, never as enabled', () => {
+    // The unit-test ConfigModule is unvalidated, so ConfigService<Environment, true> may be handed
+    // a raw string. A raw 'false' must not enable the KYC path; only a real `true` does.
+    const raw = customerKycConfigurationFromEnvironment({
+      KYC_CUSTOMER_VERIFICATION_ENABLED: 'false' as unknown as false,
+      KYC_VERIFICATION_POLICY_JSON: undefined,
+      KYC_CONSENT_NOTICE_VERSION: undefined,
+      KYC_CONSENT_NOTICE_TEXT: undefined,
+      KYC_CONSENT_VALIDITY_SECONDS: undefined,
+      KYC_OWNERSHIP_KEY_BASE64: undefined,
+      KYC_OWNERSHIP_KEY_VERSION: undefined,
+    });
+    expect(raw.enabled).toBe(false);
+    expect(raw.policy).toBeNull();
+
+    expect(() =>
+      customerKycConfigurationFromEnvironment({
+        KYC_CUSTOMER_VERIFICATION_ENABLED: 'true' as unknown as true,
+        KYC_VERIFICATION_POLICY_JSON: undefined,
+        KYC_CONSENT_NOTICE_VERSION: undefined,
+        KYC_CONSENT_NOTICE_TEXT: undefined,
+        KYC_CONSENT_VALIDITY_SECONDS: undefined,
+        KYC_OWNERSHIP_KEY_BASE64: undefined,
+        KYC_OWNERSHIP_KEY_VERSION: undefined,
+      }),
+    ).toThrow('KYC_VERIFICATION_POLICY_JSON is required when customer KYC is enabled');
+    expect(() =>
+      customerKycConfigurationFromEnvironment({
+        KYC_CUSTOMER_VERIFICATION_ENABLED: 'unvalidated-value' as unknown as true,
+        KYC_VERIFICATION_POLICY_JSON: undefined,
+        KYC_CONSENT_NOTICE_VERSION: undefined,
+        KYC_CONSENT_NOTICE_TEXT: undefined,
+        KYC_CONSENT_VALIDITY_SECONDS: undefined,
+        KYC_OWNERSHIP_KEY_BASE64: undefined,
+        KYC_OWNERSHIP_KEY_VERSION: undefined,
+      }),
+    ).toThrow('KYC_CUSTOMER_VERIFICATION_ENABLED must be a validated boolean');
+  });
+
   it('accepts an explicitly configured bounded policy, notice, consent lifetime, and 256-bit key', () => {
     const env = configured();
     const result = customerKycConfigurationFromEnvironment(env);

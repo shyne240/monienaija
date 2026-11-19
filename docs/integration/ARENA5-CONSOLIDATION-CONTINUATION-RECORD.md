@@ -284,7 +284,15 @@ fabricates anything the register reserves to its owners, and none weakens a boun
 | D7  | Mobile QA/release — device evidence                            | **Blocked in this sandbox** (no Android/iOS hardware, emulator, adb or Apple tooling): no signing, no submission, no physical-device acceptance claimed. Automated suites and browser acceptance cover what can be covered headlessly; the gap stays explicit.                                                                                                                                                                                                                                    |
 | D8  | Integration, provider and operations owners — real execution   | **Not authorized in this mission:** no provider calls, no transactions, no deployments, no activation, no merges. Preserve 3D's NOT_READY gate, eight financial blockers, operational blockers and conditions; authorized sandbox evidence, real-role runtime and worker observation remain future, separately-authorized work.                                                                                                                                                                   |
 
-### Group 7 — customer self-service bank withdrawal: wired end to end (customer half)
+### Checkpoint C1 — customer bank-withdrawal vertical slice (mission scope G9–G15; intermediate, not group sign-off)
+
+> **Numbering note.** This slice was integrated ahead of the formal group order. In the original
+> 40-group mission it belongs to G9 (shared external bank-transfer architecture), G10 (bank directory
+> and account resolution) and G11–G15 (beneficiaries, confirmation, fees, financial authorization).
+> It is therefore recorded as a checkpoint, not as "Group 7". Group 7 in the original mission is
+> **customer banking contract inventory** and Group 8 is **agent banking contract inventory** — both
+> are now produced as standalone artefacts (see §5 Group 7/Group 8 entries below). The
+> implementation is preserved and extended there; its evidence remains intermediate, not acceptance.
 
 The one outbound bank journey a customer can complete in-app now exists on the combined tree, both
 halves bound to real contracts and verified on real PostgreSQL (branch `arena/1f37a4f3-monienaija`,
@@ -316,17 +324,47 @@ commits `ca81dcad` backend, `dd1b6314` mobile):
   (0 errors), prettier clean; consolidated acceptance regenerated on `dd1b6314` (artefact commit
   `44dbd715`): tsc/lint/format/unit-suite (**3402/3402, 291 suites**)/ci-gates/mobile-manifests all
   PASS; release gate remains NOT_READY (16 blockers, 4 conditions); UNAVAILABLE rows unchanged.
-- **Local test-environment findings (this sandbox, `.env` is git-ignored, untracked).** Suites that
-  boot the real `AppModule` require the documented `node scripts/prepare-pg-test-env.js
---create-if-missing` output; without it they fail closed with "Workforce authentication
-  disabled" (401 at the workforce guard). The generated `.env` additionally required two local
-  fixes to boot at all here: `HTTP_CORS_ORIGINS_JSON=[]` (shipped by `.env.example`) is rejected by
-  the CORS allowlist validator ("expected a non-empty JSON array of origins") — unset instead; and
-  `KYC_CUSTOMER_VERIFICATION_ENABLED=false` as a raw string is truthy to the unit suite's
-  unvalidated `ConfigModule` (`module-di-wiring` fails with "KYC_VERIFICATION_POLICY_JSON is
-  required…") — unset instead (validation default is `false`). Both findings are recorded here
-  rather than patched into `.env.example`, which is out of this group's scope. Before these were
-  fixed, the unit row in the acceptance artefact read FAIL for exactly this reason (now PASS).
+- **Local test-environment findings — exact rejected values vs their working replacements (this
+  sandbox; `.env` is git-ignored and was never committed).** Suites that boot the real `AppModule`
+  require the documented `node scripts/prepare-pg-test-env.js --create-if-missing` output; without
+  it they fail closed with "Workforce authentication disabled" (401 at the workforce guard). The
+  generated `.env` additionally required two local fixes to boot at all:
+
+  | Variable                            | Rejected value (as shipped)           | Observed failure                                                                                                                                                                                    | Working replacement                                                                                          |
+  | ----------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+  | `HTTP_CORS_ORIGINS_JSON`            | `[]` (from `.env.example`)            | `Invalid environment configuration: HTTP_CORS_ORIGINS_JSON: expected a non-empty JSON array of origins` at every `AppModule` boot                                                                   | unset (empty cross-origin allowlist is the documented safe default; the validator accepts unset, never `[]`) |
+  | `KYC_CUSTOMER_VERIFICATION_ENABLED` | `false` (string, from `.env.example`) | was: unit-suite `module-di-wiring` failed with `KYC_VERIFICATION_POLICY_JSON is required when customer KYC is enabled`; the config layer now normalises raw booleans safely (see triage note below) | unset (validation default is `false`) or leave as-is (safe either way after the hardening)                   |
+
+  `.env.example` was deliberately NOT edited in this mission; changing the committed example (and the
+  `docs/integration/ENVIRONMENT-CONFIGURATION-INVENTORY.md` counts it feeds) is an owner decision.
+
+  **Raw-string boolean investigation (requested): is this a production configuration defect?**
+  No. The validated configuration path rejects malformed booleans at startup:
+  `src/config/environment.ts` parses `KYC_CUSTOMER_VERIFICATION_ENABLED` (and every other flag) with
+  `z.enum(['true','false']).transform(v => v === 'true')` under `validateEnvironment`, which is
+  wired into boot twice (`AppModule` `ConfigModule.forRoot({ validate })` and `main.ts`
+  `validateEnvironment(process.env)` before any listener is bound). In that path `'false'` is
+  `false`, and any other non-listed string is a startup error, never silently truthy. The failure
+  reproduced only in `test/module-di-wiring.spec.ts`'s _own_ test `ConfigModule`, which is
+  deliberately unvalidated, so `config.get(...)` there returns raw strings and the KYC tier-module
+  factory (typed `ConfigService<Environment, true>`) saw `'false'` as truthy. Raw `process.env`
+  reads elsewhere in `src/` were reviewed and do none of this: the rate-limit JSON reader validates
+  strictly and throws; `PROCESS_ROLE` refuses typoes by name; `KYC_OWNERSHIP_KEY_BASE64/VERSION` are
+  shape-checked and fail closed; `LIMIT_RESERVATION_STALE_THRESHOLD_MINUTES` and the pino/build
+  informationals parse with explicit fallbacks. **Conclusion: the hazard was confined to the
+  unit-test harness — there is no production path that treated a raw boolean string as truthy.** A
+  follow-up hardening landed anyway, because a `ConfigService<Environment, true>` cast relying on
+  "the caller validated it" is only as strong as the caller: `customerKycConfigurationFromEnvironment`
+  now normalises the flag itself — unvalidated `'false'`/`'0'`/`'no'` are disabled, unvalidated
+  `'true'`/`'1'`/`'yes'` are enabled, and any other non-boolean value throws
+  (`KYC_CUSTOMER_VERIFICATION_ENABLED must be a validated boolean`). It never _enables_ anything that
+  validation did not already enable; it can only refuse to treat a string as an inversion of a
+  security gate, and the production path (validated `boolean`) is byte-for-byte unchanged. Regression
+  coverage added in `test/kyc-customer-verification.config.spec.ts`. Environment validation was NOT
+  weakened; `.env.example` was NOT edited (both remain the owner's decision). The durable rule for
+  future providers is unchanged: read configuration only through the validated `Environment`, and
+  treat the P0-A harness's unvalidated `ConfigModule` as untrusted input.
+
 - **Not done / not claimed:** the AGENT half of Group 7 (agent-initiated outbound against the
   operating wallet, including own-account policy), agent-facing banking surfaces, and any provider
   execution (D8 remains not authorized). Settlement never becomes automatic.

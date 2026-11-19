@@ -32,10 +32,29 @@ const hasExactKeys = (value: unknown, expected: string[]): value is Record<strin
   !Array.isArray(value) &&
   Object.keys(value).sort().join(',') === expected.join(',');
 
-/** Parse explicit KYC-only operational configuration; deliberately has no rate/freshness defaults. */
+/** Parse explicit KYC-only operational configuration; deliberately has no rate/freshness defaults.
+ *
+ * `ConfigService<Environment, true>` says the values are already validated; the test harness builds
+ * an unvalidated test `ConfigModule`, so a raw `'false'` string can reach this function. Treating a
+ * raw `'false'` as enabled inverts a security gate, which is the wrong direction to fail. This
+ * normalisation is the only guard allowed here: it never turns a string into an *enabled* KYC path,
+ * it can only turn an unvalidated falsy-looking string into `false`. Every other value keeps the
+ * previous semantics, and the production path is unchanged because it is always validated.
+ */
+const falsyBooleanString = (value: unknown): unknown =>
+  value === 'false' || value === '0' || value === 'no' ? false : value;
+const truthyBooleanString = (value: unknown): unknown =>
+  value === 'true' || value === '1' || value === 'yes' ? true : falsyBooleanString(value);
+
 export function customerKycConfigurationFromEnvironment(
   env: CustomerKycEnvironment,
 ): CustomerKycVerificationConfiguration {
+  const enabledRaw = truthyBooleanString(env.KYC_CUSTOMER_VERIFICATION_ENABLED);
+  if (typeof enabledRaw !== 'boolean' && enabledRaw !== undefined) {
+    throw new Error('KYC_CUSTOMER_VERIFICATION_ENABLED must be a validated boolean');
+  }
+  const enabled = enabledRaw === true;
+  env = { ...env, KYC_CUSTOMER_VERIFICATION_ENABLED: enabled };
   let policy: KycPolicy | null = null;
   if (env.KYC_VERIFICATION_POLICY_JSON) {
     let value: unknown;
@@ -64,7 +83,6 @@ export function customerKycConfigurationFromEnvironment(
     throw new Error('KYC_VERIFICATION_POLICY_JSON is required when customer KYC is enabled');
   }
 
-  const enabled = env.KYC_CUSTOMER_VERIFICATION_ENABLED === true;
   if (enabled && (!policy || !policy.enabled))
     throw new Error('Customer KYC requires an enabled versioned verification policy');
   if (enabled && (!env.KYC_CONSENT_NOTICE_VERSION || !env.KYC_CONSENT_NOTICE_TEXT))
