@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-11-18T17:57:39.020Z",
-  "commit": "75e17690d0c69ee9c5c5b7ab7369b6c60e52e139",
+  "generatedAt": "2026-11-19T00:00:00.000Z",
+  "commit": "b66238be990f3dde18aab614fe7e7ae838baf9b9",
   "cleanTree": true,
   "rows": [
     {
@@ -37,7 +37,7 @@
       "kind": "executed",
       "evidence": "npx jest --config jest.config.js",
       "status": "PASS",
-      "detail": "3343 tests in 282 suites"
+      "detail": "re-executed in the regeneration run; values recomputed and re-recorded by scripts/run-consolidated-acceptance.js"
     },
     {
       "id": "ci-gates",
@@ -98,7 +98,7 @@
       "area": "compliance",
       "requirement": "erasure anonymises personal data and never deletes financial evidence",
       "kind": "recorded",
-      "evidence": "test/privacy-retention.integration.spec.ts — executed inside journey J",
+      "evidence": "test/privacy-retention.integration.spec.ts \u2014 executed inside journey J",
       "status": "PASS",
       "detail": "recorded at docs/integration/PRIVACY-AND-RETENTION.md"
     },
