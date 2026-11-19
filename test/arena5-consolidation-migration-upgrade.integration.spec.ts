@@ -50,7 +50,7 @@ const ARENA2C_ONLY = [
 // Arena 5 appended the dual-lane (customer/agent) A6 financial authorization migration after the
 // Arena 2C range. It is part of the combined head and is never renumbered.
 const ARENA5_ONLY = [
-  'GeneralizeFinancialAuthorizationsForAgents1785753600804',
+  'GeneralizeFinancialAuthorizationsForAgents1785753600803',
   'GeneralizeExternalOperationsForAgents1785753600804',
 ] as const;
 
@@ -133,7 +133,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
       expect(firstLeg).toHaveLength(161); // the 3D freeze's own chain
       expect(await migrationNames(ds)).not.toContain('ExtendBeneficiaryOwnership1785753600802');
       expect(await migrationNames(ds)).not.toContain(
-        'GeneralizeFinancialAuthorizationsForAgents1785753600804',
+        'GeneralizeFinancialAuthorizationsForAgents1785753600803',
       );
 
       // Now hand the database the combined application, exactly as the consolidated deployment would.
@@ -174,7 +174,7 @@ describe('ARENA 5 combined migration chain (real PostgreSQL)', () => {
       expect(firstLeg).toHaveLength(155); // the 2C freeze's own chain
       expect(await migrationNames(ds)).not.toContain('OutboxLeasesAndDeadLetters1785753600606');
       expect(await migrationNames(ds)).not.toContain(
-        'GeneralizeFinancialAuthorizationsForAgents1785753600804',
+        'GeneralizeFinancialAuthorizationsForAgents1785753600803',
       );
 
       ds.migrations.splice(0, ds.migrations.length, ...all);

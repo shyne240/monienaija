@@ -596,7 +596,7 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
     );
     expect(latest[0]).toEqual({
       timestamp: '1785753600804',
-      name: 'GeneralizeFinancialAuthorizationsForAgents1785753600804',
+      name: 'GeneralizeExternalOperationsForAgents1785753600804',
     });
   });
 });

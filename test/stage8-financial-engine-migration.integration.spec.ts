@@ -109,7 +109,7 @@ describe('Stage 8 consolidated financial-engine migration acceptance (real Postg
     // The Arena 5 dual-lane financial authorization migration follows the unchanged Arena 2C chain.
     expect(rows[0]).toEqual({
       timestamp: '1785753600804',
-      name: 'GeneralizeFinancialAuthorizationsForAgents1785753600804',
+      name: 'GeneralizeExternalOperationsForAgents1785753600804',
     });
   });
 
@@ -216,7 +216,7 @@ describe('Stage 8 consolidated financial-engine migration acceptance (real Postg
       expect(appliedNames).toContain('CreateGovernedLedgerReversalExecutions1785753600117');
       expect(appliedNames).toContain('CreateFinancialCommitments1785753600140');
       expect(appliedNames).toContain('LinkA7InboundExecution1785753600146');
-      expect(appliedNames.at(-1)).toBe('GeneralizeFinancialAuthorizationsForAgents1785753600804');
+      expect(appliedNames.at(-1)).toBe('GeneralizeExternalOperationsForAgents1785753600804');
       expect(await upgrade.showMigrations()).toBe(false);
     } finally {
       await destroyIntegrationDataSource(upgrade);

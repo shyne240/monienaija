@@ -89,7 +89,7 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
       // Arena 2C allocation.
       expect(rows.at(-1)).toEqual({
         timestamp: '1785753600804',
-        name: 'GeneralizeFinancialAuthorizationsForAgents1785753600804',
+        name: 'GeneralizeExternalOperationsForAgents1785753600804',
       });
     });
 
@@ -207,7 +207,7 @@ describe('Stage 10 — recovery migration 0402 and historical upgrade (real Post
         const executed = await db.runMigrations({ transaction: 'all' });
         const applied = executed.map((migration) => String(migration.name));
         expect(applied).toContain('CreateCustomerCredentialRecoveryChallenges1785753600402');
-        expect(applied.at(-1)).toBe('GeneralizeFinancialAuthorizationsForAgents1785753600804');
+        expect(applied.at(-1)).toBe('GeneralizeExternalOperationsForAgents1785753600804');
         expect(
           applied.indexOf('CreateCustomerCredentialRecoveryChallenges1785753600402'),
         ).toBeLessThan(applied.indexOf('InstitutionGovernanceExecutionIntegrity1785753600500'));
