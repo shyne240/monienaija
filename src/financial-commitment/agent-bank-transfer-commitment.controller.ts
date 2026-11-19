@@ -2,8 +2,11 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   Headers,
   HttpCode,
+  NotFoundException,
+  Param,
   Post,
   Req,
   UnauthorizedException,
@@ -80,6 +83,20 @@ export class AgentBankTransferCommitmentController {
       replayed: result.replayed,
       /** Null when no banking dispatch intent exists for this commitment. */
       operationReference: result.operationReference,
+    };
+  }
+
+  @Get('by-idempotency/:idempotencyKey')
+  async byIdempotency(@Param('idempotencyKey') idempotencyKey: string, @Req() req: AgentRequest) {
+    const principal = req.authorizationPrincipal;
+    if (!principal || principal.type !== 'AGENT' || !principal.agentId)
+      throw new UnauthorizedException('Agent session required');
+    const found = await this.commitments.lookupByIdempotencyForAgent(principal.agentId, idempotencyKey);
+    if (!found) throw new NotFoundException('Commitment not found');
+    return {
+      commitmentId: found.commitment.id,
+      state: found.commitment.state,
+      operationReference: found.operationReference,
     };
   }
 }

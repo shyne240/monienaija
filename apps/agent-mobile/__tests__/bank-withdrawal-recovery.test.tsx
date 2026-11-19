@@ -24,12 +24,16 @@ jest.mock('../../src/services/api-client', () => ({ ApiClient: { get: jest.fn().
 
 async function renderScreen(){ const u=render(<AgentBankWithdrawalScreen />); await act(async()=>{}); return u; }
 
-function mockAgentGets(serverTransactions?: { items: Array<{ type: string; status: string }> }) {
+function mockAgentGets(byIdempotencyResponse?: { state: string } | null) {
   const { ApiClient } = require('../src/services/api-client');
-  const history = serverTransactions ?? { items: [] };
   ApiClient.get.mockImplementation((url: string) => {
     if (url.includes('/agents/me/wallets')) return Promise.resolve([{ id: 'wallet-1' }]);
-    if (url.startsWith('/agents/me/transactions')) return Promise.resolve(history);
+    if (url.startsWith('/agents/me/transactions')) return Promise.resolve({ items: [] });
+    if (url.startsWith('/agents/me/banking/bank-transfers/by-idempotency/')) {
+      if (byIdempotencyResponse === null) return Promise.reject(Object.assign(new Error('not found'), { status: 404 }));
+      if (byIdempotencyResponse) return Promise.resolve(byIdempotencyResponse);
+      return Promise.reject(Object.assign(new Error('not found'), { status: 404 }));
+    }
     return Promise.resolve([]);
   });
 }
@@ -42,7 +46,7 @@ describe('Agent BankWithdrawal recovery', () => {
     const { AgentBankWithdrawalApi } = require('../src/services/bank-withdrawal');
     if (AgentBankWithdrawalApi.initiate?.mockReset) AgentBankWithdrawalApi.initiate.mockReset();
     if (AgentBankWithdrawalApi.initiate?.mockResolvedValue) AgentBankWithdrawalApi.initiate.mockResolvedValue({ commitmentId: 'c1', operationReference: 'OP1', state: 'RESERVED' });
-    mockAgentGets({ items: [] });
+    mockAgentGets(null);
   });
   test('if durable persistence fails, block submission', async () => {
     const spy=jest.spyOn(SecureStorage,'setDurable').mockRejectedValueOnce(new Error('disk full'));
@@ -88,7 +92,7 @@ describe('Agent BankWithdrawal recovery', () => {
   test('Clear blocked when server shows unresolved', async () => {
     const staleAt=new Date(Date.now()-25*60*60*1000).toISOString();
     await savePendingAgentBankWithdrawalIntent({ agentId: 'agent', beneficiaryId: 'b1', amountMinor: '10000', currency: 'NGN', idempotencyKey: 'k-clear-block', createdAt: staleAt });
-    mockAgentGets({ items: [{ type: 'EXTERNAL_BANK_TRANSFER', status: 'PENDING' }] });
+    mockAgentGets({ state: 'RESERVED' });
     const { getByTestId, getByText, queryByTestId } = await renderScreen();
     await waitFor(()=> expect(getByTestId('stale-recovery-banner')).toBeTruthy());
     fireEvent.press(getByTestId('stale-clear'));
@@ -99,7 +103,7 @@ describe('Agent BankWithdrawal recovery', () => {
   test('Different withdrawal blocked when prior unresolved', async () => {
     const staleAt=new Date(Date.now()-25*60*60*1000).toISOString();
     await savePendingAgentBankWithdrawalIntent({ agentId: 'agent', beneficiaryId: 'b1', amountMinor: '10000', currency: 'NGN', idempotencyKey: 'k-block-new', createdAt: staleAt });
-    mockAgentGets({ items: [{ type: 'EXTERNAL_BANK_TRANSFER', status: 'PENDING' }] });
+    mockAgentGets({ state: 'RESERVED' });
     const { getByTestId, getByText } = await renderScreen();
     await waitFor(()=> expect(getByTestId('stale-recovery-banner')).toBeTruthy());
     fireEvent.press(getByTestId('beneficiary-b1'));

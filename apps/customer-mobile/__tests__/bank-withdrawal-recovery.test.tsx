@@ -55,12 +55,27 @@ const BENEFICIARY = {
 
 let mockCustomerId: string | null = 'customer-a-uuid';
 
-function mockGets(serverTransactions?: { items: Array<{ type: string; status: string }> }) {
+function mockGets(byIdempotencyResponse?: { state: string } | null) {
+  (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+    if (url === '/customers/me/wallets') return Promise.resolve([NGN_WALLET]);
+    if (url === '/customers/me/beneficiaries?limit=100') return Promise.resolve({ items: [BENEFICIARY] });
+    if (url.startsWith('/customers/me/transactions')) return Promise.resolve({ items: [] });
+    if (url.startsWith('/customers/me/withdrawal-commitments/by-idempotency/')) {
+      if (byIdempotencyResponse === null) return Promise.reject(Object.assign(new Error('not found'), { status: 404 }));
+      if (byIdempotencyResponse) return Promise.resolve(byIdempotencyResponse);
+      return Promise.reject(Object.assign(new Error('not found'), { status: 404 }));
+    }
+    return Promise.reject(new Error(`unexpected ${url}`));
+  });
+  ((ApiClient as any).getCustomerId as jest.Mock).mockReturnValue(mockCustomerId);
+}
+function mockGetsWithHistory(serverTransactions?: { items: Array<{ type: string; status: string }> }) {
   const serverHistory = serverTransactions ?? { items: [] };
   (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
     if (url === '/customers/me/wallets') return Promise.resolve([NGN_WALLET]);
     if (url === '/customers/me/beneficiaries?limit=100') return Promise.resolve({ items: [BENEFICIARY] });
     if (url.startsWith('/customers/me/transactions')) return Promise.resolve(serverHistory);
+    if (url.startsWith('/customers/me/withdrawal-commitments/by-idempotency/')) return Promise.reject(Object.assign(new Error('not found'), { status: 404 }));
     return Promise.reject(new Error(`unexpected ${url}`));
   });
   ((ApiClient as any).getCustomerId as jest.Mock).mockReturnValue(mockCustomerId);
@@ -288,8 +303,8 @@ describe('BankWithdrawalScreen — recovery safety (customer)', () => {
       idempotencyKey: 'stale-key-block-clear',
       createdAt: staleCreatedAt,
     });
-    // Server shows an unresolved PENDING external bank transfer
-    mockGets({ items: [{ type: 'EXTERNAL_BANK_TRANSFER', status: 'PENDING' }] });
+    // Server shows the exact intent is still RESERVED (unresolved)
+    mockGets({ state: 'RESERVED' });
     const { getByTestId, getByText, queryByTestId } = await renderScreen();
     await waitFor(() => expect(getByTestId('stale-recovery-banner')).toBeTruthy());
     fireEvent.press(getByTestId('stale-clear'));
@@ -309,7 +324,7 @@ describe('BankWithdrawalScreen — recovery safety (customer)', () => {
       idempotencyKey: 'stale-key-block-new',
       createdAt: staleCreatedAt,
     });
-    mockGets({ items: [{ type: 'EXTERNAL_BANK_TRANSFER', status: 'PENDING' }] });
+    mockGets({ state: 'RESERVED' });
     const { getByTestId, getByText } = await renderScreen();
     await waitFor(() => expect(getByTestId('stale-recovery-banner')).toBeTruthy());
     fireEvent.press(getByTestId('beneficiary-b-verified'));
@@ -332,7 +347,7 @@ describe('BankWithdrawalScreen — recovery safety (customer)', () => {
       idempotencyKey: 'stale-key-allow-new',
       createdAt: staleCreatedAt,
     });
-    mockGets({ items: [{ type: 'EXTERNAL_BANK_TRANSFER', status: 'COMPLETED' }] });
+    mockGets({ state: 'SETTLED' });
     const { getByTestId } = await renderScreen();
     await waitFor(() => expect(getByTestId('stale-recovery-banner')).toBeTruthy());
     fireEvent.press(getByTestId('beneficiary-b-verified'));

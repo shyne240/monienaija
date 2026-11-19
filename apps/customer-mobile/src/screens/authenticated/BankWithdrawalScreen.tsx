@@ -88,25 +88,30 @@ export const BankWithdrawalScreen: React.FC = () => {
     } catch { return 'customer-recovery'; }
   }, []);
 
-  // Authoritative server check: is there an unresolved (PENDING) banking commitment for this owner?
-  // Uses existing durable operation recovery via unified history; fail-closed if we cannot verify.
-  const hasUnresolvedBankTransferOnServer = useCallback(async (): Promise<boolean> => {
+  // Authoritative server check: verify the exact outstanding intent via its immutable idempotency identity.
+  // Uses the durable commitment lookup — not a paginated history heuristic that could mistake an
+  // incomplete page for terminal confirmation. Failed/incomplete/ambiguous lookup fails closed.
+  const isExactPendingUnresolvedOnServer = useCallback(async (idempotencyKey: string): Promise<boolean> => {
     try {
-      const res = await ApiClient.get<{ items: Array<{ type: string; status: string }> }>(
-        '/customers/me/transactions?type=EXTERNAL_BANK_TRANSFER&limit=50&page=1',
+      const res = await ApiClient.get<{ state: string }>(
+        `/customers/me/withdrawal-commitments/by-idempotency/${encodeURIComponent(idempotencyKey)}`,
       );
-      return Array.isArray(res?.items) && res.items.some((i) => i.status === 'PENDING');
-    } catch {
-      return true;
+      // RESERVED is the server's unresolved state (maps to PENDING in history); SETTLED/RELEASED are terminal.
+      return res?.state === 'RESERVED';
+    } catch (e: unknown) {
+      const status = (e as { status?: number })?.status;
+      if (status === 404) return false; // No commitment ever created for this key — no duplicate risk, safe to proceed.
+      return true; // Fail closed on network/500/401/etc — must not discard recoverable identity.
     }
   }, []);
 
   const handleClearStale = useCallback(async () => {
     setError('');
     // Guard: Clear must not discard the only recoverable identity of an unresolved operation.
-    // Verify against authoritative server state (history) before discarding.
-    if (staleIntent || restoredIntent) {
-      const unresolved = await hasUnresolvedBankTransferOnServer();
+    // Verify the exact intent's authoritative state via idempotency identity.
+    const anchor = staleIntent ?? restoredIntent;
+    if (anchor) {
+      const unresolved = await isExactPendingUnresolvedOnServer(anchor.idempotencyKey);
       if (unresolved) {
         setError('This withdrawal is still pending confirmation on the server. Check history or transfer status before clearing. Nothing was discarded.');
         return;
@@ -118,7 +123,7 @@ export const BankWithdrawalScreen: React.FC = () => {
     setStaleIntent(null);
     setRestoredIntent(null);
     setError('');
-  }, [customerIdForRecovery, staleIntent, restoredIntent, hasUnresolvedBankTransferOnServer]);
+  }, [customerIdForRecovery, staleIntent, restoredIntent, isExactPendingUnresolvedOnServer]);
 
   useEffect(() => {
     void (async () => {
@@ -227,7 +232,7 @@ export const BankWithdrawalScreen: React.FC = () => {
       } catch {}
       if (!matches) {
         // Different logical attempt — must not destroy the recoverable identity of the earlier unresolved withdrawal.
-        const unresolved = await hasUnresolvedBankTransferOnServer();
+        const unresolved = await isExactPendingUnresolvedOnServer(anchor.idempotencyKey);
         if (unresolved) {
           setError('A previous withdrawal is still pending confirmation. Check your history or transfer status before starting a new one. Nothing was sent.');
           return;

@@ -141,6 +141,12 @@ export class FinancialCommitmentService {
    * binding, provider dispatch intent and settlement effects are the same shared architecture
    * the customer lane uses; only the principal, session and PIN authority differ.
    */
+  async resolveCustomerIdFromToken(token: string): Promise<string> {
+    const session = await this.sessions.validate({ token, audience: 'customer-api' });
+    if (!session.valid || !session.principal?.customerId) throw new UnauthorizedException('Customer session is invalid');
+    return session.principal.customerId;
+  }
+
   async initiateForAgent(input: InitiateAgentBankTransferCommitment): Promise<{
     commitment: FinancialCommitmentRecord;
     replayed: boolean;
@@ -322,6 +328,62 @@ export class FinancialCommitmentService {
    * A missing row is a real answer (a non-banking authorization exists), not an error; an
    * ambiguous answer indicates corrupted state and is refused rather than guessed.
    */
+  /**
+   * Lookup a commitment by the caller-provided raw idempotency key (hashed to scoped form).
+   * Returns null if no commitment was ever created for that logical attempt — which is
+   * authoritative: no duplicate can exist if nothing was ever persisted.
+   * A failed lookup (exception) is not a 404 — it is an ambiguous recovery state and must
+   * fail closed.
+   */
+  async lookupByIdempotencyForCustomer(
+    customerId: string,
+    rawIdempotencyKey: string,
+  ): Promise<{ commitment: FinancialCommitmentRecord; operationReference: string | null } | null> {
+    const key = rawIdempotencyKey.trim();
+    if (!key || key.length > 255) throw new BadRequestException('idempotencyKey is required');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId))
+      throw new BadRequestException('customerId is required');
+    const scoped = `withdrawal-commitment:${this.hash(`${customerId}:${key}`)}`;
+    const rows = await this.dataSource.query<FinancialCommitmentRecord[]>(
+      `SELECT * FROM financial_commitments WHERE idempotency_key=$1 LIMIT 1`,
+      [scoped],
+    );
+    const commitment = rows[0];
+    if (!commitment) return null;
+    // Verify ownership: the commitment's authorization must belong to this customer/principal.
+    const authRows = await this.dataSource.query<Array<{ customer_id: string }>>(
+      `SELECT customer_id FROM financial_authorizations WHERE id=$1`,
+      [commitment.authorization_id],
+    );
+    if (!authRows[0] || authRows[0].customer_id !== customerId) return null;
+    const opRef = await this.lookupBankingOperationReference(commitment.external_operation_id);
+    return { commitment, operationReference: opRef };
+  }
+
+  async lookupByIdempotencyForAgent(
+    agentId: string,
+    rawIdempotencyKey: string,
+  ): Promise<{ commitment: FinancialCommitmentRecord; operationReference: string | null } | null> {
+    const key = rawIdempotencyKey.trim();
+    if (!key || key.length > 255) throw new BadRequestException('idempotencyKey is required');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentId))
+      throw new BadRequestException('agentId is required');
+    const scoped = `withdrawal-commitment:${this.hash(`AGENT|${agentId}|${key}`)}`;
+    const rows = await this.dataSource.query<FinancialCommitmentRecord[]>(
+      `SELECT * FROM financial_commitments WHERE idempotency_key=$1 LIMIT 1`,
+      [scoped],
+    );
+    const commitment = rows[0];
+    if (!commitment) return null;
+    const authRows = await this.dataSource.query<Array<{ agent_id: string }>>(
+      `SELECT agent_id FROM financial_authorizations WHERE id=$1`,
+      [commitment.authorization_id],
+    );
+    if (!authRows[0] || authRows[0].agent_id !== agentId) return null;
+    const opRef = await this.lookupBankingOperationReference(commitment.external_operation_id);
+    return { commitment, operationReference: opRef };
+  }
+
   private async lookupBankingOperationReference(
     externalOperationId: string,
   ): Promise<string | null> {

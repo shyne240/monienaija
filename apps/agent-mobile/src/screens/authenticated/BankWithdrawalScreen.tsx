@@ -62,22 +62,27 @@ export const AgentBankWithdrawalScreen: React.FC = () => {
     finally { setIsLoading(false); }
   }, []);
 
-  const hasUnresolvedBankTransferOnServer = useCallback(async (): Promise<boolean> => {
+  const isExactPendingUnresolvedOnServer = useCallback(async (idempotencyKey: string): Promise<boolean> => {
     try {
-      const res = await ApiClient.get<{ items: Array<{ type: string; status: string }> }>('/agents/me/transactions?type=EXTERNAL_BANK_TRANSFER&limit=50&page=1');
-      return Array.isArray((res as any)?.items) && (res as any).items.some((i: any) => i.status === 'PENDING');
-    } catch { return true; }
+      const res = await ApiClient.get<{ state: string }>(`/agents/me/banking/bank-transfers/by-idempotency/${encodeURIComponent(idempotencyKey)}`);
+      return (res as any)?.state === 'RESERVED';
+    } catch (e: unknown) {
+      const status = (e as { status?: number })?.status;
+      if (status === 404) return false;
+      return true;
+    }
   }, []);
 
   const handleClearStale = useCallback(async () => {
     setError('');
-    if (staleIntent || restoredIntent) {
-      const unresolved = await hasUnresolvedBankTransferOnServer();
+    const anchor = staleIntent ?? restoredIntent;
+    if (anchor) {
+      const unresolved = await isExactPendingUnresolvedOnServer(anchor.idempotencyKey);
       if (unresolved) { setError('This withdrawal is still pending confirmation on the server. Check history or transfer status before clearing. Nothing was discarded.'); return; }
     }
     try { await clearPendingAgentBankWithdrawalIntent('agent'); } catch {}
     setStaleIntent(null); setRestoredIntent(null); setError('');
-  }, [staleIntent, restoredIntent, hasUnresolvedBankTransferOnServer]);
+  }, [staleIntent, restoredIntent, isExactPendingUnresolvedOnServer]);
 
   useEffect(() => {
     void (async () => {
@@ -135,7 +140,7 @@ export const AgentBankWithdrawalScreen: React.FC = () => {
       const candidate = { walletAccountId: walletId, beneficiaryId: selected!.id, amountMinor: parsed, currency: 'NGN' as const };
       const matches = matchesPendingAgentBankIntent(anchor, candidate);
       if (!matches) {
-        const unresolved = await hasUnresolvedBankTransferOnServer();
+        const unresolved = await isExactPendingUnresolvedOnServer(anchor.idempotencyKey);
         if (unresolved) { setError('A previous withdrawal is still pending confirmation. Check your history or transfer status before starting a new one. Nothing was sent.'); return; }
         effectiveIdempotencyKey = `agent-bank-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         effectiveCreatedAt = new Date().toISOString();
