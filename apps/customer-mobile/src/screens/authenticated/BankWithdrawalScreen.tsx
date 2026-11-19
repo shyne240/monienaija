@@ -22,14 +22,16 @@ import {
   type BankBeneficiary,
   type InitiateBankWithdrawalResult,
 } from '../../services/bank-withdrawal';
-import { BankDirectoryApi } from '../../services/bank-directory';
 import {
   clearPendingBankWithdrawalIntent,
   loadPendingBankWithdrawalIntent,
   savePendingBankWithdrawalIntent,
 } from '../../services/pending-bank-withdrawal';
+import { BankTransferPricingApi, type BankTransferPricing } from '../../services/bank-transfer-pricing';
 import { formatMinor } from '../../services/presentation';
 import { RootStackParamList } from '../../navigation/types';
+import { BankTransferAddBeneficiarySheet } from './BankTransferAddBeneficiarySheet';
+import { BankWithdrawalApi as BankBeneficiaryApi } from '../../services/bank-withdrawal';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'BankWithdrawal'>;
 
@@ -66,6 +68,9 @@ export const BankWithdrawalScreen: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<InitiateBankWithdrawalResult | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [pricing, setPricing] = useState<BankTransferPricing | null>(null);
+  const [pricingBusy, setPricingBusy] = useState(false);
 
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() => `bank-withdrawal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
 
@@ -123,6 +128,16 @@ export const BankWithdrawalScreen: React.FC = () => {
   );
   const balanceMinor = primaryWallet ? Number(primaryWallet.balanceMinor) : NaN;
   const overBalance = Number.isFinite(balanceMinor) && amountMinor > balanceMinor;
+
+  useEffect(() => {
+    const parsed = minor(amountStr);
+    if (!parsed || !selected || !primaryWallet) { setPricing(null); return; }
+    setPricingBusy(true);
+    BankTransferPricingApi.preview({ beneficiaryId: selected.id, amountMinor: parsed, walletId: primaryWallet.id })
+      .then(setPricing)
+      .catch(() => setPricing(null))
+      .finally(() => setPricingBusy(false));
+  }, [amountStr, selected, primaryWallet]);
 
   const reset = () => {
     setResult(null);
@@ -308,17 +323,19 @@ export const BankWithdrawalScreen: React.FC = () => {
 
         {beneficiaries.length === 0 ? (
           <Card variant="flat" style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>No verified bank account yet</Text>
+            <Text style={styles.emptyTitle}>No bank account yet</Text>
             <Text style={styles.body}>
-              Bank accounts are verified by MonieNaija before they can receive money, and this
-              screen cannot verify one itself. If you expected a bank account to be available,
-              contact support and ask them to verify it.
+              Add a bank account below — it will be verified with the bank first.
             </Text>
-            <Button
-              label="Contact support"
-              variant="outline"
-              onPress={() => navigation.navigate('Support')}
-            />
+            <Button label={showAdd ? 'Close' : 'Add bank account'} onPress={() => setShowAdd((v) => !v)} testID="toggle-add-beneficiary" />
+            {showAdd && (
+              <BankTransferAddBeneficiarySheet
+                walletId={primaryWallet?.id}
+                onCreated={async () => { setShowAdd(false); void load(); }}
+                onCancel={() => setShowAdd(false)}
+                create={(input) => ApiClient.post('/customers/me/beneficiaries/bank-accounts', input)}
+              />
+            )}
           </Card>
         ) : (
           <>
@@ -355,6 +372,23 @@ export const BankWithdrawalScreen: React.FC = () => {
                 if (error) setError('');
               }}
             />
+
+            {showAdd && (
+              <BankTransferAddBeneficiarySheet
+                walletId={primaryWallet?.id}
+                onCreated={async () => { setShowAdd(false); void load(); }}
+                onCancel={() => setShowAdd(false)}
+                create={(input) => ApiClient.post('/customers/me/beneficiaries/bank-accounts', input)}
+              />
+            )}
+            {pricing && (
+              <Card variant="flat" style={styles.emptyCard} testID="pricing-preview">
+                <Text style={styles.sectionLabel}>Fees</Text>
+                <Text>Fee: {formatMinor(pricing.feeMinor)} · VAT: {formatMinor(pricing.vatMinor)} · Total: {formatMinor(pricing.totalDebitMinor)}</Text>
+                <Text style={styles.hint}>Source: {pricing.pricingSource}</Text>
+              </Card>
+            )}
+            {pricingBusy && <Text style={styles.hint}>Loading pricing…</Text>}
 
             <Text style={styles.sectionLabel}>Transaction PIN</Text>
             <TextInput

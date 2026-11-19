@@ -20,10 +20,10 @@ export interface AccountEnquiryResult {
 export const BankDirectoryApi = {
   list(search?: string): Promise<BankDirectoryEntry[]> {
     const qs = search ? `?search=${encodeURIComponent(search)}` : '';
-    return ApiClient.get<{ items: BankDirectoryEntry[] }>(`api/v1/agents/me/banking/banks${qs}`).then((r) => r.items ?? []);
+    return ApiClient.get<{ items: BankDirectoryEntry[] }>(`/agents/me/banking/banks${qs}`).then((r) => r.items ?? []);
   },
 
   enquire(input: { bankCode: string; accountNumber: string; walletId?: string }): Promise<AccountEnquiryResult> {
-    return ApiClient.post<AccountEnquiryResult>('api/v1/agents/me/banking/account-enquiry', input);
+    return ApiClient.post<AccountEnquiryResult>('/agents/me/banking/account-enquiry', input);
   },
 };

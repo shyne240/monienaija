@@ -32,6 +32,7 @@ import { CashToCashClaimRecipientScreen } from '../screens/authenticated/cash-to
 import { CashToCashClaimConfirmScreen } from '../screens/authenticated/cash-to-cash/CashToCashClaimConfirmScreen';
 import { CashToCashClaimSuccessScreen } from '../screens/authenticated/cash-to-cash/CashToCashClaimSuccessScreen';
 import { WalletToCashRecipientScreen } from '../screens/authenticated/cash-out/WalletToCashRecipientScreen';
+import { AgentBankWithdrawalScreen } from '../screens/authenticated/BankWithdrawalScreen';
 import { WalletToCashAmountScreen } from '../screens/authenticated/cash-out/WalletToCashAmountScreen';
 import { WalletToCashConfirmScreen } from '../screens/authenticated/cash-out/WalletToCashConfirmScreen';
 import { WalletToCashSuccessScreen } from '../screens/authenticated/cash-out/WalletToCashSuccessScreen';
@@ -215,6 +216,11 @@ export const AppNavigator: React.FC = () => {
             name="WalletToCashSuccess"
             component={WalletToCashSuccessScreen}
             options={{ title: 'Cash-out Complete', headerBackVisible: false }}
+          />
+          <Stack.Screen
+            name="BankWithdrawal"
+            component={AgentBankWithdrawalScreen}
+            options={{ title: 'Withdraw to bank' }}
           />
         </>
       )}

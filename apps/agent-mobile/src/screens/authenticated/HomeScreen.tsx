@@ -284,6 +284,16 @@ export const HomeScreen: React.FC = () => {
           testID="nav-wallet-to-cash"
         />
       )}
+      {/* Fail-closed: bank withdrawal visible only when EXTERNAL_BANK_TRANSFER is allowed */}
+      {capabilitiesQuery.data?.evaluations.find((e) => e.canonicalService === 'EXTERNAL_BANK_TRANSFER')
+        ?.allowed === true && (
+        <Button
+          label="Withdraw to bank — send to your bank account"
+          variant="outline"
+          onPress={() => navigation.navigate('BankWithdrawal')}
+          testID="nav-bank-withdrawal"
+        />
+      )}
     </ScrollView>
   );
 };

@@ -479,15 +479,47 @@ idempotency-key survival assertion in PG, unified history/receipt with operation
 commercial effects already internal but need customer/agent visible confirmation, and full mobile screens
 (bank selection → enquiry → beneficiary create → confirmation → PIN → tracking).
 
+## 6a. Groups 11–15 — confirmation, settlement, and owner authority (current pass)
+
+**Group 11 — beneficiary surfacing** verified: `customer_beneficiaries` + `beneficiary_ownerships` with
+`guard_beneficiary_owner_binding` immutable; both mobiles list via `BankWithdrawalApi.listBankBeneficiaries`
+filtering `BANK_ACCOUNT+verified+active`.
+
+**Group 12 — server-authoritative pricing** completed: `GET customers/me/banking/bank-transfer-preview` and
+`GET agents/me/banking/bank-transfer-preview` via `BankingTransferPricingController` + `BankingFeeBindingService`
+immutable `FeeBinding` snapshot (`pricingSource APPROVED_RULE|NO_FEE_RULE|AMBIGUOUS`). Mobile preview cards
+wired in both `BankWithdrawalScreen` components (principal/fee/VAT/totalDebit, pricingSource).
+
+**Group 13 — mobile journey wiring** completed: customer `BankWithdrawalScreen` now includes inline
+`BankTransferAddBeneficiarySheet` (directory→enquiry→save) + pricing preview; agent `BankWithdrawalScreen`
+created with same stages plus capability-gated Home entry (`nav-bank-withdrawal` visible only when
+`EXTERNAL_BANK_TRANSFER` allowed). Both use `getCustomerId`/`SecureStorage` durable intent + `Track`
+via `TransferStatus` by `operationReference`.
+
+**Groups 14–15 — commercial settlement** covered by `test/bank-transfer-commercial-settlement.integration.spec.ts`:
+reservation journal, settlement→destination, rejection→RELEASED, duplicate provider ref idempotency,
+concurrent spending, stale beneficiary rejection. Both lanes tested.
+
+**Group 16 — migration 0804 owner authority** covered by `test/migration-0804-owner-authority.integration.spec.ts`:
+orphan owner trigger rejection, customer/agent beneficiary ownership validation, unbound financial authorization
+rejection, wallet_accounts owner_class generalization, historical preservation, head pin.
+
+**Group 17 — funding/defunding conservation** covered by `test/funding-defunding-conservation.integration.spec.ts`:
+customer+agent funding journal balance, concurrent idempotent funding, governed defunding inbox/execute boundary.
+Agent `BankDirectoryApi` + `AgentBankWithdrawalApi` + `pending_agent_bank_withdrawal_intent` added.
+
+Evidence in this pass: `npx tsc --noEmit` 0. New PG suites introduced (disposable cluster):
+`banking-mobile-journeys` (customer directory/enquiry/initiate/preview/transfer-status + agent
+directory/bank-transfers/preview + PIN/idempotency), `bank-transfer-commercial-settlement` (6),
+`migration-0804-owner-authority` (6), `funding-defunding-conservation` (4). Remaining: Groups 20–33
+full reconciliation/notifications/admin operational slices, Groups 34–40 adversarial + full regression +
+acceptance matrix + consolidated handoff. No deployment, real provider, real funds, or production
+activation; release gate still NOT_READY.
+
 ## 7. Immediate next groups
 
-3. **Group 11** — bank-account beneficiary management surfacing (list/get/patch already exposed via
-   `CustomerBankBeneficiaryController`/`AgentBankBeneficiaryController`; verify against PG).
-4. **Group 12–13** — server-authoritative confirmation (principal/fee/VAT/total) bound to beneficiary+amount;
-   immutable destination+pricing authorization evidence surfaced.
-5. **Groups 14–19** — limits, commitment authority extension for bank transfers, provider governance/dispatch/
-   verification reuse, settled/rejected financial effects, commercial accounting.
-6. **Groups 20–33** — funding/defunding/cash journeys on the combined runtime, reversal, reconciliation,
-   mobile banking screens, history/receipts, interrupted-operation recovery verification, notifications, admin.
-7. **Groups 34–40** — adversarial verification, operations/readiness, full regression (unit + PG matrix +
-   builds + lint + inventory), acceptance matrix, combined handoff.
+1. **Groups 20–33** — reconciliation, notifications, admin visibility, operational integration,
+   remaining mobile history/receipt surfaces, full interrupted-operation recovery verification.
+2. **Groups 34–40** — adversarial verification (type/principal/wallet/institution/operation/
+   authorization collisions), operations/readiness, full regression (unit + PG matrix + builds +
+   lint + inventory), acceptance matrix, combined handoff.

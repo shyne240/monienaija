@@ -124,6 +124,8 @@ export type RootStackParamList = {
     pendingLocatorClaim?: boolean;
   };
 
+  BankWithdrawal: undefined;
+
   // Unified history + history-derived receipt (V1-AGENT-MOBILE-06)
   TransactionReceipt: {
     itemId: string;
