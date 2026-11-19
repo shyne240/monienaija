@@ -38,6 +38,7 @@ const VALID_TYPES = new Set([
   'CASH_TO_CASH_CLAIM',
   'AGENT_FUNDING',
   'AGENT_DEFUNDING',
+  'EXTERNAL_BANK_TRANSFER',
 ]);
 
 export interface AgentUnifiedHistoryQuery {
@@ -178,6 +179,15 @@ export class AgentTransactionHistoryService {
       );
       total += Number(rows[0]?.count ?? '0');
     }
+    if (shouldInclude('EXTERNAL_BANK_TRANSFER')) {
+      const rows: Array<{ count: string }> = await this.dataSource.query(
+        `SELECT count(*)::text as count FROM financial_commitments fc
+         JOIN financial_authorizations fa ON fa.id = fc.authorization_id
+         WHERE fa.agent_id = $1::uuid AND fa.principal_type = 'AGENT'`,
+        [agentId],
+      );
+      total += Number(rows[0]?.count ?? '0');
+    }
 
     const totalPages = total === 0 ? 0 : Math.ceil(total / normalizedLimit);
     const offset = (normalizedPage - 1) * normalizedLimit;
@@ -309,6 +319,37 @@ export class AgentTransactionHistoryService {
       );
       allRows.push(...rows);
     }
+    if (shouldInclude('EXTERNAL_BANK_TRANSFER')) {
+      try {
+        const rows: Array<any> = await this.dataSource.query(
+          `SELECT fc.id::text as id, 'EXTERNAL_BANK_TRANSFER'::text as type,
+                  fc.state::text as status,
+                  fc.amount_minor::text as amount_minor, fc.currency::text as currency,
+                  fc.created_at, fc.updated_at as completed_at,
+                  eo.target_mapping_reference::text as reference,
+                  COALESCE(cb.display_name, cb.nickname, eo.target_mapping_reference)::text as narration,
+                  fc.wallet_account_id::text as source_wallet_id,
+                  null::text as destination_wallet_id,
+                  fa.institution::text as destination_institution,
+                  eo.id::text as external_operation_id,
+                  substring(cb.destination_identifier from '.{0,6}(.{4})$')::text as destination_last4,
+                  cb.bank_code::text as bank_code,
+                  '0'::text as fee_minor
+           FROM financial_commitments fc
+           JOIN financial_authorizations fa ON fa.id = fc.authorization_id
+           LEFT JOIN external_operations eo ON eo.id = fc.external_operation_id
+           LEFT JOIN customer_beneficiaries cb ON cb.id = fc.beneficiary_id
+           WHERE fa.agent_id = $1::uuid AND fa.principal_type = 'AGENT'
+           ORDER BY fc.created_at DESC, fc.id DESC`,
+          [agentId],
+        );
+        for (const r of rows) {
+          const rawStatus = String(r.status ?? 'PENDING');
+          const mapped = rawStatus === 'RESERVED' ? 'PENDING' : rawStatus === 'SETTLED' ? 'COMPLETED' : rawStatus === 'RELEASED' ? 'REVERSED' : rawStatus;
+          allRows.push({ ...r, status: mapped, _rawStatus: rawStatus });
+        }
+      } catch { /* degrade gracefully on older rehearsals */ }
+    }
 
     // Global deterministic ordering: created_at DESC, id DESC (stable on timestamp ties).
     allRows.sort((a, b) => {
@@ -403,6 +444,19 @@ export class AgentTransactionHistoryService {
         if (r.status === 'CLAIMED' && r.claimed_at) completedAt = new Date(r.claimed_at);
         else if (r.status === 'EXPIRED' && r.expired_at) completedAt = new Date(r.expired_at);
         else completedAt = null;
+      } else if (r.type === 'EXTERNAL_BANK_TRANSFER') {
+        direction = 'DEBIT';
+        const last4 = r.destination_last4 ? String(r.destination_last4).slice(-4) : null;
+        counterparty = {
+          type: 'BANK_ACCOUNT',
+          bankCode: r.bank_code ?? null,
+          maskedAccountNumber: last4 ? `****${last4}` : null,
+          displayName: r.narration ?? null,
+          destinationInstitution: r.destination_institution ?? null,
+          operationReference: r.reference ?? null,
+          externalOperationId: r.external_operation_id ?? null,
+          rawStatus: r._rawStatus ?? r.status,
+        };
       } else if (r.type === 'CASH_TO_CASH_CLAIM') {
         // Agent-cash redemption credits Agent B's float; wallet redemption is Customer-only.
         direction = r.redemption_method === 'AGENT_CASH' ? 'CREDIT' : 'UNKNOWN';

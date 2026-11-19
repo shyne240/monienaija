@@ -2,7 +2,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
-const VALID_TYPES = new Set(['WALLET_TRANSFER', 'CASH_IN', 'CASH_OUT', 'CASH_TO_CASH', 'FUNDING']);
+const VALID_TYPES = new Set(['WALLET_TRANSFER', 'CASH_IN', 'CASH_OUT', 'CASH_TO_CASH', 'FUNDING', 'EXTERNAL_BANK_TRANSFER']);
 
 export interface UnifiedHistoryQuery {
   customerId: string;
@@ -128,6 +128,15 @@ export class CustomerTransactionHistoryService {
         total += Number(rows[0]?.count ?? '0');
       }
     }
+    if (shouldInclude('EXTERNAL_BANK_TRANSFER')) {
+      const rows: Array<{ count: string }> = await this.dataSource.query(
+        `SELECT count(*)::text as count FROM financial_commitments fc
+         JOIN financial_authorizations fa ON fa.id = fc.authorization_id
+         WHERE fa.customer_id = $1::uuid AND fa.principal_type = 'CUSTOMER'`,
+        [customerId],
+      );
+      total += Number(rows[0]?.count ?? '0');
+    }
     if (shouldInclude('CASH_IN') || shouldInclude('CASH_OUT')) {
       if (ledgerAccountIds.length > 0) {
         const services: string[] = [];
@@ -183,6 +192,41 @@ export class CustomerTransactionHistoryService {
         [customerId],
       );
       allRows.push(...rows);
+    }
+    if (shouldInclude('EXTERNAL_BANK_TRANSFER')) {
+      try {
+        const rows: Array<any> = await this.dataSource.query(
+          `SELECT fc.id::text as id, 'EXTERNAL_BANK_TRANSFER'::text as type,
+                  fc.state::text as status,
+                  fc.amount_minor::text as amount_minor, fc.currency::text as currency,
+                  fc.created_at, fc.updated_at as completed_at,
+                  eo.target_mapping_reference::text as reference,
+                  COALESCE(cb.display_name, cb.nickname, eo.target_mapping_reference)::text as narration,
+                  fc.wallet_account_id::text as source_wallet_id,
+                  null::text as destination_wallet_id,
+                  fa.institution::text as destination_institution,
+                  eo.id::text as external_operation_id,
+                  fc.resolution_journal_id::text as resolution_journal_id,
+                  fc.reservation_journal_id::text as reservation_journal_id,
+                  substring(cb.destination_identifier from '.{0,6}(.{4})$')::text as destination_last4,
+                  cb.bank_code::text as bank_code,
+                  '0'::text as fee_minor
+           FROM financial_commitments fc
+           JOIN financial_authorizations fa ON fa.id = fc.authorization_id
+           LEFT JOIN external_operations eo ON eo.id = fc.external_operation_id
+           LEFT JOIN customer_beneficiaries cb ON cb.id = fc.beneficiary_id
+           WHERE fa.customer_id = $1::uuid AND fa.principal_type = 'CUSTOMER'
+           ORDER BY fc.created_at DESC, fc.id DESC`,
+          [customerId],
+        );
+        for (const r of rows) {
+          // Map internal states to customer-visible statuses: RESERVED→PENDING (never settled yet),
+          // SETTLED→COMPLETED, RELEASED→REVERSED. Never represent reservation as settlement.
+          const rawStatus = String(r.status ?? 'PENDING');
+          const mapped = rawStatus === 'RESERVED' ? 'PENDING' : rawStatus === 'SETTLED' ? 'COMPLETED' : rawStatus === 'RELEASED' ? 'REVERSED' : rawStatus;
+          allRows.push({ ...r, status: mapped, _rawStatus: rawStatus });
+        }
+      } catch { /* table may not exist in older migration rehearsals — degrade gracefully */ }
     }
     if (shouldInclude('CASH_TO_CASH')) {
       let rows: Array<any>;
@@ -445,9 +489,28 @@ export class CustomerTransactionHistoryService {
         if (r.status === 'FAILED' || r.status === 'REJECTED') {
           failureCode = r.failure_code ?? failureCode;
         }
+      } else if (r.type === 'EXTERNAL_BANK_TRANSFER') {
+        direction = 'DEBIT';
+        const last4 = r.destination_last4 ? String(r.destination_last4).slice(-4) : null;
+        counterparty = {
+          type: 'BANK_ACCOUNT',
+          bankCode: r.bank_code ?? null,
+          maskedAccountNumber: last4 ? `****${last4}` : null,
+          displayName: r.narration ?? null,
+          destinationInstitution: r.destination_institution ?? null,
+          operationReference: r.reference ?? null,
+          externalOperationId: r.external_operation_id ?? null,
+          rawStatus: r._rawStatus ?? r.status,
+        };
+        if (r._rawStatus === 'REVERSED' || r.status === 'REVERSED') {
+          failureCode = 'REJECTION_COMPENSATED';
+          failureMessage = 'Bank transfer rejected — funds returned';
+        } else if (r._rawStatus === 'PENDING') {
+          failureCode = null;
+          failureMessage = null;
+        }
       } else if (r.type === 'CASH_IN') {
         direction = 'CREDIT';
-        // hide internal workforce: only expose type AGENT, not teller identity
         counterparty = { type: 'AGENT' };
         failureCode = null;
         failureMessage = null;
