@@ -11,7 +11,7 @@ import { ApiError } from '../../services/api-client';
 import { AgentBankWithdrawalApi, type AgentBankBeneficiary } from '../../services/bank-withdrawal';
 import { BankDirectoryApi } from '../../services/bank-directory';
 import { AgentBankTransferPricingApi, type BankTransferPricing } from '../../services/bank-transfer-pricing';
-import { clearPendingAgentBankWithdrawalIntent, loadPendingAgentBankWithdrawalIntent, savePendingAgentBankWithdrawalIntent } from '../../services/pending-bank-withdrawal';
+import { clearPendingAgentBankWithdrawalIntent, hasStalePendingAgentBankWithdrawal, loadPendingAgentBankWithdrawalIntent, savePendingAgentBankWithdrawalIntent } from '../../services/pending-bank-withdrawal';
 import { formatMinor } from '../../utils/presentation';
 import { RootStackParamList } from '../../navigation/types';
 
@@ -100,6 +100,7 @@ export const AgentBankWithdrawalScreen: React.FC = () => {
     const parsed = minor(amountStr);
     if (!parsed) { setError('Enter amount.'); return; }
     if (!/^\d{4,12}$/.test(pin)) { setError('Enter PIN.'); return; }
+    try { if (await hasStalePendingAgentBankWithdrawal('agent')) { setError('Previous withdrawal pending confirmation. Check history.'); setBusy(false); return; } } catch {}
     setBusy(true); setError('');
     const pinSnap = pin; setPin('');
     try { await savePendingAgentBankWithdrawalIntent({ agentId: 'agent', beneficiaryId: selected.id, amountMinor: parsed, currency: 'NGN', idempotencyKey, createdAt: new Date().toISOString() }); } catch {}

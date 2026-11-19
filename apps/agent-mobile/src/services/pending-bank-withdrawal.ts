@@ -45,11 +45,26 @@ export async function loadPendingAgentBankWithdrawalIntent(agentId: string): Pro
   }
   if (!isPendingIntent(parsed) || parsed.agentId !== agentId) return null;
   const ageMs = Date.now() - new Date(parsed.createdAt).getTime();
-  if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > MAX_PENDING_AGE_MS) {
+  if (!Number.isFinite(ageMs) || ageMs < 0) {
     await clearPendingAgentBankWithdrawalIntent(agentId);
     return null;
   }
+  if (ageMs > MAX_PENDING_AGE_MS) {
+    // TTL expiry must not authorize new submission while prior unresolved — keep stale durable
+    return null;
+  }
   return parsed;
+}
+
+export async function hasStalePendingAgentBankWithdrawal(agentId: string): Promise<boolean> {
+  const raw = await SecureStorage.getDurable(storageKeyFor(agentId));
+  if (!raw) return false;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isPendingIntent(parsed) || parsed.agentId !== agentId) return false;
+    const ageMs = Date.now() - new Date(parsed.createdAt).getTime();
+    return Number.isFinite(ageMs) && ageMs > MAX_PENDING_AGE_MS;
+  } catch { return false; }
 }
 
 export function matchesPendingAgentBankIntent(intent: PendingAgentBankWithdrawalIntent, candidate: PendingAgentBankWithdrawalParams): boolean {

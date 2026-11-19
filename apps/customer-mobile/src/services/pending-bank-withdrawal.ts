@@ -59,11 +59,33 @@ export async function loadPendingBankWithdrawalIntent(customerId: string): Promi
   if (!isPendingIntent(parsed)) return null;
   if (parsed.customerId !== customerId) return null;
   const ageMs = Date.now() - new Date(parsed.createdAt).getTime();
-  if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > MAX_PENDING_AGE_MS) {
+  if (!Number.isFinite(ageMs) || ageMs < 0) {
+    // Clock skew — treat as invalid and clear (no safe retry age can be determined)
     await clearPendingBankWithdrawalIntent(customerId);
     return null;
   }
+  if (ageMs > MAX_PENDING_AGE_MS) {
+    // TTL expiry must NOT silently authorize a new submission while prior may still be unresolved.
+    // Keep the stale intent durable for operator/history inspection; return null to prevent silent
+    // auto-reuse, but do NOT clear — the caller must explicitly confirm resolution (history check)
+    // before minting a fresh idempotency key. This preserves the 24h staleness bound without
+    // opening a duplicate-debit window.
+    return null;
+  }
   return parsed;
+}
+
+/** Returns true if a stale (TTL-expired) pending intent still exists durably — i.e. the prior
+ * may still be unresolved. Used to block silent new submission after TTL expiry. */
+export async function hasStalePendingBankWithdrawal(customerId: string): Promise<boolean> {
+  const raw = await SecureStorage.getDurable(storageKeyFor(customerId));
+  if (!raw) return false;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isPendingIntent(parsed) || parsed.customerId !== customerId) return false;
+    const ageMs = Date.now() - new Date(parsed.createdAt).getTime();
+    return Number.isFinite(ageMs) && ageMs > MAX_PENDING_AGE_MS;
+  } catch { return false; }
 }
 
 export function matchesPendingIntent(intent: PendingBankWithdrawalIntent, candidate: PendingBankWithdrawalParams): boolean {

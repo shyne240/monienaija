@@ -24,6 +24,7 @@ import {
 } from '../../services/bank-withdrawal';
 import {
   clearPendingBankWithdrawalIntent,
+  hasStalePendingBankWithdrawal,
   loadPendingBankWithdrawalIntent,
   savePendingBankWithdrawalIntent,
 } from '../../services/pending-bank-withdrawal';
@@ -174,6 +175,14 @@ export const BankWithdrawalScreen: React.FC = () => {
       return;
     }
 
+    // TTL safety: if a stale (24h-expired) pending still exists, prior may be unresolved — block silent new authorization
+    try {
+      if (await hasStalePendingBankWithdrawal(customerIdForRecovery)) {
+        setError('A previous withdrawal is still pending confirmation. Check your transaction history before creating another.');
+        setBusy(false);
+        return;
+      }
+    } catch {}
     setBusy(true);
     setError('');
     const pinSnapshot = pin;
