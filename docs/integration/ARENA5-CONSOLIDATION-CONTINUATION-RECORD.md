@@ -223,7 +223,7 @@ real configured migration lists rather than fabricating a third inventory. Nothi
 - Interrupted or environment-blocked runs were not counted as passing; the release gate remains
   NOT_READY while its blockers stand.
 
-## 5. Groups 4–6 — consolidated-runtime preservation (in progress)
+## 5. Groups 4–7 — consolidated-runtime preservation (in progress)
 
 ### Group 4 — Nest startup, DI and process roles: verified on the combined tree
 
@@ -284,12 +284,65 @@ fabricates anything the register reserves to its owners, and none weakens a boun
 | D7  | Mobile QA/release — device evidence                            | **Blocked in this sandbox** (no Android/iOS hardware, emulator, adb or Apple tooling): no signing, no submission, no physical-device acceptance claimed. Automated suites and browser acceptance cover what can be covered headlessly; the gap stays explicit.                                                                                                                                                                                                                                    |
 | D8  | Integration, provider and operations owners — real execution   | **Not authorized in this mission:** no provider calls, no transactions, no deployments, no activation, no merges. Preserve 3D's NOT_READY gate, eight financial blockers, operational blockers and conditions; authorized sandbox evidence, real-role runtime and worker observation remain future, separately-authorized work.                                                                                                                                                                   |
 
+### Group 7 — customer self-service bank withdrawal: wired end to end (customer half)
+
+The one outbound bank journey a customer can complete in-app now exists on the combined tree, both
+halves bound to real contracts and verified on real PostgreSQL (branch `arena/1f37a4f3-monienaija`,
+commits `ca81dcad` backend, `dd1b6314` mobile):
+
+- **Server.** `POST /customers/me/withdrawal-commitments` now returns `operationReference` —
+  resolved after the commitment transaction from `banking_outbound_operations` (written by the
+  commitment bridge inside that same transaction). It is `null` when no dispatch intent exists (no
+  banking provider configured), never a fabricated reference. An ambiguous answer (>1 row for one
+  external operation) is refused with `409 ConflictException` rather than guessed; the refusal does
+  not duplicate the commitment. The `/customers/me/beneficiaries` projection gained the additive
+  `beneficiaryType`, and `bankCode`/`destinationName` populated for `BANK_ACCOUNT` beneficiaries
+  only (never for wallet recipients).
+- **Mobile.** `BankWithdrawalScreen` (route `BankWithdrawal`, Home tile "To bank"): verified, active
+  `BANK_ACCOUNT` beneficiaries only; over-balance guard; 4–12 digit transaction PIN (cleared from
+  state on submit); stable form-lifetime idempotency key; RESERVED copy that never claims the bank
+  paid; a "Track this transfer" control present only when the server produced an
+  `operationReference` (navigates to `TransferStatus`); replayed SETTLED/RELEASED outcomes rendered
+  as earlier submissions, not new success; empty state routes to support — the screen cannot add or
+  verify a bank account, and never pretends it can. `TransferStatus` screen/service migrated to the
+  server's verbatim vocabulary (AUTHORIZED/PROCESSING/CONFIRMING/SUCCESSFUL/REJECTED/REVERSED/
+  CANCELLED) with bankCode + last-4 rendering.
+- **Evidence.** Real PG: `financial-commitment-initiation` **43/43** (incl. new
+  dispatch-reference-replay and ambiguity-refusal tests and the BANK_ACCOUNT projection contract),
+  `arena3d-banking-http`, `arena3d-banking-journeys`, `a6-settlement-lifecycle` (23/23 with schema
+  suite), `a23-customer-app` and `v1-hardening-01-customer-beneficiary` (56/56 combined). Mobile:
+  `tsc` clean, full suite **25/25 suites, 220/220** (bank-withdrawal 9/9, mocked `ApiClient` — the
+  server contract it calls is covered by the backend suites above). Backend gates: tsc, eslint
+  (0 errors), prettier clean; consolidated acceptance regenerated on `dd1b6314` (artefact commit
+  `44dbd715`): tsc/lint/format/unit-suite (**3402/3402, 291 suites**)/ci-gates/mobile-manifests all
+  PASS; release gate remains NOT_READY (16 blockers, 4 conditions); UNAVAILABLE rows unchanged.
+- **Local test-environment findings (this sandbox, `.env` is git-ignored, untracked).** Suites that
+  boot the real `AppModule` require the documented `node scripts/prepare-pg-test-env.js
+  --create-if-missing` output; without it they fail closed with "Workforce authentication
+  disabled" (401 at the workforce guard). The generated `.env` additionally required two local
+  fixes to boot at all here: `HTTP_CORS_ORIGINS_JSON=[]` (shipped by `.env.example`) is rejected by
+  the CORS allowlist validator ("expected a non-empty JSON array of origins") — unset instead; and
+  `KYC_CUSTOMER_VERIFICATION_ENABLED=false` as a raw string is truthy to the unit suite's
+  unvalidated `ConfigModule` (`module-di-wiring` fails with "KYC_VERIFICATION_POLICY_JSON is
+  required…") — unset instead (validation default is `false`). Both findings are recorded here
+  rather than patched into `.env.example`, which is out of this group's scope. Before these were
+  fixed, the unit row in the acceptance artefact read FAIL for exactly this reason (now PASS).
+- **Not done / not claimed:** the AGENT half of Group 7 (agent-initiated outbound against the
+  operating wallet, including own-account policy), agent-facing banking surfaces, and any provider
+  execution (D8 remains not authorized). Settlement never becomes automatic.
+
+
 ## 6. Immediate next groups
 
 3. **Group 5–6** — P2P directions preservation on the consolidated runtime (run the 2C P2P parity
    suites: customer/agent directions); D1–D8 constraints carried as recorded above.
-4. **Group 7–8** — customer/agent banking journey wiring (no own-bank-account product; no workforce
-   acting-on-behalf; agent may transfer from the operating wallet including to own account).
+4. **Group 7–8** — customer/agent banking journey wiring. The customer half of Group 7 is done and
+   verified (see §5, Group 7): customer self-service withdrawal to a verified bank account, wired end
+   to end on real contracts. Remaining: the agent half (agent-initiated outbound against the
+   operating wallet, including the own-account policy and agent-facing surfaces), agent P2P parity
+   re-verification on the combined runtime, and Group 8's shared authority hardening. No
+   own-bank-account product; no workforce acting-on-behalf; agent may transfer from the operating
+   wallet including to own account.
 5. **Group 9–10** — shared external bank-transfer authority extension of the A6 commitment path
    (typed CUSTOMER/AGENT participants, immutable refs, institution attribution, provider destination
    binding, scoped idempotency) + bank directory/name-enquiry via provider capability contracts.
