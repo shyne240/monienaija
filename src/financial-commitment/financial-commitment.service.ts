@@ -6,6 +6,7 @@ import {
   ForbiddenException,
   Injectable,
   Inject,
+  Optional,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -29,6 +30,7 @@ import { BankingFeeBindingService } from '../banking/banking-fee-binding.service
 import { AgentTransactionAuthorizationService } from '../agent/agent-transaction-authorization.service';
 import { AgentService } from '../agent/agent-service.enum';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import { OutboxService } from '../operations/outbox.service';
 import {
   WITHDRAWAL_EXECUTION_AUTHORITY,
   type WithdrawalExecutionAuthority,
@@ -111,6 +113,7 @@ export class FinancialCommitmentService {
     private readonly bankingBridge: BankingCommitmentBridgeService,
     private readonly fees: BankingFeeBindingService,
     private readonly agentAuthorization: AgentTransactionAuthorizationService,
+    @Inject(OutboxService) @Optional() private readonly outboxService?: OutboxService,
   ) {}
 
   async initiate(input: InitiateFinancialCommitment): Promise<{
@@ -606,6 +609,34 @@ export class FinancialCommitmentService {
       operation.externalOperationId,
     );
     if (!commitment) throw new ConflictException('Financial commitment was not persisted');
+    // Governed notification: external_bank_transfer.pending — only for new commitments, never on replay
+    if (this.outboxService) {
+      try {
+        const amountMinor = input.amountMinor;
+        const refShort = commitmentId.slice(0, 8);
+        await this.outboxService.enqueue(manager, {
+          eventType: 'external_bank_transfer.pending',
+          aggregateType: 'FINANCIAL_COMMITMENT',
+          aggregateId: commitmentId,
+          payload: {
+            commitmentId,
+            externalOperationId: operation.externalOperationId,
+            principalType: input.kind,
+            customerId: input.kind === 'CUSTOMER' ? input.id : null,
+            agentId: input.kind === 'AGENT' ? input.id : null,
+            amountMinor,
+            currency: input.currency,
+            reference: refShort,
+          },
+          eventKey: `external_bank_transfer.pending:${commitmentId}:v1`,
+          schemaVersion: 1,
+          classification: 'CONFIDENTIAL',
+          retentionClass: 'FINANCIAL_CONTROL',
+          correlationId: commitmentId,
+          causationId: commitmentId,
+        });
+      } catch { /* outbox is best-effort; financial commitment remains authoritative */ }
+    }
     return { commitment, replayed: false };
   }
 

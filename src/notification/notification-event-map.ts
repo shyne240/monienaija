@@ -294,6 +294,24 @@ export function mapEventToIntents(
     ];
   }
 
+  // External bank transfer (customer + agent, one engine) — owner resolved from committed commitment/operation, never from untrusted payload alone
+  if (
+    eventType === 'external_bank_transfer.pending' ||
+    eventType === 'external_bank_transfer.settled' ||
+    eventType === 'external_bank_transfer.reversed'
+  ) {
+    const customerId = payload.customerId as string | undefined;
+    const agentId = payload.agentId as string | undefined;
+    const intents: NotificationIntent[] = [];
+    if (customerId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId)) {
+      intents.push({ recipientType: 'CUSTOMER', recipientId: customerId, channel: 'SMS', templateKey: eventType, correlationId, causationId });
+    }
+    if (agentId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentId)) {
+      intents.push({ recipientType: 'AGENT', recipientId: agentId, channel: 'SMS', templateKey: eventType, correlationId, causationId });
+    }
+    return intents;
+  }
+
   // Fallback: unknown event — no notification (not every audit generates notification)
   return [];
 }
@@ -327,6 +345,9 @@ const EMAIL_ENABLED_CUSTOMER_EVENTS: ReadonlySet<string> = new Set([
   'wallet_transfer.completed',
   'wallet_transfer.failed',
   'transfer.unknown',
+  'external_bank_transfer.pending',
+  'external_bank_transfer.settled',
+  'external_bank_transfer.reversed',
   'support.ticket.created',
   'support.ticket.assigned',
   'support.ticket.status_changed',
@@ -528,6 +549,34 @@ export const NOTIFICATION_EVENT_CATALOGUE: Array<{
     required: false,
     possible: false,
     fallback: 'Same',
+  },
+  // External bank transfer
+  {
+    eventType: 'external_bank_transfer.pending',
+    recipient: 'CUSTOMER (commitment owner) + AGENT (operating wallet owner)',
+    channel: 'SMS and/or EMAIL for an eligible CUSTOMER/AGENT, according to event configuration',
+    templateKey: 'external_bank_transfer.pending',
+    required: false,
+    possible: true,
+    fallback: 'If phone missing: SKIPPED; duplicate suppressed via eventKey',
+  },
+  {
+    eventType: 'external_bank_transfer.settled',
+    recipient: 'CUSTOMER + AGENT (settlement owner)',
+    channel: 'SMS and/or EMAIL for an eligible owner, according to event configuration',
+    templateKey: 'external_bank_transfer.settled',
+    required: false,
+    possible: true,
+    fallback: 'Same',
+  },
+  {
+    eventType: 'external_bank_transfer.reversed',
+    recipient: 'CUSTOMER + AGENT (reversal owner)',
+    channel: 'SMS and/or EMAIL for an eligible owner, according to event configuration',
+    templateKey: 'external_bank_transfer.reversed',
+    required: false,
+    possible: true,
+    fallback: 'Same; funds returned via compensating journal',
   },
   // PUSH (dependency)
   {

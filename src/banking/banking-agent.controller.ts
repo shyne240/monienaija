@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Controller,
   Get,
+  NotFoundException,
   Param,
   Post,
   Query,
@@ -69,5 +70,19 @@ export class BankingAgentController {
       throw new BadRequestException('limit must be between 1 and 200');
     }
     return this.funding.receivedFunds(agentId, walletId, parsed);
+  }
+
+  @Get('transfers/:operationReference')
+  async transfer(
+    @Req() req: AuthenticatedRequest,
+    @Param('operationReference') operationReference: string,
+  ) {
+    const agentId = this.agentOf(req);
+    if (!/^[A-Za-z0-9_-]{6,64}$/.test(operationReference)) {
+      throw new BadRequestException('operationReference is invalid');
+    }
+    const record = await this.funding.transferForAgent(agentId, operationReference);
+    if (!record) throw new NotFoundException('Transfer not found');
+    return record;
   }
 }

@@ -38,6 +38,24 @@ export const NOTIFICATION_ADDITIONAL_DEFAULTS_V2 = [
     variables: [],
     body: 'Your transfer status is being confirmed. Check your account for updates.',
   },
+  {
+    eventType: 'external_bank_transfer.pending',
+    kind: 'TRANSACTIONAL',
+    variables: ['reference', 'amount_clause'],
+    body: 'Bank transfer{{amount_clause}} is being processed. Ref {{reference}}. Check status for updates.',
+  },
+  {
+    eventType: 'external_bank_transfer.settled',
+    kind: 'TRANSACTIONAL',
+    variables: ['reference', 'amount_clause'],
+    body: 'Bank transfer{{amount_clause}} completed. Ref {{reference}}.',
+  },
+  {
+    eventType: 'external_bank_transfer.reversed',
+    kind: 'TRANSACTIONAL',
+    variables: ['reference', 'amount_clause'],
+    body: 'Bank transfer{{amount_clause}} was reversed. Ref {{reference}}. Funds returned. Contact support.',
+  },
 ] as const;
 
 export const NOTIFICATION_ORDINARY_DEFAULTS = [
@@ -60,6 +78,9 @@ export const FINANCIAL_NOTIFICATION_EVENT_TYPES = [
   'cash_to_cash.created',
   'cash_to_cash.claimed',
   'cash_to_cash.expired',
+  'external_bank_transfer.pending',
+  'external_bank_transfer.settled',
+  'external_bank_transfer.reversed',
 ] as const;
 
 export const NEW_PAYMENT_NOTIFICATION_EVENTS: ReadonlySet<string> = new Set([

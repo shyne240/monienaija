@@ -314,6 +314,57 @@ export class BankingAgentFundingService {
     };
   }
 
+  /** One outbound transfer for this agent, by our own operation reference (masked, owner-scoped). */
+  async transferForAgent(agentId: string, operationReference: string) {
+    const rows = await this.db.query<
+      Array<{
+        operation_reference: string;
+        state: string;
+        amount_minor: string;
+        currency: string;
+        destination_bank_code: string;
+        destination_account_number: string;
+        created_at: Date;
+        resolved_at: Date | null;
+        submitted_at: Date | null;
+      }>
+    >(
+      `SELECT o.operation_reference,o.state,o.amount_minor::text AS amount_minor,o.currency,
+              o.destination_bank_code,o.destination_account_number,o.created_at,o.resolved_at,o.submitted_at
+         FROM banking_outbound_operations o
+         JOIN wallet_accounts w ON w.id=o.wallet_id
+        WHERE w.customer_id=$1::text AND w.owner_class='AGENT' AND o.operation_reference=$2`,
+      [agentId, operationReference],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    const customerState =
+      row.state === 'SUCCESSFUL'
+        ? ('SUCCESSFUL' as const)
+        : row.state === 'FAILED'
+          ? ('REJECTED' as const)
+          : row.state === 'REVERSED'
+            ? ('REVERSED' as const)
+            : row.state === 'CANCELLED'
+              ? ('CANCELLED' as const)
+              : row.state === 'PENDING_PROVIDER' || row.state === 'PENDING_VERIFICATION'
+                ? ('PROCESSING' as const)
+                : row.state === 'CREATED'
+                  ? ('AUTHORIZED' as const)
+                  : ('CONFIRMING' as const);
+    return {
+      operationReference: row.operation_reference,
+      state: customerState,
+      amountMinor: row.amount_minor,
+      currency: row.currency,
+      bankCode: row.destination_bank_code,
+      accountNumberLast4: row.destination_account_number.slice(-4),
+      createdAt: row.created_at,
+      submittedAt: row.submitted_at,
+      resolvedAt: row.resolved_at,
+    };
+  }
+
   /** Exposed for callers that must bind a float credit to the exact funding account. */
   async accountForWalletInTransaction(
     manager: EntityManager,

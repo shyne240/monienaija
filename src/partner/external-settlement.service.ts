@@ -359,6 +359,16 @@ export class ExternalSettlementService {
         correlationId: context.correlationId,
         requestContext: context,
       });
+      await this.recordBankTransferNotification({
+        manager,
+        externalOperationId: operation.id,
+        commitmentId: commitment.id,
+        amountMinor: String((operation as unknown as { amountMinor?: string; amount_minor?: string }).amountMinor ?? (operation as unknown as { amount_minor?: string }).amount_minor ?? '0'),
+        currency: String((operation as unknown as { currency?: string }).currency ?? 'NGN'),
+        eventType: 'external_bank_transfer.reversed',
+        correlationId: context.correlationId,
+        requestContext: context,
+      });
       return { commitmentId: commitment.id, journalId, replayed: false };
     });
   }
@@ -664,6 +674,16 @@ export class ExternalSettlementService {
           partnerKey: settlement.partnerKey,
           capabilityKey: settlement.capabilityKey,
         },
+        correlationId: command.requestContext.correlationId,
+        requestContext: command.requestContext,
+      });
+      await this.recordBankTransferNotification({
+        manager,
+        externalOperationId: settlement.externalOperationId,
+        commitmentId: commitment?.id ?? null,
+        amountMinor: settlement.amountMinor,
+        currency: settlement.currency,
+        eventType: 'external_bank_transfer.settled',
         correlationId: command.requestContext.correlationId,
         requestContext: command.requestContext,
       });
@@ -1506,6 +1526,70 @@ export class ExternalSettlementService {
       correlationId: input.correlationId,
       causationId: input.requestContext.requestId,
     });
+  }
+
+  private async recordBankTransferNotification(input: {
+    manager: EntityManager;
+    externalOperationId: string;
+    commitmentId: string | null;
+    amountMinor: string;
+    currency: string;
+    eventType: 'external_bank_transfer.pending' | 'external_bank_transfer.settled' | 'external_bank_transfer.reversed';
+    correlationId: string;
+    requestContext: RequestContext;
+  }): Promise<void> {
+    if (!this.outboxService) return;
+    try {
+      // Resolve owner from financial authorization via commitment; fallback to external_operations owner column
+      let customerId: string | null = null;
+      let agentId: string | null = null;
+      if (input.commitmentId) {
+        const rows: Array<{ principal_type: string; principal_id: string }> = await input.manager.query(
+          `SELECT fa.principal_type, fa.principal_id::text as principal_id FROM financial_commitments fc JOIN financial_authorizations fa ON fa.id=fc.authorization_id WHERE fc.id=$1 LIMIT 1`,
+          [input.commitmentId],
+        );
+        const r = rows[0];
+        if (r?.principal_type === 'CUSTOMER') customerId = r.principal_id;
+        else if (r?.principal_type === 'AGENT') agentId = r.principal_id;
+      }
+      if (!customerId && !agentId) {
+        const opRows: Array<{ customer_id: string; wallet_account_id: string }> = await input.manager.query(
+          `SELECT customer_id::text as customer_id, wallet_account_id::text as wallet_account_id FROM external_operations WHERE id=$1 LIMIT 1`,
+          [input.externalOperationId],
+        );
+        const op = opRows[0];
+        if (op) {
+          const walletRows: Array<{ owner_class: string }> = await input.manager.query(
+            `SELECT owner_class FROM wallet_accounts WHERE id=$1 LIMIT 1`,
+            [op.wallet_account_id],
+          );
+          if (walletRows[0]?.owner_class === 'AGENT') agentId = op.customer_id;
+          else customerId = op.customer_id;
+        }
+      }
+      if (!customerId && !agentId) return;
+      const refShort = (input.commitmentId ?? input.externalOperationId).slice(0, 8);
+      await this.outboxService.enqueue(input.manager, {
+        eventType: input.eventType,
+        aggregateType: 'FINANCIAL_COMMITMENT',
+        aggregateId: input.commitmentId ?? input.externalOperationId,
+        payload: {
+          commitmentId: input.commitmentId,
+          externalOperationId: input.externalOperationId,
+          customerId,
+          agentId,
+          amountMinor: input.amountMinor,
+          currency: input.currency,
+          reference: refShort,
+        },
+        eventKey: `${input.eventType}:${input.commitmentId ?? input.externalOperationId}:v1`,
+        schemaVersion: 1,
+        classification: 'CONFIDENTIAL',
+        retentionClass: 'FINANCIAL_CONTROL',
+        correlationId: input.correlationId,
+        causationId: input.requestContext.requestId,
+      });
+    } catch { /* notification is best-effort */ }
   }
 
   private async auditSettlement(
