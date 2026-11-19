@@ -1185,7 +1185,7 @@ describe('A20 Outlets & Terminals Foundation (real PostgreSQL)', () => {
         constraint: 'audit_events_pkey',
       }),
     );
-    let spy = jest.spyOn(audit, 'record').mockRejectedValue(unrelatedUnique);
+    let spy = jest.spyOn(AuditService.prototype, 'record').mockRejectedValue(unrelatedUnique);
     try {
       await expect(
         outletService.create({
@@ -1207,7 +1207,7 @@ describe('A20 Outlets & Terminals Foundation (real PostgreSQL)', () => {
       name: 'Atomic outlet',
       actor: 'test-actor',
     });
-    spy = jest.spyOn(audit, 'record').mockRejectedValue(unrelatedUnique);
+    spy = jest.spyOn(AuditService.prototype, 'record').mockRejectedValue(unrelatedUnique);
     try {
       await expect(
         terminalService.create({
@@ -1229,7 +1229,7 @@ describe('A20 Outlets & Terminals Foundation (real PostgreSQL)', () => {
       reference: terminalRef,
       actor: 'test-actor',
     });
-    spy = jest.spyOn(audit, 'record').mockRejectedValue(new Error('synthetic audit failure'));
+    spy = jest.spyOn(AuditService.prototype, 'record').mockRejectedValue(new Error('synthetic audit failure'));
     try {
       await expect(
         outletService.updateMetadata(outlet.id, {

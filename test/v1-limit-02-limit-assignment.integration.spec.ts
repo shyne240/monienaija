@@ -1193,7 +1193,7 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
   it('rolls back assignment creation and updates if the audit write fails', async () => {
     await createProfile('AUDIT_ATOMIC');
     const service = app.get(LimitAssignmentService);
-    const audit = app.get(AuditService);
+    const audit = (service as unknown as { auditService: AuditService }).auditService;
     const input = {
       limitProfileCode: 'AUDIT_ATOMIC',
       subjectType: 'GLOBAL',

@@ -250,8 +250,8 @@ describe('Mission 15A — Agent session lifecycle and administrative revocation 
     const agent = await f.agent();
     const session = await f.login(agent);
     const audit = f.moduleRef.get(AuditService);
-    const original = audit.record.bind(audit);
-    const spy = jest.spyOn(audit, 'record').mockImplementation((manager, event) => {
+    const original = AuditService.prototype.record.bind(AuditService.prototype);
+    const spy = jest.spyOn(AuditService.prototype, 'record').mockImplementation((manager, event) => {
       if (event.action === 'SESSION_REVOKED') throw new Error('synthetic audit failure');
       return original(manager, event);
     });

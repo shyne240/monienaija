@@ -870,7 +870,7 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
       createdBy: actor,
     };
     const failAudit = () =>
-      jest.spyOn(audit, 'record').mockRejectedValue(new Error('Synthetic audit unavailable'));
+      jest.spyOn(AuditService.prototype, 'record').mockRejectedValue(new Error('Synthetic audit unavailable'));
     let failure = failAudit();
     try {
       await expect(service.createProfile(profileInput, actor)).rejects.toThrow(
@@ -1060,7 +1060,7 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
       [],
       Object.assign(new Error('audit unique'), { code: '23505', constraint: 'audit_events_pkey' }),
     );
-    failure = jest.spyOn(audit, 'record').mockRejectedValue(unrelatedUnique);
+    failure = jest.spyOn(AuditService.prototype, 'record').mockRejectedValue(unrelatedUnique);
     try {
       await expect(
         service.createProfile({ ...profileInput, code: 'AUDIT_UNIQUE_PROFILE' }, actor),
