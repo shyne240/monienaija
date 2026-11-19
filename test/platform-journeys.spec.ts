@@ -236,18 +236,25 @@ describe('platform journeys — verdict rules', () => {
 });
 
 describe('platform journeys — the defect the run found', () => {
-  it('keeps the teardown guard in the suite that failed on it', () => {
+  it('keeps a double-destroy-safe teardown in the suite that failed on it', () => {
     /*
      * `a3d-agent-float-funding` overrides the DataSource provider, so `app.close()` already destroys
      * it; destroying it again threw `CannotExecuteNotConnectedError` in `afterAll` and reddened the
      * suite while all fourteen assertions passed. Presence-based CI gates cannot see this, because a
      * configured job is not a passing one — executing the suite is what surfaced it.
+     *
+     * The consolidated merge preferred the Arena 2C harness teardown (`destroyIntegrationDataSource`),
+     * which is double-destroy-safe in either state (it also drops the run-owned database when Nest
+     * already closed the injected connection). The invariant this pins is unchanged: the suite must
+     * not call an unguarded `db.destroy()` after `app.close()`.
      */
     const source = readFileSync(
       join(ROOT, 'test/a3d-agent-float-funding.integration.spec.ts'),
       'utf8',
     );
-    expect(source).toContain('if (db?.isInitialized) await db.destroy()');
+    expect(source).toContain('if (db) await destroyIntegrationDataSource(db);');
     expect(source).not.toMatch(/\n\s*await db\?\.destroy\(\);/);
+    expect(source).not.toMatch(/if \(db\?\.isInitialized\) await db\.destroy\(\)/);
+    expect(source).not.toMatch(/\n\s*await db\.destroy\(\);/);
   });
 });
