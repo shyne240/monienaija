@@ -1360,10 +1360,14 @@ describe('A7 authoritative persistence (PostgreSQL)', () => {
       headers: { authorization: `Bearer ${f.token}`, 'idempotency-key': 'execute' },
       payload: { expectedVersion: 2 },
     };
-    const audit = app.get(AuditService);
-    const original = audit.record.bind(audit);
+    // The audit service injected into A7ProductPersistenceService (and InboundFundingService)
+    // is a different instance than app.get(AuditService) due to module scoping; spy must
+    // target the actual instance used in the transactional boundary. Spying on the prototype
+    // would also work but we explicitly target the service's dependency to preserve isolation.
+    const auditTarget = (service as unknown as { audit: AuditService }).audit;
+    const original = auditTarget.record.bind(auditTarget);
     const spy = jest
-      .spyOn(audit, 'record')
+      .spyOn(auditTarget, 'record')
       .mockImplementation((manager, event) =>
         event.entityType === 'A7_PRODUCT_LIFECYCLE' && event.action === 'CREDITED'
           ? Promise.reject(new Error('injected audit outage'))

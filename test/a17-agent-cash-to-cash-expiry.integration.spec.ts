@@ -1168,8 +1168,11 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       `UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=$1`,
       [transferId],
     );
+    // expiryService holds its own AuditService instance (not the moduleRef.get one);
+    // spying on the correct instance ensures the transactional audit failure is observed.
+    const auditTarget = (expiryService as unknown as { auditService: AuditService }).auditService;
     const spy = jest
-      .spyOn(auditService, 'record')
+      .spyOn(auditTarget, 'record')
       .mockRejectedValueOnce(new Error('audit unavailable'));
     const worker = executionWorker();
     try {
@@ -1205,9 +1208,10 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
       `UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=$1`,
       [transferId],
     );
-    const record = auditService.record.bind(auditService);
+    const auditTarget2 = (expiryService as unknown as { auditService: AuditService }).auditService;
+    const record = auditTarget2.record.bind(auditTarget2);
     const spy = jest
-      .spyOn(auditService, 'record')
+      .spyOn(auditTarget2, 'record')
       .mockImplementationOnce(async (manager, command) => {
         await manager.query(`SELECT pg_sleep(1)`);
         return record(manager, command);
