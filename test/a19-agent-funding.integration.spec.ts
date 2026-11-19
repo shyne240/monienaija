@@ -809,8 +809,8 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
       `SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
     );
     expect(latest[0]).toEqual({
-      timestamp: '1785753600803',
-      name: 'GeneralizeFinancialAuthorizationsForAgents1785753600803',
+      timestamp: '1785753600804',
+      name: 'GeneralizeExternalOperationsForAgents1785753600804',
     });
     const pool: Array<{ code: string }> = await dataSource.query(
       `SELECT code FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN'`,
@@ -824,8 +824,8 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
       `SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
     );
     expect(latest[0]).toEqual({
-      timestamp: '1785753600803',
-      name: 'GeneralizeFinancialAuthorizationsForAgents1785753600803',
+      timestamp: '1785753600804',
+      name: 'GeneralizeExternalOperationsForAgents1785753600804',
     });
   });
 });
