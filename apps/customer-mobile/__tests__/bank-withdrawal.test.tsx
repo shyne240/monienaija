@@ -106,9 +106,8 @@ describe('BankWithdrawalScreen — customer bank withdrawal', () => {
   test('is honest when there is no verified bank account', async () => {
     mockGets({ beneficiaries: [BANK_BENEFICIARIES[1]] });
     const { getByText, queryByTestId } = await renderScreen();
-    expect(getByText('No verified bank account yet')).toBeTruthy();
-    expect(getByText(/cannot verify one itself/i)).toBeTruthy();
-    expect(getByText('Contact support')).toBeTruthy();
+    expect(getByText('No bank account yet')).toBeTruthy();
+    expect(getByText(/verified with the bank first/i)).toBeTruthy();
     expect(queryByTestId('bank-submit')).toBeNull();
   });
 
