@@ -180,13 +180,21 @@ export class AgentTransactionHistoryService {
       total += Number(rows[0]?.count ?? '0');
     }
     if (shouldInclude('EXTERNAL_BANK_TRANSFER')) {
-      const rows: Array<{ count: string }> = await this.dataSource.query(
-        `SELECT count(*)::text as count FROM financial_commitments fc
-         JOIN financial_authorizations fa ON fa.id = fc.authorization_id
-         WHERE fa.agent_id = $1::uuid AND fa.principal_type = 'AGENT'`,
-        [agentId],
-      );
-      total += Number(rows[0]?.count ?? '0');
+      try {
+        const rows: Array<{ count: string }> = await this.dataSource.query(
+          `SELECT count(*)::text as count FROM financial_commitments fc
+           JOIN financial_authorizations fa ON fa.id = fc.authorization_id
+           WHERE fa.agent_id = $1::uuid AND fa.principal_type = 'AGENT'`,
+          [agentId],
+        );
+        total += Number(rows[0]?.count ?? '0');
+      } catch (e: unknown) {
+        const msg = (e as { message?: string })?.message ?? '';
+        const code = (e as { code?: string })?.code;
+        if (code === '42P01' || msg.includes('does not exist') || msg.includes('relation')) {
+          // older rehearsal without financial_commitments — degrade only for missing table
+        } else throw e;
+      }
     }
 
     const totalPages = total === 0 ? 0 : Math.ceil(total / normalizedLimit);
@@ -326,19 +334,26 @@ export class AgentTransactionHistoryService {
                   fc.state::text as status,
                   fc.amount_minor::text as amount_minor, fc.currency::text as currency,
                   fc.created_at, fc.updated_at as completed_at,
-                  eo.target_mapping_reference::text as reference,
-                  COALESCE(cb.display_name, cb.nickname, eo.target_mapping_reference)::text as narration,
+                  bo.operation_reference::text as reference,
+                  eo.target_mapping_reference::text as internal_target_reference,
+                  COALESCE(cb.display_name, cb.nickname, bo.operation_reference, eo.target_mapping_reference)::text as narration,
                   fc.wallet_account_id::text as source_wallet_id,
                   null::text as destination_wallet_id,
                   fa.institution::text as destination_institution,
                   eo.id::text as external_operation_id,
+                  bo.operation_reference::text as banking_operation_reference,
                   substring(cb.destination_identifier from '.{0,6}(.{4})$')::text as destination_last4,
                   cb.bank_code::text as bank_code,
-                  '0'::text as fee_minor
+                  COALESCE(fb.service_fee_minor::text,'0') as fee_minor,
+                  COALESCE(fb.tax_minor::text,'0') as vat_minor,
+                  COALESCE(fb.customer_debit_minor::text, fc.amount_minor::text) as total_debit_minor,
+                  COALESCE(fb.beneficiary_amount_minor::text, fc.amount_minor::text) as principal_minor
            FROM financial_commitments fc
            JOIN financial_authorizations fa ON fa.id = fc.authorization_id
            LEFT JOIN external_operations eo ON eo.id = fc.external_operation_id
+           LEFT JOIN banking_outbound_operations bo ON bo.external_operation_id = eo.id
            LEFT JOIN customer_beneficiaries cb ON cb.id = fc.beneficiary_id
+           LEFT JOIN banking_operation_fee_bindings fb ON fb.external_operation_id = eo.id
            WHERE fa.agent_id = $1::uuid AND fa.principal_type = 'AGENT'
            ORDER BY fc.created_at DESC, fc.id DESC`,
           [agentId],
@@ -346,9 +361,15 @@ export class AgentTransactionHistoryService {
         for (const r of rows) {
           const rawStatus = String(r.status ?? 'PENDING');
           const mapped = rawStatus === 'RESERVED' ? 'PENDING' : rawStatus === 'SETTLED' ? 'COMPLETED' : rawStatus === 'RELEASED' ? 'REVERSED' : rawStatus;
-          allRows.push({ ...r, status: mapped, _rawStatus: rawStatus });
+          allRows.push({ ...r, status: mapped, _rawStatus: rawStatus, reference: r.reference ?? null });
         }
-      } catch { /* degrade gracefully on older rehearsals */ }
+      } catch (e: unknown) {
+        const msg = (e as { message?: string })?.message ?? '';
+        const code = (e as { code?: string })?.code;
+        if (code === '42P01' || msg.includes('does not exist') || msg.includes('relation')) {
+          // older rehearsal without financial_commitments — degrade only for missing table
+        } else throw e;
+      }
     }
 
     // Global deterministic ordering: created_at DESC, id DESC (stable on timestamp ties).
@@ -454,7 +475,10 @@ export class AgentTransactionHistoryService {
           displayName: r.narration ?? null,
           destinationInstitution: r.destination_institution ?? null,
           operationReference: r.reference ?? null,
+          internalReference: r.internal_target_reference ?? null,
           externalOperationId: r.external_operation_id ?? null,
+          bankingOperationReference: r.banking_operation_reference ?? null,
+          principalMinor: r.principal_minor ?? r.amount_minor ?? '0',
           rawStatus: r._rawStatus ?? r.status,
         };
       } else if (r.type === 'CASH_TO_CASH_CLAIM') {
@@ -500,7 +524,9 @@ export class AgentTransactionHistoryService {
         type: String(r.type),
         status: String(r.status),
         amountMinor:
-          (r.amount_minor as string | number | bigint | null | undefined)?.toString() ?? '0',
+          r.type === 'EXTERNAL_BANK_TRANSFER' && r.principal_minor !== undefined
+            ? String(r.principal_minor ?? r.amount_minor ?? '0')
+            : ((r.amount_minor as string | number | bigint | null | undefined)?.toString() ?? '0'),
         currency: String(r.currency ?? 'NGN'),
         direction,
         createdAt: new Date(r.created_at),
@@ -508,15 +534,21 @@ export class AgentTransactionHistoryService {
         reference: r.reference ?? null,
         narration: r.narration ?? null,
         feeMinor:
-          r.type === 'WALLET_TRANSFER' && (direction !== 'DEBIT' || r.status !== 'COMPLETED')
-            ? '0'
-            : ((r.fee_minor as string | number | bigint | null | undefined)?.toString() ?? '0'),
-        ...(r.type === 'WALLET_TRANSFER'
+          r.type === 'EXTERNAL_BANK_TRANSFER'
+            ? ((r.fee_minor as string | number | bigint | null | undefined)?.toString() ?? '0')
+            : r.type === 'WALLET_TRANSFER' && (direction !== 'DEBIT' || r.status !== 'COMPLETED')
+              ? '0'
+              : ((r.fee_minor as string | number | bigint | null | undefined)?.toString() ?? '0'),
+        ...(r.type === 'WALLET_TRANSFER' || r.type === 'EXTERNAL_BANK_TRANSFER'
           ? {
-              vatMinor:
-                direction === 'DEBIT' && r.status === 'COMPLETED'
+              vatMinor: r.type === 'EXTERNAL_BANK_TRANSFER'
+                ? String(r.vat_minor ?? '0')
+                : direction === 'DEBIT' && r.status === 'COMPLETED'
                   ? String(r.vat_minor ?? '0')
                   : '0',
+              totalDebitMinor: r.type === 'EXTERNAL_BANK_TRANSFER'
+                ? (r.total_debit_minor ?? null)
+                : undefined,
             }
           : {}),
         counterparty,

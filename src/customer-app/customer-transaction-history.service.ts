@@ -129,13 +129,22 @@ export class CustomerTransactionHistoryService {
       }
     }
     if (shouldInclude('EXTERNAL_BANK_TRANSFER')) {
-      const rows: Array<{ count: string }> = await this.dataSource.query(
-        `SELECT count(*)::text as count FROM financial_commitments fc
-         JOIN financial_authorizations fa ON fa.id = fc.authorization_id
-         WHERE fa.customer_id = $1::uuid AND fa.principal_type = 'CUSTOMER'`,
-        [customerId],
-      );
-      total += Number(rows[0]?.count ?? '0');
+      try {
+        const rows: Array<{ count: string }> = await this.dataSource.query(
+          `SELECT count(*)::text as count FROM financial_commitments fc
+           JOIN financial_authorizations fa ON fa.id = fc.authorization_id
+           WHERE fa.customer_id = $1::uuid AND fa.principal_type = 'CUSTOMER'`,
+          [customerId],
+        );
+        total += Number(rows[0]?.count ?? '0');
+      } catch (e: unknown) {
+        const msg = (e as { message?: string })?.message ?? '';
+        const code = (e as { code?: string })?.code;
+        // Only missing-table rehearsals may degrade; any other failure must surface, not hide transactions
+        if (code === '42P01' || msg.includes('does not exist') || msg.includes('relation')) {
+          // older migration rehearsal without financial_commitments — degrade gracefully
+        } else throw e;
+      }
     }
     if (shouldInclude('CASH_IN') || shouldInclude('CASH_OUT')) {
       if (ledgerAccountIds.length > 0) {
@@ -200,21 +209,28 @@ export class CustomerTransactionHistoryService {
                   fc.state::text as status,
                   fc.amount_minor::text as amount_minor, fc.currency::text as currency,
                   fc.created_at, fc.updated_at as completed_at,
-                  eo.target_mapping_reference::text as reference,
-                  COALESCE(cb.display_name, cb.nickname, eo.target_mapping_reference)::text as narration,
+                  bo.operation_reference::text as reference,
+                  eo.target_mapping_reference::text as internal_target_reference,
+                  COALESCE(cb.display_name, cb.nickname, bo.operation_reference, eo.target_mapping_reference)::text as narration,
                   fc.wallet_account_id::text as source_wallet_id,
                   null::text as destination_wallet_id,
                   fa.institution::text as destination_institution,
                   eo.id::text as external_operation_id,
+                  bo.operation_reference::text as banking_operation_reference,
                   fc.resolution_journal_id::text as resolution_journal_id,
                   fc.reservation_journal_id::text as reservation_journal_id,
                   substring(cb.destination_identifier from '.{0,6}(.{4})$')::text as destination_last4,
                   cb.bank_code::text as bank_code,
-                  '0'::text as fee_minor
+                  COALESCE(fb.service_fee_minor::text,'0') as fee_minor,
+                  COALESCE(fb.tax_minor::text,'0') as vat_minor,
+                  COALESCE(fb.customer_debit_minor::text, fc.amount_minor::text) as total_debit_minor,
+                  COALESCE(fb.beneficiary_amount_minor::text, fc.amount_minor::text) as principal_minor
            FROM financial_commitments fc
            JOIN financial_authorizations fa ON fa.id = fc.authorization_id
            LEFT JOIN external_operations eo ON eo.id = fc.external_operation_id
+           LEFT JOIN banking_outbound_operations bo ON bo.external_operation_id = eo.id
            LEFT JOIN customer_beneficiaries cb ON cb.id = fc.beneficiary_id
+           LEFT JOIN banking_operation_fee_bindings fb ON fb.external_operation_id = eo.id
            WHERE fa.customer_id = $1::uuid AND fa.principal_type = 'CUSTOMER'
            ORDER BY fc.created_at DESC, fc.id DESC`,
           [customerId],
@@ -224,9 +240,17 @@ export class CustomerTransactionHistoryService {
           // SETTLED→COMPLETED, RELEASED→REVERSED. Never represent reservation as settlement.
           const rawStatus = String(r.status ?? 'PENDING');
           const mapped = rawStatus === 'RESERVED' ? 'PENDING' : rawStatus === 'SETTLED' ? 'COMPLETED' : rawStatus === 'RELEASED' ? 'REVERSED' : rawStatus;
-          allRows.push({ ...r, status: mapped, _rawStatus: rawStatus });
+          // Never expose internal target_mapping_reference as provider-issued operation reference;
+          // reference is banking_outbound_operations.operation_reference (trackable) or null if no dispatch
+          allRows.push({ ...r, status: mapped, _rawStatus: rawStatus, reference: r.reference ?? null });
         }
-      } catch { /* table may not exist in older migration rehearsals — degrade gracefully */ }
+      } catch (e: unknown) {
+        const msg = (e as { message?: string })?.message ?? '';
+        const code = (e as { code?: string })?.code;
+        if (code === '42P01' || msg.includes('does not exist') || msg.includes('relation')) {
+          // older rehearsal without financial_commitments — degrade gracefully
+        } else throw e;
+      }
     }
     if (shouldInclude('CASH_TO_CASH')) {
       let rows: Array<any>;
@@ -499,13 +523,16 @@ export class CustomerTransactionHistoryService {
           displayName: r.narration ?? null,
           destinationInstitution: r.destination_institution ?? null,
           operationReference: r.reference ?? null,
+          internalReference: r.internal_target_reference ?? null,
           externalOperationId: r.external_operation_id ?? null,
+          bankingOperationReference: r.banking_operation_reference ?? null,
+          principalMinor: r.principal_minor ?? r.amount_minor ?? '0',
           rawStatus: r._rawStatus ?? r.status,
         };
-        if (r._rawStatus === 'REVERSED' || r.status === 'REVERSED') {
+        if (r._rawStatus === 'RELEASED' || r.status === 'RELEASED' || r.status === 'REVERSED') {
           failureCode = 'REJECTION_COMPENSATED';
           failureMessage = 'Bank transfer rejected — funds returned';
-        } else if (r._rawStatus === 'PENDING') {
+        } else if (r._rawStatus === 'PENDING' || r.status === 'PENDING') {
           failureCode = null;
           failureMessage = null;
         }
@@ -538,7 +565,9 @@ export class CustomerTransactionHistoryService {
         type: String(r.type),
         status: String(r.status),
         amountMinor:
-          (r.amount_minor as string | number | bigint | null | undefined)?.toString() ?? '0',
+          r.type === 'EXTERNAL_BANK_TRANSFER' && (r.principal_minor !== undefined)
+            ? (String(r.principal_minor ?? r.amount_minor ?? '0'))
+            : ((r.amount_minor as string | number | bigint | null | undefined)?.toString() ?? '0'),
         currency: String(r.currency ?? 'NGN'),
         direction,
         createdAt: new Date(r.created_at),
@@ -546,16 +575,23 @@ export class CustomerTransactionHistoryService {
         reference: r.reference ?? null,
         narration: r.narration ?? null,
         feeMinor:
-          r.type === 'WALLET_TRANSFER' && (direction === 'RECEIVED' || r.status !== 'COMPLETED')
-            ? '0'
-            : ((r.fee_minor as string | number | bigint | null | undefined)?.toString() ?? '0'),
-        ...(r.type === 'WALLET_TRANSFER'
+          r.type === 'EXTERNAL_BANK_TRANSFER'
+            ? ((r.fee_minor as string | number | bigint | null | undefined)?.toString() ?? '0')
+            : r.type === 'WALLET_TRANSFER' && (direction === 'RECEIVED' || r.status !== 'COMPLETED')
+              ? '0'
+              : ((r.fee_minor as string | number | bigint | null | undefined)?.toString() ?? '0'),
+        ...(r.type === 'WALLET_TRANSFER' || r.type === 'EXTERNAL_BANK_TRANSFER'
           ? {
-              vatMinor:
-                direction === 'RECEIVED' || r.status !== 'COMPLETED'
+              vatMinor: r.type === 'EXTERNAL_BANK_TRANSFER'
+                ? String(r.vat_minor ?? '0')
+                : direction === 'RECEIVED' || r.status !== 'COMPLETED'
                   ? '0'
                   : String(r.vat_minor ?? '0'),
-              totalDebitMinor: direction === 'RECEIVED' ? null : (r.total_debit_minor ?? null),
+              totalDebitMinor: r.type === 'EXTERNAL_BANK_TRANSFER'
+                ? (r.total_debit_minor ?? null)
+                : direction === 'RECEIVED'
+                  ? null
+                  : (r.total_debit_minor ?? null),
             }
           : {}),
         sourceWalletId,
