@@ -1,0 +1,654 @@
+{
+  "candidate": "b5b65d0f",
+  "runIdPrefix": "f04b",
+  "batchSize": 3,
+  "totalBatches": 62,
+  "totalSuites": 186,
+  "batches": [
+    {
+      "batch": 1,
+      "runId": "f04b01",
+      "suitePaths": [
+        "test/v1-security-super-admin-recovery-01.integration.spec.ts",
+        "test/a18-aggregator-foundation.integration.spec.ts",
+        "test/mission-25g-customer-preference-authorization.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b01 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b01.json test/v1-security-super-admin-recovery-01.integration.spec.ts test/a18-aggregator-foundation.integration.spec.ts test/mission-25g-customer-preference-authorization.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b01",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": null,
+      "signal": "SIGABRT",
+      "durationMs": 29111,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "total": 0,
+      "suitesPassed": [],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T21:40:33.340Z",
+      "candidate": "b5b65d0f",
+      "status": "INCOMPLETE",
+      "note": "Process terminated with signal SIGABRT or timeout, not passing"
+    },
+    {
+      "batch": 2,
+      "runId": "f04b02",
+      "suitePaths": [
+        "test/v1-limit-05-diagnostics.integration.spec.ts",
+        "test/a8-agent-lifecycle.integration.spec.ts",
+        "test/v1-agent-mobile-idempotency-persistence-01.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b02 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b02.json test/v1-limit-05-diagnostics.integration.spec.ts test/a8-agent-lifecycle.integration.spec.ts test/v1-agent-mobile-idempotency-persistence-01.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b02",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 1,
+      "signal": null,
+      "durationMs": 92580,
+      "passed": 39,
+      "failed": 1,
+      "skipped": 0,
+      "total": 40,
+      "suitesPassed": [
+        "test/v1-limit-05-diagnostics.integration.spec.ts",
+        "test/v1-agent-mobile-idempotency-persistence-01.integration.spec.ts"
+      ],
+      "suitesFailed": [
+        "test/a8-agent-lifecycle.integration.spec.ts"
+      ],
+      "completedAt": "2026-11-19T21:44:04.854Z",
+      "candidate": "b5b65d0f",
+      "status": "FAILED"
+    },
+    {
+      "batch": 3,
+      "runId": "f04b03",
+      "suitePaths": [
+        "test/v1-admin-authorization-read-surface-01.integration.spec.ts",
+        "test/v1-workforce-bootstrap-01.integration.spec.ts",
+        "test/compliance-audit-export.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b03 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b03.json test/v1-admin-authorization-read-surface-01.integration.spec.ts test/v1-workforce-bootstrap-01.integration.spec.ts test/compliance-audit-export.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b03",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": null,
+      "signal": "SIGABRT",
+      "durationMs": 62792,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "total": 0,
+      "suitesPassed": [],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T21:45:08.647Z",
+      "candidate": "b5b65d0f",
+      "status": "INCOMPLETE",
+      "note": "Process terminated with signal SIGABRT or timeout, not passing"
+    },
+    {
+      "batch": 4,
+      "runId": "f04b04",
+      "suitePaths": [
+        "test/a21-agent-app.integration.spec.ts",
+        "test/b2f-finance-lifecycle.integration.spec.ts",
+        "test/a10-agent-service-capability.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b04 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b04.json test/a21-agent-app.integration.spec.ts test/b2f-finance-lifecycle.integration.spec.ts test/a10-agent-service-capability.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b04",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 68336,
+      "passed": 48,
+      "failed": 0,
+      "skipped": 0,
+      "total": 48,
+      "suitesPassed": [
+        "test/a21-agent-app.integration.spec.ts",
+        "test/b2f-finance-lifecycle.integration.spec.ts",
+        "test/a10-agent-service-capability.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T21:48:50.255Z",
+      "candidate": "b5b65d0f",
+      "status": "PASSED"
+    },
+    {
+      "batch": 5,
+      "runId": "f04b05",
+      "suitePaths": [
+        "test/mobile-client-support.integration.spec.ts",
+        "test/v1-admin-local-login-01.integration.spec.ts",
+        "test/notification-migration-upgrade-01.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b05 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b05.json test/mobile-client-support.integration.spec.ts test/v1-admin-local-login-01.integration.spec.ts test/notification-migration-upgrade-01.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b05",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 1,
+      "signal": null,
+      "durationMs": 86164,
+      "passed": 37,
+      "failed": 1,
+      "skipped": 0,
+      "total": 38,
+      "suitesPassed": [
+        "test/mobile-client-support.integration.spec.ts",
+        "test/v1-admin-local-login-01.integration.spec.ts"
+      ],
+      "suitesFailed": [
+        "test/notification-migration-upgrade-01.integration.spec.ts"
+      ],
+      "completedAt": "2026-11-19T21:50:17.421Z",
+      "candidate": "b5b65d0f",
+      "status": "FAILED"
+    },
+    {
+      "batch": 6,
+      "runId": "f04b06",
+      "suitePaths": [
+        "test/final-integration-gates-focus.integration.spec.ts",
+        "test/local-dev-11-roles.integration.spec.ts",
+        "test/agent-funding-pool-classification.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b06 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b06.json test/final-integration-gates-focus.integration.spec.ts test/local-dev-11-roles.integration.spec.ts test/agent-funding-pool-classification.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b06",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 40421,
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "total": 15,
+      "suitesPassed": [
+        "test/final-integration-gates-focus.integration.spec.ts",
+        "test/local-dev-11-roles.integration.spec.ts",
+        "test/agent-funding-pool-classification.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T21:50:58.843Z",
+      "candidate": "b5b65d0f",
+      "status": "PASSED"
+    },
+    {
+      "batch": 7,
+      "runId": "f04b07",
+      "suitePaths": [
+        "test/mission-15a-agent-sessions.integration.spec.ts",
+        "test/banking-outbound-service.integration.spec.ts",
+        "test/database-operational-readiness.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b07 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b07.json test/mission-15a-agent-sessions.integration.spec.ts test/banking-outbound-service.integration.spec.ts test/database-operational-readiness.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b07",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 22924,
+      "passed": 43,
+      "failed": 0,
+      "skipped": 0,
+      "total": 43,
+      "suitesPassed": [
+        "test/mission-15a-agent-sessions.integration.spec.ts",
+        "test/banking-outbound-service.integration.spec.ts",
+        "test/database-operational-readiness.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T21:51:22.768Z",
+      "candidate": "b5b65d0f",
+      "status": "PASSED"
+    },
+    {
+      "batch": 8,
+      "runId": "f04b08",
+      "suitePaths": [
+        "test/v1-system-01-suspended-customer-financial-boundary.integration.spec.ts",
+        "test/v1-mobile-idempotency-recovery-01.integration.spec.ts",
+        "test/v1-admin-full-surface-audit-01-auth-propagation.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b08 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b08.json test/v1-system-01-suspended-customer-financial-boundary.integration.spec.ts test/v1-mobile-idempotency-recovery-01.integration.spec.ts test/v1-admin-full-surface-audit-01-auth-propagation.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b08",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 35699,
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "total": 13,
+      "suitesPassed": [
+        "test/v1-system-01-suspended-customer-financial-boundary.integration.spec.ts",
+        "test/v1-mobile-idempotency-recovery-01.integration.spec.ts",
+        "test/v1-admin-full-surface-audit-01-auth-propagation.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T21:51:59.468Z",
+      "candidate": "b5b65d0f",
+      "status": "PASSED"
+    },
+    {
+      "batch": 9,
+      "runId": "f04b09",
+      "suitePaths": [
+        "test/banking-operation-records.integration.spec.ts",
+        "test/mission-16a-agent-read-authorization.integration.spec.ts",
+        "test/v1-customer-09-support-workforce-boundary.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b09 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b09.json test/banking-operation-records.integration.spec.ts test/mission-16a-agent-read-authorization.integration.spec.ts test/v1-customer-09-support-workforce-boundary.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b09",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 26105,
+      "passed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "total": 56,
+      "suitesPassed": [
+        "test/banking-operation-records.integration.spec.ts",
+        "test/mission-16a-agent-read-authorization.integration.spec.ts",
+        "test/v1-customer-09-support-workforce-boundary.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T21:52:26.574Z",
+      "candidate": "b5b65d0f",
+      "status": "PASSED"
+    },
+    {
+      "batch": 10,
+      "runId": "f04b10",
+      "suitePaths": [
+        "test/banking-provider-governance-service.integration.spec.ts",
+        "test/integrity-monitoring.integration.spec.ts",
+        "test/arena4-customer-kyc-view.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b10 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b10.json test/banking-provider-governance-service.integration.spec.ts test/integrity-monitoring.integration.spec.ts test/arena4-customer-kyc-view.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b10",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 29366,
+      "passed": 34,
+      "failed": 0,
+      "skipped": 0,
+      "total": 34,
+      "suitesPassed": [
+        "test/banking-provider-governance-service.integration.spec.ts",
+        "test/integrity-monitoring.integration.spec.ts",
+        "test/arena4-customer-kyc-view.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T21:52:56.943Z",
+      "candidate": "b5b65d0f",
+      "status": "PASSED"
+    },
+    {
+      "batch": 11,
+      "runId": "f04b11",
+      "suitePaths": [
+        "test/emergency-access-review.integration.spec.ts",
+        "test/v1-harden-01-limit-catalog-check-constraint-boundary.integration.spec.ts",
+        "test/banking-fee-binding.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b11 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b11.json test/emergency-access-review.integration.spec.ts test/v1-harden-01-limit-catalog-check-constraint-boundary.integration.spec.ts test/banking-fee-binding.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b11",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 28823,
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "total": 30,
+      "suitesPassed": [
+        "test/emergency-access-review.integration.spec.ts",
+        "test/v1-harden-01-limit-catalog-check-constraint-boundary.integration.spec.ts",
+        "test/banking-fee-binding.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T21:53:26.768Z",
+      "candidate": "b5b65d0f",
+      "status": "PASSED"
+    },
+    {
+      "batch": 12,
+      "runId": "f04b12",
+      "suitePaths": [
+        "test/banking-inbound-service.integration.spec.ts",
+        "test/banking-virtual-account-service.integration.spec.ts",
+        "test/banking-reconciliation.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b12 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b12.json test/banking-inbound-service.integration.spec.ts test/banking-virtual-account-service.integration.spec.ts test/banking-reconciliation.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b12",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 15642,
+      "passed": 37,
+      "failed": 0,
+      "skipped": 0,
+      "total": 37,
+      "suitesPassed": [
+        "test/banking-inbound-service.integration.spec.ts",
+        "test/banking-virtual-account-service.integration.spec.ts",
+        "test/banking-reconciliation.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T21:53:43.413Z",
+      "candidate": "b5b65d0f",
+      "status": "PASSED"
+    },
+    {
+      "batch": 13,
+      "runId": "f04b13",
+      "suitePaths": [
+        "test/h04-h06-notification-upgrade.integration.spec.ts",
+        "test/banking-provider-governance-schema.integration.spec.ts",
+        "test/banking-webhook-ingestion.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b13 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b13.json test/h04-h06-notification-upgrade.integration.spec.ts test/banking-provider-governance-schema.integration.spec.ts test/banking-webhook-ingestion.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b13",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 16141,
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "total": 23,
+      "suitesPassed": [
+        "test/h04-h06-notification-upgrade.integration.spec.ts",
+        "test/banking-provider-governance-schema.integration.spec.ts",
+        "test/banking-webhook-ingestion.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T21:54:00.554Z",
+      "candidate": "b5b65d0f",
+      "status": "PASSED"
+    },
+    {
+      "batch": 14,
+      "runId": "f04b14",
+      "suitePaths": [
+        "test/kyc-fixture-contract.integration.spec.ts",
+        "test/sandbox-integration-readiness.integration.spec.ts",
+        "test/v1-harden-01-runtime-access-guard-boundary.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b14 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b14.json test/kyc-fixture-contract.integration.spec.ts test/sandbox-integration-readiness.integration.spec.ts test/v1-harden-01-runtime-access-guard-boundary.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b14",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 38630,
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "total": 22,
+      "suitesPassed": [
+        "test/kyc-fixture-contract.integration.spec.ts",
+        "test/sandbox-integration-readiness.integration.spec.ts",
+        "test/v1-harden-01-runtime-access-guard-boundary.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T21:54:40.187Z",
+      "candidate": "b5b65d0f",
+      "status": "PASSED"
+    },
+    {
+      "batch": 15,
+      "runId": "f04b15",
+      "suitePaths": [
+        "test/arena3d-agent-banking-http.integration.spec.ts",
+        "test/transaction-boundary.integration.spec.ts",
+        "test/performance-acceptance.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b15 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b15.json test/arena3d-agent-banking-http.integration.spec.ts test/transaction-boundary.integration.spec.ts test/performance-acceptance.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b15",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 44040,
+      "passed": 29,
+      "failed": 0,
+      "skipped": 0,
+      "total": 29,
+      "suitesPassed": [
+        "test/arena3d-agent-banking-http.integration.spec.ts",
+        "test/transaction-boundary.integration.spec.ts",
+        "test/performance-acceptance.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T21:55:25.227Z",
+      "candidate": "b5b65d0f",
+      "status": "PASSED"
+    },
+    {
+      "batch": 16,
+      "runId": "f04b16",
+      "suitePaths": [
+        "test/v1-harden-01-a2-rate-limit-serialization.integration.spec.ts",
+        "test/metrics-transaction-safety.integration.spec.ts",
+        "test/v1-agent-cash-to-cash-operations.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b16 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b16.json test/v1-harden-01-a2-rate-limit-serialization.integration.spec.ts test/metrics-transaction-safety.integration.spec.ts test/v1-agent-cash-to-cash-operations.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b16",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 25608,
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "total": 13,
+      "suitesPassed": [
+        "test/v1-harden-01-a2-rate-limit-serialization.integration.spec.ts",
+        "test/metrics-transaction-safety.integration.spec.ts",
+        "test/v1-agent-cash-to-cash-operations.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T21:55:51.837Z",
+      "candidate": "b5b65d0f",
+      "status": "PASSED"
+    },
+    {
+      "batch": 17,
+      "runId": "f04b17",
+      "suitePaths": [
+        "test/a3d-operational-funds-visibility.integration.spec.ts",
+        "test/mission-25o-credential-binding-upgrade.integration.spec.ts",
+        "test/agent-application-access-migration-upgrade.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b17 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b17.json test/a3d-operational-funds-visibility.integration.spec.ts test/mission-25o-credential-binding-upgrade.integration.spec.ts test/agent-application-access-migration-upgrade.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b17",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 19043,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "total": 8,
+      "suitesPassed": [
+        "test/a3d-operational-funds-visibility.integration.spec.ts",
+        "test/mission-25o-credential-binding-upgrade.integration.spec.ts",
+        "test/agent-application-access-migration-upgrade.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T21:56:11.880Z",
+      "candidate": "b5b65d0f",
+      "status": "PASSED"
+    },
+    {
+      "batch": 18,
+      "runId": "f04b18",
+      "suitePaths": [
+        "test/h04-h06-cash-to-cash-channels.integration.spec.ts",
+        "test/v1-customer-self-service-lifecycle.integration.spec.ts",
+        "test/v1-harden-01-support-provision-race.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b18 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b18.json test/h04-h06-cash-to-cash-channels.integration.spec.ts test/v1-customer-self-service-lifecycle.integration.spec.ts test/v1-harden-01-support-provision-race.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b18",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 23831,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "total": 3,
+      "suitesPassed": [
+        "test/h04-h06-cash-to-cash-channels.integration.spec.ts",
+        "test/v1-customer-self-service-lifecycle.integration.spec.ts",
+        "test/v1-harden-01-support-provision-race.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T21:56:36.712Z",
+      "candidate": "b5b65d0f",
+      "status": "PASSED"
+    },
+    {
+      "batch": 19,
+      "runId": "f04b19",
+      "suitePaths": [
+        "test/v1-005-notification-delivery.integration.spec.ts",
+        "test/v1-admin-authorization-customer-read-01.integration.spec.ts",
+        "test/v1-commercial-accounting-01.integration.spec.ts"
+      ],
+      "command": "PG_TEST_RUN_ID=f04b19 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes node /home/user/monienaija/node_modules/jest/bin/jest.js --config /home/user/monienaija/jest.integration.config.js --runInBand --json --outputFile=/tmp/batch-f04b19.json test/v1-005-notification-delivery.integration.spec.ts test/v1-admin-authorization-customer-read-01.integration.spec.ts test/v1-commercial-accounting-01.integration.spec.ts",
+      "env": {
+        "PG_TEST_RUN_ID": "f04b19",
+        "NODE_ENV": "test",
+        "DB_HOST": "127.0.0.1",
+        "PG_TEST_CONFIRM_DISPOSABLE_CLUSTER": "yes",
+        "PG_TEST_BATCH_SIZE": "3",
+        "candidate": "b5b65d0f"
+      },
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 473261,
+      "passed": 123,
+      "failed": 0,
+      "skipped": 0,
+      "total": 123,
+      "suitesPassed": [
+        "test/v1-005-notification-delivery.integration.spec.ts",
+        "test/v1-admin-authorization-customer-read-01.integration.spec.ts",
+        "test/v1-commercial-accounting-01.integration.spec.ts"
+      ],
+      "suitesFailed": [],
+      "completedAt": "2026-11-19T22:04:30.976Z",
+      "candidate": "b5b65d0f",
+      "status": "PASSED"
+    }
+  ],
+  "completed": 19,
+  "remaining": 43,
+  "lastUpdated": "2026-11-19T22:04:30.976Z"
+}
