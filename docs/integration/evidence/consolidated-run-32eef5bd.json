@@ -1,0 +1,176 @@
+{
+  "candidateSource": {
+    "branch": "arena/1f37a4f3-monienaija",
+    "tip": "32eef5bd",
+    "base": "6816a760bd460df2a5347016d7d84f5c62cab642",
+    "priorTip": "ac3973b8",
+    "migrationHead": "1785753600804:GeneralizeExternalOperationsForAgents1785753600804",
+    "migrationCount": 166
+  },
+  "discoveredInventory": {
+    "unitSuites": 291,
+    "unitTests": 3409,
+    "integrationSpecs": 186,
+    "integrationTestGlob": "test/*.integration.spec.ts",
+    "customerMobileSuites": 26,
+    "customerMobileTests": 230,
+    "agentMobileSuites": 25,
+    "agentMobileTests": 346,
+    "adminWebBuild": "vite (requires vite, not installed in sandbox — not a code defect)",
+    "typeScript": "tsc --noEmit exit 0",
+    "lint": "eslint src/**/*.ts exit 0 (16 pre-existing warnings)",
+    "format": "prettier --check warnings fixed via prettier --write"
+  },
+  "executedBatches": [
+    {
+      "batch": 1,
+      "runId": "finchk01",
+      "suites": ["agent-bank-transfer-commitment.integration.spec.ts", "financial-commitment-initiation.integration.spec.ts", "bank-transfer-commercial-settlement.integration.spec.ts"],
+      "command": "PG_TEST_RUN_ID=finchk01 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes jest --config jest.integration.config.js --runInBand 3 suites",
+      "exitStatus": 0,
+      "suitesPassed": 3,
+      "suitesFailed": 0,
+      "testsPassed": 60,
+      "testsFailed": 0,
+      "manifest": "docs/integration/evidence/finchk01.json (if present)"
+    },
+    {
+      "batch": 2,
+      "runId": "finchk07",
+      "suites": ["banking-mobile-journeys.integration.spec.ts", "funding-defunding-conservation.integration.spec.ts", "migration-0804-owner-authority.integration.spec.ts", "hardening-04-customer-transaction-history.integration.spec.ts", "v1-agent-history-01.integration.spec.ts"],
+      "command": "PG_TEST_RUN_ID=finchk07 NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes jest --config jest.integration.config.js --runInBand 5 suites",
+      "exitStatus": 0,
+      "suitesPassed": 5,
+      "suitesFailed": 0,
+      "testsPassed": 64,
+      "testsFailed": 0
+    },
+    {
+      "batch": 3,
+      "runId": "migchk01",
+      "suites": ["arena5-consolidation-migration-upgrade.integration.spec.ts"],
+      "exitStatus": 0,
+      "suitesPassed": 1,
+      "suitesFailed": 0,
+      "testsPassed": 4,
+      "testsFailed": 0,
+      "note": "fresh-install check, not counted in 8-suite financial matrix"
+    },
+    {
+      "batch": 4,
+      "runId": "migchk02",
+      "suites": ["migration-chain.integration.spec.ts", "migration-0804-owner-authority.integration.spec.ts"],
+      "exitStatus": 0,
+      "suitesPassed": 2,
+      "suitesFailed": 0,
+      "testsPassed": 26,
+      "testsFailed": 0,
+      "note": "migration chain validation, not counted in 8-suite financial matrix"
+    },
+    {
+      "batch": "debug05/06",
+      "runId": "debug05,debug06",
+      "suites": ["hardening-04-customer-transaction-history.integration.spec.ts (single)", "v1-agent-history-01.integration.spec.ts (single)"],
+      "exitStatus": 0,
+      "note": "Verification after fixing history projection (fc.beneficiary_id -> fcd join, fa.amount, fcd.bank_code, fc.resolved_at) — not double-counted"
+    }
+  ],
+  "correctedCounts": {
+    "financialMatrix8Suites": {
+      "suites": 8,
+      "tests": 124,
+      "explanation": "finchk01 60 (3 suites) + finchk07 64 (5 suites) = 124. Prior consolidated-run-ac3973b8.json reported 154 by double-counting debug05/06 singles and migchk01/02 (4+26) which are separate categories."
+    },
+    "allExecutedSoFar": {
+      "suites": 11,
+      "tests": 154,
+      "breakdown": "124 (financial matrix) + 4 (fresh-install) + 26 (migration chain) = 154 — matches inflated prior count but categories now disambiguated"
+    }
+  },
+  "partialRuns": {
+    "finrun01": {
+      "runId": "finrun01",
+      "command": "NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes PG_TEST_RUN_ID=finrun01 PG_TEST_BATCH_SIZE=6 node scripts/run-pg-integration-tests.js (31 batches, 186 files)",
+      "batchesStarted": 4,
+      "batchesFinished": 3,
+      "suitesPassed": 17,
+      "suitesFailed": 2,
+      "log": "/tmp/pg-finrun01.log",
+      "failures": [
+        {
+          "suite": "test/a7-authoritative-persistence.integration.spec.ts",
+          "test": "rolls back receipt, journal, execution limit and lifecycle together and retains the observation",
+          "expected": 500,
+          "received": 200,
+          "repro": "PG_TEST_RUN_ID=a7chk01 jest --runInBand test/a7-authoritative-persistence.integration.spec.ts -t 'rolls back receipt'",
+          "classification": "PRE_EXISTING — reproduces on base commit 6816a760 (no local diff in src/operations/audit.service.ts). AuditService.record spy not triggering rollback; investigation needed in A7 execution path, unrelated to bank-withdrawal changes."
+        },
+        {
+          "suite": "test/a17-agent-cash-to-cash-expiry.integration.spec.ts",
+          "test": "audit failure rolls back expiry and retry after restart processes the persisted due row once",
+          "expected": "FAILED",
+          "received": "COMPLETED",
+          "repro": "PG_TEST_RUN_ID=a17chk01 jest --runInBand test/a17-agent-cash-to-cash-expiry.integration.spec.ts -t 'audit failure rolls back'",
+          "classification": "PRE_EXISTING — same audit-injection rollback pattern, reproduces on HEAD with no A17-related diff"
+        }
+      ]
+    },
+    "finrun02_killed": {
+      "runId": "finrun02",
+      "command": "PG_TEST_RUN_ID=finrun02 PG_TEST_BATCH_SIZE=6 PG_TEST_CONCURRENCY=2",
+      "result": "SIGKILL after 2 batches — memory exhaustion on 2-vCPU/3.8GB with concurrent PG (2 workers) + isolated KYC (1 worker) = 3 heavy Node processes. Concurrency 2 validated only for PG alone (2 workers ~3.2GB), not plus third. Restarted as finrun03 with CONCURRENCY=1.",
+      "log": "/tmp/pg-finrun02.log"
+    },
+    "finrun03_in_progress": {
+      "runId": "finrun03",
+      "command": "NODE_ENV=test DB_HOST=127.0.0.1 PG_TEST_CONFIRM_DISPOSABLE_CLUSTER=yes PG_TEST_RUN_ID=finrun03 PG_TEST_BATCH_SIZE=6 PG_TEST_CONCURRENCY=1 PG_TEST_MAX_OLD_SPACE_MB=1536 node scripts/run-pg-integration-tests.js",
+      "log": "/tmp/pg-finrun03.log",
+      "status": "running sequential 31 batches, started batch 1/31"
+    }
+  },
+  "regressionEvidence": {
+    "unit": { "exit": 0, "suitesPassed": 291, "testsPassed": 3409, "testsFailed": 0 },
+    "customerMobile": { "exit": 0, "suitesPassed": 26, "testsPassed": 230 },
+    "agentMobile": { "exit": 0, "suitesPassed": 25, "testsPassed": 346 },
+    "typeScript": { "exit": 0 },
+    "lint": { "exit": 0, "preExistingWarnings": 16 },
+    "buildBackend": { "exit": 0, "artifact": "dist/main.js" },
+    "buildAdminWeb": { "exit": 1, "reason": "vite not installed in sandbox, not a code defect (ts:check also shows missing vite types)" },
+    "migrationHead": "1785753600804",
+    "migrationCount": 166,
+    "freshInstall": "pass (arena5-upgrade 4/4)",
+    "socketLane": {
+      "command": "KYC_ISOLATED_CONFIRM_DISPOSABLE=yes node scripts/run-isolated-kyc-tests.js",
+      "result": "OOM after ~62s at 1899MB heap (single process, no max-old-space), then timeout at 180s with 3072MB — needs longer wall-clock (>180s) or batch-size split. PG harness memory note: concurrency 2 ok alone, concurrency 2+1 OOMs. Retry with longer timeout after PG finishes.",
+      "log": "/tmp/kyc-isolated.log and /tmp/kyc-isolated-3072.log"
+    }
+  },
+  "remainingSuites": {
+    "integrationDiscovered": 186,
+    "integrationExecutedFinancialMatrix": 8,
+    "integrationRemaining": 178,
+    "note": "Remaining includes notification, integrity-monitoring, concurrency adversarial, inbound funding, commercial accounting, etc. Executing via finrun03 bounded runner (CONCURRENCY=1, BATCH_SIZE=6) with distinct PG_TEST_RUN_IDs per continuation."
+  },
+  "recoverySafeguard": {
+    "priorDefect": "Clear/overwrite previously used filtered GET /transactions?type=EXTERNAL_BANK_TRANSFER&limit=50 which could mistake paginated/incomplete page for terminal (absence of PENDING in page ≠ settled).",
+    "fix": "Authoritative per-intent lookup via GET /customers/me/withdrawal-commitments/by-idempotency/:k and /agents/me/banking/bank-transfers/by-idempotency/:k → SELECT financial_commitments WHERE idempotency_key=$1 (scoped withdrawal-commitment:${hash(customerId:key)} / AGENT|agentId|key), ownership check via financial_authorizations.customer_id/agent_id, operationReference via single banking_outbound_operations.operation_reference. 404=never-created=safe, RESERVED=unresolved fail-closed, non-404 error=fail-closed.",
+    "code": [
+      "src/financial-commitment/financial-commitment.service.ts: lookupByIdempotencyForCustomer/Agent, lookupBankingOperationReference, resolveCustomerIdFromToken",
+      "src/financial-commitment/financial-commitment.controller.ts: GET by-idempotency/:idempotencyKey with AuthenticationSessionService validation",
+      "src/financial-commitment/agent-bank-transfer-commitment.controller.ts: GET by-idempotency with authorizationPrincipal check",
+      "apps/customer-mobile/src/screens/authenticated/BankWithdrawalScreen.tsx: isExactPendingUnresolvedOnServer(idempotencyKey)",
+      "apps/agent-mobile/src/screens/authenticated/BankWithdrawalScreen.tsx: isExactPendingUnresolvedOnServer (stale hasUnresolvedBankTransferOnServer ref fixed in 32eef5bd)"
+    ],
+    "tests": "customer-mobile bank-withdrawal-recovery 10/10, agent-mobile 6/6 after fixing stale ref (was 1/6 ReferenceError)",
+    "historyFix": "customer-transaction-history.service.ts and agent-transaction-history.service.ts: LEFT JOIN financial_commitment_destinations fcd ON fcd.commitment_id=fc.id, fcd.bank_code, fa.amount_minor, fc.resolved_at — verified hardening-04 26/26, v1-agent-history-01 18/18"
+  },
+  "nextContinuation": {
+    "resumePoint": "finrun03 running sequential 31 batches (186 files). Monitor /tmp/pg-finrun03.log, capture PG_TEST_SUMMARY JSON when complete, generate per-batch manifests with runId, suite identity, exit, passed/failed/skipped, remaining.",
+    "requiredSteps": [
+      "Wait for finrun03 PG_TEST_SUMMARY, run socket lane with NODE_OPTIONS=--max-old-space-size=3072 and 300s timeout after PG finishes",
+      "Run admin-web ts:check (already captured) and build (vite missing is expected), boot consolidated app, HTTP journeys, worker, Chromium",
+      "Update MONIENAIJA-V1-CONSOLIDATED-TRANSACTION-AND-APPLICATION-HANDOFF.md and ARENA5-CONSOLIDATION-CONTINUATION-RECORD.md with finrun03 full 186-suite results and corrected 124 count",
+      "Re-verify 40-group acceptance matrix and V1 transaction matrix"
+    ]
+  }
+}
